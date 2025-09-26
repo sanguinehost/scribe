@@ -83,8 +83,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 					);
 					// Don't clear the cookie here - let the client handle 401s
 				}
-			} catch (error) {
-				console.log(`[${timestamp}] handle: Session validation error:`, error);
+			} catch (_error) {
+				console.log(`[${timestamp}] handle: Session validation error:`, _error);
 				// Don't clear the cookie here - could be temporary network issue
 			}
 		}

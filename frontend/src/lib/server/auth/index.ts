@@ -1,8 +1,8 @@
 import { encodeBase32LowerCaseNoPadding, encodeHexLowerCase } from '@oslojs/encoding';
 import { sha256 } from '@oslojs/crypto/sha2';
-import type { Session, User } from '$lib/types';
-import { apiClient } from '$lib/api';
-import { ResultAsync, fromPromise } from 'neverthrow';
+import type { Session, User, SessionResponse } from '$lib/types';
+import { apiClient as _apiClient } from '$lib/api';
+import { ResultAsync, fromPromise, Result as _Result } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import type { Cookies, RequestEvent } from '@sveltejs/kit';
 import { ApiResponseError } from '$lib/errors/api';
@@ -28,7 +28,7 @@ export function createSession(
 				expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString()
 			};
 
-			const result = await apiClient.createSession(session, fetchFn);
+			const result = await _apiClient.createSession(session, fetchFn);
 			if (result.isErr()) {
 				throw result.error;
 			}
@@ -42,7 +42,7 @@ export function createSession(
 export function validateSessionToken(
 	_token: string,
 	fetchFn: typeof fetch = globalThis.fetch
-): ResultAsync<SessionValidationResult, ApiError> {
+): ResultAsync<SessionResponse, ApiError> {
 	console.log(`[${new Date().toISOString()}] validateSessionToken: ENTER`);
 	return fromPromise(
 		(async () => {
@@ -51,7 +51,7 @@ export function validateSessionToken(
 
 			// Use fetchFn to avoid errors with server-side relative URLs
 			console.log(`[${new Date().toISOString()}] validateSessionToken: Fetching current session`);
-			const sessionResult = await apiClient.getSession(fetchFn);
+			const sessionResult = await _apiClient.getSession(fetchFn);
 
 			// Explicitly check for errors BEFORE accessing .value
 			if (sessionResult.isErr()) {
@@ -84,6 +84,14 @@ export function validateSessionToken(
 
 			const backendResponse = sessionResult.value;
 
+			// Check if session is null
+			if (!backendResponse.session) {
+				console.log(
+					`[${new Date().toISOString()}] validateSessionToken: Session is null from backend`
+				);
+				return { session: null, user: null } as const;
+			}
+
 			// Convert backend session format to our expected format
 			const session: Session = {
 				id: backendResponse.session.id,
@@ -98,7 +106,7 @@ export function validateSessionToken(
 				console.log(
 					`[${new Date().toISOString()}] validateSessionToken: Session ${session.id} expired, deleting`
 				);
-				await apiClient.deleteSession(session.id, fetchFn).catch((error) => {
+				await _apiClient.deleteSession(session.id, fetchFn).catch((error) => {
 					console.error('Failed to delete expired session:', error);
 				});
 				console.log(`[${new Date().toISOString()}] validateSessionToken: EXIT - expired`);
@@ -130,7 +138,7 @@ export function invalidateSession(
 ): ResultAsync<undefined, ApiError> {
 	return fromPromise(
 		(async () => {
-			const result = await apiClient.deleteSession(sessionId, fetchFn);
+			const result = await _apiClient.deleteSession(sessionId, fetchFn);
 			if (result.isErr()) {
 				throw result.error;
 			}
@@ -146,7 +154,7 @@ export function invalidateAllSessions(
 ): ResultAsync<undefined, ApiError> {
 	return fromPromise(
 		(async () => {
-			const result = await apiClient.deleteSessionsForUser(userId, fetchFn);
+			const result = await _apiClient.deleteSessionsForUser(userId, fetchFn);
 			if (result.isErr()) {
 				throw result.error;
 			}
@@ -156,12 +164,12 @@ export function invalidateAllSessions(
 	);
 }
 
-export function getSessionCookie(event: RequestEvent): string | undefined {
-	return event.cookies.get('session');
+export function getSessionCookie(_event: RequestEvent): string | undefined {
+	return _event.cookies.get('session');
 }
 
-export function setSessionTokenCookie(cookies: Cookies, token: string, expiresAt: Date): void {
-	cookies.set('session', token, {
+export function setSessionTokenCookie(_cookies: Cookies, token: string, expiresAt: Date): void {
+	_cookies.set('session', token, {
 		httpOnly: true,
 		sameSite: 'lax',
 		expires: expiresAt,
@@ -170,8 +178,8 @@ export function setSessionTokenCookie(cookies: Cookies, token: string, expiresAt
 	});
 }
 
-export function deleteSessionTokenCookie(cookies: Cookies): void {
-	cookies.set('session', 'token', {
+export function deleteSessionTokenCookie(_cookies: Cookies): void {
+	_cookies.set('session', 'token', {
 		httpOnly: true,
 		sameSite: 'lax',
 		maxAge: 0,

@@ -1,5 +1,5 @@
 import { getContext, setContext } from 'svelte';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 
 export class SettingsStore {
 	isVisible = $state(false);
@@ -9,25 +9,25 @@ export class SettingsStore {
 
 	async loadTypingSpeed() {
 		try {
-			const result = await apiClient.getUserSettings();
+			const result = await _apiClient.getUserSettings();
 			if (result.isOk()) {
 				this.typingSpeed = result.value.typing_speed ?? 30;
 			}
-		} catch (error) {
-			console.warn('Failed to load typing speed setting, using default:', error);
+		} catch (_error) {
+			console.warn('Failed to load typing speed setting, using default:', _error);
 		}
 	}
 
 	async saveTypingSpeed() {
 		try {
-			const result = await apiClient.updateUserSettings({
+			const result = await _apiClient.updateUserSettings({
 				typing_speed: this.typingSpeed
 			});
 			if (result.isOk()) {
 				console.log('Typing speed saved successfully');
 			}
-		} catch (error) {
-			console.warn('Failed to save typing speed setting:', error);
+		} catch (_error) {
+			console.warn('Failed to save typing speed setting:', _error);
 		}
 	}
 

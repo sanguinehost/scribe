@@ -2,7 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
 	import { CreditCard, Zap, MessageCircle, Layers, Shield } from 'lucide-svelte';
@@ -19,7 +19,7 @@
 	$: loading = subscriptionStore.loading;
 	$: error = subscriptionStore.error;
 	$: currentPlan = subscriptionStore.currentPlan;
-	$: isSubscribed = subscriptionStore.isSubscribed;
+	$: _isSubscribed = subscriptionStore.isSubscribed;
 	$: isTrialing = subscriptionStore.isTrialing;
 	$: trialDaysRemaining = subscriptionStore.trialDaysRemaining;
 	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
@@ -32,7 +32,7 @@
 	$: isThrottled = subscriptionStore.isThrottled;
 	$: throttleDelay = subscriptionStore.throttleDelay;
 
-	function handleViewPricing() {
+	function _handleViewPricing() {
 		// Instead of navigating to pricing page, we'll show upgrade options directly
 		// This function is kept for backward compatibility but could be removed
 		console.log('View pricing clicked - showing upgrade options directly');
@@ -113,7 +113,7 @@
 							<PlanBadge
 								planType={currentPlan}
 								status={subscription?.status}
-								size="md"
+								_size="md"
 								showStatus={true}
 							/>
 							<div>
@@ -134,9 +134,9 @@
 									buttonClass="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer border-none"
 								/>
 							{:else}
-								<Button variant="outline" onclick={handleManageSubscription}>
+								<ButtonComponent variant="outline" onclick={handleManageSubscription}>
 									Manage Subscription
-								</Button>
+								</ButtonComponent>
 							{/if}
 						{/if}
 					</div>
@@ -175,7 +175,7 @@
 						planType={currentPlan}
 						{isThrottled}
 						{throttleDelay}
-						size="md"
+						_size="md"
 					/>
 				</div>
 
@@ -280,7 +280,7 @@
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div class="rounded-lg border p-4">
 								<div class="mb-2 flex items-center gap-2">
-									<PlanBadge planType="basic" size="sm" />
+									<PlanBadge planType="basic" _size="sm" />
 									<span class="font-medium">Basic Plan</span>
 								</div>
 								<p class="mb-3 text-sm text-slate-600 dark:text-slate-300">
@@ -295,7 +295,7 @@
 
 							<div class="rounded-lg border p-4">
 								<div class="mb-2 flex items-center gap-2">
-									<PlanBadge planType="premium" size="sm" />
+									<PlanBadge planType="premium" _size="sm" />
 									<span class="font-medium">Premium Plan</span>
 								</div>
 								<p class="mb-3 text-sm text-slate-600 dark:text-slate-300">
@@ -321,7 +321,7 @@
 		</CardHeader>
 		<CardContent>
 			<div class="flex items-center gap-3">
-				<PlanBadge planType="free" size="md" />
+				<PlanBadge planType="free" _size="md" />
 				<div>
 					<p class="font-semibold">Free Plan</p>
 					<p class="text-sm text-slate-600 dark:text-slate-300">Payments are currently disabled</p>

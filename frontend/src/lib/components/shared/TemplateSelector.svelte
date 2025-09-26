@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button } from '../ui/button';
+	import { Button as ButtonComponent } from '../ui/button';
 	import { Label } from '../ui/label';
 	import { Skeleton } from '../ui/skeleton';
-	import { Badge } from '../ui/badge';
+	import { Badge as _BadgeComponent } from '../ui/badge';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import { toast } from 'svelte-sonner';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { PromptTemplateInfo } from '$lib/types';
 
 	let {
@@ -32,7 +32,7 @@
 	let selectedTemplate = $state<PromptTemplateInfo | null>(null);
 
 	// Template descriptions for better UX
-	const templateDescriptions = {
+	const _templateDescriptions = {
 		neutral_roleplay: 'Balanced roleplay with narration and dialogue',
 		chatbot_dialogue: 'Pure conversation, like texting with a friend',
 		creative_writing: 'Rich narrative with detailed descriptions'
@@ -46,7 +46,7 @@
 	async function loadTemplates() {
 		try {
 			isLoading = true;
-			const result = await apiClient.getPromptTemplates();
+			const result = await _apiClient.getPromptTemplates();
 
 			if (result.isOk()) {
 				availableTemplates = result.value.templates;
@@ -56,8 +56,8 @@
 				console.error('Failed to load prompt templates:', result.error);
 				toast.error('Failed to load prompt templates');
 			}
-		} catch (error) {
-			console.error('Error loading templates:', error);
+		} catch (_error) {
+			console.error('Error loading templates:', _error);
 			toast.error('Error loading templates');
 		} finally {
 			isLoading = false;
@@ -110,14 +110,14 @@
 		return !template.compatibility.requires_character;
 	}
 
-	function getCompatibilityBadge(template: PromptTemplateInfo): string | null {
+	function _getCompatibilityBadge(_template: PromptTemplateInfo): string | null {
 		if (!showCompatibility) return null;
 
-		const compatible = isCompatible(template);
+		const compatible = isCompatible(_template);
 		if (!compatible) return 'Limited';
 
 		// Show recommended for perfect matches
-		if (template.compatibility.requires_character === (currentChatMode === 'Character')) {
+		if (_template.compatibility.requires_character === (currentChatMode === 'Character')) {
 			return 'Recommended';
 		}
 
@@ -129,8 +129,8 @@
 	}
 
 	// Close dropdown when clicking outside
-	function handleClickOutside(event: Event) {
-		const target = event.target as HTMLElement;
+	function handleClickOutside(_event: Event) {
+		const target = _event.target as HTMLElement;
 		const dropdown = document.querySelector('[data-template-selector]');
 		if (dropdown && !dropdown.contains(target)) {
 			closeDropdown();
@@ -160,7 +160,7 @@
 	{:else}
 		<div class="relative" data-template-selector>
 			<!-- Selected Template Display -->
-			<Button
+			<ButtonComponent
 				variant="outline"
 				class="h-auto w-full justify-between overflow-hidden p-3 text-left"
 				{disabled}
@@ -181,7 +181,7 @@
 				{:else}
 					<ChevronDown class="h-4 w-4 shrink-0 opacity-50" />
 				{/if}
-			</Button>
+			</ButtonComponent>
 
 			<!-- Dropdown Menu -->
 			{#if isDropdownOpen}

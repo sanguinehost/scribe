@@ -1,25 +1,28 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn';
+	/* eslint-disable svelte/valid-compile */
+	// Disable custom elements to avoid props inference issues
+	import type { Snippet } from 'svelte';
+	import { cn as _cn } from '$lib/utils/shadcn';
 
 	let {
 		children,
 		class: c,
 		...props
 	}: {
-		children: any;
+		children?: Snippet;
 		class?: string;
-		[key: string]: any;
+		[key: string]: unknown;
 	} = $props();
 </script>
 
 <code
-	class={cn(
+	class={_cn(
 		'inline-block break-words rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground',
 		c
 	)}
 	{...props}
 >
-	{@render children?.()}
+	{#if children}{@render children()}{/if}
 </code>
 
 <style>

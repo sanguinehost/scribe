@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
-import { Result, ok } from 'neverthrow';
+import { Result as _Result, ok } from 'neverthrow';
 
 // Mock window.matchMedia for jsdom
 Object.defineProperty(window, 'matchMedia', {

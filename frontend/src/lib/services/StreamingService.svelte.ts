@@ -1,7 +1,10 @@
 // StreamingService.ts - Decoupled Svelte 5 Streaming Client with Robust Error Handling
 import { fetchEventSource, type EventSourceMessage } from '@microsoft/fetch-event-source';
 import { env } from '$env/dynamic/public';
-import type { ScribeChatMessage, ScribeChatSession } from '$lib/types';
+import type {
+	ScribeChatMessage as _ScribeChatMessage,
+	ScribeChatSession as _ScribeChatSession
+} from '$lib/types';
 
 // StreamingService loaded successfully
 
@@ -97,17 +100,17 @@ class StreamingService {
 	>();
 
 	// Local animation state (ChatGPT-style)
-	private animationIntervals = new Map<string, NodeJS.Timeout>();
+	private animationIntervals = new Map<string, ReturnType<typeof setTimeout>>();
 	private animationSpeed = 15; // ms between character reveals (2x faster than before)
 
 	// Timestamp-based animation tracking
 	private animationStartTimes = new Map<string, number>();
 	private animationRequestIds = new Map<string, number>();
-	private animationFallbackTimeouts = new Map<string, NodeJS.Timeout>();
+	private animationFallbackTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
 	// LEGACY: Keep old state for gradual migration
 	private typingQueues = new Map<string, string[]>();
-	private typingIntervals = new Map<string, NodeJS.Timeout>();
+	private typingIntervals = new Map<string, ReturnType<typeof setTimeout>>();
 	private typingSpeed = 50; // ms between characters
 	private chunkBuffers = new Map<string, { [index: number]: string }>();
 	private expectedChunkIndex = new Map<string, number>();
@@ -117,7 +120,7 @@ class StreamingService {
 		doneReceived: false,
 		messageSavedReceived: false,
 		tokenUsageReceived: false,
-		closeTimeoutId: null as NodeJS.Timeout | null,
+		closeTimeoutId: null as ReturnType<typeof setTimeout> | null,
 		shouldClose: false
 	};
 
@@ -199,7 +202,7 @@ class StreamingService {
 					console.log('🔄 Connection appears stalled, attempting recovery');
 
 					// Store current connection params before disconnect
-					const currentChatId = this.currentChatId;
+					const _currentChatId = this.currentChatId;
 
 					// Disconnect the stalled connection and reset state
 					console.log('🔄 Recovering from stalled connection');
@@ -588,9 +591,9 @@ class StreamingService {
 	/**
 	 * Parse multiple JSON chunks that may be concatenated in a single string
 	 */
-	private parseMultipleJsonChunks(data: string): StreamedChunk[] {
+	private parseMultipleJsonChunks(_data: string): StreamedChunk[] {
 		const chunks: StreamedChunk[] = [];
-		let remaining = data.trim();
+		let remaining = _data.trim();
 
 		while (remaining.length > 0) {
 			try {
@@ -642,8 +645,8 @@ class StreamingService {
 				chunks.push(chunk);
 
 				remaining = remaining.substring(jsonEnd).trim();
-			} catch (e) {
-				console.error('Failed to parse JSON chunk:', e, 'Remaining:', remaining.substring(0, 100));
+			} catch (_e) {
+				console.error('Failed to parse JSON chunk:', _e, 'Remaining:', remaining.substring(0, 100));
 				break;
 			}
 		}
@@ -873,8 +876,8 @@ class StreamingService {
 				},
 				assistantMessageId
 			);
-		} catch (error) {
-			this.handleConnectionError(error as Error);
+		} catch (_error) {
+			this.handleConnectionError(_error as Error);
 		}
 	}
 
@@ -1002,8 +1005,8 @@ class StreamingService {
 				}
 			},
 
-			onmessage: (event: EventSourceMessage) => {
-				this.handleStreamMessage(event, assistantMessageId);
+			onmessage: (_event: EventSourceMessage) => {
+				this.handleStreamMessage(_event, assistantMessageId);
 			},
 
 			onclose: () => {
@@ -1046,14 +1049,14 @@ class StreamingService {
 	/**
 	 * Handle incoming stream messages with sophisticated parsing
 	 */
-	private handleStreamMessage(event: EventSourceMessage, assistantMessageId: string): void {
+	private handleStreamMessage(_event: EventSourceMessage, assistantMessageId: string): void {
 		try {
-			switch (event.event) {
+			switch (_event.event) {
 				case 'content':
-					if (event.data) {
+					if (_event.data) {
 						try {
 							// Parse multiple JSON chunks that may be concatenated in a single SSE event
-							const chunks = this.parseMultipleJsonChunks(event.data);
+							const chunks = this.parseMultipleJsonChunks(_event.data);
 
 							const messageId = this.currentAssistantMessageId || assistantMessageId;
 							const messageBuffer = this.messageBuffers.get(messageId);
@@ -1087,24 +1090,24 @@ class StreamingService {
 
 							// Update buffer content if we have contiguous chunks
 							this.updateBufferContent(messageId);
-						} catch (e) {
-							console.error('Failed to parse structured chunks:', e, 'Raw data:', event.data);
+						} catch (_e) {
+							console.error('Failed to parse structured chunks:', _e, 'Raw data:', _event.data);
 							// For fallback, still buffer the raw content
 							const messageId = this.currentAssistantMessageId || assistantMessageId;
 							const messageBuffer = this.messageBuffers.get(messageId);
 							if (messageBuffer) {
-								messageBuffer.content += event.data;
+								messageBuffer.content += _event.data;
 							}
 						}
 					}
 					break;
 
 				case 'error':
-					this.handleStreamError(new Error(event.data), assistantMessageId);
+					this.handleStreamError(new Error(_event.data), assistantMessageId);
 					break;
 
 				case 'done':
-					if (event.data === '[DONE]') {
+					if (_event.data === '[DONE]') {
 						// NEW ARCHITECTURE: Mark buffer as complete and start animation when ready
 						const messageId = this.currentAssistantMessageId || assistantMessageId;
 						const messageBuffer = this.messageBuffers.get(messageId);
@@ -1141,46 +1144,47 @@ class StreamingService {
 					break;
 
 				case 'message_saved':
-					this.handleMessageSaved(event.data, assistantMessageId);
+					this.handleMessageSaved(_event.data, assistantMessageId);
 					// Mark message_saved as received and try to close connection
 					this.connectionCloseState.messageSavedReceived = true;
 					console.log('💾 message_saved event received, checking if we can close connection');
 					this.tryCloseConnection();
 					break;
 
-				case 'token_usage':
-					console.log('📊 Processing token_usage event:', event.data);
+				case 'token_usage': {
+					console.log('📊 Processing token_usage event:', _event.data);
 					// Use the tracked message ID for token usage
 					const messageIdForTokens = this.currentAssistantMessageId || assistantMessageId;
 					console.log(
 						`📊 TOKEN EVENT: original ID: ${assistantMessageId}, current tracked ID: ${this.currentAssistantMessageId}, using ID: ${messageIdForTokens}`
 					);
-					this.handleTokenUsage(event.data, messageIdForTokens);
+					this.handleTokenUsage(_event.data, messageIdForTokens);
 
 					// Mark token_usage as received and try to close connection
 					this.connectionCloseState.tokenUsageReceived = true;
 					console.log('📊 token_usage event received, checking if we can close connection');
 					this.tryCloseConnection();
 					break;
+				}
 
 				case 'reasoning_chunk':
 					// Handle reasoning chunks if needed
-					console.log('Reasoning:', event.data);
+					console.log('Reasoning:', _event.data);
 					break;
 
 				default:
 					// Handle default message event or unknown events
-					console.log('📤 Processing default/unknown event:', event.event);
-					if (event.data && event.data !== '[DONE]') {
+					console.log('📤 Processing default/unknown event:', _event.event);
+					if (_event.data && _event.data !== '[DONE]') {
 						// Use the tracked message ID for typing queue (may have been updated by message_saved)
 						const messageIdForTyping = this.currentAssistantMessageId || assistantMessageId;
-						this.addToTypingQueue(messageIdForTyping, event.data);
+						this.addToTypingQueue(messageIdForTyping, _event.data);
 					}
 					break;
 			}
-		} catch (error) {
-			console.error('Error parsing stream message:', error);
-			this.handleStreamError(error as Error, assistantMessageId);
+		} catch (_error) {
+			console.error('Error parsing stream message:', _error);
+			this.handleStreamError(_error as Error, assistantMessageId);
 		}
 	}
 
@@ -1237,9 +1241,9 @@ class StreamingService {
 	/**
 	 * NEW ARCHITECTURE: Handle message saved event with buffer updates
 	 */
-	private handleMessageSaved(data: string, assistantMessageId: string): void {
+	private handleMessageSaved(_data: string, assistantMessageId: string): void {
 		try {
-			const messageData = JSON.parse(data);
+			const messageData = JSON.parse(_data);
 			const actualMessageId = messageData.message_id;
 
 			console.log(
@@ -1275,7 +1279,7 @@ class StreamingService {
 			const currentVariantIndex = messageData.current_variant_index ?? 0;
 
 			// Update message ID and variant metadata in messages array while preserving object identity
-			let messageUpdated = false;
+			let _messageUpdated = false;
 			for (const msg of this.messages) {
 				// For variants, we need to match by either frontend ID or backend ID
 				if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
@@ -1295,13 +1299,13 @@ class StreamingService {
 						variant_count: msg.variant_count,
 						current_variant_index: msg.current_variant_index
 					});
-					messageUpdated = true;
+					_messageUpdated = true;
 					break;
 				}
 			}
 
 			// Force Svelte reactivity if we updated a message
-			if (messageUpdated) {
+			if (_messageUpdated) {
 				this.messages = [...this.messages];
 			}
 
@@ -1333,17 +1337,17 @@ class StreamingService {
 				this.chunkBuffers.set(actualMessageId, oldBuffer);
 				this.chunkBuffers.delete(assistantMessageId);
 			}
-		} catch (error) {
-			console.error('Failed to parse message saved data:', error);
+		} catch (_error) {
+			console.error('Failed to parse message saved data:', _error);
 		}
 	}
 
 	/**
 	 * NEW ARCHITECTURE: Handle token usage information with buffer updates
 	 */
-	private handleTokenUsage(data: string, assistantMessageId: string): void {
+	private handleTokenUsage(_data: string, assistantMessageId: string): void {
 		try {
-			const tokenData = JSON.parse(data);
+			const tokenData = JSON.parse(_data);
 			console.log(`📊 handleTokenUsage: Processing tokens for message ${assistantMessageId}`, {
 				prompt_tokens: tokenData.prompt_tokens,
 				completion_tokens: tokenData.completion_tokens,
@@ -1379,8 +1383,8 @@ class StreamingService {
 					return msg;
 				});
 			}
-		} catch (error) {
-			console.error('Failed to parse token usage data:', error);
+		} catch (_error) {
+			console.error('Failed to parse token usage data:', _error);
 		}
 	}
 
@@ -1389,7 +1393,7 @@ class StreamingService {
 	 */
 	private finalizeMessage(assistantMessageId: string): void {
 		// Check if message exists
-		const messageExists = this.messages.find((m) => m.id === assistantMessageId);
+		const _messageExists = this.messages.find((m) => m.id === assistantMessageId);
 
 		// FIRST: Process any remaining chunks in the chunk buffer
 		// This handles the case where chunks are buffered but stream closed before processing
@@ -1440,10 +1444,10 @@ class StreamingService {
 		this.clearChunkBuffer(assistantMessageId);
 
 		// Mark message as no longer loading
-		let messageUpdated = false;
+		let _messageUpdated = false;
 		this.messages = this.messages.map((msg) => {
 			if (msg.id === assistantMessageId) {
-				messageUpdated = true;
+				_messageUpdated = true;
 				const finalMsg = { ...msg, loading: false };
 				console.log(
 					`✅ Final message ${assistantMessageId}: ${finalMsg.content.length} chars, tokens: ${finalMsg.prompt_tokens || '?'}/${finalMsg.completion_tokens || '?'}`
@@ -1562,66 +1566,96 @@ class StreamingService {
 	/**
 	 * Determine if we should retry based on error type and retry count
 	 */
-	private shouldRetry(error: any): boolean {
+	private shouldRetry(error: unknown): boolean {
 		if (this.retryCount >= this.config.maxRetries) {
 			return false;
 		}
 
-		if (error?.name === 'AbortError') {
+		const err = error as unknown;
+		// Type guard to check if error has expected properties
+		const isErrorWithName = (e: unknown): e is { name: string } =>
+			typeof e === 'object' &&
+			e !== null &&
+			'name' in e &&
+			typeof (e as { name: unknown }).name === 'string';
+		const isErrorWithMessage = (e: unknown): e is { message: string } =>
+			typeof e === 'object' &&
+			e !== null &&
+			'message' in e &&
+			typeof (e as { message: unknown }).message === 'string';
+
+		if (isErrorWithName(err) && err.name === 'AbortError') {
 			return false;
 		}
 
 		// Don't retry auth errors
-		if (error?.message?.includes('401') || error?.message?.includes('Authentication')) {
+		if (
+			isErrorWithMessage(err) &&
+			(err.message.includes('401') || err.message.includes('Authentication'))
+		) {
 			return false;
 		}
 
 		// Don't retry daily limit errors
 		if (
-			error?.name === 'DailyLimitError' ||
-			error?.message?.includes('Daily message limit reached')
+			(isErrorWithName(err) && err.name === 'DailyLimitError') ||
+			(isErrorWithMessage(err) && err.message.includes('Daily message limit reached'))
 		) {
-			console.warn('🚫 Not retrying daily limit error:', error.message);
+			console.warn(
+				'🚫 Not retrying daily limit error:',
+				isErrorWithMessage(err) ? err.message : 'Unknown error'
+			);
 			return false;
 		}
 
 		// Don't retry validation errors - these are frontend bugs that need to be fixed, not retried
 		if (
-			error?.message?.includes('last message') ||
-			error?.message?.includes('Invalid conversation history') ||
-			error?.message?.includes('Backend validation failed')
+			isErrorWithMessage(err) &&
+			(err.message.includes('last message') ||
+				err.message.includes('Invalid conversation history') ||
+				err.message.includes('Backend validation failed'))
 		) {
-			console.warn('🚫 Not retrying validation error:', error.message);
+			console.warn('🚫 Not retrying validation error:', err.message);
 			return false;
 		}
 
 		// Don't retry most 4xx client errors (except some specific cases)
-		if (error?.message?.includes('Connection failed:') && error?.message?.includes('4')) {
+		if (
+			isErrorWithMessage(err) &&
+			err.message.includes('Connection failed:') &&
+			err.message.includes('4')
+		) {
 			// Parse the status code to be more specific
-			const statusMatch = error.message.match(/(\d{3})/);
+			const statusMatch = err.message.match(/(\d{3})/);
 			if (statusMatch) {
 				const statusCode = parseInt(statusMatch[1]);
 				if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
-					console.warn(`🚫 Not retrying client error ${statusCode}:`, error.message);
+					console.warn(`🚫 Not retrying client error ${statusCode}:`, err.message);
 					return false;
 				}
 			}
 		}
 
 		// Retry server errors (5xx) and rate limiting (429)
-		if (error?.message?.includes('Server error:') || error?.message?.includes('429')) {
-			console.log('🔄 Retrying server error or rate limit:', error.message);
+		if (
+			isErrorWithMessage(err) &&
+			(err.message.includes('Server error:') || err.message.includes('429'))
+		) {
+			console.log('🔄 Retrying server error or rate limit:', err.message);
 			this.retryCount++;
 			return true;
 		}
 
 		// Retry network errors and timeouts
 		if (
-			error?.message?.includes('timeout') ||
-			error?.message?.includes('network') ||
-			error?.name === 'TypeError'
+			(isErrorWithMessage(err) &&
+				(err.message.includes('timeout') || err.message.includes('network'))) ||
+			(isErrorWithName(err) && err.name === 'TypeError')
 		) {
-			console.log('🔄 Retrying network/timeout error:', error.message);
+			console.log(
+				'🔄 Retrying network/timeout error:',
+				isErrorWithMessage(err) ? err.message : 'Unknown error'
+			);
 			this.retryCount++;
 			return true;
 		}
@@ -1778,13 +1812,13 @@ class StreamingService {
 		}
 
 		// Clear all local animations
-		for (const [messageId, intervalId] of this.animationIntervals) {
+		for (const [_messageId, intervalId] of this.animationIntervals) {
 			clearInterval(intervalId);
 		}
 		this.animationIntervals.clear();
 
 		// Clear timestamp-based animation tracking
-		for (const [messageId, requestId] of this.animationRequestIds) {
+		for (const [_messageId, requestId] of this.animationRequestIds) {
 			cancelAnimationFrame(requestId);
 		}
 		this.animationRequestIds.clear();

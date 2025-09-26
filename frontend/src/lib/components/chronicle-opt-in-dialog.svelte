@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		Dialog,
 		DialogContent,
@@ -8,27 +8,27 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Checkbox as CheckboxComponent } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
 	import { BookOpen, Search, Clock, Sparkles } from 'lucide-svelte';
 
-	export let open = false;
+	export let _open = false;
 	export let onConfirm: (enableChronicle: boolean, rememberChoice: boolean) => void;
 
 	let rememberChoice = false;
 
 	function handleEnable() {
 		onConfirm(true, rememberChoice);
-		open = false;
+		_open = false;
 	}
 
 	function handleSkip() {
 		onConfirm(false, rememberChoice);
-		open = false;
+		_open = false;
 	}
 </script>
 
-<Dialog bind:open>
+<Dialog bind:open={_open}>
 	<DialogContent class="sm:max-w-[500px]">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
@@ -82,18 +82,18 @@
 		</DialogHeader>
 
 		<div class="flex items-center space-x-2 py-2">
-			<Checkbox id="remember-choice" bind:checked={rememberChoice} />
+			<CheckboxComponent id="remember-choice" bind:checked={rememberChoice} />
 			<Label for="remember-choice" class="cursor-pointer text-sm font-normal">
 				Remember my choice for this session
 			</Label>
 		</div>
 
 		<DialogFooter class="sm:justify-between">
-			<Button variant="outline" onclick={handleSkip}>Skip for Now</Button>
-			<Button onclick={handleEnable} class="gap-2">
+			<ButtonComponent variant="outline" onclick={handleSkip}>Skip for Now</ButtonComponent>
+			<ButtonComponent onclick={handleEnable} class="gap-2">
 				<BookOpen class="h-4 w-4" />
 				Enable Chronicles
-			</Button>
+			</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

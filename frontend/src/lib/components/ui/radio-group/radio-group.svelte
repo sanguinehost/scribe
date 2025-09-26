@@ -1,6 +1,7 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import { RadioGroup as RadioGroupPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	let {
 		ref = $bindable(null),
@@ -10,4 +11,4 @@
 	}: RadioGroupPrimitive.RootProps = $props();
 </script>
 
-<RadioGroupPrimitive.Root bind:ref bind:value class={cn('grid gap-2', className)} {...restProps} />
+<RadioGroupPrimitive.Root bind:ref bind:value class={_cn('grid gap-2', className)} {...restProps} />

@@ -5,15 +5,15 @@
 	// Props
 	export let planType: PlanType = 'free';
 	export let status: SubscriptionStatus | null = null;
-	export let size: 'sm' | 'md' | 'lg' = 'md';
+	export let _size: 'sm' | 'md' | 'lg' = 'md';
 	export let showStatus: boolean = false;
 
 	// Computed properties
-	$: badgeClass = getBadgeClass(planType, size);
+	$: badgeClass = getBadgeClass(planType, _size);
 	$: displayText = getDisplayText(planType, status, showStatus);
-	$: iconSize = getIconSize(size);
+	$: iconSize = getIconSize(_size);
 
-	function getBadgeClass(plan: PlanType, size: 'sm' | 'md' | 'lg'): string {
+	function getBadgeClass(plan: PlanType, _size: 'sm' | 'md' | 'lg'): string {
 		const baseClass = 'inline-flex items-center font-medium rounded-full';
 
 		// Size classes
@@ -32,7 +32,7 @@
 				'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 ring-1 ring-purple-600/20'
 		};
 
-		return `${baseClass} ${sizeClasses[size]} ${planClasses[plan]}`;
+		return `${baseClass} ${sizeClasses[_size]} ${planClasses[plan]}`;
 	}
 
 	function getDisplayText(
@@ -76,8 +76,8 @@
 		return planName;
 	}
 
-	function getIconSize(size: 'sm' | 'md' | 'lg'): number {
-		switch (size) {
+	function getIconSize(_size: 'sm' | 'md' | 'lg'): number {
+		switch (_size) {
 			case 'sm':
 				return 12;
 			case 'md':

@@ -4,16 +4,16 @@
 		CreateLorebookEntryPayload,
 		UpdateLorebookEntryPayload
 	} from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 
 	interface Props {
 		entry?: LorebookEntry | null;
 		isLoading?: boolean;
-		onSubmit?: (data: CreateLorebookEntryPayload | UpdateLorebookEntryPayload) => void;
+		onSubmit?: (_data: CreateLorebookEntryPayload | UpdateLorebookEntryPayload) => void;
 		onCancel?: () => void;
 	}
 
@@ -29,8 +29,8 @@
 	const title = isEditing ? 'Edit Entry' : 'Create New Entry';
 	const submitLabel = isEditing ? 'Update Entry' : 'Create Entry';
 
-	function handleSubmit(event: Event) {
-		event.preventDefault();
+	function handleSubmit(_event: Event) {
+		_event.preventDefault();
 
 		if (!entryTitle.trim() || !content.trim()) {
 			return;
@@ -94,7 +94,7 @@
 			<!-- Content -->
 			<div class="space-y-2">
 				<Label for="entry-content">Content</Label>
-				<Textarea
+				<TextareaComponent
 					id="entry-content"
 					bind:value={content}
 					placeholder="Enter the lorebook entry content"
@@ -132,7 +132,7 @@
 
 			<!-- Submit buttons -->
 			<div class="flex gap-2 pt-4">
-				<Button
+				<ButtonComponent
 					type="submit"
 					disabled={isLoading || !entryTitle.trim() || !content.trim()}
 					class="flex-1"
@@ -143,11 +143,16 @@
 						></div>
 					{/if}
 					{submitLabel}
-				</Button>
+				</ButtonComponent>
 				{#if onCancel}
-					<Button type="button" variant="outline" onclick={handleCancel} disabled={isLoading}>
+					<ButtonComponent
+						type="button"
+						variant="outline"
+						onclick={handleCancel}
+						disabled={isLoading}
+					>
 						Cancel
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 		</form>

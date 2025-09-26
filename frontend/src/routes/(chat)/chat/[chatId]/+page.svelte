@@ -5,7 +5,7 @@
 		ScribeChatMessage,
 		ScribeCharacter,
 		BackendAuthResponse,
-		User
+		User as _User
 	} from '$lib/types.ts';
 
 	// Define the type for the data prop received from the loader

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		ChevronLeft,
 		ChevronRight,
@@ -78,7 +78,7 @@
 	{#if message.message_type === 'Assistant' && !readonly && !isFirstMessage(message)}
 		<!-- Left/Right chevrons for response variants -->
 		<div class="flex items-center gap-1">
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
@@ -87,7 +87,7 @@
 				title="Previous variant"
 			>
 				<ChevronLeft size={12} />
-			</Button>
+			</ButtonComponent>
 
 			{#if variantInfo}
 				<span class="px-1 text-[9px] text-muted-foreground">
@@ -95,7 +95,7 @@
 				</span>
 			{/if}
 
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
@@ -106,13 +106,13 @@
 					: 'Regenerate response'}
 			>
 				<ChevronRight size={12} />
-			</Button>
+			</ButtonComponent>
 		</div>
 	{/if}
 
 	<!-- Edit button for user messages -->
 	{#if message.message_type === 'User' && !readonly}
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
@@ -121,11 +121,11 @@
 			title="Edit message"
 		>
 			<Edit size={10} />
-		</Button>
+		</ButtonComponent>
 	{/if}
 
 	<!-- Copy button -->
-	<Button
+	<ButtonComponent
 		variant="ghost"
 		size="sm"
 		class="h-6 w-6 rounded-md border border-border/40 p-0 shadow-sm backdrop-blur-sm transition-colors duration-150 {copyClicked
@@ -136,11 +136,11 @@
 		title="Copy message"
 	>
 		<Copy size={10} />
-	</Button>
+	</ButtonComponent>
 
 	<!-- Delete button for user messages -->
 	{#if message.message_type === 'User' && !readonly}
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 text-destructive shadow-sm backdrop-blur-sm hover:bg-destructive/80"
@@ -149,13 +149,13 @@
 			title="Delete message"
 		>
 			<Trash2 size={10} />
-		</Button>
+		</ButtonComponent>
 	{/if}
 
 	<!-- More actions dropdown (custom implementation) - only for AI messages -->
 	{#if message.message_type === 'Assistant'}
 		<div class="relative" use:clickOutside={closeDropdown}>
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
@@ -164,7 +164,7 @@
 				title="More actions"
 			>
 				<MoreHorizontal size={10} />
-			</Button>
+			</ButtonComponent>
 
 			{#if showDropdown}
 				<div

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Dialog as DialogPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = DialogPrimitive.DescriptionProps;
 
@@ -9,7 +9,7 @@
 </script>
 
 <DialogPrimitive.Description
-	class={cn('text-sm text-muted-foreground', className)}
+	class={_cn('text-sm text-muted-foreground', className)}
 	{...$$restProps}
 >
 	<slot />

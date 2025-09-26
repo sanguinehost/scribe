@@ -18,7 +18,7 @@
 		currentAuthTypeParam === 'signup' ? 'register' : 'login'
 	);
 	// Update description based on authType using correct $derived syntax
-	const description = $derived(
+	const _description = $derived(
 		authType === 'register'
 			? 'Use your email, username and password to sign up'
 			: 'Use your email or username and password to sign in'

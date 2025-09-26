@@ -1,7 +1,8 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { type WithElementRef } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	let {
 		ref = $bindable(null),
@@ -13,7 +14,7 @@
 
 <span
 	bind:this={ref}
-	class={cn('ml-auto text-xs tracking-widest opacity-60', className)}
+	class={_cn('ml-auto text-xs tracking-widest opacity-60', className)}
 	{...restProps}
 >
 	{@render children?.()}

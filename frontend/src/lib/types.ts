@@ -574,8 +574,8 @@ export type SessionResponse = {
 		id: string;
 		user_id: string;
 		expires_at: string | Date;
-	};
-	user: User;
+	} | null;
+	user: User | null;
 };
 
 export interface SuggestedActionItem {
@@ -722,9 +722,7 @@ export interface ExpandTextResponse {
 }
 
 // Impersonate request (for generating full user response)
-export interface ImpersonateRequest {
-	// Empty for now, uses chat context
-}
+export type ImpersonateRequest = object; // Uses chat context
 
 export interface ImpersonateResponse {
 	generated_response: string;
@@ -880,7 +878,7 @@ export interface ScribeAssistantResponse {
 	response: string; // Assistant's response
 	actions?: Array<{
 		type: 'generate_field' | 'create_character' | 'create_lorebook_entry';
-		payload: any; // Specific action data
+		payload: unknown; // Specific action data
 		description: string;
 	}>;
 	suggestions?: string[]; // Follow-up suggestions
@@ -980,8 +978,8 @@ export interface AgentAnalysisResponse {
 	chat_session_id: string;
 	analysis_type: string;
 	agent_reasoning: string | null;
-	planned_searches: any | null;
-	execution_log: any | null;
+	planned_searches: unknown | null;
+	execution_log: unknown | null;
 	retrieved_context: string | null;
 	analysis_summary: string | null;
 	total_tokens_used: number | null;
@@ -1018,7 +1016,7 @@ export interface DeleteChatRequest {
 export interface LlmInfoResponse {
 	local_llm_enabled: boolean; // Feature is available
 	server_running: boolean; // Server is actually running
-	hardware: any; // Hardware capabilities as JSON
+	hardware: Event; // Hardware capabilities as JSON
 	models: LocalModelInfo[];
 	download_progress?: DownloadProgressInfo | null;
 }

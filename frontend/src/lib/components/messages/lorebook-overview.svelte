@@ -8,7 +8,7 @@
 		ImportLorebookDialog
 	} from '$lib/components/lorebooks';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
 	import type { Lorebook, CreateLorebookPayload, UpdateLorebookPayload } from '$lib/types';
 
@@ -30,29 +30,29 @@
 		showCreateDialog = true;
 	}
 
-	function handleSelectLorebook(lorebook: Lorebook) {
+	function handleSelectLorebook(_lorebook: Lorebook) {
 		// Use an event dispatcher to notify parent components
 		const event = new CustomEvent('selectLorebook', {
-			detail: { lorebookId: lorebook.id }
+			detail: { lorebookId: _lorebook.id }
 		});
 		document.dispatchEvent(event);
 	}
 
-	function handleEditLorebook(lorebook: Lorebook) {
+	function handleEditLorebook(_lorebook: Lorebook) {
 		// Use an event dispatcher to notify parent components
 		const event = new CustomEvent('editLorebook', {
-			detail: { lorebookId: lorebook.id }
+			detail: { lorebookId: _lorebook.id }
 		});
 		document.dispatchEvent(event);
 	}
 
-	function handleDeleteLorebook(lorebook: Lorebook) {
-		deletingLorebook = lorebook;
+	function handleDeleteLorebook(_lorebook: Lorebook) {
+		deletingLorebook = _lorebook;
 		showDeleteDialog = true;
 	}
 
-	function handleExportLorebook(lorebook: Lorebook) {
-		exportingLorebook = lorebook;
+	function handleExportLorebook(_lorebook: Lorebook) {
+		exportingLorebook = _lorebook;
 		showExportDialog = true;
 	}
 
@@ -78,8 +78,8 @@
 		exportingLorebook = null;
 	}
 
-	async function handleCreateSubmit(data: CreateLorebookPayload | UpdateLorebookPayload) {
-		const result = await lorebookStore.createLorebook(data as CreateLorebookPayload);
+	async function handleCreateSubmit(_data: CreateLorebookPayload | UpdateLorebookPayload) {
+		const result = await lorebookStore.createLorebook(_data as CreateLorebookPayload);
 		if (result) {
 			showCreateDialog = false;
 			toast.success('Lorebook created successfully!');
@@ -164,8 +164,10 @@
 				</div>
 
 				<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
-					<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
-					<Button variant="destructive" onclick={confirmDelete}>Delete Lorebook</Button>
+					<ButtonComponent variant="outline" onclick={cancelDelete}>Cancel</ButtonComponent>
+					<ButtonComponent variant="destructive" onclick={confirmDelete}
+						>Delete Lorebook</ButtonComponent
+					>
 				</div>
 			</DialogContent>
 		</Dialog>

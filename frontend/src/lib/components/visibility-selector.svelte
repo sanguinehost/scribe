@@ -1,8 +1,8 @@
 <!-- Removed module script exporting VisibilityType -->
 
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn';
-	import { Button } from './ui/button';
+	import { cn as _cn } from '$lib/utils/shadcn';
+	import { Button as ButtonComponent } from './ui/button';
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -48,10 +48,10 @@
 <DropdownMenu {open} onOpenChange={(val) => (open = val)}>
 	<DropdownMenuTrigger>
 		{#snippet child({ props })}
-			<Button
+			<ButtonComponent
 				{...props}
 				variant="outline"
-				class={cn(
+				class={_cn(
 					'hidden w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground md:flex md:h-[34px] md:px-2',
 					c
 				)}
@@ -59,7 +59,7 @@
 				<Icon />
 				{label}
 				<ChevronDownIcon />
-			</Button>
+			</ButtonComponent>
 		{/snippet}
 	</DropdownMenuTrigger>
 

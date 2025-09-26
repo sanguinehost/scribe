@@ -1,6 +1,7 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import { Dialog as SheetPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	let {
 		ref = $bindable(null),
@@ -11,6 +12,6 @@
 
 <SheetPrimitive.Description
 	bind:ref
-	class={cn('text-sm text-muted-foreground', className)}
+	class={_cn('text-sm text-muted-foreground', className)}
 	{...restProps}
 />

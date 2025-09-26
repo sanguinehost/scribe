@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -105,9 +105,9 @@
 	}
 
 	// Apply a preset value to all budget settings
-	function applyPreset(value: number) {
-		total_token_limit = value;
-		const budgets = calculatePresetBudgets(value);
+	function applyPreset(_value: number) {
+		total_token_limit = _value;
+		const budgets = calculatePresetBudgets(_value);
 		recent_history_budget = budgets.history;
 		rag_budget = budgets.rag;
 	}
@@ -154,7 +154,7 @@
 					<Label for="total-context-limit">Total Context Window (tokens)</Label>
 					<div class="flex flex-wrap gap-1">
 						{#each presetButtons() as preset}
-							<Button
+							<ButtonComponent
 								variant="ghost"
 								size="sm"
 								class="h-6 px-2 text-xs"
@@ -162,7 +162,7 @@
 								onclick={() => applyPreset(preset.value)}
 							>
 								{preset.label}
-							</Button>
+							</ButtonComponent>
 						{/each}
 					</div>
 				</div>
@@ -254,7 +254,7 @@
 			<div class="space-y-2">
 				<Label>Quick Presets</Label>
 				<div class="grid grid-cols-3 gap-2">
-					<Button
+					<ButtonComponent
 						variant="outline"
 						size="sm"
 						onclick={() => {
@@ -265,8 +265,8 @@
 					>
 						Efficient<br />
 						<span class="text-xs text-muted-foreground">64k total</span>
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						variant="outline"
 						size="sm"
 						onclick={() => {
@@ -277,8 +277,8 @@
 					>
 						Balanced<br />
 						<span class="text-xs text-muted-foreground">200k total</span>
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						variant="outline"
 						size="sm"
 						onclick={() => {
@@ -289,7 +289,7 @@
 					>
 						Large<br />
 						<span class="text-xs text-muted-foreground">400k total</span>
-					</Button>
+					</ButtonComponent>
 				</div>
 			</div>
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Lorebook } from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		Card,
 		CardContent,
@@ -12,10 +12,10 @@
 
 	interface Props {
 		lorebook: Lorebook;
-		onSelect?: (lorebook: Lorebook) => void;
-		onEdit?: (lorebook: Lorebook) => void;
-		onDelete?: (lorebook: Lorebook) => void;
-		onExport?: (lorebook: Lorebook) => void;
+		onSelect?: (_lorebook: Lorebook) => void;
+		onEdit?: (_lorebook: Lorebook) => void;
+		onDelete?: (_lorebook: Lorebook) => void;
+		onExport?: (_lorebook: Lorebook) => void;
 	}
 
 	let { lorebook, onSelect, onEdit, onDelete, onExport }: Props = $props();
@@ -24,18 +24,18 @@
 		onSelect?.(lorebook);
 	}
 
-	function handleEdit(event: Event) {
-		event.stopPropagation();
+	function handleEdit(_event: Event) {
+		_event.stopPropagation();
 		onEdit?.(lorebook);
 	}
 
-	function handleDelete(event: Event) {
-		event.stopPropagation();
+	function handleDelete(_event: Event) {
+		_event.stopPropagation();
 		onDelete?.(lorebook);
 	}
 
-	function handleExport(event: Event) {
-		event.stopPropagation();
+	function handleExport(_event: Event) {
+		_event.stopPropagation();
 		onExport?.(lorebook);
 	}
 
@@ -60,7 +60,7 @@
 			</div>
 			<div class="ml-2 flex gap-1">
 				{#if onEdit}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleEdit}
@@ -68,10 +68,10 @@
 						aria-label="Edit lorebook"
 					>
 						<Edit class="h-4 w-4" />
-					</Button>
+					</ButtonComponent>
 				{/if}
 				{#if onExport}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleExport}
@@ -79,10 +79,10 @@
 						aria-label="Export lorebook"
 					>
 						<Download class="h-4 w-4" />
-					</Button>
+					</ButtonComponent>
 				{/if}
 				{#if onDelete}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleDelete}
@@ -90,7 +90,7 @@
 						aria-label="Delete lorebook"
 					>
 						<Trash class="h-4 w-4" />
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 		</div>

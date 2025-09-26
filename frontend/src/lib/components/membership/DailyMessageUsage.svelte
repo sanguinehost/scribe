@@ -7,7 +7,7 @@
 	export let planType: PlanType = 'free';
 	export let isThrottled: boolean = false;
 	export let throttleDelay: number = 0;
-	export let size: 'sm' | 'md' | 'lg' = 'md';
+	export let _size: 'sm' | 'md' | 'lg' = 'md';
 
 	// Daily limits based on plan
 	const dailyLimits: Record<PlanType, { limit: number; type: 'hard' | 'soft' }> = {
@@ -42,7 +42,7 @@
 			md: 'h-2',
 			lg: 'h-3'
 		};
-		return `w-full ${heights[size]}`;
+		return `w-full ${heights[_size]}`;
 	}
 
 	function getStatusText(): string {

@@ -13,7 +13,7 @@
 		setUnauthenticated,
 		getIsAuthenticated
 	} from '$lib/auth.svelte'; // Import from new auth store
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types';
@@ -31,8 +31,8 @@
 			.then(({ initGlobalLlmStore }) => {
 				try {
 					initGlobalLlmStore();
-				} catch (error) {
-					console.warn('LlmStore initialization failed:', error);
+				} catch (_error) {
+					console.warn('LlmStore initialization failed:', _error);
 				}
 			})
 			.catch((error) => {
@@ -44,8 +44,8 @@
 			.then(({ initGlobalModelLifecycleStore }) => {
 				try {
 					initGlobalModelLifecycleStore();
-				} catch (error) {
-					console.warn('ModelLifecycleStore initialization failed:', error);
+				} catch (_error) {
+					console.warn('ModelLifecycleStore initialization failed:', _error);
 				}
 			})
 			.catch((error) => {
@@ -89,7 +89,7 @@
 				subscriptionStore.clearData();
 			}
 
-			goto('/signin');
+			_goto('/signin');
 		};
 
 		window.addEventListener('auth:invalidated', handleAuthInvalidated);
@@ -110,7 +110,7 @@
 			});
 			// Redirect to signin after a brief delay
 			setTimeout(() => {
-				goto('/signin');
+				_goto('/signin');
 			}, 1000);
 		};
 

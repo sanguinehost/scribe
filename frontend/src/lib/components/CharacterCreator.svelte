@@ -7,15 +7,15 @@
 		DialogTitle,
 		DialogFooter
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Badge } from '$lib/components/ui/badge';
-	import { apiClient } from '$lib/api';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
+	import { Checkbox as CheckboxComponent } from '$lib/components/ui/checkbox';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { Expand, X, Heart, Globe, Plus, HelpCircle } from 'lucide-svelte';
+	import { Expand, X as _X, Heart, Globe, Plus, HelpCircle } from 'lucide-svelte';
 	import AiAssistantWidget from './ai-assistant-widget.svelte';
 	import {
 		Tooltip,
@@ -23,13 +23,13 @@
 		TooltipTrigger,
 		TooltipContent
 	} from '$lib/components/ui/tooltip';
-	import type { CharacterDataForClient, Lorebook } from '$lib/types';
+	import type { CharacterDataForClient, Character as _Character, Lorebook } from '$lib/types';
 	import { writable } from 'svelte/store';
 	import { createEventDispatcher, onMount } from 'svelte';
 
 	const depthPromptPlaceholder = 'e.g., "The character is secretly a dragon."';
 
-	export let open = false;
+	export let _open = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -38,13 +38,13 @@
 
 	async function loadLorebooks() {
 		try {
-			const result = await apiClient.getLorebooks();
+			const result = await _apiClient.getLorebooks();
 			if (result.isOk()) {
 				lorebooks.set(result.value);
 			} else {
 				toast.error('Failed to load lorebooks: ' + result.error.message);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to load lorebooks');
 		}
 	}
@@ -55,7 +55,7 @@
 
 	// Pop-out editor state
 	let popoutEditorOpen = false;
-	let popoutFieldName = '';
+	let _popoutFieldName = '';
 	let popoutFieldLabel = '';
 	let popoutContent = '';
 	let popoutFieldKey = ''; // Used to store the actual formData key
@@ -157,9 +157,8 @@
 			};
 
 			// The API client expects more fields than are needed for creation.
-			// We cast to `any` to bypass the strict client-side type check.
-			// The backend will correctly handle the partial data.
-			const result = await apiClient.createCharacter(createData as any);
+			// We cast to the expected API type for character creation
+			const result = await _apiClient.createCharacter(createData as Omit<_Character, 'id'>);
 			if (result.isOk()) {
 				toast.success('Character created successfully');
 				dispatch('created', { character: result.value });
@@ -167,7 +166,7 @@
 			} else {
 				toast.error('Failed to create character: ' + result.error.message);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to create character');
 		} finally {
 			saving = false;
@@ -175,7 +174,7 @@
 	}
 
 	function handleCancel() {
-		open = false;
+		_open = false;
 		// Reset form
 		formData = {
 			name: '',
@@ -223,7 +222,7 @@
 
 	function openPopoutEditor(fieldKey: string, fieldLabel: string, greetingIndex?: number) {
 		popoutFieldKey = fieldKey;
-		popoutFieldName = fieldKey;
+		_popoutFieldName = fieldKey;
 		popoutFieldLabel = fieldLabel;
 		popoutFieldType = 'text'; // Default to text
 
@@ -252,11 +251,17 @@
 			} else if (popoutFieldKey === 'depth_prompt_role') {
 				formData.depth_prompt_role = popoutContent;
 			} else {
-				(formData as any)[popoutFieldKey] = popoutContent;
+				// Type-safe way to update known formData fields
+				type FormDataKey = keyof typeof formData;
+				if (popoutFieldKey in formData) {
+					(formData as Record<FormDataKey, string | string[] | number | boolean | null>)[
+						popoutFieldKey as FormDataKey
+					] = popoutContent;
+				}
 			}
 			popoutEditorOpen = false;
 			popoutFieldKey = '';
-			popoutFieldName = '';
+			_popoutFieldName = '';
 			popoutFieldLabel = '';
 			popoutContent = '';
 			popoutFieldType = 'text';
@@ -266,7 +271,7 @@
 	function cancelPopoutEditor() {
 		popoutEditorOpen = false;
 		popoutFieldKey = '';
-		popoutFieldName = '';
+		_popoutFieldName = '';
 		popoutFieldLabel = '';
 		popoutContent = '';
 		popoutFieldType = 'text';
@@ -286,15 +291,15 @@
 		formData.tags = formData.tags.filter((tag) => tag !== tagToRemove);
 	}
 
-	function handleTagKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
+	function handleTagKeydown(_event: KeyboardEvent) {
+		if (_event.key === 'Enter') {
+			_event.preventDefault();
 			addTag();
 		}
 	}
 </script>
 
-<Dialog bind:open>
+<Dialog bind:open={_open}>
 	<TooltipProvider>
 		<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
 			<DialogHeader>
@@ -313,7 +318,7 @@
 						<div class="ml-auto flex items-center gap-2">
 							<Tooltip>
 								<TooltipTrigger>
-									<Checkbox id="favorite" bind:checked={formData.fav} />
+									<CheckboxComponent id="favorite" bind:checked={formData.fav} />
 								</TooltipTrigger>
 								<TooltipContent>Toggle to add or remove from favorites</TooltipContent>
 							</Tooltip>
@@ -339,16 +344,16 @@
 						<Label>Tags</Label>
 						<div class="mb-2 flex flex-wrap gap-2">
 							{#each formData.tags as tag}
-								<Badge variant="secondary" class="flex items-center gap-1">
+								<BadgeComponent variant="secondary" class="flex items-center gap-1">
 									{tag}
 									<button
 										type="button"
 										onclick={() => removeTag(tag)}
 										class="hover:text-destructive"
 									>
-										<X class="h-3 w-3" />
+										<svelte:component this={_X} class="h-3 w-3" />
 									</button>
-								</Badge>
+								</BadgeComponent>
 							{/each}
 						</div>
 						<div class="flex gap-2">
@@ -358,9 +363,9 @@
 								onkeydown={handleTagKeydown}
 								class="flex-1"
 							/>
-							<Button type="button" onclick={addTag} size="sm" variant="outline">
+							<ButtonComponent type="button" onclick={addTag} size="sm" variant="outline">
 								<Plus class="h-4 w-4" />
-							</Button>
+							</ButtonComponent>
 						</div>
 					</div>
 
@@ -377,7 +382,7 @@
 								variant="compact"
 							/>
 						</div>
-						<Textarea
+						<TextareaComponent
 							id="description"
 							bind:value={formData.description}
 							placeholder="A brief description of the character..."
@@ -399,7 +404,7 @@
 								variant="compact"
 							/>
 						</div>
-						<Textarea
+						<TextareaComponent
 							id="first_mes"
 							bind:value={formData.first_mes}
 							placeholder="The character's initial greeting or first message..."
@@ -419,11 +424,11 @@
 							{#if $lorebooks && $lorebooks.length > 0}
 								{#each $lorebooks as lorebook}
 									<div class="flex items-center space-x-2">
-										<Checkbox
+										<CheckboxComponent
 											id={`lorebook-${lorebook.id}`}
 											checked={formData.selectedLorebooks.includes(lorebook.id)}
-											on:change={(event) => {
-												const isChecked = event.detail;
+											on:change={() => {
+												const isChecked = !formData.selectedLorebooks.includes(lorebook.id);
 
 												if (isChecked) {
 													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
@@ -451,7 +456,7 @@
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
 							<Label>Alternate Greetings</Label>
-							<Button
+							<ButtonComponent
 								type="button"
 								variant="outline"
 								size="sm"
@@ -460,11 +465,11 @@
 								}}
 							>
 								Add Greeting
-							</Button>
+							</ButtonComponent>
 						</div>
 						{#if formData.alternate_greetings.length > 0}
 							<div class="space-y-2">
-								{#each formData.alternate_greetings as greeting, index (index)}
+								{#each formData.alternate_greetings as _greeting, index (index)}
 									<div class="flex gap-2">
 										<div class="flex-1 space-y-2">
 											<div class="flex items-center justify-between">
@@ -479,7 +484,7 @@
 													variant="compact"
 												/>
 											</div>
-											<Textarea
+											<TextareaComponent
 												bind:value={formData.alternate_greetings[index]}
 												placeholder={`Alternate greeting ${index + 1}...`}
 												rows={4}
@@ -487,7 +492,7 @@
 											/>
 										</div>
 										<div class="flex flex-col gap-1">
-											<Button
+											<ButtonComponent
 												type="button"
 												variant="outline"
 												size="icon"
@@ -498,9 +503,9 @@
 												}}
 												class="h-8 w-8"
 											>
-												<X class="h-4 w-4" />
-											</Button>
-											<Button
+												<svelte:component this={_X} class="h-4 w-4" />
+											</ButtonComponent>
+											<ButtonComponent
 												type="button"
 												variant="outline"
 												size="icon"
@@ -513,7 +518,7 @@
 												class="h-8 w-8"
 											>
 												<Expand class="h-4 w-4" />
-											</Button>
+											</ButtonComponent>
 										</div>
 									</div>
 								{/each}
@@ -544,7 +549,7 @@
 											}}
 											variant="compact"
 										/>
-										<Button
+										<ButtonComponent
 											type="button"
 											variant="ghost"
 											size="sm"
@@ -552,10 +557,10 @@
 											class="h-6 px-2 text-xs"
 										>
 											Expand
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="personality"
 									bind:value={formData.personality}
 									placeholder="Character personality traits..."
@@ -575,7 +580,7 @@
 											}}
 											variant="compact"
 										/>
-										<Button
+										<ButtonComponent
 											type="button"
 											variant="ghost"
 											size="sm"
@@ -583,10 +588,10 @@
 											class="h-6 px-2 text-xs"
 										>
 											Expand
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="scenario"
 									bind:value={formData.scenario}
 									placeholder="Roleplay scenario..."
@@ -606,7 +611,7 @@
 											}}
 											variant="compact"
 										/>
-										<Button
+										<ButtonComponent
 											type="button"
 											variant="ghost"
 											size="sm"
@@ -614,10 +619,10 @@
 											class="h-6 px-2 text-xs"
 										>
 											Expand
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="mes_example"
 									bind:value={formData.mes_example}
 									placeholder="Example messages..."
@@ -659,7 +664,7 @@
 											}}
 											variant="compact"
 										/>
-										<Button
+										<ButtonComponent
 											type="button"
 											variant="ghost"
 											size="sm"
@@ -667,10 +672,10 @@
 											class="h-6 px-2 text-xs"
 										>
 											Expand
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="depth_prompt"
 									bind:value={formData.depth_prompt}
 									placeholder={depthPromptPlaceholder}
@@ -774,7 +779,7 @@
 										variant="compact"
 									/>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="system_prompt"
 									bind:value={formData.system_prompt}
 									placeholder="System instructions..."
@@ -787,14 +792,16 @@
 			</div>
 
 			<DialogFooter>
-				<Button variant="outline" onclick={handleCancel} disabled={saving}>Cancel</Button>
-				<Button onclick={handleCreate} disabled={saving}>
+				<ButtonComponent variant="outline" onclick={handleCancel} disabled={saving}
+					>Cancel</ButtonComponent
+				>
+				<ButtonComponent onclick={handleCreate} disabled={saving}>
 					{#if saving}
 						Creating...
 					{:else}
 						Create Character
 					{/if}
-				</Button>
+				</ButtonComponent>
 			</DialogFooter>
 		</DialogContent>
 	</TooltipProvider>
@@ -812,7 +819,7 @@
 
 		<div class="py-4">
 			{#if popoutFieldType === 'text'}
-				<Textarea
+				<TextareaComponent
 					bind:value={popoutContent}
 					placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
 					rows={20}
@@ -829,8 +836,8 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={cancelPopoutEditor}>Cancel</Button>
-			<Button onclick={savePopoutEditor}>Save Changes</Button>
+			<ButtonComponent variant="outline" onclick={cancelPopoutEditor}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={savePopoutEditor}>Save Changes</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

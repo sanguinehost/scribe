@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { CheckCircle, XCircle, Loader2 } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { goto } from '$app/navigation';
+	import { Button as _ButtonComponent } from '$lib/components/ui/button';
+	import { goto as _goto } from '$app/navigation';
 
 	export let data: PageData;
 </script>

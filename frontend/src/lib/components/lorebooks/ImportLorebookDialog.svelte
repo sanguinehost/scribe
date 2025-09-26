@@ -8,11 +8,11 @@
 		DialogDescription,
 		DialogFooter
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { LorebookUploadPayload, ScribeMinimalLorebook } from '$lib/types';
 	import type { ApiError } from '$lib/errors/api';
 
@@ -26,8 +26,8 @@
 	let selectedFile: File | null = $state(null);
 	let isImporting = $state(false);
 
-	function handleFileChange(event: Event) {
-		const target = event.target as HTMLInputElement;
+	function handleFileChange(_event: Event) {
+		const target = _event.target as HTMLInputElement;
 		if (target.files && target.files.length > 0) {
 			selectedFile = target.files[0];
 		} else {
@@ -35,13 +35,15 @@
 		}
 	}
 
-	function detectLorebookFormat(data: any): 'scribe_minimal' | 'silly_tavern_full' {
-		if (data && data.entries) {
+	function detectLorebookFormat(
+		_data: Record<string, unknown>
+	): 'scribe_minimal' | 'silly_tavern_full' {
+		if (_data && _data.entries) {
 			// If entries is an array, it's likely Scribe format
-			if (Array.isArray(data.entries)) {
+			if (Array.isArray(_data.entries)) {
 				// Additional validation: check if entries have the expected Scribe structure
-				if (data.entries.length > 0) {
-					const firstEntry = data.entries[0];
+				if (_data.entries.length > 0) {
+					const firstEntry = _data.entries[0];
 					// Check for Scribe Minimal: entry has 'title', 'keywords' (array), and 'content'
 					if (
 						typeof firstEntry.title === 'string' &&
@@ -56,7 +58,7 @@
 				return 'scribe_minimal';
 			}
 			// If entries is an object (with string keys like "0", "1", etc.), it's SillyTavern format
-			else if (typeof data.entries === 'object' && !Array.isArray(data.entries)) {
+			else if (typeof _data.entries === 'object' && !Array.isArray(_data.entries)) {
 				return 'silly_tavern_full';
 			}
 		}
@@ -80,10 +82,10 @@
 
 			if (detectedFormat === 'scribe_minimal') {
 				console.log('Importing as Scribe Minimal format');
-				result = await apiClient.importLorebookScribeMinimal(payload as ScribeMinimalLorebook);
+				result = await _apiClient.importLorebookScribeMinimal(payload as ScribeMinimalLorebook);
 			} else {
 				console.log('Importing as SillyTavern Full format');
-				result = await apiClient.importLorebook(payload as LorebookUploadPayload);
+				result = await _apiClient.importLorebook(payload as LorebookUploadPayload);
 			}
 
 			if (result.isOk()) {
@@ -126,14 +128,16 @@
 			</div>
 		</div>
 		<DialogFooter>
-			<Button variant="outline" onclick={handleClose} disabled={isImporting}>Cancel</Button>
-			<Button onclick={handleImport} disabled={!selectedFile || isImporting}>
+			<ButtonComponent variant="outline" onclick={handleClose} disabled={isImporting}
+				>Cancel</ButtonComponent
+			>
+			<ButtonComponent onclick={handleImport} disabled={!selectedFile || isImporting}>
 				{#if isImporting}
 					Importing...
 				{:else}
 					Import
 				{/if}
-			</Button>
+			</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

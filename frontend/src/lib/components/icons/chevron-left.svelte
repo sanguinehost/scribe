@@ -1,4 +1,7 @@
 <script lang="ts">
+	/* eslint-disable svelte/valid-compile */
+
+	// Disable custom elements to avoid props inference issues
 	let {
 		size = 16,
 		class: className = '',

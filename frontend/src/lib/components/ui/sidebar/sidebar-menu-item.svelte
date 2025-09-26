@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
 
@@ -14,7 +15,7 @@
 <li
 	bind:this={ref}
 	data-sidebar="menu-item"
-	class={cn('group/menu-item relative', className)}
+	class={_cn('group/menu-item relative', className)}
 	{...restProps}
 >
 	{@render children?.()}

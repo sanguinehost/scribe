@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { ScrollText, Plus } from 'lucide-svelte';
 	import { slideAndFade } from '$lib/utils/transitions';
 
@@ -21,33 +21,27 @@
 
 	// Listen for chronicle creation and deletion events
 	onMount(() => {
-		const handleChronicleCreated = async (event: CustomEvent) => {
+		const handleChronicleCreated = async (_event: CustomEvent) => {
 			console.log('[Chronicles Sidebar] New chronicle created, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
 
-		const handleChronicleDeleted = async (event: CustomEvent) => {
+		const handleChronicleDeleted = async (_event: CustomEvent) => {
 			console.log('[Chronicles Sidebar] Chronicle deleted, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
 
-		window.addEventListener(
-			'chronicle-created',
-			handleChronicleCreated as unknown as EventListener
-		);
-		window.addEventListener(
-			'chronicle-deleted',
-			handleChronicleDeleted as unknown as EventListener
-		);
+		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as () => void);
+		window.addEventListener('chronicle-deleted', handleChronicleDeleted as unknown as () => void);
 
 		return () => {
 			window.removeEventListener(
 				'chronicle-created',
-				handleChronicleCreated as unknown as EventListener
+				handleChronicleCreated as unknown as () => void
 			);
 			window.removeEventListener(
 				'chronicle-deleted',
-				handleChronicleDeleted as unknown as EventListener
+				handleChronicleDeleted as unknown as () => void
 			);
 		};
 	});
@@ -75,7 +69,7 @@
 	<div class="border-b p-4">
 		<div class="flex items-center justify-between">
 			<h3 class="text-sm font-medium">Chronicles</h3>
-			<Button variant="ghost" size="sm" onclick={handleViewAll}>View All</Button>
+			<ButtonComponent variant="ghost" size="sm" onclick={handleViewAll}>View All</ButtonComponent>
 		</div>
 	</div>
 
@@ -94,7 +88,7 @@
 			<div class="text-center">
 				<ScrollText class="mx-auto mb-2 h-8 w-8 text-primary/50" />
 				<p class="mb-2 text-sm text-muted-foreground">No chronicles yet</p>
-				<Button
+				<ButtonComponent
 					variant="outline"
 					size="sm"
 					onclick={handleCreateChronicle}
@@ -102,7 +96,7 @@
 				>
 					<Plus class="mr-1 h-4 w-4" />
 					Create First
-				</Button>
+				</ButtonComponent>
 			</div>
 		</div>
 	{:else}
@@ -136,9 +130,9 @@
 
 				{#if chronicleStore.chronicles.length > 10}
 					<div class="p-2 text-center">
-						<Button variant="ghost" size="sm" onclick={handleViewAll}>
+						<ButtonComponent variant="ghost" size="sm" onclick={handleViewAll}>
 							+{chronicleStore.chronicles.length - 10} more
-						</Button>
+						</ButtonComponent>
 					</div>
 				{/if}
 			</div>
@@ -146,10 +140,10 @@
 
 		<!-- Create button at bottom -->
 		<div class="border-t p-4">
-			<Button variant="outline" size="sm" class="w-full" onclick={handleCreateChronicle}>
+			<ButtonComponent variant="outline" size="sm" class="w-full" onclick={handleCreateChronicle}>
 				<Plus class="mr-2 h-4 w-4" />
 				New Chronicle
-			</Button>
+			</ButtonComponent>
 		</div>
 	{/if}
 </div>

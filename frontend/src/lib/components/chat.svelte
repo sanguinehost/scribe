@@ -1,12 +1,12 @@
 <script lang="ts">
 	// Removed Attachment import
 	import { toast } from 'svelte-sonner';
-	import { apiClient } from '$lib/api'; // Import apiClient
+	import { apiClient as _apiClient } from '$lib/api'; // Import apiClient
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import { tick } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
-	import type { User, ScribeCharacter } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
-	import type { ScribeChatSession, ScribeChatMessage, ChatMode } from '$lib/types'; // Import Scribe types
+	import type { User, ScribeCharacter, Message } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
+	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types'; // Import Scribe types
 	import type { UserPersona } from '$lib/types';
 	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import Messages from './messages.svelte';
@@ -308,8 +308,8 @@
 							if (messageIndex !== -1) {
 								streamingService.messages[messageIndex] = {
 									...streamingService.messages[messageIndex],
-									content: greetingContent,
-									displayedContent: greetingContent,
+									content: greetingContent || '',
+									displayedContent: greetingContent || '',
 									current_variant_index: variantIndex
 								};
 								firstMessageVariantIndex = variantIndex;
@@ -356,7 +356,7 @@
 		suppressAutoScroll = true;
 
 		try {
-			const result = await apiClient.getMessagesByChatId(chat.id, {
+			const result = await _apiClient.getMessagesByChatId(chat.id, {
 				limit: 20,
 				cursor: nextCursor
 			});
@@ -378,7 +378,7 @@
 				});
 
 				// Log detailed message info to identify duplicates
-				newMessages.forEach((msg, idx) => {
+				newMessages.forEach((msg: Message, idx: number) => {
 					console.log(
 						`📋 Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`
 					);
@@ -386,7 +386,7 @@
 
 				// Convert to ScribeChatMessage format
 				const convertedMessages: ScribeChatMessage[] = newMessages.map(
-					(rawMsg): ScribeChatMessage => ({
+					(rawMsg: Message): ScribeChatMessage => ({
 						id: rawMsg.id,
 						backend_id: rawMsg.id,
 						session_id: rawMsg.session_id,
@@ -536,8 +536,8 @@
 				nextCursor = newCursor;
 				hasMoreMessages = newCursor !== null;
 			}
-		} catch (error) {
-			console.error('Error loading more messages:', error);
+		} catch (_error) {
+			console.error('Error loading more messages:', _error);
 			toast.error('Failed to load older messages');
 		} finally {
 			isLoadingMore = false;
@@ -562,7 +562,7 @@
 
 	// Object identity cache to prevent unnecessary component recreation
 	let messageCache = new Map<string, ScribeChatMessage>();
-	let lastStreamingMessages: any[] = [];
+	let lastStreamingMessages: unknown[] = [];
 
 	// Create a single, reactive source of truth for display messages with object identity preservation
 	let displayMessages = $derived.by(() => {
@@ -602,10 +602,7 @@
 					cached.completion_tokens !== msg.completion_tokens ||
 					cached.error !== msg.error ||
 					cached.variant_count !== msg.variant_count ||
-					cached.current_variant_index !== msg.current_variant_index ||
-					(cached as any).isRegenerating !== msg.isRegenerating ||
-					// Force re-render when variant changes (especially for first messages)
-					(cached as any)._variantChangedAt !== (msg as any)._variantChangedAt;
+					cached.current_variant_index !== msg.current_variant_index;
 
 				if (hasChanged) {
 					// Message content changed
@@ -631,9 +628,8 @@
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
 						// Include regeneration flag for loading indicator
-						isRegenerating: msg.isRegenerating,
-						// Include variant change timestamp to force re-renders
-						_variantChangedAt: (msg as any)._variantChangedAt
+						isRegenerating: msg.isRegenerating
+						// Note: _variantChangedAt removed due to type conflicts
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -657,10 +653,10 @@
 			});
 
 			// Only log when no messages are animating to avoid spam
-			const hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
+			const _hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
 			return messages;
-		} catch (error) {
-			console.error('❌ Error in displayMessages derived:', error);
+		} catch (_error) {
+			console.error('❌ Error in displayMessages derived:', _error);
 			// Return cached messages if available, otherwise return empty array
 			return Array.from(messageCache.values());
 		}
@@ -777,8 +773,8 @@
 
 		try {
 			return createChatModeStrategy(chat.chat_mode);
-		} catch (error) {
-			console.error('Failed to create chat mode strategy:', error, 'for mode:', chat.chat_mode);
+		} catch (_error) {
+			console.error('Failed to create chat mode strategy:', _error, 'for mode:', chat.chat_mode);
 			return null;
 		}
 	});
@@ -841,7 +837,7 @@
 
 		lastPersonasLoad = now;
 		try {
-			const result = await apiClient.getUserPersonas();
+			const result = await _apiClient.getUserPersonas();
 			if (result.isOk()) {
 				availablePersonas = result.value;
 				console.log('Loaded personas:', availablePersonas.length);
@@ -855,8 +851,8 @@
 					toast.error(`Failed to load personas: ${result.error.message}`);
 				}
 			}
-		} catch (error) {
-			console.error('Failed to load personas:', error);
+		} catch (_error) {
+			console.error('Failed to load personas:', _error);
 			toast.error('Failed to load personas');
 		}
 	}
@@ -865,7 +861,7 @@
 		try {
 			const currentUser = getCurrentUser();
 			if (currentUser?.default_persona_id) {
-				const personaResult = await apiClient.getUserPersona(currentUser.default_persona_id);
+				const personaResult = await _apiClient.getUserPersona(currentUser.default_persona_id);
 				if (personaResult.isOk()) {
 					currentUserPersona = personaResult.value;
 				} else {
@@ -879,8 +875,8 @@
 				// Create a fallback persona with username
 				currentUserPersona = { name: currentUser.username } as UserPersona;
 			}
-		} catch (error) {
-			console.warn('Error loading user persona:', error);
+		} catch (_error) {
+			console.warn('Error loading user persona:', _error);
 			// currentUserPersona remains null, so userPersonaName will be 'User'
 		}
 	}
@@ -890,14 +886,14 @@
 		if (!chat?.id) return null;
 
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				return result.value.model_name || null;
 			} else {
 				console.error('Failed to get chat model:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to get chat model:', error);
+		} catch (_error) {
+			console.error('Failed to get chat model:', _error);
 		}
 		return null;
 	}
@@ -906,14 +902,14 @@
 	async function loadAgentMode() {
 		if (!chat?.id) return;
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				agentMode = (result.value.agent_mode as typeof agentMode) || 'disabled';
 			} else {
 				console.error('Failed to load agent mode:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to load agent mode:', error);
+		} catch (_error) {
+			console.error('Failed to load agent mode:', _error);
 		}
 	}
 
@@ -926,7 +922,7 @@
 		agentMode = mode;
 
 		try {
-			const result = await apiClient.updateChatSessionSettings(chat.id, {
+			const result = await _apiClient.updateChatSessionSettings(chat.id, {
 				agent_mode: mode
 			});
 
@@ -945,10 +941,10 @@
 				console.error('Failed to save agent mode:', result.error);
 				toast.error('Failed to update context enrichment mode');
 			}
-		} catch (error) {
+		} catch (_error) {
 			// Revert on error
 			agentMode = previousMode;
-			console.error('Failed to save agent mode:', error);
+			console.error('Failed to save agent mode:', _error);
 			toast.error('Failed to update context enrichment mode');
 		}
 	}
@@ -976,7 +972,7 @@
 	});
 
 	// --- Token Counting Effect ---
-	let tokenCountTimeout: NodeJS.Timeout | null = null;
+	let tokenCountTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
 		// Clear existing timeout
@@ -996,8 +992,8 @@
 					);
 					// Only show if we actually got a meaningful result
 					showTokenUsage = !!(result && result.total > 0);
-				} catch (error) {
-					console.error('Token counting failed:', error);
+				} catch (_error) {
+					console.error('Token counting failed:', _error);
 					showTokenUsage = false;
 				}
 			}, 3000); // 3 second debounce to prevent rate limiting
@@ -1034,7 +1030,7 @@
 			suggestionsError = null;
 			suggestionsRetryable = false;
 
-			const result = await apiClient.fetchSuggestedActions(chat.id);
+			const result = await _apiClient.fetchSuggestedActions(chat.id);
 
 			if (result.isOk()) {
 				const responseData = result.value; // This is { suggestions: [...], token_usage?: {...} }
@@ -1096,12 +1092,12 @@
 				dynamicSuggestedActions = [];
 				toast.error(`Could not load suggested actions: ${cleanErrorMessage}`);
 			}
-		} catch (err: any) {
+		} catch (err: unknown) {
 			// Catch any unexpected errors during the API client call itself
 			console.error('Error fetching suggested actions:', err);
 
 			// Clean up error message for user display
-			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
+			let cleanErrorMessage = (err as Error).message || 'An unexpected error occurred.';
 			if (
 				cleanErrorMessage.includes('PropertyNotFound("/content/parts")') ||
 				cleanErrorMessage.includes('PropertyNotFound("/candidates")')
@@ -1172,7 +1168,7 @@
 
 			try {
 				console.log('Generating AI chronicle name for chat:', chat.id);
-				const nameResult = await apiClient.generateChronicleName(chat.id);
+				const nameResult = await _apiClient.generateChronicleName(chat.id);
 
 				if (nameResult.isOk()) {
 					chronicleName = nameResult.value.name;
@@ -1181,13 +1177,13 @@
 					console.warn('Failed to generate AI chronicle name, using fallback:', nameResult.error);
 					// Continue with fallback name
 				}
-			} catch (error) {
-				console.warn('Error generating AI chronicle name, using fallback:', error);
+			} catch (_error) {
+				console.warn('Error generating AI chronicle name, using fallback:', _error);
 				// Continue with fallback name
 			}
 
 			// Create a new chronicle with the generated/fallback name
-			const chronicleResult = await apiClient.createChronicle({
+			const chronicleResult = await _apiClient.createChronicle({
 				name: chronicleName,
 				description: `Chronicle for ${chat.title || 'chat session'}`
 			});
@@ -1196,7 +1192,7 @@
 				const chronicle = chronicleResult.value;
 
 				// Update chat to associate with the chronicle
-				const updateResult = await apiClient.updateChatSessionSettings(chat.id, {
+				const updateResult = await _apiClient.updateChatSessionSettings(chat.id, {
 					chronicle_id: chronicle.id
 				});
 
@@ -1212,8 +1208,8 @@
 				console.error('Failed to create chronicle:', chronicleResult.error);
 				toast.error('Failed to create chronicle');
 			}
-		} catch (error) {
-			console.error('Error creating chronicle:', error);
+		} catch (_error) {
+			console.error('Error creating chronicle:', _error);
 			toast.error('An error occurred while creating chronicle');
 		}
 	}
@@ -1304,19 +1300,20 @@
 				agentMode: agentMode
 			});
 			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
-		} catch (error) {
-			console.error('❌ Failed to send message:', error);
+		} catch (_error) {
+			console.error('❌ Failed to send message:', _error);
 
 			// Check if this is a daily limit error
 			if (
-				error instanceof Error &&
-				(error.name === 'DailyLimitError' || error.message.includes('Daily message limit reached'))
+				_error instanceof Error &&
+				(_error.name === 'DailyLimitError' ||
+					_error.message.includes('Daily message limit reached'))
 			) {
 				// Show upgrade prompt for daily limit errors
 				if (ENABLE_PAYMENTS) {
 					showUpgradePrompt = true;
 				} else {
-					toast.error(error.message);
+					toast.error(_error.message);
 				}
 			} else {
 				toast.error('Failed to send message. Please try again.');
@@ -1364,19 +1361,20 @@
 				model: currentModel || undefined,
 				agentMode: agentMode
 			});
-		} catch (error) {
-			console.error('Failed to generate AI response:', error);
+		} catch (_error) {
+			console.error('Failed to generate AI response:', _error);
 
 			// Check if this is a daily limit error
 			if (
-				error instanceof Error &&
-				(error.name === 'DailyLimitError' || error.message.includes('Daily message limit reached'))
+				_error instanceof Error &&
+				(_error.name === 'DailyLimitError' ||
+					_error.message.includes('Daily message limit reached'))
 			) {
 				// Show upgrade prompt for daily limit errors
 				if (ENABLE_PAYMENTS) {
 					showUpgradePrompt = true;
 				} else {
-					toast.error(error.message);
+					toast.error(_error.message);
 				}
 			} else {
 				toast.error('Failed to generate response. Please try again.');
@@ -1501,19 +1499,20 @@
 			// Note: StreamingService will handle message creation and updates
 			const preview = lastUserMessage.content.substring(0, 100);
 			chatHistory.updateChatPreview(chat.id, preview);
-		} catch (error) {
-			console.error('Failed to regenerate response:', error);
+		} catch (_error) {
+			console.error('Failed to regenerate response:', _error);
 
 			// Check if this is a daily limit error
 			if (
-				error instanceof Error &&
-				(error.name === 'DailyLimitError' || error.message.includes('Daily message limit reached'))
+				_error instanceof Error &&
+				(_error.name === 'DailyLimitError' ||
+					_error.message.includes('Daily message limit reached'))
 			) {
 				// Show upgrade prompt for daily limit errors
 				if (ENABLE_PAYMENTS) {
 					showUpgradePrompt = true;
 				} else {
-					toast.error(error.message);
+					toast.error(_error.message);
 				}
 			} else {
 				toast.error('Failed to regenerate response. Please try again.');
@@ -1565,7 +1564,7 @@
 					variantIndex: index
 				});
 
-				const result = await apiClient.selectMessageVariant(firstMessage.backend_id, {
+				const result = await _apiClient.selectMessageVariant(firstMessage.backend_id, {
 					variant_index: index
 				});
 
@@ -1575,8 +1574,8 @@
 					console.warn('⚠️ Failed to persist variant selection to backend:', result.error);
 					// Don't show error to user since the UI still works without backend sync
 				}
-			} catch (error) {
-				console.warn('⚠️ Error persisting first message variant selection:', error);
+			} catch (_error) {
+				console.warn('⚠️ Error persisting first message variant selection:', _error);
 				// Don't show error to user since this is not critical for functionality
 			}
 		}
@@ -1663,7 +1662,7 @@
 		// Delete trailing messages from backend (including embeddings)
 		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
 			try {
-				await apiClient.deleteTrailingMessages(removedMessages[0].backend_id);
+				await _apiClient.deleteTrailingMessages(removedMessages[0].backend_id);
 			} catch (err) {
 				console.warn('Failed to delete trailing messages from backend:', err);
 				// Continue with regeneration even if cleanup fails
@@ -1691,7 +1690,7 @@
 		try {
 			// Use backend ID for API call if available, otherwise use frontend ID
 			const apiMessageId = message.backend_id || messageId;
-			const result = await apiClient.selectMessageVariant(apiMessageId, {
+			const result = await _apiClient.selectMessageVariant(apiMessageId, {
 				variant_index: newIndex
 			});
 
@@ -1741,7 +1740,7 @@
 			try {
 				// Use backend ID for API call if available, otherwise use frontend ID
 				const apiMessageId = message.backend_id || messageId;
-				const result = await apiClient.selectMessageVariant(apiMessageId, {
+				const result = await _apiClient.selectMessageVariant(apiMessageId, {
 					variant_index: newIndex
 				});
 
@@ -1824,7 +1823,7 @@
 		// Delete trailing messages from backend if they exist
 		if (messagesToRemove.length > 0 && messagesToRemove[0].backend_id) {
 			try {
-				await apiClient.deleteTrailingMessages(messagesToRemove[0].backend_id);
+				await _apiClient.deleteTrailingMessages(messagesToRemove[0].backend_id);
 			} catch (err) {
 				console.warn('Failed to delete trailing messages from backend during retry:', err);
 				// Continue with retry even if cleanup fails
@@ -1876,7 +1875,7 @@
 
 			if (messagesToDeleteFromBackend.length > 0 && messagesToDeleteFromBackend[0].backend_id) {
 				try {
-					await apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
+					await _apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
 				} catch (err) {
 					console.warn('Failed to delete trailing messages from backend:', err);
 					// Continue with regeneration even if cleanup fails
@@ -1926,7 +1925,7 @@
 		// Delete from backend if it has a backend ID
 		if (messageToDelete?.backend_id || messageToDelete?.id) {
 			try {
-				await apiClient.deleteMessage(messageToDelete.backend_id || messageToDelete.id);
+				await _apiClient.deleteMessage(messageToDelete.backend_id || messageToDelete.id);
 				console.log('Message deleted from backend successfully');
 			} catch (err) {
 				console.error('Failed to delete message from backend:', err);
@@ -2186,7 +2185,7 @@
 {/if}
 
 <!-- Chronicle Opt-in Dialog -->
-<ChronicleOptInDialog bind:open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
+<ChronicleOptInDialog bind:_open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
 
 <!-- Regeneration Options Modal -->
 <RegenerationModal

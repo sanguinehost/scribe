@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './button';
+	import { Button as ButtonComponent } from './button';
 	import { onMount } from 'svelte';
 
 	let {
@@ -20,15 +20,15 @@
 	let isImageError = $state(false);
 
 	// Handle keyboard events
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+	function handleKeydown(_event: KeyboardEvent) {
+		if (_event.key === 'Escape') {
 			closeModal();
 		}
 	}
 
 	// Handle backdrop click
-	function handleBackdropClick(event: MouseEvent) {
-		if (event.target === event.currentTarget) {
+	function handleBackdropClick(_event: MouseEvent) {
+		if (_event.target === _event.currentTarget) {
 			closeModal();
 		}
 	}
@@ -88,7 +88,7 @@
 		aria-label="Image lightbox"
 	>
 		<!-- Close button -->
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			onclick={closeModal}
@@ -103,7 +103,7 @@
 					d="M6 18L18 6M6 6l12 12"
 				/>
 			</svg>
-		</Button>
+		</ButtonComponent>
 
 		<!-- Image container -->
 		<div class="relative max-h-[90vh] max-w-[90vw]">

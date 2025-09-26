@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
 
@@ -14,7 +15,7 @@
 <div
 	bind:this={ref}
 	data-sidebar="menu-badge"
-	class={cn(
+	class={_cn(
 		'pointer-events-none absolute right-1 flex h-5 min-w-5 select-none items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums text-sidebar-foreground',
 		'peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[active=true]/menu-button:text-sidebar-accent-foreground',
 		'peer-data-[size=sm]/menu-button:top-1',

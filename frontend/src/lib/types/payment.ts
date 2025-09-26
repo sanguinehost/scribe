@@ -24,7 +24,7 @@ export interface CreditTransaction {
 	balance_after: number;
 	transaction_type: string;
 	description: string;
-	metadata?: any;
+	metadata?: unknown;
 	reference_id?: string;
 	created_at: string;
 }
@@ -87,6 +87,14 @@ export interface PurchaseCreditsRequest {
 export interface PurchaseCreditsResponse {
 	checkout_url: string;
 	transaction_id: string;
+}
+
+export interface TransactionVerificationResponse {
+	success: boolean;
+	source?: 'database' | 'paddle';
+	subscription?: {
+		status: SubscriptionStatus;
+	};
 }
 
 // Credit reservation for atomic operations
@@ -386,5 +394,5 @@ export enum CreditError {
 export interface PaymentError {
 	code: CreditError | string;
 	message: string;
-	details?: any;
+	details?: unknown;
 }

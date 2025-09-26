@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { Bot } from 'lucide-svelte';
 	import AiAssistantDialog from './ai-assistant-dialog.svelte';
 	import type { CharacterContext } from '$lib/types';
@@ -26,7 +26,7 @@
 </script>
 
 <!-- AI Assistant Button -->
-<Button
+<ButtonComponent
 	variant="ghost"
 	size="sm"
 	class={variant === 'compact' ? 'h-7 px-2 text-xs' : 'h-7 w-7 p-1.5'}
@@ -38,7 +38,7 @@
 	{#if variant === 'compact'}
 		AI
 	{/if}
-</Button>
+</ButtonComponent>
 
 <!-- AI Assistant Dialog -->
 <AiAssistantDialog

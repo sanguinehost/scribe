@@ -7,14 +7,17 @@
 		DialogTitle,
 		DialogDescription
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { toast } from 'svelte-sonner';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import CreditPackageSelector from './CreditPackageSelector.svelte';
 	import { AlertCircle, ExternalLink, Loader } from 'lucide-svelte';
 	import { ENABLE_PAYMENT_CREDITS } from '$lib/utils/features';
-	import type { CreditPackage, PurchaseCreditsResponse } from '$lib/types/payment';
+	import type {
+		CreditPackage,
+		PurchaseCreditsResponse as _PurchaseCreditsResponse
+	} from '$lib/types/payment';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
@@ -42,7 +45,7 @@
 		purchaseError = null;
 
 		try {
-			const result = await apiClient.purchaseCredits(selectedPackage.package_id);
+			const result = await _apiClient.purchaseCredits(selectedPackage.package_id);
 
 			if (result.isErr()) {
 				const error = result.error;
@@ -99,9 +102,9 @@
 
 			// Redirect to Paddle checkout
 			window.location.href = purchaseData.checkout_url;
-		} catch (error) {
+		} catch (_error) {
 			const errorMessage =
-				error instanceof Error ? error.message : 'Purchase initialization failed';
+				_error instanceof Error ? _error.message : 'Purchase initialization failed';
 			console.error('Purchase error:', errorMessage);
 			purchaseError = errorMessage;
 			toast.error(errorMessage);
@@ -122,7 +125,7 @@
 	}
 
 	// Format package details for confirmation
-	function formatPackageConfirmation(pkg: CreditPackage): string {
+	function _formatPackageConfirmation(pkg: CreditPackage): string {
 		const price = (pkg.price_cents / 100).toFixed(2);
 		const credits = pkg.credits.toLocaleString();
 		const bonus = pkg.bonus_percentage ? ` (+${pkg.bonus_percentage}% bonus)` : '';
@@ -201,11 +204,16 @@
 
 			<!-- Footer Actions -->
 			<div class="flex gap-3 pt-4">
-				<Button variant="outline" on:click={handleClose} disabled={isPurchasing} class="flex-1">
+				<ButtonComponent
+					variant="outline"
+					onclick={handleClose}
+					disabled={isPurchasing}
+					class="flex-1"
+				>
 					Cancel
-				</Button>
-				<Button
-					on:click={handlePurchase}
+				</ButtonComponent>
+				<ButtonComponent
+					onclick={handlePurchase}
 					disabled={!selectedPackage || isPurchasing}
 					class="flex-1"
 				>
@@ -215,7 +223,7 @@
 					{:else}
 						Continue to Checkout
 					{/if}
-				</Button>
+				</ButtonComponent>
 			</div>
 		</DialogContent>
 	</Dialog>

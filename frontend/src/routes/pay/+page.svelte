@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { PUBLIC_ENABLE_PAYMENTS } from '$env/static/public';
 
 	let transactionId: string | null = null;
@@ -40,7 +40,7 @@
 			// No transaction ID - redirect to main app
 			loading = false;
 			setTimeout(() => {
-				goto('/');
+				_goto('/');
 			}, 3000);
 		}
 	});
@@ -115,7 +115,7 @@
 
 				// Redirect to main app after a short delay
 				setTimeout(() => {
-					goto('/');
+					_goto('/');
 				}, 2000);
 			} else {
 				// Verification failed after retries - but payment might still be successful
@@ -137,7 +137,7 @@
 
 					// Redirect to main app
 					setTimeout(() => {
-						goto('/');
+						_goto('/');
 					}, 2000);
 				} else {
 					// Show error but provide options
@@ -156,7 +156,7 @@
 
 	function handleContinue() {
 		// Redirect to dashboard or appropriate page after payment
-		goto('/');
+		_goto('/');
 	}
 </script>
 
@@ -210,7 +210,7 @@
 							</p>
 							<div class="space-y-3">
 								<button
-									on:click={() => {
+									onclick={() => {
 										loading = true;
 										error = null;
 										handleTransactionCompletion();
@@ -220,7 +220,7 @@
 									Retry Verification
 								</button>
 								<button
-									on:click={handleContinue}
+									onclick={handleContinue}
 									class="w-full rounded-lg bg-slate-200 px-4 py-3 font-medium text-slate-900 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
 								>
 									Continue to App
@@ -228,7 +228,7 @@
 							</div>
 						{:else}
 							<button
-								on:click={handleContinue}
+								onclick={handleContinue}
 								class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 							>
 								Return to App
@@ -268,7 +268,7 @@
 							>
 						</p>
 						<button
-							on:click={handleContinue}
+							onclick={handleContinue}
 							class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 						>
 							Continue to App
@@ -302,7 +302,7 @@
 							No payment transaction detected. Redirecting you back to the app...
 						</p>
 						<button
-							on:click={handleContinue}
+							onclick={handleContinue}
 							class="w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700"
 						>
 							Return to App

@@ -1,15 +1,15 @@
 <script lang="ts">
 	import type { Lorebook, CreateLorebookPayload, UpdateLorebookPayload } from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 
 	interface Props {
 		lorebook?: Lorebook | null;
 		isLoading?: boolean;
-		onSubmit?: (data: CreateLorebookPayload | UpdateLorebookPayload) => void;
+		onSubmit?: (_data: CreateLorebookPayload | UpdateLorebookPayload) => void;
 		onCancel?: () => void;
 	}
 
@@ -22,8 +22,8 @@
 	const title = isEditing ? 'Edit Lorebook' : 'Create New Lorebook';
 	const submitLabel = isEditing ? 'Update Lorebook' : 'Create Lorebook';
 
-	function handleSubmit(event: Event) {
-		event.preventDefault();
+	function handleSubmit(_event: Event) {
+		_event.preventDefault();
 
 		if (!name.trim()) {
 			return;
@@ -67,7 +67,7 @@
 
 			<div class="space-y-2">
 				<Label for="lorebook-description">Description</Label>
-				<Textarea
+				<TextareaComponent
 					id="lorebook-description"
 					bind:value={description}
 					placeholder="Enter lorebook description (optional)"
@@ -77,18 +77,23 @@
 			</div>
 
 			<div class="flex gap-2 pt-4">
-				<Button type="submit" disabled={isLoading || !name.trim()} class="flex-1">
+				<ButtonComponent type="submit" disabled={isLoading || !name.trim()} class="flex-1">
 					{#if isLoading}
 						<div
 							class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
 						></div>
 					{/if}
 					{submitLabel}
-				</Button>
+				</ButtonComponent>
 				{#if onCancel}
-					<Button type="button" variant="outline" onclick={handleCancel} disabled={isLoading}>
+					<ButtonComponent
+						type="button"
+						variant="outline"
+						onclick={handleCancel}
+						disabled={isLoading}
+					>
 						Cancel
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 		</form>

@@ -1,4 +1,4 @@
-import { Result, err, ok } from 'neverthrow';
+import { Result as _Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
 import { ENABLE_LOCAL_LLM, PAYMENT_FEATURES } from '$lib/utils/features';
@@ -70,15 +70,15 @@ import type {
 	ChatDeletionAnalysisResponse,
 	ChronicleAction,
 	LlmInfoResponse,
-	ModelInfo,
-	DownloadProgressInfo,
+	ModelInfo as _ModelInfo,
+	DownloadProgressInfo as _DownloadProgressInfo,
 	DownloadModelRequest,
 	DownloadModelResponse,
 	ModelRecommendation,
 	ModelActionResponse,
 	GroupedModelInfo,
-	ModelVariantInfo,
-	HardwareCapabilities,
+	ModelVariantInfo as _ModelVariantInfo,
+	HardwareCapabilities as _HardwareCapabilities,
 	PromptTemplateInfo,
 	PromptTemplateListResponse,
 	// Payment types
@@ -101,7 +101,8 @@ import type {
 	CreateSubscriptionRequest,
 	CreateSubscriptionResponse,
 	OrderPreviewRequest,
-	OrderPreview
+	OrderPreview,
+	TransactionVerificationResponse
 } from '$lib/types/payment';
 import {
 	setConnectionError,
@@ -110,7 +111,7 @@ import {
 	clearConnectionError,
 	debugCookies
 } from '$lib/auth.svelte'; // Import the new auth store functions
-import { browser } from '$app/environment'; // To check if in browser context
+import { browser as _browser } from '$app/environment'; // To check if in browser context
 import { env } from '$env/dynamic/public';
 
 // Actual API client
@@ -128,7 +129,7 @@ class ApiClient {
 		this.baseUrl = (apiUrl || baseUrl || '').trim();
 
 		// Debug log to verify API URL is set correctly
-		if (browser) {
+		if (_browser) {
 			if (!apiUrl) {
 				console.warn(
 					'[ApiClient] PUBLIC_API_URL is not defined, using relative paths or provided baseUrl'
@@ -153,7 +154,7 @@ class ApiClient {
 		endpoint: string,
 		options: RequestInit = {},
 		fetchFn: typeof fetch = this.fetchFn
-	): Promise<Result<T, ApiError>> {
+	): Promise<_Result<T, ApiError>> {
 		// Early validation to prevent errors
 		if (!endpoint) {
 			console.error('[ApiClient] fetch: No endpoint provided');
@@ -223,7 +224,7 @@ class ApiClient {
 					}
 
 					// Only update auth store and redirect if we're in the browser
-					if (browser) {
+					if (_browser) {
 						// Import auth state check
 						const { getCurrentUser } = await import('$lib/auth.svelte');
 						const currentUser = getCurrentUser();
@@ -270,7 +271,7 @@ class ApiClient {
 				}
 
 				// Handle proxy errors (Vite dev server can't reach backend) as connection issues
-				if (isProxyError && browser) {
+				if (isProxyError && _browser) {
 					const isAuthEndpoint =
 						endpoint.includes('/api/auth/') ||
 						endpoint.includes('/api/characters') ||
@@ -301,7 +302,7 @@ class ApiClient {
 			// Success logging removed - only log errors
 
 			// If we successfully made a request, clear any connection errors
-			if (browser) {
+			if (_browser) {
 				if (getHasConnectionError()) {
 					console.log(
 						`[${new Date().toISOString()}] ApiClient.fetch: Server appears to be back online, clearing connection error state.`
@@ -319,22 +320,22 @@ class ApiClient {
 			}
 
 			return ok(data as T);
-		} catch (error) {
+		} catch (_error) {
 			console.error(
 				`[${new Date().toISOString()}] ApiClient.fetch: EXIT - Network/Fetch Error for ${endpoint}`,
-				error
+				_error
 			);
 
 			// Check if this is a network connectivity issue
 			const isNetworkError =
-				error instanceof Error &&
-				(error.message.includes('ECONNREFUSED') ||
-					error.message.includes('fetch') ||
-					error.name === 'TypeError' ||
-					error.message.includes('NetworkError') ||
-					error.message.includes('Failed to fetch'));
+				_error instanceof Error &&
+				(_error.message.includes('ECONNREFUSED') ||
+					_error.message.includes('fetch') ||
+					_error.name === 'TypeError' ||
+					_error.message.includes('NetworkError') ||
+					_error.message.includes('Failed to fetch'));
 
-			if (isNetworkError && browser) {
+			if (isNetworkError && _browser) {
 				// For auth-related endpoints, treat network failures as potential auth issues
 				// but be less aggressive than for 401s - show a message and let user decide
 				const isAuthEndpoint =
@@ -358,21 +359,21 @@ class ApiClient {
 					isNetworkError
 						? 'Unable to connect to server. Please check your internet connection or try again later.'
 						: 'Network error',
-					error as Error
+					_error as Error
 				)
 			);
 		}
 	}
 
 	// Auth methods
-	async getUser(fetchFn: typeof fetch = globalThis.fetch): Promise<Result<User, ApiError>> {
+	async getUser(fetchFn: typeof fetch = globalThis.fetch): Promise<_Result<User, ApiError>> {
 		return this.fetch<User>('/api/auth/me', {}, fetchFn);
 	}
 
 	async authenticateUser(
 		data: { identifier: string; password: string },
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<LoginSuccessData, ApiError>> {
+	): Promise<_Result<LoginSuccessData, ApiError>> {
 		return this.fetch<LoginSuccessData>(
 			'/api/auth/login',
 			{
@@ -386,7 +387,7 @@ class ApiClient {
 	async getAuthUser(
 		data: { email: string },
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<LoginSuccessData, ApiError>> {
+	): Promise<_Result<LoginSuccessData, ApiError>> {
 		console.warn('getAuthUser called - consider using authenticateUser for standard login flow');
 		// This method likely also needs to align with the LoginSuccessData response if it's hitting the same /api/auth/login endpoint
 		// For now, assuming it should also return LoginSuccessData. If it's a different flow, this might need adjustment.
@@ -403,7 +404,7 @@ class ApiClient {
 	async createUser(
 		data: { email: string; username: string; password: string },
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<AuthUser, ApiError>> {
+	): Promise<_Result<AuthUser, ApiError>> {
 		return this.fetch<AuthUser>(
 			'/api/auth/register',
 			{
@@ -414,7 +415,7 @@ class ApiClient {
 		);
 	}
 
-	async logout(fetchFn: typeof fetch = globalThis.fetch): Promise<Result<void, ApiError>> {
+	async logout(fetchFn: typeof fetch = globalThis.fetch): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(
 			'/api/auth/logout',
 			{
@@ -427,7 +428,7 @@ class ApiClient {
 	async verifyEmail(
 		token: string,
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<{ message: string }, ApiError>> {
+	): Promise<_Result<{ message: string }, ApiError>> {
 		return this.fetch<{ message: string }>(
 			'/api/auth/verify-email',
 			{
@@ -442,7 +443,7 @@ class ApiClient {
 	async createSession(
 		session: Session,
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<Session, ApiError>> {
+	): Promise<_Result<Session, ApiError>> {
 		return this.fetch<Session>(
 			'/api/auth/session',
 			{
@@ -456,14 +457,14 @@ class ApiClient {
 	// Updated to call /api/auth/session/current and not take sessionId
 	async getSession(
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<SessionResponse, ApiError>> {
+	): Promise<_Result<SessionResponse, ApiError>> {
 		return this.fetch<SessionResponse>('/api/auth/session/current', {}, fetchFn);
 	}
 
 	async extendSession(
 		sessionId: string,
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<Session, ApiError>> {
+	): Promise<_Result<Session, ApiError>> {
 		return this.fetch<Session>(
 			`/api/auth/session/${sessionId}/extend`,
 			{
@@ -476,7 +477,7 @@ class ApiClient {
 	async deleteSession(
 		sessionId: string,
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<undefined, ApiError>> {
+	): Promise<_Result<undefined, ApiError>> {
 		return this.fetch<undefined>(
 			`/api/auth/session/${sessionId}`,
 			{
@@ -489,7 +490,7 @@ class ApiClient {
 	async deleteSessionsForUser(
 		userId: string,
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<Result<undefined, ApiError>> {
+	): Promise<_Result<undefined, ApiError>> {
 		return this.fetch<undefined>(
 			`/api/auth/user/${userId}/sessions`,
 			{
@@ -500,41 +501,41 @@ class ApiClient {
 	}
 
 	// Chat methods
-	async getChats(): Promise<Result<ScribeChatSession[], ApiError>> {
+	async getChats(): Promise<_Result<ScribeChatSession[], ApiError>> {
 		// Use ScribeChatSession from types.ts if it matches API response
 		return this.fetch<ScribeChatSession[]>('/api/chats');
 	}
 
-	async getChatsByCharacter(characterId: string): Promise<Result<ScribeChatSession[], ApiError>> {
+	async getChatsByCharacter(characterId: string): Promise<_Result<ScribeChatSession[], ApiError>> {
 		return this.fetch<ScribeChatSession[]>(`/api/chats/by-character/${characterId}`);
 	}
 
 	// Updated createChat to accept and send character details
-	async createChat(data: CreateChatRequest): Promise<Result<ScribeChatSession, ApiError>> {
+	async createChat(_data: CreateChatRequest): Promise<_Result<ScribeChatSession, ApiError>> {
 		// Use ScribeChatSession
 		console.log(
 			`[${new Date().toISOString()}] ApiClient.createChat: Creating chat with data:`,
-			data
+			_data
 		);
 		return this.fetch<ScribeChatSession>('/api/chat/create_session', {
 			// Use ScribeChatSession
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
-	async getChatById(id: string): Promise<Result<ScribeChatSession, ApiError>> {
+	async getChatById(id: string): Promise<_Result<ScribeChatSession, ApiError>> {
 		// Use ScribeChatSession
 		return this.fetch<ScribeChatSession>(`/api/chats/fetch/${id}`); // Fixed type argument
 	}
 
 	// Character methods (Added)
-	async getCharacters(): Promise<Result<Character[], ApiError>> {
+	async getCharacters(): Promise<_Result<Character[], ApiError>> {
 		// Assuming an endpoint exists to list characters, adjust if needed
 		return this.fetch<Character[]>('/api/characters');
 	}
 
-	async getCharacter(id: string): Promise<Result<Character, ApiError>> {
+	async getCharacter(id: string): Promise<_Result<Character, ApiError>> {
 		console.log(`[${new Date().toISOString()}] ApiClient.getCharacter: Fetching character ${id}`);
 		return this.fetch<Character>(`/api/characters/fetch/${id}`);
 	}
@@ -542,7 +543,7 @@ class ApiClient {
 	async updateCharacter(
 		id: string,
 		data: Partial<Character>
-	): Promise<Result<Character, ApiError>> {
+	): Promise<_Result<Character, ApiError>> {
 		console.log(
 			`[${new Date().toISOString()}] ApiClient.updateCharacter: Updating character ${id}`,
 			data
@@ -553,18 +554,18 @@ class ApiClient {
 		});
 	}
 
-	async createCharacter(data: Omit<Character, 'id'>): Promise<Result<Character, ApiError>> {
+	async createCharacter(_data: Omit<Character, 'id'>): Promise<_Result<Character, ApiError>> {
 		console.log(
 			`[${new Date().toISOString()}] ApiClient.createCharacter: Creating character`,
-			data
+			_data
 		);
 		return this.fetch<Character>('/api/characters', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
-	async deleteCharacter(id: string): Promise<Result<void, ApiError>> {
+	async deleteCharacter(id: string): Promise<_Result<void, ApiError>> {
 		console.log(
 			`[${new Date().toISOString()}] ApiClient.deleteCharacter: Deleting character ${id}`
 		);
@@ -573,7 +574,7 @@ class ApiClient {
 		});
 	}
 
-	async uploadCharacter(file: File): Promise<Result<Character, ApiError>> {
+	async uploadCharacter(file: File): Promise<_Result<Character, ApiError>> {
 		console.log(
 			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Uploading character file ${file.name}`
 		);
@@ -624,21 +625,21 @@ class ApiClient {
 				data
 			);
 			return ok(data as Character);
-		} catch (error) {
+		} catch (_error) {
 			console.error(
 				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Network/Fetch Error`,
-				error
+				_error
 			);
 			return err(
 				new ApiNetworkError(
 					'Unable to upload character. Please check your connection or try again later.',
-					error as Error
+					_error as Error
 				)
 			);
 		}
 	}
 
-	async generateCharacter(payload: { prompt: string }): Promise<Result<Character, ApiError>> {
+	async generateCharacter(payload: { prompt: string }): Promise<_Result<Character, ApiError>> {
 		console.log(
 			`[${new Date().toISOString()}] ApiClient.generateCharacter: Generating character from prompt`
 		);
@@ -652,14 +653,14 @@ class ApiClient {
 
 	async getChatDeletionAnalysis(
 		id: string
-	): Promise<Result<ChatDeletionAnalysisResponse, ApiError>> {
+	): Promise<_Result<ChatDeletionAnalysisResponse, ApiError>> {
 		return this.fetch<ChatDeletionAnalysisResponse>(`/api/chats/${id}/deletion-analysis`);
 	}
 
 	async deleteChatById(
 		id: string,
 		chronicleAction?: ChronicleAction
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		const queryParams = chronicleAction ? `?chronicle_action=${chronicleAction}` : '';
 		return this.fetch<void>(`/api/chats/remove/${id}${queryParams}`, {
 			method: 'DELETE'
@@ -669,14 +670,16 @@ class ApiClient {
 	async updateChatVisibility(
 		id: string,
 		visibility: 'public' | 'private'
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/${id}/visibility`, {
 			method: 'PUT',
 			body: JSON.stringify({ visibility })
 		});
 	}
 
-	async fetchSuggestedActions(chatId: string): Promise<Result<SuggestedActionsResponse, ApiError>> {
+	async fetchSuggestedActions(
+		chatId: string
+	): Promise<_Result<SuggestedActionsResponse, ApiError>> {
 		return this.fetch<SuggestedActionsResponse>(`/api/chat/${chatId}/suggested-actions`, {
 			method: 'POST',
 			body: JSON.stringify({}) // Empty JSON object
@@ -687,7 +690,7 @@ class ApiClient {
 	async getMessagesByChatId(
 		chatId: string,
 		options?: { limit?: number; cursor?: string }
-	): Promise<Result<PaginatedMessagesResponse | Message[], ApiError>> {
+	): Promise<_Result<PaginatedMessagesResponse | Message[], ApiError>> {
 		// Support both old and new API responses
 		const params = new URLSearchParams();
 		if (options?.limit) params.append('limit', options.limit.toString());
@@ -695,7 +698,9 @@ class ApiClient {
 		const query = params.toString() ? `?${params.toString()}` : '';
 
 		// The backend now returns PaginatedMessagesResponse, but we maintain backwards compatibility
-		const result = await this.fetch<any>(`/api/chats/${chatId}/messages${query}`);
+		const result = await this.fetch<PaginatedMessagesResponse>(
+			`/api/chats/${chatId}/messages${query}`
+		);
 
 		if (result.isOk() && result.value) {
 			// Check if it's the new paginated response format
@@ -709,34 +714,34 @@ class ApiClient {
 		return result;
 	}
 
-	async getMessageById(messageId: string): Promise<Result<Message, ApiError>> {
+	async getMessageById(messageId: string): Promise<_Result<Message, ApiError>> {
 		return this.fetch<Message>(`/api/chats/messages/${messageId}`);
 	}
 
 	async createMessage(
 		chatId: string,
 		data: CreateMessageRequest
-	): Promise<Result<Message, ApiError>> {
+	): Promise<_Result<Message, ApiError>> {
 		return this.fetch<Message>(`/api/chats/${chatId}/messages`, {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async voteMessage(id: string, type: 'up' | 'down'): Promise<Result<void, ApiError>> {
+	async voteMessage(id: string, type: 'up' | 'down'): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/messages/${id}/vote`, {
 			method: 'POST',
 			body: JSON.stringify({ type_: type })
 		});
 	}
 
-	async deleteTrailingMessages(id: string): Promise<Result<void, ApiError>> {
+	async deleteTrailingMessages(id: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/messages/${id}/trailing`, {
 			method: 'DELETE'
 		});
 	}
 
-	async deleteMessage(id: string): Promise<Result<void, ApiError>> {
+	async deleteMessage(id: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/messages/${id}`, {
 			method: 'DELETE'
 		});
@@ -746,7 +751,7 @@ class ApiClient {
 	async createMessageVariant(
 		messageId: string,
 		data: CreateMessageVariantRequest
-	): Promise<Result<Message, ApiError>> {
+	): Promise<_Result<Message, ApiError>> {
 		return this.fetch<Message>(`/api/chat/messages/${messageId}/variants`, {
 			method: 'POST',
 			body: JSON.stringify(data)
@@ -756,70 +761,72 @@ class ApiClient {
 	async selectMessageVariant(
 		messageId: string,
 		data: SelectVariantRequest
-	): Promise<Result<Message, ApiError>> {
+	): Promise<_Result<Message, ApiError>> {
 		return this.fetch<Message>(`/api/chat/messages/${messageId}/select-variant`, {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async getMessageVariants(messageId: string): Promise<Result<MessageVariantResponse[], ApiError>> {
+	async getMessageVariants(
+		messageId: string
+	): Promise<_Result<MessageVariantResponse[], ApiError>> {
 		return this.fetch<MessageVariantResponse[]>(`/api/chat/messages/${messageId}/variants`);
 	}
 
 	// Vote methods
-	async getVotesByChatId(chatId: string): Promise<Result<Vote[], ApiError>> {
+	async getVotesByChatId(chatId: string): Promise<_Result<Vote[], ApiError>> {
 		return this.fetch<Vote[]>(`/api/chats/${chatId}/votes`);
 	}
 
 	// Document methods
-	async createDocument(data: CreateDocumentRequest): Promise<Result<DocumentResponse, ApiError>> {
+	async createDocument(_data: CreateDocumentRequest): Promise<_Result<DocumentResponse, ApiError>> {
 		return this.fetch<DocumentResponse>('/api/documents', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
-	async getDocumentsById(id: string): Promise<Result<DocumentResponse[], ApiError>> {
+	async getDocumentsById(id: string): Promise<_Result<DocumentResponse[], ApiError>> {
 		return this.fetch<DocumentResponse[]>(`/api/documents/${id}`);
 	}
 
-	async getLatestDocumentById(id: string): Promise<Result<DocumentResponse, ApiError>> {
+	async getLatestDocumentById(id: string): Promise<_Result<DocumentResponse, ApiError>> {
 		return this.fetch<DocumentResponse>(`/api/documents/${id}/latest`);
 	}
 
 	async deleteDocumentsAfterTimestamp(
 		id: string,
 		timestamp: string
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/documents/${id}/timestamp/${timestamp}`, {
 			method: 'DELETE'
 		});
 	}
 
 	// Suggestion methods
-	async createSuggestion(data: CreateSuggestionRequest): Promise<Result<Suggestion, ApiError>> {
+	async createSuggestion(_data: CreateSuggestionRequest): Promise<_Result<Suggestion, ApiError>> {
 		return this.fetch<Suggestion>('/api/suggestions', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
-	async getSuggestionsByDocumentId(documentId: string): Promise<Result<Suggestion[], ApiError>> {
+	async getSuggestionsByDocumentId(documentId: string): Promise<_Result<Suggestion[], ApiError>> {
 		return this.fetch<Suggestion[]>(`/api/suggestions/document/${documentId}`);
 	}
 
 	// Chat Session Settings methods
 	async getChatSessionSettings(
 		sessionId: string
-	): Promise<Result<ChatSessionSettingsResponse, ApiError>> {
+	): Promise<_Result<ChatSessionSettingsResponse, ApiError>> {
 		return this.fetch<ChatSessionSettingsResponse>(`/api/chat/${sessionId}/settings`);
 	}
 
 	async updateChatSessionSettings(
 		sessionId: string,
 		settings: UpdateChatSessionSettingsRequest
-	): Promise<Result<ChatSessionSettingsResponse, ApiError>> {
+	): Promise<_Result<ChatSessionSettingsResponse, ApiError>> {
 		return this.fetch<ChatSessionSettingsResponse>(`/api/chat/${sessionId}/settings`, {
 			method: 'PUT',
 			body: JSON.stringify(settings)
@@ -830,7 +837,7 @@ class ApiClient {
 		sessionId: string,
 		analysisType?: 'pre_processing' | 'post_processing',
 		messageId?: string
-	): Promise<Result<AgentAnalysisResponse[], ApiError>> {
+	): Promise<_Result<AgentAnalysisResponse[], ApiError>> {
 		const params = new URLSearchParams();
 		if (analysisType) {
 			params.append('analysis_type', analysisType);
@@ -845,111 +852,113 @@ class ApiClient {
 	}
 
 	// User Persona methods
-	async createUserPersona(data: CreateUserPersonaRequest): Promise<Result<UserPersona, ApiError>> {
+	async createUserPersona(
+		_data: CreateUserPersonaRequest
+	): Promise<_Result<UserPersona, ApiError>> {
 		return this.fetch<UserPersona>('/api/personas', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
-	async getUserPersonas(): Promise<Result<UserPersona[], ApiError>> {
+	async getUserPersonas(): Promise<_Result<UserPersona[], ApiError>> {
 		return this.fetch<UserPersona[]>('/api/personas');
 	}
 
-	async getUserPersona(id: string): Promise<Result<UserPersona, ApiError>> {
+	async getUserPersona(id: string): Promise<_Result<UserPersona, ApiError>> {
 		return this.fetch<UserPersona>(`/api/personas/${id}`);
 	}
 
 	async updateUserPersona(
 		id: string,
 		data: UpdateUserPersonaRequest
-	): Promise<Result<UserPersona, ApiError>> {
+	): Promise<_Result<UserPersona, ApiError>> {
 		return this.fetch<UserPersona>(`/api/personas/${id}`, {
 			method: 'PUT',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async deleteUserPersona(id: string): Promise<Result<void, ApiError>> {
+	async deleteUserPersona(id: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/personas/${id}`, {
 			method: 'DELETE'
 		});
 	}
 
-	async setDefaultPersona(personaId: string): Promise<Result<void, ApiError>> {
+	async setDefaultPersona(personaId: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/user-settings/set_default_persona/${personaId}`, {
 			method: 'PUT'
 		});
 	}
 
 	// User Settings methods - for global defaults
-	async getUserSettings(): Promise<Result<UserSettingsResponse, ApiError>> {
+	async getUserSettings(): Promise<_Result<UserSettingsResponse, ApiError>> {
 		return this.fetch<UserSettingsResponse>('/api/user-settings');
 	}
 
 	async updateUserSettings(
 		settings: UpdateUserSettingsRequest
-	): Promise<Result<UserSettingsResponse, ApiError>> {
+	): Promise<_Result<UserSettingsResponse, ApiError>> {
 		return this.fetch<UserSettingsResponse>('/api/user-settings', {
 			method: 'PUT',
 			body: JSON.stringify(settings)
 		});
 	}
 
-	async deleteUserSettings(): Promise<Result<void, ApiError>> {
+	async deleteUserSettings(): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>('/api/user-settings', {
 			method: 'DELETE'
 		});
 	}
 
 	// Lorebook methods
-	async getLorebooks(): Promise<Result<Lorebook[], ApiError>> {
+	async getLorebooks(): Promise<_Result<Lorebook[], ApiError>> {
 		return this.fetch<Lorebook[]>('/api/lorebooks');
 	}
 
-	async getLorebook(id: string): Promise<Result<Lorebook, ApiError>> {
+	async getLorebook(id: string): Promise<_Result<Lorebook, ApiError>> {
 		return this.fetch<Lorebook>(`/api/lorebooks/${id}`);
 	}
 
-	async createLorebook(data: CreateLorebookPayload): Promise<Result<Lorebook, ApiError>> {
+	async createLorebook(_data: CreateLorebookPayload): Promise<_Result<Lorebook, ApiError>> {
 		return this.fetch<Lorebook>('/api/lorebooks', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
 	async updateLorebook(
 		id: string,
 		data: UpdateLorebookPayload
-	): Promise<Result<Lorebook, ApiError>> {
+	): Promise<_Result<Lorebook, ApiError>> {
 		return this.fetch<Lorebook>(`/api/lorebooks/${id}`, {
 			method: 'PUT',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async deleteLorebook(id: string): Promise<Result<void, ApiError>> {
+	async deleteLorebook(id: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/lorebooks/${id}`, {
 			method: 'DELETE'
 		});
 	}
 
 	// Lorebook Entry methods
-	async getLorebookEntries(lorebookId: string): Promise<Result<LorebookEntry[], ApiError>> {
+	async getLorebookEntries(lorebookId: string): Promise<_Result<LorebookEntry[], ApiError>> {
 		return this.fetch<LorebookEntry[]>(`/api/lorebooks/${lorebookId}/entries`);
 	}
 
 	async getLorebookEntry(
 		lorebookId: string,
 		entryId: string
-	): Promise<Result<LorebookEntry, ApiError>> {
+	): Promise<_Result<LorebookEntry, ApiError>> {
 		return this.fetch<LorebookEntry>(`/api/lorebooks/${lorebookId}/entries/${entryId}`);
 	}
 
 	async createLorebookEntry(
 		lorebookId: string,
 		data: CreateLorebookEntryPayload
-	): Promise<Result<LorebookEntry, ApiError>> {
+	): Promise<_Result<LorebookEntry, ApiError>> {
 		return this.fetch<LorebookEntry>(`/api/lorebooks/${lorebookId}/entries`, {
 			method: 'POST',
 			body: JSON.stringify(data)
@@ -960,14 +969,14 @@ class ApiClient {
 		lorebookId: string,
 		entryId: string,
 		data: UpdateLorebookEntryPayload
-	): Promise<Result<LorebookEntry, ApiError>> {
+	): Promise<_Result<LorebookEntry, ApiError>> {
 		return this.fetch<LorebookEntry>(`/api/lorebooks/${lorebookId}/entries/${entryId}`, {
 			method: 'PUT',
 			body: JSON.stringify(data)
 		});
 	}
 
-	async deleteLorebookEntry(lorebookId: string, entryId: string): Promise<Result<void, ApiError>> {
+	async deleteLorebookEntry(lorebookId: string, entryId: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/lorebooks/${lorebookId}/entries/${entryId}`, {
 			method: 'DELETE'
 		});
@@ -982,7 +991,7 @@ class ApiClient {
 			end_message_index?: number;
 			extraction_model?: string;
 		}
-	): Promise<Result<{ entries_extracted: number; entries: LorebookEntry[] }, ApiError>> {
+	): Promise<_Result<{ entries_extracted: number; entries: LorebookEntry[] }, ApiError>> {
 		return this.fetch<{ entries_extracted: number; entries: LorebookEntry[] }>(
 			`/api/lorebooks/${lorebookId}/extract-from-chat`,
 			{
@@ -996,7 +1005,7 @@ class ApiClient {
 	async associateLorebookToChat(
 		chatId: string,
 		lorebookId: string
-	): Promise<Result<ChatSessionLorebookAssociation, ApiError>> {
+	): Promise<_Result<ChatSessionLorebookAssociation, ApiError>> {
 		return this.fetch<ChatSessionLorebookAssociation>(`/api/chats/${chatId}/lorebooks`, {
 			method: 'POST',
 			body: JSON.stringify({ lorebook_id: lorebookId })
@@ -1006,7 +1015,7 @@ class ApiClient {
 	async getChatLorebookAssociations(
 		chatId: string,
 		includeSource = false
-	): Promise<Result<EnhancedChatSessionLorebookAssociation[], ApiError>> {
+	): Promise<_Result<EnhancedChatSessionLorebookAssociation[], ApiError>> {
 		const url = `/api/chats/${chatId}/lorebooks${includeSource ? '?include_source=true' : ''}`;
 		return this.fetch<EnhancedChatSessionLorebookAssociation[]>(url);
 	}
@@ -1014,7 +1023,7 @@ class ApiClient {
 	async disassociateLorebookFromChat(
 		chatId: string,
 		lorebookId: string
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}`, {
 			method: 'DELETE'
 		});
@@ -1025,7 +1034,7 @@ class ApiClient {
 		chatId: string,
 		lorebookId: string,
 		action: 'disable' | 'enable'
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}/override`, {
 			method: 'PUT',
 			body: JSON.stringify({ action })
@@ -1035,7 +1044,7 @@ class ApiClient {
 	async removeCharacterLorebookOverride(
 		chatId: string,
 		lorebookId: string
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/${chatId}/lorebooks/${lorebookId}/override`, {
 			method: 'DELETE'
 		});
@@ -1043,23 +1052,23 @@ class ApiClient {
 
 	async getCharacterLorebookOverrides(
 		chatId: string
-	): Promise<Result<CharacterLorebookOverrideResponse[], ApiError>> {
+	): Promise<_Result<CharacterLorebookOverrideResponse[], ApiError>> {
 		return this.fetch<CharacterLorebookOverrideResponse[]>(
 			`/api/chats/${chatId}/lorebook-overrides`
 		);
 	}
 
 	// Import/Export methods
-	async importLorebook(data: LorebookUploadPayload): Promise<Result<Lorebook, ApiError>> {
+	async importLorebook(_data: LorebookUploadPayload): Promise<_Result<Lorebook, ApiError>> {
 		return this.fetch<Lorebook>('/api/lorebooks/import?format=silly_tavern_full', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
 	async importLorebookScribeMinimal(
 		data: ScribeMinimalLorebook
-	): Promise<Result<Lorebook, ApiError>> {
+	): Promise<_Result<Lorebook, ApiError>> {
 		return this.fetch<Lorebook>('/api/lorebooks/import?format=scribe_minimal', {
 			method: 'POST',
 			body: JSON.stringify(data)
@@ -1069,7 +1078,7 @@ class ApiClient {
 	async exportLorebook(
 		lorebookId: string,
 		format: 'scribe_minimal' | 'silly_tavern_full' = 'silly_tavern_full'
-	): Promise<Result<ScribeMinimalLorebook | LorebookUploadPayload, ApiError>> {
+	): Promise<_Result<ScribeMinimalLorebook | LorebookUploadPayload, ApiError>> {
 		return this.fetch<ScribeMinimalLorebook | LorebookUploadPayload>(
 			`/api/lorebooks/${lorebookId}/export?format=${format}`
 		);
@@ -1079,7 +1088,7 @@ class ApiClient {
 	async expandText(
 		chatId: string,
 		originalText: string
-	): Promise<Result<ExpandTextResponse, ApiError>> {
+	): Promise<_Result<ExpandTextResponse, ApiError>> {
 		const payload: ExpandTextRequest = { original_text: originalText };
 		return this.fetch<ExpandTextResponse>(`/api/chat/${chatId}/expand`, {
 			method: 'POST',
@@ -1088,7 +1097,7 @@ class ApiClient {
 	}
 
 	// Impersonate method - generates user actions based on chat context
-	async impersonate(chatId: string): Promise<Result<ImpersonateResponse, ApiError>> {
+	async impersonate(chatId: string): Promise<_Result<ImpersonateResponse, ApiError>> {
 		const payload: ImpersonateRequest = {};
 		return this.fetch<ImpersonateResponse>(`/api/chat/${chatId}/impersonate`, {
 			method: 'POST',
@@ -1103,7 +1112,7 @@ class ApiClient {
 	// Generate or enhance a specific character field
 	async generateCharacterField(
 		request: GenerateCharacterFieldRequest
-	): Promise<Result<GenerateCharacterFieldResponse, ApiError>> {
+	): Promise<_Result<GenerateCharacterFieldResponse, ApiError>> {
 		return this.fetch<GenerateCharacterFieldResponse>('/api/generation/character/field', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1113,7 +1122,7 @@ class ApiClient {
 	// Generate a complete character from a prompt
 	async generateCompleteCharacter(
 		request: GenerateCompleteCharacterRequest
-	): Promise<Result<GenerateCompleteCharacterResponse, ApiError>> {
+	): Promise<_Result<GenerateCompleteCharacterResponse, ApiError>> {
 		return this.fetch<GenerateCompleteCharacterResponse>('/api/generation/character/complete', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1123,7 +1132,7 @@ class ApiClient {
 	// Enhance an existing character
 	async enhanceCharacter(
 		request: EnhanceCharacterRequest
-	): Promise<Result<EnhanceCharacterResponse, ApiError>> {
+	): Promise<_Result<EnhanceCharacterResponse, ApiError>> {
 		return this.fetch<EnhanceCharacterResponse>('/api/generation/character/enhance', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1133,7 +1142,7 @@ class ApiClient {
 	// Generate lorebook entries
 	async generateLorebookEntries(
 		request: GenerateLorebookEntriesRequest
-	): Promise<Result<GenerateLorebookEntriesResponse, ApiError>> {
+	): Promise<_Result<GenerateLorebookEntriesResponse, ApiError>> {
 		return this.fetch<GenerateLorebookEntriesResponse>('/api/generation/lorebook/entries', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1143,7 +1152,7 @@ class ApiClient {
 	// Generate a single lorebook entry
 	async generateLorebookEntry(
 		request: GenerateLorebookEntryRequest
-	): Promise<Result<GenerateLorebookEntryResponse, ApiError>> {
+	): Promise<_Result<GenerateLorebookEntryResponse, ApiError>> {
 		return this.fetch<GenerateLorebookEntryResponse>('/api/generation/lorebook/entry', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1153,7 +1162,7 @@ class ApiClient {
 	// Chat with Scribe assistant for content creation
 	async scribeAssistant(
 		request: ScribeAssistantRequest
-	): Promise<Result<ScribeAssistantResponse, ApiError>> {
+	): Promise<_Result<ScribeAssistantResponse, ApiError>> {
 		return this.fetch<ScribeAssistantResponse>('/api/generation/scribe-assistant', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1165,19 +1174,19 @@ class ApiClient {
 	// ============================================================================
 
 	// Get all chronicles for the current user
-	async getChronicles(): Promise<Result<PlayerChronicleWithCounts[], ApiError>> {
+	async getChronicles(): Promise<_Result<PlayerChronicleWithCounts[], ApiError>> {
 		return this.fetch<PlayerChronicleWithCounts[]>('/api/chronicles');
 	}
 
 	// Get a specific chronicle by ID
-	async getChronicle(id: string): Promise<Result<PlayerChronicle, ApiError>> {
+	async getChronicle(id: string): Promise<_Result<PlayerChronicle, ApiError>> {
 		return this.fetch<PlayerChronicle>(`/api/chronicles/${id}`);
 	}
 
 	// Generate a chronicle name from chat messages
 	async generateChronicleName(
 		chatSessionId: string
-	): Promise<Result<{ name: string; reasoning?: string }, ApiError>> {
+	): Promise<_Result<{ name: string; reasoning?: string }, ApiError>> {
 		return this.fetch<{ name: string; reasoning?: string }>('/api/chronicles/generate-name', {
 			method: 'POST',
 			body: JSON.stringify({ chat_session_id: chatSessionId })
@@ -1185,10 +1194,12 @@ class ApiClient {
 	}
 
 	// Create a new chronicle
-	async createChronicle(data: CreateChronicleRequest): Promise<Result<PlayerChronicle, ApiError>> {
+	async createChronicle(
+		_data: CreateChronicleRequest
+	): Promise<_Result<PlayerChronicle, ApiError>> {
 		return this.fetch<PlayerChronicle>('/api/chronicles', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
@@ -1196,7 +1207,7 @@ class ApiClient {
 	async updateChronicle(
 		id: string,
 		data: UpdateChronicleRequest
-	): Promise<Result<PlayerChronicle, ApiError>> {
+	): Promise<_Result<PlayerChronicle, ApiError>> {
 		return this.fetch<PlayerChronicle>(`/api/chronicles/${id}`, {
 			method: 'PUT',
 			body: JSON.stringify(data)
@@ -1204,7 +1215,7 @@ class ApiClient {
 	}
 
 	// Delete a chronicle
-	async deleteChronicle(id: string): Promise<Result<void, ApiError>> {
+	async deleteChronicle(id: string): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chronicles/${id}`, {
 			method: 'DELETE'
 		});
@@ -1214,7 +1225,7 @@ class ApiClient {
 	async getChronicleEvents(
 		chronicleId: string,
 		filter?: EventFilter
-	): Promise<Result<ChronicleEvent[], ApiError>> {
+	): Promise<_Result<ChronicleEvent[], ApiError>> {
 		const params = new URLSearchParams();
 		if (filter) {
 			if (filter.event_type) params.append('event_type', filter.event_type);
@@ -1237,7 +1248,7 @@ class ApiClient {
 	async createChronicleEvent(
 		chronicleId: string,
 		data: CreateEventRequest
-	): Promise<Result<ChronicleEvent, ApiError>> {
+	): Promise<_Result<ChronicleEvent, ApiError>> {
 		return this.fetch<ChronicleEvent>(`/api/chronicles/${chronicleId}/events`, {
 			method: 'POST',
 			body: JSON.stringify(data)
@@ -1248,7 +1259,7 @@ class ApiClient {
 	async deleteChronicleEvent(
 		chronicleId: string,
 		eventId: string
-	): Promise<Result<void, ApiError>> {
+	): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chronicles/${chronicleId}/events/${eventId}`, {
 			method: 'DELETE'
 		});
@@ -1263,7 +1274,7 @@ class ApiClient {
 			end_message_index?: number;
 			extraction_model?: string;
 		}
-	): Promise<Result<{ events_extracted: number; events: ChronicleEvent[] }, ApiError>> {
+	): Promise<_Result<{ events_extracted: number; events: ChronicleEvent[] }, ApiError>> {
 		return this.fetch<{ events_extracted: number; events: ChronicleEvent[] }>(
 			`/api/chronicles/${chronicleId}/extract-events`,
 			{
@@ -1274,7 +1285,7 @@ class ApiClient {
 	}
 
 	// Create a chronicle from a chat session
-	async createChronicleFromChat(data: {
+	async createChronicleFromChat(_data: {
 		chat_session_id: string;
 		chronicle_name: string;
 		chronicle_description?: string;
@@ -1282,7 +1293,7 @@ class ApiClient {
 		end_message_index?: number;
 		extraction_model?: string;
 	}): Promise<
-		Result<
+		_Result<
 			{ chronicle: PlayerChronicle; events_extracted: number; events: ChronicleEvent[] },
 			ApiError
 		>
@@ -1293,7 +1304,7 @@ class ApiClient {
 			events: ChronicleEvent[];
 		}>('/api/chronicles/from-chat', {
 			method: 'POST',
-			body: JSON.stringify(data)
+			body: JSON.stringify(_data)
 		});
 	}
 
@@ -1309,7 +1320,7 @@ class ApiClient {
 			batch_size?: number;
 		}
 	): Promise<
-		Result<
+		_Result<
 			{
 				events_created: number;
 				messages_processed: number;
@@ -1335,7 +1346,7 @@ class ApiClient {
 	// ============================================================================
 
 	// Count tokens for text using the hybrid token counter
-	async countTokens(request: TokenCountRequest): Promise<Result<TokenCountResponse, ApiError>> {
+	async countTokens(request: TokenCountRequest): Promise<_Result<TokenCountResponse, ApiError>> {
 		return this.fetch<TokenCountResponse>('/api/chat/count-tokens', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1348,7 +1359,7 @@ class ApiClient {
 	// These methods are conditionally included based on ENABLE_LOCAL_LLM feature flag
 
 	// Get LLM system information and available models
-	async getLlmInfo(): Promise<Result<LlmInfoResponse, ApiError>> {
+	async getLlmInfo(): Promise<_Result<LlmInfoResponse, ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
@@ -1356,7 +1367,7 @@ class ApiClient {
 	}
 
 	// Get smart model recommendations based on hardware
-	async getModelRecommendations(): Promise<Result<ModelRecommendation[], ApiError>> {
+	async getModelRecommendations(): Promise<_Result<ModelRecommendation[], ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
@@ -1364,7 +1375,7 @@ class ApiClient {
 	}
 
 	// Get the best single model recommendation
-	async getBestRecommendation(): Promise<Result<ModelRecommendation | null, ApiError>> {
+	async getBestRecommendation(): Promise<_Result<ModelRecommendation | null, ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
@@ -1372,11 +1383,11 @@ class ApiClient {
 	}
 
 	// Download a specific model
-	async downloadModel(modelId: string): Promise<Result<DownloadModelResponse, ApiError>> {
+	async downloadModel(_modelId: string): Promise<_Result<DownloadModelResponse, ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
-		const request: DownloadModelRequest = { model_id: modelId };
+		const request: DownloadModelRequest = { model_id: _modelId };
 		return this.fetch<DownloadModelResponse>('/api/llm/models/download', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1384,27 +1395,27 @@ class ApiClient {
 	}
 
 	// Delete a downloaded model
-	async deleteModel(modelId: string): Promise<Result<ModelActionResponse, ApiError>> {
+	async deleteModel(_modelId: string): Promise<_Result<ModelActionResponse, ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
-		return this.fetch<ModelActionResponse>(`/api/llm/models/${modelId}`, {
+		return this.fetch<ModelActionResponse>(`/api/llm/models/${_modelId}`, {
 			method: 'DELETE'
 		});
 	}
 
 	// Activate/switch to a different model
-	async activateModel(modelId: string): Promise<Result<ModelActionResponse, ApiError>> {
+	async activateModel(_modelId: string): Promise<_Result<ModelActionResponse, ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
-		return this.fetch<ModelActionResponse>(`/api/llm/models/${modelId}/activate`, {
+		return this.fetch<ModelActionResponse>(`/api/llm/models/${_modelId}/activate`, {
 			method: 'POST'
 		});
 	}
 
 	// Download and activate the best recommended model
-	async downloadBestModel(): Promise<Result<ModelActionResponse, ApiError>> {
+	async downloadBestModel(): Promise<_Result<ModelActionResponse, ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
@@ -1418,7 +1429,7 @@ class ApiClient {
 		show_incompatible?: boolean;
 		only_downloaded?: boolean;
 		only_recommended?: boolean;
-	}): Promise<Result<GroupedModelInfo[], ApiError>> {
+	}): Promise<_Result<GroupedModelInfo[], ApiError>> {
 		if (!ENABLE_LOCAL_LLM) {
 			return err(new ApiResponseError(404, 'Local LLM feature not enabled'));
 		}
@@ -1444,8 +1455,8 @@ class ApiClient {
 	/**
 	 * Get all available models with their capabilities
 	 */
-	async getAllModels(): Promise<Result<Record<string, any>, ApiError>> {
-		return this.fetch<Record<string, any>>('/api/llm/models/all');
+	async getAllModels(): Promise<_Result<Record<string, unknown>, ApiError>> {
+		return this.fetch<Record<string, unknown>>('/api/llm/models/all');
 	}
 
 	// Template Management Methods
@@ -1453,14 +1464,14 @@ class ApiClient {
 	/**
 	 * Get all available prompt templates
 	 */
-	async getPromptTemplates(): Promise<Result<PromptTemplateListResponse, ApiError>> {
+	async getPromptTemplates(): Promise<_Result<PromptTemplateListResponse, ApiError>> {
 		return this.fetch<PromptTemplateListResponse>('/api/templates');
 	}
 
 	/**
 	 * Get information for a specific prompt template
 	 */
-	async getPromptTemplateInfo(templateId: string): Promise<Result<PromptTemplateInfo, ApiError>> {
+	async getPromptTemplateInfo(templateId: string): Promise<_Result<PromptTemplateInfo, ApiError>> {
 		return this.fetch<PromptTemplateInfo>(`/api/templates/${encodeURIComponent(templateId)}`);
 	}
 
@@ -1486,21 +1497,21 @@ class ApiClient {
 	/**
 	 * Get current user's subscription information
 	 */
-	async getSubscription(): Promise<Result<SubscriptionResponse, ApiError>> {
+	async getSubscription(): Promise<_Result<SubscriptionResponse, ApiError>> {
 		return this.fetch<SubscriptionResponse>('/api/payment/subscription');
 	}
 
 	/**
 	 * Get current user's usage information and limits
 	 */
-	async getUsage(): Promise<Result<UsageLimitsResponse, ApiError>> {
+	async getUsage(): Promise<_Result<UsageLimitsResponse, ApiError>> {
 		return this.fetch<UsageLimitsResponse>('/api/payment/usage');
 	}
 
 	/**
 	 * Get available subscription plans
 	 */
-	async getPlans(): Promise<Result<PlansResponse, ApiError>> {
+	async getPlans(): Promise<_Result<PlansResponse, ApiError>> {
 		return this.fetch<PlansResponse>('/api/payment/plans');
 	}
 
@@ -1509,7 +1520,7 @@ class ApiClient {
 	 */
 	async createSubscription(
 		request: CreateSubscriptionRequest
-	): Promise<Result<CreateSubscriptionResponse, ApiError>> {
+	): Promise<_Result<CreateSubscriptionResponse, ApiError>> {
 		return this.fetch<CreateSubscriptionResponse>('/api/payment/subscription', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1519,7 +1530,7 @@ class ApiClient {
 	/**
 	 * Preview an order before checkout
 	 */
-	async previewOrder(request: OrderPreviewRequest): Promise<Result<OrderPreview, ApiError>> {
+	async previewOrder(request: OrderPreviewRequest): Promise<_Result<OrderPreview, ApiError>> {
 		return this.fetch<OrderPreview>('/api/payment/subscription/preview', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1531,7 +1542,7 @@ class ApiClient {
 	 */
 	async createPayment(
 		request: CreatePaymentRequest
-	): Promise<Result<CreatePaymentResponse, ApiError>> {
+	): Promise<_Result<CreatePaymentResponse, ApiError>> {
 		return this.fetch<CreatePaymentResponse>('/api/payment/payment', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1541,8 +1552,12 @@ class ApiClient {
 	/**
 	 * Verify a transaction and create/update subscription if valid
 	 */
-	async verifyTransaction(transactionId: string): Promise<Result<any, ApiError>> {
-		return this.fetch<any>(`/api/payment/transaction/${transactionId}/verify`);
+	async verifyTransaction(
+		transactionId: string
+	): Promise<_Result<TransactionVerificationResponse, ApiError>> {
+		return this.fetch<TransactionVerificationResponse>(
+			`/api/payment/transaction/${transactionId}/verify`
+		);
 	}
 
 	/**
@@ -1550,7 +1565,7 @@ class ApiClient {
 	 */
 	async cancelSubscription(
 		request: CancelSubscriptionRequest = {}
-	): Promise<Result<SubscriptionResponse, ApiError>> {
+	): Promise<_Result<SubscriptionResponse, ApiError>> {
 		return this.fetch<SubscriptionResponse>('/api/payment/subscription/cancel', {
 			method: 'POST',
 			body: JSON.stringify(request)
@@ -1560,7 +1575,7 @@ class ApiClient {
 	/**
 	 * Reactivate cancelled subscription
 	 */
-	async reactivateSubscription(): Promise<Result<SubscriptionResponse, ApiError>> {
+	async reactivateSubscription(): Promise<_Result<SubscriptionResponse, ApiError>> {
 		return this.fetch<SubscriptionResponse>('/api/payment/subscription/reactivate', {
 			method: 'POST',
 			body: JSON.stringify({})
@@ -1574,7 +1589,7 @@ class ApiClient {
 	/**
 	 * Get current user's credit balance
 	 */
-	async getCreditBalance(): Promise<Result<CreditBalanceResponse, ApiError>> {
+	async getCreditBalance(): Promise<_Result<CreditBalanceResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.credits) {
 			return err(new ApiResponseError(501, 'Credits feature not enabled'));
 		}
@@ -1587,7 +1602,7 @@ class ApiClient {
 	async getCreditTransactions(
 		limit = 50,
 		offset = 0
-	): Promise<Result<CreditTransactionsResponse, ApiError>> {
+	): Promise<_Result<CreditTransactionsResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.credits) {
 			return err(new ApiResponseError(501, 'Credits feature not enabled'));
 		}
@@ -1599,7 +1614,7 @@ class ApiClient {
 	/**
 	 * Get available credit packages for purchase
 	 */
-	async getCreditPackages(): Promise<Result<CreditPackagesResponse, ApiError>> {
+	async getCreditPackages(): Promise<_Result<CreditPackagesResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.credits) {
 			return err(new ApiResponseError(501, 'Credits feature not enabled'));
 		}
@@ -1609,7 +1624,7 @@ class ApiClient {
 	/**
 	 * Get model costs and pricing information
 	 */
-	async getModelCosts(): Promise<Result<ModelCostsResponse, ApiError>> {
+	async getModelCosts(): Promise<_Result<ModelCostsResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.credits) {
 			return err(new ApiResponseError(501, 'Credits feature not enabled'));
 		}
@@ -1619,7 +1634,7 @@ class ApiClient {
 	/**
 	 * Purchase a credit package
 	 */
-	async purchaseCredits(packageId: string): Promise<Result<PurchaseCreditsResponse, ApiError>> {
+	async purchaseCredits(packageId: string): Promise<_Result<PurchaseCreditsResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.credits) {
 			return err(new ApiResponseError(501, 'Credits feature not enabled'));
 		}
@@ -1632,7 +1647,7 @@ class ApiClient {
 	/**
 	 * Get current usage stats (daily and monthly)
 	 */
-	async getUsageStats(): Promise<Result<UsageResponse, ApiError>> {
+	async getUsageStats(): Promise<_Result<UsageResponse, ApiError>> {
 		if (!PAYMENT_FEATURES.enabled) {
 			return err(new ApiResponseError(501, 'Payment features not enabled'));
 		}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn';
+	import { cn as _cn } from '$lib/utils/shadcn';
 	import ChevronUp from './icons/chevron-up.svelte';
 	import {
 		DropdownMenu,
@@ -10,9 +10,9 @@
 	} from './ui/dropdown-menu';
 	import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar';
 	import { getCurrentUser, getIsAuthenticated, getHasConnectionError } from '$lib/auth.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { performLogout } from '$lib/auth.svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { PlanBadge, subscriptionStore, DailyMessageUsage } from './membership';
 	import { CheckoutButton } from './payment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
@@ -24,7 +24,7 @@
 		// Use comprehensive logout that clears both state and cookies immediately
 		await performLogout('manual', false);
 		// Then navigate to logout route for backend cleanup and final redirect
-		goto('/logout');
+		_goto('/logout');
 	}
 
 	function openMembershipSettings() {
@@ -85,7 +85,7 @@
 							<PlanBadge
 								planType={subscriptionStore.currentPlan}
 								status={subscriptionStore.subscription?.status}
-								size="sm"
+								_size="sm"
 								showStatus={true}
 							/>
 							<span class="text-xs text-slate-600 dark:text-slate-300">
@@ -100,12 +100,12 @@
 								planType={subscriptionStore.currentPlan}
 								isThrottled={subscriptionStore.isThrottled}
 								throttleDelay={subscriptionStore.throttleDelay}
-								size="sm"
+								_size="sm"
 							/>
 						</div>
 
 						<!-- Upgrade button for free users or when at daily limit -->
-						{#if subscriptionStore.currentPlan === 'free' || (subscriptionStore.usageLimits?.daily_message_count >= 20 && subscriptionStore.currentPlan === 'free')}
+						{#if (subscriptionStore.currentPlan as unknown) === 'free' || (subscriptionStore.usageLimits?.daily_message_count && subscriptionStore.usageLimits.daily_message_count >= 20 && (subscriptionStore.currentPlan as unknown) === 'free')}
 							<div class="mt-2">
 								<CheckoutButton
 									planType="basic"

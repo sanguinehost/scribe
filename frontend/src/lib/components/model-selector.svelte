@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -8,14 +8,18 @@
 	} from './ui/dropdown-menu';
 	import CheckCircleFillIcon from './icons/check-circle-fill.svelte';
 	import ChevronDownIcon from './icons/chevron-down.svelte';
-	import { cn } from '$lib/utils/shadcn';
-	import { chatModels, getAllAvailableModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
+	import { cn as _cn } from '$lib/utils/shadcn';
+	import {
+		chatModels as _chatModels,
+		getAllAvailableModels,
+		DEFAULT_CHAT_MODEL as _DEFAULT_CHAT_MODEL
+	} from '$lib/ai/models';
 	import type { ClassValue } from 'svelte/elements';
 	import type { ScribeChatSession } from '$lib/types';
 	import { SelectedModel } from '$lib/hooks/selected-model.svelte';
 	import { LLMStore } from '$lib/stores/llm.svelte';
 	import { ModelLifecycleStore } from '$lib/stores/modelLifecycle.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { creditStore } from '$lib/stores/credits';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
 	import { Coins } from 'lucide-svelte';
@@ -35,7 +39,7 @@
 
 	// When we have a chat, load and manage its model override
 	let chatModelOverride = $state<string>('');
-	let isLoadingChatSettings = $state(false);
+	let _isLoadingChatSettings = $state(false);
 
 	// Load chat settings when chat changes
 	$effect(() => {
@@ -49,18 +53,18 @@
 	async function loadChatSettings() {
 		if (!chat?.id) return;
 
-		isLoadingChatSettings = true;
+		_isLoadingChatSettings = true;
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				chatModelOverride = result.value.model_name || '';
 			} else {
 				console.error('Failed to load chat settings:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to load chat settings:', error);
+		} catch (_error) {
+			console.error('Failed to load chat settings:', _error);
 		} finally {
-			isLoadingChatSettings = false;
+			_isLoadingChatSettings = false;
 		}
 	}
 
@@ -72,7 +76,7 @@
 		const provider = selectedModel?.isLocal ? 'local' : 'gemini';
 
 		try {
-			const result = await apiClient.updateChatSessionSettings(chat.id, {
+			const result = await _apiClient.updateChatSessionSettings(chat.id, {
 				model_name: modelId || null,
 				model_provider: modelId ? provider : null
 			});
@@ -82,8 +86,8 @@
 			} else {
 				console.error('Failed to update chat model override:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to update chat model override:', error);
+		} catch (_error) {
+			console.error('Failed to update chat model override:', _error);
 		}
 	}
 
@@ -134,17 +138,17 @@
 <DropdownMenu {open} onOpenChange={(val) => (open = val)}>
 	<DropdownMenuTrigger>
 		{#snippet child({ props })}
-			<Button
+			<ButtonComponent
 				{...props}
 				variant="outline"
-				class={cn(
+				class={_cn(
 					'w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground md:h-[34px] md:px-2',
 					c
 				)}
 			>
 				{selectedChatModelDetails?.name}
 				<ChevronDownIcon />
-			</Button>
+			</ButtonComponent>
 		{/snippet}
 	</DropdownMenuTrigger>
 	<DropdownMenuContent align="start" class="min-w-[300px]">

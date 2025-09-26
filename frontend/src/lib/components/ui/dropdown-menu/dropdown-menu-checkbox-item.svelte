@@ -1,8 +1,9 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import { DropdownMenu as DropdownMenuPrimitive, type WithoutChildrenOrChild } from 'bits-ui';
 	import Check from '@lucide/svelte/icons/check';
 	import Minus from '@lucide/svelte/icons/minus';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { Snippet } from 'svelte';
 
 	let {
@@ -21,7 +22,7 @@
 	bind:ref
 	bind:checked
 	bind:indeterminate
-	class={cn(
+	class={_cn(
 		'relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50',
 		className
 	)}
@@ -32,7 +33,7 @@
 			{#if indeterminate}
 				<Minus class="size-4" />
 			{:else}
-				<Check class={cn('size-4', !checked && 'text-transparent')} />
+				<Check class={_cn('size-4', !checked && 'text-transparent')} />
 			{/if}
 		</span>
 		{@render childrenProp?.()}

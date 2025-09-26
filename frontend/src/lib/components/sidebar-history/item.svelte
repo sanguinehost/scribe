@@ -9,7 +9,7 @@
 	import { useSidebar, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem } from '../ui/sidebar';
 	import TrashIcon from '../icons/trash.svelte';
 	import MoreHorizontalIcon from '../icons/more-horizontal.svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 
 	let {
 		chat,
@@ -30,7 +30,7 @@
 			<button
 				{...props}
 				onclick={() => {
-					goto(`/chat/${chat.id}`);
+					_goto(`/chat/${chat.id}`);
 					context.setOpenMobile(false);
 				}}
 			>

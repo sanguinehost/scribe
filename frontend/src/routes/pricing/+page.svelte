@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import SubscriptionCheckout from '$lib/components/subscriptions/SubscriptionCheckout.svelte';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Loader, AlertCircle } from 'lucide-svelte';
@@ -23,7 +23,7 @@
 
 		try {
 			// Load available plans
-			const plansResult = await apiClient.getPlans();
+			const plansResult = await _apiClient.getPlans();
 			if (plansResult.isOk()) {
 				plans = plansResult.value.plans;
 				currentPlan = plansResult.value.current_plan || 'free';
@@ -42,7 +42,7 @@
 		if (!ENABLE_PAYMENTS) return;
 
 		try {
-			const result = await apiClient.createSubscription({
+			const result = await _apiClient.createSubscription({
 				plan_type: planType,
 				billing_period: billingCycle
 			});
@@ -77,7 +77,7 @@
 	) {
 		// For free plan, just redirect to app
 		if (event.detail.planType === 'free') {
-			goto('/');
+			_goto('/');
 		}
 	}
 </script>

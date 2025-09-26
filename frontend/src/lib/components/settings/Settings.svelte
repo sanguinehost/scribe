@@ -1,33 +1,36 @@
 <script lang="ts">
-	import { fly } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
-	import { Button } from '../ui/button';
+	import { fly as _fly } from 'svelte/transition';
+	import { quintOut as _quintOut } from 'svelte/easing';
+	import { Button as ButtonComponent } from '../ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 	import { Input } from '../ui/input';
 	import { Label } from '../ui/label';
-	import { Separator } from '../ui/separator';
-	import { Checkbox } from '../ui/checkbox';
+	import { Separator as _SeparatorComponent } from '../ui/separator';
+	import { Checkbox as _CheckboxComponent } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { chatModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
+	import { chatModels, DEFAULT_CHAT_MODEL as _DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
-	import { apiClient } from '$lib/api';
-	import type { UserSettingsResponse, UpdateUserSettingsRequest } from '$lib/types';
+	import { apiClient as _apiClient } from '$lib/api';
+	import type {
+		UserSettingsResponse as _UserSettingsResponse,
+		UpdateUserSettingsRequest
+	} from '$lib/types';
 	import { MembershipSettings } from '$lib/components/membership';
 
 	const settingsStore = SettingsStore.fromContext();
 
 	// Conditionally get LlmStore if feature is enabled
-	let llmStore = $state<any>(null);
+	let llmStore = $state<Record<string, unknown> | null>(null);
 
 	if (ENABLE_LOCAL_LLM) {
 		// Use dynamic import with immediate store access
 		import('$lib/stores/llm.svelte')
 			.then(({ getGlobalLlmStore }) => {
-				llmStore = getGlobalLlmStore();
+				llmStore = getGlobalLlmStore() as unknown as Record<string, unknown>;
 			})
 			.catch((e) => {
 				console.warn('LlmStore not available', e);
@@ -118,7 +121,7 @@
 				preferred_local_model: settings.preferred_local_model || null
 			};
 
-			const result = await apiClient.updateUserSettings(updateRequest);
+			const result = await _apiClient.updateUserSettings(updateRequest);
 			if (result.isOk()) {
 				toast.success('Settings saved successfully');
 				// Reload to show the updated settings
@@ -127,8 +130,8 @@
 				console.error('Failed to save settings:', result.error);
 				toast.error(`Failed to save settings: ${result.error.message}`);
 			}
-		} catch (error) {
-			console.error('Failed to save settings:', error);
+		} catch (_error) {
+			console.error('Failed to save settings:', _error);
 			toast.error('Failed to save settings');
 		} finally {
 			isLoading = false;
@@ -138,7 +141,7 @@
 	async function loadSettings() {
 		isLoading = true;
 		try {
-			const userSettingsResult = await apiClient.getUserSettings();
+			const userSettingsResult = await _apiClient.getUserSettings();
 			if (userSettingsResult.isOk()) {
 				const userSettings = userSettingsResult.value;
 				console.log('Loaded user settings:', userSettings);
@@ -180,8 +183,8 @@
 				console.error('Failed to load user settings:', userSettingsResult.error);
 				toast.error('Failed to load settings');
 			}
-		} catch (error) {
-			console.error('Failed to load settings:', error);
+		} catch (_error) {
+			console.error('Failed to load settings:', _error);
 			toast.error('Failed to load settings');
 		} finally {
 			isLoading = false;
@@ -236,8 +239,10 @@
 				<h1 class="text-2xl font-bold">Settings</h1>
 				<p class="text-muted-foreground">Configure default values and application preferences</p>
 			</div>
-			<Button variant="outline" onclick={resetToDefaults}>Reset to Defaults</Button>
-			<Button variant="ghost" onclick={closeSettings}>
+			<ButtonComponent variant="outline" onclick={resetToDefaults}
+				>Reset to Defaults</ButtonComponent
+			>
+			<ButtonComponent variant="ghost" onclick={closeSettings}>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -253,7 +258,7 @@
 					<path d="M6 12h12" />
 				</svg>
 				Close
-			</Button>
+			</ButtonComponent>
 		</div>
 
 		{#if isLoading}
@@ -390,7 +395,7 @@
 						<CardHeader class={expandedSections.advanced ? '' : 'pb-6'}>
 							<div class="flex items-center justify-between">
 								<CardTitle class="text-lg">Advanced Generation</CardTitle>
-								<Button
+								<ButtonComponent
 									variant="ghost"
 									size="sm"
 									onclick={() => (expandedSections.advanced = !expandedSections.advanced)}
@@ -400,7 +405,7 @@
 									{:else}
 										<ChevronDown />
 									{/if}
-								</Button>
+								</ButtonComponent>
 							</div>
 						</CardHeader>
 						{#if expandedSections.advanced}
@@ -451,7 +456,7 @@
 						<CardHeader class={expandedSections.gemini ? '' : 'pb-6'}>
 							<div class="flex items-center justify-between">
 								<CardTitle class="text-lg">Gemini-Specific Options</CardTitle>
-								<Button
+								<ButtonComponent
 									variant="ghost"
 									size="sm"
 									onclick={() => (expandedSections.gemini = !expandedSections.gemini)}
@@ -461,7 +466,7 @@
 									{:else}
 										<ChevronDown />
 									{/if}
-								</Button>
+								</ButtonComponent>
 							</div>
 						</CardHeader>
 						{#if expandedSections.gemini}
@@ -529,8 +534,8 @@
 
 				<!-- Save Button -->
 				<div class="flex justify-end gap-4 border-t pt-6">
-					<Button variant="outline" onclick={closeSettings}>Cancel</Button>
-					<Button onclick={saveSettings} disabled={isLoading}>
+					<ButtonComponent variant="outline" onclick={closeSettings}>Cancel</ButtonComponent>
+					<ButtonComponent onclick={saveSettings} disabled={isLoading}>
 						{#if isLoading}
 							<svg
 								class="-ml-1 mr-2 h-4 w-4 animate-spin"
@@ -556,7 +561,7 @@
 						{:else}
 							Save Settings
 						{/if}
-					</Button>
+					</ButtonComponent>
 				</div>
 			</div>
 		{/if}

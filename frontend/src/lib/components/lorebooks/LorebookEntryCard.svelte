@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { LorebookEntry } from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		Card,
 		CardContent,
@@ -8,7 +8,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Trash, Edit, Eye, EyeOff, Zap } from 'lucide-svelte';
 
 	interface Props {
@@ -20,18 +20,18 @@
 
 	let { entry, onEdit, onDelete, onToggleEnabled }: Props = $props();
 
-	function handleEdit(event: Event) {
-		event.stopPropagation();
+	function handleEdit(_event: Event) {
+		_event.stopPropagation();
 		onEdit?.(entry);
 	}
 
-	function handleDelete(event: Event) {
-		event.stopPropagation();
+	function handleDelete(_event: Event) {
+		_event.stopPropagation();
 		onDelete?.(entry);
 	}
 
-	function handleToggleEnabled(event: Event) {
-		event.stopPropagation();
+	function handleToggleEnabled(_event: Event) {
+		_event.stopPropagation();
 		onToggleEnabled?.(entry);
 	}
 
@@ -63,12 +63,12 @@
 					{entry.entry_title}
 					<div class="flex gap-1">
 						{#if entry.is_constant}
-							<Badge variant="secondary" class="text-xs">
+							<BadgeComponent variant="secondary" class="text-xs">
 								<Zap class="mr-1 h-3 w-3" />
 								Constant
-							</Badge>
+							</BadgeComponent>
 						{/if}
-						<Badge variant={entry.is_enabled ? 'default' : 'secondary'} class="text-xs">
+						<BadgeComponent variant={entry.is_enabled ? 'default' : 'secondary'} class="text-xs">
 							{#if entry.is_enabled}
 								<Eye class="mr-1 h-3 w-3" />
 								Enabled
@@ -76,7 +76,7 @@
 								<EyeOff class="mr-1 h-3 w-3" />
 								Disabled
 							{/if}
-						</Badge>
+						</BadgeComponent>
 					</div>
 				</CardTitle>
 
@@ -85,10 +85,12 @@
 						<span class="text-xs font-medium">Keywords:</span>
 						<div class="mt-1 flex flex-wrap gap-1">
 							{#each keywordsList.slice(0, 5) as keyword}
-								<Badge variant="outline" class="text-xs">{keyword}</Badge>
+								<BadgeComponent variant="outline" class="text-xs">{keyword}</BadgeComponent>
 							{/each}
 							{#if keywordsList.length > 5}
-								<Badge variant="outline" class="text-xs">+{keywordsList.length - 5} more</Badge>
+								<BadgeComponent variant="outline" class="text-xs"
+									>+{keywordsList.length - 5} more</BadgeComponent
+								>
 							{/if}
 						</div>
 					</CardDescription>
@@ -97,7 +99,7 @@
 
 			<div class="ml-2 flex gap-1">
 				{#if onToggleEnabled}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleToggleEnabled}
@@ -109,10 +111,10 @@
 						{:else}
 							<Eye class="h-4 w-4" />
 						{/if}
-					</Button>
+					</ButtonComponent>
 				{/if}
 				{#if onEdit}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleEdit}
@@ -120,10 +122,10 @@
 						aria-label="Edit entry"
 					>
 						<Edit class="h-4 w-4" />
-					</Button>
+					</ButtonComponent>
 				{/if}
 				{#if onDelete}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleDelete}
@@ -131,7 +133,7 @@
 						aria-label="Delete entry"
 					>
 						<Trash class="h-4 w-4" />
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 		</div>

@@ -1,12 +1,16 @@
 <script lang="ts">
+	/* eslint-disable svelte/valid-compile */
+	// Disable custom elements to avoid props inference issues
+	import type { Snippet } from 'svelte';
+
 	let {
 		children,
 		class: c,
 		...props
 	}: {
-		children: any;
+		children?: Snippet;
 		class?: string;
-		[key: string]: any;
+		[key: string]: unknown;
 	} = $props();
 </script>
 

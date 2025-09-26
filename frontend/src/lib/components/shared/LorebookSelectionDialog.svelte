@@ -8,13 +8,13 @@
 		DialogDescription,
 		DialogFooter
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from 'svelte-sonner';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { Lorebook, EnhancedChatSessionLorebookAssociation } from '$lib/types';
 	import type { ApiError } from '$lib/errors/api';
 	import type { Result } from 'neverthrow';
@@ -73,16 +73,16 @@
 	async function loadLorebooks() {
 		loading = true;
 		try {
-			const result = await apiClient.getLorebooks();
+			const result = await _apiClient.getLorebooks();
 			if (result.isOk()) {
 				lorebooks = result.value;
 			} else {
 				toast.error('Failed to load lorebooks');
 				console.error('Failed to load lorebooks:', result.error);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('An error occurred while loading lorebooks');
-			console.error('Error loading lorebooks:', error);
+			console.error('Error loading lorebooks:', _error);
 		} finally {
 			loading = false;
 		}
@@ -115,7 +115,7 @@
 
 		loading = true;
 		try {
-			const actions: Promise<Result<any, ApiError>>[] = [];
+			const actions: Promise<Result<unknown, ApiError>>[] = [];
 
 			for (const lorebook of lorebooks) {
 				const isCurrentlySelectedInUI = originalAssociationIds.has(lorebook.id);
@@ -151,7 +151,7 @@
 					if (existingCharacterAssociation && isCharacterLorebookEffectivelyDisabled) {
 						// If it's a character lorebook that was disabled, restore it.
 						console.log(`Restoring character lorebook override for ${lorebook.name}`);
-						actions.push(apiClient.setCharacterLorebookOverride(chatId, lorebook.id, 'enable'));
+						actions.push(_apiClient.setCharacterLorebookOverride(chatId, lorebook.id, 'enable'));
 					}
 
 					if (!existingChatAssociation) {
@@ -159,7 +159,7 @@
 						// This covers cases where it's a brand new manual lorebook,
 						// or a character lorebook that was disabled and now also manually added.
 						console.log(`Associating new manual lorebook: ${lorebook.name}`);
-						actions.push(apiClient.associateLorebookToChat(chatId, lorebook.id));
+						actions.push(_apiClient.associateLorebookToChat(chatId, lorebook.id));
 					}
 				} else if (!isNewlySelectedInUI && isCurrentlySelectedInUI) {
 					// User unchecked the box for this lorebook.
@@ -168,13 +168,13 @@
 					if (existingChatAssociation) {
 						// If there's a manual association, disassociate it.
 						console.log(`Disassociating manual lorebook: ${lorebook.name}`);
-						actions.push(apiClient.disassociateLorebookFromChat(chatId, lorebook.id));
+						actions.push(_apiClient.disassociateLorebookFromChat(chatId, lorebook.id));
 					}
 
 					if (existingCharacterAssociation && isCharacterLorebookEffectivelyActive) {
 						// If it's a character lorebook that was active, disable it.
 						console.log(`Disabling character lorebook override for ${lorebook.name}`);
-						actions.push(apiClient.setCharacterLorebookOverride(chatId, lorebook.id, 'disable'));
+						actions.push(_apiClient.setCharacterLorebookOverride(chatId, lorebook.id, 'disable'));
 					}
 				}
 			}
@@ -191,7 +191,7 @@
 			}
 
 			// Reload current associations (fetch enhanced version)
-			const associationsResult = await apiClient.getChatLorebookAssociations(chatId, true);
+			const associationsResult = await _apiClient.getChatLorebookAssociations(chatId, true);
 			if (associationsResult.isOk()) {
 				dispatch('updated', { associations: associationsResult.value });
 				toast.success('Lorebook associations updated successfully');
@@ -200,10 +200,10 @@
 			}
 
 			handleClose();
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+		} catch (_error) {
+			const errorMessage = _error instanceof Error ? _error.message : 'An unknown error occurred';
 			toast.error(`Failed to update associations: ${errorMessage}`);
-			console.error('Error updating lorebook associations:', error);
+			console.error('Error updating lorebook associations:', _error);
 		} finally {
 			loading = false;
 		}
@@ -246,13 +246,13 @@
 			<!-- Selected count -->
 			{#if selectedLorebookIds.size > 0}
 				<div class="flex items-center gap-2">
-					<Badge variant="secondary">
+					<BadgeComponent variant="secondary">
 						{selectedLorebookIds.size} selected
-					</Badge>
+					</BadgeComponent>
 					{#if hasChanges}
-						<Badge variant="outline" class="border-orange-600 text-orange-600">
+						<BadgeComponent variant="outline" class="border-orange-600 text-orange-600">
 							Changes pending
-						</Badge>
+						</BadgeComponent>
 					{/if}
 				</div>
 			{/if}
@@ -313,14 +313,16 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={handleClose} disabled={loading}>Cancel</Button>
-			<Button onclick={saveChanges} disabled={loading || !hasChanges}>
+			<ButtonComponent variant="outline" onclick={handleClose} disabled={loading}
+				>Cancel</ButtonComponent
+			>
+			<ButtonComponent onclick={saveChanges} disabled={loading || !hasChanges}>
 				{#if loading}
 					Updating...
 				{:else}
 					Save Changes
 				{/if}
-			</Button>
+			</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

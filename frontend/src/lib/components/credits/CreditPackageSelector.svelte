@@ -2,9 +2,9 @@
 	import { onMount } from 'svelte';
 	import { creditStore } from '$lib/stores/credits';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Coins, Zap, Star, Loader } from 'lucide-svelte';
 	import type { CreditPackage } from '$lib/types/payment';
 
@@ -89,9 +89,9 @@
 				<div class="mb-4 text-sm text-destructive">
 					Failed to load credit packages: {error}
 				</div>
-				<Button variant="outline" size="sm" on:click={() => creditStore.fetchPackages()}>
+				<ButtonComponent variant="outline" size="sm" onclick={() => creditStore.fetchPackages()}>
 					Retry
-				</Button>
+				</ButtonComponent>
 			</div>
 		{:else if isLoading}
 			<div class="flex items-center justify-center py-8">
@@ -113,27 +113,27 @@
 						pkg.package_id
 							? 'ring-2 ring-primary'
 							: ''}"
-						on:click={() => onPackageSelect(pkg)}
+						onclick={() => onPackageSelect(pkg)}
 					>
 						{#if pkg.package_id === bestValueId}
 							<div class="absolute -right-2 -top-2">
-								<Badge
+								<BadgeComponent
 									variant="secondary"
 									class="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
 								>
 									<Star class="mr-1 h-3 w-3" />
 									Best Value
-								</Badge>
+								</BadgeComponent>
 							</div>
 						{:else if pkg.package_id === popularId}
 							<div class="absolute -right-2 -top-2">
-								<Badge
+								<BadgeComponent
 									variant="secondary"
 									class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
 								>
 									<Zap class="mr-1 h-3 w-3" />
 									Popular
-								</Badge>
+								</BadgeComponent>
 							</div>
 						{/if}
 
@@ -160,17 +160,17 @@
 								≈ ${((pkg.price_cents / pkg.credits) * 100).toFixed(3)} per credit
 							</div>
 
-							<Button
+							<ButtonComponent
 								variant={selectedPackageId === pkg.package_id ? 'default' : 'outline'}
 								size="sm"
 								class="w-full"
-								on:click={(e) => {
+								onclick={(e) => {
 									e.stopPropagation();
 									onPackageSelect(pkg);
 								}}
 							>
 								{selectedPackageId === pkg.package_id ? 'Selected' : 'Select Package'}
-							</Button>
+							</ButtonComponent>
 						</Card.Content>
 					</Card.Root>
 				{/each}

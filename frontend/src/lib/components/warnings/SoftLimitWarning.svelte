@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { AlertTriangle, Clock, Zap } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
 	import type { SoftLimitStatus } from '$lib/types/payment';
@@ -53,10 +53,10 @@
 				Rate limited (+{formatDelay(safeDelayMs)} delay)
 			</span>
 			{#if showUpgradeButton}
-				<Button variant="outline" size="sm" on:click={onUpgrade} class="ml-2">
+				<ButtonComponent variant="outline" size="sm" onclick={onUpgrade} class="ml-2">
 					<Zap class="mr-1 h-3 w-3" />
 					Upgrade
-				</Button>
+				</ButtonComponent>
 			{/if}
 		</div>
 	{:else}
@@ -99,17 +99,17 @@
 
 				{#if showUpgradeButton}
 					<div class="flex gap-2 pt-2">
-						<Button on:click={onUpgrade} size="sm">
+						<ButtonComponent onclick={onUpgrade} size="sm">
 							<Zap class="mr-1.5 h-4 w-4" />
 							Upgrade Plan
-						</Button>
-						<Button
+						</ButtonComponent>
+						<ButtonComponent
 							variant="outline"
 							size="sm"
-							on:click={() => window.open('/docs/rate-limits', '_blank')}
+							onclick={() => window.open('/docs/rate-limits', '_blank')}
 						>
 							Learn More
-						</Button>
+						</ButtonComponent>
 					</div>
 				{/if}
 			</AlertDescription>

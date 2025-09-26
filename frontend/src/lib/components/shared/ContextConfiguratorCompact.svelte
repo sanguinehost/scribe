@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 
@@ -124,7 +124,7 @@
 			<div class="flex items-center justify-between">
 				<Label for="total-context-limit-compact" class="text-xs">Total Context (tokens)</Label>
 				<div class="flex gap-1">
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
@@ -136,8 +136,8 @@
 						}}
 					>
 						4K
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
@@ -149,8 +149,8 @@
 						}}
 					>
 						8K
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
@@ -162,8 +162,8 @@
 						}}
 					>
 						32K
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
@@ -175,8 +175,8 @@
 						}}
 					>
 						128K
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						class="h-5 px-1 text-xs"
@@ -188,7 +188,7 @@
 						}}
 					>
 						200K
-					</Button>
+					</ButtonComponent>
 				</div>
 			</div>
 			<Input
@@ -235,7 +235,7 @@
 	<div class="space-y-1">
 		<Label class="text-xs">Quick Presets</Label>
 		<div class="flex gap-1">
-			<Button
+			<ButtonComponent
 				variant="outline"
 				size="sm"
 				onclick={() => {
@@ -246,8 +246,8 @@
 				class="h-7 flex-1 text-xs"
 			>
 				Efficient
-			</Button>
-			<Button
+			</ButtonComponent>
+			<ButtonComponent
 				variant="outline"
 				size="sm"
 				onclick={() => {
@@ -258,8 +258,8 @@
 				class="h-7 flex-1 text-xs"
 			>
 				Balanced
-			</Button>
-			<Button
+			</ButtonComponent>
+			<ButtonComponent
 				variant="outline"
 				size="sm"
 				onclick={() => {
@@ -270,7 +270,7 @@
 				class="h-7 flex-1 text-xs"
 			>
 				Large
-			</Button>
+			</ButtonComponent>
 		</div>
 	</div>
 

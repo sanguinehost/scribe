@@ -67,7 +67,17 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 
 			if (name && value !== undefined) {
 				// Parse cookie attributes
-				const cookieOptions: any = {};
+				const cookieOptions: {
+					path: string; // Required by SvelteKit
+					domain?: string;
+					maxAge?: number;
+					expires?: Date;
+					secure?: boolean;
+					httpOnly?: boolean;
+					sameSite?: 'strict' | 'lax' | 'none';
+				} = {
+					path: '/' // Default value
+				};
 
 				for (const attr of attributes) {
 					const [key, val] = attr.split('=', 2);
@@ -110,6 +120,11 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 							cookieOptions.sameSite = val as 'strict' | 'lax' | 'none';
 							break;
 					}
+				}
+
+				// Ensure path is set (required by SvelteKit)
+				if (!cookieOptions.path) {
+					cookieOptions.path = '/';
 				}
 
 				// Set the cookie on the browser via SvelteKit

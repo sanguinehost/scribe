@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser as _browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import CheckoutOverlay from './CheckoutOverlay.svelte';
 	import type { PlanType } from '$lib/types';
@@ -28,7 +28,7 @@
 	 * Open checkout overlay
 	 */
 	function handleOpenCheckout() {
-		if (!browser || !ENABLE_PAYMENTS || disabled || loading) {
+		if (!_browser || !ENABLE_PAYMENTS || disabled || loading) {
 			return;
 		}
 
@@ -45,8 +45,8 @@
 	/**
 	 * Handle checkout completion
 	 */
-	function handleCheckoutComplete(event: CustomEvent<{ transactionId: string }>) {
-		dispatch('checkout-complete', event.detail);
+	function handleCheckoutComplete(_event: CustomEvent<{ transactionId: string }>) {
+		dispatch('checkout-complete', _event.detail);
 		isOverlayOpen = false;
 	}
 
@@ -69,7 +69,7 @@
 		class:loading={checkoutLoading}
 		class:disabled={isDisabled}
 		disabled={isDisabled}
-		on:click={handleOpenCheckout}
+		onclick={handleOpenCheckout}
 		type="button"
 	>
 		{#if showSpinner}

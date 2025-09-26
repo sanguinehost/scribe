@@ -29,10 +29,10 @@ class SidebarState {
 	state = $derived.by(() => (this.open ? 'expanded' : 'collapsed'));
 	openedByHover = $state(false);
 
-	constructor(props: SidebarStateProps) {
-		this.setOpen = props.setOpen;
+	constructor(_props: SidebarStateProps) {
+		this.setOpen = _props.setOpen;
 		this.#isMobile = new IsMobile();
-		this.props = props;
+		this.props = _props;
 	}
 
 	// Convenience getter for checking if the sidebar is mobile
@@ -49,8 +49,8 @@ class SidebarState {
 		}
 	};
 
-	setOpenMobile = (value: boolean) => {
-		this.openMobile = value;
+	setOpenMobile = (_value: boolean) => {
+		this.openMobile = _value;
 	};
 
 	toggle = () => {
@@ -72,8 +72,8 @@ const SYMBOL_KEY = 'scn-sidebar';
  * @param props The constructor props for the `SidebarState` class.
  * @returns  The `SidebarState` instance.
  */
-export function setSidebar(props: SidebarStateProps): SidebarState {
-	return setContext(Symbol.for(SYMBOL_KEY), new SidebarState(props));
+export function setSidebar(_props: SidebarStateProps): SidebarState {
+	return setContext(Symbol.for(SYMBOL_KEY), new SidebarState(_props));
 }
 
 /**

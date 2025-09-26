@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { apiClient } from '$lib/api';
+	import { goto as _goto } from '$app/navigation';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { ApiResponseError, ApiNetworkError, ApiClientError } from '$lib/errors/api';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import Input from '$lib/components/ui/input/input.svelte';
@@ -32,7 +32,7 @@
 
 		try {
 			// 1. Register the user
-			const registerResult = await apiClient.createUser({ email, username, password });
+			const registerResult = await _apiClient.createUser({ email, username, password });
 
 			if (registerResult.isOk()) {
 				const authUser = registerResult.value;
@@ -40,7 +40,7 @@
 
 				// Registration successful, redirect to signin page
 				toast.success('Registration successful! Please sign in.');
-				goto('/signin');
+				_goto('/signin');
 			} else {
 				// Handle registration error
 				console.error('Registration failed:', registerResult.error);

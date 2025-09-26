@@ -2,11 +2,11 @@
 	import { useSidebar } from './ui/sidebar';
 	import SidebarToggle from './sidebar-toggle.svelte';
 	import ModelSelector from './model-selector.svelte';
-	import { Badge } from './ui/badge';
-	import { Button } from './ui/button';
+	import { Badge as BadgeComponent } from './ui/badge';
+	import { Button as _ButtonComponent } from './ui/button';
 	import { ScrollText } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types'; // Updated import path
 	import type { ScribeChatSession } from '$lib/types'; // Use Scribe type
@@ -15,7 +15,7 @@
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
 
 	let {
-		user,
+		user: _user,
 		chat,
 		readonly
 	}: {
@@ -24,7 +24,7 @@
 		readonly: boolean;
 	} = $props();
 
-	const sidebar = useSidebar();
+	const _sidebar = useSidebar();
 
 	// Chronicle state management (same pattern as ChatConfigPanel)
 	let currentChronicleId = $state<string | null>(null);
@@ -95,7 +95,7 @@
 		if (!chat?.id) return;
 		isLoadingSettings = true;
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				const settings = result.value;
 				// Update currentChronicleId from the fresh backend settings
@@ -107,8 +107,8 @@
 				// Fallback to chat prop if API fails
 				currentChronicleId = chat.chronicle_id || null;
 			}
-		} catch (error) {
-			console.error('[Chat Header] Error loading chat settings:', error);
+		} catch (_error) {
+			console.error('[Chat Header] Error loading chat settings:', _error);
 			// Fallback to chat prop if error occurs
 			currentChronicleId = chat.chronicle_id || null;
 		} finally {
@@ -132,21 +132,21 @@
 	<SidebarToggle />
 
 	{#if isLoadingSettings}
-		<Badge variant="secondary" class="gap-1">
+		<BadgeComponent variant="secondary" class="gap-1">
 			<ScrollText class="h-3 w-3 animate-spin" />
 			Loading...
-		</Badge>
+		</BadgeComponent>
 	{:else if hasChronicleId}
 		{#if currentChronicle}
-			<Badge variant="secondary" class="gap-1">
+			<BadgeComponent variant="secondary" class="gap-1">
 				<ScrollText class="h-3 w-3" />
 				{currentChronicle.name}
-			</Badge>
+			</BadgeComponent>
 		{:else}
-			<Badge variant="secondary" class="gap-1">
+			<BadgeComponent variant="secondary" class="gap-1">
 				<ScrollText class="h-3 w-3" />
 				Chronicle (Loading...)
-			</Badge>
+			</BadgeComponent>
 		{/if}
 
 		{#if !readonly && chat}

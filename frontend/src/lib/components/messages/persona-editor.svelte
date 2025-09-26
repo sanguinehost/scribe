@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 	import type { CreateUserPersonaRequest } from '$lib/types';
-	import { apiClient } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
+	import { apiClient as _apiClient } from '$lib/api';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
@@ -25,7 +25,7 @@
 		onSuccess?: () => void;
 	} = $props();
 
-	const dispatch = createEventDispatcher();
+	const _dispatch = createEventDispatcher();
 	const selectedPersonaStore = SelectedPersonaStore.fromContext();
 
 	let isCreating = $state(false);
@@ -60,7 +60,7 @@
 
 		isCreating = true;
 		try {
-			const result = await apiClient.createUserPersona(formData);
+			const result = await _apiClient.createUserPersona(formData);
 
 			if (result.isOk()) {
 				toast.success('Persona created successfully!');
@@ -74,7 +74,7 @@
 				console.error('Failed to create persona:', result.error);
 				toast.error(`Failed to create persona: ${result.error.message}`);
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('Failed to create persona:', error);
 			toast.error('Failed to create persona. Please try again.');
 		} finally {
@@ -103,9 +103,9 @@
 		}
 	}
 
-	function handleTagKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
+	function handleTagKeydown(_event: KeyboardEvent) {
+		if (_event.key === 'Enter') {
+			_event.preventDefault();
 			addTag();
 		}
 	}
@@ -150,7 +150,7 @@
 
 					<div class="space-y-2">
 						<Label for="description">Description *</Label>
-						<Textarea
+						<TextareaComponent
 							id="description"
 							bind:value={formData.description}
 							placeholder="Describe this persona's purpose and characteristics..."
@@ -163,7 +163,7 @@
 						<Label>Tags</Label>
 						<div class="mb-2 flex flex-wrap gap-2">
 							{#each formData.tags || [] as tag}
-								<Badge variant="secondary" class="flex items-center gap-1">
+								<BadgeComponent variant="secondary" class="flex items-center gap-1">
 									{tag}
 									<button
 										type="button"
@@ -172,7 +172,7 @@
 									>
 										<X class="h-3 w-3" />
 									</button>
-								</Badge>
+								</BadgeComponent>
 							{/each}
 						</div>
 						<div class="flex gap-2">
@@ -182,16 +182,16 @@
 								onkeydown={handleTagKeydown}
 								class="flex-1"
 							/>
-							<Button type="button" onclick={addTag} size="sm" variant="outline">
+							<ButtonComponent type="button" onclick={addTag} size="sm" variant="outline">
 								<Plus class="h-4 w-4" />
-							</Button>
+							</ButtonComponent>
 						</div>
 					</div>
 				</div>
 
 				<!-- Advanced Options -->
 				<div class="space-y-4">
-					<Button
+					<ButtonComponent
 						type="button"
 						variant="ghost"
 						class="flex w-full items-center justify-between p-3 text-left hover:bg-muted/50"
@@ -203,7 +203,7 @@
 						{:else}
 							<ChevronDown class="h-5 w-5" />
 						{/if}
-					</Button>
+					</ButtonComponent>
 
 					{#if showAdvancedOptions}
 						<div class="space-y-6 rounded-lg border bg-muted/20 p-4">
@@ -213,7 +213,7 @@
 
 								<div class="space-y-2">
 									<Label for="personality">Personality</Label>
-									<Textarea
+									<TextareaComponent
 										id="personality"
 										bind:value={formData.personality}
 										placeholder="Describe the personality traits, speaking style, and character..."
@@ -223,7 +223,7 @@
 
 								<div class="space-y-2">
 									<Label for="scenario">Scenario</Label>
-									<Textarea
+									<TextareaComponent
 										id="scenario"
 										bind:value={formData.scenario}
 										placeholder="Describe the context or situation this persona operates in..."
@@ -238,7 +238,7 @@
 
 								<div class="space-y-2">
 									<Label for="first_mes">First Message</Label>
-									<Textarea
+									<TextareaComponent
 										id="first_mes"
 										bind:value={formData.first_mes}
 										placeholder="The first message this persona will send..."
@@ -248,7 +248,7 @@
 
 								<div class="space-y-2">
 									<Label for="system_prompt">System Prompt</Label>
-									<Textarea
+									<TextareaComponent
 										id="system_prompt"
 										bind:value={formData.system_prompt}
 										placeholder="System-level instructions for how this persona should behave..."
@@ -258,7 +258,7 @@
 
 								<div class="space-y-2">
 									<Label for="mes_example">Message Examples</Label>
-									<Textarea
+									<TextareaComponent
 										id="mes_example"
 										bind:value={formData.mes_example}
 										placeholder="Example messages to help train the persona's style..."
@@ -268,7 +268,7 @@
 
 								<div class="space-y-2">
 									<Label for="post_history_instructions">Post-History Instructions</Label>
-									<Textarea
+									<TextareaComponent
 										id="post_history_instructions"
 										bind:value={formData.post_history_instructions}
 										placeholder="Instructions to apply after the conversation history..."
@@ -282,10 +282,15 @@
 
 				<!-- Action Buttons -->
 				<div class="flex flex-col gap-3 pt-4 sm:flex-row sm:justify-end">
-					<Button type="button" variant="outline" onclick={handleCancel} disabled={isCreating}>
+					<ButtonComponent
+						type="button"
+						variant="outline"
+						onclick={handleCancel}
+						disabled={isCreating}
+					>
 						Cancel
-					</Button>
-					<Button
+					</ButtonComponent>
+					<ButtonComponent
 						type="submit"
 						disabled={isCreating || !formData.name.trim() || !formData.description.trim()}
 					>
@@ -314,7 +319,7 @@
 						{:else}
 							Create Persona
 						{/if}
-					</Button>
+					</ButtonComponent>
 				</div>
 			</form>
 		</CardContent>

@@ -6,7 +6,7 @@
 		DialogTitle,
 		DialogDescription
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 
 	interface Props {
 		open: boolean;
@@ -68,8 +68,8 @@
 		</div>
 
 		<div class="flex justify-end gap-3">
-			<Button variant="outline" onclick={onClose}>Cancel</Button>
-			<Button onclick={handleExport}>Export</Button>
+			<ButtonComponent variant="outline" onclick={onClose}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={handleExport}>Export</ButtonComponent>
 		</div>
 	</DialogContent>
 </Dialog>

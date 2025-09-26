@@ -46,5 +46,12 @@ export default ts.config(
 				parser: ts.parser
 			}
 		}
+	},
+	{
+		// Disable custom element props validation for UI components
+		files: ['src/lib/components/ui/**/*.svelte'],
+		rules: {
+			'svelte/valid-compile': 'off'
+		}
 	}
 );

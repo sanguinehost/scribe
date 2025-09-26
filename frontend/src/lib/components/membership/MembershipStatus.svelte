@@ -4,7 +4,7 @@
 	import PlanBadge from './PlanBadge.svelte';
 	import UsageIndicator from './UsageIndicator.svelte';
 	import { CheckoutButton } from '$lib/components/payment';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 
 	// Props
 	export let compact: boolean = false;
@@ -13,12 +13,12 @@
 
 	// Reactive subscription data
 	$: subscription = subscriptionStore.subscription;
-	$: planFeatures = subscriptionStore.planFeatures;
+	$: _planFeatures = subscriptionStore.planFeatures;
 	$: usageLimits = subscriptionStore.usageLimits;
 	$: loading = subscriptionStore.loading;
 	$: error = subscriptionStore.error;
 	$: currentPlan = subscriptionStore.currentPlan;
-	$: isSubscribed = subscriptionStore.isSubscribed;
+	$: _isSubscribed = subscriptionStore.isSubscribed;
 	$: isTrialing = subscriptionStore.isTrialing;
 	$: trialDaysRemaining = subscriptionStore.trialDaysRemaining;
 	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
@@ -90,7 +90,7 @@
 					<PlanBadge
 						planType={currentPlan}
 						status={subscription?.status}
-						size={compact ? 'sm' : 'md'}
+						_size={compact ? 'sm' : 'md'}
 						showStatus={true}
 					/>
 
@@ -108,9 +108,13 @@
 
 				{#if !compact && showUpgradeButton && currentPlan !== 'premium'}
 					{#if currentPlan === 'free'}
-						<Button variant="default" size="sm" on:click={handleUpgrade}>Upgrade</Button>
+						<ButtonComponent variant="default" size="sm" onclick={handleUpgrade}
+							>Upgrade</ButtonComponent
+						>
 					{:else}
-						<Button variant="outline" size="sm" on:click={handleManageSubscription}>Manage</Button>
+						<ButtonComponent variant="outline" size="sm" onclick={handleManageSubscription}
+							>Manage</ButtonComponent
+						>
 					{/if}
 				{/if}
 			</div>
@@ -138,7 +142,9 @@
 								buttonClass="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
 							/>
 						{:else}
-							<Button variant="default" size="sm" on:click={handleUpgrade}>View Plans</Button>
+							<ButtonComponent variant="default" size="sm" onclick={handleUpgrade}
+								>View Plans</ButtonComponent
+							>
 						{/if}
 					</div>
 				</div>
@@ -154,7 +160,9 @@
 							<strong>Trial Active:</strong>
 							{trialDaysRemaining} days remaining
 						</p>
-						<Button variant="default" size="sm" on:click={handleUpgrade}>Subscribe Now</Button>
+						<ButtonComponent variant="default" size="sm" onclick={handleUpgrade}
+							>Subscribe Now</ButtonComponent
+						>
 					</div>
 				</div>
 			{/if}
@@ -164,7 +172,7 @@
 	<!-- Fallback when payments are disabled -->
 	<div class="membership-status">
 		<div class="flex items-center gap-3">
-			<PlanBadge planType="free" size={compact ? 'sm' : 'md'} />
+			<PlanBadge planType="free" _size={compact ? 'sm' : 'md'} />
 			{#if !compact}
 				<span class="text-sm text-slate-600 dark:text-slate-300"> Payments not available </span>
 			{/if}

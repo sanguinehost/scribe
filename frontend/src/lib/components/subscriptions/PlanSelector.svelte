@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		Card,
 		CardContent,
@@ -9,7 +9,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Check, Zap, Star, Crown } from 'lucide-svelte';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import type { PlanFeatures, PlanType } from '$lib/types/payment';
@@ -30,7 +30,7 @@
 		billingCycle = 'monthly',
 		onPlanSelect = () => {},
 		onBillingCycleChange = () => {},
-		selectedPlan = null,
+		selectedPlan = undefined,
 		isLoading = false
 	}: Props = $props();
 
@@ -161,7 +161,7 @@
 					'monthly'
 						? 'bg-background text-foreground shadow-sm'
 						: 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => billingCycle === 'yearly' && handleBillingToggle()}
+					onclick={() => billingCycle === 'yearly' && handleBillingToggle()}
 					disabled={isLoading}
 				>
 					Monthly
@@ -171,13 +171,16 @@
 					'yearly'
 						? 'bg-background text-foreground shadow-sm'
 						: 'text-muted-foreground hover:text-foreground'}"
-					on:click={() => billingCycle === 'monthly' && handleBillingToggle()}
+					onclick={() => billingCycle === 'monthly' && handleBillingToggle()}
 					disabled={isLoading}
 				>
 					Yearly
-					<Badge variant="secondary" class="absolute -right-2 -top-2 px-1.5 py-0.5 text-xs">
+					<BadgeComponent
+						variant="secondary"
+						class="absolute -right-2 -top-2 px-1.5 py-0.5 text-xs"
+					>
 						Save 17%
-					</Badge>
+					</BadgeComponent>
 				</button>
 			</div>
 		</div>
@@ -196,7 +199,9 @@
 				<div class="relative">
 					{#if recommended && billingCycle === 'yearly'}
 						<div class="absolute -top-3 left-1/2 z-10 -translate-x-1/2 transform">
-							<Badge class="bg-primary text-primary-foreground">Most Popular</Badge>
+							<BadgeComponent class="bg-primary text-primary-foreground"
+								>Most Popular</BadgeComponent
+							>
 						</div>
 					{/if}
 
@@ -249,15 +254,17 @@
 
 						<CardFooter>
 							{#if isCurrent}
-								<Button disabled class="w-full" variant="outline">Current Plan</Button>
+								<ButtonComponent disabled class="w-full" variant="outline"
+									>Current Plan</ButtonComponent
+								>
 							{:else}
-								<Button
+								<ButtonComponent
 									class="w-full {recommended && billingCycle === 'yearly'
 										? 'bg-primary hover:bg-primary/90'
 										: ''}"
 									variant={recommended && billingCycle === 'yearly' ? 'default' : 'outline'}
 									disabled={isLoading}
-									on:click={() => handlePlanSelect(plan.plan_type)}
+									onclick={() => handlePlanSelect(plan.plan_type)}
 								>
 									{#if plan.plan_type === 'free'}
 										Start Free
@@ -266,7 +273,7 @@
 									{:else}
 										Switch to {plan.display_name}
 									{/if}
-								</Button>
+								</ButtonComponent>
 							{/if}
 						</CardFooter>
 					</Card>

@@ -58,7 +58,7 @@ export function setAuthenticated(user: User): void {
 	hasShownSessionInvalidated = false;
 
 	// Dispatch auth success event for other parts of the app
-	if (browser) {
+	if (_browser) {
 		window.dispatchEvent(new CustomEvent('auth:success'));
 	}
 
@@ -87,7 +87,7 @@ export function setConnectionError(): void {
 	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Connection error detected.`);
 
 	// Debounce the toast notification to avoid showing multiple identical toasts
-	if (browser && !hasShownConnectionError) {
+	if (_browser && !hasShownConnectionError) {
 		hasShownConnectionError = true;
 		window.dispatchEvent(new CustomEvent('auth:connection-error'));
 
@@ -130,7 +130,7 @@ export async function performLogout(
 		auth.hasConnectionError = false;
 
 		// Clear cookies with priority on client-side (immediate) then server-side (HttpOnly backup)
-		if (browser) {
+		if (_browser) {
 			// 1. IMMEDIATE: Clear cookies client-side first (works for non-HttpOnly cookies)
 			clearSessionCookies();
 
@@ -166,7 +166,7 @@ export async function performLogout(
 		hasShownSessionInvalidated = false;
 
 		// Show notification and handle events based on reason
-		if (browser && showNotification) {
+		if (_browser && showNotification) {
 			if (reason === 'expired' && !hasShownSessionInvalidated) {
 				hasShownSessionInvalidated = true;
 				console.log(
@@ -218,7 +218,7 @@ export function clearConnectionError(): void {
 
 // Enhanced client-side cookie clearing utility that works in both local and cloud environments
 function clearSessionCookies(): void {
-	if (!browser) return;
+	if (!_browser) return;
 
 	try {
 		// Get current domain info for more targeted deletion
@@ -292,7 +292,7 @@ function clearSessionCookies(): void {
 			try {
 				document.cookie = cookieString;
 				successCount++;
-			} catch (e) {
+			} catch (_e) {
 				// Silently continue if any specific cookie deletion fails
 			}
 		});
@@ -300,14 +300,14 @@ function clearSessionCookies(): void {
 		console.log(
 			`[${new Date().toISOString()}] auth.svelte.ts: Session cookies cleared from client-side (${successCount}/${cookieOptions.length} attempts successful)`
 		);
-	} catch (error) {
-		console.warn(`[${new Date().toISOString()}] auth.svelte.ts: Error clearing cookies:`, error);
+	} catch (_error) {
+		console.warn(`[${new Date().toISOString()}] auth.svelte.ts: Error clearing cookies:`, _error);
 	}
 }
 
 // Debug utility to check current cookies (for testing cookie deletion)
 export function debugCookies(): void {
-	if (!browser) return;
+	if (!_browser) return;
 
 	const allCookies = document.cookie;
 	const sessionCookies = allCookies
@@ -342,16 +342,15 @@ export function setLoading(): void {
 // Function to initialize auth state, typically called from a root layout load function
 // This function will attempt to fetch the current user from the backend.
 // If successful, it updates the store. If it fails (e.g., 401), it also updates the store.
-import { apiClient } from '$lib/api';
-import { browser } from '$app/environment';
-import { goto } from '$app/navigation';
+import { apiClient as _apiClient } from '$lib/api';
+import { browser as _browser } from '$app/environment';
 
 let initializePromise: Promise<void> | null = null;
 let lastSessionCheck = 0;
 const SESSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 export async function initializeAuth(forceRecheck = false): Promise<void> {
-	if (!browser) {
+	if (!_browser) {
 		console.log(
 			`[${new Date().toISOString()}] auth.svelte.ts: Skipping auth initialization on server.`
 		);
@@ -390,7 +389,7 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 		try {
 			// Attempt to get the current session/user info from the backend.
 			// This relies on the browser sending the HttpOnly session cookie.
-			const result = await apiClient.getUser(); // Use existing getUser method
+			const result = await _apiClient.getUser(); // Use existing getUser method
 
 			if (result.isOk()) {
 				const user = result.value;
@@ -442,10 +441,10 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 					setUnauthenticated();
 				}
 			}
-		} catch (error) {
+		} catch (_error) {
 			console.error(
 				`[${new Date().toISOString()}] auth.svelte.ts: Unexpected error during auth initialization:`,
-				error
+				_error
 			);
 			setUnauthenticated(); // Ensure unauthenticated state on unexpected errors
 		}

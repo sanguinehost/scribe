@@ -10,10 +10,10 @@ import type { ScribeChatSession } from '$lib/types';
 const HoistedMockVisibilitySelector = vi.hoisted(() => {
 	class MockedVisibilitySelectorComponentInternal {
 		element: HTMLDivElement;
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 		constructor({
 			target,
-			props
+			props: _props
 		}: {
 			target: Element;
 			props: { chat?: ScribeChatSession; class?: string };

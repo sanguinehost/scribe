@@ -7,7 +7,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Calendar, CreditCard, Shield, RotateCcw } from 'lucide-svelte';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import type { OrderPreview, PlanFeatures } from '$lib/types/payment';
@@ -83,7 +83,7 @@
 		} as OrderPreview;
 	});
 
-	const displayOrder = $derived.by(() => orderPreview || fallbackOrder);
+	const displayOrder = $derived(orderPreview || fallbackOrder());
 </script>
 
 {#if ENABLE_PAYMENTS && displayOrder}
@@ -115,7 +115,9 @@
 							</p>
 						</div>
 						{#if displayOrder.billing_period === 'yearly'}
-							<Badge variant="secondary" class="text-green-600">Annual savings</Badge>
+							<BadgeComponent variant="secondary" class="text-green-600"
+								>Annual savings</BadgeComponent
+							>
 						{/if}
 					</div>
 

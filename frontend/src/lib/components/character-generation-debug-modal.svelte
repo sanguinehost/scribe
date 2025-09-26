@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
-	import { Copy, X, Info } from 'lucide-svelte';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
+	import { Copy, X as _X, Info } from 'lucide-svelte';
 	import type { GenerateCharacterFieldResponse } from '$lib/types';
 
 	let {
@@ -156,7 +156,7 @@
 									<div class="border-t pt-3">
 										<div class="mb-2 flex items-center justify-between">
 											<div class="font-medium text-muted-foreground">Full Query Text</div>
-											<Button
+											<ButtonComponent
 												variant="outline"
 												size="sm"
 												onclick={() => copyToClipboard(lorebookInfo.queryText!, 'query')}
@@ -164,7 +164,7 @@
 											>
 												<Copy size={12} />
 												{copiedSection === 'query' ? 'Copied!' : 'Copy'}
-											</Button>
+											</ButtonComponent>
 										</div>
 										<div class="rounded bg-muted p-3 font-mono text-xs">
 											{lorebookInfo.queryText}
@@ -186,7 +186,7 @@
 										<div class="h-2 w-2 rounded-full bg-purple-500"></div>
 										System Prompt ({debugInfo.system_prompt.length.toLocaleString()} characters)
 									</div>
-									<Button
+									<ButtonComponent
 										variant="outline"
 										size="sm"
 										onclick={() => copyToClipboard(debugInfo.system_prompt, 'system')}
@@ -194,7 +194,7 @@
 									>
 										<Copy size={12} />
 										{copiedSection === 'system' ? 'Copied!' : 'Copy'}
-									</Button>
+									</ButtonComponent>
 								</div>
 							</div>
 							<pre
@@ -213,7 +213,7 @@
 										<div class="h-2 w-2 rounded-full bg-emerald-500"></div>
 										User Message ({debugInfo.user_message.length.toLocaleString()} characters)
 									</div>
-									<Button
+									<ButtonComponent
 										variant="outline"
 										size="sm"
 										onclick={() => copyToClipboard(debugInfo.user_message, 'user')}
@@ -221,7 +221,7 @@
 									>
 										<Copy size={12} />
 										{copiedSection === 'user' ? 'Copied!' : 'Copy'}
-									</Button>
+									</ButtonComponent>
 								</div>
 							</div>
 							<pre

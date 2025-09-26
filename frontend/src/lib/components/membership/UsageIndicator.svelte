@@ -3,20 +3,20 @@
 
 	// Props
 	export let usage: UsageLimitsResponse | null = null;
-	export let size: 'sm' | 'md' | 'lg' = 'md';
+	export let _size: 'sm' | 'md' | 'lg' = 'md';
 	export let showNumbers: boolean = true;
 	export let showPercentage: boolean = false;
-	export let orientation: 'horizontal' | 'vertical' = 'horizontal';
+	export let _orientation: 'horizontal' | 'vertical' = 'horizontal';
 
 	// Computed properties
 	$: usagePercentage = calculateUsagePercentage(usage);
 	$: isNearLimit = usagePercentage >= 80;
 	$: isAtLimit = usagePercentage >= 100;
 	$: statusColor = getStatusColor(usagePercentage);
-	$: containerClass = getContainerClass(size, orientation);
-	$: progressBarClass = getProgressBarClass(size, orientation);
+	$: containerClass = getContainerClass(_size, _orientation);
+	$: progressBarClass = getProgressBarClass(_size, _orientation);
 
-	function calculateUsagePercentage(usage: UsageLimitsResponse | null): number {
+	function calculateUsagePercentage(_usage: UsageLimitsResponse | null): number {
 		// Since we no longer use token limits for display, return 0
 		// This component should be replaced with DailyMessageUsage for better UX
 		return 0;
@@ -29,21 +29,21 @@
 	}
 
 	function getContainerClass(
-		size: 'sm' | 'md' | 'lg',
-		orientation: 'horizontal' | 'vertical'
+		_size: 'sm' | 'md' | 'lg',
+		_orientation: 'horizontal' | 'vertical'
 	): string {
-		if (orientation === 'vertical') {
+		if (_orientation === 'vertical') {
 			const widths = { sm: 'w-2', md: 'w-3', lg: 'w-4' };
-			return `${widths[size]} h-full`;
+			return `${widths[_size]} h-full`;
 		} else {
 			const heights = { sm: 'h-1.5', md: 'h-2', lg: 'h-3' };
-			return `w-full ${heights[size]}`;
+			return `w-full ${heights[_size]}`;
 		}
 	}
 
 	function getProgressBarClass(
-		size: 'sm' | 'md' | 'lg',
-		orientation: 'horizontal' | 'vertical'
+		_size: 'sm' | 'md' | 'lg',
+		_orientation: 'horizontal' | 'vertical'
 	): string {
 		let baseClass = `${statusColor} transition-all duration-300 ease-out rounded-full`;
 
@@ -67,7 +67,7 @@
 		return count.toLocaleString();
 	}
 
-	function getRemainingTime(usage: UsageLimitsResponse | null): string {
+	function getRemainingTime(_usage: UsageLimitsResponse | null): string {
 		if (!usage) return '';
 
 		const now = new Date();
@@ -122,7 +122,7 @@
 				>
 					<div
 						class={`${progressBarClass} ${isAtLimit ? 'critical-glow' : isNearLimit ? 'warning-glow' : 'normal-glow'}`}
-						style={orientation === 'horizontal'
+						style={_orientation === 'horizontal'
 							? `width: ${usagePercentage}%`
 							: `height: ${usagePercentage}%`}
 						role="progressbar"

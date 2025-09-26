@@ -1,8 +1,8 @@
-import { browser } from '$app/environment';
-import { apiClient } from '$lib/api';
+import { browser as _browser } from '$app/environment';
+import { apiClient as _apiClient } from '$lib/api';
 import { ENABLE_PAYMENTS } from '$lib/utils/features';
 import type {
-	SubscriptionResponse,
+	SubscriptionResponse as _SubscriptionResponse,
 	UsageLimitsResponse,
 	PlanFeatures,
 	Subscription,
@@ -48,9 +48,9 @@ export const subscriptionStore = {
 
 	get currentPlan(): PlanType {
 		if (_subscription?.plan_type) {
-			return _subscription.plan_type;
+			return _subscription.plan_type as PlanType;
 		}
-		return 'free';
+		return 'free' as PlanType;
 	},
 
 	get usagePercentage(): number {
@@ -109,7 +109,7 @@ export const subscriptionStore = {
 	 * Fetch subscription data from API
 	 */
 	async refresh(force: boolean = false): Promise<void> {
-		if (!browser || !ENABLE_PAYMENTS) {
+		if (!_browser || !ENABLE_PAYMENTS) {
 			return;
 		}
 
@@ -123,7 +123,7 @@ export const subscriptionStore = {
 		_error = null;
 
 		try {
-			const result = await apiClient.getSubscription();
+			const result = await _apiClient.getSubscription();
 
 			if (result.isOk()) {
 				_subscription = result.value.subscription || null;
@@ -159,7 +159,7 @@ export const subscriptionStore = {
 	 * Initialize the subscription store
 	 */
 	initialize(): void {
-		if (!browser || !ENABLE_PAYMENTS) {
+		if (!_browser || !ENABLE_PAYMENTS) {
 			return;
 		}
 		// Start initial refresh

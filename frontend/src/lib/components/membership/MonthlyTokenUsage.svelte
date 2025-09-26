@@ -67,7 +67,7 @@
 			<!-- Header -->
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-2">
-					<Zap size={16} class="text-blue-500" />
+					<svelte:component this={Zap} size={16} class="text-blue-500" />
 					<span class="text-sm font-medium text-slate-900 dark:text-slate-100">
 						Monthly Token Usage
 					</span>

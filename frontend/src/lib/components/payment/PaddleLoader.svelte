@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { browser } from '$app/environment';
+	import { browser as _browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
 
@@ -12,7 +12,7 @@
 	 * This component should be included once per app to initialize Paddle
 	 */
 	onMount(async () => {
-		if (!browser || !ENABLE_PAYMENTS) {
+		if (!_browser || !ENABLE_PAYMENTS) {
 			return;
 		}
 
@@ -44,7 +44,10 @@
 
 			// Initialize Paddle with token and checkout settings
 			// Environment is auto-detected from token prefix (test_ for sandbox, live_ for production)
-			if (window.Paddle?.Initialize) {
+			if (
+				(window as unknown as { Paddle?: { Initialize: (...args: unknown[]) => unknown } }).Paddle
+					?.Initialize
+			) {
 				// Detect user's theme preference
 				const isDarkMode =
 					window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -53,7 +56,9 @@
 				// Detect user's locale (fallback to 'en')
 				const locale = navigator.language?.substring(0, 2) || 'en';
 
-				window.Paddle.Initialize({
+				(
+					window as unknown as { Paddle?: { Initialize: (...args: unknown[]) => unknown } }
+				).Paddle?.Initialize({
 					token: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN,
 					checkout: {
 						settings: {
@@ -66,9 +71,9 @@
 								'width: 100%; min-width: 312px; background-color: transparent; border: none;' // For inline mode if needed
 						}
 					},
-					eventCallback: (event) => {
+					eventCallback: (_event: { name: string; data: unknown }) => {
 						// Log Paddle events for debugging
-						console.log('Paddle event:', event.name, event.data);
+						console.log('Paddle event:', _event.name, _event.data);
 					}
 				});
 			}
@@ -77,9 +82,9 @@
 			console.log(
 				`Paddle.js loaded successfully with token: ${PUBLIC_PADDLE_CLIENT_SIDE_TOKEN.substring(0, 8)}...`
 			);
-		} catch (error) {
-			console.error('Failed to load Paddle.js:', error);
-			paddleError = error instanceof Error ? error.message : 'Unknown error loading Paddle.js';
+		} catch (_error) {
+			console.error('Failed to load Paddle.js:', _error);
+			paddleError = _error instanceof Error ? _error.message : 'Unknown error loading Paddle.js';
 		}
 	});
 

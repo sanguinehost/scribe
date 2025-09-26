@@ -1,15 +1,10 @@
 import { writable, derived, get } from 'svelte/store';
 import { PAYMENT_FEATURES } from '$lib/utils/features';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
+import type { CreditBalanceResponse } from '$lib/types/payment';
 
-// Credit balance and usage information
-export interface CreditBalance {
-	balance: number;
-	lifetime_earned: number;
-	lifetime_spent: number;
-	last_monthly_grant?: string;
-	updated_at?: string;
-}
+// Credit balance and usage information - use the response type for compatibility
+export type CreditBalance = CreditBalanceResponse;
 
 // Credit transaction
 export interface CreditTransaction {
@@ -18,7 +13,7 @@ export interface CreditTransaction {
 	balance_after: number;
 	transaction_type: string;
 	description: string;
-	metadata?: any;
+	metadata?: unknown;
 	reference_id?: string;
 	created_at: string;
 }
@@ -54,7 +49,7 @@ interface CreditState {
 	error: string | null;
 	lastFetch: Date | null;
 	modelCosts?: { [key: string]: number };
-	tokenPricing?: { [key: string]: any };
+	tokenPricing?: { [key: string]: unknown };
 	contextMultipliers?: { [key: string]: number };
 }
 
@@ -80,7 +75,7 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const result = await apiClient.getCreditBalance();
+			const result = await _apiClient.getCreditBalance();
 
 			if (result.isErr()) {
 				throw new Error(result.error.message || 'Failed to fetch credit balance');
@@ -96,15 +91,15 @@ function createCreditStore() {
 			}));
 
 			return data;
-		} catch (error) {
+		} catch (_error) {
 			const errorMessage =
-				error instanceof Error ? error.message : 'Failed to fetch credit balance';
+				_error instanceof Error ? _error.message : 'Failed to fetch credit balance';
 			update((state) => ({
 				...state,
 				isLoading: false,
 				error: errorMessage
 			}));
-			throw error;
+			throw _error;
 		}
 	}
 
@@ -118,7 +113,7 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const result = await apiClient.getCreditTransactions(limit, offset);
+			const result = await _apiClient.getCreditTransactions(limit, offset);
 
 			if (result.isErr()) {
 				throw new Error(result.error.message || 'Failed to fetch transactions');
@@ -133,14 +128,15 @@ function createCreditStore() {
 			}));
 
 			return data.transactions;
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Failed to fetch transactions';
+		} catch (_error) {
+			const errorMessage =
+				_error instanceof Error ? _error.message : 'Failed to fetch transactions';
 			update((state) => ({
 				...state,
 				isLoading: false,
 				error: errorMessage
 			}));
-			throw error;
+			throw _error;
 		}
 	}
 
@@ -154,7 +150,7 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const result = await apiClient.getCreditPackages();
+			const result = await _apiClient.getCreditPackages();
 
 			if (result.isErr()) {
 				throw new Error(result.error.message || 'Failed to fetch credit packages');
@@ -169,15 +165,15 @@ function createCreditStore() {
 			}));
 
 			return data.packages;
-		} catch (error) {
+		} catch (_error) {
 			const errorMessage =
-				error instanceof Error ? error.message : 'Failed to fetch credit packages';
+				_error instanceof Error ? _error.message : 'Failed to fetch credit packages';
 			update((state) => ({
 				...state,
 				isLoading: false,
 				error: errorMessage
 			}));
-			throw error;
+			throw _error;
 		}
 	}
 
@@ -191,7 +187,7 @@ function createCreditStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const result = await apiClient.purchaseCredits(packageId);
+			const result = await _apiClient.purchaseCredits(packageId);
 
 			if (result.isErr()) {
 				throw new Error(result.error.message || 'Failed to purchase credits');
@@ -208,14 +204,14 @@ function createCreditStore() {
 			}));
 
 			return data;
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Failed to purchase credits';
+		} catch (_error) {
+			const errorMessage = _error instanceof Error ? _error.message : 'Failed to purchase credits';
 			update((state) => ({
 				...state,
 				isLoading: false,
 				error: errorMessage
 			}));
-			throw error;
+			throw _error;
 		}
 	}
 
@@ -259,7 +255,7 @@ function createCreditStore() {
 		}
 
 		try {
-			const result = await apiClient.getModelCosts();
+			const result = await _apiClient.getModelCosts();
 
 			if (result.isErr()) {
 				throw new Error(result.error.message || 'Failed to fetch model costs');
@@ -275,8 +271,8 @@ function createCreditStore() {
 			}));
 
 			return data;
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Failed to fetch model costs';
+		} catch (_error) {
+			const errorMessage = _error instanceof Error ? _error.message : 'Failed to fetch model costs';
 			console.error('Failed to fetch model costs:', errorMessage);
 			// Don't update error state as this is non-critical
 			return null;

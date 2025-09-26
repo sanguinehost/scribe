@@ -7,23 +7,22 @@
 		DialogTitle,
 		DialogFooter
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Separator } from '$lib/components/ui/separator';
-	import { Badge } from '$lib/components/ui/badge';
-	import { apiClient } from '$lib/api';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
+	import { Checkbox as CheckboxComponent } from '$lib/components/ui/checkbox';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { Expand, X, Star, Heart, Globe, Plus, Trash2, HelpCircle } from 'lucide-svelte';
+	import { Expand, X as _X, Heart, Globe, Plus, HelpCircle } from 'lucide-svelte';
 	import GenerationWidget from './generation-widget.svelte';
-	import type { Character, Lorebook, CharacterContext } from '$lib/types';
+	import type { Character, CharacterDataForClient, Lorebook, CharacterContext } from '$lib/types';
 	import { writable } from 'svelte/store';
 	import { tick } from 'svelte';
 
 	export let characterId: string | null = null;
-	export let open = false;
+	export let _open = false;
 
 	let loading = false;
 	let saving = false;
@@ -32,20 +31,20 @@
 
 	async function loadLorebooks() {
 		try {
-			const result = await apiClient.getLorebooks();
+			const result = await _apiClient.getLorebooks();
 			if (result.isOk()) {
 				lorebooks.set(result.value);
 			} else {
 				toast.error('Failed to load lorebooks: ' + result.error.message);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to load lorebooks');
 		}
 	}
 
 	// Pop-out editor state
 	let popoutEditorOpen = false;
-	let popoutFieldName = '';
+	let _popoutFieldName = '';
 	let popoutFieldLabel = '';
 	let popoutContent = '';
 	let popoutFieldKey = ''; // Used to store the actual formData key
@@ -112,7 +111,7 @@
 	];
 
 	// Load character data when dialog opens or characterId changes
-	$: if (open && characterId) {
+	$: if (_open && characterId) {
 		loadCharacter();
 	}
 
@@ -124,7 +123,7 @@
 			// Ensure lorebooks are loaded before character data to populate the dropdown correctly.
 			await loadLorebooks();
 
-			const result = await apiClient.getCharacter(characterId);
+			const result = await _apiClient.getCharacter(characterId);
 			if (result.isOk()) {
 				character = result.value;
 				// Wait for the DOM to update after lorebooks have been loaded.
@@ -165,11 +164,11 @@
 				};
 			} else {
 				toast.error('Failed to load character: ' + result.error.message);
-				open = false;
+				_open = false;
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to load character');
-			open = false;
+			_open = false;
 		} finally {
 			loading = false;
 		}
@@ -181,7 +180,7 @@
 		saving = true;
 		try {
 			// Following the pattern from CharacterCreator.svelte to build the payload explicitly.
-			const updateData: { [key: string]: any } = {};
+			const updateData: Partial<CharacterDataForClient> = {};
 
 			// Core data - only add to payload if it has a value
 			if (formData.name) updateData.name = formData.name;
@@ -216,16 +215,16 @@
 			if (formData.depth_prompt_depth !== null)
 				updateData.depth_prompt_depth = formData.depth_prompt_depth;
 			if (formData.depth_prompt_role) updateData.depth_prompt_role = formData.depth_prompt_role;
-			updateData.talkativeness = formData.talkativeness; // Always send number
+			updateData.talkativeness = formData.talkativeness.toString(); // Convert number to string
 
-			const result = await apiClient.updateCharacter(characterId, updateData);
+			const result = await _apiClient.updateCharacter(characterId, updateData);
 			if (result.isOk()) {
 				toast.success('Character updated successfully');
-				open = false;
+				_open = false;
 			} else {
 				toast.error('Failed to update character: ' + result.error.message);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to update character');
 		} finally {
 			saving = false;
@@ -233,7 +232,7 @@
 	}
 
 	function handleCancel() {
-		open = false;
+		_open = false;
 		// Reset form
 		formData = {
 			// Core character data (encrypted & actively used)
@@ -267,7 +266,7 @@
 
 	function openPopoutEditor(fieldKey: string, fieldLabel: string, greetingIndex?: number) {
 		popoutFieldKey = fieldKey;
-		popoutFieldName = fieldKey;
+		_popoutFieldName = fieldKey;
 		popoutFieldLabel = fieldLabel;
 		popoutFieldType = 'text'; // Default to text
 
@@ -298,11 +297,17 @@
 			} else if (popoutFieldKey === 'depth_prompt_role') {
 				formData.depth_prompt_role = popoutContent;
 			} else {
-				(formData as any)[popoutFieldKey] = popoutContent;
+				// Type-safe way to update known formData fields
+				type FormDataKey = keyof typeof formData;
+				if (popoutFieldKey in formData) {
+					(formData as Record<FormDataKey, string | string[] | number | boolean | null>)[
+						popoutFieldKey as FormDataKey
+					] = popoutContent;
+				}
 			}
 			popoutEditorOpen = false;
 			popoutFieldKey = '';
-			popoutFieldName = '';
+			_popoutFieldName = '';
 			popoutFieldLabel = '';
 			popoutContent = '';
 			popoutFieldType = 'text';
@@ -312,7 +317,7 @@
 	function cancelPopoutEditor() {
 		popoutEditorOpen = false;
 		popoutFieldKey = '';
-		popoutFieldName = '';
+		_popoutFieldName = '';
 		popoutFieldLabel = '';
 		popoutContent = '';
 		popoutFieldType = 'text';
@@ -332,15 +337,15 @@
 		formData.tags = formData.tags.filter((tag) => tag !== tagToRemove);
 	}
 
-	function handleTagKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
+	function handleTagKeydown(_event: KeyboardEvent) {
+		if (_event.key === 'Enter') {
+			_event.preventDefault();
 			addTag();
 		}
 	}
 </script>
 
-<Dialog bind:open>
+<Dialog bind:open={_open}>
 	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
 		<DialogHeader>
 			<DialogTitle>Edit Character</DialogTitle>
@@ -360,11 +365,7 @@
 					<div class="flex items-center gap-2">
 						<h3 class="text-lg font-semibold">Basic Information</h3>
 						<div class="ml-auto flex items-center gap-2">
-							<Checkbox
-								id="favorite"
-								bind:checked={formData.fav}
-								title="Toggle to add or remove from favorites"
-							/>
+							<CheckboxComponent id="favorite" bind:checked={formData.fav} />
 							<Label for="favorite" class="flex items-center gap-1 text-sm">
 								<Heart class="h-4 w-4" />
 								Favorite
@@ -391,16 +392,16 @@
 						<Label>Tags</Label>
 						<div class="mb-2 flex flex-wrap gap-2">
 							{#each formData.tags as tag}
-								<Badge variant="secondary" class="flex items-center gap-1">
+								<BadgeComponent variant="secondary" class="flex items-center gap-1">
 									{tag}
 									<button
 										type="button"
 										onclick={() => removeTag(tag)}
 										class="hover:text-destructive"
 									>
-										<X class="h-3 w-3" />
+										<svelte:component this={_X} class="h-3 w-3" />
 									</button>
-								</Badge>
+								</BadgeComponent>
 							{/each}
 						</div>
 						<div class="flex gap-2">
@@ -410,9 +411,9 @@
 								onkeydown={handleTagKeydown}
 								class="flex-1"
 							/>
-							<Button type="button" onclick={addTag} size="sm" variant="outline">
+							<ButtonComponent type="button" onclick={addTag} size="sm" variant="outline">
 								<Plus class="h-4 w-4" />
-							</Button>
+							</ButtonComponent>
 						</div>
 					</div>
 
@@ -429,7 +430,7 @@
 								disabled={saving}
 							/>
 						</div>
-						<Textarea
+						<TextareaComponent
 							id="description"
 							bind:value={formData.description}
 							placeholder={character.description ?? 'Character description...'}
@@ -450,7 +451,7 @@
 								disabled={saving}
 							/>
 						</div>
-						<Textarea
+						<TextareaComponent
 							id="first_mes"
 							bind:value={formData.first_mes}
 							placeholder={character.first_mes ?? 'Initial greeting or first message...'}
@@ -469,7 +470,7 @@
 							{#if $lorebooks && $lorebooks.length > 0}
 								{#each $lorebooks as lorebook}
 									<div class="flex items-center space-x-2">
-										<Checkbox
+										<CheckboxComponent
 											id={`lorebook-${lorebook.id}`}
 											checked={formData.selectedLorebooks.includes(lorebook.id)}
 											on:change={() => {
@@ -499,7 +500,7 @@
 					<div class="grid gap-2">
 						<div class="flex items-center justify-between">
 							<Label>Alternate Greetings</Label>
-							<Button
+							<ButtonComponent
 								type="button"
 								variant="outline"
 								size="sm"
@@ -508,20 +509,20 @@
 								}}
 							>
 								Add Greeting
-							</Button>
+							</ButtonComponent>
 						</div>
 						{#if formData.alternate_greetings.length > 0}
 							<div class="space-y-2">
-								{#each formData.alternate_greetings as greeting, index (index)}
+								{#each formData.alternate_greetings as _greeting, index (index)}
 									<div class="flex gap-2">
-										<Textarea
+										<TextareaComponent
 											bind:value={formData.alternate_greetings[index]}
 											placeholder={`Alternate greeting ${index + 1}...`}
 											rows={4}
 											class="flex-1"
 										/>
 										<div class="flex flex-col gap-1">
-											<Button
+											<ButtonComponent
 												type="button"
 												variant="outline"
 												size="icon"
@@ -532,9 +533,9 @@
 												}}
 												class="h-8 w-8"
 											>
-												<X class="h-4 w-4" />
-											</Button>
-											<Button
+												<svelte:component this={_X} class="h-4 w-4" />
+											</ButtonComponent>
+											<ButtonComponent
 												type="button"
 												variant="outline"
 												size="icon"
@@ -547,7 +548,7 @@
 												class="h-8 w-8"
 											>
 												<Expand class="h-4 w-4" />
-											</Button>
+											</ButtonComponent>
 										</div>
 									</div>
 								{/each}
@@ -578,7 +579,7 @@
 											}}
 											disabled={saving}
 										/>
-										<Button
+										<ButtonComponent
 											type="button"
 											variant="ghost"
 											size="sm"
@@ -586,10 +587,10 @@
 											class="h-6 px-2 text-xs"
 										>
 											Expand
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="personality"
 									bind:value={formData.personality}
 									placeholder={character.personality ?? 'Character personality traits...'}
@@ -609,7 +610,7 @@
 											}}
 											disabled={saving}
 										/>
-										<Button
+										<ButtonComponent
 											type="button"
 											variant="ghost"
 											size="sm"
@@ -617,10 +618,10 @@
 											class="h-6 px-2 text-xs"
 										>
 											Expand
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="scenario"
 									bind:value={formData.scenario}
 									placeholder={character.scenario ?? 'Roleplay scenario...'}
@@ -630,7 +631,7 @@
 							<div class="grid gap-2">
 								<div class="flex items-center justify-between">
 									<Label for="mes_example">Message Examples</Label>
-									<Button
+									<ButtonComponent
 										type="button"
 										variant="ghost"
 										size="sm"
@@ -638,9 +639,9 @@
 										class="h-6 px-2 text-xs"
 									>
 										Expand
-									</Button>
+									</ButtonComponent>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="mes_example"
 									bind:value={formData.mes_example}
 									placeholder={character.mes_example ?? 'Example messages...'}
@@ -672,7 +673,7 @@
 							<div class="grid gap-2">
 								<div class="flex items-center justify-between">
 									<Label for="depth_prompt">Content</Label>
-									<Button
+									<ButtonComponent
 										type="button"
 										variant="ghost"
 										size="sm"
@@ -680,9 +681,9 @@
 										class="h-6 px-2 text-xs"
 									>
 										Expand
-									</Button>
+									</ButtonComponent>
 								</div>
-								<Textarea
+								<TextareaComponent
 									id="depth_prompt"
 									bind:value={formData.depth_prompt}
 									placeholder={character.depth_prompt ??
@@ -747,7 +748,7 @@
 						<div class="space-y-4 pt-2">
 							<div class="grid gap-2">
 								<Label for="system_prompt">System Instructions</Label>
-								<Textarea
+								<TextareaComponent
 									id="system_prompt"
 									bind:value={formData.system_prompt}
 									placeholder={character.system_prompt ?? 'System instructions...'}
@@ -761,14 +762,16 @@
 		{/if}
 
 		<DialogFooter>
-			<Button variant="outline" onclick={handleCancel} disabled={saving}>Cancel</Button>
-			<Button onclick={handleSave} disabled={saving || loading}>
+			<ButtonComponent variant="outline" onclick={handleCancel} disabled={saving}
+				>Cancel</ButtonComponent
+			>
+			<ButtonComponent onclick={handleSave} disabled={saving || loading}>
 				{#if saving}
 					Saving...
 				{:else}
 					Save Changes
 				{/if}
-			</Button>
+			</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
@@ -785,7 +788,7 @@
 
 		<div class="py-4">
 			{#if popoutFieldType === 'text'}
-				<Textarea
+				<TextareaComponent
 					bind:value={popoutContent}
 					placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
 					rows={20}
@@ -802,8 +805,8 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={cancelPopoutEditor}>Cancel</Button>
-			<Button onclick={savePopoutEditor}>Save Changes</Button>
+			<ButtonComponent variant="outline" onclick={cancelPopoutEditor}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={savePopoutEditor}>Save Changes</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

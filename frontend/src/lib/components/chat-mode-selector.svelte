@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { apiClient } from '$lib/api';
+	import { goto as _goto } from '$app/navigation';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { ChatMode } from '$lib/types';
 	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import { toast } from 'svelte-sonner';
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 	import {
 		Dialog,
@@ -56,7 +56,7 @@
 
 		isCreating = true;
 		try {
-			const createChatResult = await apiClient.createChat({
+			const createChatResult = await _apiClient.createChat({
 				chat_mode: selectedMode,
 				character_id: null, // No character for non-character modes
 				title: customTitle || createChatModeStrategy(selectedMode).generateChatTitle(null)
@@ -65,7 +65,7 @@
 			if (createChatResult.isOk()) {
 				const chat = createChatResult.value;
 				toast.success('Chat created successfully');
-				await goto(`/chat/${chat.id}`, { invalidateAll: true });
+				await _goto(`/chat/${chat.id}`, { invalidateAll: true });
 				open = false;
 				onOpenChange?.(false);
 			} else {
@@ -73,8 +73,8 @@
 					description: createChatResult.error.message
 				});
 			}
-		} catch (error) {
-			console.error('Error creating chat:', error);
+		} catch (_error) {
+			console.error('Error creating chat:', _error);
 			toast.error('An unexpected error occurred');
 		} finally {
 			isCreating = false;
@@ -85,10 +85,10 @@
 <Dialog bind:open {onOpenChange}>
 	<DialogTrigger>
 		{#snippet child({ props })}
-			<Button {...props} variant="outline" class="w-full">
+			<ButtonComponent {...props} variant="outline" class="w-full">
 				<span class="mr-2">💬</span>
 				Start New Chat
-			</Button>
+			</ButtonComponent>
 		{/snippet}
 	</DialogTrigger>
 	<DialogContent class="sm:max-w-md">
@@ -145,8 +145,10 @@
 			</div>
 
 			<DialogFooter class="gap-2">
-				<Button variant="outline" onclick={() => (selectedMode = null)}>Back</Button>
-				<Button
+				<ButtonComponent variant="outline" onclick={() => (selectedMode = null)}
+					>Back</ButtonComponent
+				>
+				<ButtonComponent
 					onclick={createChat}
 					disabled={isCreating || !customTitle.trim()}
 					class="min-w-[120px]"
@@ -156,7 +158,7 @@
 					{:else}
 						Create Chat
 					{/if}
-				</Button>
+				</ButtonComponent>
 			</DialogFooter>
 		{/if}
 	</DialogContent>

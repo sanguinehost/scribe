@@ -1,10 +1,10 @@
-import { browser } from '$app/environment';
+import { browser as _browser } from '$app/environment';
 import { error } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 
 export const load: PageLoad = async ({ url }) => {
-	if (!browser) {
+	if (!_browser) {
 		return {
 			status: 'loading',
 			message: 'Please wait...'
@@ -18,7 +18,7 @@ export const load: PageLoad = async ({ url }) => {
 	}
 
 	try {
-		const result = await apiClient.verifyEmail(token);
+		const result = await _apiClient.verifyEmail(token);
 
 		if (result.isOk()) {
 			return {
@@ -32,12 +32,12 @@ export const load: PageLoad = async ({ url }) => {
 			status: 'error',
 			message: result.error.message
 		};
-	} catch (e) {
+	} catch (_e) {
 		// This catch block might be redundant if the API client handles all errors,
 		// but it's good for catching unexpected issues.
 		let errorMessage = 'An unknown error occurred during verification.';
-		if (e instanceof Error) {
-			errorMessage = e.message;
+		if (_e instanceof Error) {
+			errorMessage = _e.message;
 		}
 		return {
 			status: 'error',

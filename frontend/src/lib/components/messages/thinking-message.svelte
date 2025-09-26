@@ -1,12 +1,12 @@
 <script lang="ts">
 	import SparklesIcon from '$lib/components/icons/sparkles.svelte';
-	import { fly } from 'svelte/transition';
+	import { fly as _fly } from 'svelte/transition';
 </script>
 
 <div
 	class="group/message mx-auto w-full max-w-3xl px-4"
 	data-role="assistant"
-	in:fly={{ opacity: 0, y: 5 }}
+	in:_fly={{ opacity: 0, y: 5 }}
 >
 	<div
 		class="

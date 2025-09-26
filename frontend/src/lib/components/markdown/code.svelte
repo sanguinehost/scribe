@@ -1,15 +1,18 @@
 <script lang="ts">
+	/* eslint-disable svelte/valid-compile */
+	// Disable custom elements to avoid props inference issues
 	import { onMount } from 'svelte';
-	import { cn } from '$lib/utils/shadcn';
+	import type { Snippet } from 'svelte';
+	import { cn as _cn } from '$lib/utils/shadcn';
 
 	let {
 		children,
 		class: c,
 		...props
 	}: {
-		children: any;
+		children?: Snippet;
 		class?: string;
-		[key: string]: any;
+		[key: string]: unknown;
 	} = $props();
 
 	let element = $state<HTMLElement | null>(null);
@@ -33,7 +36,7 @@
 
 		// Check if this looks like a status block
 		const isStatusBlock =
-			/^(CURRENT STATE|INVENTORY|STATUS|STATS|CHARACTER|PARTY|LOCATION|HEALTH|EQUIPMENT)[\s\(].*:/im.test(
+			/^(CURRENT STATE|INVENTORY|STATUS|STATS|CHARACTER|PARTY|LOCATION|HEALTH|EQUIPMENT)[\s(].*:/im.test(
 				text
 			) || /Health:\s*\d+|Location:|Status:|Inventory:|Power Path:|Attainment:|CARRIED/i.test(text);
 
@@ -91,7 +94,7 @@
 			}
 
 			// Inventory items (numbered, bulleted, or bracketed lists) - match against trimmed line
-			const inventoryMatch = line.trim().match(/^(\d+x|\*|\-|\[)\s*(.+)$/);
+			const inventoryMatch = line.trim().match(/^(\d+x|\*|-|\[)\s*(.+)$/);
 			if (inventoryMatch) {
 				const [, bullet, item] = inventoryMatch;
 				// For brackets, don't add space since it's already part of the text
@@ -123,7 +126,7 @@
 {#if isInlineCode}
 	<code
 		bind:this={element}
-		class={cn(
+		class={_cn(
 			'inline-block break-words rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground',
 			c
 		)}

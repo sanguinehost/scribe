@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Loader, ArrowLeft, ExternalLink, AlertCircle } from 'lucide-svelte';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
@@ -142,10 +142,10 @@
 			<!-- Plan Selection Step -->
 			<div class="space-y-8">
 				{#if showBackButton}
-					<Button variant="ghost" on:click={onBack} class="mb-4">
+					<ButtonComponent variant="ghost" onclick={onBack} class="mb-4">
 						<ArrowLeft class="mr-2 h-4 w-4" />
 						Back
-					</Button>
+					</ButtonComponent>
 				{/if}
 
 				<div class="space-y-4 text-center">
@@ -178,10 +178,10 @@
 				<!-- Left Column: Order Details -->
 				<div class="space-y-6">
 					<div class="flex items-center gap-4">
-						<Button variant="ghost" size="sm" on:click={handleBackToPlans}>
+						<ButtonComponent variant="ghost" size="sm" onclick={handleBackToPlans}>
 							<ArrowLeft class="mr-2 h-4 w-4" />
 							Back to plans
-						</Button>
+						</ButtonComponent>
 					</div>
 
 					<div class="space-y-4">
@@ -222,11 +222,11 @@
 
 					<!-- Checkout Actions -->
 					<div class="space-y-4">
-						<Button
+						<ButtonComponent
 							class="w-full"
 							size="lg"
 							disabled={isLoading}
-							on:click={handleProceedToCheckout}
+							onclick={handleProceedToCheckout}
 						>
 							{#if isLoading}
 								<Loader class="mr-2 h-4 w-4 animate-spin" />
@@ -235,7 +235,7 @@
 								<ExternalLink class="mr-2 h-4 w-4" />
 								Proceed to Secure Checkout
 							{/if}
-						</Button>
+						</ButtonComponent>
 
 						<p class="text-center text-xs text-muted-foreground">
 							You'll be redirected to our secure payment processor (Paddle) to complete your

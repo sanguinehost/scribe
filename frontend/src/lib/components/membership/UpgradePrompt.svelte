@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { CheckoutButton } from '$lib/components/payment';
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
-	import { AlertTriangle, Zap } from 'lucide-svelte';
+	import { AlertTriangle, Zap as _Zap } from 'lucide-svelte';
 
 	export let variant: 'banner' | 'modal' | 'inline' = 'inline';
 	export let showCloseButton: boolean = true;
@@ -52,14 +52,14 @@
 					on:checkout-start={() => handleUpgrade('premium')}
 				/>
 				{#if showCloseButton}
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={handleClose}
 						class="text-red-600 hover:bg-red-100 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/50 dark:hover:text-red-300"
 					>
 						✕
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 		</div>
@@ -96,7 +96,9 @@
 						on:checkout-start={() => handleUpgrade('premium')}
 					/>
 					{#if showCloseButton}
-						<Button variant="ghost" onclick={handleClose} class="w-full">Cancel</Button>
+						<ButtonComponent variant="ghost" onclick={handleClose} class="w-full"
+							>Cancel</ButtonComponent
+						>
 					{/if}
 				</div>
 			</div>
@@ -118,14 +120,14 @@
 				on:checkout-start={() => handleUpgrade('premium')}
 			/>
 			{#if showCloseButton}
-				<Button
+				<ButtonComponent
 					variant="ghost"
 					size="sm"
 					onclick={handleClose}
 					class="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
 				>
 					✕
-				</Button>
+				</ButtonComponent>
 			{/if}
 		</div>
 	{/if}

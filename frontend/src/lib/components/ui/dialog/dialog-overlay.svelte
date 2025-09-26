@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Dialog as DialogPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = DialogPrimitive.OverlayProps;
 
@@ -9,6 +9,6 @@
 </script>
 
 <DialogPrimitive.Overlay
-	class={cn('fixed inset-0 z-50 bg-background/80 backdrop-blur-sm', className)}
+	class={_cn('fixed inset-0 z-50 bg-background/80 backdrop-blur-sm', className)}
 	{...$$restProps}
 />

@@ -1,5 +1,9 @@
 // Document type removed as it's not used in this utility
-import type { ScribeChatMessage, MessageRole, DocumentResponse } from '$lib/types'; // Import Scribe types
+import type {
+	ScribeChatMessage as _ScribeChatMessage,
+	MessageRole as _MessageRole,
+	DocumentResponse
+} from '$lib/types'; // Import Scribe types
 
 // Define our own UIMessage interface to avoid depending on @ai-sdk/svelte
 interface UIMessage {
@@ -15,7 +19,7 @@ interface UIMessage {
 }
 
 // Helper function to map roles
-function mapScribeRoleToUIRole(scribeRole: MessageRole): UIMessage['role'] {
+function mapScribeRoleToUIRole(scribeRole: _MessageRole): UIMessage['role'] {
 	switch (scribeRole) {
 		case 'User':
 			return 'user';
@@ -30,7 +34,7 @@ function mapScribeRoleToUIRole(scribeRole: MessageRole): UIMessage['role'] {
 	}
 }
 
-export function convertToUIMessages(messages: Array<ScribeChatMessage>): Array<UIMessage> {
+export function convertToUIMessages(messages: Array<_ScribeChatMessage>): Array<UIMessage> {
 	return messages.map((message) => ({
 		id: message.id,
 		// Map Scribe 'content' to UIMessage 'parts' (TextUIPart uses 'text')
@@ -45,8 +49,8 @@ export function convertToUIMessages(messages: Array<ScribeChatMessage>): Array<U
 	}));
 }
 
-// Note: This function now expects ScribeChatMessage array
-export function getMostRecentUserMessage(messages: Array<ScribeChatMessage>) {
+// Note: This function now expects _ScribeChatMessage array
+export function getMostRecentUserMessage(messages: Array<_ScribeChatMessage>) {
 	// Filter based on Scribe's message_type
 	const userMessages = messages.filter((message) => message.message_type === 'User');
 	return userMessages.at(-1);
@@ -59,16 +63,16 @@ export function getDocumentTimestampByIndex(documents: Array<DocumentResponse>, 
 	return documents[index].created_at;
 }
 
-// Note: This function now expects ScribeChatMessage array
+// Note: This function now expects _ScribeChatMessage array
 export function getTrailingMessageId({
 	messages
 }: {
-	messages: Array<ScribeChatMessage>; // Use ScribeChatMessage
+	messages: Array<_ScribeChatMessage>; // Use _ScribeChatMessage
 }): string | null {
 	const trailingMessage = messages.at(-1);
 
 	if (!trailingMessage) return null;
 
-	// ScribeChatMessage has an 'id' property
+	// _ScribeChatMessage has an 'id' property
 	return trailingMessage.id;
 }

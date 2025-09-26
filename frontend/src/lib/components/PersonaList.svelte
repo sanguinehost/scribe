@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import type { UserPersona } from '$lib/types';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -24,7 +24,7 @@
 		isLoading = true;
 		error = null;
 		try {
-			const result = await apiClient.getUserPersonas();
+			const result = await _apiClient.getUserPersonas();
 			if (result.isOk()) {
 				personas = result.value;
 				error = null;
@@ -33,7 +33,7 @@
 				console.error('Failed to fetch personas:', result.error);
 				error = `Failed to fetch personas: ${result.error.message}`;
 			}
-		} catch (e: any) {
+		} catch (e: unknown) {
 			if (e instanceof Error && e.message.includes('401')) {
 				console.error('Caught 401 during fetch, redirection initiated.');
 			} else {
@@ -95,9 +95,14 @@
 <div class="flex h-full flex-col">
 	<div class="flex items-center justify-between border-b p-2">
 		<h2 class="px-2 text-lg font-semibold">Personas</h2>
-		<Button variant="ghost" size="icon" onclick={handleCreateClick} aria-label="Create Persona">
+		<ButtonComponent
+			variant="ghost"
+			size="icon"
+			onclick={handleCreateClick}
+			aria-label="Create Persona"
+		>
 			<PlusIcon class="h-5 w-5" />
-		</Button>
+		</ButtonComponent>
 	</div>
 
 	<div class="flex-1 space-y-2 overflow-y-auto p-2">

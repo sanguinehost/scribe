@@ -2,9 +2,9 @@
 	import { onMount } from 'svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { PlayerChronicleWithCounts } from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		Card,
 		CardContent,
@@ -12,7 +12,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as _BadgeComponent } from '$lib/components/ui/badge';
 	import {
 		AlertDialog,
 		AlertDialogAction,
@@ -23,7 +23,14 @@
 		AlertDialogHeader,
 		AlertDialogTitle
 	} from '$lib/components/ui/alert-dialog';
-	import { ScrollText, Plus, Calendar, MessageSquare, ArrowLeft, Trash2 } from 'lucide-svelte';
+	import {
+		ScrollText,
+		Plus,
+		Calendar,
+		MessageSquare,
+		ArrowLeft as _ArrowLeft,
+		Trash2
+	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { slideAndFade } from '$lib/utils/transitions';
 
@@ -43,33 +50,27 @@
 
 	// Listen for chronicle creation and deletion events
 	onMount(() => {
-		const handleChronicleCreated = async (event: CustomEvent) => {
+		const handleChronicleCreated = async (_event: CustomEvent) => {
 			console.log('[Chronicles List] New chronicle created, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
 
-		const handleChronicleDeleted = async (event: CustomEvent) => {
+		const handleChronicleDeleted = async (_event: CustomEvent) => {
 			console.log('[Chronicles List] Chronicle deleted, refreshing list');
 			await chronicleStore.loadChronicles();
 		};
 
-		window.addEventListener(
-			'chronicle-created',
-			handleChronicleCreated as unknown as EventListener
-		);
-		window.addEventListener(
-			'chronicle-deleted',
-			handleChronicleDeleted as unknown as EventListener
-		);
+		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as () => void);
+		window.addEventListener('chronicle-deleted', handleChronicleDeleted as unknown as () => void);
 
 		return () => {
 			window.removeEventListener(
 				'chronicle-created',
-				handleChronicleCreated as unknown as EventListener
+				handleChronicleCreated as unknown as () => void
 			);
 			window.removeEventListener(
 				'chronicle-deleted',
-				handleChronicleDeleted as unknown as EventListener
+				handleChronicleDeleted as unknown as () => void
 			);
 		};
 	});
@@ -91,8 +92,8 @@
 		});
 	}
 
-	function handleDeleteChronicleClick(event: Event, chronicle: PlayerChronicleWithCounts) {
-		event.stopPropagation(); // Prevent card click
+	function handleDeleteChronicleClick(_event: Event, chronicle: PlayerChronicleWithCounts) {
+		_event.stopPropagation(); // Prevent card click
 		chronicleToDelete = chronicle;
 		deleteChronicleDialogOpen = true;
 	}
@@ -102,7 +103,7 @@
 
 		isDeletingChronicle = true;
 		try {
-			const result = await apiClient.deleteChronicle(chronicleToDelete.id);
+			const result = await _apiClient.deleteChronicle(chronicleToDelete.id);
 			if (result.isOk()) {
 				toast.success('Chronicle deleted successfully');
 				// Reload chronicles list
@@ -134,10 +135,10 @@
 				<h1 class="text-3xl font-bold">Chronicles</h1>
 				<p class="mt-2 text-muted-foreground">Manage your story chronicles and their events</p>
 			</div>
-			<Button onclick={handleCreateNew} class="gap-2">
+			<ButtonComponent onclick={handleCreateNew} class="gap-2">
 				<Plus class="h-4 w-4" />
 				New Chronicle
-			</Button>
+			</ButtonComponent>
 		</div>
 	</div>
 
@@ -166,9 +167,13 @@
 					<h3 class="mb-2 text-lg font-semibold">Failed to load chronicles</h3>
 					<p class="text-sm">{chronicleStore.error}</p>
 				</div>
-				<Button variant="outline" onclick={() => chronicleStore.loadChronicles()} class="mt-4">
+				<ButtonComponent
+					variant="outline"
+					onclick={() => chronicleStore.loadChronicles()}
+					class="mt-4"
+				>
 					Try Again
-				</Button>
+				</ButtonComponent>
 			</CardContent>
 		</Card>
 	{:else if chronicleStore.chronicles.length === 0}
@@ -179,10 +184,10 @@
 				<p class="mb-6 text-sm text-muted-foreground">
 					Create your first chronicle to start tracking story events
 				</p>
-				<Button onclick={handleCreateNew} class="gap-2">
+				<ButtonComponent onclick={handleCreateNew} class="gap-2">
 					<Plus class="h-4 w-4" />
 					Create First Chronicle
-				</Button>
+				</ButtonComponent>
 			</CardContent>
 		</Card>
 	{:else}
@@ -226,7 +231,7 @@
 								</CardContent>
 							</button>
 							<!-- Delete button positioned absolutely in top-right -->
-							<Button
+							<ButtonComponent
 								variant="ghost"
 								size="icon"
 								class="absolute right-2 top-2 h-8 w-8 opacity-60 hover:opacity-100"
@@ -234,7 +239,7 @@
 								title="Delete chronicle"
 							>
 								<Trash2 class="h-4 w-4 text-destructive" />
-							</Button>
+							</ButtonComponent>
 						</Card>
 					</div>
 				{/key}

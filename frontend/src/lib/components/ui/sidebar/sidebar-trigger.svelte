@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { Button as ButtonComponent } from '$lib/components/ui/button/index.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import PanelLeft from '@lucide/svelte/icons/panel-left';
 	import type { ComponentProps } from 'svelte';
 	import { useSidebar } from './context.svelte.js';
@@ -10,14 +11,14 @@
 		class: className,
 		onclick,
 		...restProps
-	}: ComponentProps<typeof Button> & {
+	}: ComponentProps<typeof ButtonComponent> & {
 		onclick?: (e: MouseEvent) => void;
 	} = $props();
 
 	const sidebar = useSidebar();
 </script>
 
-<Button
+<ButtonComponent
 	type="button"
 	onclick={(e) => {
 		onclick?.(e);
@@ -26,9 +27,9 @@
 	data-sidebar="trigger"
 	variant="ghost"
 	size="icon"
-	class={cn('h-7 w-7', className)}
+	class={_cn('h-7 w-7', className)}
 	{...restProps}
 >
 	<PanelLeft />
 	<span class="sr-only">Toggle Sidebar</span>
-</Button>
+</ButtonComponent>

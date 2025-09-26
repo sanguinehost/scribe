@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ url, fetch }) => {
+export const load: PageServerLoad = async ({ url, fetch: _fetch }) => {
 	// Extract transaction ID from URL parameters
 	const transactionId = url.searchParams.get('_ptxn') || url.searchParams.get('transaction_id');
 	const status = url.searchParams.get('status');
@@ -24,8 +24,8 @@ export const load: PageServerLoad = async ({ url, fetch }) => {
 			// 		paymentData: verificationResult.data
 			// 	};
 			// }
-		} catch (error) {
-			console.error('Error verifying transaction:', error);
+		} catch (_error) {
+			console.error('Error verifying transaction:', _error);
 		}
 	}
 

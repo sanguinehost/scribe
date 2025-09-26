@@ -104,7 +104,7 @@
 		return success;
 	}
 
-	function handleExportLorebook(lorebook: Lorebook) {
+	function handleExportLorebook(_lorebook: Lorebook) {
 		showExportDialog = true;
 	}
 

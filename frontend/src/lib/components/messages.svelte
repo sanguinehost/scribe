@@ -14,14 +14,14 @@
 	import { onMount } from 'svelte';
 	import Message from './messages/message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
-	import type { ScribeChatMessage, User, ScribeChatSession } from '$lib/types';
+	import type { ScribeChatMessage, ScribeCharacter, ScribeChatSession, User } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SelectedLorebookStore } from '$lib/stores/selected-lorebook.svelte';
 	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { fly, fade } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
+	import { fly as _fly, fade } from 'svelte/transition';
+	import { quintOut as _quintOut } from 'svelte/easing';
 	import * as Tooltip from '$lib/components/ui/tooltip'; // Import Tooltip components
 	import { infiniteScroll } from '$lib/actions/infinite-scroll';
 	import { Loader2 } from 'lucide-svelte';
@@ -59,7 +59,7 @@
 		loading: boolean;
 		messages: ScribeChatMessage[];
 		selectedCharacterId?: string | null;
-		character?: any | null; // Will be properly typed
+		character?: ScribeCharacter | null;
 		chat?: ScribeChatSession | undefined;
 		user?: User | undefined; // Type for user prop
 		onRetryMessage?: (messageId: string) => void;
@@ -110,15 +110,15 @@
 		return message.message_type === 'Assistant' && (hasFirstMessageId || isFirstAssistantMessage);
 	}
 
-	function handleGreetingChanged(event: CustomEvent) {
-		const { index, content } = event.detail;
+	function handleGreetingChanged(_event: CustomEvent) {
+		const { index, content } = _event.detail;
 		currentGreetingIndex = index;
 		onGreetingChanged?.({ index, content });
 	}
 
-	let mounted = $state(false);
+	let _mounted = $state(false);
 	onMount(() => {
-		mounted = true;
+		_mounted = true;
 
 		// Initialize usage tracking for soft limits (feature-gated)
 		if (PAYMENT_FEATURES.softLimits) {
@@ -127,20 +127,20 @@
 		}
 
 		// Listen for lorebook events from the overview components
-		const handleSelectLorebook = (event: CustomEvent) => {
-			selectedLorebookStore.selectLorebook(event.detail.lorebookId);
+		const handleSelectLorebook = (_event: CustomEvent) => {
+			selectedLorebookStore.selectLorebook(_event.detail.lorebookId);
 		};
 
-		const handleEditLorebook = (event: CustomEvent) => {
-			selectedLorebookStore.selectLorebook(event.detail.lorebookId);
+		const handleEditLorebook = (_event: CustomEvent) => {
+			selectedLorebookStore.selectLorebook(_event.detail.lorebookId);
 		};
 
 		const handleBackToLorebookList = () => {
 			selectedLorebookStore.showList();
 		};
 
-		document.addEventListener('selectLorebook', handleSelectLorebook as EventListener);
-		document.addEventListener('editLorebook', handleEditLorebook as EventListener);
+		document.addEventListener('selectLorebook', handleSelectLorebook as () => void);
+		document.addEventListener('editLorebook', handleEditLorebook as () => void);
 		document.addEventListener('backToLorebookList', handleBackToLorebookList);
 
 		return () => {
@@ -149,8 +149,8 @@
 				usageStore.stopAutoRefresh();
 			}
 
-			document.removeEventListener('selectLorebook', handleSelectLorebook as EventListener);
-			document.removeEventListener('editLorebook', handleEditLorebook as EventListener);
+			document.removeEventListener('selectLorebook', handleSelectLorebook as () => void);
+			document.removeEventListener('editLorebook', handleEditLorebook as () => void);
 			document.removeEventListener('backToLorebookList', handleBackToLorebookList);
 		};
 	});
@@ -164,7 +164,7 @@
 			if (!endRef || scrollLock.locked) return;
 
 			// Don't auto-scroll during streaming to allow user to freely scroll
-			const hasAnimatingMessages = messages.some((m) => m.loading || (m as any).isAnimating);
+			const hasAnimatingMessages = messages.some((m) => m.loading);
 			if (hasAnimatingMessages) return;
 
 			// Don't auto-scroll during infinite scroll loading or when suppressed
@@ -225,7 +225,7 @@
 
 	// Scroll to top when showing character overview, settings, or other empty states
 	$effect(() => {
-		if (!containerRef || !mounted) return;
+		if (!containerRef || !_mounted) return;
 
 		// If we're showing empty state content (no messages), scroll to top
 		// This triggers when view changes (character selection, settings, etc.)
@@ -241,7 +241,7 @@
 
 	// Also scroll to top when starting fresh chats (with only initial message)
 	$effect(() => {
-		if (!containerRef || !mounted) return;
+		if (!containerRef || !_mounted) return;
 
 		// For truly new chats with just a greeting message, scroll to top
 		// instead of bottom to show the character info and start of conversation
@@ -257,7 +257,7 @@
 
 	// Scroll to bottom when loading existing chats with messages
 	$effect(() => {
-		if (!containerRef || !mounted || !endRef) return;
+		if (!containerRef || !_mounted || !endRef) return;
 
 		// For existing chats with messages, scroll to bottom (most recent message)
 		// Only on initial load (when message count is 20 or less = initial batch)
@@ -277,13 +277,27 @@
 			}, 100);
 		}
 	});
+
+	// Handle loadmore event from infiniteScroll action
+	$effect(() => {
+		if (!containerRef) return;
+
+		const handleLoadMore = () => {
+			onLoadMore?.();
+		};
+
+		containerRef.addEventListener('loadmore', handleLoadMore);
+
+		return () => {
+			containerRef?.removeEventListener('loadmore', handleLoadMore);
+		};
+	});
 </script>
 
 <Tooltip.Provider>
-	<!-- @ts-ignore - on:loadmore is a custom event from infiniteScroll action -->
 	<div
 		bind:this={containerRef}
-		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(mounted &&
+		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(_mounted &&
 			messages.length === 0) ||
 		settingsStore.isVisible
 			? ''
@@ -293,7 +307,6 @@
 			threshold: 200,
 			debounce: 300
 		}}
-		on:loadmore={() => onLoadMore?.()}
 	>
 		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
 		{#if settingsStore.isVisible || settingsStore.isTransitioning}
@@ -319,7 +332,7 @@
 		{/if}
 
 		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible AND not transitioning) -->
-		{#if mounted && messages.length === 0 && !settingsStore.isVisible && !settingsStore.isTransitioning}
+		{#if _mounted && messages.length === 0 && !settingsStore.isVisible && !settingsStore.isTransitioning}
 			<div class="relative flex flex-1">
 				<!-- Apply same smooth transition approach as sidebar -->
 				<div
@@ -499,15 +512,15 @@
 			{#if isFirstMessage(message, index) && character}
 				<FirstMessage
 					{message}
-					{readonly}
+					_readonly={readonly}
 					loading={false}
-					alternateGreetings={character.alternate_greetings}
+					alternateGreetings={character.alternate_greetings || undefined}
 					{currentGreetingIndex}
 					on:greetingChanged={handleGreetingChanged}
 					{character}
-					{user}
+					_user={user}
 					{substituteTemplateVariables}
-					{userPersonaName}
+					_userPersonaName={userPersonaName}
 				/>
 			{:else}
 				{@const currentIndex = message.current_variant_index ?? 0}

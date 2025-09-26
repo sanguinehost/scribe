@@ -1,6 +1,7 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import { Separator as SeparatorPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	let {
 		ref = $bindable(null),
@@ -12,7 +13,7 @@
 
 <SeparatorPrimitive.Root
 	bind:ref
-	class={cn(
+	class={_cn(
 		'shrink-0 bg-border',
 		orientation === 'horizontal' ? 'h-[1px] w-full' : 'min-h-full w-[1px]',
 		className

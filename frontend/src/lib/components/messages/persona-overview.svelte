@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { apiClient } from '$lib/api';
-	import type { UserPersona } from '$lib/types';
+	import { apiClient as _apiClient } from '$lib/api';
+	import type { UserPersona, UpdateUserPersonaRequest } from '$lib/types';
 	import { toast } from 'svelte-sonner';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
-	import { fly } from 'svelte/transition';
+	import { fly as _fly } from 'svelte/transition';
 	import DOMPurify from 'dompurify';
-	import { quintOut } from 'svelte/easing';
-	import { Button } from '$lib/components/ui/button';
+	import { quintOut as _quintOut } from 'svelte/easing';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { slideAndFade } from '$lib/utils/transitions';
 	import {
 		Card,
 		CardHeader,
-		CardTitle,
-		CardDescription,
+		CardTitle as _CardTitle,
+		CardDescription as _CardDescription,
 		CardContent
 	} from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
@@ -20,7 +20,7 @@
 	import ImageLightbox from '$lib/components/ui/image-lightbox.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import {
 		AlertDialog,
 		AlertDialogAction,
@@ -31,7 +31,6 @@
 		AlertDialogHeader,
 		AlertDialogTitle
 	} from '$lib/components/ui/alert-dialog';
-	import PlusIcon from '../icons/plus.svelte';
 	import TrashIcon from '../icons/trash.svelte';
 	import PencilEditIcon from '../icons/pencil-edit.svelte';
 	import CheckCircleFill from '../icons/check-circle-fill.svelte';
@@ -39,11 +38,11 @@
 
 	let {
 		personaId,
-		onEdit,
+		_onEdit,
 		onSetDefault
 	}: {
 		personaId: string;
-		onEdit?: (persona: UserPersona) => void;
+		_onEdit?: (persona: UserPersona) => void;
 		onSetDefault?: (personaId: string) => void;
 	} = $props();
 
@@ -115,7 +114,7 @@
 
 		isLoading = true;
 		try {
-			const result = await apiClient.getUserPersona(personaId);
+			const result = await _apiClient.getUserPersona(personaId);
 			if (result.isOk()) {
 				persona = result.value;
 				// Initialize edit values
@@ -132,8 +131,8 @@
 					description: result.error.message
 				});
 			}
-		} catch (error) {
-			console.error('Error loading persona:', error);
+		} catch (_error) {
+			console.error('Error loading persona:', _error);
 			toast.error('An unexpected error occurred');
 		} finally {
 			isLoading = false;
@@ -177,7 +176,7 @@
 		isSaving = true;
 
 		try {
-			const updateData: any = {};
+			const updateData: UpdateUserPersonaRequest = {};
 
 			// Only include changed fields
 			if (editedName !== (persona.name || '') && editedName.trim()) {
@@ -207,7 +206,7 @@
 
 			// Only make API call if there are changes
 			if (Object.keys(updateData).length > 0) {
-				const result = await apiClient.updateUserPersona(persona.id, updateData);
+				const result = await _apiClient.updateUserPersona(persona.id, updateData);
 				if (result.isOk()) {
 					// Update local persona data
 					persona.name = editedName.trim();
@@ -228,9 +227,9 @@
 				// No changes, just exit edit mode
 				isEditMode = false;
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Error updating persona');
-			console.error('Error updating persona:', error);
+			console.error('Error updating persona:', _error);
 		} finally {
 			isSaving = false;
 		}
@@ -245,7 +244,7 @@
 
 		isDeletingPersona = true;
 		try {
-			const result = await apiClient.deleteUserPersona(persona.id);
+			const result = await _apiClient.deleteUserPersona(persona.id);
 			if (result.isOk()) {
 				toast.success('Persona deleted successfully');
 
@@ -260,8 +259,8 @@
 					description: result.error.message
 				});
 			}
-		} catch (error) {
-			console.error('Error deleting persona:', error);
+		} catch (_error) {
+			console.error('Error deleting persona:', _error);
 			toast.error('An unexpected error occurred');
 		} finally {
 			isDeletingPersona = false;
@@ -274,7 +273,7 @@
 
 		isSettingDefault = true;
 		try {
-			const result = await apiClient.setDefaultPersona(persona.id);
+			const result = await _apiClient.setDefaultPersona(persona.id);
 			if (result.isOk()) {
 				toast.success(`'${persona.name}' is now your default persona`);
 				if (onSetDefault) {
@@ -285,8 +284,8 @@
 					description: result.error.message
 				});
 			}
-		} catch (error) {
-			console.error('Error setting default persona:', error);
+		} catch (_error) {
+			console.error('Error setting default persona:', _error);
 			toast.error('An unexpected error occurred');
 		} finally {
 			isSettingDefault = false;
@@ -393,7 +392,7 @@
 											<div>
 												<Label for="edit-description" class="text-sm font-medium">Description</Label
 												>
-												<Textarea
+												<TextareaComponent
 													id="edit-description"
 													bind:value={editedDescription}
 													class="mt-1"
@@ -406,23 +405,28 @@
 								</div>
 								<div class="flex gap-2">
 									{#if !isEditMode}
-										<Button onclick={handleEdit} size="lg" class="gap-2">
+										<ButtonComponent onclick={handleEdit} size="lg" class="gap-2">
 											<PencilEditIcon class="h-4 w-4" />
 											Edit Persona
-										</Button>
-										<Button
+										</ButtonComponent>
+										<ButtonComponent
 											onclick={handleSetDefault}
 											variant="outline"
 											size="lg"
 											disabled={isSettingDefault}
 										>
 											{isSettingDefault ? 'Setting...' : 'Set as Default'}
-										</Button>
-										<Button onclick={handleDeleteClick} variant="destructive" size="lg">
+										</ButtonComponent>
+										<ButtonComponent onclick={handleDeleteClick} variant="destructive" size="lg">
 											<TrashIcon class="h-4 w-4" />
-										</Button>
+										</ButtonComponent>
 									{:else}
-										<Button onclick={handleSave} disabled={isSaving} size="lg" class="gap-2">
+										<ButtonComponent
+											onclick={handleSave}
+											disabled={isSaving}
+											size="lg"
+											class="gap-2"
+										>
 											{#if isSaving}
 												<div
 													class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
@@ -432,8 +436,10 @@
 												<CheckCircleFill class="h-4 w-4" />
 												Save Changes
 											{/if}
-										</Button>
-										<Button onclick={handleCancelEdit} variant="outline" size="lg">Cancel</Button>
+										</ButtonComponent>
+										<ButtonComponent onclick={handleCancelEdit} variant="outline" size="lg"
+											>Cancel</ButtonComponent
+										>
 									{/if}
 								</div>
 							</div>

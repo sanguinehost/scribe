@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { getIsAuthenticated, getIsLoadingAuth } from '$lib/auth.svelte';
 	import { Loader } from 'lucide-svelte';
 
 	let { children, redirectTo = '/signin' } = $props<{
-		children?: any;
+		children?: unknown;
 		redirectTo?: string;
 	}>();
 
 	// Redirect to signin if not authenticated
 	$effect(() => {
 		if (!getIsAuthenticated() && !getIsLoadingAuth()) {
-			goto(redirectTo);
+			_goto(redirectTo);
 		}
 	});
 </script>

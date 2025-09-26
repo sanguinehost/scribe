@@ -9,7 +9,7 @@
 	} from '$lib/stores/credits';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
 	import { Coins, AlertCircle, TrendingUp, Clock } from 'lucide-svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Progress from '$lib/components/ui/progress';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -26,8 +26,8 @@
 
 		try {
 			await Promise.all([creditStore.fetchBalance(), creditStore.fetchModelCosts()]);
-		} catch (error) {
-			console.error('Failed to fetch credit data:', error);
+		} catch (_error) {
+			console.error('Failed to fetch credit data:', _error);
 		}
 	});
 
@@ -88,10 +88,10 @@
 		</Tooltip.Root>
 
 		{#if showPurchaseButton}
-			<Button variant="outline" size="sm" on:click={onPurchaseClick}>
+			<ButtonComponent variant="outline" size="sm" onclick={onPurchaseClick}>
 				<TrendingUp class="mr-1 h-3.5 w-3.5" />
 				Buy
-			</Button>
+			</ButtonComponent>
 		{/if}
 	</div>
 {:else}
@@ -104,10 +104,10 @@
 					Credit Balance
 				</Card.Title>
 				{#if showPurchaseButton}
-					<Button variant="outline" size="sm" on:click={onPurchaseClick}>
+					<ButtonComponent variant="outline" size="sm" onclick={onPurchaseClick}>
 						<TrendingUp class="mr-1.5 h-4 w-4" />
 						Purchase Credits
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 			<Card.Description>Manage your credits and track usage</Card.Description>

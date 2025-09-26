@@ -1,5 +1,5 @@
 // Chronicle store for managing chronicles list
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import type { PlayerChronicleWithCounts } from '$lib/types';
 import { toast } from 'svelte-sonner';
 
@@ -13,7 +13,7 @@ class ChronicleStore {
 		this.error = null;
 
 		try {
-			const result = await apiClient.getChronicles();
+			const result = await _apiClient.getChronicles();
 			if (result.isOk()) {
 				this.chronicles = result.value;
 			} else {
@@ -22,7 +22,7 @@ class ChronicleStore {
 					description: result.error.message
 				});
 			}
-		} catch (error) {
+		} catch (_error) {
 			this.error = 'An unexpected error occurred';
 			toast.error('Failed to load chronicles');
 		} finally {

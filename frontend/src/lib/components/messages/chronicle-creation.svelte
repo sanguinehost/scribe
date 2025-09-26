@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import { Label } from '$lib/components/ui/label';
 	import {
 		Card,
@@ -40,7 +40,7 @@
 				description: description.trim() || undefined
 			};
 
-			const result = await apiClient.createChronicle(data);
+			const result = await _apiClient.createChronicle(data);
 			if (result.isOk()) {
 				toast.success('Chronicle created successfully');
 				// Refresh the chronicles store
@@ -57,9 +57,9 @@
 		}
 	}
 
-	function handleKeyDown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
+	function handleKeyDown(_event: KeyboardEvent) {
+		if (_event.key === 'Enter' && (_event.ctrlKey || _event.metaKey)) {
+			_event.preventDefault();
 			handleCreate();
 		}
 	}
@@ -67,14 +67,14 @@
 
 <div class="mx-auto max-w-2xl px-4">
 	<div class="mb-8">
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			onclick={handleGoBack}
 			class="mb-4 gap-2 text-muted-foreground hover:text-foreground"
 		>
 			<ArrowLeft class="h-4 w-4" />
 			Back to Chronicles
-		</Button>
+		</ButtonComponent>
 
 		<div class="flex items-center gap-3">
 			<ScrollText class="h-8 w-8 text-muted-foreground" />
@@ -111,7 +111,7 @@
 
 			<div class="space-y-2">
 				<Label for="chronicle-description">Description</Label>
-				<Textarea
+				<TextareaComponent
 					id="chronicle-description"
 					bind:value={description}
 					placeholder="Enter a brief description of your chronicle..."
@@ -126,15 +126,17 @@
 			</div>
 
 			<div class="flex gap-3 pt-4">
-				<Button onclick={handleCreate} disabled={isCreating || !name.trim()} class="gap-2">
+				<ButtonComponent onclick={handleCreate} disabled={isCreating || !name.trim()} class="gap-2">
 					{#if isCreating}
 						Creating...
 					{:else}
 						<Save class="h-4 w-4" />
 						Create Chronicle
 					{/if}
-				</Button>
-				<Button variant="outline" onclick={handleGoBack} disabled={isCreating}>Cancel</Button>
+				</ButtonComponent>
+				<ButtonComponent variant="outline" onclick={handleGoBack} disabled={isCreating}
+					>Cancel</ButtonComponent
+				>
 			</div>
 
 			<div class="rounded-md border border-muted bg-muted/20 p-4">

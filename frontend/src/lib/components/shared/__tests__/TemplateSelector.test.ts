@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import TemplateSelector from '../TemplateSelector.svelte';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import type { PromptTemplateInfo, PromptTemplateListResponse } from '$lib/types';
 import { ok } from 'neverthrow';
 
@@ -52,7 +52,7 @@ describe('TemplateSelector', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		(apiClient.getPromptTemplates as any).mockResolvedValue(ok(mockApiResponse));
+		vi.mocked(_apiClient.getPromptTemplates).mockResolvedValue(ok(mockApiResponse));
 	});
 
 	it('renders with loading state initially', () => {
@@ -66,7 +66,7 @@ describe('TemplateSelector', () => {
 	});
 
 	it('loads and displays templates after mount', async () => {
-		const { getByText, getByRole } = render(TemplateSelector, {
+		const { getByText, getByRole: _getByRole } = render(TemplateSelector, {
 			props: {
 				selectedTemplateId: 'neutral_roleplay'
 			}
@@ -78,7 +78,7 @@ describe('TemplateSelector', () => {
 		});
 
 		// Check that the API was called
-		expect(apiClient.getPromptTemplates).toHaveBeenCalledTimes(1);
+		expect(_apiClient.getPromptTemplates).toHaveBeenCalledTimes(1);
 	});
 
 	it('shows dropdown when clicked', async () => {
@@ -169,7 +169,7 @@ describe('TemplateSelector', () => {
 
 	it('handles API errors gracefully', async () => {
 		const mockError = new Error('API Error');
-		(apiClient.getPromptTemplates as any).mockRejectedValue(mockError);
+		vi.mocked(_apiClient.getPromptTemplates).mockRejectedValue(mockError);
 
 		const { getByText } = render(TemplateSelector, {
 			props: {
@@ -184,6 +184,6 @@ describe('TemplateSelector', () => {
 		});
 
 		// Check that API was called
-		expect(apiClient.getPromptTemplates).toHaveBeenCalledTimes(1);
+		expect(_apiClient.getPromptTemplates).toHaveBeenCalledTimes(1);
 	});
 });

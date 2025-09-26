@@ -2,7 +2,7 @@
 	// Effects are now used inline with $effect syntax
 	import { toast } from 'svelte-sonner';
 	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import TypewriterMessage from './TypewriterMessage.svelte';
 	import ChatHeader from './chat-header.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
@@ -43,9 +43,9 @@
 			streamingState.messages.some((msg) => msg.isAnimating === true)
 	);
 
-	let hasError = $derived(streamingState.currentError !== null);
+	let _hasError = $derived(streamingState.currentError !== null);
 
-	let lastMessage = $derived(
+	let _lastMessage = $derived(
 		streamingState.messages.length > 0
 			? streamingState.messages[streamingState.messages.length - 1]
 			: null
@@ -96,12 +96,12 @@
 		if (!chat?.id) return null;
 
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				return result.value.model_name || null;
 			}
-		} catch (error) {
-			console.error('Failed to get chat model:', error);
+		} catch (_error) {
+			console.error('Failed to get chat model:', _error);
 		}
 		return null;
 	}
@@ -161,8 +161,8 @@
 				history,
 				model: model || undefined
 			});
-		} catch (error) {
-			console.error('Failed to send message:', error);
+		} catch (_error) {
+			console.error('Failed to send message:', _error);
 			toast.error('Failed to send message. Please try again.');
 		}
 	}
@@ -197,7 +197,7 @@
 			const messageIndex = streamingState.messages.findIndex((msg) => msg.id === messageId);
 			if (messageIndex === -1) return;
 
-			const history = streamingState.messages
+			const _history = streamingState.messages
 				.slice(0, messageIndex)
 				.filter((msg) => !msg.isAnimating && !msg.error)
 				.map((msg) => ({
@@ -205,12 +205,12 @@
 					content: msg.content
 				}));
 
-			const model = await getCurrentChatModel();
+			const _model = await getCurrentChatModel();
 
 			// TODO: Implement retry functionality
 			toast.info('Retry functionality not yet implemented');
-		} catch (error) {
-			console.error('Failed to retry message:', error);
+		} catch (_error) {
+			console.error('Failed to retry message:', _error);
 			toast.error('Failed to retry message. Please try again.');
 		}
 	}

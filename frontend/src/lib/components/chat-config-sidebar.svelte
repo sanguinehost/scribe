@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { createEventDispatcher } from 'svelte';
 	import type { ScribeChatSession } from '$lib/types';
 	import type { UserPersona } from '$lib/types';
@@ -23,18 +23,18 @@
 		isOpen = !isOpen;
 	}
 
-	function handleSettingsUpdated(event: CustomEvent) {
-		dispatch('settingsUpdated', event.detail);
+	function handleSettingsUpdated(_event: CustomEvent) {
+		dispatch('settingsUpdated', _event.detail);
 	}
 
-	function handlePersonaChanged(event: CustomEvent) {
-		dispatch('personaChanged', event.detail);
+	function handlePersonaChanged(_event: CustomEvent) {
+		dispatch('personaChanged', _event.detail);
 	}
 </script>
 
 <!-- Toggle Button (always visible on the right edge) -->
 <div class="fixed right-4 top-1/2 z-50 -translate-y-1/2">
-	<Button
+	<ButtonComponent
 		variant="ghost"
 		size="sm"
 		onclick={toggleSidebar}
@@ -46,7 +46,7 @@
 		{:else}
 			<ChevronLeft class="h-4 w-4" />
 		{/if}
-	</Button>
+	</ButtonComponent>
 </div>
 
 <!-- Sidebar Panel -->
@@ -58,9 +58,9 @@
 		<div class="flex h-full flex-col">
 			<!-- Close Button Header -->
 			<div class="flex justify-end border-b p-2">
-				<Button variant="ghost" size="sm" onclick={toggleSidebar}>
+				<ButtonComponent variant="ghost" size="sm" onclick={toggleSidebar}>
 					<ChevronRight class="h-4 w-4" />
-				</Button>
+				</ButtonComponent>
 			</div>
 
 			<!-- Chat Config Panel -->

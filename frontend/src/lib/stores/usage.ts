@@ -1,7 +1,11 @@
 import { writable, derived } from 'svelte/store';
 import { PAYMENT_FEATURES } from '$lib/utils/features';
-import { apiClient } from '$lib/api';
-import type { UsageResponse, SoftLimitStatus, DailyUsage } from '$lib/types/payment';
+import { apiClient as _apiClient } from '$lib/api';
+import type {
+	UsageResponse as _UsageResponse,
+	SoftLimitStatus,
+	DailyUsage
+} from '$lib/types/payment';
 
 // Usage store state
 interface UsageState {
@@ -40,7 +44,7 @@ function createUsageStore() {
 		update((state) => ({ ...state, isLoading: true, error: null }));
 
 		try {
-			const result = await apiClient.getUsageStats();
+			const result = await _apiClient.getUsageStats();
 
 			if (result.isOk()) {
 				const data = result.value;
@@ -62,14 +66,14 @@ function createUsageStore() {
 				}));
 				throw new Error(errorMessage);
 			}
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Failed to fetch usage stats';
+		} catch (_error) {
+			const errorMessage = _error instanceof Error ? _error.message : 'Failed to fetch usage stats';
 			update((state) => ({
 				...state,
 				isLoading: false,
 				error: errorMessage
 			}));
-			throw error;
+			throw _error;
 		}
 	}
 

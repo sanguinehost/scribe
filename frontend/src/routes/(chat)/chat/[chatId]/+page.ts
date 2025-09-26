@@ -1,11 +1,11 @@
 import { error, redirect } from '@sveltejs/kit';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import type {
 	ScribeChatMessage,
 	ScribeChatSession,
 	ScribeCharacter,
-	MessageRole,
-	BackendAuthResponse,
+	MessageRole as _MessageRole,
+	BackendAuthResponse as _BackendAuthResponse,
 	Message
 } from '$lib/types.ts';
 
@@ -15,7 +15,7 @@ export async function load({ params: { chatId }, parent }) {
 		const { user } = parentData; // Get user from parent layout
 
 		// Fetch chat session details
-		const chatResult = await apiClient.getChatById(chatId);
+		const chatResult = await _apiClient.getChatById(chatId);
 		if (chatResult.isErr()) {
 			if ('statusCode' in chatResult.error) {
 				if (chatResult.error.statusCode === 404) {
@@ -32,7 +32,7 @@ export async function load({ params: { chatId }, parent }) {
 		const chat: ScribeChatSession = chatResult.value;
 
 		// Fetch initial batch of chat messages (first page)
-		const messagesResult = await apiClient.getMessagesByChatId(chatId, { limit: 20 });
+		const messagesResult = await _apiClient.getMessagesByChatId(chatId, { limit: 20 });
 		if (messagesResult.isErr()) {
 			if ('statusCode' in messagesResult.error && messagesResult.error.statusCode === 401) {
 				// Authentication failed (likely DEK missing after server restart)
@@ -106,7 +106,7 @@ export async function load({ params: { chatId }, parent }) {
 		// Fetch character details using the character_id from the chat session
 		let character: ScribeCharacter | null = null;
 		if (chat.character_id) {
-			const characterResult = await apiClient.getCharacter(chat.character_id);
+			const characterResult = await _apiClient.getCharacter(chat.character_id);
 			if (characterResult.isOk()) {
 				character = characterResult.value;
 			} else {
@@ -118,8 +118,8 @@ export async function load({ params: { chatId }, parent }) {
 		}
 
 		return { chat, messages, character, user, initialCursor };
-	} catch (e) {
-		console.error('Error loading chat data:', e);
+	} catch (_e) {
+		console.error('Error loading chat data:', _e);
 		error(500, 'An error occurred while processing your request');
 	}
 }

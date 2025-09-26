@@ -2,7 +2,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
 	import {
 		Dialog,
@@ -11,9 +11,9 @@
 		DialogTitle,
 		DialogDescription
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import type { PlanType } from '$lib/types';
 
 	// Props
@@ -157,30 +157,11 @@
 					plan: selectedPlan,
 					billing: selectedBilling,
 					source: 'checkout_overlay'
-				},
-				// Success callback (called when checkout completes)
-				successCallback: (data: any) => {
-					console.log('✅ Paddle checkout success:', data);
-					// Extract transaction ID from the data
-					const transactionId =
-						data.transactionId || data.transaction?.id || data.checkout?.transactionId;
-					if (transactionId) {
-						dispatch('checkout-complete', { transactionId });
-						// The successUrl will handle redirect, but fallback just in case
-						if (!data.redirected) {
-							window.location.href = `/pay?_ptxn=${transactionId}`;
-						}
-					}
-				},
-				// Close callback (called when user closes checkout)
-				closeCallback: () => {
-					console.log('Paddle checkout closed by user');
-					checkoutLoading = false;
-					handleClose();
 				}
 			});
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Payment initialization failed';
+		} catch (_error) {
+			const errorMessage =
+				_error instanceof Error ? _error.message : 'Payment initialization failed';
 			console.error('❌ Checkout error:', errorMessage);
 			checkoutError = errorMessage;
 			checkoutLoading = false;
@@ -197,13 +178,13 @@
 		selectedPlan = plan;
 	}
 
-	function toggleBilling() {
+	function _toggleBilling() {
 		selectedBilling = selectedBilling === 'monthly' ? 'yearly' : 'monthly';
 	}
 </script>
 
 {#if ENABLE_PAYMENTS}
-	<Dialog bind:open onOpenChange={(value) => !checkoutLoading && dispatch('close')}>
+	<Dialog bind:open onOpenChange={(_value) => !checkoutLoading && dispatch('close')}>
 		<DialogContent class="max-w-4xl">
 			<DialogHeader>
 				<DialogTitle>Choose Your Plan</DialogTitle>
@@ -220,7 +201,7 @@
 							class="rounded-md px-4 py-2 transition-all {selectedBilling === 'monthly'
 								? 'bg-background shadow-sm'
 								: ''}"
-							on:click={() => (selectedBilling = 'monthly')}
+							onclick={() => (selectedBilling = 'monthly')}
 							disabled={checkoutLoading}
 						>
 							Monthly
@@ -229,11 +210,11 @@
 							class="rounded-md px-4 py-2 transition-all {selectedBilling === 'yearly'
 								? 'bg-background shadow-sm'
 								: ''}"
-							on:click={() => (selectedBilling = 'yearly')}
+							onclick={() => (selectedBilling = 'yearly')}
 							disabled={checkoutLoading}
 						>
 							Yearly
-							<Badge variant="secondary" class="ml-2">Save 17%</Badge>
+							<BadgeComponent variant="secondary" class="ml-2">Save 17%</BadgeComponent>
 						</button>
 					</div>
 				</div>
@@ -245,7 +226,7 @@
 							class="cursor-pointer transition-all {selectedPlan === planKey
 								? 'ring-2 ring-primary'
 								: ''}"
-							on:click={() => selectPlan(planKey)}
+							onclick={() => selectPlan(planKey as PlanType)}
 						>
 							<CardContent class="p-6">
 								<div class="space-y-4">
@@ -291,7 +272,7 @@
 
 									{#if selectedPlan === planKey}
 										<div class="pt-2">
-											<Badge variant="default">Selected</Badge>
+											<BadgeComponent variant="default">Selected</BadgeComponent>
 										</div>
 									{/if}
 								</div>
@@ -316,7 +297,7 @@
 									<div class="text-2xl font-bold text-primary">
 										{currentPrice.display}
 									</div>
-									{#if selectedBilling === 'yearly'}
+									{#if selectedBilling === 'yearly' && 'savings' in currentPrice}
 										<div class="text-sm text-accent">
 											{currentPrice.savings}
 										</div>
@@ -367,10 +348,14 @@
 
 				<!-- Action Buttons -->
 				<div class="flex justify-end gap-3">
-					<Button variant="outline" on:click={handleClose} disabled={checkoutLoading}>
-						Cancel
-					</Button>
-					<Button on:click={handleCheckout} disabled={checkoutLoading} class="min-w-[150px]">
+					<ButtonComponent variant="outline" onclick={handleClose} disabled={checkoutLoading}
+						>Cancel</ButtonComponent
+					>
+					<ButtonComponent
+						onclick={handleCheckout}
+						disabled={checkoutLoading}
+						class="min-w-[150px]"
+					>
 						{#if checkoutLoading}
 							<div
 								class="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
@@ -379,7 +364,7 @@
 						{:else}
 							Continue to Checkout
 						{/if}
-					</Button>
+					</ButtonComponent>
 				</div>
 			</div>
 		</DialogContent>
