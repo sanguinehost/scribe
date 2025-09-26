@@ -86,8 +86,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Rust
+    - name: Install Rust with clippy
       uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
 
     - name: Run cargo audit
       run: |

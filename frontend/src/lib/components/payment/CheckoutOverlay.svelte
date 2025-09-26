@@ -149,6 +149,10 @@
 				environment: PUBLIC_PADDLE_CLIENT_SIDE_TOKEN?.startsWith('test_') ? 'sandbox' : 'production'
 			});
 
+			// Close our dialog first to avoid z-index conflicts with Paddle overlay
+			open = false;
+			dispatch('close');
+
 			window.Paddle.Checkout.open({
 				// Items to purchase
 				items: [
@@ -396,5 +400,25 @@
 {/if}
 
 <style>
-	/* Additional styles if needed */
+	/* Ensure Paddle overlay has highest z-index and is clickable */
+	:global(.paddle-checkout-container) {
+		z-index: 9999 !important;
+		pointer-events: auto !important;
+	}
+
+	:global(.paddle-overlay) {
+		z-index: 9999 !important;
+		pointer-events: auto !important;
+	}
+
+	:global([data-paddle-overlay]) {
+		z-index: 9999 !important;
+		pointer-events: auto !important;
+	}
+
+	/* Ensure Paddle iframe is interactive */
+	:global(.paddle-checkout-container iframe) {
+		pointer-events: auto !important;
+		z-index: 10000 !important;
+	}
 </style>
