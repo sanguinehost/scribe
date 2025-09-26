@@ -20,6 +20,7 @@ use crate::models::chats::{
 };
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
     Router,
@@ -135,7 +136,7 @@ pub async fn set_chat_character_override_handler(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %user.id, field_name = %payload.field_name, "Attempting to set chat character override");
+    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %loggable_user_id(user.id), field_name = %payload.field_name, "Attempting to set chat character override");
 
     // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
     // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
@@ -697,7 +698,10 @@ fn fetch_chat_with_ownership_check(
         ));
     }
 
-    tracing::debug!("Successfully verified chat ownership for user {}", user_id);
+    tracing::debug!(
+        "Successfully verified chat ownership for user {}",
+        loggable_user_id(user_id)
+    );
     Ok(chat)
 }
 
@@ -958,7 +962,11 @@ pub async fn get_messages_by_chat_id_handler(
     let chat_id = parse_chat_id(&id)?;
     let user = get_authenticated_user(auth_session)?;
 
-    tracing::debug!("Parsed chat_id = {}, user_id = {}", chat_id, user.id);
+    tracing::debug!(
+        "Parsed chat_id = {}, user_id = {}",
+        chat_id,
+        loggable_user_id(user.id)
+    );
 
     // Fetch chat session and verify ownership
     let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;

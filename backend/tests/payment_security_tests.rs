@@ -19,7 +19,7 @@ mod payment_security_tests {
     use scribe_backend::{
         config::Config,
         errors::AppError,
-        models::users::{AccountStatus, NewUser, UserRole},
+        models::users::UserRole,
         services::payment::CreditService,
         test_helpers::{TestDataGuard, spawn_app},
     };
@@ -484,6 +484,8 @@ mod payment_security_tests {
 
         // Note: Rate limiting might not be enforced in test environment
         // This test documents the expected behavior
+        // Variable here for future use when rate limiting is fully implemented
+        let _ = too_many_requests;
     }
 
     // ===== Missing Endpoint Security Tests =====
@@ -940,6 +942,7 @@ mod payment_security_tests {
     }
 
     // ===== Helper function to get balance =====
+    #[allow(dead_code)]
     async fn get_user_balance(
         pool: &Pool<DeadpoolManager<diesel::PgConnection>>,
         config: Arc<Config>,

@@ -198,7 +198,7 @@ mod payment_integration_tests {
                     test_name.map(String::from),
                     "Name should match"
                 );
-                println!("✓ Successfully created customer: {}", customer.id);
+                // ✓ Successfully created customer
             }
             Err(e) => {
                 // Log the error but don't fail the test in case of API issues
@@ -228,14 +228,13 @@ mod payment_integration_tests {
 
         match customer_result {
             Ok(customer) => {
-                println!(
-                    "✅ Created customer: {} with email: {}",
-                    customer.id, test_email
-                );
+                println!("✅ Created customer: [ID-REDACTED] with email: [REDACTED]");
+                let customer_id = customer.id.clone();
+                let _ = (customer_id.clone(), test_email); // Variables kept for future debugging use
 
                 // Now create a transaction using the new API
                 let transaction_request = CreateTransactionRequest {
-                    customer_id: customer.id.clone(),
+                    customer_id: customer_id,
                     items: vec![TransactionItem {
                         price_id: TEST_PRICE_ID.to_string(),
                         quantity: 1,
@@ -272,7 +271,7 @@ mod payment_integration_tests {
                         println!(
                             "📝 Open this URL in your browser to complete the transaction in Paddle sandbox"
                         );
-                        println!("📧 Customer email for checkout: {}", test_email);
+                        // 📧 Customer email for checkout: [REDACTED];
 
                         // Verify the checkout URL contains the transaction parameter
                         if transaction.checkout_url.contains("?_ptxn=") {
@@ -317,14 +316,13 @@ mod payment_integration_tests {
 
         match customer_result {
             Ok(customer) => {
-                println!(
-                    "✅ Created customer: {} with email: {}",
-                    customer.id, test_email
-                );
+                println!("✅ Created customer: [ID-REDACTED] with email: [REDACTED]");
+                let customer_id = customer.id.clone();
+                let _ = (customer_id.clone(), test_email); // Variables kept for future debugging use
 
                 // Step 2: Create transaction for the real customer
                 let transaction_request = CreateTransactionRequest {
-                    customer_id: customer.id.clone(),
+                    customer_id: customer_id,
                     items: vec![TransactionItem {
                         price_id: TEST_PRICE_ID.to_string(),
                         quantity: 1,
@@ -361,7 +359,7 @@ mod payment_integration_tests {
                         println!(
                             "📝 Open this URL in your browser to complete the transaction in Paddle sandbox"
                         );
-                        println!("📧 Customer email for checkout: {}", test_email);
+                        // 📧 Customer email for checkout: [REDACTED];
 
                         // Verify the URL format
                         if transaction.checkout_url.contains("?_ptxn=") {

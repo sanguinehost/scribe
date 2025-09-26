@@ -9,6 +9,7 @@ use crate::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient,
 };
 use crate::models::users::{User, UserDbQuery};
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
 use crate::services::encryption_service::EncryptionService;
 use crate::state::DbPool;
@@ -140,7 +141,7 @@ impl UserPersonaService {
                 AppError::InternalServerErrorGeneric(format!("DB interact join error: {e}"))
             })??; // Flatten Result<Result<T, E1>, E2>
 
-        tracing::info!(user_id = %current_user.id, persona_id = %inserted_persona.id, "Successfully created user persona");
+        tracing::info!(user_id = %loggable_user_id(current_user.id), persona_id = %inserted_persona.id, "Successfully created user persona");
 
         inserted_persona.into_data_for_client(Some(dek))
     }
@@ -175,16 +176,16 @@ impl UserPersonaService {
             Some(persona_db) => {
                 if persona_db.user_id != current_user.id {
                     tracing::warn!(
-                        current_user_id = %current_user.id,
+                        current_user_id = %loggable_user_id(current_user.id),
                         target_persona_id = %persona_db.id,
-                        target_persona_user_id = %persona_db.user_id,
+                        target_persona_user_id = %loggable_user_id(persona_db.user_id),
                         "User attempted to access a persona they do not own."
                     );
                     return Err(AppError::Forbidden(
                         "Access denied to user persona".to_string(),
                     ));
                 }
-                tracing::info!(user_id = %current_user.id, persona_id = %persona_db.id, "Successfully fetched user persona, attempting conversion to client data.");
+                tracing::info!(user_id = %loggable_user_id(current_user.id), persona_id = %persona_db.id, "Successfully fetched user persona, attempting conversion to client data.");
                 persona_db.into_data_for_client(dek_opt)
             }
             None => Err(AppError::NotFound(format!(
@@ -228,7 +229,7 @@ impl UserPersonaService {
                 Ok(client_data) => personas_for_client.push(client_data),
                 Err(e) => {
                     tracing::error!(
-                        user_id = %current_user.id,
+                        user_id = %loggable_user_id(current_user.id),
                         persona_id = %persona_id_for_log,
                         error = ?e,
                         "Failed to decrypt persona during list operation. Skipping this persona."
@@ -237,7 +238,7 @@ impl UserPersonaService {
                 }
             }
         }
-        tracing::info!(user_id = %current_user.id, count = personas_for_client.len(), "Successfully listed and decrypted user personas");
+        tracing::info!(user_id = %loggable_user_id(current_user.id), count = personas_for_client.len(), "Successfully listed and decrypted user personas");
         Ok(personas_for_client)
     }
 
@@ -276,9 +277,9 @@ impl UserPersonaService {
 
         if persona.user_id != current_user.id {
             tracing::warn!(
-                current_user_id = %current_user.id,
+                current_user_id = %loggable_user_id(current_user.id),
                 target_persona_id = %persona.id,
-                target_persona_user_id = %persona.user_id,
+                target_persona_user_id = %loggable_user_id(persona.user_id),
                 "User attempted to update a persona they do not own."
             );
             return Err(AppError::Forbidden(
@@ -372,7 +373,7 @@ impl UserPersonaService {
         );
 
         if !changed {
-            tracing::debug!(user_id = %current_user.id, %persona_id, "No changes detected for user persona update. Returning existing.");
+            tracing::debug!(user_id = %loggable_user_id(current_user.id), %persona_id, "No changes detected for user persona update. Returning existing.");
             return persona.into_data_for_client(Some(dek));
         }
 
@@ -400,7 +401,7 @@ impl UserPersonaService {
                 ))
             })??;
 
-        tracing::info!(user_id = %current_user.id, persona_id = %updated_persona_db.id, "Successfully updated user persona");
+        tracing::info!(user_id = %loggable_user_id(current_user.id), persona_id = %updated_persona_db.id, "Successfully updated user persona");
         updated_persona_db.into_data_for_client(Some(dek))
     }
 
@@ -436,9 +437,9 @@ impl UserPersonaService {
             Some(persona) => {
                 if persona.user_id != current_user.id {
                     tracing::warn!(
-                        current_user_id = %current_user.id,
+                        current_user_id = %loggable_user_id(current_user.id),
                         target_persona_id = %persona.id,
-                        target_persona_user_id = %persona.user_id,
+                        target_persona_user_id = %loggable_user_id(persona.user_id),
                         "User attempted to delete a persona they do not own."
                     );
                     return Err(AppError::Forbidden(
@@ -474,12 +475,12 @@ impl UserPersonaService {
                 if num_deleted == 0 {
                     // This case should ideally not be reached if the fetch & ownership check passed,
                     // unless there was a race condition (persona deleted between fetch and delete query).
-                    tracing::warn!(user_id = %current_user.id, %persona_id, "Delete operation affected 0 rows, though persona was fetched and owned.");
+                    tracing::warn!(user_id = %loggable_user_id(current_user.id), %persona_id, "Delete operation affected 0 rows, though persona was fetched and owned.");
                     Err(AppError::NotFound(format!(
                         "User persona with ID {persona_id} not found during delete, or already deleted."
                     )))
                 } else {
-                    tracing::info!(user_id = %current_user.id, %persona_id, "Successfully deleted user persona");
+                    tracing::info!(user_id = %loggable_user_id(current_user.id), %persona_id, "Successfully deleted user persona");
                     Ok(())
                 }
             }
@@ -515,7 +516,7 @@ impl UserPersonaService {
                 ))
             })??;
 
-        tracing::info!(user_id = %user_id_val, default_persona_id = ?persona_id_val, "Successfully set default persona for user");
+        tracing::info!(user_id = %loggable_user_id(user_id_val), default_persona_id = ?persona_id_val, "Successfully set default persona for user");
 
         // Convert UserDbQuery to User before returning
         // This assumes User::from(UserDbQuery) handles DEK decryption or sets it to None appropriately.

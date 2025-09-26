@@ -555,7 +555,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
     let test_username = format!("list_user_{}", Uuid::new_v4());
     let test_password = "password123";
 
-    println!("Test user: {test_username}");
+    // Test user: [USERNAME-REDACTED]
 
     // Insert user with known password hash using the *new* helper
     let user = {
@@ -573,7 +573,7 @@ async fn test_list_characters_handler_with_auth() -> Result<(), AnyhowError> {
             .await;
         match interact_result {
             Ok(Ok(u)) => {
-                println!("Successfully inserted test user: {}", u.username);
+                // Successfully inserted test user: [USERNAME-REDACTED]
                 Ok(u)
             }
             Ok(Err(e)) => {

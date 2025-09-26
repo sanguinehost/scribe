@@ -4,12 +4,11 @@ mod plan_enforcement_middleware_tests {
     use deadpool_diesel::{Manager as DeadpoolManager, Pool};
     use diesel::prelude::*;
     use scribe_backend::{
-        middleware::plan_enforcement::{EnforcementConfig, EnforcementResult},
+        middleware::plan_enforcement::EnforcementConfig,
         models::users::UserRole,
         services::{EncryptionService, payment::SubscriptionService},
         test_helpers::{TestDataGuard, spawn_app},
     };
-    use serde_json::json;
     use uuid::Uuid;
 
     /// Helper function to create a test user
@@ -72,9 +71,9 @@ mod plan_enforcement_middleware_tests {
     #[tokio::test]
     async fn test_enforcement_config_creation() {
         // Test that various enforcement configurations can be created
-        let basic_config = EnforcementConfig::basic_chat();
-        let advanced_config = EnforcementConfig::advanced_chat();
-        let disabled_config = EnforcementConfig::disabled();
+        let _basic_config = EnforcementConfig::basic_chat();
+        let _advanced_config = EnforcementConfig::advanced_chat();
+        let _disabled_config = EnforcementConfig::disabled();
 
         // Basic smoke tests - configs should be created successfully
         assert!(true, "EnforcementConfig variants created successfully");
@@ -125,7 +124,7 @@ mod plan_enforcement_middleware_tests {
 
         // Test that SubscriptionService can be created for plan enforcement
         let encryption_service = EncryptionService::new();
-        let subscription_service =
+        let _subscription_service =
             SubscriptionService::new((*app.config).clone(), encryption_service);
 
         // Basic smoke test - service should be created successfully

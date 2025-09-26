@@ -26,6 +26,7 @@ use crate::{
         chats::DbInsertableChatMessage, // ChatMessage and MessageRole will be from super::types
         lorebooks::ChatSessionLorebook, // User is used by get_session_data_for_generation
     },
+    privacy::logging::loggable_user_id,
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
         embeddings::RetrievedChunk, // For RAG chunks
@@ -128,7 +129,10 @@ pub async fn get_session_data_for_generation(
                     })?;
 
                 let user_db_query = user_db_query_result.map_err(|e| {
-                    AppError::NotFound(format!("UserDbQuery for user {user_id} not found: {e}"))
+                    AppError::NotFound(format!(
+                        "UserDbQuery for user {} not found: {e}",
+                        loggable_user_id(user_id)
+                    ))
                 })?;
                 user_db_query.into()
             };

@@ -9,6 +9,7 @@ use crate::errors::AppError;
 use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};
 use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterDataForClient};
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::character_assets::dsl::character_assets;
 use crate::schema::characters::dsl::{characters, id, user_id};
 use crate::services::character_generation::{
@@ -1206,7 +1207,7 @@ pub async fn get_character_asset_handler(
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
-    tracing::info!(%character_id, %asset_id, %local_user_id, "Fetching character asset for user");
+    tracing::info!(%character_id, %asset_id, user_id = %loggable_user_id(local_user_id), "Fetching character asset for user");
 
     // First, verify that the character belongs to the user
     let conn = state

@@ -7,6 +7,8 @@
 //! - Plan information retrieval
 
 #[cfg(feature = "payment")]
+use crate::privacy::logging::{loggable_user_id, sanitize_json_value, sanitize_personal_info};
+#[cfg(feature = "payment")]
 use axum::{
     Router,
     extract::{Path, Query, State},
@@ -311,7 +313,11 @@ pub async fn get_subscription(
                 })
             }
             Err(e) => {
-                warn!("Failed to get usage limits for user {}: {}", user.id, e);
+                warn!(
+                    "Failed to get usage limits for user {}: {}",
+                    loggable_user_id(user.id),
+                    e
+                );
                 // Fallback to default values without usage data
                 Some(UsageLimitsResponse {
                     tokens_used_total: 0, // Unknown usage, default to 0
@@ -413,7 +419,11 @@ pub async fn get_usage(
             }))
         }
         Err(e) => {
-            warn!("Failed to get usage limits for user {}: {}", user.id, e);
+            warn!(
+                "Failed to get usage limits for user {}: {}",
+                loggable_user_id(user.id),
+                e
+            );
             // Fallback to safe defaults
             Ok(Json(UsageLimitsResponse {
                 tokens_used_total: 0,
@@ -447,9 +457,9 @@ pub async fn create_payment(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     tracing::info!(
-        user_id = %user.id,
-        user_email = %user.email,
-        user_username = %user.username,
+        user_id = %loggable_user_id(user.id),
+        user_email = %sanitize_personal_info(&user.email),
+        user_username = %sanitize_personal_info(&user.username),
         "🎯 CREATE_PAYMENT: User authenticated"
     );
 
@@ -458,8 +468,8 @@ pub async fn create_payment(
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
 
     tracing::debug!(
-        customer_email = %user.email,
-        customer_name = %user.username,
+        customer_email = %sanitize_personal_info(&user.email),
+        customer_name = %sanitize_personal_info(&user.username),
         "🎯 CREATE_PAYMENT: Creating/getting Paddle customer"
     );
     let customer = paddle_service
@@ -468,7 +478,7 @@ pub async fn create_payment(
 
     tracing::info!(
         customer_id = %customer.id,
-        customer_email = ?customer.email,
+        customer_email = %customer.email.as_ref().map(|e| sanitize_personal_info(e).to_string()).unwrap_or_else(|| "None".to_string()),
         "🎯 CREATE_PAYMENT: Paddle customer resolved"
     );
 
@@ -588,7 +598,7 @@ pub async fn verify_transaction(
     tracing::info!(
         "🎯 Verifying transaction {} for user {}",
         transaction_id,
-        user.id
+        loggable_user_id(user.id)
     );
 
     // First, check if we have the transaction in our database
@@ -1176,9 +1186,8 @@ pub async fn paddle_webhook(
 ) -> Result<Json<WebhookResponse>, AppError> {
     tracing::info!("🎯 PADDLE WEBHOOK HANDLER CALLED - Received Paddle webhook");
 
-    // Log the full raw payload for debugging
-    let payload_string = String::from_utf8_lossy(&body);
-    tracing::info!("🎯 Raw webhook payload: {}", payload_string);
+    // Log webhook metadata for debugging (payload contains PII and is not logged)
+    tracing::info!("🎯 Received webhook payload of {} bytes", body.len());
 
     // Log all headers for debugging
     tracing::info!("🎯 Webhook headers: {:?}", headers);
@@ -1211,9 +1220,11 @@ pub async fn paddle_webhook(
     // 4. Try to parse as generic JSON first to see the structure
     match serde_json::from_slice::<serde_json::Value>(&body) {
         Ok(raw_json) => {
-            tracing::info!(
-                "🎯 Raw JSON structure: {}",
-                serde_json::to_string_pretty(&raw_json).unwrap_or("unparseable".to_string())
+            // Log sanitized structure (removes PII)
+            let sanitized_json = sanitize_json_value(&raw_json);
+            tracing::debug!(
+                "🎯 Sanitized JSON structure: {}",
+                serde_json::to_string_pretty(&sanitized_json).unwrap_or("unparseable".to_string())
             );
 
             // Check for different possible event_type field names
@@ -1401,7 +1412,10 @@ async fn process_transaction_completed(
         if let Some(customer_data) = webhook_data.data.get("customer") {
             tracing::info!("🎯 Found customer data in webhook");
             if let Some(email) = customer_data.get("email").and_then(|v| v.as_str()) {
-                tracing::info!("🎯 Found customer email in webhook: {}", email);
+                tracing::info!(
+                    "🎯 Found customer email in webhook: {}",
+                    sanitize_personal_info(email)
+                );
                 Some(email.to_string())
             } else {
                 tracing::warn!("🎯 Customer data found but no email field");
@@ -1418,7 +1432,10 @@ async fn process_transaction_completed(
             .or_else(|| transaction_data.get("email"))
             .and_then(|v| v.as_str())
             .map(|email| {
-                tracing::info!("🎯 Found customer email in transaction: {}", email);
+                tracing::info!(
+                    "🎯 Found customer email in transaction: {}",
+                    sanitize_personal_info(email)
+                );
                 email.to_string()
             })
     })
@@ -1429,15 +1446,19 @@ async fn process_transaction_completed(
             .and_then(|billing| billing.get("email"))
             .and_then(|v| v.as_str())
             .map(|email| {
-                tracing::info!("🎯 Found customer email in billing details: {}", email);
+                tracing::info!(
+                    "🎯 Found customer email in billing details: {}",
+                    sanitize_personal_info(email)
+                );
                 email.to_string()
             })
     })
     .unwrap_or_else(|| {
-        // Fallback: Log the webhook structure and use test email
+        // Fallback: Log sanitized webhook structure and use test email
+        let sanitized_data = sanitize_json_value(&webhook_data.data);
         tracing::error!(
-            "🎯 Could not find customer email anywhere in webhook. Full webhook data: {}",
-            serde_json::to_string_pretty(&webhook_data.data).unwrap_or("unparseable".to_string())
+            "🎯 Could not find customer email anywhere in webhook. Sanitized webhook data: {}",
+            serde_json::to_string_pretty(&sanitized_data).unwrap_or("unparseable".to_string())
         );
         tracing::warn!(
             "🎯 Using fallback test email for customer_id: {}",
@@ -1448,7 +1469,7 @@ async fn process_transaction_completed(
 
     tracing::info!(
         "🎯 Processing transaction for customer email: {}",
-        customer_email
+        sanitize_personal_info(&customer_email)
     );
 
     // Find user by email
@@ -1467,7 +1488,7 @@ async fn process_transaction_completed(
         Ok(Err(_)) => {
             tracing::warn!(
                 "🎯 User not found for customer email: {}, skipping subscription creation",
-                customer_email
+                sanitize_personal_info(&customer_email)
             );
             return Ok(());
         }
@@ -1478,7 +1499,7 @@ async fn process_transaction_completed(
 
     tracing::info!(
         "🎯 Found user {} for transaction {}",
-        user.id,
+        loggable_user_id(user.id),
         transaction_id
     );
 
@@ -1684,7 +1705,7 @@ async fn process_transaction_completed(
     tracing::info!(
         "🎯 Successfully created subscription {} for user {} from transaction {}",
         subscription.id,
-        user.id,
+        loggable_user_id(user.id),
         transaction_id
     );
 

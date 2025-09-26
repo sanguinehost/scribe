@@ -51,11 +51,11 @@ async fn test_payment_usage_tracking_direct() {
         last_activity: chrono::Utc::now(),
     };
 
-    println!("Testing payment usage tracking for user: {}", test_user_id);
+    // Testing payment usage tracking for test user (not logging actual ID for privacy)
 
     // Track usage
     let conn = app.db_pool.get().await.unwrap();
-    let tracked = conn
+    let _tracked = conn
         .interact(move |conn| {
             usage_service.track_usage_sync(
                 conn,
@@ -69,7 +69,7 @@ async fn test_payment_usage_tracking_direct() {
         .unwrap()
         .unwrap();
 
-    println!("Usage tracked successfully: {:?}", tracked);
+    // Usage tracked successfully - continuing verification
 
     // Verify the data was stored in payment_usage_tracking table
     let conn = app.db_pool.get().await.unwrap();
@@ -87,11 +87,8 @@ async fn test_payment_usage_tracking_direct() {
 
     match stored_usage {
         Some(usage) => {
-            println!("✅ SUCCESS: Payment usage tracking record found!");
-            println!("  User ID: {}", usage.user_id);
-            println!("  Tokens used: {}", usage.tokens_used);
-            println!("  Period: {} to {}", usage.period_start, usage.period_end);
-            println!("  Has metadata: {}", usage.metadata_encrypted.is_some());
+            // ✅ SUCCESS: Payment usage tracking record found
+            // Verifying record fields without logging sensitive data
 
             // Assertions
             assert_eq!(usage.user_id, test_user_id);
@@ -106,5 +103,5 @@ async fn test_payment_usage_tracking_direct() {
         }
     }
 
-    println!("✅ Payment usage tracking test completed successfully!");
+    // ✅ Payment usage tracking test completed successfully
 }

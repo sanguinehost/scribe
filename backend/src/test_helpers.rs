@@ -2240,7 +2240,7 @@ impl TestDataGuard {
         }
 
         if !self.user_ids.is_empty() {
-            tracing::debug!(user_ids = ?self.user_ids, "Cleaning up test users");
+            tracing::debug!(user_count = self.user_ids.len(), "Cleaning up test users");
             let user_ids_clone = self.user_ids.clone();
             let diesel_op_result_users = conn
                 .interact(move |conn_interaction| {

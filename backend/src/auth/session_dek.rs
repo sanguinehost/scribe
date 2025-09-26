@@ -1,5 +1,6 @@
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
+use crate::privacy::logging::loggable_user_id;
 use async_trait::async_trait;
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_login::AuthSession;
@@ -73,25 +74,25 @@ where
         })?;
 
         let user_id = user.id;
-        tracing::warn!(target: "auth_debug", "SessionDek: Found authenticated user with ID: {}", user_id);
+        tracing::warn!(target: "auth_debug", "SessionDek: Found authenticated user with ID: {}", loggable_user_id(user_id));
 
         // The AuthBackend's get_user method populates the DEK from cache
         // So if the user has a DEK, it should be present in the user object
         user.dek.map_or_else(
             || {
-                tracing::warn!(target: "auth_debug", "SessionDek: DEK not found in user object for user_id: {}", user_id);
+                tracing::warn!(target: "auth_debug", "SessionDek: DEK not found in user object for user_id: {}", loggable_user_id(user_id));
                 warn!(
-                    user_id = %user_id,
+                    user_id = %loggable_user_id(user_id),
                     "SessionDek extractor: DEK not found in user object. User may need to log in again."
                 );
 
                 Err(AppError::DekMissing)
             },
             |dek_wrapper| {
-                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", user_id);
+                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", loggable_user_id(user_id));
                 debug!(
                     "SessionDek extractor: Successfully retrieved DEK from user object for user_id: {}",
-                    user_id
+                    loggable_user_id(user_id)
                 );
 
                 // Convert SerializableSecretDek to SessionDek

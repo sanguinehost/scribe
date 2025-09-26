@@ -22,6 +22,7 @@ use crate::models::chats::{
     SuggestedActionsRequest,
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
 };
+use crate::privacy::logging::loggable_user_id;
 use crate::prompt_builder;
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
@@ -198,7 +199,7 @@ pub async fn generate_chat_response(
         .user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
-    tracing::debug!(user_id = %user.id, user_dek_from_auth_session_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
+    tracing::debug!(user_id = %loggable_user_id(user.id), user_dek_from_auth_session_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
 
     let user_id_value = user.id;
     let session_dek_arc = Arc::new(session_dek.0); // MODIFIED: Create Arc for SessionDek

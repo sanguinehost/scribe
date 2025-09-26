@@ -92,7 +92,7 @@ mod credit_integration_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let sub = conn
             .interact(move |conn| {
-                let subscription_service =
+                let _subscription_service =
                     SubscriptionService::new(config_for_sub.as_ref().clone(), encryption_service);
 
                 // Create subscription

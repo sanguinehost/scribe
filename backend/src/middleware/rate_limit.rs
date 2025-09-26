@@ -1,10 +1,12 @@
-use crate::errors::AppError;
 use axum::{extract::Request, middleware::Next, response::Response};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
+
+#[cfg(feature = "payment")]
+use crate::errors::AppError;
 
 /// Simple in-memory rate limiter for template endpoints
 ///

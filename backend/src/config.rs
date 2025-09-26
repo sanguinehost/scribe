@@ -502,7 +502,8 @@ impl Config {
                 "staging" => "https://qdrant.staging.local:6334".to_string(),
                 "production" => "https://qdrant.production.local:6334".to_string(),
                 "container" => "https://qdrant:6334".to_string(),
-                "local" | _ => "https://localhost:6334".to_string(),
+                "local" => "https://localhost:6334".to_string(),
+                _ => "https://localhost:6334".to_string(),
             });
         }
 
@@ -547,19 +548,19 @@ impl Config {
             .map_err(|e| anyhow::anyhow!("Invalid subscription config JSON: {}", e))?;
 
         // Validate required sections exist
-        if !tiers_config.get("tiers").is_some() {
+        if tiers_config.get("tiers").is_none() {
             return Err(anyhow::anyhow!(
                 "Missing 'tiers' section in subscription config"
             ));
         }
 
-        if !tiers_config.get("credit_system").is_some() {
+        if tiers_config.get("credit_system").is_none() {
             return Err(anyhow::anyhow!(
                 "Missing 'credit_system' section in subscription config"
             ));
         }
 
-        if !tiers_config.get("feature_flags").is_some() {
+        if tiers_config.get("feature_flags").is_none() {
             return Err(anyhow::anyhow!(
                 "Missing 'feature_flags' section in subscription config"
             ));
