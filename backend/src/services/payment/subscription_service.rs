@@ -133,6 +133,46 @@ impl SubscriptionService {
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
+        // Check if subscription has expired and should be treated as inactive
+        if let Some(ref sub) = subscription {
+            let now = chrono::Utc::now();
+            let grace_period_days = self.config.payment.grace_period_days as i64;
+
+            // Check if subscription is past its current period end
+            if sub.current_period_end < now {
+                let days_overdue = (now.signed_duration_since(sub.current_period_end)).num_days();
+
+                // If past grace period, treat as cancelled
+                if days_overdue > grace_period_days {
+                    tracing::warn!(
+                        "Subscription {} for user {} is expired and past grace period ({} days overdue)",
+                        sub.id,
+                        user_id,
+                        days_overdue
+                    );
+                    return Ok(None); // Return None to indicate no active subscription
+                }
+
+                // Within grace period, log but still return the subscription
+                tracing::info!(
+                    "Subscription {} for user {} is {} days overdue but within grace period",
+                    sub.id,
+                    user_id,
+                    days_overdue
+                );
+            }
+
+            // Check if subscription is marked to cancel at period end and period has ended
+            if sub.cancel_at_period_end.unwrap_or(false) && sub.current_period_end < now {
+                tracing::info!(
+                    "Subscription {} for user {} was marked to cancel at period end and period has ended",
+                    sub.id,
+                    user_id
+                );
+                return Ok(None); // Return None to indicate no active subscription
+            }
+        }
+
         Ok(subscription)
     }
 

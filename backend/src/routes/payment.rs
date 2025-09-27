@@ -1867,7 +1867,7 @@ async fn process_subscription_updated(
 /// Process subscription.cancelled webhook event
 #[cfg(feature = "payment")]
 async fn process_subscription_cancelled(
-    _app_state: AppState,
+    app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
     tracing::info!(
@@ -1875,8 +1875,128 @@ async fn process_subscription_cancelled(
         webhook_data.event_id
     );
 
-    // For subscription cancellations
-    tracing::info!("🎯 Subscription cancellation processing not yet implemented");
+    // Extract subscription data from the webhook payload
+    let subscription_data = webhook_data
+        .data
+        .get("subscription")
+        .ok_or_else(|| AppError::BadRequest("Missing subscription data in webhook".to_string()))?;
+
+    let paddle_subscription_id = subscription_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing subscription ID in webhook".to_string()))?
+        .to_string();
+
+    let status = subscription_data
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("cancelled")
+        .to_string();
+
+    tracing::info!(
+        "🎯 Subscription cancellation details - ID: {}, Status: {}",
+        paddle_subscription_id,
+        status
+    );
+
+    // Find subscription by paddle_subscription_id
+    let subscription_service = crate::services::payment::SubscriptionService::new(
+        (*app_state.config).clone(),
+        (*app_state.encryption_service).clone(),
+    );
+
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let paddle_subscription_id_for_closure = paddle_subscription_id.clone();
+    let subscription = conn
+        .interact(move |conn| {
+            use crate::schema::subscriptions;
+            use diesel::prelude::*;
+            subscriptions::table
+                .filter(
+                    subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
+                )
+                .first::<crate::models::payment::Subscription>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    if let Some(subscription) = subscription {
+        tracing::info!(
+            "🎯 Found subscription {} for paddle_subscription_id: {}, cancelling",
+            subscription.id,
+            paddle_subscription_id
+        );
+
+        // Update subscription status to cancelled
+        let subscription_id = subscription.id;
+        let conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let updated_subscription = conn
+            .interact(move |conn| {
+                use crate::schema::subscriptions;
+                use diesel::prelude::*;
+                diesel::update(subscriptions::table.find(subscription_id))
+                    .set((
+                        subscriptions::status.eq("cancelled"),
+                        subscriptions::cancel_at_period_end.eq(true),
+                        subscriptions::updated_at.eq(chrono::Utc::now()),
+                    ))
+                    .returning(crate::models::payment::Subscription::as_returning())
+                    .get_result(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        tracing::info!(
+            "🎯 Successfully cancelled subscription {} (paddle_subscription_id: {})",
+            updated_subscription.id,
+            paddle_subscription_id
+        );
+
+        // Log cancellation in audit log
+        use crate::services::payment::PaymentAuditService;
+        let audit_service = PaymentAuditService::new();
+        let conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let user_id = subscription.user_id;
+        if let Err(e) = conn
+            .interact(move |conn| {
+                audit_service.log_subscription_event(
+                    conn,
+                    user_id,
+                    crate::services::payment::AuditEventType::SubscriptionCancelled,
+                    Some(&paddle_subscription_id),
+                )
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))
+            .and_then(|r| r)
+        {
+            tracing::error!("Failed to audit log subscription cancellation: {}", e);
+            // Don't fail the webhook processing if audit logging fails
+        }
+    } else {
+        tracing::warn!(
+            "🎯 Subscription not found for paddle_subscription_id: {}, ignoring cancellation webhook",
+            paddle_subscription_id
+        );
+    }
 
     Ok(())
 }
