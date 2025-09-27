@@ -225,11 +225,51 @@ pub async fn get_subscription(
     // Get subscription from database
     let user_id = user.id;
     let subscription_service_clone = subscription_service.clone();
-    let subscription = conn
+    let mut subscription = conn
         .interact(move |conn| subscription_service_clone.get_user_subscription_sync(conn, user_id))
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get subscription: {}", e)))?;
+
+    // Sync with Paddle if subscription exists
+    if let Some(ref sub) = subscription {
+        tracing::info!(
+            "🔄 Syncing subscription {} with Paddle for real-time status",
+            sub.id
+        );
+
+        // Create Paddle service for sync
+        let paddle_service = crate::services::payment::paddle_service::PaddleService::new(
+            (*app_state.config).clone().payment,
+        );
+
+        let subscription_service_clone = subscription_service.clone();
+        let subscription_clone = sub.clone();
+        let synced_subscription = conn
+            .interact(move |conn| {
+                // Use tokio::task::block_in_place to run async code in sync context
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        subscription_service_clone
+                            .sync_subscription_with_paddle(
+                                conn,
+                                &subscription_clone,
+                                &paddle_service,
+                            )
+                            .await
+                    })
+                })
+            })
+            .await
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+            })?
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to sync subscription: {}", e))
+            })?;
+
+        subscription = synced_subscription;
+    }
 
     // Get plan features if subscription exists
     let plan_features = if let Some(ref sub) = subscription {

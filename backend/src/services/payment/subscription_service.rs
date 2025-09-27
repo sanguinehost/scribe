@@ -418,6 +418,124 @@ impl SubscriptionService {
 
         Ok(subscriptions)
     }
+
+    /// Sync subscription status with Paddle (verify real-time status)
+    pub async fn sync_subscription_with_paddle(
+        &self,
+        conn: &mut PgConnection,
+        subscription: &Subscription,
+        paddle_service: &crate::services::payment::paddle_service::PaddleService,
+    ) -> Result<Option<Subscription>, AppError> {
+        // Only sync if we have a Paddle subscription ID
+        let paddle_subscription_id = match &subscription.paddle_subscription_id {
+            Some(id) => id,
+            None => {
+                tracing::warn!(
+                    "Subscription {} has no Paddle subscription ID, cannot sync",
+                    subscription.id
+                );
+                return Ok(Some(subscription.clone()));
+            }
+        };
+
+        tracing::info!(
+            "🔄 Syncing subscription {} with Paddle (paddle_id: {})",
+            subscription.id,
+            paddle_subscription_id
+        );
+
+        // Get current status from Paddle
+        let paddle_subscription = match paddle_service
+            .get_subscription(paddle_subscription_id)
+            .await
+        {
+            Ok(paddle_sub) => paddle_sub,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to get subscription {} from Paddle: {}",
+                    paddle_subscription_id,
+                    e
+                );
+
+                // If subscription not found in Paddle, mark as cancelled
+                if e.to_string().contains("404") || e.to_string().contains("not found") {
+                    tracing::warn!(
+                        "Subscription {} not found in Paddle, marking as cancelled",
+                        subscription.id
+                    );
+
+                    let updates = UpdateSubscription {
+                        status: Some(SubscriptionStatus::Cancelled.to_string()),
+                        cancel_at_period_end: Some(true),
+                        ..Default::default()
+                    };
+
+                    let updated_subscription = self
+                        .update_subscription(conn, subscription.id, updates)
+                        .await?;
+                    return Ok(Some(updated_subscription));
+                }
+
+                // For other errors, return the local subscription (fail gracefully)
+                tracing::warn!(
+                    "Error fetching subscription from Paddle, using local data: {}",
+                    e
+                );
+                return Ok(Some(subscription.clone()));
+            }
+        };
+
+        // Check if status needs updating
+        let current_status = SubscriptionStatus::from(subscription.status.as_str());
+        let paddle_status = match paddle_subscription.status.as_str() {
+            "active" => SubscriptionStatus::Active,
+            "trialing" => SubscriptionStatus::Trialing,
+            "past_due" => SubscriptionStatus::PastDue,
+            "incomplete" => SubscriptionStatus::Incomplete,
+            "cancelled" => SubscriptionStatus::Cancelled,
+            _ => {
+                tracing::warn!(
+                    "Unknown Paddle status '{}' for subscription {}, keeping local status",
+                    paddle_subscription.status,
+                    subscription.id
+                );
+                current_status
+            }
+        };
+
+        // Update if status differs
+        if current_status != paddle_status {
+            tracing::info!(
+                "📊 Subscription {} status changed: {} -> {} (from Paddle)",
+                subscription.id,
+                current_status.to_string(),
+                paddle_status.to_string()
+            );
+
+            let mut updates = UpdateSubscription {
+                status: Some(paddle_status.to_string()),
+                ..Default::default()
+            };
+
+            // Update billing dates if available
+            if let Some(current_billing_period) = &paddle_subscription.current_billing_period {
+                updates.current_period_start = Some(current_billing_period.starts_at);
+                updates.current_period_end = Some(current_billing_period.ends_at);
+            }
+
+            let updated_subscription = self
+                .update_subscription(conn, subscription.id, updates)
+                .await?;
+            Ok(Some(updated_subscription))
+        } else {
+            tracing::debug!(
+                "Subscription {} status is in sync with Paddle ({})",
+                subscription.id,
+                current_status.to_string()
+            );
+            Ok(Some(subscription.clone()))
+        }
+    }
 }
 
 #[cfg(feature = "payment")]
