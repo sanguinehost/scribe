@@ -116,7 +116,8 @@ export type SubscriptionStatus =
 	| 'trialing'
 	| 'unpaid'
 	| 'incomplete'
-	| 'expired';
+	| 'expired'
+	| 'pending_cancellation';
 
 export interface Subscription {
 	id: string;

@@ -21,6 +21,7 @@
 	$: currentPlan = subscriptionStore.currentPlan;
 	$: _isSubscribed = subscriptionStore.isSubscribed;
 	$: isTrialing = subscriptionStore.isTrialing;
+	$: isCancelledTrial = subscriptionStore.isCancelledTrial;
 	$: trialDaysRemaining = subscriptionStore.trialDaysRemaining;
 	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
 
@@ -58,12 +59,19 @@
 	function getRenewalText(): string {
 		if (!subscription) return '';
 
-		if (subscription.cancel_at_period_end) {
-			return `Subscription cancels in ${daysUntilRenewal} days`;
+		// Handle cancelled trials specifically
+		if (isCancelledTrial) {
+			return `Trial expires in ${trialDaysRemaining} days`;
 		}
 
 		if (isTrialing) {
+			// For active trials
 			return `Trial ends in ${trialDaysRemaining} days`;
+		}
+
+		// For non-trial subscriptions
+		if (subscription.cancel_at_period_end) {
+			return `Subscription expires in ${daysUntilRenewal} days`;
 		}
 
 		return `Subscription renews in ${daysUntilRenewal} days`;
@@ -146,16 +154,22 @@
 						<div class="grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-4 dark:bg-slate-900">
 							<div>
 								<p class="text-sm font-medium text-slate-900 dark:text-slate-100">Status</p>
-								<p class="text-sm capitalize text-slate-600 dark:text-slate-300">
-									{subscription.status}
+								<p class="text-sm text-slate-600 dark:text-slate-300">
+									{isCancelledTrial
+										? subscriptionStore.getStatusText()
+										: subscriptionStore.formatStatusDisplay(subscription.status)}
 								</p>
 							</div>
 							<div>
 								<p class="text-sm font-medium text-slate-900 dark:text-slate-100">
-									{isTrialing ? 'Trial Ends' : 'Next Billing'}
+									{isCancelledTrial ? 'Trial Expires' : isTrialing ? 'Trial Ends' : 'Next Billing'}
 								</p>
 								<p class="text-sm text-slate-600 dark:text-slate-300">
-									{formatDate(subscription.current_period_end)}
+									{formatDate(
+										(isTrialing || isCancelledTrial) && subscription.trial_end
+											? subscription.trial_end
+											: subscription.current_period_end
+									)}
 								</p>
 							</div>
 						</div>
