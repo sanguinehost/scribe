@@ -83,7 +83,7 @@ jobs:
         # Check 5: Webhook signature validation
         echo "🔍 Checking webhook signature validation..."
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-        if ! grep -q "webhook.*signature\|signature.*webhook\|paddle.*verify" backend/src/routes/; then
+        if ! grep -r -q "webhook.*signature\|signature.*webhook\|paddle.*verify" backend/src/routes/; then
           echo "❌ FAIL: No webhook signature validation found"
           FAILED_CHECKS=$((FAILED_CHECKS + 1))
         else
