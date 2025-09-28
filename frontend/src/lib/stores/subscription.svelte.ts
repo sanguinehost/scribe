@@ -102,17 +102,7 @@ export const subscriptionStore = {
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-			console.log('🗓️ [DAYS_UNTIL_RENEWAL] Cancelled trial calculation:', {
-				subscriptionId: _subscription.id,
-				status: _subscription.status,
-				trialEnd: _subscription.trial_end,
-				trialEndParsed: trialEndDate.toISOString(),
-				currentTime: now.toISOString(),
-				diffTimeMs: diffTime,
-				diffTimeDays: diffTime / (1000 * 60 * 60 * 24),
-				daysUntilRenewal,
-				isCancelledTrial: subscriptionStore.isCancelledTrial
-			});
+			console.log('🗓️ [DAYS_UNTIL_RENEWAL] Cancelled trial:', daysUntilRenewal, 'days');
 
 			return daysUntilRenewal;
 		}
@@ -124,13 +114,7 @@ export const subscriptionStore = {
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-			console.log('🗓️ [DAYS_UNTIL_RENEWAL] Active trial calculation:', {
-				subscriptionId: _subscription.id,
-				status: _subscription.status,
-				trialEnd: _subscription.trial_end,
-				daysUntilRenewal,
-				isTrialing: subscriptionStore.isTrialing
-			});
+			console.log('🗓️ [DAYS_UNTIL_RENEWAL] Active trial:', daysUntilRenewal, 'days');
 
 			return daysUntilRenewal;
 		}
@@ -145,12 +129,7 @@ export const subscriptionStore = {
 		const diffTime = renewalDate.getTime() - now.getTime();
 		const daysUntilRenewal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-		console.log('🗓️ [DAYS_UNTIL_RENEWAL] Regular subscription calculation:', {
-			subscriptionId: _subscription.id,
-			status: _subscription.status,
-			currentPeriodEnd: _subscription.current_period_end,
-			daysUntilRenewal
-		});
+		console.log('🗓️ [DAYS_UNTIL_RENEWAL] Regular subscription:', daysUntilRenewal, 'days');
 
 		return daysUntilRenewal;
 	},
@@ -184,17 +163,7 @@ export const subscriptionStore = {
 		const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
 		// Debug logging to trace the calculation
-		console.log('🗓️ [TRIAL_DAYS] Trial days calculation:', {
-			subscriptionId: _subscription.id,
-			trialEnd: _subscription.trial_end,
-			trialEndParsed: trialEnd.toISOString(),
-			currentTime: now.toISOString(),
-			diffTimeMs: diffTime,
-			diffTimeDays: diffTime / (1000 * 60 * 60 * 24),
-			daysRemaining,
-			isTrialing: subscriptionStore.isTrialing,
-			isCancelledTrial: subscriptionStore.isCancelledTrial
-		});
+		console.log('🗓️ [TRIAL_DAYS] Trial days remaining:', daysRemaining);
 
 		return daysRemaining;
 	},
@@ -213,6 +182,19 @@ export const subscriptionStore = {
 			const trialEnd = new Date(_subscription.trial_end);
 			const now = new Date();
 			return now < trialEnd;
+		}
+		return false;
+	},
+
+	get isExpiredTrial(): boolean {
+		if (!_subscription) return false;
+		// An expired trial is one where:
+		// 1. Status is 'canceled', AND
+		// 2. We have a trial_end date that has passed
+		if (_subscription.status === 'canceled' && _subscription.trial_end) {
+			const trialEnd = new Date(_subscription.trial_end);
+			const now = new Date();
+			return now >= trialEnd; // Trial has ended
 		}
 		return false;
 	},

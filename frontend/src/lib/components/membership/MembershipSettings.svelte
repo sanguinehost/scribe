@@ -16,13 +16,14 @@
 	$: subscription = subscriptionStore.subscription;
 	$: planFeatures = subscriptionStore.planFeatures;
 	$: usageLimits = subscriptionStore.usageLimits;
+	$: customerPortalUrl = subscriptionStore.customerPortalUrl;
 	$: loading = subscriptionStore.loading;
 	$: error = subscriptionStore.error;
 	$: currentPlan = subscriptionStore.currentPlan;
 	$: _isSubscribed = subscriptionStore.isSubscribed;
 	$: isTrialing = subscriptionStore.isTrialing;
 	$: isCancelledTrial = subscriptionStore.isCancelledTrial;
-	$: trialDaysRemaining = subscriptionStore.trialDaysRemaining;
+	$: isExpiredTrial = subscriptionStore.isExpiredTrial;
 	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
 
 	// Credit data - creditStore is a store, not a plain object
@@ -40,33 +41,44 @@
 	}
 
 	function handleManageSubscription() {
-		// TODO: Implement proper subscription management
-		// For now, show available options based on current subscription status
 		if (!subscription) {
 			toast.error('No active subscription found.');
 			return;
 		}
 
-		// This could be enhanced to:
-		// 1. Show a modal with management options (cancel, reactivate, change plan)
-		// 2. Use Paddle's customer portal if available
-		// 3. Redirect to a dedicated subscription management page
+		if (!customerPortalUrl) {
+			toast.error('Unable to access subscription management. Please try again later.');
+			console.warn('No customer portal URL available for subscription:', subscription.id);
+			return;
+		}
 
-		toast.info('Subscription management coming soon. Contact support for assistance.');
-		console.log('Manage subscription clicked for:', subscription);
+		// Open Paddle customer portal in new tab
+		try {
+			window.open(customerPortalUrl, '_blank', 'noopener,noreferrer');
+			toast.success('Opening subscription management portal...');
+		} catch (error) {
+			console.error('Failed to open customer portal:', error);
+			toast.error('Failed to open subscription management portal.');
+		}
 	}
 
 	function getRenewalText(): string {
 		if (!subscription) return '';
 
+		// Handle expired trials first
+		const isExpiredTrial = subscriptionStore.isExpiredTrial;
+		if (isExpiredTrial) {
+			return 'Trial expired - Back to Free Plan';
+		}
+
 		// Handle cancelled trials specifically
 		if (isCancelledTrial) {
-			return `Trial expires in ${trialDaysRemaining} days`;
+			return `Trial expires in ${daysUntilRenewal} days`;
 		}
 
 		if (isTrialing) {
 			// For active trials
-			return `Trial ends in ${trialDaysRemaining} days`;
+			return `Trial ends in ${daysUntilRenewal} days`;
 		}
 
 		// For non-trial subscriptions
@@ -155,18 +167,26 @@
 							<div>
 								<p class="text-sm font-medium text-slate-900 dark:text-slate-100">Status</p>
 								<p class="text-sm text-slate-600 dark:text-slate-300">
-									{isCancelledTrial
-										? subscriptionStore.getStatusText()
-										: subscriptionStore.formatStatusDisplay(subscription.status)}
+									{isExpiredTrial
+										? 'Trial Expired'
+										: isCancelledTrial
+											? subscriptionStore.getStatusText()
+											: subscriptionStore.formatStatusDisplay(subscription.status)}
 								</p>
 							</div>
 							<div>
 								<p class="text-sm font-medium text-slate-900 dark:text-slate-100">
-									{isCancelledTrial ? 'Trial Expires' : isTrialing ? 'Trial Ends' : 'Next Billing'}
+									{isExpiredTrial
+										? 'Trial Expired'
+										: isCancelledTrial
+											? 'Trial Expires'
+											: isTrialing
+												? 'Trial Ends'
+												: 'Next Billing'}
 								</p>
 								<p class="text-sm text-slate-600 dark:text-slate-300">
 									{formatDate(
-										(isTrialing || isCancelledTrial) && subscription.trial_end
+										(isTrialing || isCancelledTrial || isExpiredTrial) && subscription.trial_end
 											? subscription.trial_end
 											: subscription.current_period_end
 									)}

@@ -209,11 +209,77 @@ push_backend() {
         exit 1
     fi
 
+    # Try to push to the primary region
     if $CONTAINER_RUNTIME push --compression-format gzip --remove-signatures $ECR_BACKEND_REPO:latest; then
-        log_success "Backend image pushed successfully"
+        log_success "Backend image pushed successfully to $AWS_REGION"
     else
-        log_error "Backend push failed"
-        exit 1
+        log_warning "Backend push failed to $AWS_REGION"
+
+        # If we're not already in ap-southeast-2, try fallback to ap-southeast-2
+        if [ "$AWS_REGION" != "ap-southeast-2" ]; then
+            log_info "Attempting fallback push to ap-southeast-2..."
+
+            # Set up fallback variables
+            FALLBACK_REGION="ap-southeast-2"
+            FALLBACK_ECR_REPO="$AWS_ACCOUNT_ID.dkr.ecr.$FALLBACK_REGION.amazonaws.com/$ENVIRONMENT-scribe-backend"
+
+            # Tag image for fallback region
+            $CONTAINER_RUNTIME tag $ECR_BACKEND_REPO:latest $FALLBACK_ECR_REPO:latest
+
+            # Authenticate to fallback region
+            log_info "Authenticating to ECR in $FALLBACK_REGION..."
+            if ! aws ecr get-login-password --region $FALLBACK_REGION | $CONTAINER_RUNTIME login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$FALLBACK_REGION.amazonaws.com; then
+                log_error "ECR authentication failed for fallback region $FALLBACK_REGION"
+                exit 1
+            fi
+
+            # Try pushing to fallback region
+            if $CONTAINER_RUNTIME push --compression-format gzip --remove-signatures $FALLBACK_ECR_REPO:latest; then
+                log_success "Backend image pushed successfully to fallback region $FALLBACK_REGION"
+
+                # If original region was ap-southeast-4, try to replicate from ap-southeast-2
+                if [ "$AWS_REGION" = "ap-southeast-4" ]; then
+                    log_info "Attempting to replicate image from $FALLBACK_REGION to $AWS_REGION..."
+
+                    # Check if ECR repository exists in target region, create if not
+                    if ! aws ecr describe-repositories --repository-names "$ENVIRONMENT-scribe-backend" --region $AWS_REGION &>/dev/null; then
+                        log_info "Creating ECR repository in $AWS_REGION..."
+                        aws ecr create-repository --repository-name "$ENVIRONMENT-scribe-backend" --region $AWS_REGION || {
+                            log_warning "Failed to create ECR repository in $AWS_REGION, but continuing..."
+                        }
+                    fi
+
+                    # Use ECR replication or manual pull/push
+                    # First try AWS ECR replication if configured, otherwise manual copy
+                    log_info "Manually copying image from $FALLBACK_REGION to $AWS_REGION..."
+
+                    # Pull from fallback region
+                    aws ecr get-login-password --region $FALLBACK_REGION | $CONTAINER_RUNTIME login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$FALLBACK_REGION.amazonaws.com
+                    $CONTAINER_RUNTIME pull $FALLBACK_ECR_REPO:latest
+
+                    # Tag for target region
+                    $CONTAINER_RUNTIME tag $FALLBACK_ECR_REPO:latest $ECR_BACKEND_REPO:latest
+
+                    # Push to target region
+                    aws ecr get-login-password --region $AWS_REGION | $CONTAINER_RUNTIME login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+                    if $CONTAINER_RUNTIME push --compression-format gzip --remove-signatures $ECR_BACKEND_REPO:latest; then
+                        log_success "Backend image replicated successfully to $AWS_REGION"
+                    else
+                        log_warning "Replication to $AWS_REGION failed, but image is available in $FALLBACK_REGION"
+                        # Update the ECR repo reference for deployment
+                        ECR_BACKEND_REPO="$FALLBACK_ECR_REPO"
+                        AWS_REGION="$FALLBACK_REGION"
+                        log_info "Updated deployment to use $FALLBACK_REGION"
+                    fi
+                fi
+            else
+                log_error "Backend push failed to both $AWS_REGION and fallback region $FALLBACK_REGION"
+                exit 1
+            fi
+        else
+            log_error "Backend push failed to $AWS_REGION and no fallback available"
+            exit 1
+        fi
     fi
 }
 
@@ -238,8 +304,17 @@ deploy_service() {
     local service_name=$1
     log_info "Deploying $service_name to ECS..."
 
+    # Update ECS cluster name based on current region (in case it was changed during fallback)
+    local current_cluster="$ENVIRONMENT-scribe-cluster"
+    if [ "$service_name" = "$BACKEND_SERVICE" ]; then
+        # Use the region that was determined during push_backend (might have been updated to fallback)
+        current_cluster="$ENVIRONMENT-scribe-cluster"
+    fi
+
+    log_info "Using ECS cluster: $current_cluster in region: $AWS_REGION"
+
     aws ecs update-service \
-        --cluster $ECS_CLUSTER \
+        --cluster $current_cluster \
         --service $service_name \
         --force-new-deployment \
         --region $AWS_REGION
@@ -249,7 +324,7 @@ deploy_service() {
     # Wait for deployment to complete
     log_info "Waiting for $service_name deployment to complete..."
     aws ecs wait services-stable \
-        --cluster $ECS_CLUSTER \
+        --cluster $current_cluster \
         --services $service_name \
         --region $AWS_REGION
 

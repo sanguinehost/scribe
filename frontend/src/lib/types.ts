@@ -1137,7 +1137,9 @@ export type SubscriptionStatus =
 	| 'past_due'
 	| 'trialing'
 	| 'unpaid'
-	| 'incomplete';
+	| 'incomplete'
+	| 'expired'
+	| 'pending_cancellation';
 export type PlanType = 'free' | 'basic' | 'premium' | 'pro'; // Added 'pro' for legacy compatibility
 
 export interface Subscription {
@@ -1225,6 +1227,7 @@ export interface SubscriptionResponse {
 	subscription?: Subscription;
 	plan_features?: PlanFeatures;
 	usage_limits?: UsageLimitsResponse;
+	customer_portal_url?: string;
 }
 
 export interface PlansResponse {

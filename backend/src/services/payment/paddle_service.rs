@@ -114,11 +114,24 @@ pub struct PaddleSubscription {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub items: Vec<PaddleSubscriptionItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trial_dates: Option<PaddleTrialDates>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled_change: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management_urls: Option<serde_json::Value>,
 }
 
 /// Paddle billing period
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PaddleBillingPeriod {
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+}
+
+/// Paddle trial dates
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaddleTrialDates {
     pub starts_at: DateTime<Utc>,
     pub ends_at: DateTime<Utc>,
 }
@@ -1003,6 +1016,118 @@ impl PaddleService {
     /// Get grace period in days
     pub fn grace_period_days(&self) -> i32 {
         self.config.grace_period_days
+    }
+
+    /// Generate customer portal authentication token and URL
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError` if the Paddle API request fails
+    pub async fn generate_customer_portal_url(
+        &self,
+        customer_id: &str,
+    ) -> Result<String, AppError> {
+        let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
+            AppError::ConfigurationError("Paddle API key not configured".to_string())
+        })?;
+
+        let base_url = if self.config.paddle_sandbox_mode {
+            "https://sandbox-api.paddle.com"
+        } else {
+            "https://api.paddle.com"
+        };
+
+        // Create customer auth token request
+        let mut payload = HashMap::new();
+        payload.insert("customer_id", customer_id);
+
+        let response = self
+            .client
+            .post(&format!("{}/customer-auth-tokens", base_url))
+            .bearer_auth(api_key)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    customer_id = %customer_id,
+                    "Failed to create customer auth token"
+                );
+                AppError::ExternalServiceError(format!(
+                    "Failed to create customer auth token: {}",
+                    e
+                ))
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            error!(
+                status = %status,
+                error_body = %error_body,
+                customer_id = %customer_id,
+                "Paddle customer auth token API error"
+            );
+            return Err(AppError::ExternalServiceError(format!(
+                "Paddle customer auth token API error: {}",
+                error_body
+            )));
+        }
+
+        let response_text = response.text().await.unwrap_or_default();
+        debug!(
+            response_body = %response_text,
+            customer_id = %customer_id,
+            "Raw customer auth token response from Paddle API"
+        );
+
+        // Parse the response to extract the token
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_text).map_err(|e| {
+                error!(
+                    error = %e,
+                    response_text = %response_text,
+                    "Failed to parse customer auth token response"
+                );
+                AppError::JsonParseError(format!(
+                    "Failed to parse customer auth token response: {}",
+                    e
+                ))
+            })?;
+
+        // Extract the customer auth token from the response
+        let auth_token = response_json
+            .get("data")
+            .and_then(|data| data.get("customer_auth_token"))
+            .and_then(|token| token.as_str())
+            .ok_or_else(|| {
+                error!(
+                    response_json = %response_json,
+                    "Customer auth token not found in Paddle response"
+                );
+                AppError::ExternalServiceError(
+                    "Customer auth token not found in response".to_string(),
+                )
+            })?;
+
+        // Generate the customer portal URL with the token
+        let portal_base_url = if self.config.paddle_sandbox_mode {
+            "https://sandbox-vendors.paddle.com"
+        } else {
+            "https://vendors.paddle.com"
+        };
+
+        let portal_url = format!("{}?token={}", portal_base_url, auth_token);
+
+        info!(
+            customer_id = %customer_id,
+            portal_url = %portal_url,
+            sandbox_mode = %self.config.paddle_sandbox_mode,
+            "Generated customer portal URL"
+        );
+
+        Ok(portal_url)
     }
 }
 

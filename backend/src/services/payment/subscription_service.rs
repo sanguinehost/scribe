@@ -541,7 +541,9 @@ impl SubscriptionService {
 
         // Determine if this was a trial subscription based on trial_dates
         let has_trial = paddle_subscription.trial_dates.is_some();
-        let trial_end_date = paddle_subscription.trial_dates.as_ref()
+        let trial_end_date = paddle_subscription
+            .trial_dates
+            .as_ref()
             .map(|trial| trial.ends_at);
 
         tracing::info!(
@@ -568,8 +570,16 @@ impl SubscriptionService {
             );
 
             let mut updates = UpdateSubscription {
-                status: if status_changed { Some(paddle_status.to_string()) } else { None },
-                trial_end: if trial_end_changed { trial_end_date } else { None },
+                status: if status_changed {
+                    Some(paddle_status.to_string())
+                } else {
+                    None
+                },
+                trial_end: if trial_end_changed {
+                    trial_end_date
+                } else {
+                    None
+                },
                 ..Default::default()
             };
 

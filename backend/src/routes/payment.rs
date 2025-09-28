@@ -50,6 +50,7 @@ pub struct SubscriptionResponse {
     pub subscription: Option<Subscription>,
     pub plan_features: Option<PlanFeatures>,
     pub usage_limits: Option<UsageLimitsResponse>,
+    pub customer_portal_url: Option<String>,
 }
 
 #[cfg(feature = "payment")]
@@ -382,17 +383,61 @@ pub async fn get_subscription(
         None
     };
 
+    // Generate customer portal URL if subscription exists and has paddle_customer_id
+    let customer_portal_url = if let Some(ref sub) = subscription {
+        if let Some(ref customer_id) = sub.paddle_customer_id {
+            // Create Paddle service for portal URL generation
+            let paddle_service = crate::services::payment::paddle_service::PaddleService::new(
+                (*app_state.config).clone().payment,
+            );
+
+            match paddle_service
+                .generate_customer_portal_url(customer_id)
+                .await
+            {
+                Ok(portal_url) => {
+                    tracing::info!(
+                        "🎯 Generated customer portal URL for user {} with customer_id {}",
+                        user.id,
+                        customer_id
+                    );
+                    Some(portal_url)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "⚠️ Failed to generate customer portal URL for user {} with customer_id {}: {}",
+                        user.id,
+                        customer_id,
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            tracing::info!(
+                "ℹ️ No Paddle customer ID found for user {} subscription {}",
+                user.id,
+                sub.id
+            );
+            None
+        }
+    } else {
+        None
+    };
+
     let response = SubscriptionResponse {
         subscription: subscription.clone(),
         plan_features: plan_features.clone(),
         usage_limits: usage_limits.clone(),
+        customer_portal_url,
     };
 
     tracing::info!(
-        "🔄 Sending subscription response for user {}: subscription_exists={}, plan_type={:?}",
+        "🔄 Sending subscription response for user {}: subscription_exists={}, plan_type={:?}, has_portal_url={}",
         user.id,
         response.subscription.is_some(),
-        response.subscription.as_ref().map(|s| &s.plan_type)
+        response.subscription.as_ref().map(|s| &s.plan_type),
+        response.customer_portal_url.is_some()
     );
 
     Ok(Json(response))
@@ -1268,6 +1313,7 @@ pub async fn cancel_subscription(
         subscription: None,
         plan_features: None,
         usage_limits: None,
+        customer_portal_url: None,
     }))
 }
 
@@ -1286,6 +1332,7 @@ pub async fn reactivate_subscription(
         subscription: None,
         plan_features: None,
         usage_limits: None,
+        customer_portal_url: None,
     }))
 }
 
