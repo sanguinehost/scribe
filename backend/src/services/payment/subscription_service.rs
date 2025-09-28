@@ -125,18 +125,39 @@ impl SubscriptionService {
         conn: &mut PgConnection,
         user_id: Uuid,
     ) -> Result<Option<Subscription>, AppError> {
+        // Get the most recent subscription for this user
+        // Include cancelled trials so we can check if they've expired
         let subscription = subscriptions::table
             .filter(subscriptions::user_id.eq(user_id))
-            .filter(subscriptions::status.ne("cancelled"))
             .order(subscriptions::created_at.desc())
             .first::<Subscription>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-        // Check if subscription has expired and should be treated as inactive
+        // Check if subscription exists and should be treated as active
         if let Some(ref sub) = subscription {
             let now = chrono::Utc::now();
             let grace_period_days = self.config.payment.grace_period_days as i64;
+
+            // Check if this is an expired cancelled trial
+            if self.is_cancelled_trial_expired(sub) {
+                tracing::info!(
+                    "Cancelled trial {} for user {} has expired, treating as no active subscription",
+                    sub.id,
+                    user_id
+                );
+                return Ok(None); // Return None to indicate user should be on free tier
+            }
+
+            // For fully cancelled subscriptions (not trials), exclude them
+            if (sub.status == "cancelled" || sub.status == "canceled") && sub.trial_end.is_none() {
+                tracing::info!(
+                    "User {} has a fully cancelled subscription {}, treating as no active subscription",
+                    user_id,
+                    sub.id
+                );
+                return Ok(None);
+            }
 
             // Check if subscription is past its current period end
             if sub.current_period_end < now {
@@ -297,6 +318,21 @@ impl SubscriptionService {
     pub fn is_trial_active(&self, subscription: &Subscription) -> bool {
         if let Some(trial_end) = subscription.trial_end {
             trial_end > Utc::now()
+        } else {
+            false
+        }
+    }
+
+    /// Check if a cancelled trial has expired and should be treated as inactive
+    pub fn is_cancelled_trial_expired(&self, subscription: &Subscription) -> bool {
+        // Check if this is a cancelled trial
+        if subscription.status != "canceled" && subscription.status != "cancelled" {
+            return false;
+        }
+
+        // If there's no trial_end, it's not a trial
+        if let Some(trial_end) = subscription.trial_end {
+            trial_end < Utc::now()
         } else {
             false
         }
@@ -485,7 +521,7 @@ impl SubscriptionService {
             }
         };
 
-        // Check if status needs updating
+        // Check if status needs updating and handle trial information
         let current_status = SubscriptionStatus::from(subscription.status.as_str());
         let paddle_status = match paddle_subscription.status.as_str() {
             "active" => SubscriptionStatus::Active,
@@ -503,17 +539,37 @@ impl SubscriptionService {
             }
         };
 
-        // Update if status differs
-        if current_status != paddle_status {
+        // Determine if this was a trial subscription based on trial_dates
+        let has_trial = paddle_subscription.trial_dates.is_some();
+        let trial_end_date = paddle_subscription.trial_dates.as_ref()
+            .map(|trial| trial.ends_at);
+
+        tracing::info!(
+            "🎯 Paddle subscription analysis: status='{}', has_trial={}, trial_end={:?}",
+            paddle_subscription.status,
+            has_trial,
+            trial_end_date
+        );
+
+        // Check if we need to update status or trial information
+        let status_changed = current_status != paddle_status;
+        let trial_end_changed = subscription.trial_end != trial_end_date;
+
+        if status_changed || trial_end_changed {
             tracing::info!(
-                "📊 Subscription {} status changed: {} -> {} (from Paddle)",
+                "📊 Subscription {} needs update: status_changed={} ({} -> {}), trial_end_changed={} ({:?} -> {:?})",
                 subscription.id,
+                status_changed,
                 current_status.to_string(),
-                paddle_status.to_string()
+                paddle_status.to_string(),
+                trial_end_changed,
+                subscription.trial_end,
+                trial_end_date
             );
 
             let mut updates = UpdateSubscription {
-                status: Some(paddle_status.to_string()),
+                status: if status_changed { Some(paddle_status.to_string()) } else { None },
+                trial_end: if trial_end_changed { trial_end_date } else { None },
                 ..Default::default()
             };
 
@@ -523,15 +579,29 @@ impl SubscriptionService {
                 updates.current_period_end = Some(current_billing_period.ends_at);
             }
 
+            // Special handling for cancelled trials
+            if paddle_status == SubscriptionStatus::Cancelled && has_trial {
+                tracing::info!(
+                    "🎯 Detected cancelled trial for subscription {} - trial_end: {:?}",
+                    subscription.id,
+                    trial_end_date
+                );
+                // Ensure trial_end is set for cancelled trials
+                if trial_end_date.is_some() {
+                    updates.trial_end = trial_end_date;
+                }
+            }
+
             let updated_subscription = self
                 .update_subscription(conn, subscription.id, updates)
                 .await?;
             Ok(Some(updated_subscription))
         } else {
             tracing::debug!(
-                "Subscription {} status is in sync with Paddle ({})",
+                "Subscription {} is in sync with Paddle (status: {}, trial_end: {:?})",
                 subscription.id,
-                current_status.to_string()
+                current_status.to_string(),
+                subscription.trial_end
             );
             Ok(Some(subscription.clone()))
         }
