@@ -398,6 +398,18 @@ pub fn find_user_by_email(conn: &mut PgConnection, email: &str) -> Result<User, 
     Ok(User::from(user_db_query))
 }
 
+pub fn find_user_by_id(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthError> {
+    info!("Finding user by ID: {}", user_id);
+
+    let user_db_query = users::table
+        .filter(users::id.eq(user_id))
+        .select(UserDbQuery::as_select())
+        .first::<UserDbQuery>(conn)
+        .map_err(AuthError::from)?;
+
+    Ok(User::from(user_db_query))
+}
+
 // Function to verify user credentials
 #[instrument(skip(conn, password), err)]
 pub fn verify_credentials(

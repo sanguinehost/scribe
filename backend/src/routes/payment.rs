@@ -806,6 +806,26 @@ pub async fn verify_transaction(
                 "free"
             };
 
+            // Extract paddle subscription ID from stored transaction items
+            let paddle_subscription_id =
+                if let Some(item) = transaction.items.as_array().and_then(|a| a.first()) {
+                    item.get("price")
+                        .and_then(|price| price.get("subscription_id"))
+                        .and_then(|v| v.as_str())
+                        .or_else(|| item.get("subscription_id").and_then(|v| v.as_str()))
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                };
+
+            if let Some(ref sub_id) = paddle_subscription_id {
+                tracing::info!(
+                    "🎯 Extracted paddle_subscription_id: {} from stored transaction {}",
+                    sub_id,
+                    transaction_id
+                );
+            }
+
             let subscription_service = crate::services::payment::SubscriptionService::new(
                 (*app_state.config).clone(),
                 (*app_state.encryption_service).clone(),
@@ -825,8 +845,8 @@ pub async fn verify_transaction(
                         user.id,
                         plan_type,
                         paddle_customer_id,
-                        None,
-                        None,
+                        paddle_subscription_id, // Pass extracted subscription ID
+                        None,                   // No trial
                     )
                 })
                 .await
@@ -950,7 +970,7 @@ pub async fn verify_transaction(
                 is_trial
             );
 
-            // Check if user already has a subscription
+            // Check if user already has a subscription - prevent duplicates
             let conn = app_state
                 .pool
                 .get()
@@ -975,11 +995,84 @@ pub async fn verify_transaction(
 
             if let Some(existing) = existing_subscription {
                 tracing::info!(
-                    "🎯 User already has an active subscription: {}",
-                    existing.id
+                    "🎯 User already has an active subscription: {} (status: {}, plan_type: {})",
+                    existing.id,
+                    existing.status,
+                    existing.plan_type
                 );
 
-                // Update existing subscription if needed
+                // DUPLICATE PREVENTION: Check if this transaction has already been processed
+                let transaction_id_for_check = transaction_id.clone();
+                let existing_processed_transaction = conn
+                    .interact(move |conn| {
+                        use crate::models::payment::PaymentTransaction;
+                        use crate::schema::payment_transactions::dsl::*;
+                        use diesel::prelude::*;
+
+                        payment_transactions
+                            .filter(paddle_transaction_id.eq(&transaction_id_for_check))
+                            .filter(status.eq("completed"))
+                            .first::<PaymentTransaction>(conn)
+                            .optional()
+                    })
+                    .await
+                    .map_err(|e| AppError::DbInteractError(e.to_string()))?
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                if existing_processed_transaction.is_some() {
+                    tracing::warn!(
+                        "🚫 Transaction {} already processed for user {}, preventing duplicate subscription creation",
+                        transaction_id,
+                        user.id
+                    );
+                    return Ok(Json(serde_json::json!({
+                        "success": true,
+                        "message": "Transaction already processed",
+                        "subscription": {
+                            "id": existing.id,
+                            "plan_type": existing.plan_type,
+                            "status": existing.status,
+                            "trial_end": existing.trial_end
+                        },
+                        "source": "existing"
+                    })));
+                }
+
+                // Determine if we should upgrade or prevent duplicate
+                let should_upgrade = match (existing.plan_type.as_str(), plan_type) {
+                    ("basic", "premium") => true, // Allow upgrade from basic to premium
+                    ("free", "basic") => true,    // Allow upgrade from free to basic
+                    ("free", "premium") => true,  // Allow upgrade from free to premium
+                    (existing_plan, new_plan) if existing_plan == new_plan => {
+                        // Same plan - only update if it's a trial or status change
+                        is_trial || existing.status != "active"
+                    }
+                    _ => {
+                        tracing::warn!(
+                            "🚫 Preventing potential downgrade or duplicate: user {} already has {} subscription, attempting to create {} subscription",
+                            user.id,
+                            existing.plan_type,
+                            plan_type
+                        );
+                        false
+                    }
+                };
+
+                if !should_upgrade {
+                    return Ok(Json(serde_json::json!({
+                        "success": true,
+                        "message": "User already has an active subscription",
+                        "subscription": {
+                            "id": existing.id,
+                            "plan_type": existing.plan_type,
+                            "status": existing.status,
+                            "trial_end": existing.trial_end
+                        },
+                        "source": "existing"
+                    })));
+                }
+
+                // Update existing subscription (upgrade scenario)
                 let conn = app_state
                     .pool
                     .get()
@@ -994,9 +1087,17 @@ pub async fn verify_transaction(
                 };
 
                 let existing_id = existing.id;
-                let plan_type_clone = plan_type.clone();
+                let plan_type_clone = plan_type.to_string();
                 let customer_id_str = customer_id.to_string();
                 let subscription_status_str = subscription_status.to_string();
+
+                tracing::info!(
+                    "🎯 Upgrading subscription {} from {} to {} for user {}",
+                    existing.id,
+                    existing.plan_type,
+                    plan_type,
+                    user.id
+                );
 
                 let updated = conn
                     .interact(move |conn| {
@@ -1032,7 +1133,7 @@ pub async fn verify_transaction(
 
                 Ok(Json(serde_json::json!({
                     "success": true,
-                    "message": if is_trial { "Trial subscription updated successfully" } else { "Subscription updated successfully" },
+                    "message": if is_trial { "Trial subscription updated successfully" } else { "Subscription upgraded successfully" },
                     "subscription": {
                         "id": updated.id,
                         "plan_type": updated.plan_type,
@@ -1524,11 +1625,13 @@ async fn process_transaction_completed(
         webhook_data.event_id
     );
 
-    // Extract transaction data from the webhook payload
-    let transaction_data = webhook_data
-        .data
-        .get("transaction")
-        .ok_or_else(|| AppError::BadRequest("Missing transaction data in webhook".to_string()))?;
+    // For transaction.completed events, the transaction data is nested under data.transaction
+    tracing::info!("🎯 Step 1: Extracting transaction data from webhook");
+    let transaction_data = webhook_data.data.get("transaction").ok_or_else(|| {
+        tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'transaction' field in webhook data");
+        AppError::BadRequest("Missing transaction data in webhook".to_string())
+    })?;
+    tracing::info!("🎯 Step 1 complete: Extracted nested transaction data");
 
     let transaction_id = transaction_data
         .get("id")
@@ -1565,89 +1668,115 @@ async fn process_transaction_completed(
         return Ok(());
     }
 
-    // Try to get customer email from multiple possible locations in the webhook
-    let customer_email = {
-        // Try 1: Customer data object in webhook
-        if let Some(customer_data) = webhook_data.data.get("customer") {
-            tracing::info!("🎯 Found customer data in webhook");
-            if let Some(email) = customer_data.get("email").and_then(|v| v.as_str()) {
-                tracing::info!(
-                    "🎯 Found customer email in webhook: {}",
-                    sanitize_personal_info(email)
-                );
-                Some(email.to_string())
-            } else {
-                tracing::warn!("🎯 Customer data found but no email field");
-                None
-            }
-        } else {
-            None
-        }
+    // Extract customer email for fallback user lookup
+    tracing::info!("🎯 Step 1a: Extracting customer email");
+    let customer_email = webhook_data
+        .data
+        .get("customer")
+        .and_then(|c| c.get("email"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let Some(ref email) = customer_email {
+        tracing::info!("🎯 Step 1a complete: Customer email: {}", email);
+    } else {
+        tracing::info!("🎯 Step 1a complete: No customer email found");
     }
-    .or_else(|| {
-        // Try 2: Email directly in transaction data
-        transaction_data
-            .get("customer_email")
-            .or_else(|| transaction_data.get("email"))
-            .and_then(|v| v.as_str())
-            .map(|email| {
-                tracing::info!(
-                    "🎯 Found customer email in transaction: {}",
-                    sanitize_personal_info(email)
-                );
-                email.to_string()
-            })
-    })
-    .or_else(|| {
-        // Try 3: Look for email in billing details
-        transaction_data
-            .get("billing_details")
-            .and_then(|billing| billing.get("email"))
-            .and_then(|v| v.as_str())
-            .map(|email| {
-                tracing::info!(
-                    "🎯 Found customer email in billing details: {}",
-                    sanitize_personal_info(email)
-                );
-                email.to_string()
-            })
-    })
-    .unwrap_or_else(|| {
-        // Fallback: Log sanitized webhook structure and use test email
-        let sanitized_data = sanitize_json_value(&webhook_data.data);
-        tracing::error!(
-            "🎯 Could not find customer email anywhere in webhook. Sanitized webhook data: {}",
-            serde_json::to_string_pretty(&sanitized_data).unwrap_or("unparseable".to_string())
-        );
-        tracing::warn!(
-            "🎯 Using fallback test email for customer_id: {}",
-            customer_id
-        );
-        "lucasrw@protonmail.com".to_string() // Use the actual logged-in user's email from logs
-    });
 
+    // Find user by paddle_customer_id or email
     tracing::info!(
-        "🎯 Processing transaction for customer email: {}",
-        sanitize_personal_info(&customer_email)
+        "🎯 Step 2: Finding user by paddle_customer_id: {}",
+        customer_id
     );
-
-    // Find user by email
     let conn = app_state
         .pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
+    let customer_id_for_closure = customer_id.clone();
     let customer_email_for_closure = customer_email.clone();
+
+    use crate::schema::{payment_transactions, subscriptions, users};
+    use diesel::prelude::*;
+
+    let user_id = conn
+        .interact(move |conn| -> Result<uuid::Uuid, diesel::result::Error> {
+            // Try to find user from existing subscriptions
+            if let Ok(subscription) = subscriptions::table
+                .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
+                .select(subscriptions::user_id)
+                .first::<uuid::Uuid>(conn)
+            {
+                tracing::info!("🎯 Found user from existing subscription");
+                return Ok(subscription);
+            }
+
+            // Try to find user from payment transactions
+            if let Ok(transaction) = payment_transactions::table
+                .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
+                .select(payment_transactions::user_id)
+                .first::<uuid::Uuid>(conn)
+            {
+                tracing::info!("🎯 Found user from payment transaction");
+                return Ok(transaction);
+            }
+
+            // Fallback: Try to find user by email
+            if let Some(ref email) = customer_email_for_closure {
+                if let Ok(user) = users::table
+                    .filter(users::email.eq(email))
+                    .select(users::id)
+                    .first::<uuid::Uuid>(conn)
+                {
+                    tracing::info!("🎯 Found user by email fallback");
+                    return Ok(user);
+                }
+            }
+
+            Err(diesel::result::Error::NotFound)
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 2 FAILED: Database interaction error: {}",
+                e
+            );
+            AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+        })?;
+
+    let user_id = match user_id {
+        Ok(id) => {
+            tracing::info!("🎯 Step 2 complete: Found user_id: {}", id);
+            id
+        }
+        Err(e) => {
+            tracing::warn!(
+                "🎯 Step 2: Could not find user for paddle_customer_id: {} (error: {:?}), skipping transaction processing",
+                customer_id,
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    // Get the full user record
+    tracing::info!(
+        "🎯 Step 3: Fetching full user record for user_id: {}",
+        user_id
+    );
     let user = match conn
-        .interact(move |conn| crate::auth::find_user_by_email(conn, &customer_email_for_closure))
+        .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await
     {
-        Ok(Ok(user)) => user,
-        Ok(Err(_)) => {
-            tracing::warn!(
-                "🎯 User not found for customer email: {}, skipping subscription creation",
-                sanitize_personal_info(&customer_email)
+        Ok(Ok(user)) => {
+            tracing::info!("🎯 Step 3 complete: User found");
+            user
+        }
+        Ok(Err(e)) => {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 3 FAILED: User not found for user_id: {} (error: {:?})",
+                user_id,
+                e
             );
             return Ok(());
         }
@@ -1724,7 +1853,7 @@ async fn process_transaction_completed(
 
         // Prepare customer data for encryption (PII)
         let customer_data = serde_json::json!({
-            "email": customer_email.clone(),
+            "email": user.email.clone(),
             "name": transaction_data.get("customer").and_then(|c| c.get("name")),
             "billing_details": transaction_data.get("billing_details")
         });
@@ -1837,45 +1966,169 @@ async fn process_transaction_completed(
         _ => "free", // Default to free plan for unknown price IDs
     };
 
-    tracing::info!(
-        "🎯 Creating {} subscription for user {} (price_id: {})",
-        plan_type,
-        user.id,
-        price_data
-    );
+    // Extract Paddle subscription ID from transaction data
+    // Try multiple possible locations where Paddle might include subscription_id
+    let paddle_subscription_id = transaction_data
+        .get("subscription_id")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            // Try looking in items array for subscription-based pricing
+            transaction_data
+                .get("items")
+                .and_then(|items| items.as_array())
+                .and_then(|items| items.first())
+                .and_then(|item| item.get("price"))
+                .and_then(|price| price.get("subscription_id"))
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| {
+            // Try looking directly in billing_details
+            transaction_data
+                .get("billing_details")
+                .and_then(|bd| bd.get("subscription_id"))
+                .and_then(|v| v.as_str())
+        })
+        .map(|s| s.to_string());
 
-    // Create subscription record
-    let subscription_service = crate::services::payment::SubscriptionService::new(
-        (*app_state.config).clone(),
-        (*app_state.encryption_service).clone(),
-    );
+    if let Some(ref sub_id) = paddle_subscription_id {
+        tracing::info!(
+            "🎯 Extracted paddle_subscription_id: {} from transaction {}",
+            sub_id,
+            transaction_id
+        );
+    } else {
+        tracing::warn!(
+            "🎯 No paddle_subscription_id found in transaction {} - this may be a one-time payment",
+            transaction_id
+        );
+    }
 
-    let conn_clone = app_state
+    // Check for existing active subscription to prevent duplicates
+    let conn_duplicate_check = app_state
         .pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-    let subscription = conn_clone
+    let existing_subscription = conn_duplicate_check
         .interact(move |conn| {
-            subscription_service.create_subscription_sync(
-                conn,
-                user.id,
-                plan_type,
-                Some(customer_id.clone()),
-                None, // No paddle subscription ID for transaction-based billing
-                None, // No trial
-            )
+            use crate::models::payment::Subscription;
+            use crate::schema::subscriptions::dsl as sub_dsl;
+            use diesel::prelude::*;
+
+            sub_dsl::subscriptions
+                .filter(sub_dsl::user_id.eq(user.id))
+                .filter(sub_dsl::status.ne("cancelled"))
+                .first::<Subscription>(conn)
+                .optional()
         })
         .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-    tracing::info!(
-        "🎯 Successfully created subscription {} for user {} from transaction {}",
-        subscription.id,
-        loggable_user_id(user.id),
-        transaction_id
-    );
+    if let Some(existing) = existing_subscription {
+        tracing::warn!(
+            "🎯 User {} already has an active subscription {} ({}), webhook for transaction {} will update existing subscription",
+            user.id,
+            existing.id,
+            existing.plan_type,
+            transaction_id
+        );
+
+        // Update existing subscription instead of creating a duplicate
+        let subscription_service = crate::services::payment::SubscriptionService::new(
+            (*app_state.config).clone(),
+            (*app_state.encryption_service).clone(),
+        );
+
+        let conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let existing_id = existing.id;
+        let plan_type_str = plan_type.to_string();
+        let customer_id_str = customer_id.to_string();
+        let paddle_sub_id_clone = paddle_subscription_id.clone();
+
+        tracing::info!(
+            "🎯 Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {:?})",
+            existing.id,
+            existing.plan_type,
+            plan_type,
+            user.id,
+            paddle_subscription_id
+        );
+
+        let updated_subscription = conn
+            .interact(move |conn| {
+                use crate::models::payment::Subscription;
+                use crate::schema::subscriptions::dsl as sub_dsl;
+                use diesel::prelude::*;
+
+                diesel::update(sub_dsl::subscriptions.find(existing_id))
+                    .set((
+                        sub_dsl::plan_type.eq(plan_type_str),
+                        sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
+                        sub_dsl::paddle_subscription_id.eq(paddle_sub_id_clone),
+                        sub_dsl::status.eq("active"),
+                        sub_dsl::updated_at.eq(chrono::Utc::now()),
+                    ))
+                    .get_result::<Subscription>(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        tracing::info!(
+            "🎯 Successfully updated existing subscription {} for user {} from transaction {}",
+            updated_subscription.id,
+            loggable_user_id(user.id),
+            transaction_id
+        );
+    } else {
+        tracing::info!(
+            "🎯 Creating new {} subscription for user {} (price_id: {})",
+            plan_type,
+            user.id,
+            price_data
+        );
+
+        // Create subscription record
+        let subscription_service = crate::services::payment::SubscriptionService::new(
+            (*app_state.config).clone(),
+            (*app_state.encryption_service).clone(),
+        );
+
+        let conn_clone = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let paddle_sub_id_for_create = paddle_subscription_id.clone();
+        let subscription = conn_clone
+            .interact(move |conn| {
+                subscription_service.create_subscription_sync(
+                    conn,
+                    user.id,
+                    plan_type,
+                    Some(customer_id.clone()),
+                    paddle_sub_id_for_create, // Pass extracted paddle subscription ID
+                    None,                     // No trial for transaction-based billing
+                )
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+        tracing::info!(
+            "🎯 Successfully created subscription {} for user {} from transaction {}",
+            subscription.id,
+            loggable_user_id(user.id),
+            transaction_id
+        );
+    }
 
     // Log successful payment event to audit log
     {
@@ -1920,7 +2173,7 @@ async fn process_transaction_completed(
 /// Process subscription.created webhook event
 #[cfg(feature = "payment")]
 async fn process_subscription_created(
-    _app_state: AppState,
+    app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
     tracing::info!(
@@ -1928,9 +2181,519 @@ async fn process_subscription_created(
         webhook_data.event_id
     );
 
-    // For subscription-based billing (future enhancement)
-    tracing::info!("🎯 Subscription creation processing not yet implemented");
+    // Extract subscription data from the webhook payload
+    // For subscription.created events, the subscription data is nested under data.subscription
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 1: Extracting subscription data from webhook");
+    let subscription_data = webhook_data.data.get("subscription").ok_or_else(|| {
+        tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'subscription' field in webhook data");
+        AppError::BadRequest("Missing subscription data in webhook".to_string())
+    })?;
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 1 complete: Extracted nested subscription data");
 
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 2: Extracting subscription ID");
+    let subscription_id = subscription_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'id' field in subscription data");
+            AppError::BadRequest("Missing subscription ID in webhook".to_string())
+        })?
+        .to_string();
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 2 complete: Subscription ID: {}",
+        subscription_id
+    );
+
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 3: Extracting customer ID");
+    let customer_id = subscription_data
+        .get("customer_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'customer_id' field in subscription data");
+            AppError::BadRequest("Missing customer_id in webhook".to_string())
+        })?
+        .to_string();
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 3 complete: Customer ID: {}",
+        customer_id
+    );
+
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 4: Extracting status");
+    let status = subscription_data
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 4 complete: Status: {}", status);
+
+    tracing::info!(
+        "🎯 Subscription details - ID: {}, Customer: {}, Status: {}",
+        subscription_id,
+        customer_id,
+        status
+    );
+
+    // Extract plan type from subscription items
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 5: Extracting plan type from subscription items");
+    let plan_type = subscription_data
+        .get("items")
+        .and_then(|items| items.as_array())
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("price"))
+        .and_then(|price| price.get("id"))
+        .and_then(|v| v.as_str())
+        .map(|price_id| {
+            match price_id {
+                // Basic plan price IDs
+                "pri_01k4qbyetvn495nzv9nkqhxz02" => "basic", // Basic monthly
+                "pri_01k5ejs7h9zmw4d888r3pjjqna" => "basic", // Basic yearly
+
+                // Premium plan price IDs
+                "pri_01k5ej7wzvpcj6j65vcbpam6t4" => "premium", // Premium monthly
+                "pri_01k5ejva0cwqzbtgzd2c9qk0d4" => "premium", // Premium yearly
+
+                // Fallback patterns
+                price_id if price_id.contains("basic") => "basic",
+                price_id if price_id.contains("premium") => "premium",
+                price_id if price_id.contains("enterprise") => "enterprise",
+                _ => "free", // Default to free plan for unknown price IDs
+            }
+        })
+        .unwrap_or("free");
+
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 5 complete: Mapped to plan type: {}",
+        plan_type
+    );
+
+    // Extract trial information - calculate trial days if subscription is in trialing status
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 6: Extracting trial information (status: {})",
+        status
+    );
+    let trial_days = if status == "trialing" {
+        subscription_data
+            .get("scheduled_change")
+            .and_then(|sc| sc.get("effective_at"))
+            .or_else(|| subscription_data.get("next_billed_at"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|trial_end_dt| {
+                let trial_end = trial_end_dt.with_timezone(&chrono::Utc);
+                let now = chrono::Utc::now();
+                let duration = trial_end.signed_duration_since(now);
+                duration.num_days() as i32
+            })
+    } else {
+        None
+    };
+
+    if let Some(days) = trial_days {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 6 complete: Subscription has {} days remaining in trial",
+            days
+        );
+    } else {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 6 complete: No trial period (status: {})",
+            status
+        );
+    }
+
+    // Extract trial_end date (actual DateTime, not just days)
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6a: Extracting trial_end date");
+    let trial_end = if status == "trialing" {
+        subscription_data
+            .get("scheduled_change")
+            .and_then(|sc| sc.get("effective_at"))
+            .or_else(|| subscription_data.get("next_billed_at"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+    } else {
+        None
+    };
+
+    if let Some(end) = &trial_end {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 6a complete: Trial ends at: {}",
+            end
+        );
+    } else {
+        tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6a complete: No trial_end date");
+    }
+
+    // Extract current billing period dates
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 6b: Extracting current_period_start and current_period_end"
+    );
+    let current_period_start = subscription_data
+        .get("current_billing_period")
+        .and_then(|cbp| cbp.get("starts_at"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let current_period_end = subscription_data
+        .get("current_billing_period")
+        .and_then(|cbp| cbp.get("ends_at"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    if let (Some(start), Some(end)) = (&current_period_start, &current_period_end) {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 6b complete: Billing period: {} to {}",
+            start,
+            end
+        );
+    } else {
+        tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6b complete: No billing period dates found");
+    }
+
+    // Extract customer email for fallback user lookup
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6c: Extracting customer email");
+    let customer_email = webhook_data
+        .data
+        .get("customer")
+        .and_then(|c| c.get("email"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let Some(ref email) = customer_email {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 6c complete: Customer email: {}",
+            email
+        );
+    } else {
+        tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6c complete: No customer email found");
+    }
+
+    // Find user by paddle_customer_id or email
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 7: Getting database connection from pool");
+    let conn = app_state.pool.get().await.map_err(|e| {
+        tracing::error!(
+            "🎯 [WEBHOOK_ERROR] Step 7 FAILED: Failed to get DB connection: {}",
+            e
+        );
+        AppError::DbPoolError(e.to_string())
+    })?;
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 7 complete: Database connection obtained");
+
+    // Look up user by paddle_customer_id from existing subscriptions or transactions, or by email
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 8: Finding user by paddle_customer_id: {}",
+        customer_id
+    );
+    let customer_id_for_closure = customer_id.clone();
+    let customer_email_for_closure = customer_email.clone();
+
+    use crate::schema::{payment_transactions, subscriptions, users};
+    use diesel::prelude::*;
+
+    let user_id = conn
+        .interact(move |conn| -> Result<uuid::Uuid, diesel::result::Error> {
+            // Try to find user from existing subscriptions
+            if let Ok(subscription) = subscriptions::table
+                .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
+                .select(subscriptions::user_id)
+                .first::<uuid::Uuid>(conn)
+            {
+                tracing::info!("🎯 Found user from existing subscription");
+                return Ok(subscription);
+            }
+
+            // Try to find user from payment transactions
+            if let Ok(transaction) = payment_transactions::table
+                .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
+                .select(payment_transactions::user_id)
+                .first::<uuid::Uuid>(conn)
+            {
+                tracing::info!("🎯 Found user from payment transaction");
+                return Ok(transaction);
+            }
+
+            // Fallback: Try to find user by email
+            if let Some(ref email) = customer_email_for_closure {
+                if let Ok(user) = users::table
+                    .filter(users::email.eq(email))
+                    .select(users::id)
+                    .first::<uuid::Uuid>(conn)
+                {
+                    tracing::info!("🎯 Found user by email fallback");
+                    return Ok(user);
+                }
+            }
+
+            Err(diesel::result::Error::NotFound)
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 8 FAILED: Database interaction error: {}",
+                e
+            );
+            AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+        })?;
+
+    let user_id = match user_id {
+        Ok(id) => {
+            tracing::info!("🎯 [WEBHOOK_DEBUG] Step 8 complete: Found user_id: {}", id);
+            id
+        }
+        Err(e) => {
+            tracing::warn!(
+                "🎯 [WEBHOOK_DEBUG] Step 8: Could not find user for paddle_customer_id: {} (error: {:?}), skipping subscription creation",
+                customer_id,
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    // Get the full user record
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] Step 9: Fetching full user record for user_id: {}",
+        user_id
+    );
+    let user = match conn
+        .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
+        .await
+    {
+        Ok(Ok(user)) => {
+            tracing::info!("🎯 [WEBHOOK_DEBUG] Step 9 complete: User found");
+            user
+        }
+        Ok(Err(e)) => {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 9 FAILED: User not found for user_id: {} (error: {:?})",
+                user_id,
+                e
+            );
+            return Ok(());
+        }
+        Err(e) => {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 9 FAILED: Database interaction error: {}",
+                e
+            );
+            return Err(AppError::DbInteractError(e.to_string()));
+        }
+    };
+
+    tracing::info!(
+        "🎯 Found user {} for subscription {}",
+        loggable_user_id(user.id),
+        subscription_id
+    );
+
+    // Check for existing active subscription to prevent duplicates
+    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 10: Checking for existing active subscription");
+    let conn_duplicate_check = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| {
+            tracing::error!("🎯 [WEBHOOK_ERROR] Step 10 FAILED: Failed to get DB connection for duplicate check: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+    let user_id_for_check = user.id;
+    let existing_subscription = conn_duplicate_check
+        .interact(move |conn| {
+            use crate::models::payment::Subscription;
+            use crate::schema::subscriptions::dsl as sub_dsl;
+            use diesel::prelude::*;
+
+            sub_dsl::subscriptions
+                .filter(sub_dsl::user_id.eq(user_id_for_check))
+                .filter(sub_dsl::status.ne("cancelled"))
+                .first::<Subscription>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("🎯 [WEBHOOK_ERROR] Step 10 FAILED: Database interaction error during duplicate check: {}", e);
+            AppError::DbInteractError(e.to_string())
+        })?
+        .map_err(|e| {
+            tracing::error!("🎯 [WEBHOOK_ERROR] Step 10 FAILED: Database query error during duplicate check: {}", e);
+            AppError::DatabaseQueryError(e.to_string())
+        })?;
+
+    if let Some(existing) = existing_subscription {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 10 complete: Found existing active subscription {} ({}) for user {}",
+            existing.id,
+            existing.plan_type,
+            user.id
+        );
+        tracing::warn!(
+            "🎯 User {} already has an active subscription {} ({}), webhook for subscription {} will update existing subscription",
+            user.id,
+            existing.id,
+            existing.plan_type,
+            subscription_id
+        );
+
+        // Update existing subscription instead of creating a duplicate
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 11: Updating existing subscription {} to plan {} with Paddle subscription ID {}",
+            existing.id,
+            plan_type,
+            subscription_id
+        );
+        let conn = app_state.pool.get().await.map_err(|e| {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 11 FAILED: Failed to get DB connection for update: {}",
+                e
+            );
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        let existing_id = existing.id;
+        let plan_type_str = plan_type.to_string();
+        let customer_id_str = customer_id.clone();
+        let subscription_id_str = subscription_id.clone();
+
+        // Prepare date fields for update
+        // current_period_start and current_period_end are required fields, so provide defaults if not in webhook
+        let now = chrono::Utc::now();
+        let period_start_for_update = current_period_start.unwrap_or(now);
+        let period_end_for_update = current_period_end.unwrap_or(now + chrono::Duration::days(30));
+        // trial_end is optional, so None is valid
+        let trial_end_for_update = trial_end;
+
+        tracing::info!(
+            "🎯 Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {})",
+            existing.id,
+            existing.plan_type,
+            plan_type,
+            user.id,
+            subscription_id
+        );
+        tracing::info!(
+            "🎯 Date fields for update - trial_end: {:?}, period_start: {}, period_end: {}",
+            trial_end_for_update,
+            period_start_for_update,
+            period_end_for_update
+        );
+
+        let updated_subscription = conn
+            .interact(move |conn| {
+                use crate::models::payment::Subscription;
+                use crate::schema::subscriptions::dsl as sub_dsl;
+                use diesel::prelude::*;
+
+                diesel::update(sub_dsl::subscriptions.find(existing_id))
+                    .set((
+                        sub_dsl::plan_type.eq(plan_type_str),
+                        sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
+                        sub_dsl::paddle_subscription_id.eq(Some(subscription_id_str)),
+                        sub_dsl::status.eq(&status),
+                        sub_dsl::trial_end.eq(trial_end_for_update),
+                        sub_dsl::current_period_start.eq(period_start_for_update),
+                        sub_dsl::current_period_end.eq(period_end_for_update),
+                        sub_dsl::updated_at.eq(chrono::Utc::now()),
+                    ))
+                    .get_result::<Subscription>(conn)
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Database interaction error during update: {}", e);
+                AppError::DbInteractError(e.to_string())
+            })?
+            .map_err(|e| {
+                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Database query error during update: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 11 complete: Successfully updated subscription {} (plan_type: {}, paddle_subscription_id: {})",
+            updated_subscription.id,
+            updated_subscription.plan_type,
+            updated_subscription
+                .paddle_subscription_id
+                .as_ref()
+                .unwrap_or(&"None".to_string())
+        );
+        tracing::info!(
+            "🎯 Successfully updated existing subscription {} for user {} from subscription.created webhook",
+            updated_subscription.id,
+            loggable_user_id(user.id)
+        );
+    } else {
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 10 complete: No existing active subscription found for user {}",
+            user.id
+        );
+        tracing::info!(
+            "🎯 Creating new {} subscription for user {} from subscription.created webhook",
+            plan_type,
+            user.id
+        );
+
+        // Create subscription record
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 11: Creating new subscription for user {} with plan {}",
+            user.id,
+            plan_type
+        );
+        let subscription_service = crate::services::payment::SubscriptionService::new(
+            (*app_state.config).clone(),
+            (*app_state.encryption_service).clone(),
+        );
+
+        let conn = app_state.pool.get().await.map_err(|e| {
+            tracing::error!(
+                "🎯 [WEBHOOK_ERROR] Step 11 FAILED: Failed to get DB connection for create: {}",
+                e
+            );
+            AppError::DbPoolError(e.to_string())
+        })?;
+
+        // Clone subscription_id for logging after closure
+        let subscription_id_for_service = subscription_id.clone();
+        let subscription = conn
+            .interact(move |conn| {
+                subscription_service.create_subscription_sync(
+                    conn,
+                    user.id,
+                    plan_type,
+                    Some(customer_id),
+                    Some(subscription_id_for_service.clone()), // Pass Paddle subscription ID
+                    trial_days, // Pass trial days if present
+                )
+            })
+            .await
+            .map_err(|e| {
+                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Database interaction error during create: {}", e);
+                AppError::DbInteractError(e.to_string())
+            })?
+            .map_err(|e| {
+                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Subscription creation error: {}", e);
+                e
+            })?;
+
+        tracing::info!(
+            "🎯 [WEBHOOK_DEBUG] Step 11 complete: Successfully created subscription {} (plan_type: {}, paddle_subscription_id: {})",
+            subscription.id,
+            subscription.plan_type,
+            subscription
+                .paddle_subscription_id
+                .as_ref()
+                .unwrap_or(&"None".to_string())
+        );
+        tracing::info!(
+            "🎯 Successfully created subscription {} for user {} from subscription.created webhook",
+            subscription.id,
+            loggable_user_id(user.id)
+        );
+    }
+
+    tracing::info!(
+        "🎯 [WEBHOOK_DEBUG] process_subscription_created completed successfully for subscription {}",
+        subscription_id
+    );
     Ok(())
 }
 

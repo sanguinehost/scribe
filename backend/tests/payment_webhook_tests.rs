@@ -56,13 +56,21 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription_id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                "status": "active",
-                "items": [{
-                    "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02",
-                    "quantity": 1
-                }]
+                "subscription": {
+                    "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                    "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                    "status": "active",
+                    "items": [{
+                        "price": {
+                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02"
+                        },
+                        "quantity": 1
+                    }]
+                },
+                "customer": {
+                    "id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                    "email": "test@example.com"
+                }
             }
         })
     }
@@ -300,7 +308,11 @@ mod payment_webhook_tests {
 
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
-        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        // Use explicit timestamp for deterministic testing
+        let timestamp = chrono::Utc::now().timestamp();
+        let signature =
+            create_webhook_signature_with_timestamp(&payload_str, &webhook_secret, Some(timestamp));
 
         let response = Client::new()
             .post(&format!("{}/api/payment/webhook/paddle", &app.address))
@@ -311,14 +323,17 @@ mod payment_webhook_tests {
             .await
             .expect("Failed to execute request");
 
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+
         // Should accept requests with valid signature
         // Note: This might return 500 if the webhook processing logic isn't complete,
         // but it should not be a 400 (bad request) due to signature issues
         assert!(
-            response.status() == StatusCode::OK
-                || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
-            "Expected OK or Internal Server Error, got: {}",
-            response.status()
+            status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
+            "Expected OK or Internal Server Error, got: {}. Body: {}",
+            status,
+            body
         );
     }
 
@@ -736,6 +751,464 @@ mod payment_webhook_tests {
         assert!(
             invalid_result.is_err(),
             "Invalid signature should fail verification"
+        );
+    }
+
+    /// Test subscription.created webhook stores paddle_subscription_id
+    #[tokio::test]
+    async fn test_subscription_created_webhook_stores_paddle_subscription_id() {
+        use diesel::prelude::*;
+        use scribe_backend::schema::subscriptions;
+        use uuid::Uuid;
+
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create test user
+        let user_id = Uuid::new_v4();
+        let test_email = "webhook_test_user@example.com";
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            use scribe_backend::schema::users::dsl;
+
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>("webhook_test_user")
+            .bind::<diesel::sql_types::Text, _>(test_email)
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .execute(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to create test user");
+
+        // Create realistic subscription.created webhook payload
+        let paddle_subscription_id = "sub_01test123456789abcdef";
+        let paddle_customer_id = "cus_01test123456789abcdef";
+        let payload = json!({
+            "event_id": "evt_subscription_created_test_001",
+            "event_type": "subscription.created",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "notification_id": "ntf_test_001",
+            "data": {
+                "subscription": {
+                    "id": paddle_subscription_id,
+                    "customer_id": paddle_customer_id,
+                    "status": "active",
+                    "current_billing_period": {
+                        "starts_at": Utc::now().to_rfc3339(),
+                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
+                    },
+                    "items": [{
+                        "price": {
+                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
+                        },
+                        "quantity": 1
+                    }]
+                },
+                "customer": {
+                    "id": paddle_customer_id,
+                    "email": test_email,
+                    "name": "Test User"
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        // Send webhook
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "Subscription.created webhook should succeed. Status: {}, Body: {}",
+            status,
+            body
+        );
+
+        // Verify subscription was created with paddle_subscription_id
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let stored_subscription = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .filter(subscriptions::user_id.eq(user_id))
+                    .first::<scribe_backend::models::payment::Subscription>(conn)
+                    .optional()
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to query subscription");
+
+        assert!(
+            stored_subscription.is_some(),
+            "Subscription should be created"
+        );
+
+        let subscription = stored_subscription.unwrap();
+        assert_eq!(
+            subscription.paddle_subscription_id,
+            Some(paddle_subscription_id.to_string()),
+            "Paddle subscription ID should be stored"
+        );
+        assert_eq!(
+            subscription.paddle_customer_id,
+            Some(paddle_customer_id.to_string()),
+            "Paddle customer ID should be stored"
+        );
+        assert_eq!(
+            subscription.plan_type, "basic",
+            "Plan type should be correctly mapped from price_id"
+        );
+        assert_eq!(
+            subscription.status, "active",
+            "Subscription status should match webhook"
+        );
+    }
+
+    /// Test subscription.created webhook prevents duplicate subscriptions
+    #[tokio::test]
+    async fn test_subscription_created_prevents_duplicate_subscriptions() {
+        use diesel::prelude::*;
+        use scribe_backend::schema::subscriptions;
+        use uuid::Uuid;
+
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create test user
+        let user_id = Uuid::new_v4();
+        let test_email = "duplicate_test_user@example.com";
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            use scribe_backend::schema::users::dsl;
+
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>("duplicate_test_user")
+            .bind::<diesel::sql_types::Text, _>(test_email)
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .execute(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to create test user");
+
+        // Send first subscription.created webhook
+        let first_subscription_id = "sub_01first123456789abcdef";
+        let paddle_customer_id = "cus_01test123456789abcdef";
+        let first_payload = json!({
+            "event_id": "evt_subscription_created_duplicate_test_001",
+            "event_type": "subscription.created",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "notification_id": "ntf_duplicate_test_001",
+            "data": {
+                "subscription": {
+                    "id": first_subscription_id,
+                    "customer_id": paddle_customer_id,
+                    "status": "active",
+                    "current_billing_period": {
+                        "starts_at": Utc::now().to_rfc3339(),
+                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
+                    },
+                    "items": [{
+                        "price": {
+                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
+                        },
+                        "quantity": 1
+                    }]
+                },
+                "customer": {
+                    "id": paddle_customer_id,
+                    "email": test_email,
+                    "name": "Test User"
+                }
+            }
+        });
+
+        let payload_str = first_payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Send second subscription.created webhook with different subscription_id
+        let second_subscription_id = "sub_01second123456789abcdef";
+        let second_payload = json!({
+            "event_id": "evt_subscription_created_duplicate_test_002",
+            "event_type": "subscription.created",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "notification_id": "ntf_duplicate_test_002",
+            "data": {
+                "subscription": {
+                    "id": second_subscription_id,
+                    "customer_id": paddle_customer_id,
+                    "status": "active",
+                    "current_billing_period": {
+                        "starts_at": Utc::now().to_rfc3339(),
+                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
+                    },
+                    "items": [{
+                        "price": {
+                            "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4", // Premium monthly
+                        },
+                        "quantity": 1
+                    }]
+                },
+                "customer": {
+                    "id": paddle_customer_id,
+                    "email": test_email,
+                    "name": "Test User"
+                }
+            }
+        });
+
+        let payload_str = second_payload.to_string();
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Second webhook should also succeed (update existing)"
+        );
+
+        // Verify only ONE subscription exists for user
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let subscription_count = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .filter(subscriptions::user_id.eq(user_id))
+                    .count()
+                    .get_result::<i64>(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to count subscriptions");
+
+        assert_eq!(
+            subscription_count, 1,
+            "Should have exactly one subscription (no duplicates)"
+        );
+
+        // Verify subscription was updated to second subscription_id and premium plan
+        let stored_subscription = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .filter(subscriptions::user_id.eq(user_id))
+                    .first::<scribe_backend::models::payment::Subscription>(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to query subscription");
+
+        assert_eq!(
+            stored_subscription.paddle_subscription_id,
+            Some(second_subscription_id.to_string()),
+            "Subscription should be updated to second subscription_id"
+        );
+        assert_eq!(
+            stored_subscription.plan_type, "premium",
+            "Plan should be updated to premium"
+        );
+    }
+
+    /// Test transaction.completed webhook stores paddle_subscription_id from transaction data
+    #[tokio::test]
+    async fn test_transaction_completed_stores_paddle_subscription_id() {
+        use diesel::prelude::*;
+        use scribe_backend::schema::subscriptions;
+        use uuid::Uuid;
+
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create test user
+        let user_id = Uuid::new_v4();
+        let test_email = "transaction_sub_test@example.com";
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            use scribe_backend::schema::users::dsl;
+
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>("transaction_sub_test_user")
+            .bind::<diesel::sql_types::Text, _>(test_email)
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .execute(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to create test user");
+
+        // Create transaction.completed webhook with subscription_id in transaction data
+        let paddle_subscription_id = "sub_01txn123456789abcdef";
+        let paddle_customer_id = "cus_01txn123456789abcdef";
+        let transaction_id = "txn_01test123456789abcdef";
+
+        let payload = json!({
+            "event_id": "evt_transaction_completed_sub_test_001",
+            "event_type": "transaction.completed",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "notification_id": "ntf_txn_sub_test_001",
+            "data": {
+                "transaction": {
+                    "id": transaction_id,
+                    "status": "completed",
+                    "customer_id": paddle_customer_id,
+                    "subscription_id": paddle_subscription_id, // Subscription ID at top level
+                    "currency_code": "USD",
+                    "items": [{
+                        "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
+                        "quantity": 1
+                    }],
+                    "details": {
+                        "totals": {
+                            "total": "1000",
+                            "tax": "100",
+                            "currency_code": "USD"
+                        }
+                    }
+                },
+                "customer": {
+                    "id": paddle_customer_id,
+                    "email": test_email,
+                    "name": "Transaction Test User"
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        // Send webhook
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Transaction.completed webhook should succeed"
+        );
+
+        // Verify subscription was created with paddle_subscription_id from transaction
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let stored_subscription = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .filter(subscriptions::user_id.eq(user_id))
+                    .first::<scribe_backend::models::payment::Subscription>(conn)
+                    .optional()
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to query subscription");
+
+        assert!(
+            stored_subscription.is_some(),
+            "Subscription should be created from transaction webhook"
+        );
+
+        let subscription = stored_subscription.unwrap();
+        assert_eq!(
+            subscription.paddle_subscription_id,
+            Some(paddle_subscription_id.to_string()),
+            "Paddle subscription ID should be extracted from transaction data"
+        );
+        assert_eq!(
+            subscription.paddle_customer_id,
+            Some(paddle_customer_id.to_string()),
+            "Paddle customer ID should be stored"
+        );
+        assert_eq!(
+            subscription.plan_type, "basic",
+            "Plan type should be correctly mapped from price_id"
         );
     }
 }
