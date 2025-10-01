@@ -1175,6 +1175,7 @@ export interface PlanFeatures {
 	annual_savings_percent?: number;
 	paddle_price_id_monthly?: string;
 	paddle_price_id_yearly?: string;
+	max_context_tokens?: number; // Subscription tier context limit
 	billing_features?: {
 		monthly: BillingFeatures;
 		yearly: BillingFeatures;
