@@ -234,8 +234,8 @@ pub async fn get_subscription(
 
     // Sync with Paddle if subscription exists
     if let Some(ref sub) = subscription {
-        tracing::info!(
-            "🔄 Syncing subscription {} with Paddle for real-time status",
+        tracing::debug!(
+            "Syncing subscription {} with Paddle for real-time status",
             sub.id
         );
 
@@ -275,7 +275,7 @@ pub async fn get_subscription(
     // Get plan features if subscription exists
     let plan_features = if let Some(ref sub) = subscription {
         let plan_type = sub.plan_type.clone();
-        tracing::info!(
+        tracing::debug!(
             "📋 Subscription found for user {}: plan_type='{}', status='{}', id='{}'",
             user.id,
             plan_type,
@@ -290,7 +290,7 @@ pub async fn get_subscription(
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get plan features: {}", e)))?
     } else {
-        tracing::info!("❌ No subscription found for user {}", user.id);
+        tracing::debug!("No subscription found for user {}", user.id);
         // Default to free plan features
         let subscription_service_clone = subscription_service.clone();
         conn.interact(move |conn| subscription_service_clone.get_plan_features_sync(conn, "free"))
@@ -396,8 +396,8 @@ pub async fn get_subscription(
                 .await
             {
                 Ok(portal_url) => {
-                    tracing::info!(
-                        "🎯 Generated customer portal URL for user {} with customer_id {}",
+                    tracing::debug!(
+                        "Generated customer portal URL for user {} with customer_id {}",
                         user.id,
                         customer_id
                     );
@@ -414,7 +414,7 @@ pub async fn get_subscription(
                 }
             }
         } else {
-            tracing::info!(
+            tracing::debug!(
                 "ℹ️ No Paddle customer ID found for user {} subscription {}",
                 user.id,
                 sub.id
@@ -432,8 +432,8 @@ pub async fn get_subscription(
         customer_portal_url,
     };
 
-    tracing::info!(
-        "🔄 Sending subscription response for user {}: subscription_exists={}, plan_type={:?}, has_portal_url={}",
+    tracing::debug!(
+        "Sending subscription response for user {}: subscription_exists={}, plan_type={:?}, has_portal_url={}",
         user.id,
         response.subscription.is_some(),
         response.subscription.as_ref().map(|s| &s.plan_type),
@@ -547,57 +547,57 @@ pub async fn create_payment(
     State(app_state): State<AppState>,
     Json(request): Json<CreatePaymentRequest>,
 ) -> Result<Json<CreatePaymentResponse>, AppError> {
-    tracing::info!(
+    tracing::debug!(
         plan_type = %request.plan_type,
         success_url = %request.success_url.as_deref().unwrap_or("None"),
         cancel_url = %request.cancel_url.as_deref().unwrap_or("None"),
-        "🎯 CREATE_PAYMENT: Handler entered"
+        "Handler entered"
     );
 
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    tracing::info!(
+    tracing::debug!(
         user_id = %loggable_user_id(user.id),
         user_email = %sanitize_personal_info(&user.email),
         user_username = %sanitize_personal_info(&user.username),
-        "🎯 CREATE_PAYMENT: User authenticated"
+        "User authenticated"
     );
 
     // Create or get existing customer
-    tracing::debug!("🎯 CREATE_PAYMENT: Creating PaddleService with payment config");
+    tracing::debug!("Creating PaddleService with payment config");
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
 
     tracing::debug!(
         customer_email = %sanitize_personal_info(&user.email),
         customer_name = %sanitize_personal_info(&user.username),
-        "🎯 CREATE_PAYMENT: Creating/getting Paddle customer"
+        "Creating/getting Paddle customer"
     );
     let customer = paddle_service
         .create_customer(&user.email, Some(&user.username))
         .await?;
 
-    tracing::info!(
+    tracing::debug!(
         customer_id = %customer.id,
         customer_email = %customer.email.as_ref().map(|e| sanitize_personal_info(e).to_string()).unwrap_or_else(|| "None".to_string()),
-        "🎯 CREATE_PAYMENT: Paddle customer resolved"
+        "Paddle customer resolved"
     );
 
     // Look up plan features from database to get paddle_price_id
-    tracing::debug!("🎯 CREATE_PAYMENT: Creating subscription service");
+    tracing::debug!("Creating subscription service");
     let subscription_service = SubscriptionService::new(
         (*app_state.config).clone(),
         (*app_state.encryption_service).clone(),
     );
 
-    tracing::debug!("🎯 CREATE_PAYMENT: Getting database connection");
+    tracing::debug!("Getting database connection");
     let conn = app_state.pool.get().await.map_err(|e| {
-        tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Failed to get database connection");
+        tracing::error!(error = %e, "Failed to get database connection");
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
-    tracing::debug!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: Looking up plan features");
+    tracing::debug!(plan_type = %request.plan_type, "Looking up plan features");
     let plan_type_clone = request.plan_type.clone();
     let subscription_service_clone = subscription_service.clone();
     let plan_features = conn
@@ -606,30 +606,31 @@ pub async fn create_payment(
         })
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Database interaction failed");
+            tracing::error!(error = %e, "Database interaction failed");
             AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
         })?
         .map_err(|e| {
-            tracing::error!(error = %e, "🎯 CREATE_PAYMENT: Database query failed");
+            tracing::error!(error = %e, "Database query failed");
             AppError::DatabaseQueryError(format!("Database query failed: {}", e))
         })?
         .ok_or_else(|| {
-            tracing::error!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: Invalid plan type");
+            tracing::error!(plan_type = %request.plan_type, "Invalid plan type");
             AppError::BadRequest(format!("Invalid plan type: {}", request.plan_type))
         })?;
 
     tracing::debug!(
         plan_type = %request.plan_type,
         paddle_price_id = ?plan_features.paddle_price_id,
-        "🎯 CREATE_PAYMENT: Plan features loaded"
+        "Plan features loaded"
     );
 
-    let price_id = plan_features
-        .paddle_price_id
-        .ok_or_else(|| {
-            tracing::error!(plan_type = %request.plan_type, "🎯 CREATE_PAYMENT: No paddle_price_id configured for plan");
-            AppError::BadRequest(format!("Plan '{}' does not have a configured paddle_price_id", request.plan_type))
-        })?;
+    let price_id = plan_features.paddle_price_id.ok_or_else(|| {
+        tracing::error!(plan_type = %request.plan_type, "No paddle_price_id configured for plan");
+        AppError::BadRequest(format!(
+            "Plan '{}' does not have a configured paddle_price_id",
+            request.plan_type
+        ))
+    })?;
 
     // Create transaction request
     let transaction_request = CreateTransactionRequest {
@@ -648,13 +649,13 @@ pub async fn create_payment(
         billing_details: None,
     };
 
-    tracing::info!(
+    tracing::debug!(
         customer_id = %customer.id,
         price_id = %price_id,
         collection_mode = %transaction_request.collection_mode,
         success_url = ?request.success_url,
         cancel_url = ?request.cancel_url,
-        "🎯 CREATE_PAYMENT: About to create Paddle transaction"
+        "About to create Paddle transaction"
     );
 
     // Create transaction with Paddle
@@ -666,17 +667,17 @@ pub async fn create_payment(
                 error = %e,
                 customer_id = %customer.id,
                 price_id = %price_id,
-                "🎯 CREATE_PAYMENT: Failed to create Paddle transaction"
+                "Failed to create Paddle transaction"
             );
             e
         })?;
 
-    tracing::info!(
+    tracing::debug!(
         transaction_id = %transaction.transaction_id,
         checkout_url = %transaction.checkout_url,
         status = %transaction.status,
         customer_id = %customer.id,
-        "🎯 CREATE_PAYMENT: Successfully created transaction, returning response"
+        "Successfully created transaction, returning response"
     );
 
     Ok(Json(CreatePaymentResponse {
@@ -697,8 +698,8 @@ pub async fn verify_transaction(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    tracing::info!(
-        "🎯 Verifying transaction {} for user {}",
+    tracing::debug!(
+        "Verifying transaction {} for user {}",
         transaction_id,
         loggable_user_id(user.id)
     );
@@ -750,8 +751,8 @@ pub async fn verify_transaction(
 
     // If we have the transaction in our database and it's completed, use that data
     if let Some(transaction) = stored_transaction {
-        tracing::info!(
-            "🎯 Found transaction {} in database with status: {}",
+        tracing::debug!(
+            "Found transaction {} in database with status: {}",
             transaction_id,
             transaction.status
         );
@@ -819,8 +820,8 @@ pub async fn verify_transaction(
                 };
 
             if let Some(ref sub_id) = paddle_subscription_id {
-                tracing::info!(
-                    "🎯 Extracted paddle_subscription_id: {} from stored transaction {}",
+                tracing::debug!(
+                    "Extracted paddle_subscription_id: {} from stored transaction {}",
                     sub_id,
                     transaction_id
                 );
@@ -852,8 +853,8 @@ pub async fn verify_transaction(
                 .await
                 .map_err(|e| AppError::DbInteractError(e.to_string()))??;
 
-            tracing::info!(
-                "🎯 Created subscription {} from stored transaction {}",
+            tracing::debug!(
+                "Created subscription {} from stored transaction {}",
                 new_subscription.id,
                 transaction_id
             );
@@ -872,7 +873,7 @@ pub async fn verify_transaction(
     }
 
     // If not in database or not completed, try Paddle API
-    tracing::info!("🎯 Transaction not found in database or not completed, checking Paddle API");
+    tracing::debug!("Transaction not found in database or not completed, checking Paddle API");
 
     // Create PaddleService to verify transaction
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
@@ -880,14 +881,13 @@ pub async fn verify_transaction(
     // Verify transaction with Paddle API
     match paddle_service.get_transaction(&transaction_id).await {
         Ok(response) => {
-            tracing::debug!("🎯 Raw Paddle API response: {:?}", response);
-
             // Use response directly - get_transaction() already extracts the data field
             let transaction_data = &response;
 
-            tracing::info!(
-                "🎯 Transaction data retrieved from Paddle: {:?}",
-                transaction_data
+            tracing::debug!(
+                transaction_id = %transaction_id,
+                status = ?transaction_data.get("status"),
+                "Transaction data retrieved from Paddle"
             );
 
             // Check if transaction is completed or if it's a valid trial transaction
@@ -912,8 +912,8 @@ pub async fn verify_transaction(
             // Check if this is a trial transaction (draft status with $0.00 total)
             let is_trial = status == "draft" && is_zero_total;
 
-            tracing::info!(
-                "🎯 Transaction status: {}, total: {}, is_trial: {}",
+            tracing::debug!(
+                "Transaction status: {}, total: {}, is_trial: {}",
                 status,
                 total_str,
                 is_trial
@@ -921,7 +921,7 @@ pub async fn verify_transaction(
 
             if status != "completed" && !is_trial {
                 tracing::warn!(
-                    "🎯 Transaction {} is not completed and not a trial (status: {}, total: {})",
+                    "Transaction {} is not completed and not a trial (status: {}, total: {})",
                     transaction_id,
                     status,
                     total_str
@@ -963,8 +963,8 @@ pub async fn verify_transaction(
             // Set trial days if this is a trial transaction
             let trial_days = if is_trial { Some(7) } else { None };
 
-            tracing::info!(
-                "🎯 Creating/updating {} subscription for user {} (trial: {})",
+            tracing::debug!(
+                "Creating/updating {} subscription for user {} (trial: {})",
                 plan_type,
                 user.id,
                 is_trial
@@ -994,8 +994,8 @@ pub async fn verify_transaction(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             if let Some(existing) = existing_subscription {
-                tracing::info!(
-                    "🎯 User already has an active subscription: {} (status: {}, plan_type: {})",
+                tracing::debug!(
+                    "User already has an active subscription: {} (status: {}, plan_type: {})",
                     existing.id,
                     existing.status,
                     existing.plan_type
@@ -1091,8 +1091,8 @@ pub async fn verify_transaction(
                 let customer_id_str = customer_id.to_string();
                 let subscription_status_str = subscription_status.to_string();
 
-                tracing::info!(
-                    "🎯 Upgrading subscription {} from {} to {} for user {}",
+                tracing::debug!(
+                    "Upgrading subscription {} from {} to {} for user {}",
                     existing.id,
                     existing.plan_type,
                     plan_type,
@@ -1168,8 +1168,8 @@ pub async fn verify_transaction(
                     .await
                     .map_err(|e| AppError::DbInteractError(e.to_string()))??;
 
-                tracing::info!(
-                    "🎯 Successfully created {} subscription {} for user {}",
+                tracing::debug!(
+                    "Successfully created {} subscription {} for user {}",
                     if is_trial { "trial" } else { "active" },
                     new_subscription.id,
                     user.id
@@ -1221,7 +1221,7 @@ pub async fn verify_transaction(
             }
 
             // Generic error logging and response
-            tracing::error!("🎯 Failed to verify transaction {}: {}", transaction_id, e);
+            tracing::error!("Failed to verify transaction {}: {}", transaction_id, e);
 
             // Still return a response but indicate verification failed
             Ok(Json(serde_json::json!({
@@ -1444,35 +1444,35 @@ pub async fn paddle_webhook(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<WebhookResponse>, AppError> {
-    tracing::info!("🎯 PADDLE WEBHOOK HANDLER CALLED - Received Paddle webhook");
+    tracing::info!("Received Paddle webhook");
 
     // Log webhook metadata for debugging (payload contains PII and is not logged)
-    tracing::info!("🎯 Received webhook payload of {} bytes", body.len());
+    tracing::debug!("Received webhook payload of {} bytes", body.len());
 
     // Log all headers for debugging
-    tracing::info!("🎯 Webhook headers: {:?}", headers);
+    tracing::debug!("Webhook headers: {:?}", headers);
 
     // 1. Check for Paddle-Signature header
     let signature = headers
         .get("Paddle-Signature")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| {
-            tracing::error!("🎯 WEBHOOK ERROR: Missing Paddle-Signature header");
+            tracing::error!("WEBHOOK ERROR: Missing Paddle-Signature header");
             AppError::BadRequest("Missing Paddle-Signature header".to_string())
         })?;
 
-    tracing::info!("🎯 Found signature: {}", signature);
+    tracing::debug!("Found signature: {}", signature);
 
     // 2. Create PaddleService to verify signature
     let paddle_service = PaddleService::new(app_state.config.payment.clone());
-    tracing::info!("🎯 Created PaddleService for signature verification");
+    tracing::debug!("Created PaddleService for signature verification");
 
     // 3. Verify webhook signature
     if let Err(e) = paddle_service.verify_webhook_signature(&body, signature) {
-        tracing::error!("🎯 WEBHOOK ERROR: Signature verification failed: {}", e);
+        tracing::error!("WEBHOOK ERROR: Signature verification failed: {}", e);
         return Err(e);
     }
-    tracing::info!("🎯 Webhook signature verified successfully");
+    tracing::info!("Webhook signature verified successfully");
 
     // Create audit service for logging webhook events
     let audit_service = PaymentAuditService::new();
@@ -1483,35 +1483,35 @@ pub async fn paddle_webhook(
             // Log sanitized structure (removes PII)
             let sanitized_json = sanitize_json_value(&raw_json);
             tracing::debug!(
-                "🎯 Sanitized JSON structure: {}",
+                "Sanitized JSON structure: {}",
                 serde_json::to_string_pretty(&sanitized_json).unwrap_or("unparseable".to_string())
             );
 
             // Check for different possible event_type field names
             if let Some(event_type) = raw_json.get("event_type") {
-                tracing::info!("🎯 Found event_type: {}", event_type);
+                tracing::debug!("Found event_type: {}", event_type);
             }
             if let Some(event_type) = raw_json.get("eventType") {
-                tracing::info!("🎯 Found eventType: {}", event_type);
+                tracing::debug!("Found eventType: {}", event_type);
             }
             if let Some(event_type) = raw_json.get("type") {
-                tracing::info!("🎯 Found type: {}", event_type);
+                tracing::debug!("Found type: {}", event_type);
             }
         }
         Err(e) => {
-            tracing::error!("🎯 WEBHOOK ERROR: Cannot parse as JSON at all: {}", e);
+            tracing::error!("WEBHOOK ERROR: Cannot parse as JSON at all: {}", e);
             return Err(AppError::BadRequest(format!("Invalid JSON: {}", e)));
         }
     }
 
     // 5. Parse JSON payload as PaddleWebhook
     let webhook_data: PaddleWebhook = serde_json::from_slice(&body).map_err(|e| {
-        tracing::error!("🎯 WEBHOOK ERROR: Failed to parse as PaddleWebhook: {}", e);
+        tracing::error!("WEBHOOK ERROR: Failed to parse as PaddleWebhook: {}", e);
         AppError::BadRequest(format!("Invalid PaddleWebhook payload: {}", e))
     })?;
 
-    tracing::info!(
-        "🎯 Successfully parsed webhook data: event_type={:?}, event_id={}",
+    tracing::debug!(
+        "Successfully parsed webhook data: event_type={:?}, event_id={}",
         webhook_data.event_type,
         webhook_data.event_id
     );
@@ -1548,30 +1548,30 @@ pub async fn paddle_webhook(
     // 6. Process webhook based on event type
     match webhook_data.event_type {
         PaddleEventType::TransactionCompleted => {
-            tracing::info!("🎯 Processing TransactionCompleted webhook");
+            tracing::info!("Processing TransactionCompleted webhook");
             process_transaction_completed(app_state, &webhook_data).await?;
         }
         PaddleEventType::SubscriptionCreated => {
-            tracing::info!("🎯 Processing SubscriptionCreated webhook");
+            tracing::info!("Processing SubscriptionCreated webhook");
             process_subscription_created(app_state, &webhook_data).await?;
         }
         PaddleEventType::SubscriptionUpdated => {
-            tracing::info!("🎯 Processing SubscriptionUpdated webhook");
+            tracing::info!("Processing SubscriptionUpdated webhook");
             process_subscription_updated(app_state, &webhook_data).await?;
         }
         PaddleEventType::SubscriptionCancelled => {
-            tracing::info!("🎯 Processing SubscriptionCancelled webhook");
+            tracing::info!("Processing SubscriptionCancelled webhook");
             process_subscription_cancelled(app_state, &webhook_data).await?;
         }
         _ => {
-            tracing::info!(
-                "🎯 Webhook event type {:?} not processed - acknowledged",
+            tracing::debug!(
+                "Webhook event type {:?} not processed - acknowledged",
                 webhook_data.event_type
             );
         }
     }
 
-    tracing::info!("🎯 Webhook processed successfully");
+    tracing::info!("Webhook processed successfully");
 
     Ok(Json(WebhookResponse {
         success: true,
@@ -1586,8 +1586,8 @@ pub async fn handle_pay_page(
     State(app_state): State<AppState>,
 ) -> Result<axum::response::Response, AppError> {
     if let Some(transaction_id) = query._ptxn {
-        tracing::info!(
-            "🎯 Payment completion detected for transaction: {}",
+        tracing::debug!(
+            "Payment completion detected for transaction: {}",
             transaction_id
         );
 
@@ -1620,18 +1620,18 @@ async fn process_transaction_completed(
     app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!(
-        "🎯 Processing transaction.completed webhook: {}",
+    tracing::debug!(
+        "Processing transaction.completed webhook: {}",
         webhook_data.event_id
     );
 
     // For transaction.completed events, the transaction data is nested under data.transaction
-    tracing::info!("🎯 Step 1: Extracting transaction data from webhook");
+    tracing::debug!("Step 1: Extracting transaction data from webhook");
     let transaction_data = webhook_data.data.get("transaction").ok_or_else(|| {
-        tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'transaction' field in webhook data");
+        tracing::error!("Missing 'transaction' field in webhook data");
         AppError::BadRequest("Missing transaction data in webhook".to_string())
     })?;
-    tracing::info!("🎯 Step 1 complete: Extracted nested transaction data");
+    tracing::debug!("Step 1 complete: Extracted nested transaction data");
 
     let transaction_id = transaction_data
         .get("id")
@@ -1651,8 +1651,8 @@ async fn process_transaction_completed(
         .unwrap_or("unknown")
         .to_string();
 
-    tracing::info!(
-        "🎯 Transaction details - ID: {}, Customer: {}, Status: {}",
+    tracing::debug!(
+        "Transaction details - ID: {}, Customer: {}, Status: {}",
         transaction_id,
         customer_id,
         status
@@ -1660,8 +1660,8 @@ async fn process_transaction_completed(
 
     // Only process completed transactions
     if status != "completed" {
-        tracing::info!(
-            "🎯 Transaction {} not completed (status: {}), skipping",
+        tracing::debug!(
+            "Transaction {} not completed (status: {}), skipping",
             transaction_id,
             status
         );
@@ -1669,7 +1669,7 @@ async fn process_transaction_completed(
     }
 
     // Extract customer email for fallback user lookup
-    tracing::info!("🎯 Step 1a: Extracting customer email");
+    tracing::debug!("Step 1a: Extracting customer email");
     let customer_email = webhook_data
         .data
         .get("customer")
@@ -1677,14 +1677,17 @@ async fn process_transaction_completed(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     if let Some(ref email) = customer_email {
-        tracing::info!("🎯 Step 1a complete: Customer email: {}", email);
+        tracing::debug!(
+            customer_email = %sanitize_personal_info(email),
+            "Step 1a complete: Customer email found"
+        );
     } else {
-        tracing::info!("🎯 Step 1a complete: No customer email found");
+        tracing::debug!("Step 1a complete: No customer email found");
     }
 
     // Find user by paddle_customer_id or email
-    tracing::info!(
-        "🎯 Step 2: Finding user by paddle_customer_id: {}",
+    tracing::debug!(
+        "Step 2: Finding user by paddle_customer_id: {}",
         customer_id
     );
     let conn = app_state
@@ -1707,7 +1710,7 @@ async fn process_transaction_completed(
                 .select(subscriptions::user_id)
                 .first::<uuid::Uuid>(conn)
             {
-                tracing::info!("🎯 Found user from existing subscription");
+                tracing::debug!("Found user from existing subscription");
                 return Ok(subscription);
             }
 
@@ -1717,7 +1720,7 @@ async fn process_transaction_completed(
                 .select(payment_transactions::user_id)
                 .first::<uuid::Uuid>(conn)
             {
-                tracing::info!("🎯 Found user from payment transaction");
+                tracing::debug!("Found user from payment transaction");
                 return Ok(transaction);
             }
 
@@ -1728,7 +1731,7 @@ async fn process_transaction_completed(
                     .select(users::id)
                     .first::<uuid::Uuid>(conn)
                 {
-                    tracing::info!("🎯 Found user by email fallback");
+                    tracing::debug!("Found user by email fallback");
                     return Ok(user);
                 }
             }
@@ -1737,21 +1740,18 @@ async fn process_transaction_completed(
         })
         .await
         .map_err(|e| {
-            tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 2 FAILED: Database interaction error: {}",
-                e
-            );
+            tracing::error!("Step 2 FAILED: Database interaction error: {}", e);
             AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
         })?;
 
     let user_id = match user_id {
         Ok(id) => {
-            tracing::info!("🎯 Step 2 complete: Found user_id: {}", id);
+            tracing::debug!("Step 2 complete: Found user_id: {}", id);
             id
         }
         Err(e) => {
             tracing::warn!(
-                "🎯 Step 2: Could not find user for paddle_customer_id: {} (error: {:?}), skipping transaction processing",
+                "Step 2: Could not find user for paddle_customer_id: {} (error: {:?}), skipping transaction processing",
                 customer_id,
                 e
             );
@@ -1760,21 +1760,18 @@ async fn process_transaction_completed(
     };
 
     // Get the full user record
-    tracing::info!(
-        "🎯 Step 3: Fetching full user record for user_id: {}",
-        user_id
-    );
+    tracing::debug!("Step 3: Fetching full user record for user_id: {}", user_id);
     let user = match conn
         .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await
     {
         Ok(Ok(user)) => {
-            tracing::info!("🎯 Step 3 complete: User found");
+            tracing::debug!("Step 3 complete: User found");
             user
         }
         Ok(Err(e)) => {
             tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 3 FAILED: User not found for user_id: {} (error: {:?})",
+                "Step 3 FAILED: User not found for user_id: {} (error: {:?})",
                 user_id,
                 e
             );
@@ -1785,8 +1782,8 @@ async fn process_transaction_completed(
         }
     };
 
-    tracing::info!(
-        "🎯 Found user {} for transaction {}",
+    tracing::debug!(
+        "Found user {} for transaction {}",
         loggable_user_id(user.id),
         transaction_id
     );
@@ -1803,7 +1800,7 @@ async fn process_transaction_completed(
         // let user_id_for_dek = user.id.clone();
         // let dek = app_state.auth_backend.get_dek_from_cache(&user_id_for_dek)
         //     .ok_or_else(|| {
-        //         tracing::warn!("🎯 DEK not in cache for user {}, fetching from database", user_id_for_dek);
+        //         tracing::warn!("DEK not in cache for user {}, fetching from database", user_id_for_dek);
         //         AppError::ValidationError("User encryption key not available".to_string())
         //     })?;
 
@@ -1934,8 +1931,8 @@ async fn process_transaction_completed(
         .map_err(|e| AppError::DbInteractError(e.to_string()))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to store transaction: {}", e)))?;
 
-        tracing::info!(
-            "🎯 Successfully stored transaction {} in database",
+        tracing::debug!(
+            "Successfully stored transaction {} in database",
             transaction_id
         );
     }
@@ -2000,14 +1997,14 @@ async fn process_transaction_completed(
         .map(|s| s.to_string());
 
     if let Some(ref sub_id) = paddle_subscription_id {
-        tracing::info!(
-            "🎯 Extracted paddle_subscription_id: {} from transaction {}",
+        tracing::debug!(
+            "Extracted paddle_subscription_id: {} from transaction {}",
             sub_id,
             transaction_id
         );
     } else {
         tracing::warn!(
-            "🎯 No paddle_subscription_id found in transaction {} - this may be a one-time payment",
+            "No paddle_subscription_id found in transaction {} - this may be a one-time payment",
             transaction_id
         );
     }
@@ -2037,7 +2034,7 @@ async fn process_transaction_completed(
 
     if let Some(existing) = existing_subscription {
         tracing::warn!(
-            "🎯 User {} already has an active subscription {} ({}), webhook for transaction {} will update existing subscription",
+            "User {} already has an active subscription {} ({}), webhook for transaction {} will update existing subscription",
             user.id,
             existing.id,
             existing.plan_type,
@@ -2061,8 +2058,8 @@ async fn process_transaction_completed(
         let customer_id_str = customer_id.to_string();
         let paddle_sub_id_clone = paddle_subscription_id.clone();
 
-        tracing::info!(
-            "🎯 Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {:?})",
+        tracing::debug!(
+            "Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {:?})",
             existing.id,
             existing.plan_type,
             plan_type,
@@ -2090,15 +2087,15 @@ async fn process_transaction_completed(
             .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-        tracing::info!(
-            "🎯 Successfully updated existing subscription {} for user {} from transaction {}",
+        tracing::debug!(
+            "Successfully updated existing subscription {} for user {} from transaction {}",
             updated_subscription.id,
             loggable_user_id(user.id),
             transaction_id
         );
     } else {
-        tracing::info!(
-            "🎯 Creating new {} subscription for user {} (price_id: {})",
+        tracing::debug!(
+            "Creating new {} subscription for user {} (price_id: {})",
             plan_type,
             user.id,
             price_data
@@ -2131,8 +2128,8 @@ async fn process_transaction_completed(
             .await
             .map_err(|e| AppError::DbInteractError(e.to_string()))??;
 
-        tracing::info!(
-            "🎯 Successfully created subscription {} for user {} from transaction {}",
+        tracing::debug!(
+            "Successfully created subscription {} for user {} from transaction {}",
             subscription.id,
             loggable_user_id(user.id),
             transaction_id
@@ -2185,65 +2182,57 @@ async fn process_subscription_created(
     app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!(
-        "🎯 Processing subscription.created webhook: {}",
+    tracing::debug!(
+        "Processing subscription.created webhook: {}",
         webhook_data.event_id
     );
 
     // Extract subscription data from the webhook payload
-    // For subscription.created events, the subscription data is nested under data.subscription
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 1: Extracting subscription data from webhook");
-    let subscription_data = webhook_data.data.get("subscription").ok_or_else(|| {
-        tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'subscription' field in webhook data");
-        AppError::BadRequest("Missing subscription data in webhook".to_string())
-    })?;
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 1 complete: Extracted nested subscription data");
+    // For subscription.created events, the subscription data is directly in the data field
+    // NOT nested under data.subscription (Paddle sends the entity directly in data)
+    tracing::debug!("Step 1: Extracting subscription data from webhook");
+    let subscription_data = &webhook_data.data;
+    tracing::debug!("Step 1 complete: Using subscription data directly from data field");
 
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 2: Extracting subscription ID");
+    tracing::debug!("Step 2: Extracting subscription ID");
     let subscription_id = subscription_data
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'id' field in subscription data");
+            tracing::error!("Missing 'id' field in subscription data");
             AppError::BadRequest("Missing subscription ID in webhook".to_string())
         })?
         .to_string();
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 2 complete: Subscription ID: {}",
-        subscription_id
-    );
+    tracing::debug!("Step 2 complete: Subscription ID: {}", subscription_id);
 
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 3: Extracting customer ID");
+    tracing::debug!("Step 3: Extracting customer ID");
     let customer_id = subscription_data
         .get("customer_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            tracing::error!("🎯 [WEBHOOK_ERROR] Missing 'customer_id' field in subscription data");
+            tracing::error!("Missing 'customer_id' field in subscription data");
             AppError::BadRequest("Missing customer_id in webhook".to_string())
         })?
         .to_string();
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 3 complete: Customer ID: {}",
-        customer_id
-    );
+    tracing::debug!("Step 3 complete: Customer ID: {}", customer_id);
 
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 4: Extracting status");
+    tracing::debug!("Step 4: Extracting status");
     let status = subscription_data
         .get("status")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown")
         .to_string();
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 4 complete: Status: {}", status);
+    tracing::debug!("Step 4 complete: Status: {}", status);
 
-    tracing::info!(
-        "🎯 Subscription details - ID: {}, Customer: {}, Status: {}",
+    tracing::debug!(
+        "Subscription details - ID: {}, Customer: {}, Status: {}",
         subscription_id,
         customer_id,
         status
     );
 
     // Extract plan type from subscription items
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 5: Extracting plan type from subscription items");
+    tracing::debug!("Step 5: Extracting plan type from subscription items");
     let plan_type = subscription_data
         .get("items")
         .and_then(|items| items.as_array())
@@ -2270,16 +2259,10 @@ async fn process_subscription_created(
         })
         .unwrap_or("free");
 
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 5 complete: Mapped to plan type: {}",
-        plan_type
-    );
+    tracing::debug!("Step 5 complete: Mapped to plan type: {}", plan_type);
 
     // Extract trial information - calculate trial days if subscription is in trialing status
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 6: Extracting trial information (status: {})",
-        status
-    );
+    tracing::debug!("Step 6: Extracting trial information (status: {})", status);
     let trial_days = if status == "trialing" {
         subscription_data
             .get("scheduled_change")
@@ -2298,19 +2281,16 @@ async fn process_subscription_created(
     };
 
     if let Some(days) = trial_days {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 6 complete: Subscription has {} days remaining in trial",
+        tracing::debug!(
+            "Step 6 complete: Subscription has {} days remaining in trial",
             days
         );
     } else {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 6 complete: No trial period (status: {})",
-            status
-        );
+        tracing::debug!("Step 6 complete: No trial period (status: {})", status);
     }
 
     // Extract trial_end date (actual DateTime, not just days)
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6a: Extracting trial_end date");
+    tracing::debug!("Step 6a: Extracting trial_end date");
     let trial_end = if status == "trialing" {
         subscription_data
             .get("scheduled_change")
@@ -2324,18 +2304,13 @@ async fn process_subscription_created(
     };
 
     if let Some(end) = &trial_end {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 6a complete: Trial ends at: {}",
-            end
-        );
+        tracing::debug!("Step 6a complete: Trial ends at: {}", end);
     } else {
-        tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6a complete: No trial_end date");
+        tracing::debug!("Step 6a complete: No trial_end date");
     }
 
     // Extract current billing period dates
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 6b: Extracting current_period_start and current_period_end"
-    );
+    tracing::debug!("Step 6b: Extracting current_period_start and current_period_end");
     let current_period_start = subscription_data
         .get("current_billing_period")
         .and_then(|cbp| cbp.get("starts_at"))
@@ -2351,17 +2326,13 @@ async fn process_subscription_created(
         .map(|dt| dt.with_timezone(&chrono::Utc));
 
     if let (Some(start), Some(end)) = (&current_period_start, &current_period_end) {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 6b complete: Billing period: {} to {}",
-            start,
-            end
-        );
+        tracing::debug!("Step 6b complete: Billing period: {} to {}", start, end);
     } else {
-        tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6b complete: No billing period dates found");
+        tracing::debug!("Step 6b complete: No billing period dates found");
     }
 
     // Extract customer email for fallback user lookup
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6c: Extracting customer email");
+    tracing::debug!("Step 6c: Extracting customer email");
     let customer_email = webhook_data
         .data
         .get("customer")
@@ -2369,28 +2340,25 @@ async fn process_subscription_created(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     if let Some(ref email) = customer_email {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 6c complete: Customer email: {}",
-            email
+        tracing::debug!(
+            customer_email = %sanitize_personal_info(email),
+            "Step 6c complete: Customer email found"
         );
     } else {
-        tracing::info!("🎯 [WEBHOOK_DEBUG] Step 6c complete: No customer email found");
+        tracing::debug!("Step 6c complete: No customer email found");
     }
 
     // Find user by paddle_customer_id or email
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 7: Getting database connection from pool");
+    tracing::debug!("Step 7: Getting database connection from pool");
     let conn = app_state.pool.get().await.map_err(|e| {
-        tracing::error!(
-            "🎯 [WEBHOOK_ERROR] Step 7 FAILED: Failed to get DB connection: {}",
-            e
-        );
+        tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
         AppError::DbPoolError(e.to_string())
     })?;
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 7 complete: Database connection obtained");
+    tracing::debug!("Step 7 complete: Database connection obtained");
 
     // Look up user by paddle_customer_id from existing subscriptions or transactions, or by email
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 8: Finding user by paddle_customer_id: {}",
+    tracing::debug!(
+        "Step 8: Finding user by paddle_customer_id: {}",
         customer_id
     );
     let customer_id_for_closure = customer_id.clone();
@@ -2407,7 +2375,7 @@ async fn process_subscription_created(
                 .select(subscriptions::user_id)
                 .first::<uuid::Uuid>(conn)
             {
-                tracing::info!("🎯 Found user from existing subscription");
+                tracing::debug!("Found user from existing subscription");
                 return Ok(subscription);
             }
 
@@ -2417,7 +2385,7 @@ async fn process_subscription_created(
                 .select(payment_transactions::user_id)
                 .first::<uuid::Uuid>(conn)
             {
-                tracing::info!("🎯 Found user from payment transaction");
+                tracing::debug!("Found user from payment transaction");
                 return Ok(transaction);
             }
 
@@ -2428,7 +2396,7 @@ async fn process_subscription_created(
                     .select(users::id)
                     .first::<uuid::Uuid>(conn)
                 {
-                    tracing::info!("🎯 Found user by email fallback");
+                    tracing::debug!("Found user by email fallback");
                     return Ok(user);
                 }
             }
@@ -2437,21 +2405,18 @@ async fn process_subscription_created(
         })
         .await
         .map_err(|e| {
-            tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 8 FAILED: Database interaction error: {}",
-                e
-            );
+            tracing::error!("Step 8 FAILED: Database interaction error: {}", e);
             AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
         })?;
 
     let user_id = match user_id {
         Ok(id) => {
-            tracing::info!("🎯 [WEBHOOK_DEBUG] Step 8 complete: Found user_id: {}", id);
+            tracing::debug!("Step 8 complete: Found user_id: {}", id);
             id
         }
         Err(e) => {
             tracing::warn!(
-                "🎯 [WEBHOOK_DEBUG] Step 8: Could not find user for paddle_customer_id: {} (error: {:?}), skipping subscription creation",
+                "Step 8: Could not find user for paddle_customer_id: {} (error: {:?}), skipping subscription creation",
                 customer_id,
                 e
             );
@@ -2460,51 +2425,44 @@ async fn process_subscription_created(
     };
 
     // Get the full user record
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] Step 9: Fetching full user record for user_id: {}",
-        user_id
-    );
+    tracing::debug!("Step 9: Fetching full user record for user_id: {}", user_id);
     let user = match conn
         .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await
     {
         Ok(Ok(user)) => {
-            tracing::info!("🎯 [WEBHOOK_DEBUG] Step 9 complete: User found");
+            tracing::debug!("Step 9 complete: User found");
             user
         }
         Ok(Err(e)) => {
             tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 9 FAILED: User not found for user_id: {} (error: {:?})",
+                "Step 9 FAILED: User not found for user_id: {} (error: {:?})",
                 user_id,
                 e
             );
             return Ok(());
         }
         Err(e) => {
-            tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 9 FAILED: Database interaction error: {}",
-                e
-            );
+            tracing::error!("Step 9 FAILED: Database interaction error: {}", e);
             return Err(AppError::DbInteractError(e.to_string()));
         }
     };
 
-    tracing::info!(
-        "🎯 Found user {} for subscription {}",
+    tracing::debug!(
+        "Found user {} for subscription {}",
         loggable_user_id(user.id),
         subscription_id
     );
 
     // Check for existing active subscription to prevent duplicates
-    tracing::info!("🎯 [WEBHOOK_DEBUG] Step 10: Checking for existing active subscription");
-    let conn_duplicate_check = app_state
-        .pool
-        .get()
-        .await
-        .map_err(|e| {
-            tracing::error!("🎯 [WEBHOOK_ERROR] Step 10 FAILED: Failed to get DB connection for duplicate check: {}", e);
-            AppError::DbPoolError(e.to_string())
-        })?;
+    tracing::debug!("Step 10: Checking for existing active subscription");
+    let conn_duplicate_check = app_state.pool.get().await.map_err(|e| {
+        tracing::error!(
+            "Step 10 FAILED: Failed to get DB connection for duplicate check: {}",
+            e
+        );
+        AppError::DbPoolError(e.to_string())
+    })?;
 
     let user_id_for_check = user.id;
     let existing_subscription = conn_duplicate_check
@@ -2521,23 +2479,29 @@ async fn process_subscription_created(
         })
         .await
         .map_err(|e| {
-            tracing::error!("🎯 [WEBHOOK_ERROR] Step 10 FAILED: Database interaction error during duplicate check: {}", e);
+            tracing::error!(
+                "Step 10 FAILED: Database interaction error during duplicate check: {}",
+                e
+            );
             AppError::DbInteractError(e.to_string())
         })?
         .map_err(|e| {
-            tracing::error!("🎯 [WEBHOOK_ERROR] Step 10 FAILED: Database query error during duplicate check: {}", e);
+            tracing::error!(
+                "Step 10 FAILED: Database query error during duplicate check: {}",
+                e
+            );
             AppError::DatabaseQueryError(e.to_string())
         })?;
 
     if let Some(existing) = existing_subscription {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 10 complete: Found existing active subscription {} ({}) for user {}",
+        tracing::debug!(
+            "Step 10 complete: Found existing active subscription {} ({}) for user {}",
             existing.id,
             existing.plan_type,
             user.id
         );
         tracing::warn!(
-            "🎯 User {} already has an active subscription {} ({}), webhook for subscription {} will update existing subscription",
+            "User {} already has an active subscription {} ({}), webhook for subscription {} will update existing subscription",
             user.id,
             existing.id,
             existing.plan_type,
@@ -2545,15 +2509,15 @@ async fn process_subscription_created(
         );
 
         // Update existing subscription instead of creating a duplicate
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 11: Updating existing subscription {} to plan {} with Paddle subscription ID {}",
+        tracing::debug!(
+            "Step 11: Updating existing subscription {} to plan {} with Paddle subscription ID {}",
             existing.id,
             plan_type,
             subscription_id
         );
         let conn = app_state.pool.get().await.map_err(|e| {
             tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 11 FAILED: Failed to get DB connection for update: {}",
+                "Step 11 FAILED: Failed to get DB connection for update: {}",
                 e
             );
             AppError::DbPoolError(e.to_string())
@@ -2572,16 +2536,16 @@ async fn process_subscription_created(
         // trial_end is optional, so None is valid
         let trial_end_for_update = trial_end;
 
-        tracing::info!(
-            "🎯 Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {})",
+        tracing::debug!(
+            "Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {})",
             existing.id,
             existing.plan_type,
             plan_type,
             user.id,
             subscription_id
         );
-        tracing::info!(
-            "🎯 Date fields for update - trial_end: {:?}, period_start: {}, period_end: {}",
+        tracing::debug!(
+            "Date fields for update - trial_end: {:?}, period_start: {}, period_end: {}",
             trial_end_for_update,
             period_start_for_update,
             period_end_for_update
@@ -2608,16 +2572,19 @@ async fn process_subscription_created(
             })
             .await
             .map_err(|e| {
-                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Database interaction error during update: {}", e);
+                tracing::error!(
+                    "Step 11 FAILED: Database interaction error during update: {}",
+                    e
+                );
                 AppError::DbInteractError(e.to_string())
             })?
             .map_err(|e| {
-                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Database query error during update: {}", e);
+                tracing::error!("Step 11 FAILED: Database query error during update: {}", e);
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 11 complete: Successfully updated subscription {} (plan_type: {}, paddle_subscription_id: {})",
+        tracing::debug!(
+            "Step 11 complete: Successfully updated subscription {} (plan_type: {}, paddle_subscription_id: {})",
             updated_subscription.id,
             updated_subscription.plan_type,
             updated_subscription
@@ -2625,25 +2592,25 @@ async fn process_subscription_created(
                 .as_ref()
                 .unwrap_or(&"None".to_string())
         );
-        tracing::info!(
-            "🎯 Successfully updated existing subscription {} for user {} from subscription.created webhook",
+        tracing::debug!(
+            "Successfully updated existing subscription {} for user {} from subscription.created webhook",
             updated_subscription.id,
             loggable_user_id(user.id)
         );
     } else {
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 10 complete: No existing active subscription found for user {}",
+        tracing::debug!(
+            "Step 10 complete: No existing active subscription found for user {}",
             user.id
         );
-        tracing::info!(
-            "🎯 Creating new {} subscription for user {} from subscription.created webhook",
+        tracing::debug!(
+            "Creating new {} subscription for user {} from subscription.created webhook",
             plan_type,
             user.id
         );
 
         // Create subscription record
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 11: Creating new subscription for user {} with plan {}",
+        tracing::debug!(
+            "Step 11: Creating new subscription for user {} with plan {}",
             user.id,
             plan_type
         );
@@ -2654,7 +2621,7 @@ async fn process_subscription_created(
 
         let conn = app_state.pool.get().await.map_err(|e| {
             tracing::error!(
-                "🎯 [WEBHOOK_ERROR] Step 11 FAILED: Failed to get DB connection for create: {}",
+                "Step 11 FAILED: Failed to get DB connection for create: {}",
                 e
             );
             AppError::DbPoolError(e.to_string())
@@ -2670,21 +2637,24 @@ async fn process_subscription_created(
                     plan_type,
                     Some(customer_id),
                     Some(subscription_id_for_service.clone()), // Pass Paddle subscription ID
-                    trial_days, // Pass trial days if present
+                    trial_days,                                // Pass trial days if present
                 )
             })
             .await
             .map_err(|e| {
-                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Database interaction error during create: {}", e);
+                tracing::error!(
+                    "Step 11 FAILED: Database interaction error during create: {}",
+                    e
+                );
                 AppError::DbInteractError(e.to_string())
             })?
             .map_err(|e| {
-                tracing::error!("🎯 [WEBHOOK_ERROR] Step 11 FAILED: Subscription creation error: {}", e);
+                tracing::error!("Step 11 FAILED: Subscription creation error: {}", e);
                 e
             })?;
 
-        tracing::info!(
-            "🎯 [WEBHOOK_DEBUG] Step 11 complete: Successfully created subscription {} (plan_type: {}, paddle_subscription_id: {})",
+        tracing::debug!(
+            "Step 11 complete: Successfully created subscription {} (plan_type: {}, paddle_subscription_id: {})",
             subscription.id,
             subscription.plan_type,
             subscription
@@ -2692,15 +2662,15 @@ async fn process_subscription_created(
                 .as_ref()
                 .unwrap_or(&"None".to_string())
         );
-        tracing::info!(
-            "🎯 Successfully created subscription {} for user {} from subscription.created webhook",
+        tracing::debug!(
+            "Successfully created subscription {} for user {} from subscription.created webhook",
             subscription.id,
             loggable_user_id(user.id)
         );
     }
 
-    tracing::info!(
-        "🎯 [WEBHOOK_DEBUG] process_subscription_created completed successfully for subscription {}",
+    tracing::debug!(
+        "process_subscription_created completed successfully for subscription {}",
         subscription_id
     );
     Ok(())
@@ -2712,16 +2682,14 @@ async fn process_subscription_updated(
     app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!(
-        "🎯 Processing subscription.updated webhook: {}",
+    tracing::debug!(
+        "Processing subscription.updated webhook: {}",
         webhook_data.event_id
     );
 
     // Extract subscription data from the webhook payload
-    let subscription_data = webhook_data
-        .data
-        .get("subscription")
-        .ok_or_else(|| AppError::BadRequest("Missing subscription data in webhook".to_string()))?;
+    // Paddle sends the subscription data directly in the data field, not nested
+    let subscription_data = &webhook_data.data;
 
     let paddle_subscription_id = subscription_data
         .get("id")
@@ -2735,8 +2703,8 @@ async fn process_subscription_updated(
         .ok_or_else(|| AppError::BadRequest("Missing subscription status in webhook".to_string()))?
         .to_string();
 
-    tracing::info!(
-        "🎯 Subscription update details - ID: {}, Status: {}",
+    tracing::debug!(
+        "Subscription update details - ID: {}, Status: {}",
         paddle_subscription_id,
         status
     );
@@ -2770,10 +2738,10 @@ async fn process_subscription_updated(
         .map(|dt| dt.with_timezone(&chrono::Utc));
 
     if let Some(end) = &trial_end {
-        tracing::info!("🎯 Trial ends at: {}", end);
+        tracing::debug!("Trial ends at: {}", end);
     }
     if let (Some(start), Some(end)) = (&current_period_start, &current_period_end) {
-        tracing::info!("🎯 Billing period: {} to {}", start, end);
+        tracing::debug!("Billing period: {} to {}", start, end);
     }
 
     // Find subscription by paddle_subscription_id
@@ -2800,8 +2768,8 @@ async fn process_subscription_updated(
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
     if let Some(subscription) = subscription {
-        tracing::info!(
-            "🎯 Found subscription {} for paddle_subscription_id: {}, updating",
+        tracing::debug!(
+            "Found subscription {} for paddle_subscription_id: {}, updating",
             subscription.id,
             paddle_subscription_id
         );
@@ -2848,8 +2816,8 @@ async fn process_subscription_updated(
             .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-        tracing::info!(
-            "🎯 Successfully updated subscription {} (paddle_subscription_id: {}, status: {})",
+        tracing::debug!(
+            "Successfully updated subscription {} (paddle_subscription_id: {}, status: {})",
             updated_subscription.id,
             paddle_subscription_id,
             status
@@ -2890,7 +2858,7 @@ async fn process_subscription_updated(
         }
     } else {
         tracing::warn!(
-            "🎯 Subscription not found for paddle_subscription_id: {}, ignoring update webhook",
+            "Subscription not found for paddle_subscription_id: {}, ignoring update webhook",
             paddle_subscription_id
         );
     }
@@ -2904,16 +2872,14 @@ async fn process_subscription_cancelled(
     app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
-    tracing::info!(
-        "🎯 Processing subscription.cancelled webhook: {}",
+    tracing::debug!(
+        "Processing subscription.cancelled webhook: {}",
         webhook_data.event_id
     );
 
     // Extract subscription data from the webhook payload
-    let subscription_data = webhook_data
-        .data
-        .get("subscription")
-        .ok_or_else(|| AppError::BadRequest("Missing subscription data in webhook".to_string()))?;
+    // Paddle sends the subscription data directly in the data field, not nested
+    let subscription_data = &webhook_data.data;
 
     let paddle_subscription_id = subscription_data
         .get("id")
@@ -2927,8 +2893,8 @@ async fn process_subscription_cancelled(
         .unwrap_or("cancelled")
         .to_string();
 
-    tracing::info!(
-        "🎯 Subscription cancellation details - ID: {}, Status: {}",
+    tracing::debug!(
+        "Subscription cancellation details - ID: {}, Status: {}",
         paddle_subscription_id,
         status
     );
@@ -2962,8 +2928,8 @@ async fn process_subscription_cancelled(
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
     if let Some(subscription) = subscription {
-        tracing::info!(
-            "🎯 Found subscription {} for paddle_subscription_id: {}, cancelling",
+        tracing::debug!(
+            "Found subscription {} for paddle_subscription_id: {}, cancelling",
             subscription.id,
             paddle_subscription_id
         );
@@ -2993,8 +2959,8 @@ async fn process_subscription_cancelled(
             .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-        tracing::info!(
-            "🎯 Successfully cancelled subscription {} (paddle_subscription_id: {})",
+        tracing::debug!(
+            "Successfully cancelled subscription {} (paddle_subscription_id: {})",
             updated_subscription.id,
             paddle_subscription_id
         );
@@ -3027,7 +2993,7 @@ async fn process_subscription_cancelled(
         }
     } else {
         tracing::warn!(
-            "🎯 Subscription not found for paddle_subscription_id: {}, ignoring cancellation webhook",
+            "Subscription not found for paddle_subscription_id: {}, ignoring cancellation webhook",
             paddle_subscription_id
         );
     }
@@ -3316,7 +3282,7 @@ pub fn payment_webhook_routes() -> Router<AppState> {
     use crate::middleware::webhook_rate_limit_middleware;
     use axum::middleware::from_fn;
 
-    tracing::info!("🎯 Creating payment webhook routes");
+    tracing::debug!("Creating payment webhook routes");
     Router::new()
         .route(
             "/webhook/paddle",

@@ -64,7 +64,7 @@ impl<'de> Deserialize<'de> for PaddleEventType {
             "customer_created" | "customer.created" => Ok(PaddleEventType::CustomerCreated),
             "customer_updated" | "customer.updated" => Ok(PaddleEventType::CustomerUpdated),
             _ => {
-                tracing::warn!("🎯 Unknown Paddle event type received: {}", s);
+                tracing::warn!("Unknown Paddle event type received: {}", s);
                 Err(serde::de::Error::unknown_variant(
                     &s,
                     &[
@@ -328,24 +328,22 @@ impl PaddleService {
         signature: &str,
     ) -> Result<(), AppError> {
         let webhook_secret = self.config.paddle_webhook_secret.as_ref().ok_or_else(|| {
-            tracing::error!(
-                "🎯 WEBHOOK SECRET ERROR: Paddle webhook secret not configured in PaymentConfig"
-            );
+            tracing::error!("Paddle webhook secret not configured in PaymentConfig");
             AppError::ConfigurationError("Paddle webhook secret not configured".to_string())
         })?;
 
         // Log webhook secret info for debugging (don't log actual secret)
         tracing::info!(
-            "🎯 Using webhook secret of length: {} chars",
+            "Using webhook secret of length: {} chars",
             webhook_secret.len()
         );
         tracing::info!(
-            "🎯 Webhook secret starts with: {}...",
+            "Webhook secret starts with: {}...",
             &webhook_secret.chars().take(4).collect::<String>()
         );
 
         // Parse Paddle signature format: "ts=<timestamp>;h1=<signature>"
-        tracing::info!("🎯 Raw signature header: {}", signature);
+        tracing::debug!("Raw signature header: {}", signature);
 
         let mut timestamp = None;
         let mut h1_signature = None;
@@ -356,29 +354,29 @@ impl PaddleService {
                     "ts" => timestamp = Some(value),
                     "h1" => h1_signature = Some(value),
                     _ => {
-                        tracing::warn!("🎯 Unknown signature component: {}={}", key, value);
+                        tracing::debug!("Unknown signature component: {}={}", key, value);
                     }
                 }
             }
         }
 
         let timestamp = timestamp.ok_or_else(|| {
-            tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Missing timestamp in signature");
+            tracing::error!("Missing timestamp in signature");
             AppError::InvalidWebhookSignature("Missing timestamp in signature".to_string())
         })?;
 
         let h1_signature = h1_signature.ok_or_else(|| {
-            tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Missing h1 signature component");
+            tracing::error!("Missing h1 signature component");
             AppError::InvalidWebhookSignature("Missing h1 signature component".to_string())
         })?;
 
-        tracing::info!("🎯 Parsed timestamp: {}", timestamp);
-        tracing::info!("🎯 Parsed h1 signature: {}", h1_signature);
+        tracing::debug!("Parsed timestamp: {}", timestamp);
+        tracing::debug!("Parsed h1 signature: {}", h1_signature);
 
         // Create signed payload: timestamp:request_body
         let payload_string = String::from_utf8_lossy(payload);
         let signed_payload = format!("{}:{}", timestamp, payload_string);
-        tracing::info!("🎯 Signed payload length: {} bytes", signed_payload.len());
+        tracing::debug!("Signed payload length: {} bytes", signed_payload.len());
 
         // Use HMAC-SHA256 to verify the signature
         use hmac::{Hmac, Mac};
@@ -387,10 +385,7 @@ impl PaddleService {
         type HmacSha256 = Hmac<Sha256>;
 
         let mut mac = HmacSha256::new_from_slice(webhook_secret.as_bytes()).map_err(|e| {
-            tracing::error!(
-                "🎯 WEBHOOK SECRET ERROR: Invalid webhook secret format: {}",
-                e
-            );
+            tracing::error!("Invalid webhook secret format: {}", e);
             AppError::InvalidWebhookSignature(format!("Invalid webhook secret: {}", e))
         })?;
 
@@ -399,32 +394,26 @@ impl PaddleService {
         // Paddle sends signatures as hex-encoded strings
         let expected_signature = hex::encode(mac.finalize().into_bytes());
 
-        tracing::info!("🎯 Expected h1 signature: {}", expected_signature);
+        tracing::debug!("Expected h1 signature: {}", expected_signature);
 
         // Compare h1 signature in constant time
         use subtle::ConstantTimeEq;
         let received_bytes = hex::decode(h1_signature).map_err(|e| {
-            tracing::error!(
-                "🎯 WEBHOOK SIGNATURE ERROR: Failed to decode h1 signature: {}",
-                e
-            );
+            tracing::error!("Failed to decode h1 signature: {}", e);
             AppError::InvalidWebhookSignature("Invalid h1 signature format".to_string())
         })?;
         let expected_bytes = hex::decode(&expected_signature).map_err(|e| {
-            tracing::error!(
-                "🎯 WEBHOOK SIGNATURE ERROR: Failed to decode expected signature: {}",
-                e
-            );
+            tracing::error!("Failed to decode expected signature: {}", e);
             AppError::InvalidWebhookSignature("Invalid expected signature format".to_string())
         })?;
 
         if received_bytes.ct_eq(&expected_bytes).into() {
-            tracing::info!("🎯 Webhook signature verification SUCCESS");
+            tracing::debug!("Webhook signature verification SUCCESS");
             Ok(())
         } else {
-            tracing::error!("🎯 WEBHOOK SIGNATURE ERROR: Signature verification FAILED");
-            tracing::error!("🎯 Expected: {}", expected_signature);
-            tracing::error!("🎯 Received: {}", h1_signature);
+            tracing::error!("Signature verification FAILED");
+            tracing::error!("Expected: {}", expected_signature);
+            tracing::error!("Received: {}", h1_signature);
             Err(AppError::InvalidWebhookSignature(
                 "Signature mismatch".to_string(),
             ))
@@ -629,27 +618,27 @@ impl PaddleService {
         if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
             info!(
                 raw_json = %serde_json::to_string_pretty(&raw_json).unwrap_or_else(|_| "Invalid JSON".to_string()),
-                "🎯 RAW PADDLE RESPONSE STRUCTURE"
+                "RAW PADDLE RESPONSE STRUCTURE"
             );
 
             // Check if data field exists
             if let Some(data) = raw_json.get("data") {
-                info!("🎯 DATA FIELD EXISTS in Paddle response");
+                info!("DATA FIELD EXISTS in Paddle response");
 
                 // Check checkout field specifically
                 if let Some(checkout) = data.get("checkout") {
                     info!(
                         checkout_field = %serde_json::to_string(checkout).unwrap_or_else(|_| "Invalid checkout".to_string()),
-                        "🎯 CHECKOUT FIELD FOUND in data"
+                        "CHECKOUT FIELD FOUND in data"
                     );
                 } else {
-                    warn!("🎯 NO CHECKOUT FIELD found in data object");
+                    warn!("NO CHECKOUT FIELD found in data object");
                 }
             } else {
-                warn!("🎯 NO DATA FIELD found in Paddle response");
+                warn!("NO DATA FIELD found in Paddle response");
             }
         } else {
-            error!("🎯 Failed to parse response as JSON: {}", response_text);
+            error!("Failed to parse response as JSON: {}", response_text);
         }
 
         // Paddle wraps the response in a "data" field
@@ -672,23 +661,23 @@ impl PaddleService {
             transaction_id = %transaction.id,
             transaction_status = %transaction.status,
             transaction_checkout = ?transaction.checkout,
-            "🎯 PARSED PADDLE TRANSACTION"
+            "PARSED PADDLE TRANSACTION"
         );
 
         // Extract checkout URL from transaction with detailed logging
         // Paddle returns checkout_url at root level for automatic collection mode
         let checkout_url = if let Some(url) = &transaction.checkout_url {
-            info!(checkout_url = %url, "🎯 Found checkout URL from Paddle at root level");
+            info!(checkout_url = %url, "Found checkout URL from Paddle at root level");
             url.clone()
         } else if let Some(checkout) = &transaction.checkout {
-            info!("🎯 Transaction has checkout field, checking for nested URL");
+            info!("Transaction has checkout field, checking for nested URL");
             match &checkout.url {
                 Some(url) => {
-                    info!(checkout_url = %url, "🎯 Found checkout URL from Paddle in checkout field");
+                    info!(checkout_url = %url, "Found checkout URL from Paddle in checkout field");
                     url.clone()
                 }
                 None => {
-                    warn!("🎯 Checkout field exists but URL is None - using fallback");
+                    warn!("Checkout field exists but URL is None - using fallback");
                     let fallback_url = format!(
                         "{}/pay?_ptxn={}",
                         &self.config.payment_base_url, transaction.id
@@ -697,14 +686,14 @@ impl PaddleService {
                         fallback_url = %fallback_url,
                         transaction_id = %transaction.id,
                         payment_base_url = %self.config.payment_base_url,
-                        "🎯 Using fallback checkout URL (checkout field exists but no URL)"
+                        "Using fallback checkout URL (checkout field exists but no URL)"
                     );
                     fallback_url
                 }
             }
         } else {
             warn!(
-                "🎯 No checkout_url at root level and no checkout field in transaction - using fallback"
+                "No checkout_url at root level and no checkout field in transaction - using fallback"
             );
             let fallback_url = format!(
                 "{}/pay?_ptxn={}",
@@ -714,7 +703,7 @@ impl PaddleService {
                 fallback_url = %fallback_url,
                 transaction_id = %transaction.id,
                 payment_base_url = %self.config.payment_base_url,
-                "🎯 Using fallback checkout URL (no checkout data found)"
+                "Using fallback checkout URL (no checkout data found)"
             );
             fallback_url
         };
@@ -901,7 +890,7 @@ impl PaddleService {
 
         let url = format!("{}/transactions/{}", api_url, transaction_id);
 
-        tracing::info!("🎯 Getting transaction {} from Paddle API", transaction_id);
+        tracing::info!("Getting transaction {} from Paddle API", transaction_id);
 
         let response = self
             .client
@@ -924,7 +913,7 @@ impl PaddleService {
         })?;
 
         tracing::info!(
-            "🎯 Paddle transaction response status: {}, body: {}",
+            "Paddle transaction response status: {}, body: {}",
             status,
             response_text
         );

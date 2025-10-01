@@ -263,16 +263,15 @@ mod subscription_e2e_tests {
             "event_id": format!("evt_e2e_sub_{}", Uuid::new_v4().simple()),
             "occurred_at": "2025-01-15T10:00:00.000Z",
             "data": {
-                "subscription": {
-                    "id": paddle_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4" // premium monthly
-                        }
-                    }]
-                },
+                // Paddle sends subscription data directly in data, not nested
+                "id": paddle_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "items": [{
+                    "price": {
+                        "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4" // premium monthly
+                    }
+                }],
                 "customer": {
                     "id": paddle_customer_id,
                     "email": test_email.clone()
@@ -398,16 +397,15 @@ mod subscription_e2e_tests {
             "event_id": format!("evt_first_{}", Uuid::new_v4().simple()),
             "occurred_at": "2025-01-15T10:00:00.000Z",
             "data": {
-                "subscription": {
-                    "id": first_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02" // basic monthly
-                        }
-                    }]
-                },
+                // Paddle sends subscription data directly in data, not nested
+                "id": first_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "items": [{
+                    "price": {
+                        "id": "pri_01k4qbyetvn495nzv9nkqhxz02" // basic monthly
+                    }
+                }],
                 "customer": {
                     "id": paddle_customer_id,
                     "email": test_email.clone()
@@ -456,16 +454,15 @@ mod subscription_e2e_tests {
             "event_id": format!("evt_second_{}", Uuid::new_v4().simple()),
             "occurred_at": "2025-01-15T11:00:00.000Z",
             "data": {
-                "subscription": {
-                    "id": second_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4" // premium monthly
-                        }
-                    }]
-                },
+                // Paddle sends subscription data directly in data, not nested
+                "id": second_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "items": [{
+                    "price": {
+                        "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4" // premium monthly
+                    }
+                }],
                 "customer": {
                     "id": paddle_customer_id,
                     "email": test_email.clone()

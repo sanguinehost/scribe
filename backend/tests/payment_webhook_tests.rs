@@ -56,17 +56,16 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription": {
-                    "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "status": "active",
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02"
-                        },
-                        "quantity": 1
-                    }]
-                },
+                // Paddle sends subscription data directly in data, not nested under data.subscription
+                "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "status": "active",
+                "items": [{
+                    "price": {
+                        "id": "pri_01k4qbyetvn495nzv9nkqhxz02"
+                    },
+                    "quantity": 1
+                }],
                 "customer": {
                     "id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
                     "email": "test@example.com"
@@ -422,19 +421,18 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription": {
-                    "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "status": "active",
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    },
-                    "items": [{
-                        "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02",
-                        "quantity": 1
-                    }]
+                // Paddle sends subscription data directly in data, not nested
+                "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "status": "active",
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                 },
+                "items": [{
+                    "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02",
+                    "quantity": 1
+                }],
                 "customer": {
                     "id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
                     "email": "test@example.com",
@@ -482,19 +480,18 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription": {
-                    "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "status": "paused",
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    },
-                    "items": [{
-                        "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02",
-                        "quantity": 1
-                    }]
-                }
+                // Paddle sends subscription data directly in data, not nested
+                "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "status": "paused",
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
+                },
+                "items": [{
+                    "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02",
+                    "quantity": 1
+                }]
             }
         });
 
@@ -596,14 +593,13 @@ mod payment_webhook_tests {
             "event_type": "subscription.updated",
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription": {
-                    "id": paddle_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "canceled",
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    }
+                // Paddle sends subscription data directly in data, not nested
+                "id": paddle_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "canceled",
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                 }
             }
         });
@@ -733,14 +729,13 @@ mod payment_webhook_tests {
             "event_type": "subscription.updated",
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription": {
-                    "id": paddle_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "current_billing_period": {
-                        "starts_at": new_period_start.to_rfc3339(),
-                        "ends_at": new_period_end.to_rfc3339()
-                    }
+                // Paddle sends subscription data directly in data, not nested
+                "id": paddle_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "current_billing_period": {
+                    "starts_at": new_period_start.to_rfc3339(),
+                    "ends_at": new_period_end.to_rfc3339()
                 }
             }
         });
@@ -808,15 +803,14 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "subscription": {
-                    "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "status": "canceled",
-                    "canceled_at": Utc::now().to_rfc3339(),
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    }
+                // Paddle sends subscription data directly in data, not nested
+                "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "status": "canceled",
+                "canceled_at": Utc::now().to_rfc3339(),
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                 }
             }
         });
@@ -1081,21 +1075,20 @@ mod payment_webhook_tests {
             "occurred_at": Utc::now().to_rfc3339(),
             "notification_id": "ntf_test_001",
             "data": {
-                "subscription": {
-                    "id": paddle_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    },
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
-                        },
-                        "quantity": 1
-                    }]
+                // Paddle sends subscription data directly in data, not nested
+                "id": paddle_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                 },
+                "items": [{
+                    "price": {
+                        "id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
+                    },
+                    "quantity": 1
+                }],
                 "customer": {
                     "id": paddle_customer_id,
                     "email": test_email,
@@ -1221,21 +1214,20 @@ mod payment_webhook_tests {
             "occurred_at": Utc::now().to_rfc3339(),
             "notification_id": "ntf_duplicate_test_001",
             "data": {
-                "subscription": {
-                    "id": first_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    },
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
-                        },
-                        "quantity": 1
-                    }]
+                // Paddle sends subscription data directly in data, not nested
+                "id": first_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                 },
+                "items": [{
+                    "price": {
+                        "id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
+                    },
+                    "quantity": 1
+                }],
                 "customer": {
                     "id": paddle_customer_id,
                     "email": test_email,
@@ -1268,21 +1260,20 @@ mod payment_webhook_tests {
             "occurred_at": Utc::now().to_rfc3339(),
             "notification_id": "ntf_duplicate_test_002",
             "data": {
-                "subscription": {
-                    "id": second_subscription_id,
-                    "customer_id": paddle_customer_id,
-                    "status": "active",
-                    "current_billing_period": {
-                        "starts_at": Utc::now().to_rfc3339(),
-                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
-                    },
-                    "items": [{
-                        "price": {
-                            "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4", // Premium monthly
-                        },
-                        "quantity": 1
-                    }]
+                // Paddle sends subscription data directly in data, not nested
+                "id": second_subscription_id,
+                "customer_id": paddle_customer_id,
+                "status": "active",
+                "current_billing_period": {
+                    "starts_at": Utc::now().to_rfc3339(),
+                    "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
                 },
+                "items": [{
+                    "price": {
+                        "id": "pri_01k5ej7wzvpcj6j65vcbpam6t4", // Premium monthly
+                    },
+                    "quantity": 1
+                }],
                 "customer": {
                     "id": paddle_customer_id,
                     "email": test_email,

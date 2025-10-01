@@ -1,6 +1,7 @@
 import { browser as _browser } from '$app/environment';
 import { apiClient as _apiClient } from '$lib/api';
 import { ENABLE_PAYMENTS } from '$lib/utils/features';
+import { logger } from '$lib/utils/logger';
 import type {
 	SubscriptionResponse as _SubscriptionResponse,
 	UsageLimitsResponse,
@@ -75,7 +76,7 @@ export const subscriptionStore = {
 		if (_subscription?.plan_type) {
 			// Handle 'pro' -> 'premium' mapping for legacy subscriptions
 			const planType = _subscription.plan_type === 'pro' ? 'premium' : _subscription.plan_type;
-			console.log('🔧 Plan Type Mapping:', {
+			logger.debug('Plan Type Mapping:', {
 				originalPlanType: _subscription.plan_type,
 				mappedPlanType: planType,
 				subscriptionId: _subscription.id
@@ -107,7 +108,7 @@ export const subscriptionStore = {
 
 	get daysUntilRenewal(): number {
 		if (!_subscription) {
-			console.log('🗓️ [DAYS_UNTIL_RENEWAL] No subscription found, returning 0');
+			logger.debug('[DAYS_UNTIL_RENEWAL] No subscription found, returning 0');
 			return 0;
 		}
 
@@ -118,7 +119,7 @@ export const subscriptionStore = {
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-			console.log('🗓️ [DAYS_UNTIL_RENEWAL] Cancelled trial:', daysUntilRenewal, 'days');
+			logger.debug('[DAYS_UNTIL_RENEWAL] Cancelled trial:', daysUntilRenewal, 'days');
 
 			return daysUntilRenewal;
 		}
@@ -130,14 +131,14 @@ export const subscriptionStore = {
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-			console.log('🗓️ [DAYS_UNTIL_RENEWAL] Active trial:', daysUntilRenewal, 'days');
+			logger.debug('[DAYS_UNTIL_RENEWAL] Active trial:', daysUntilRenewal, 'days');
 
 			return daysUntilRenewal;
 		}
 
 		// For regular subscriptions, use current_period_end
 		if (!_subscription.current_period_end) {
-			console.log('🗓️ [DAYS_UNTIL_RENEWAL] No current_period_end found, returning 0');
+			logger.debug('[DAYS_UNTIL_RENEWAL] No current_period_end found, returning 0');
 			return 0;
 		}
 		const renewalDate = new Date(_subscription.current_period_end);
@@ -145,7 +146,7 @@ export const subscriptionStore = {
 		const diffTime = renewalDate.getTime() - now.getTime();
 		const daysUntilRenewal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-		console.log('🗓️ [DAYS_UNTIL_RENEWAL] Regular subscription:', daysUntilRenewal, 'days');
+		logger.debug('[DAYS_UNTIL_RENEWAL] Regular subscription:', daysUntilRenewal, 'days');
 
 		return daysUntilRenewal;
 	},
@@ -179,7 +180,7 @@ export const subscriptionStore = {
 		const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
 		// Debug logging to trace the calculation
-		console.log('🗓️ [TRIAL_DAYS] Trial days remaining:', daysRemaining);
+		logger.debug('[TRIAL_DAYS] Trial days remaining:', daysRemaining);
 
 		return daysRemaining;
 	},
@@ -232,7 +233,7 @@ export const subscriptionStore = {
 	 */
 	async refresh(force: boolean = false): Promise<void> {
 		if (!_browser || !ENABLE_PAYMENTS) {
-			console.log(
+			logger.debug(
 				'🔄 [FRONTEND_SUBSCRIPTION] Skipping refresh: browser=',
 				_browser,
 				'payments_enabled=',
@@ -245,7 +246,7 @@ export const subscriptionStore = {
 		const now = Date.now();
 		const cacheAge = now - _lastFetch;
 		if (!force && cacheAge < CACHE_DURATION) {
-			console.log('🔄 [FRONTEND_SUBSCRIPTION] Using cached data:', {
+			logger.debug('[FRONTEND_SUBSCRIPTION] Using cached data:', {
 				cacheAge: `${Math.round(cacheAge / 1000)}s`,
 				cacheLimit: `${CACHE_DURATION / 1000}s`,
 				lastFetch: new Date(_lastFetch).toISOString()
@@ -253,7 +254,7 @@ export const subscriptionStore = {
 			return;
 		}
 
-		console.log('🔄 [FRONTEND_SUBSCRIPTION] Starting subscription refresh:', {
+		logger.debug('[FRONTEND_SUBSCRIPTION] Starting subscription refresh:', {
 			forced: force,
 			cacheAge: `${Math.round(cacheAge / 1000)}s`,
 			currentSubscription: _subscription
@@ -269,11 +270,11 @@ export const subscriptionStore = {
 		_error = null;
 
 		try {
-			console.log('🔄 [FRONTEND_SUBSCRIPTION] Calling API...');
+			logger.debug('[FRONTEND_SUBSCRIPTION] Calling API...');
 			const result = await _apiClient.getSubscription();
 
 			if (result.isOk()) {
-				console.log('🔄 [FRONTEND_SUBSCRIPTION] API call SUCCESS - Raw response:', {
+				logger.debug('[FRONTEND_SUBSCRIPTION] API call SUCCESS - Raw response:', {
 					subscription: result.value.subscription,
 					plan_features: result.value.plan_features,
 					usage_limits: result.value.usage_limits,
@@ -282,7 +283,7 @@ export const subscriptionStore = {
 
 				// Log specific details about plan type mapping
 				if (result.value.subscription) {
-					console.log('🔄 [FRONTEND_SUBSCRIPTION] Subscription details:', {
+					logger.debug('[FRONTEND_SUBSCRIPTION] Subscription details:', {
 						id: result.value.subscription.id,
 						plan_type: result.value.subscription.plan_type,
 						status: result.value.subscription.status,
@@ -293,21 +294,21 @@ export const subscriptionStore = {
 						cancel_at_period_end: result.value.subscription.cancel_at_period_end
 					});
 				} else {
-					console.log('🔄 [FRONTEND_SUBSCRIPTION] No subscription found in response');
+					logger.debug('[FRONTEND_SUBSCRIPTION] No subscription found in response');
 				}
 
 				if (result.value.plan_features) {
-					console.log('🔄 [FRONTEND_SUBSCRIPTION] Plan features:', {
+					logger.debug('[FRONTEND_SUBSCRIPTION] Plan features:', {
 						plan_type: result.value.plan_features.plan_type,
 						display_name: result.value.plan_features.display_name,
 						description: result.value.plan_features.description
 					});
 				} else {
-					console.log('🔄 [FRONTEND_SUBSCRIPTION] No plan features found in response');
+					logger.debug('[FRONTEND_SUBSCRIPTION] No plan features found in response');
 				}
 
 				if (result.value.usage_limits) {
-					console.log('🔄 [FRONTEND_SUBSCRIPTION] Usage limits:', {
+					logger.debug('[FRONTEND_SUBSCRIPTION] Usage limits:', {
 						daily_message_count: result.value.usage_limits.daily_message_count,
 						is_throttled: result.value.usage_limits.is_throttled,
 						throttle_delay: result.value.usage_limits.throttle_delay
@@ -335,7 +336,7 @@ export const subscriptionStore = {
 				// Log state changes
 				if (previousSubscription) {
 					if (statusChanged || planChanged || subscriptionIdChanged) {
-						console.log('🔄 [FRONTEND_SUBSCRIPTION] SUBSCRIPTION STATE CHANGED:', {
+						logger.debug('[FRONTEND_SUBSCRIPTION] SUBSCRIPTION STATE CHANGED:', {
 							statusChanged: statusChanged ? `${previousStatus} → ${_subscription?.status}` : false,
 							planChanged: planChanged ? `${previousPlan} → ${_subscription?.plan_type}` : false,
 							subscriptionIdChanged: subscriptionIdChanged
@@ -345,7 +346,7 @@ export const subscriptionStore = {
 						});
 					}
 				} else if (_subscription) {
-					console.log('🔄 [FRONTEND_SUBSCRIPTION] NEW SUBSCRIPTION DETECTED:', {
+					logger.debug('[FRONTEND_SUBSCRIPTION] NEW SUBSCRIPTION DETECTED:', {
 						id: _subscription.id,
 						status: _subscription.status,
 						plan_type: _subscription.plan_type,
@@ -361,7 +362,7 @@ export const subscriptionStore = {
 					subscriptionIdChanged ||
 					(!previousSubscription && _subscription)
 				) {
-					console.log(
+					logger.debug(
 						'🔄 [FRONTEND_SUBSCRIPTION] Notifying',
 						_changeCallbacks.length,
 						'listeners of subscription change'
@@ -378,10 +379,10 @@ export const subscriptionStore = {
 					// Call all registered callbacks
 					_changeCallbacks.forEach((callback, index) => {
 						try {
-							console.log('🔄 [FRONTEND_SUBSCRIPTION] Calling listener', index + 1);
+							logger.debug('[FRONTEND_SUBSCRIPTION] Calling listener', index + 1);
 							callback(changeData);
 						} catch (error) {
-							console.error('🔄 [FRONTEND_SUBSCRIPTION] Error in change callback:', error);
+							logger.error('[FRONTEND_SUBSCRIPTION] Error in change callback:', error);
 						}
 					});
 				}
@@ -391,7 +392,7 @@ export const subscriptionStore = {
 				const isSubscribed = subscriptionStore.isSubscribed;
 				const displayName = subscriptionStore.getPlanDisplayName();
 
-				console.log('🔄 [FRONTEND_SUBSCRIPTION] Final store state:', {
+				logger.debug('[FRONTEND_SUBSCRIPTION] Final store state:', {
 					rawPlanType: _subscription?.plan_type,
 					normalizedCurrentPlan: currentPlan,
 					status: _subscription?.status,
@@ -406,10 +407,10 @@ export const subscriptionStore = {
 				// Critical check: Is this the cancelled subscription issue?
 				if (_subscription?.status === 'active' || _subscription?.status === 'trialing') {
 					if (currentPlan === 'premium' || displayName === 'Premium') {
-						console.log(
+						logger.debug(
 							'🔄 [FRONTEND_SUBSCRIPTION] ⚠️  POTENTIAL ISSUE DETECTED: Still showing Premium despite cancelled subscription'
 						);
-						console.log('🔄 [FRONTEND_SUBSCRIPTION] Debug info:', {
+						logger.debug('[FRONTEND_SUBSCRIPTION] Debug info:', {
 							subscriptionId: _subscription.id,
 							status: _subscription.status,
 							planType: _subscription.plan_type,
@@ -420,18 +421,18 @@ export const subscriptionStore = {
 					}
 				}
 			} else {
-				console.error('🔄 [FRONTEND_SUBSCRIPTION] API call FAILED:', {
+				logger.error('[FRONTEND_SUBSCRIPTION] API call FAILED:', {
 					error: result.error,
 					message: result.error.message
 				});
 				_error = result.error.message || 'Failed to fetch subscription data';
 			}
 		} catch (error) {
-			console.error('🔄 [FRONTEND_SUBSCRIPTION] Exception during refresh:', error);
+			logger.error('[FRONTEND_SUBSCRIPTION] Exception during refresh:', error);
 			_error = error instanceof Error ? error.message : 'Unknown error occurred';
 		} finally {
 			_loading = false;
-			console.log('🔄 [FRONTEND_SUBSCRIPTION] Refresh completed:', {
+			logger.debug('[FRONTEND_SUBSCRIPTION] Refresh completed:', {
 				success: !_error,
 				error: _error,
 				timestamp: new Date().toISOString()
@@ -490,7 +491,7 @@ export const subscriptionStore = {
 	 * Clear cache to force next refresh to fetch fresh data
 	 */
 	clearCache(): void {
-		console.log('🔄 [FRONTEND_SUBSCRIPTION] Cache cleared');
+		logger.debug('[FRONTEND_SUBSCRIPTION] Cache cleared');
 		_lastFetch = 0;
 	},
 
@@ -501,7 +502,7 @@ export const subscriptionStore = {
 	 */
 	onSubscriptionChange(callback: SubscriptionChangeCallback): () => void {
 		_changeCallbacks.push(callback);
-		console.log(
+		logger.debug(
 			'🔄 [FRONTEND_SUBSCRIPTION] Registered change callback (total:',
 			_changeCallbacks.length,
 			')'
@@ -512,7 +513,7 @@ export const subscriptionStore = {
 			const index = _changeCallbacks.indexOf(callback);
 			if (index > -1) {
 				_changeCallbacks.splice(index, 1);
-				console.log(
+				logger.debug(
 					'🔄 [FRONTEND_SUBSCRIPTION] Unregistered change callback (remaining:',
 					_changeCallbacks.length,
 					')'
@@ -541,7 +542,7 @@ export const subscriptionStore = {
 		let displayName: string;
 
 		if (_planFeatures?.display_name) {
-			console.log('📛 Using plan features display name:', _planFeatures.display_name);
+			logger.debug('Using plan features display name:', _planFeatures.display_name);
 			displayName = _planFeatures.display_name;
 		} else {
 			// Fallback based on plan type
@@ -572,7 +573,7 @@ export const subscriptionStore = {
 			}
 		}
 
-		console.log('📛 Final display name:', {
+		logger.debug('Final display name:', {
 			currentPlan: subscriptionStore.currentPlan,
 			displayName,
 			planFeatures: _planFeatures

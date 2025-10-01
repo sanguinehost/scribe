@@ -475,7 +475,7 @@ impl SubscriptionService {
         };
 
         tracing::info!(
-            "🔄 Syncing subscription {} with Paddle (paddle_id: {})",
+            "Syncing subscription {} with Paddle (paddle_id: {})",
             subscription.id,
             paddle_subscription_id
         );
@@ -547,7 +547,7 @@ impl SubscriptionService {
             .map(|trial| trial.ends_at);
 
         tracing::info!(
-            "🎯 Paddle subscription analysis: status='{}', has_trial={}, trial_end={:?}",
+            "Paddle subscription analysis: status='{}', has_trial={}, trial_end={:?}",
             paddle_subscription.status,
             has_trial,
             trial_end_date
@@ -592,7 +592,7 @@ impl SubscriptionService {
             // Special handling for cancelled trials
             if paddle_status == SubscriptionStatus::Cancelled && has_trial {
                 tracing::info!(
-                    "🎯 Detected cancelled trial for subscription {} - trial_end: {:?}",
+                    "Detected cancelled trial for subscription {} - trial_end: {:?}",
                     subscription.id,
                     trial_end_date
                 );
