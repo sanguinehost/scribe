@@ -197,9 +197,10 @@ mod credit_service_tests {
             .await
             .expect("Failed to create user");
 
-        // Enable credits
+        // Enable credits and set config path
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
         let config = Arc::new(config);
 
         // Setup user with credits
@@ -265,9 +266,10 @@ mod credit_service_tests {
             .await
             .expect("Failed to create user");
 
-        // Enable credits
+        // Enable credits and set config path
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
         let config = Arc::new(config);
 
         // Initialize user
@@ -315,6 +317,112 @@ mod credit_service_tests {
     }
 
     #[tokio::test]
+    async fn test_monthly_grant_premium_tier() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let user_id = Uuid::new_v4();
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
+
+        // Enable credits and set config path
+        let mut config = (*app.config).clone();
+        config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
+        let config = Arc::new(config);
+
+        // Initialize user
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            let service = CreditService::new(config_clone);
+            service.initialize_user_credits(conn, user_id)
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to initialize");
+
+        // Grant monthly credits for premium tier
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let balance = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config_clone);
+                service.grant_monthly_credits(conn, user_id, "premium")
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to grant monthly credits");
+
+        // Premium tier should get 800 credits per month (from config)
+        assert_eq!(balance.balance, 800);
+        assert_eq!(balance.lifetime_earned, 800);
+        assert!(balance.last_monthly_grant.is_some());
+
+        // Try to grant again in same month - should not double grant
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let balance2 = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config_clone);
+                service.grant_monthly_credits(conn, user_id, "premium")
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed second grant attempt");
+
+        assert_eq!(balance2.balance, 800); // Should still be 800, not 1600
+        assert_eq!(balance2.lifetime_earned, 800);
+    }
+
+    #[tokio::test]
+    async fn test_monthly_grant_free_tier_gets_zero() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let user_id = Uuid::new_v4();
+        create_test_user(&app.db_pool, user_id)
+            .await
+            .expect("Failed to create user");
+
+        // Enable credits and set config path
+        let mut config = (*app.config).clone();
+        config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
+        let config = Arc::new(config);
+
+        // Initialize user
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact(move |conn| {
+            let service = CreditService::new(config_clone);
+            service.initialize_user_credits(conn, user_id)
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to initialize");
+
+        // Grant monthly credits for free tier
+        let config_clone = config.clone();
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let balance = conn
+            .interact(move |conn| {
+                let service = CreditService::new(config_clone);
+                service.grant_monthly_credits(conn, user_id, "free")
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to grant monthly credits");
+
+        // Free tier should get 0 monthly credits (no subscription)
+        assert_eq!(balance.balance, 0);
+        assert_eq!(balance.lifetime_earned, 0);
+        // last_monthly_grant should NOT be updated for free tier since no credits granted
+        assert!(balance.last_monthly_grant.is_none());
+    }
+
+    #[tokio::test]
     async fn test_transaction_history() {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
@@ -324,9 +432,10 @@ mod credit_service_tests {
             .await
             .expect("Failed to create user");
 
-        // Enable credits
+        // Enable credits and set config path
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
         let config = Arc::new(config);
 
         // Create some transactions
@@ -467,9 +576,10 @@ mod credit_service_tests {
             .await
             .expect("Failed to create user");
 
-        // Enable credits
+        // Enable credits and set config path
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
         let config = Arc::new(config);
 
         // Initialize user
@@ -552,9 +662,10 @@ mod credit_service_tests {
             .await
             .expect("Failed to create user");
 
-        // Enable credits
+        // Enable credits and set config path
         let mut config = (*app.config).clone();
         config.payment.credits_enabled = true;
+        config.payment.subscription_config_path = "config/subscription_tiers.json".to_string();
         let config = Arc::new(config);
 
         // Initialize with 100 credits
