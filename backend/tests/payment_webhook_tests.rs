@@ -599,7 +599,7 @@ mod payment_webhook_tests {
                 "subscription": {
                     "id": paddle_subscription_id,
                     "customer_id": paddle_customer_id,
-                    "status": "cancelled",
+                    "status": "canceled",
                     "current_billing_period": {
                         "starts_at": Utc::now().to_rfc3339(),
                         "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
@@ -645,8 +645,8 @@ mod payment_webhook_tests {
             .expect("Failed to query subscription");
 
         assert_eq!(
-            updated_sub.status, "cancelled",
-            "Subscription status should be updated to cancelled"
+            updated_sub.status, "canceled",
+            "Subscription status should be updated to canceled"
         );
         assert_eq!(
             updated_sub.cancel_at_period_end,
@@ -811,7 +811,7 @@ mod payment_webhook_tests {
                 "subscription": {
                     "id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
                     "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "status": "cancelled",
+                    "status": "canceled",
                     "canceled_at": Utc::now().to_rfc3339(),
                     "current_billing_period": {
                         "starts_at": Utc::now().to_rfc3339(),

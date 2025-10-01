@@ -56,20 +56,25 @@ mod subscription_e2e_tests {
 
         // Insert test user
         {
-            let mut conn = app
+            let test_email_clone = test_email.clone();
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
-            diesel::insert_into(users::table)
-                .values((
-                    users::id.eq(test_user_id),
-                    users::username.eq(format!("e2e_user_{}", Uuid::new_v4().simple())),
-                    users::email.eq(&test_email),
-                    users::password_hash.eq("dummy_hash"),
-                ))
-                .execute(&mut conn)
-                .expect("Failed to insert test user");
+            conn.interact(move |conn| {
+                diesel::insert_into(users::table)
+                    .values((
+                        users::id.eq(test_user_id),
+                        users::username.eq(format!("e2e_user_{}", Uuid::new_v4().simple())),
+                        users::email.eq(&test_email_clone),
+                        users::password_hash.eq("dummy_hash"),
+                    ))
+                    .execute(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to insert test user");
         }
 
         // Get webhook secret from app config
@@ -128,34 +133,40 @@ mod subscription_e2e_tests {
 
         // Assert: Subscription created in database with paddle_subscription_id
         let subscription_id = {
-            let mut conn = app
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
+            let paddle_customer_id_for_check = paddle_customer_id.clone();
+            let paddle_subscription_id_for_check = paddle_subscription_id.clone();
 
-            let subscription: (Uuid, String, Option<String>, Option<String>, String) =
-                subscriptions::table
-                    .select((
-                        subscriptions::id,
-                        subscriptions::plan_type,
-                        subscriptions::paddle_customer_id,
-                        subscriptions::paddle_subscription_id,
-                        subscriptions::status,
-                    ))
-                    .filter(subscriptions::user_id.eq(test_user_id))
-                    .first(&mut conn)
-                    .expect("Should find subscription for user");
+            let subscription: (Uuid, String, Option<String>, Option<String>, String) = conn
+                .interact(move |conn| {
+                    subscriptions::table
+                        .select((
+                            subscriptions::id,
+                            subscriptions::plan_type,
+                            subscriptions::paddle_customer_id,
+                            subscriptions::paddle_subscription_id,
+                            subscriptions::status,
+                        ))
+                        .filter(subscriptions::user_id.eq(test_user_id))
+                        .first(conn)
+                })
+                .await
+                .expect("Failed to interact with database")
+                .expect("Should find subscription for user");
 
             assert_eq!(subscription.1, "basic", "Plan type should be basic");
             assert_eq!(
                 subscription.2,
-                Some(paddle_customer_id.clone()),
+                Some(paddle_customer_id_for_check),
                 "Customer ID should be stored"
             );
             assert_eq!(
                 subscription.3,
-                Some(paddle_subscription_id.clone()),
+                Some(paddle_subscription_id_for_check),
                 "Subscription ID should be stored from transaction"
             );
             assert_eq!(subscription.4, "active", "Status should be active");
@@ -165,20 +176,29 @@ mod subscription_e2e_tests {
 
         // Verify subscription can be queried by paddle_subscription_id
         {
-            let mut conn = app
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
+            let paddle_subscription_id_for_query = paddle_subscription_id.clone();
 
-            let found_subscription: (Uuid, Uuid, String) = subscriptions::table
-                .select((
-                    subscriptions::id,
-                    subscriptions::user_id,
-                    subscriptions::plan_type,
-                ))
-                .filter(subscriptions::paddle_subscription_id.eq(&paddle_subscription_id))
-                .first(&mut conn)
+            let found_subscription: (Uuid, Uuid, String) = conn
+                .interact(move |conn| {
+                    subscriptions::table
+                        .select((
+                            subscriptions::id,
+                            subscriptions::user_id,
+                            subscriptions::plan_type,
+                        ))
+                        .filter(
+                            subscriptions::paddle_subscription_id
+                                .eq(&paddle_subscription_id_for_query),
+                        )
+                        .first(conn)
+                })
+                .await
+                .expect("Failed to interact with database")
                 .expect("Should find subscription by paddle_subscription_id");
 
             assert_eq!(found_subscription.0, subscription_id);
@@ -211,20 +231,25 @@ mod subscription_e2e_tests {
 
         // Insert test user
         {
-            let mut conn = app
+            let test_email_clone = test_email.clone();
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
-            diesel::insert_into(users::table)
-                .values((
-                    users::id.eq(test_user_id),
-                    users::username.eq(format!("e2e_sub_user_{}", Uuid::new_v4().simple())),
-                    users::email.eq(&test_email),
-                    users::password_hash.eq("dummy_hash"),
-                ))
-                .execute(&mut conn)
-                .expect("Failed to insert test user");
+            conn.interact(move |conn| {
+                diesel::insert_into(users::table)
+                    .values((
+                        users::id.eq(test_user_id),
+                        users::username.eq(format!("e2e_sub_user_{}", Uuid::new_v4().simple())),
+                        users::email.eq(&test_email_clone),
+                        users::password_hash.eq("dummy_hash"),
+                    ))
+                    .execute(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to insert test user");
         }
 
         // Get webhook secret
@@ -277,33 +302,39 @@ mod subscription_e2e_tests {
 
         // Assert: Premium subscription created with all Paddle data
         {
-            let mut conn = app
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
+            let paddle_customer_id_for_check = paddle_customer_id.clone();
+            let paddle_subscription_id_for_check = paddle_subscription_id.clone();
 
-            let subscription: (String, Option<String>, Option<String>, String) =
-                subscriptions::table
-                    .select((
-                        subscriptions::plan_type,
-                        subscriptions::paddle_customer_id,
-                        subscriptions::paddle_subscription_id,
-                        subscriptions::status,
-                    ))
-                    .filter(subscriptions::user_id.eq(test_user_id))
-                    .first(&mut conn)
-                    .expect("Should find subscription for user");
+            let subscription: (String, Option<String>, Option<String>, String) = conn
+                .interact(move |conn| {
+                    subscriptions::table
+                        .select((
+                            subscriptions::plan_type,
+                            subscriptions::paddle_customer_id,
+                            subscriptions::paddle_subscription_id,
+                            subscriptions::status,
+                        ))
+                        .filter(subscriptions::user_id.eq(test_user_id))
+                        .first(conn)
+                })
+                .await
+                .expect("Failed to interact with database")
+                .expect("Should find subscription for user");
 
             assert_eq!(subscription.0, "premium", "Plan type should be premium");
             assert_eq!(
                 subscription.1,
-                Some(paddle_customer_id.clone()),
+                Some(paddle_customer_id_for_check),
                 "Customer ID should be stored"
             );
             assert_eq!(
                 subscription.2,
-                Some(paddle_subscription_id.clone()),
+                Some(paddle_subscription_id_for_check),
                 "Subscription ID should be stored"
             );
             assert_eq!(subscription.3, "active", "Status should be active");
@@ -335,20 +366,25 @@ mod subscription_e2e_tests {
 
         // Insert test user
         {
-            let mut conn = app
+            let test_email_clone = test_email.clone();
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
-            diesel::insert_into(users::table)
-                .values((
-                    users::id.eq(test_user_id),
-                    users::username.eq(format!("e2e_change_user_{}", Uuid::new_v4().simple())),
-                    users::email.eq(&test_email),
-                    users::password_hash.eq("dummy_hash"),
-                ))
-                .execute(&mut conn)
-                .expect("Failed to insert test user");
+            conn.interact(move |conn| {
+                diesel::insert_into(users::table)
+                    .values((
+                        users::id.eq(test_user_id),
+                        users::username.eq(format!("e2e_change_user_{}", Uuid::new_v4().simple())),
+                        users::email.eq(&test_email_clone),
+                        users::password_hash.eq("dummy_hash"),
+                    ))
+                    .execute(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to insert test user");
         }
 
         // Get webhook secret
@@ -394,15 +430,21 @@ mod subscription_e2e_tests {
 
         // Assert: Basic subscription exists
         {
-            let mut conn = app
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
-            let plan: String = subscriptions::table
-                .select(subscriptions::plan_type)
-                .filter(subscriptions::user_id.eq(test_user_id))
-                .first(&mut conn)
+
+            let plan: String = conn
+                .interact(move |conn| {
+                    subscriptions::table
+                        .select(subscriptions::plan_type)
+                        .filter(subscriptions::user_id.eq(test_user_id))
+                        .first(conn)
+                })
+                .await
+                .expect("Failed to interact with database")
                 .expect("Should find basic subscription");
 
             assert_eq!(plan, "basic");
@@ -446,19 +488,25 @@ mod subscription_e2e_tests {
 
         // Assert: Subscription upgraded to premium (no duplicate)
         {
-            let mut conn = app
+            let conn = app
                 .db_pool
                 .get()
                 .await
                 .expect("Failed to get DB connection");
+            let second_subscription_id_for_check = second_subscription_id.clone();
 
-            let subscriptions: Vec<(String, Option<String>)> = subscriptions::table
-                .select((
-                    subscriptions::plan_type,
-                    subscriptions::paddle_subscription_id,
-                ))
-                .filter(subscriptions::user_id.eq(test_user_id))
-                .load(&mut conn)
+            let subscriptions: Vec<(String, Option<String>)> = conn
+                .interact(move |conn| {
+                    subscriptions::table
+                        .select((
+                            subscriptions::plan_type,
+                            subscriptions::paddle_subscription_id,
+                        ))
+                        .filter(subscriptions::user_id.eq(test_user_id))
+                        .load(conn)
+                })
+                .await
+                .expect("Failed to interact with database")
                 .expect("Should find subscriptions");
 
             assert_eq!(
@@ -472,7 +520,7 @@ mod subscription_e2e_tests {
             );
             assert_eq!(
                 subscriptions[0].1,
-                Some(second_subscription_id.clone()),
+                Some(second_subscription_id_for_check),
                 "Subscription ID should be updated"
             );
         }

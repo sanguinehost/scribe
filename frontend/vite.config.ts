@@ -49,7 +49,7 @@ export default defineConfig({
 		}),
 		proxy: {
 			'/api': {
-				target: 'https://localhost:8080',
+				target: process.env.VITE_BACKEND_TARGET || 'https://localhost:8081',
 				changeOrigin: true,
 				secure: false,
 				cookieDomainRewrite: 'localhost',

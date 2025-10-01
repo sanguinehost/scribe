@@ -19,7 +19,7 @@ export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
 	const isProductionAPI = env.PUBLIC_API_URL && request.url.startsWith(env.PUBLIC_API_URL);
 	const isLocalAPI =
 		!env.PUBLIC_API_URL &&
-		(request.url.includes('localhost:8080') || request.url.startsWith(event.url.origin + '/api'));
+		(request.url.includes('localhost') || request.url.startsWith(event.url.origin + '/api'));
 
 	if (isProductionAPI || isLocalAPI) {
 		console.log(`[${new Date().toISOString()}] handleFetch: Forwarding cookies to API`);
