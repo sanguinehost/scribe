@@ -1476,6 +1476,151 @@ mod payment_webhook_tests {
             "Plan type should be correctly mapped from price_id"
         );
     }
+
+    /// Test that transaction.completed webhook handles credit package purchases
+    #[tokio::test]
+    async fn test_credit_purchase_via_transaction_completed() {
+        use diesel::prelude::*;
+        use scribe_backend::schema::{credit_transactions, user_credits, users};
+        use uuid::Uuid;
+
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create test user
+        let user_id = Uuid::new_v4();
+        let test_email = "credit_purchaser@example.com";
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>("credit_purchaser")
+            .bind::<diesel::sql_types::Text, _>(test_email)
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .execute(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to create test user");
+
+        // Transaction payload for credit package purchase (250 credits for $5)
+        let event_id = format!("evt_credit_purchase_{}", Uuid::new_v4());
+        let transaction_id = format!("txn_credit_{}", Uuid::new_v4());
+        let paddle_customer_id = format!("cus_{}", Uuid::new_v4());
+
+        let payload = json!({
+            "event_type": "transaction.completed",
+            "event_id": event_id,
+            "occurred_at": Utc::now().to_rfc3339(),
+            "data": {
+                "transaction": {
+                    "id": transaction_id,
+                    "customer_id": paddle_customer_id.clone(),
+                    "status": "completed",
+                    "items": [{
+                        "price": {
+                            "id": "pri_credits_250" // Starter Pack - 250 credits
+                        },
+                        "quantity": 1
+                    }],
+                    "details": {
+                        "totals": {
+                            "total": "500", // $5.00 in cents
+                            "tax": "0",
+                            "discount": "0"
+                        }
+                    },
+                    "currency_code": "USD",
+                    "created_at": Utc::now().to_rfc3339(),
+                    "billed_at": Utc::now().to_rfc3339()
+                },
+                "customer": {
+                    "id": paddle_customer_id.clone(),
+                    "email": test_email
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        // Send webhook
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        let status = response.status();
+        println!("Credit purchase webhook response status: {}", status);
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "Webhook should process successfully"
+        );
+
+        // Verify credits were added to user account
+        let conn = app
+            .db_pool
+            .get()
+            .await
+            .expect("Failed to get DB connection");
+
+        let credits_balance: i32 = conn
+            .interact(move |conn| {
+                user_credits::table
+                    .filter(user_credits::user_id.eq(user_id))
+                    .select(user_credits::balance)
+                    .first(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to query credit balance");
+
+        assert_eq!(
+            credits_balance, 250,
+            "User should have 250 credits after purchase"
+        );
+
+        // Verify credit transaction was recorded
+        let transaction_count: i64 = conn
+            .interact(move |conn| {
+                credit_transactions::table
+                    .filter(credit_transactions::user_id.eq(user_id))
+                    .filter(credit_transactions::transaction_type.eq("purchase"))
+                    .count()
+                    .get_result(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to count credit transactions");
+
+        assert_eq!(
+            transaction_count, 1,
+            "Should have exactly one credit purchase transaction"
+        );
+    }
 }
 
 // Empty module for when payment feature is not enabled

@@ -2003,10 +2003,89 @@ async fn process_transaction_completed(
             transaction_id
         );
     } else {
-        tracing::warn!(
-            "No paddle_subscription_id found in transaction {} - this may be a one-time payment",
+        tracing::debug!(
+            "No paddle_subscription_id found in transaction {} - checking if this is a credit purchase",
             transaction_id
         );
+
+        // Check if this is a credit package purchase
+        let conn_credit_check = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let price_data_for_credit_check = price_data.to_string();
+        let credit_package_result = conn_credit_check
+            .interact(move |conn| {
+                use crate::models::credit::CreditPackage;
+                use crate::schema::credit_packages::dsl;
+                use diesel::prelude::*;
+
+                dsl::credit_packages
+                    .filter(dsl::paddle_price_id.eq(&price_data_for_credit_check))
+                    .filter(dsl::active.eq(true))
+                    .first::<CreditPackage>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        if let Some(credit_package) = credit_package_result {
+            tracing::info!(
+                "Credit purchase detected: {} ({} credits) for user {} in transaction {}",
+                credit_package.name,
+                credit_package.credits,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+
+            // Add credits to user account
+            let credit_service =
+                crate::services::payment::CreditService::new(app_state.config.clone());
+
+            let conn = app_state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            let user_id_for_credits = user.id;
+            let credits_to_add = credit_package.credits;
+            let package_name = credit_package.name.clone();
+            let transaction_id_clone = transaction_id.clone();
+
+            conn.interact(move |conn| {
+                credit_service.add_credits(
+                    conn,
+                    user_id_for_credits,
+                    credits_to_add,
+                    "purchase",
+                    &format!("Credit package purchase: {}", package_name),
+                    Some(transaction_id_clone),
+                    None,
+                )
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+
+            tracing::info!(
+                "Successfully added {} credits to user {} from transaction {}",
+                credit_package.credits,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+
+            // Credit purchase handled, no subscription to create
+            return Ok(());
+        } else {
+            tracing::warn!(
+                "Transaction {} has no subscription_id and doesn't match any credit package (price_id: {})",
+                transaction_id,
+                price_data
+            );
+        }
     }
 
     // Check for existing active subscription to prevent duplicates
