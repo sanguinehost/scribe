@@ -776,6 +776,7 @@ pub async fn verify_transaction(
                     sub_dsl::subscriptions
                         .filter(sub_dsl::user_id.eq(user_id_for_sub))
                         .filter(sub_dsl::status.ne("cancelled"))
+                        .select(Subscription::as_select())
                         .first::<Subscription>(conn)
                         .optional()
                 })
@@ -986,6 +987,7 @@ pub async fn verify_transaction(
                     sub_dsl::subscriptions
                         .filter(sub_dsl::user_id.eq(user.id))
                         .filter(sub_dsl::status.ne("cancelled"))
+                        .select(Subscription::as_select())
                         .first::<Subscription>(conn)
                         .optional()
                 })
@@ -1115,6 +1117,7 @@ pub async fn verify_transaction(
                                     sub_dsl::trial_end.eq(Some(trial_end)),
                                     sub_dsl::updated_at.eq(chrono::Utc::now()),
                                 ))
+                                .returning(Subscription::as_returning())
                                 .get_result::<Subscription>(conn)
                         } else {
                             diesel::update(sub_dsl::subscriptions.find(existing_id))
@@ -1124,6 +1127,7 @@ pub async fn verify_transaction(
                                     sub_dsl::status.eq(subscription_status_str),
                                     sub_dsl::updated_at.eq(chrono::Utc::now()),
                                 ))
+                                .returning(Subscription::as_returning())
                                 .get_result::<Subscription>(conn)
                         }
                     })
@@ -2104,6 +2108,7 @@ async fn process_transaction_completed(
             sub_dsl::subscriptions
                 .filter(sub_dsl::user_id.eq(user.id))
                 .filter(sub_dsl::status.ne("cancelled"))
+                .select(Subscription::as_select())
                 .first::<Subscription>(conn)
                 .optional()
         })
@@ -2160,6 +2165,7 @@ async fn process_transaction_completed(
                         sub_dsl::status.eq("active"),
                         sub_dsl::updated_at.eq(chrono::Utc::now()),
                     ))
+                    .returning(Subscription::as_returning())
                     .get_result::<Subscription>(conn)
             })
             .await
@@ -2553,6 +2559,7 @@ async fn process_subscription_created(
             sub_dsl::subscriptions
                 .filter(sub_dsl::user_id.eq(user_id_for_check))
                 .filter(sub_dsl::status.ne("cancelled"))
+                .select(Subscription::as_select())
                 .first::<Subscription>(conn)
                 .optional()
         })
@@ -2647,6 +2654,7 @@ async fn process_subscription_created(
                         sub_dsl::current_period_end.eq(period_end_for_update),
                         sub_dsl::updated_at.eq(chrono::Utc::now()),
                     ))
+                    .returning(Subscription::as_returning())
                     .get_result::<Subscription>(conn)
             })
             .await
@@ -2839,6 +2847,7 @@ async fn process_subscription_updated(
                 .filter(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
+                .select(crate::models::payment::Subscription::as_select())
                 .first::<crate::models::payment::Subscription>(conn)
                 .optional()
         })
@@ -2999,6 +3008,7 @@ async fn process_subscription_cancelled(
                 .filter(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
+                .select(crate::models::payment::Subscription::as_select())
                 .first::<crate::models::payment::Subscription>(conn)
                 .optional()
         })

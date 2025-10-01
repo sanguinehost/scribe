@@ -99,6 +99,12 @@ impl SubscriptionService {
             credits_allocated_this_period: Some(false),
             soft_limit_override: None,
             last_credit_grant: None,
+            paddle_sync_attempted: false,
+            first_payment_date: None,
+            has_ever_paid: Some(false),
+            cancellation_date: None,
+            trial_start_date: trial_end.map(|_| now),
+            last_payment_date: None,
         };
 
         let subscription = diesel::insert_into(subscriptions::table)
@@ -130,6 +136,7 @@ impl SubscriptionService {
         let subscription = subscriptions::table
             .filter(subscriptions::user_id.eq(user_id))
             .order(subscriptions::created_at.desc())
+            .select(Subscription::as_select())
             .first::<Subscription>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -205,6 +212,7 @@ impl SubscriptionService {
     ) -> Result<Option<Subscription>, AppError> {
         let subscription = subscriptions::table
             .find(subscription_id)
+            .select(Subscription::as_select())
             .first::<Subscription>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -220,6 +228,7 @@ impl SubscriptionService {
     ) -> Result<Option<Subscription>, AppError> {
         let subscription = subscriptions::table
             .filter(subscriptions::paddle_subscription_id.eq(paddle_subscription_id))
+            .select(Subscription::as_select())
             .first::<Subscription>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -449,6 +458,7 @@ impl SubscriptionService {
             .filter(subscriptions::status.eq(SubscriptionStatus::Active.to_string()))
             .filter(subscriptions::current_period_end.le(cutoff_date))
             .filter(subscriptions::cancel_at_period_end.eq(false))
+            .select(Subscription::as_select())
             .load::<Subscription>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

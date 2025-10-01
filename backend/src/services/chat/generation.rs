@@ -42,7 +42,9 @@ use crate::{
 
 // Conditional import for payment features
 #[cfg(feature = "payment")]
-use crate::services::payment::SoftLimitService;
+use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "payment")]
+use crate::services::payment::{SoftLimitService, SubscriptionService};
 
 // Type aliases for complex types
 type GeminiStreamResult = Result<
@@ -621,10 +623,59 @@ pub async fn get_session_data_for_generation(
     debug!(%session_id, %user_id, "Retrieved user settings for context management");
 
     // Use user-configured values or fall back to config defaults
-    let context_total_token_limit = user_settings
+    let mut context_total_token_limit = user_settings
         .default_context_total_token_limit
         .map(|v| v as usize)
         .unwrap_or(state.config.context_total_token_limit);
+
+    // Enforce subscription tier's max_context_tokens limit
+    #[cfg(feature = "payment")]
+    {
+        let conn_for_plan_check = state.pool.get().await?;
+        let subscription_service =
+            SubscriptionService::new(state.config.as_ref().clone(), EncryptionService::new());
+
+        // Get user's subscription
+        let subscription_service_clone_1 = subscription_service.clone();
+        let user_subscription = conn_for_plan_check
+            .interact(move |conn| {
+                subscription_service_clone_1.get_user_subscription_sync(conn, user_id)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+        // Get plan features
+        let plan_type = user_subscription
+            .as_ref()
+            .map(|s| s.plan_type.clone())
+            .unwrap_or_else(|| "free".to_string());
+
+        let conn_for_features = state.pool.get().await?;
+        let subscription_service_clone_2 = subscription_service.clone();
+        let plan_type_for_query = plan_type.clone();
+        let plan_features = conn_for_features
+            .interact(move |conn| {
+                subscription_service_clone_2.get_plan_features_sync(conn, &plan_type_for_query)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+        // Enforce max_context_tokens if set
+        if let Some(max_tokens) = plan_features.and_then(|pf| pf.max_context_tokens) {
+            if context_total_token_limit > max_tokens as usize {
+                info!(
+                    %session_id,
+                    %user_id,
+                    requested = %context_total_token_limit,
+                    plan_max = %max_tokens,
+                    plan_type = %plan_type,
+                    "Enforcing subscription tier context limit - capping user's requested limit to plan maximum"
+                );
+                context_total_token_limit = max_tokens as usize;
+            }
+        }
+    }
+
     let recent_history_token_budget = user_settings
         .default_context_recent_history_budget
         .map(|v| v as usize)

@@ -634,6 +634,7 @@ mod payment_webhook_tests {
             .interact(move |conn| {
                 subscriptions::table
                     .find(subscription_id)
+                    .select(scribe_backend::models::payment::Subscription::as_select())
                     .first::<scribe_backend::models::payment::Subscription>(conn)
             })
             .await
@@ -770,6 +771,7 @@ mod payment_webhook_tests {
             .interact(move |conn| {
                 subscriptions::table
                     .find(subscription_id)
+                    .select(scribe_backend::models::payment::Subscription::as_select())
                     .first::<scribe_backend::models::payment::Subscription>(conn)
             })
             .await
@@ -1128,6 +1130,7 @@ mod payment_webhook_tests {
             .interact(move |conn| {
                 subscriptions::table
                     .filter(subscriptions::user_id.eq(user_id))
+                    .select(scribe_backend::models::payment::Subscription::as_select())
                     .first::<scribe_backend::models::payment::Subscription>(conn)
                     .optional()
             })
@@ -1323,6 +1326,7 @@ mod payment_webhook_tests {
             .interact(move |conn| {
                 subscriptions::table
                     .filter(subscriptions::user_id.eq(user_id))
+                    .select(scribe_backend::models::payment::Subscription::as_select())
                     .first::<scribe_backend::models::payment::Subscription>(conn)
             })
             .await
@@ -1448,6 +1452,7 @@ mod payment_webhook_tests {
             .interact(move |conn| {
                 subscriptions::table
                     .filter(subscriptions::user_id.eq(user_id))
+                    .select(scribe_backend::models::payment::Subscription::as_select())
                     .first::<scribe_backend::models::payment::Subscription>(conn)
                     .optional()
             })

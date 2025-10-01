@@ -110,11 +110,18 @@ mod credit_integration_tests {
                     credits_allocated_this_period: Some(false),
                     last_credit_grant: None,
                     soft_limit_override: None,
+                    paddle_sync_attempted: false,
+                    first_payment_date: None,
+                    has_ever_paid: Some(false),
+                    cancellation_date: None,
+                    trial_start_date: None,
+                    last_payment_date: None,
                 };
 
                 use scribe_backend::schema::subscriptions::dsl;
                 diesel::insert_into(dsl::subscriptions)
                     .values(&new_sub)
+                    .returning(Subscription::as_returning())
                     .get_result::<Subscription>(conn)
             })
             .await

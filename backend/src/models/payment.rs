@@ -93,6 +93,12 @@ pub struct Subscription {
     pub credits_allocated_this_period: Option<bool>,
     pub soft_limit_override: Option<i32>,
     pub last_credit_grant: Option<DateTime<Utc>>,
+    pub paddle_sync_attempted: bool,
+    pub first_payment_date: Option<DateTime<Utc>>,
+    pub has_ever_paid: Option<bool>,
+    pub cancellation_date: Option<DateTime<Utc>>,
+    pub trial_start_date: Option<DateTime<Utc>>,
+    pub last_payment_date: Option<DateTime<Utc>>,
 }
 
 /// New subscription for database insertion
@@ -112,6 +118,12 @@ pub struct NewSubscription {
     pub credits_allocated_this_period: Option<bool>,
     pub soft_limit_override: Option<i32>,
     pub last_credit_grant: Option<DateTime<Utc>>,
+    pub paddle_sync_attempted: bool,
+    pub first_payment_date: Option<DateTime<Utc>>,
+    pub has_ever_paid: Option<bool>,
+    pub cancellation_date: Option<DateTime<Utc>>,
+    pub trial_start_date: Option<DateTime<Utc>>,
+    pub last_payment_date: Option<DateTime<Utc>>,
 }
 
 /// Update subscription for database updates
@@ -147,6 +159,7 @@ pub struct PlanFeatures {
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
     pub paddle_price_id_yearly: Option<String>,
+    pub max_context_tokens: Option<i32>,
 }
 
 /// Payment usage tracking model for database queries

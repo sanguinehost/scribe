@@ -263,6 +263,7 @@ impl PaymentScheduler {
                             .or(subscriptions::last_credit_grant
                                 .lt(Utc::now() - chrono::Duration::days(25))),
                     )
+                    .select(Subscription::as_select())
                     .load::<Subscription>(conn)
             })
             .await
@@ -340,6 +341,7 @@ impl PaymentScheduler {
                             SubscriptionStatus::Trialing.to_string(),
                         ]),
                     ))
+                    .select(Subscription::as_select())
                     .load::<Subscription>(conn)
             })
             .await

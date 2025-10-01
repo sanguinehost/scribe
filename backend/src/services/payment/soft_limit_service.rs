@@ -224,6 +224,7 @@ impl SoftLimitService {
         dsl::subscriptions
             .filter(dsl::user_id.eq(user_id))
             .filter(dsl::status.eq("active"))
+            .select(Subscription::as_select())
             .first::<Subscription>(conn)
             .optional()
             .map_err(|e| {

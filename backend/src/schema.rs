@@ -653,6 +653,7 @@ diesel::table! {
         updated_at -> Nullable<Timestamptz>,
         #[max_length = 255]
         paddle_price_id_yearly -> Nullable<Varchar>,
+        max_context_tokens -> Nullable<Int4>,
     }
 }
 
@@ -706,6 +707,29 @@ diesel::table! {
         credits_allocated_this_period -> Nullable<Bool>,
         soft_limit_override -> Nullable<Int4>,
         last_credit_grant -> Nullable<Timestamptz>,
+        paddle_sync_attempted -> Bool,
+        first_payment_date -> Nullable<Timestamptz>,
+        has_ever_paid -> Nullable<Bool>,
+        cancellation_date -> Nullable<Timestamptz>,
+        trial_start_date -> Nullable<Timestamptz>,
+        last_payment_date -> Nullable<Timestamptz>,
+        grace_period_end -> Nullable<Timestamptz>,
+        previous_subscription_id -> Nullable<Uuid>,
+        cancellation_reason_encrypted -> Nullable<Bytea>,
+        cancellation_reason_nonce -> Nullable<Bytea>,
+        paddle_trial_end -> Nullable<Timestamptz>,
+        first_billed_at -> Nullable<Timestamptz>,
+        next_billed_at -> Nullable<Timestamptz>,
+        canceled_at -> Nullable<Timestamptz>,
+        paused_at -> Nullable<Timestamptz>,
+        trial_starts_at -> Nullable<Timestamptz>,
+        trial_ends_at -> Nullable<Timestamptz>,
+        scheduled_change -> Nullable<Jsonb>,
+        management_urls -> Nullable<Jsonb>,
+        discount -> Nullable<Jsonb>,
+        #[max_length = 50]
+        collection_mode -> Nullable<Varchar>,
+        billing_details -> Nullable<Jsonb>,
     }
 }
 

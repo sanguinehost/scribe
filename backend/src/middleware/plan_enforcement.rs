@@ -138,6 +138,7 @@ async fn check_plan_limits(
                 .filter(subscriptions::user_id.eq(user_id))
                 .filter(subscriptions::status.ne("cancelled"))
                 .order(subscriptions::created_at.desc())
+                .select(Subscription::as_select())
                 .first::<Subscription>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
