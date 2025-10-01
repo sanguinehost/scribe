@@ -2,6 +2,7 @@
 export { default as PaddleLoader } from './PaddleLoader.svelte';
 export { default as CheckoutButton } from './CheckoutButton.svelte';
 export { default as CheckoutOverlay } from './CheckoutOverlay.svelte';
+export { default as SubscriptionActivationStatus } from './SubscriptionActivationStatus.svelte';
 
 // Payment types
 export interface PaymentPlan {

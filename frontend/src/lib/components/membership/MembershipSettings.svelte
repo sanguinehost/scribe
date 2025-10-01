@@ -25,6 +25,7 @@
 	$: isCancelledTrial = subscriptionStore.isCancelledTrial;
 	$: isExpiredTrial = subscriptionStore.isExpiredTrial;
 	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
+	$: isFreeUser = subscriptionStore.isFreeUser;
 
 	// Credit data - creditStore is a store, not a plain object
 	// We'll use the CreditBalance component which handles its own store subscription
@@ -138,10 +139,12 @@
 							/>
 							<div>
 								<h3 class="font-semibold">{subscriptionStore.getPlanDisplayName()}</h3>
-								{#if subscription && getRenewalText()}
+								{#if !isFreeUser && subscription && getRenewalText()}
 									<p class="text-sm text-slate-600 dark:text-slate-300">
 										{getRenewalText()}
 									</p>
+								{:else if isFreeUser}
+									<p class="text-sm text-slate-600 dark:text-slate-300">No subscription active</p>
 								{/if}
 							</div>
 						</div>
@@ -162,7 +165,7 @@
 					</div>
 
 					<!-- Subscription Details -->
-					{#if subscription}
+					{#if !isFreeUser && subscription}
 						<div class="grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-4 dark:bg-slate-900">
 							<div>
 								<p class="text-sm font-medium text-slate-900 dark:text-slate-100">Status</p>
@@ -191,6 +194,34 @@
 											: subscription.current_period_end
 									)}
 								</p>
+							</div>
+						</div>
+					{:else if isFreeUser}
+						<!-- Free User Information -->
+						<div class="rounded-lg bg-blue-50 p-4 dark:bg-blue-950/30">
+							<div class="flex items-start gap-3">
+								<div class="flex-shrink-0">
+									<svg
+										class="h-5 w-5 text-blue-600 dark:text-blue-400"
+										fill="currentColor"
+										viewBox="0 0 20 20"
+									>
+										<path
+											fill-rule="evenodd"
+											d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+											clip-rule="evenodd"
+										/>
+									</svg>
+								</div>
+								<div>
+									<p class="text-sm font-medium text-blue-900 dark:text-blue-200">
+										Free Plan Active
+									</p>
+									<p class="mt-1 text-sm text-blue-700 dark:text-blue-300">
+										You're currently using the free tier. Upgrade to unlock additional features and
+										higher limits.
+									</p>
+								</div>
 							</div>
 						</div>
 					{/if}

@@ -524,6 +524,280 @@ mod payment_webhook_tests {
     }
 
     #[tokio::test]
+    async fn test_subscription_updated_status_change_to_cancelled() {
+        use diesel::prelude::*;
+        use scribe_backend::schema::{subscriptions, users};
+        use uuid::Uuid;
+
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create test user
+        let user_id = Uuid::new_v4();
+        let test_email = "sub_updated_test@example.com";
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>("sub_updated_test_user")
+            .bind::<diesel::sql_types::Text, _>(test_email)
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .execute(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to create test user");
+
+        // Create initial active subscription
+        let paddle_subscription_id = "sub_01updated_test_001";
+        let paddle_customer_id = "cus_01updated_test_001";
+
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let subscription_id = conn
+            .interact(move |conn| {
+                diesel::insert_into(subscriptions::table)
+                    .values((
+                        subscriptions::user_id.eq(user_id),
+                        subscriptions::plan_type.eq("basic"),
+                        subscriptions::status.eq("active"),
+                        subscriptions::paddle_customer_id.eq(Some(paddle_customer_id)),
+                        subscriptions::paddle_subscription_id.eq(Some(paddle_subscription_id)),
+                        subscriptions::current_period_start.eq(Utc::now()),
+                        subscriptions::current_period_end
+                            .eq(Utc::now() + chrono::Duration::days(30)),
+                        subscriptions::cancel_at_period_end.eq(false),
+                    ))
+                    .returning(subscriptions::id)
+                    .get_result::<Uuid>(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to create subscription");
+
+        // Send subscription.updated webhook with cancelled status
+        let payload = json!({
+            "event_id": "evt_subscription_updated_cancel_001",
+            "event_type": "subscription.updated",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "data": {
+                "subscription": {
+                    "id": paddle_subscription_id,
+                    "customer_id": paddle_customer_id,
+                    "status": "cancelled",
+                    "current_billing_period": {
+                        "starts_at": Utc::now().to_rfc3339(),
+                        "ends_at": (Utc::now() + chrono::Duration::days(30)).to_rfc3339()
+                    }
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "Subscription.updated webhook should succeed. Status: {}, Body: {}",
+            status,
+            body
+        );
+
+        // Verify subscription status was updated to cancelled
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let updated_sub = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .find(subscription_id)
+                    .first::<scribe_backend::models::payment::Subscription>(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to query subscription");
+
+        assert_eq!(
+            updated_sub.status, "cancelled",
+            "Subscription status should be updated to cancelled"
+        );
+        assert_eq!(
+            updated_sub.cancel_at_period_end,
+            Some(true),
+            "cancel_at_period_end should be true"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_subscription_updated_trialing_to_active() {
+        use diesel::prelude::*;
+        use scribe_backend::schema::{subscriptions, users};
+        use uuid::Uuid;
+
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create test user
+        let user_id = Uuid::new_v4();
+        let test_email = "trial_to_active_test@example.com";
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+
+        conn.interact(move |conn| {
+            diesel::sql_query(
+                "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
+                 dek_nonce, role, account_status, total_prompt_tokens, total_completion_tokens,
+                 total_token_cost_cents, token_usage_updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
+                 ON CONFLICT (id) DO NOTHING"
+            )
+            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Text, _>("trial_to_active_user")
+            .bind::<diesel::sql_types::Text, _>(test_email)
+            .bind::<diesel::sql_types::Text, _>("test_hash")
+            .bind::<diesel::sql_types::Text, _>("test_salt")
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 32])
+            .bind::<diesel::sql_types::Bytea, _>(vec![0u8; 12])
+            .bind::<diesel::sql_types::Text, _>("User")
+            .bind::<diesel::sql_types::Text, _>("active")
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::BigInt, _>(0i64)
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .execute(conn)
+        })
+        .await
+        .expect("Failed to interact with database")
+        .expect("Failed to create test user");
+
+        // Create initial trialing subscription
+        let paddle_subscription_id = "sub_01trial_to_active_001";
+        let paddle_customer_id = "cus_01trial_to_active_001";
+        let trial_end = Utc::now() + chrono::Duration::days(7);
+
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let subscription_id = conn
+            .interact(move |conn| {
+                diesel::insert_into(subscriptions::table)
+                    .values((
+                        subscriptions::user_id.eq(user_id),
+                        subscriptions::plan_type.eq("basic"),
+                        subscriptions::status.eq("trialing"),
+                        subscriptions::paddle_customer_id.eq(Some(paddle_customer_id)),
+                        subscriptions::paddle_subscription_id.eq(Some(paddle_subscription_id)),
+                        subscriptions::trial_end.eq(Some(trial_end)),
+                        subscriptions::current_period_start.eq(Utc::now()),
+                        subscriptions::current_period_end
+                            .eq(Utc::now() + chrono::Duration::days(7)),
+                        subscriptions::cancel_at_period_end.eq(false),
+                    ))
+                    .returning(subscriptions::id)
+                    .get_result::<Uuid>(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to create subscription");
+
+        // Send subscription.updated webhook with active status and new billing period
+        let new_period_start = Utc::now() + chrono::Duration::days(7);
+        let new_period_end = Utc::now() + chrono::Duration::days(37);
+
+        let payload = json!({
+            "event_id": "evt_subscription_trial_to_active_001",
+            "event_type": "subscription.updated",
+            "occurred_at": Utc::now().to_rfc3339(),
+            "data": {
+                "subscription": {
+                    "id": paddle_subscription_id,
+                    "customer_id": paddle_customer_id,
+                    "status": "active",
+                    "current_billing_period": {
+                        "starts_at": new_period_start.to_rfc3339(),
+                        "ends_at": new_period_end.to_rfc3339()
+                    }
+                }
+            }
+        });
+
+        let payload_str = payload.to_string();
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
+            .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
+        let signature = create_webhook_signature(&payload_str, &webhook_secret);
+
+        let response = Client::new()
+            .post(&format!("{}/api/payment/webhook/paddle", &app.address))
+            .header("Paddle-Signature", signature)
+            .header("Content-Type", "application/json")
+            .body(payload_str)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "Subscription.updated webhook should succeed. Status: {}, Body: {}",
+            status,
+            body
+        );
+
+        // Verify subscription status and dates were updated
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let updated_sub = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .find(subscription_id)
+                    .first::<scribe_backend::models::payment::Subscription>(conn)
+            })
+            .await
+            .expect("Failed to interact with database")
+            .expect("Failed to query subscription");
+
+        assert_eq!(
+            updated_sub.status, "active",
+            "Subscription status should be updated to active"
+        );
+        assert_eq!(
+            updated_sub.cancel_at_period_end,
+            Some(false),
+            "cancel_at_period_end should be false"
+        );
+        // Verify billing period was updated
+        assert!(
+            updated_sub.current_period_start > trial_end - chrono::Duration::days(1),
+            "Billing period start should be updated"
+        );
+    }
+
+    #[tokio::test]
     async fn test_webhook_handles_subscription_cancelled_event() {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());

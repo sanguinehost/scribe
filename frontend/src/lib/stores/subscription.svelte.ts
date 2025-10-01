@@ -9,6 +9,15 @@ import type {
 	PlanType
 } from '$lib/types';
 
+// Subscription change callback type
+type SubscriptionChangeCallback = (changes: {
+	previous: Subscription | null;
+	current: Subscription | null;
+	statusChanged: boolean;
+	planChanged: boolean;
+	subscriptionIdChanged: boolean;
+}) => void;
+
 // Subscription store state
 let _subscription = $state<Subscription | null>(null);
 let _planFeatures = $state<PlanFeatures | null>(null);
@@ -18,6 +27,9 @@ let _loading = $state(false);
 let _error = $state<string | null>(null);
 let _lastFetch = 0;
 const CACHE_DURATION = 30 * 1000; // 30 seconds
+
+// Subscription change listeners
+let _changeCallbacks: SubscriptionChangeCallback[] = [];
 
 // Create reactive subscription store object
 export const subscriptionStore = {
@@ -87,6 +99,10 @@ export const subscriptionStore = {
 		// No longer using token limits for tracking limits
 		// Daily message limits are enforced server-side
 		return false;
+	},
+
+	get isFreeUser(): boolean {
+		return !_subscription || _subscription.plan_type === 'free';
 	},
 
 	get daysUntilRenewal(): number {
@@ -302,6 +318,7 @@ export const subscriptionStore = {
 				const previousSubscription = _subscription;
 				const previousStatus = _subscription?.status;
 				const previousPlan = _subscription?.plan_type;
+				const previousPaddleSubId = _subscription?.paddle_subscription_id;
 
 				// Update store state
 				_subscription = result.value.subscription || null;
@@ -310,15 +327,20 @@ export const subscriptionStore = {
 				_customerPortalUrl = result.value.customer_portal_url || null;
 				_lastFetch = now;
 
+				// Detect changes
+				const statusChanged = previousStatus !== _subscription?.status;
+				const planChanged = previousPlan !== _subscription?.plan_type;
+				const subscriptionIdChanged = previousPaddleSubId !== _subscription?.paddle_subscription_id;
+
 				// Log state changes
 				if (previousSubscription) {
-					const statusChanged = previousStatus !== _subscription?.status;
-					const planChanged = previousPlan !== _subscription?.plan_type;
-
-					if (statusChanged || planChanged) {
+					if (statusChanged || planChanged || subscriptionIdChanged) {
 						console.log('🔄 [FRONTEND_SUBSCRIPTION] SUBSCRIPTION STATE CHANGED:', {
 							statusChanged: statusChanged ? `${previousStatus} → ${_subscription?.status}` : false,
 							planChanged: planChanged ? `${previousPlan} → ${_subscription?.plan_type}` : false,
+							subscriptionIdChanged: subscriptionIdChanged
+								? `${previousPaddleSubId} → ${_subscription?.paddle_subscription_id}`
+								: false,
 							timestamp: new Date().toISOString()
 						});
 					}
@@ -327,7 +349,40 @@ export const subscriptionStore = {
 						id: _subscription.id,
 						status: _subscription.status,
 						plan_type: _subscription.plan_type,
+						paddle_subscription_id: _subscription.paddle_subscription_id,
 						timestamp: new Date().toISOString()
+					});
+				}
+
+				// Notify listeners if subscription changed
+				if (
+					statusChanged ||
+					planChanged ||
+					subscriptionIdChanged ||
+					(!previousSubscription && _subscription)
+				) {
+					console.log(
+						'🔄 [FRONTEND_SUBSCRIPTION] Notifying',
+						_changeCallbacks.length,
+						'listeners of subscription change'
+					);
+
+					const changeData = {
+						previous: previousSubscription,
+						current: _subscription,
+						statusChanged,
+						planChanged,
+						subscriptionIdChanged
+					};
+
+					// Call all registered callbacks
+					_changeCallbacks.forEach((callback, index) => {
+						try {
+							console.log('🔄 [FRONTEND_SUBSCRIPTION] Calling listener', index + 1);
+							callback(changeData);
+						} catch (error) {
+							console.error('🔄 [FRONTEND_SUBSCRIPTION] Error in change callback:', error);
+						}
 					});
 				}
 
@@ -428,6 +483,42 @@ export const subscriptionStore = {
 		_loading = false;
 		_error = null;
 		_lastFetch = 0;
+		_changeCallbacks = []; // Clear callbacks on reset
+	},
+
+	/**
+	 * Clear cache to force next refresh to fetch fresh data
+	 */
+	clearCache(): void {
+		console.log('🔄 [FRONTEND_SUBSCRIPTION] Cache cleared');
+		_lastFetch = 0;
+	},
+
+	/**
+	 * Register a callback to be notified when subscription changes
+	 * @param callback Function to call when subscription changes
+	 * @returns Unsubscribe function
+	 */
+	onSubscriptionChange(callback: SubscriptionChangeCallback): () => void {
+		_changeCallbacks.push(callback);
+		console.log(
+			'🔄 [FRONTEND_SUBSCRIPTION] Registered change callback (total:',
+			_changeCallbacks.length,
+			')'
+		);
+
+		// Return unsubscribe function
+		return () => {
+			const index = _changeCallbacks.indexOf(callback);
+			if (index > -1) {
+				_changeCallbacks.splice(index, 1);
+				console.log(
+					'🔄 [FRONTEND_SUBSCRIPTION] Unregistered change callback (remaining:',
+					_changeCallbacks.length,
+					')'
+				);
+			}
+		};
 	},
 
 	/**

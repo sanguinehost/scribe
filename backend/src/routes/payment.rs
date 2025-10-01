@@ -1941,12 +1941,21 @@ async fn process_transaction_completed(
     }
 
     // Extract price_id to determine plan type
+    // Note: Paddle webhooks have two possible structures:
+    // 1. Nested: items[0].price.id (newer structure)
+    // 2. Flat: items[0].price_id (older structure)
     let price_data = transaction_data
         .get("items")
         .and_then(|items| items.as_array())
         .and_then(|items| items.first())
-        .and_then(|item| item.get("price_id"))
-        .and_then(|v| v.as_str())
+        .and_then(|item| {
+            // Try nested structure first (items[0].price.id)
+            item.get("price")
+                .and_then(|price| price.get("id"))
+                .and_then(|v| v.as_str())
+                // Fallback to flat structure (items[0].price_id)
+                .or_else(|| item.get("price_id").and_then(|v| v.as_str()))
+        })
         .unwrap_or("unknown");
 
     // Map price_id to plan type (based on database plan_features table)
@@ -2700,7 +2709,7 @@ async fn process_subscription_created(
 /// Process subscription.updated webhook event
 #[cfg(feature = "payment")]
 async fn process_subscription_updated(
-    _app_state: AppState,
+    app_state: AppState,
     webhook_data: &PaddleWebhook,
 ) -> Result<(), AppError> {
     tracing::info!(
@@ -2708,8 +2717,183 @@ async fn process_subscription_updated(
         webhook_data.event_id
     );
 
-    // For subscription updates (status changes, renewals, etc.)
-    tracing::info!("🎯 Subscription update processing not yet implemented");
+    // Extract subscription data from the webhook payload
+    let subscription_data = webhook_data
+        .data
+        .get("subscription")
+        .ok_or_else(|| AppError::BadRequest("Missing subscription data in webhook".to_string()))?;
+
+    let paddle_subscription_id = subscription_data
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing subscription ID in webhook".to_string()))?
+        .to_string();
+
+    let status = subscription_data
+        .get("status")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing subscription status in webhook".to_string()))?
+        .to_string();
+
+    tracing::info!(
+        "🎯 Subscription update details - ID: {}, Status: {}",
+        paddle_subscription_id,
+        status
+    );
+
+    // Extract trial_end date (actual DateTime, not just days)
+    let trial_end = if status == "trialing" {
+        subscription_data
+            .get("scheduled_change")
+            .and_then(|sc| sc.get("effective_at"))
+            .or_else(|| subscription_data.get("next_billed_at"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+    } else {
+        None
+    };
+
+    // Extract current billing period dates
+    let current_period_start = subscription_data
+        .get("current_billing_period")
+        .and_then(|cbp| cbp.get("starts_at"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let current_period_end = subscription_data
+        .get("current_billing_period")
+        .and_then(|cbp| cbp.get("ends_at"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    if let Some(end) = &trial_end {
+        tracing::info!("🎯 Trial ends at: {}", end);
+    }
+    if let (Some(start), Some(end)) = (&current_period_start, &current_period_end) {
+        tracing::info!("🎯 Billing period: {} to {}", start, end);
+    }
+
+    // Find subscription by paddle_subscription_id
+    let conn = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let paddle_subscription_id_for_closure = paddle_subscription_id.clone();
+    let subscription = conn
+        .interact(move |conn| {
+            use crate::schema::subscriptions;
+            use diesel::prelude::*;
+            subscriptions::table
+                .filter(
+                    subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
+                )
+                .first::<crate::models::payment::Subscription>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    if let Some(subscription) = subscription {
+        tracing::info!(
+            "🎯 Found subscription {} for paddle_subscription_id: {}, updating",
+            subscription.id,
+            paddle_subscription_id
+        );
+
+        // Update subscription with new data
+        let subscription_id = subscription.id;
+        let conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        // Determine cancel_at_period_end based on status
+        // Note: Paddle uses "canceled" (US spelling) not "cancelled" (UK spelling)
+        let cancel_at_period_end = status == "canceled";
+
+        // Prepare date fields for the closure
+        // Keep existing values if not provided in webhook
+        let trial_end_for_update = trial_end.or(subscription.trial_end);
+        let period_start_for_update =
+            current_period_start.unwrap_or(subscription.current_period_start);
+        let period_end_for_update = current_period_end.unwrap_or(subscription.current_period_end);
+
+        // Clone status for use in the closure and later logging
+        let status_for_update = status.clone();
+
+        let updated_subscription = conn
+            .interact(move |conn| {
+                use crate::schema::subscriptions;
+                use diesel::prelude::*;
+                diesel::update(subscriptions::table.find(subscription_id))
+                    .set((
+                        subscriptions::status.eq(&status_for_update),
+                        subscriptions::trial_end.eq(trial_end_for_update),
+                        subscriptions::current_period_start.eq(period_start_for_update),
+                        subscriptions::current_period_end.eq(period_end_for_update),
+                        subscriptions::cancel_at_period_end.eq(cancel_at_period_end),
+                        subscriptions::updated_at.eq(chrono::Utc::now()),
+                    ))
+                    .returning(crate::models::payment::Subscription::as_returning())
+                    .get_result(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        tracing::info!(
+            "🎯 Successfully updated subscription {} (paddle_subscription_id: {}, status: {})",
+            updated_subscription.id,
+            paddle_subscription_id,
+            status
+        );
+
+        // Log update in audit log
+        use crate::services::payment::PaymentAuditService;
+        let audit_service = PaymentAuditService::new();
+        let conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let user_id = subscription.user_id;
+        let audit_event_type = match status.as_str() {
+            "active" => crate::services::payment::AuditEventType::SubscriptionActivated,
+            "canceled" => crate::services::payment::AuditEventType::SubscriptionCancelled,
+            "paused" => crate::services::payment::AuditEventType::SubscriptionPaused,
+            _ => crate::services::payment::AuditEventType::SubscriptionUpdated,
+        };
+
+        if let Err(e) = conn
+            .interact(move |conn| {
+                audit_service.log_subscription_event(
+                    conn,
+                    user_id,
+                    audit_event_type,
+                    Some(&paddle_subscription_id),
+                )
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))
+            .and_then(|r| r)
+        {
+            tracing::error!("Failed to audit log subscription update: {}", e);
+            // Don't fail the webhook processing if audit logging fails
+        }
+    } else {
+        tracing::warn!(
+            "🎯 Subscription not found for paddle_subscription_id: {}, ignoring update webhook",
+            paddle_subscription_id
+        );
+    }
 
     Ok(())
 }

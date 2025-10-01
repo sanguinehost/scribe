@@ -107,10 +107,33 @@
 
 											// Extract transaction ID from event data
 											const eventData = event.data as Record<string, unknown>; // Paddle event data structure is dynamic
-											const transaction = eventData?.transaction as
-												| Record<string, unknown>
-												| undefined;
-											const transactionId = transaction?.id || eventData?.transaction_id;
+
+											// Try multiple paths to find transaction ID
+											let transactionId: string | undefined;
+
+											// Method 1: Direct transaction_id field
+											transactionId = eventData?.transaction_id as string;
+
+											// Method 2: Nested transaction object
+											if (!transactionId) {
+												const transaction = eventData?.transaction as
+													| Record<string, unknown>
+													| undefined;
+												transactionId = transaction?.id as string;
+											}
+
+											// Method 3: Check if the data itself has an id field
+											if (!transactionId) {
+												transactionId = eventData?.id as string;
+											}
+
+											console.log('🔍 Transaction ID extraction attempts:', {
+												direct_transaction_id: eventData?.transaction_id,
+												transaction_object_id: (eventData?.transaction as Record<string, unknown>)
+													?.id,
+												direct_id: eventData?.id,
+												final_transaction_id: transactionId
+											});
 
 											if (transactionId) {
 												console.log('✅ Transaction ID captured:', transactionId);
@@ -121,7 +144,8 @@
 
 												if (
 													currentPath === '/pay' &&
-													currentSearch.includes(`_ptxn=${transactionId}`)
+													(currentSearch.includes(`transaction_id=${transactionId}`) ||
+														currentSearch.includes(`_ptxn=${transactionId}`))
 												) {
 													console.log('🔄 Already on payment success page, skipping redirect');
 													return;
@@ -131,7 +155,7 @@
 												setTimeout(() => {
 													console.log('🔀 Redirecting to payment success page...');
 													window.location.replace(
-														`${window.location.origin}/pay?_ptxn=${transactionId}`
+														`${window.location.origin}/pay?transaction_id=${transactionId}`
 													);
 												}, 500);
 											} else {

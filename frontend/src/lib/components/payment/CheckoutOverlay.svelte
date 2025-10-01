@@ -79,29 +79,6 @@
 				'API access',
 				'Priority queue & beta features'
 			]
-		},
-		pro: {
-			name: 'Premium',
-			description: 'Professional roleplay & storytelling platform',
-			monthly: {
-				price: 25,
-				priceId: 'pri_01k5ej7wzvpcj6j65vcbpam6t4',
-				display: '$25/month'
-			},
-			yearly: {
-				price: 250,
-				priceId: 'pri_01k5ejva0cwqzbtgzd2c9qk0d4',
-				display: '$250/year',
-				monthlyEquivalent: '$20.83/month',
-				savings: 'Save $50 per year'
-			},
-			features: [
-				'200 daily messages (soft limit)',
-				'800 included credits/month',
-				'Unlimited characters & lorebooks',
-				'API access',
-				'Priority queue & beta features'
-			]
 		}
 	};
 
@@ -129,8 +106,30 @@
 			return;
 		}
 
+		// Check for existing pending transactions to prevent duplicates
+		const pendingTransactionKey = `pending_checkout_${selectedPlan}_${selectedBilling}`;
+		const existingPendingTransaction =
+			typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(pendingTransactionKey) : null;
+
+		if (existingPendingTransaction) {
+			const pendingTime = parseInt(existingPendingTransaction);
+			const timeSinceLastCheckout = Date.now() - pendingTime;
+
+			// If less than 5 minutes have passed, prevent duplicate checkout
+			if (timeSinceLastCheckout < 5 * 60 * 1000) {
+				checkoutError =
+					'A checkout for this plan is already in progress. Please wait a few minutes before trying again.';
+				return;
+			}
+		}
+
 		checkoutLoading = true;
 		checkoutError = null;
+
+		// Mark this checkout as pending
+		if (typeof sessionStorage !== 'undefined') {
+			sessionStorage.setItem(pendingTransactionKey, Date.now().toString());
+		}
 
 		dispatch('checkout-start', { planType: selectedPlan, billing: selectedBilling });
 
@@ -181,6 +180,12 @@
 			open = false;
 			dispatch('close');
 
+			// Clear pending transaction when checkout successfully opens
+			const pendingTransactionKey = `pending_checkout_${selectedPlan}_${selectedBilling}`;
+			if (typeof sessionStorage !== 'undefined') {
+				sessionStorage.removeItem(pendingTransactionKey);
+			}
+
 			window.Paddle.Checkout.open({
 				// Items to purchase
 				items: [
@@ -195,9 +200,8 @@
 					theme: theme, // Match app theme
 					locale: navigator.language?.substring(0, 2) || 'en',
 					variant: 'one-page', // Simpler one-page checkout
-					allowLogout: false, // Don't show logout option
-					// Add success URL as backup (event callback is primary)
-					successUrl: `${window.location.origin}/pay`
+					allowLogout: false // Don't show logout option
+					// Removed successUrl - let eventCallback handle redirects with proper parameters
 				},
 				// Custom data for tracking and analytics
 				customData: {
@@ -222,6 +226,12 @@
 			});
 			checkoutError = errorMessage;
 			checkoutLoading = false;
+
+			// Clear pending transaction on error
+			const pendingTransactionKey = `pending_checkout_${selectedPlan}_${selectedBilling}`;
+			if (typeof sessionStorage !== 'undefined') {
+				sessionStorage.removeItem(pendingTransactionKey);
+			}
 		}
 	}
 

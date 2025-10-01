@@ -26,6 +26,9 @@ pub enum AuditEventType {
     CreditAdded,
     CreditDeducted,
     SubscriptionCreated,
+    SubscriptionActivated,
+    SubscriptionUpdated,
+    SubscriptionPaused,
     SubscriptionCancelled,
     PaymentProcessed,
     PaymentFailed,
@@ -38,6 +41,9 @@ impl AuditEventType {
             Self::CreditAdded => "credit_added",
             Self::CreditDeducted => "credit_deducted",
             Self::SubscriptionCreated => "subscription_created",
+            Self::SubscriptionActivated => "subscription_activated",
+            Self::SubscriptionUpdated => "subscription_updated",
+            Self::SubscriptionPaused => "subscription_paused",
             Self::SubscriptionCancelled => "subscription_cancelled",
             Self::PaymentProcessed => "payment_processed",
             Self::PaymentFailed => "payment_failed",
@@ -48,7 +54,11 @@ impl AuditEventType {
     fn category(&self) -> &'static str {
         match self {
             Self::CreditAdded | Self::CreditDeducted => "credit",
-            Self::SubscriptionCreated | Self::SubscriptionCancelled => "subscription",
+            Self::SubscriptionCreated
+            | Self::SubscriptionActivated
+            | Self::SubscriptionUpdated
+            | Self::SubscriptionPaused
+            | Self::SubscriptionCancelled => "subscription",
             Self::PaymentProcessed | Self::PaymentFailed => "payment",
             Self::WebhookReceived => "webhook",
         }

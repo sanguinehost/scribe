@@ -61,8 +61,9 @@
 			processingTransaction = true;
 			handleTransactionCompletion();
 		} else {
-			// No valid transaction ID - check subscription status directly
+			// No valid transaction ID - but payment might still have succeeded
 			console.log('No valid transaction ID found, checking subscription status directly...');
+			console.log('This is expected behavior - Paddle redirects without transaction parameters');
 			processingTransaction = true;
 			handleNoTransactionId();
 		}
@@ -78,38 +79,66 @@
 			// Import the API client and auth functions
 			const { apiClient } = await import('$lib/api');
 			const { setAuthenticated } = await import('$lib/auth.svelte');
+			const { subscriptionStore } = await import('$lib/stores/subscription.svelte');
 
-			// Try to verify transaction with backend (with retry logic)
+			// Clear subscription cache to ensure we get fresh data
+			subscriptionStore.clearCache();
+
+			// Set up subscription change listener for immediate detection
+			let _subscriptionDetected = false;
+			const unsubscribe = subscriptionStore.onSubscriptionChange((changes) => {
+				console.log('🎯 Payment page detected subscription change:', changes);
+				if (
+					changes.current &&
+					(changes.current.status === 'active' || changes.current.status === 'trialing')
+				) {
+					_subscriptionDetected = true;
+					console.log('✅ Active/trialing subscription detected via change listener');
+				}
+			});
+
+			// Try to verify transaction with backend (with improved retry logic)
 			console.log('Verifying transaction with backend...');
 			let result;
 			let retryCount = 0;
-			const maxRetries = 3;
-			const retryDelay = 2000; // Start with 2 seconds
+			const maxRetries = 8; // Increased from 3 to 8
+
+			// Smarter retry timing: fast initially, then slower
+			const getRetryDelay = (attempt: number): number => {
+				if (attempt < 3) return 1000; // First 3: 1s apart
+				if (attempt < 6) return 2000; // Next 3: 2s apart
+				return 3000; // Final 2: 3s apart
+			};
 
 			while (retryCount < maxRetries) {
 				result = await apiClient.verifyTransaction(transactionId!);
 
-				console.log(`Verification attempt ${retryCount + 1} result:`, result);
+				console.log(`Verification attempt ${retryCount + 1}/${maxRetries} result:`, result);
 
 				// Check both the response wrapper success AND the data.success field
 				if (result.isOk() && result.value?.success === true) {
 					// Success - transaction verified
+					console.log('✅ Transaction verified successfully');
 					break;
 				} else if (result.isOk() && result.value?.source === 'database') {
 					// Transaction is in our database, treat as success
-					console.log('Transaction found in database');
+					console.log('✅ Transaction found in database');
 					break;
 				} else if (retryCount < maxRetries - 1) {
-					// Wait before retrying (exponential backoff)
+					const delay = getRetryDelay(retryCount);
 					console.log(
-						`Verification attempt ${retryCount + 1} needs retry, waiting ${(retryDelay * (retryCount + 1)) / 1000}s...`
+						`⏳ Verification attempt ${retryCount + 1} needs retry, waiting ${delay / 1000}s...`
 					);
-					await new Promise((resolve) => setTimeout(resolve, retryDelay * (retryCount + 1)));
+					await new Promise((resolve) => setTimeout(resolve, delay));
 					retryCount++;
 				} else {
+					console.log('⚠️ All verification attempts exhausted');
 					break;
 				}
 			}
+
+			// Clean up subscription listener
+			unsubscribe();
 
 			if (
 				result &&
@@ -202,11 +231,64 @@
 			// Import necessary modules
 			const { subscriptionStore } = await import('$lib/stores/subscription.svelte');
 
-			// Check if user has a subscription now (maybe payment completed successfully but we missed the transaction ID)
-			console.log('Checking current subscription status...');
-			await subscriptionStore.refresh();
+			// Clear subscription cache to ensure fresh data
+			subscriptionStore.clearCache();
 
-			const subscription = subscriptionStore.subscription;
+			// Set up subscription change listener for immediate detection
+			let _subscriptionDetected = false;
+			const unsubscribe = subscriptionStore.onSubscriptionChange((changes) => {
+				console.log('🎯 Payment page (no txn) detected subscription change:', changes);
+				if (
+					changes.current &&
+					(changes.current.status === 'active' || changes.current.status === 'trialing')
+				) {
+					_subscriptionDetected = true;
+					console.log('✅ Active/trialing subscription detected via change listener');
+				}
+			});
+
+			// Check if user has a subscription now (payment completed but no transaction ID)
+			console.log('Checking current subscription status (no transaction ID provided)...');
+
+			// Improved retry logic with better timing
+			let retryCount = 0;
+			const maxRetries = 8; // Increased from 3 to 8
+			let subscription = null;
+
+			// Smarter retry timing
+			const getRetryDelay = (attempt: number): number => {
+				if (attempt < 3) return 1000; // First 3: 1s apart
+				if (attempt < 6) return 2000; // Next 3: 2s apart
+				return 3000; // Final 2: 3s apart
+			};
+
+			while (retryCount < maxRetries && !subscription) {
+				console.log(`🔄 Subscription check attempt ${retryCount + 1}/${maxRetries}...`);
+				await subscriptionStore.refresh(true); // Force refresh
+				subscription = subscriptionStore.subscription;
+
+				if (
+					subscription &&
+					(subscription.status === 'active' || subscription.status === 'trialing')
+				) {
+					console.log('✅ Found active/trialing subscription');
+					break;
+				}
+
+				if (retryCount < maxRetries - 1) {
+					const delay = getRetryDelay(retryCount);
+					console.log(`⏳ Subscription not found yet, waiting ${delay / 1000}s before retry...`);
+					await new Promise((resolve) => setTimeout(resolve, delay));
+					retryCount++;
+				} else {
+					console.log('⚠️ All subscription check attempts exhausted');
+					break;
+				}
+			}
+
+			// Clean up subscription listener
+			unsubscribe();
+
 			if (
 				subscription &&
 				(subscription.status === 'active' || subscription.status === 'trialing')
@@ -216,24 +298,28 @@
 				// Show success message
 				loading = false;
 				error = null;
+				status = 'success'; // Set status for success display
 
 				// Redirect to main app after a short delay
 				setTimeout(() => {
 					_goto('/');
 				}, 2000);
 			} else {
-				// No active subscription - probably no payment was made or it failed
-				console.log('No active subscription found');
+				// No active subscription found - this might be normal if on the free plan
+				console.log('No active subscription found - may be returning to free plan');
 				loading = false;
+				error =
+					'Payment verification completed. If you made a payment, it may take a few minutes to process.';
 
 				// Redirect to main app after a delay
 				setTimeout(() => {
 					_goto('/');
-				}, 3000);
+				}, 4000);
 			}
 		} catch (err) {
 			console.error('Error checking subscription status:', err);
 			loading = false;
+			error = 'Unable to verify payment status. Returning to the app...';
 
 			// Redirect to main app anyway
 			setTimeout(() => {
@@ -263,7 +349,14 @@
 					<div
 						class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"
 					></div>
-					<p class="text-slate-600 dark:text-slate-300">Processing payment...</p>
+					<p class="text-slate-600 dark:text-slate-300">
+						{transactionId ? 'Verifying payment...' : 'Checking subscription status...'}
+					</p>
+					{#if !transactionId}
+						<p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+							This may take a few moments while we confirm your payment
+						</p>
+					{/if}
 				</div>
 			{:else if error}
 				<div class="rounded-lg bg-white p-8 shadow-lg dark:bg-slate-800">
