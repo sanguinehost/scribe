@@ -90,7 +90,7 @@ variable "subject_alternative_names" {
 variable "postgres_version" {
   description = "PostgreSQL version"
   type        = string
-  default     = "15.4"
+  default     = "16.8"
 }
 
 variable "db_instance_class" {
@@ -292,4 +292,69 @@ variable "payment_grace_period_days" {
   description = "Grace period in days after subscription expires"
   type        = number
   default     = 7
+}
+
+# Paddle subscription price IDs (should be provided via terraform.tfvars or environment variables)
+variable "paddle_basic_monthly_price_id" {
+  description = "Paddle price ID for Basic plan - monthly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k4qbyetvn495nzv9nkqhxz02"  # From .env PADDLE_BASIC_MONTHLY_PRICE_ID
+}
+
+variable "paddle_basic_yearly_price_id" {
+  description = "Paddle price ID for Basic plan - yearly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejs7h9zmw4d888r3pjjqna"  # From .env PADDLE_BASIC_YEARLY_PRICE_ID
+}
+
+variable "paddle_premium_monthly_price_id" {
+  description = "Paddle price ID for Premium plan - monthly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ej7wzvpcj6j65vcbpam6t4"  # From .env PADDLE_PREMIUM_MONTHLY_PRICE_ID
+}
+
+variable "paddle_premium_yearly_price_id" {
+  description = "Paddle price ID for Premium plan - yearly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejva0cwqzbtgzd2c9qk0d4"  # From .env PADDLE_PREMIUM_YEARLY_PRICE_ID
+}
+
+# Paddle credit package price IDs
+variable "paddle_credits_250_price_id" {
+  description = "Paddle price ID for 250 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ej9f8281rvnzybmpxc9hpm"  # From .env PADDLE_CREDITS_250_PRICE_ID
+}
+
+variable "paddle_credits_500_price_id" {
+  description = "Paddle price ID for 500/550 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejc7dkwxfty64nfvenj8yq"  # From .env PADDLE_CREDITS_500_PRICE_ID
+}
+
+variable "paddle_credits_1500_price_id" {
+  description = "Paddle price ID for 1500 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejdg0hzzem86wzd28zmd2q"  # From .env PADDLE_CREDITS_1500_PRICE_ID
+}
+
+variable "paddle_credits_3500_price_id" {
+  description = "Paddle price ID for 3500 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejenme5xjtje37jwfpbxe2"  # From .env PADDLE_CREDITS_3500_PRICE_ID
+}
+
+variable "paddle_credits_8000_price_id" {
+  description = "Paddle price ID for 8000 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejfy6t65v6d28fqf0c4kmr"  # From .env PADDLE_CREDITS_8000_PRICE_ID
 }

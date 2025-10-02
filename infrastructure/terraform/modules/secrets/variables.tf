@@ -150,3 +150,68 @@ variable "payment_grace_period_days" {
   type        = number
   default     = 7
 }
+
+# Paddle subscription price IDs
+variable "paddle_basic_monthly_price_id" {
+  description = "Paddle price ID for Basic plan - monthly billing"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_basic_yearly_price_id" {
+  description = "Paddle price ID for Basic plan - yearly billing"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_premium_monthly_price_id" {
+  description = "Paddle price ID for Premium plan - monthly billing"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_premium_yearly_price_id" {
+  description = "Paddle price ID for Premium plan - yearly billing"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# Paddle credit package price IDs
+variable "paddle_credits_250_price_id" {
+  description = "Paddle price ID for 250 credits package"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_credits_500_price_id" {
+  description = "Paddle price ID for 500/550 credits package"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_credits_1500_price_id" {
+  description = "Paddle price ID for 1500 credits package"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_credits_3500_price_id" {
+  description = "Paddle price ID for 3500 credits package"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_credits_8000_price_id" {
+  description = "Paddle price ID for 8000 credits package"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

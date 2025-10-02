@@ -284,6 +284,35 @@ pub struct PaymentConfig {
     /// Paddle webhook secret for signature verification
     pub paddle_webhook_secret: Option<String>,
 
+    // Paddle subscription price IDs (from Secrets Manager)
+    /// Paddle price ID for Basic plan - monthly billing
+    pub paddle_basic_monthly_price_id: Option<String>,
+
+    /// Paddle price ID for Basic plan - yearly billing
+    pub paddle_basic_yearly_price_id: Option<String>,
+
+    /// Paddle price ID for Premium plan - monthly billing
+    pub paddle_premium_monthly_price_id: Option<String>,
+
+    /// Paddle price ID for Premium plan - yearly billing
+    pub paddle_premium_yearly_price_id: Option<String>,
+
+    // Paddle credit package price IDs (from Secrets Manager)
+    /// Paddle price ID for 250 credits package
+    pub paddle_credits_250_price_id: Option<String>,
+
+    /// Paddle price ID for 500/550 credits package
+    pub paddle_credits_500_price_id: Option<String>,
+
+    /// Paddle price ID for 1500 credits package
+    pub paddle_credits_1500_price_id: Option<String>,
+
+    /// Paddle price ID for 3500 credits package
+    pub paddle_credits_3500_price_id: Option<String>,
+
+    /// Paddle price ID for 8000 credits package
+    pub paddle_credits_8000_price_id: Option<String>,
+
     /// Whether to use Paddle sandbox mode (for development/testing)
     #[serde(default = "default_paddle_sandbox_mode")]
     pub paddle_sandbox_mode: bool,
@@ -350,6 +379,42 @@ impl std::fmt::Debug for PaymentConfig {
                 "paddle_webhook_secret",
                 &self.paddle_webhook_secret.as_ref().map(|_| "[REDACTED]"),
             )
+            .field(
+                "paddle_basic_monthly_price_id",
+                &self.paddle_basic_monthly_price_id.as_deref(),
+            )
+            .field(
+                "paddle_basic_yearly_price_id",
+                &self.paddle_basic_yearly_price_id.as_deref(),
+            )
+            .field(
+                "paddle_premium_monthly_price_id",
+                &self.paddle_premium_monthly_price_id.as_deref(),
+            )
+            .field(
+                "paddle_premium_yearly_price_id",
+                &self.paddle_premium_yearly_price_id.as_deref(),
+            )
+            .field(
+                "paddle_credits_250_price_id",
+                &self.paddle_credits_250_price_id.as_deref(),
+            )
+            .field(
+                "paddle_credits_500_price_id",
+                &self.paddle_credits_500_price_id.as_deref(),
+            )
+            .field(
+                "paddle_credits_1500_price_id",
+                &self.paddle_credits_1500_price_id.as_deref(),
+            )
+            .field(
+                "paddle_credits_3500_price_id",
+                &self.paddle_credits_3500_price_id.as_deref(),
+            )
+            .field(
+                "paddle_credits_8000_price_id",
+                &self.paddle_credits_8000_price_id.as_deref(),
+            )
             .field("paddle_sandbox_mode", &self.paddle_sandbox_mode)
             .field("payment_base_url", &self.payment_base_url)
             .field("free_tier_token_limit", &self.free_tier_token_limit)
@@ -373,6 +438,15 @@ impl Default for PaymentConfig {
         Self {
             paddle_api_key: None,
             paddle_webhook_secret: None,
+            paddle_basic_monthly_price_id: None,
+            paddle_basic_yearly_price_id: None,
+            paddle_premium_monthly_price_id: None,
+            paddle_premium_yearly_price_id: None,
+            paddle_credits_250_price_id: None,
+            paddle_credits_500_price_id: None,
+            paddle_credits_1500_price_id: None,
+            paddle_credits_3500_price_id: None,
+            paddle_credits_8000_price_id: None,
             paddle_sandbox_mode: default_paddle_sandbox_mode(),
             payment_base_url: default_payment_base_url(),
             free_tier_token_limit: default_free_tier_token_limit(),

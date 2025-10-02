@@ -61,5 +61,16 @@ resource "aws_secretsmanager_secret_version" "app_secrets" {
     free_tier_token_limit    = tostring(var.free_tier_token_limit)
     enforce_payment_limits   = tostring(var.enforce_payment_limits)
     payment_grace_period_days = tostring(var.payment_grace_period_days)
+    # Paddle subscription price IDs
+    paddle_basic_monthly_price_id  = var.paddle_basic_monthly_price_id
+    paddle_basic_yearly_price_id   = var.paddle_basic_yearly_price_id
+    paddle_premium_monthly_price_id = var.paddle_premium_monthly_price_id
+    paddle_premium_yearly_price_id = var.paddle_premium_yearly_price_id
+    # Paddle credit package price IDs
+    paddle_credits_250_price_id  = var.paddle_credits_250_price_id
+    paddle_credits_500_price_id  = var.paddle_credits_500_price_id
+    paddle_credits_1500_price_id = var.paddle_credits_1500_price_id
+    paddle_credits_3500_price_id = var.paddle_credits_3500_price_id
+    paddle_credits_8000_price_id = var.paddle_credits_8000_price_id
   } : {}))
 }
