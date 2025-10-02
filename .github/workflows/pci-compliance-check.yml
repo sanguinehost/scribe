@@ -3,6 +3,9 @@ name: PCI DSS SAQ-A Compliance Check
 # This workflow helps maintain SAQ-A compliance by scanning for potential cardholder data
 # patterns that should never be committed to the repository.
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [ main, develop, feat/payment-* ]
@@ -153,6 +156,8 @@ jobs:
   security-audit:
     runs-on: ubuntu-latest
     name: Security Audit
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
