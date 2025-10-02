@@ -395,6 +395,9 @@
 			{/if}
 		</CardContent>
 	</Card>
+
+	<!-- Purchase Credits Dialog -->
+	<PurchaseCreditsDialog bind:open={showPurchaseDialog} />
 {:else}
 	<!-- Fallback when payments are disabled -->
 	<Card class="w-full">
@@ -411,7 +414,4 @@
 			</div>
 		</CardContent>
 	</Card>
-
-	<!-- Purchase Credits Dialog -->
-	<PurchaseCreditsDialog bind:open={showPurchaseDialog} />
 {/if}
