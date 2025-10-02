@@ -10,30 +10,37 @@
 	import DailyMessageUsage from './DailyMessageUsage.svelte';
 	import MonthlyTokenUsage from './MonthlyTokenUsage.svelte';
 	import { CheckoutButton } from '$lib/components/payment';
-	import { CreditBalance } from '$lib/components/credits';
+	import { CreditBalance, PurchaseCreditsDialog } from '$lib/components/credits';
 
 	// Reactive subscription data
-	$: subscription = subscriptionStore.subscription;
-	$: planFeatures = subscriptionStore.planFeatures;
-	$: usageLimits = subscriptionStore.usageLimits;
-	$: customerPortalUrl = subscriptionStore.customerPortalUrl;
-	$: loading = subscriptionStore.loading;
-	$: error = subscriptionStore.error;
-	$: currentPlan = subscriptionStore.currentPlan;
-	$: _isSubscribed = subscriptionStore.isSubscribed;
-	$: isTrialing = subscriptionStore.isTrialing;
-	$: isCancelledTrial = subscriptionStore.isCancelledTrial;
-	$: isExpiredTrial = subscriptionStore.isExpiredTrial;
-	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
-	$: isFreeUser = subscriptionStore.isFreeUser;
+	let subscription = $derived(subscriptionStore.subscription);
+	let planFeatures = $derived(subscriptionStore.planFeatures);
+	let usageLimits = $derived(subscriptionStore.usageLimits);
+	let customerPortalUrl = $derived(subscriptionStore.customerPortalUrl);
+	let loading = $derived(subscriptionStore.loading);
+	let error = $derived(subscriptionStore.error);
+	let currentPlan = $derived(subscriptionStore.currentPlan);
+	let _isSubscribed = $derived(subscriptionStore.isSubscribed);
+	let isTrialing = $derived(subscriptionStore.isTrialing);
+	let isCancelledTrial = $derived(subscriptionStore.isCancelledTrial);
+	let isExpiredTrial = $derived(subscriptionStore.isExpiredTrial);
+	let daysUntilRenewal = $derived(subscriptionStore.daysUntilRenewal);
+	let isFreeUser = $derived(subscriptionStore.isFreeUser);
 
 	// Credit data - creditStore is a store, not a plain object
 	// We'll use the CreditBalance component which handles its own store subscription
 
 	// Daily usage data from subscription store
-	$: dailyMessageCount = subscriptionStore.dailyMessageCount;
-	$: isThrottled = subscriptionStore.isThrottled;
-	$: throttleDelay = subscriptionStore.throttleDelay;
+	let dailyMessageCount = $derived(subscriptionStore.dailyMessageCount);
+	let isThrottled = $derived(subscriptionStore.isThrottled);
+	let throttleDelay = $derived(subscriptionStore.throttleDelay);
+
+	// Purchase credits dialog state
+	let showPurchaseDialog = $state(false);
+
+	function handlePurchaseCreditsClick() {
+		showPurchaseDialog = true;
+	}
 
 	function _handleViewPricing() {
 		// Instead of navigating to pricing page, we'll show upgrade options directly
@@ -281,7 +288,7 @@
 						<Zap size={16} />
 						Credits
 					</h3>
-					<CreditBalance showPurchaseButton={true} />
+					<CreditBalance showPurchaseButton={true} onPurchaseClick={handlePurchaseCreditsClick} />
 				</div>
 
 				<!-- Plan Features -->
@@ -404,4 +411,7 @@
 			</div>
 		</CardContent>
 	</Card>
+
+	<!-- Purchase Credits Dialog -->
+	<PurchaseCreditsDialog bind:open={showPurchaseDialog} />
 {/if}

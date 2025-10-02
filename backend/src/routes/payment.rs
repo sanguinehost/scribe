@@ -2278,6 +2278,57 @@ async fn process_transaction_completed(
         }
     }
 
+    // Grant monthly credits for the subscription tier
+    // This ensures users immediately receive their tier's monthly allocation
+    {
+        tracing::debug!(
+            "Granting monthly credits for {} tier to user {}",
+            plan_type,
+            loggable_user_id(user.id)
+        );
+
+        let credit_service = CreditService::new(app_state.config.clone());
+        let conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let user_id_for_credits = user.id;
+        let plan_type_for_credits = plan_type.to_string();
+
+        match conn
+            .interact(move |conn| {
+                credit_service.grant_monthly_credits(
+                    conn,
+                    user_id_for_credits,
+                    &plan_type_for_credits,
+                )
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))
+            .and_then(|r| r)
+        {
+            Ok(balance) => {
+                tracing::info!(
+                    "Successfully granted monthly credits to user {}. New balance: {}",
+                    loggable_user_id(user.id),
+                    balance.balance
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to grant monthly credits for user {} ({}): {}",
+                    loggable_user_id(user.id),
+                    plan_type,
+                    e
+                );
+                // Don't fail the webhook if credit granting fails
+                // The scheduler will retry later
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -2987,6 +3038,58 @@ async fn process_subscription_updated(
         {
             tracing::error!("Failed to audit log subscription update: {}", e);
             // Don't fail the webhook processing if audit logging fails
+        }
+
+        // Grant monthly credits on trial-to-paid conversion or subscription activation
+        if is_trial_conversion || (status == "active" && subscription.status != "active") {
+            tracing::debug!(
+                "Granting monthly credits for {} tier to user {} (trial_conversion: {}, activation: {})",
+                subscription.plan_type,
+                loggable_user_id(subscription.user_id),
+                is_trial_conversion,
+                status == "active" && subscription.status != "active"
+            );
+
+            let credit_service = CreditService::new(app_state.config.clone());
+            let conn = app_state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            let user_id_for_credits = subscription.user_id;
+            let plan_type_for_credits = subscription.plan_type.clone();
+
+            match conn
+                .interact(move |conn| {
+                    credit_service.grant_monthly_credits(
+                        conn,
+                        user_id_for_credits,
+                        &plan_type_for_credits,
+                    )
+                })
+                .await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))
+                .and_then(|r| r)
+            {
+                Ok(balance) => {
+                    tracing::info!(
+                        "Successfully granted monthly credits to user {}. New balance: {}",
+                        loggable_user_id(subscription.user_id),
+                        balance.balance
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to grant monthly credits for user {} ({}): {}",
+                        loggable_user_id(subscription.user_id),
+                        subscription.plan_type,
+                        e
+                    );
+                    // Don't fail the webhook if credit granting fails
+                    // The scheduler will retry later
+                }
+            }
         }
     } else {
         tracing::warn!(
