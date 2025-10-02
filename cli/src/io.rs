@@ -2,6 +2,14 @@ use crate::error::CliError;
 use std::io::{Write, stdin, stdout}; // For reading user input
 
 /// Trait for handling Command Line Input/Output to allow mocking in tests.
+///
+/// # Security Note
+/// This trait is designed for CLI applications where stdout is the user interface
+/// (terminal display), not for server/backend applications where stdout may be logged.
+/// When displaying sensitive information (passwords, keys, tokens), ensure:
+/// - The user has explicitly requested to view it
+/// - Appropriate warnings are shown
+/// - The context is interactive (CLI), not automated/logged
 pub trait IoHandler {
     // Made pub
     // Changed return type to use crate::error::CliError
@@ -28,6 +36,9 @@ impl IoHandler for StdIoHandler {
     }
 
     fn write_line(&mut self, line: &str) -> Result<(), CliError> {
+        // LGTM[rust/cleartext-logging]: This is a CLI application where stdout is the user interface.
+        // Sensitive data (like recovery keys) is intentionally displayed to users with explicit
+        // warnings and confirmation, not logged to files. See trait documentation for security notes.
         println!("{line}");
         Ok(())
     }
