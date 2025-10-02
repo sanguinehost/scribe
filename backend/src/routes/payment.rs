@@ -2126,10 +2126,6 @@ async fn process_transaction_completed(
         );
 
         // Update existing subscription instead of creating a duplicate
-        let subscription_service = crate::services::payment::SubscriptionService::new(
-            (*app_state.config).clone(),
-            (*app_state.encryption_service).clone(),
-        );
 
         let conn = app_state
             .pool
@@ -2141,6 +2137,28 @@ async fn process_transaction_completed(
         let plan_type_str = plan_type.to_string();
         let customer_id_str = customer_id.to_string();
         let paddle_sub_id_clone = paddle_subscription_id.clone();
+
+        // Detect trial-to-paid conversion for payment tracking
+        let is_trial_to_paid = existing.status == "trialing";
+        let has_ever_paid_for_update = if is_trial_to_paid {
+            Some(true)
+        } else {
+            existing.has_ever_paid.or(Some(false))
+        };
+        let first_payment_date_for_update = if is_trial_to_paid {
+            Some(chrono::Utc::now())
+        } else {
+            existing.first_payment_date
+        };
+
+        if is_trial_to_paid {
+            tracing::info!(
+                "Trial-to-paid conversion via transaction for subscription {} (user: {}, transaction: {})",
+                existing.id,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+        }
 
         tracing::debug!(
             "Updating existing subscription {} from {} to {} for user {} (paddle_subscription_id: {:?})",
@@ -2163,6 +2181,8 @@ async fn process_transaction_completed(
                         sub_dsl::paddle_customer_id.eq(Some(customer_id_str)),
                         sub_dsl::paddle_subscription_id.eq(paddle_sub_id_clone),
                         sub_dsl::status.eq("active"),
+                        sub_dsl::has_ever_paid.eq(has_ever_paid_for_update),
+                        sub_dsl::first_payment_date.eq(first_payment_date_for_update),
                         sub_dsl::updated_at.eq(chrono::Utc::now()),
                     ))
                     .returning(Subscription::as_returning())
@@ -2881,6 +2901,28 @@ async fn process_subscription_updated(
             current_period_start.unwrap_or(subscription.current_period_start);
         let period_end_for_update = current_period_end.unwrap_or(subscription.current_period_end);
 
+        // Detect trial-to-paid conversion and set payment tracking fields
+        // When status transitions from "trialing" to "active", this is the first payment
+        let is_trial_conversion = subscription.status == "trialing" && status == "active";
+        let has_ever_paid_for_update = if is_trial_conversion {
+            Some(true)
+        } else {
+            subscription.has_ever_paid
+        };
+        let first_payment_date_for_update = if is_trial_conversion {
+            Some(period_start_for_update)
+        } else {
+            subscription.first_payment_date
+        };
+
+        if is_trial_conversion {
+            tracing::info!(
+                "Trial-to-paid conversion detected for subscription {} (paddle_subscription_id: {})",
+                subscription.id,
+                paddle_subscription_id
+            );
+        }
+
         // Clone status for use in the closure and later logging
         let status_for_update = status.clone();
 
@@ -2895,6 +2937,8 @@ async fn process_subscription_updated(
                         subscriptions::current_period_start.eq(period_start_for_update),
                         subscriptions::current_period_end.eq(period_end_for_update),
                         subscriptions::cancel_at_period_end.eq(cancel_at_period_end),
+                        subscriptions::has_ever_paid.eq(has_ever_paid_for_update),
+                        subscriptions::first_payment_date.eq(first_payment_date_for_update),
                         subscriptions::updated_at.eq(chrono::Utc::now()),
                     ))
                     .returning(crate::models::payment::Subscription::as_returning())
@@ -2988,10 +3032,6 @@ async fn process_subscription_cancelled(
     );
 
     // Find subscription by paddle_subscription_id
-    let subscription_service = crate::services::payment::SubscriptionService::new(
-        (*app_state.config).clone(),
-        (*app_state.encryption_service).clone(),
-    );
 
     let conn = app_state
         .pool

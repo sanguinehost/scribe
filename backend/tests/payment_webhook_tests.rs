@@ -792,6 +792,26 @@ mod payment_webhook_tests {
             updated_sub.current_period_start > trial_end - chrono::Duration::days(1),
             "Billing period start should be updated"
         );
+        // Verify trial-to-paid conversion tracking fields are set
+        assert_eq!(
+            updated_sub.has_ever_paid,
+            Some(true),
+            "has_ever_paid should be set to true when trial converts to paid"
+        );
+        assert!(
+            updated_sub.first_payment_date.is_some(),
+            "first_payment_date should be set when trial converts to paid"
+        );
+        // first_payment_date should be set to the new billing period start
+        if let Some(first_payment) = updated_sub.first_payment_date {
+            assert!(
+                (first_payment - updated_sub.current_period_start)
+                    .num_seconds()
+                    .abs()
+                    < 2,
+                "first_payment_date should be set to current_period_start"
+            );
+        }
     }
 
     #[tokio::test]

@@ -85,6 +85,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -118,6 +124,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -151,6 +163,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -184,6 +202,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -218,6 +242,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -271,6 +301,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -331,6 +367,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -383,6 +425,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -435,6 +483,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -498,6 +552,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(true),
                 last_credit_grant: Some(Utc::now() - Duration::days(5)),
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -552,6 +612,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(true),
                 last_credit_grant: Some(Utc::now() - Duration::days(5)),
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -608,6 +674,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(true),
                 last_credit_grant: Some(Utc::now() - Duration::days(35)),
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -670,6 +742,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),      // Haven't allocated credits yet
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -767,6 +845,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(true),
                 last_credit_grant: Some(Utc::now() - Duration::days(5)),
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let sub_id = subscription.id;
@@ -840,6 +924,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -922,6 +1012,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let sub_id = trial_sub.id;
@@ -1042,6 +1138,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let sub_id = trial_sub.id;
@@ -1119,6 +1221,12 @@ mod subscription_cancellation_tests {
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
+                paddle_sync_attempted: false,
+                first_payment_date: None,
+                has_ever_paid: Some(false),
+                cancellation_date: None,
+                trial_start_date: None,
+                last_payment_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");

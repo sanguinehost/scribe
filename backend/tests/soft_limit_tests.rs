@@ -333,6 +333,12 @@ mod soft_limit_tests {
             trial_end: None,
             credits_allocated_this_period: Some(false),
             soft_limit_override: None,
+            paddle_sync_attempted: false,
+            first_payment_date: None,
+            has_ever_paid: Some(false),
+            cancellation_date: None,
+            trial_start_date: None,
+            last_payment_date: None,
             last_credit_grant: None,
         };
 
@@ -504,6 +510,12 @@ mod soft_limit_tests {
             trial_end: None,
             credits_allocated_this_period: Some(false),
             soft_limit_override: Some(500), // Custom limit
+            paddle_sync_attempted: false,
+            first_payment_date: None,
+            has_ever_paid: Some(false),
+            cancellation_date: None,
+            trial_start_date: None,
+            last_payment_date: None,
             last_credit_grant: None,
         };
 

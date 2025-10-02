@@ -72,7 +72,13 @@
 			return 'Trial expired - Back to Free Plan';
 		}
 
-		// Handle cancelled trials specifically
+		// Handle cancelled paid subscriptions (converted from trial, then cancelled)
+		const isCancelledPaid = subscriptionStore.isCancelledPaidSubscription;
+		if (isCancelledPaid) {
+			return `Subscription expires in ${daysUntilRenewal} days`;
+		}
+
+		// Handle cancelled trials specifically (never converted to paid)
 		if (isCancelledTrial) {
 			return `Trial expires in ${daysUntilRenewal} days`;
 		}
@@ -189,9 +195,13 @@
 								</p>
 								<p class="text-sm text-slate-600 dark:text-slate-300">
 									{formatDate(
-										(isTrialing || isCancelledTrial || isExpiredTrial) && subscription.trial_end
-											? subscription.trial_end
-											: subscription.current_period_end
+										// For cancelled paid subscriptions, use current_period_end
+										// For trials (active, cancelled, or expired) that never paid, use trial_end
+										subscription.has_ever_paid === true
+											? subscription.current_period_end
+											: (isTrialing || isCancelledTrial || isExpiredTrial) && subscription.trial_end
+												? subscription.trial_end
+												: subscription.current_period_end
 									)}
 								</p>
 							</div>

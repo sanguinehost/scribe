@@ -188,14 +188,17 @@ export const subscriptionStore = {
 	get isCancelledTrial(): boolean {
 		if (!_subscription) return false;
 		// A trial is cancelled if:
-		// 1. Status is pending_cancellation with active trial, OR
-		// 2. Status is expired/canceled but we still have trial_end date that hasn't passed yet
-		if (_subscription.status === 'pending_cancellation' && _subscription.trial_end) {
+		// 1. Status is pending_cancellation with active trial AND never converted to paid, OR
+		// 2. Status is canceled with trial_end that hasn't passed AND never converted to paid
+		// IMPORTANT: If has_ever_paid is true, this is a cancelled paid subscription, not a cancelled trial
+		const neverPaid = !_subscription.has_ever_paid;
+
+		if (_subscription.status === 'pending_cancellation' && _subscription.trial_end && neverPaid) {
 			const trialEnd = new Date(_subscription.trial_end);
 			const now = new Date();
 			return now < trialEnd;
 		}
-		if (_subscription.status === 'canceled' && _subscription.trial_end) {
+		if (_subscription.status === 'canceled' && _subscription.trial_end && neverPaid) {
 			const trialEnd = new Date(_subscription.trial_end);
 			const now = new Date();
 			return now < trialEnd;
@@ -207,13 +210,26 @@ export const subscriptionStore = {
 		if (!_subscription) return false;
 		// An expired trial is one where:
 		// 1. Status is 'canceled', AND
-		// 2. We have a trial_end date that has passed
-		if (_subscription.status === 'canceled' && _subscription.trial_end) {
+		// 2. We have a trial_end date that has passed, AND
+		// 3. Never converted to paid (has_ever_paid is false)
+		if (
+			_subscription.status === 'canceled' &&
+			_subscription.trial_end &&
+			!_subscription.has_ever_paid
+		) {
 			const trialEnd = new Date(_subscription.trial_end);
 			const now = new Date();
 			return now >= trialEnd; // Trial has ended
 		}
 		return false;
+	},
+
+	get isCancelledPaidSubscription(): boolean {
+		if (!_subscription) return false;
+		// A cancelled paid subscription is one where:
+		// 1. Status is 'canceled', AND
+		// 2. User has paid at least once (has_ever_paid is true)
+		return _subscription.status === 'canceled' && _subscription.has_ever_paid === true;
 	},
 
 	get dailyMessageCount(): number {
@@ -603,7 +619,13 @@ export const subscriptionStore = {
 			return 'Free Plan';
 		}
 
-		// Handle cancelled trials first
+		// Handle cancelled paid subscriptions (converted from trial, then cancelled)
+		if (subscriptionStore.isCancelledPaidSubscription) {
+			const daysLeft = subscriptionStore.daysUntilRenewal;
+			return `Subscription Cancelled (${daysLeft} days left)`;
+		}
+
+		// Handle cancelled trials (never converted to paid)
 		if (subscriptionStore.isCancelledTrial) {
 			return `Trial Cancelled (${subscriptionStore.trialDaysRemaining} days left)`;
 		}

@@ -1153,6 +1153,8 @@ export interface Subscription {
 	current_period_end: string; // ISO date
 	cancel_at_period_end?: boolean;
 	trial_end?: string; // ISO date
+	has_ever_paid?: boolean | null; // Tracks if subscription ever converted from trial to paid
+	first_payment_date?: string | null; // ISO date - when trial first converted to paid
 	created_at?: string; // ISO date
 	updated_at?: string; // ISO date
 }
