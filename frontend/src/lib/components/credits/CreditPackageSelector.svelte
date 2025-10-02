@@ -38,7 +38,7 @@
 		const price = priceCents / 100;
 		return new Intl.NumberFormat('en-US', {
 			style: 'currency',
-			currency: currency.toUpperCase()
+			currency: (currency || 'USD').toUpperCase()
 		}).format(price);
 	}
 
@@ -157,7 +157,7 @@
 							{/if}
 
 							<div class="text-xs text-muted-foreground">
-								≈ ${((pkg.price_cents / pkg.credits) * 100).toFixed(3)} per credit
+								≈ ${(pkg.price_cents / pkg.credits / 100).toFixed(3)} per credit
 							</div>
 
 							<ButtonComponent
