@@ -77,6 +77,10 @@ output "backend_secrets_list" {
     {
       name      = "PAYMENT_GRACE_PERIOD_DAYS"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:payment_grace_period_days::"
+    },
+    {
+      name      = "CREDITS_ENABLED"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CREDITS_ENABLED::"
     }
   ] : [])
 }

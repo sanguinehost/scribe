@@ -1629,13 +1629,9 @@ async fn process_transaction_completed(
         webhook_data.event_id
     );
 
-    // For transaction.completed events, the transaction data is nested under data.transaction
-    tracing::debug!("Step 1: Extracting transaction data from webhook");
-    let transaction_data = webhook_data.data.get("transaction").ok_or_else(|| {
-        tracing::error!("Missing 'transaction' field in webhook data");
-        AppError::BadRequest("Missing transaction data in webhook".to_string())
-    })?;
-    tracing::debug!("Step 1 complete: Extracted nested transaction data");
+    // Paddle sends transaction data directly in the data field (not nested under data.transaction)
+    tracing::debug!("Step 1: Using webhook data directly as transaction");
+    let transaction_data = &webhook_data.data;
 
     let transaction_id = transaction_data
         .get("id")
@@ -2060,19 +2056,30 @@ async fn process_transaction_completed(
             let package_name = credit_package.name.clone();
             let transaction_id_clone = transaction_id.clone();
 
-            conn.interact(move |conn| {
-                credit_service.add_credits(
-                    conn,
-                    user_id_for_credits,
-                    credits_to_add,
-                    "purchase",
-                    &format!("Credit package purchase: {}", package_name),
-                    Some(transaction_id_clone),
-                    None,
-                )
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+            let add_credits_result = conn
+                .interact(move |conn| {
+                    credit_service.add_credits(
+                        conn,
+                        user_id_for_credits,
+                        credits_to_add,
+                        "purchase",
+                        &format!("Credit package purchase: {}", package_name),
+                        Some(transaction_id_clone),
+                        None,
+                    )
+                })
+                .await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+            // Log error if credit addition failed
+            if let Err(e) = add_credits_result {
+                tracing::error!(
+                    "Failed to add credits for transaction {}: {:?}",
+                    transaction_id,
+                    e
+                );
+                return Err(e);
+            }
 
             tracing::info!(
                 "Successfully added {} credits to user {} from transaction {}",
