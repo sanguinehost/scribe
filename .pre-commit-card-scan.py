@@ -163,6 +163,13 @@ IGNORE_PATTERNS = [
     r'security\.rs.*credit_card',  # Security detection patterns in security.rs
     r'llm/llamacpp/security\.rs',  # LLM security pattern definitions
 
+    # Encryption test files (legitimate test data for encryption verification)
+    r'backend/tests/credit_encryption_tests\.rs',  # Credit encryption test suite
+    r'backend/tests/payment_encryption_tests\.rs',  # Payment encryption test suite
+    r'backend/tests/payment_security_tests\.rs',  # Payment security test suite
+    r'encryption_tests.*4111',  # Test card in encryption tests
+    r'sensitive_description.*4111',  # Sensitive test descriptions
+
     # Build and compiled files (timestamped data, not card numbers)
     r'"version":"[0-9]{13}"',  # Version timestamps
     r'when.*[0-9]{13}',  # Migration timestamps
