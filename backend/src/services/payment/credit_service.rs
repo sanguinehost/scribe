@@ -967,9 +967,17 @@ mod tests {
         let app = spawn_app(false, false, false).await;
         let _test_guard = TestDataGuard::new(app.db_pool.clone());
 
-        let conn = app.db_pool.get().await.unwrap();
-        let user_id = Uuid::new_v4();
+        // Create a test user to satisfy foreign key constraint
+        let test_user = crate::test_helpers::db::create_test_user(
+            &app.db_pool,
+            "test_credit_user".to_string(),
+            "password123".to_string(),
+        )
+        .await
+        .unwrap();
+        let user_id = test_user.id;
 
+        let conn = app.db_pool.get().await.unwrap();
         let credit_service = CreditService::new(app.config.clone());
 
         // Initialize credits

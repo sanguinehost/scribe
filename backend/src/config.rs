@@ -372,6 +372,10 @@ pub struct PaymentConfig {
     /// Daily usage reset time (UTC hour, 0-23)
     #[serde(default = "default_usage_reset_hour_utc")]
     pub usage_reset_hour_utc: u8,
+
+    /// Retention period for webhook events in days (for cleanup job)
+    #[serde(default = "default_webhook_retention_days")]
+    pub webhook_event_retention_days: i64,
 }
 
 #[cfg(feature = "payment")]
@@ -439,6 +443,10 @@ impl std::fmt::Debug for PaymentConfig {
             .field("max_credit_balance", &self.max_credit_balance)
             .field("usage_tracking_enabled", &self.usage_tracking_enabled)
             .field("usage_reset_hour_utc", &self.usage_reset_hour_utc)
+            .field(
+                "webhook_event_retention_days",
+                &self.webhook_event_retention_days,
+            )
             .finish()
     }
 }
@@ -472,6 +480,7 @@ impl Default for PaymentConfig {
             max_credit_balance: default_max_credit_balance(),
             usage_tracking_enabled: default_usage_tracking_enabled(),
             usage_reset_hour_utc: default_usage_reset_hour_utc(),
+            webhook_event_retention_days: default_webhook_retention_days(),
         }
     }
 }
@@ -545,6 +554,11 @@ fn default_usage_tracking_enabled() -> bool {
 #[cfg(feature = "payment")]
 fn default_usage_reset_hour_utc() -> u8 {
     0 // Reset at midnight UTC
+}
+
+#[cfg(feature = "payment")]
+fn default_webhook_retention_days() -> i64 {
+    90 // Keep webhook events for 90 days (audit/compliance)
 }
 
 impl Config {

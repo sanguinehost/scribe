@@ -17,7 +17,7 @@ use crate::{
     config::Config,
     errors::AppError,
     models::payment::{Subscription, SubscriptionStatus},
-    schema::{daily_usage_tracking, subscriptions, users},
+    schema::{daily_usage_tracking, subscriptions, users, webhook_events},
     services::{
         encryption_service::EncryptionService,
         payment::{CreditService, SubscriptionService, UsageTrackingService},
@@ -65,6 +65,7 @@ impl PaymentScheduler {
         let scheduler_for_daily = self.clone();
         let scheduler_for_monthly = self.clone();
         let scheduler_for_renewal = self.clone();
+        let scheduler_for_cleanup = self.clone();
 
         // Task 1: Daily usage reset at midnight UTC
         tokio::spawn(async move {
@@ -79,6 +80,11 @@ impl PaymentScheduler {
         // Task 3: Subscription renewal check every 30 minutes
         tokio::spawn(async move {
             scheduler_for_renewal.run_subscription_renewal_task().await;
+        });
+
+        // Task 4: Webhook event cleanup (daily)
+        tokio::spawn(async move {
+            scheduler_for_cleanup.run_webhook_cleanup_task().await;
         });
 
         info!("Payment scheduler tasks started");
@@ -446,6 +452,57 @@ impl PaymentScheduler {
                 );
             }
         }
+
+        Ok(())
+    }
+
+    /// Webhook event cleanup task - runs daily
+    async fn run_webhook_cleanup_task(&self) {
+        let mut interval = interval(Duration::from_secs(24 * 60 * 60)); // 24 hours
+
+        loop {
+            interval.tick().await;
+
+            if let Err(e) = self.cleanup_old_webhook_events().await {
+                error!("Failed to clean up webhook events: {}", e);
+            } else {
+                info!("Webhook event cleanup completed");
+            }
+        }
+    }
+
+    /// Clean up old webhook events based on retention period
+    pub async fn cleanup_old_webhook_events(&self) -> Result<(), AppError> {
+        let retention_days = self.config.payment.webhook_event_retention_days;
+        let cutoff_date = Utc::now() - chrono::Duration::days(retention_days);
+
+        info!(
+            "Starting webhook event cleanup (retention: {} days, cutoff: {})",
+            retention_days,
+            cutoff_date.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+
+        let conn = self.pool.get().await?;
+        let deleted_count = conn
+            .interact(move |conn| {
+                diesel::delete(webhook_events::table)
+                    .filter(webhook_events::created_at.lt(cutoff_date))
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| {
+                error!("Database error during webhook cleanup: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?
+            .map_err(|e| {
+                error!("Failed to delete old webhook events: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        info!(
+            "Successfully deleted {} webhook events older than {} days",
+            deleted_count, retention_days
+        );
 
         Ok(())
     }

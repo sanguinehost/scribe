@@ -1151,6 +1151,7 @@ mod tests {
             usage_tracking_enabled: false,
             usage_reset_hour_utc: 0,
             data_encryption_key: None,
+            webhook_event_retention_days: 90,
         }
     }
 

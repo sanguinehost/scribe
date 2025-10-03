@@ -891,6 +891,27 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    webhook_events (id) {
+        id -> Uuid,
+        #[max_length = 255]
+        event_id -> Varchar,
+        #[max_length = 100]
+        event_type -> Varchar,
+        #[max_length = 500]
+        paddle_signature -> Varchar,
+        #[max_length = 64]
+        payload_hash -> Varchar,
+        processed_at -> Timestamptz,
+        #[max_length = 50]
+        processing_status -> Varchar,
+        created_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(agent_context_analysis -> chat_sessions (chat_session_id));
 diesel::joinable!(agent_context_analysis -> users (user_id));
 diesel::joinable!(character_assets -> characters (character_id));
@@ -975,4 +996,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_personas,
     user_settings,
     users,
+    webhook_events,
 );

@@ -319,3 +319,32 @@ impl PaymentTransaction {
         Ok(customer_data)
     }
 }
+
+// ============================================================================
+// Webhook Event Models (for idempotency and replay protection)
+// ============================================================================
+
+/// Represents a processed webhook event for idempotency tracking
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
+#[diesel(table_name = crate::schema::webhook_events)]
+pub struct WebhookEvent {
+    pub id: Uuid,
+    pub event_id: String,
+    pub event_type: String,
+    pub paddle_signature: String,
+    pub payload_hash: String,
+    pub processed_at: DateTime<Utc>,
+    pub processing_status: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// New webhook event for insertion
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = crate::schema::webhook_events)]
+pub struct NewWebhookEvent {
+    pub event_id: String,
+    pub event_type: String,
+    pub paddle_signature: String,
+    pub payload_hash: String,
+    pub processing_status: String,
+}

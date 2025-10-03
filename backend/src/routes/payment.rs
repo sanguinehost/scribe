@@ -1569,6 +1569,98 @@ pub async fn paddle_webhook(
         webhook_data.event_id
     );
 
+    // ========================================================================
+    // IDEMPOTENCY CHECK - Prevent duplicate webhook processing
+    // ========================================================================
+    // Calculate payload hash for tamper detection
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(body.as_ref());
+    let payload_hash = hex::encode(hasher.finalize());
+
+    // Check if this event has already been processed
+    let event_id = &webhook_data.event_id;
+    let event_type_str = format!("{:?}", webhook_data.event_type);
+
+    tracing::debug!(
+        event_id = %event_id,
+        event_type = %event_type_str,
+        payload_hash = %payload_hash,
+        "Checking for duplicate webhook event"
+    );
+
+    let conn_idempotency = app_state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let event_id_clone = event_id.clone();
+    let existing_event = conn_idempotency
+        .interact(move |conn| {
+            use crate::models::payment::WebhookEvent;
+            use crate::schema::webhook_events::dsl;
+            use diesel::prelude::*;
+
+            dsl::webhook_events
+                .filter(dsl::event_id.eq(event_id_clone))
+                .select(WebhookEvent::as_select())
+                .first::<WebhookEvent>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to check for duplicate webhook: {}", e))
+        })?;
+
+    if let Some(existing) = existing_event {
+        // Event already processed - check if payload and event type match
+        if existing.payload_hash != payload_hash {
+            // Payload hash mismatch detected
+            if existing.event_type == event_type_str {
+                // Same event_type but different payload = Tampering attempt
+                tracing::warn!(
+                    event_id = %event_id,
+                    event_type = %event_type_str,
+                    expected_hash = %existing.payload_hash,
+                    received_hash = %payload_hash,
+                    "Webhook replay detected with modified payload - rejecting"
+                );
+                return Err(AppError::BadRequest(
+                    "Duplicate event_id with modified payload".to_string(),
+                ));
+            } else {
+                // Different event_type = Shouldn't happen in Paddle but handle gracefully
+                tracing::warn!(
+                    event_id = %event_id,
+                    original_event_type = %existing.event_type,
+                    new_event_type = %event_type_str,
+                    "Duplicate event_id across different event types detected (unusual but handling gracefully)"
+                );
+            }
+        }
+
+        // Return idempotent success (webhook already processed or duplicate event_id)
+        tracing::info!(
+            event_id = %event_id,
+            event_type = %event_type_str,
+            original_processed_at = %existing.processed_at,
+            payload_match = %(existing.payload_hash == payload_hash),
+            "Webhook already processed - returning idempotent success"
+        );
+
+        return Ok(Json(WebhookResponse {
+            success: true,
+            message: "Webhook already processed (idempotent)".to_string(),
+        }));
+    }
+
+    tracing::debug!(
+        event_id = %event_id,
+        "Webhook event is new - proceeding with processing"
+    );
+
     // Log webhook event to audit log (privacy-focused)
     {
         let conn = app_state
@@ -1598,6 +1690,9 @@ pub async fn paddle_webhook(
         }
     }
 
+    // Clone app_state for event recording after processing
+    let app_state_for_recording = app_state.clone();
+
     // 6. Process webhook based on event type
     match webhook_data.event_type {
         PaddleEventType::TransactionCompleted => {
@@ -1625,6 +1720,69 @@ pub async fn paddle_webhook(
     }
 
     tracing::info!("Webhook processed successfully");
+
+    // ========================================================================
+    // RECORD WEBHOOK EVENT - For idempotency tracking
+    // ========================================================================
+    // Record successful processing in webhook_events table
+    let conn_record = app_state_for_recording
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    let event_id_for_insert = event_id.clone();
+    let event_type_for_insert = event_type_str.clone();
+    let signature_for_insert = signature.to_string();
+    let payload_hash_for_insert = payload_hash.clone();
+
+    match conn_record
+        .interact(move |conn| {
+            use crate::models::payment::NewWebhookEvent;
+            use crate::schema::webhook_events;
+            use diesel::prelude::*;
+
+            let new_event = NewWebhookEvent {
+                event_id: event_id_for_insert,
+                event_type: event_type_for_insert,
+                paddle_signature: signature_for_insert,
+                payload_hash: payload_hash_for_insert,
+                processing_status: "processed".to_string(),
+            };
+
+            diesel::insert_into(webhook_events::table)
+                .values(&new_event)
+                .execute(conn)
+        })
+        .await
+    {
+        Ok(Ok(_)) => {
+            tracing::info!(
+                event_id = %event_id,
+                event_type = %event_type_str,
+                "Webhook event recorded for idempotency tracking"
+            );
+        }
+        Ok(Err(e)) => {
+            // This could fail if there's a race condition and another request
+            // already inserted the same event_id (UNIQUE constraint violation)
+            // That's OK - it means idempotency worked at the database level
+            tracing::warn!(
+                event_id = %event_id,
+                "Failed to record webhook event (likely race condition with duplicate): {}",
+                e
+            );
+            // Don't fail the request - the webhook was processed successfully
+        }
+        Err(e) => {
+            tracing::error!(
+                event_id = %event_id,
+                "Failed to interact with database for event recording: {}",
+                e
+            );
+            // Don't fail the request - the webhook was processed successfully
+        }
+    }
 
     Ok(Json(WebhookResponse {
         success: true,

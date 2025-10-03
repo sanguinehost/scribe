@@ -53,6 +53,7 @@ mod payment_integration_tests {
             usage_tracking_enabled: false,
             usage_reset_hour_utc: 0,
             data_encryption_key: env::var("PAYMENT_DATA_ENCRYPTION_KEY").ok(),
+            webhook_event_retention_days: 90,
         }
     }
 
@@ -68,6 +69,14 @@ mod payment_integration_tests {
 
     #[test]
     fn test_webhook_signature_verification_success() {
+        // Set environment variables before creating config
+        unsafe {
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
+
         let config = test_payment_config();
         let service = PaddleService::new(config);
 
@@ -78,7 +87,7 @@ mod payment_integration_tests {
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
 
-        let webhook_secret = env::var("PADDLE_WEBHOOK_SECRET")
+        let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
             .unwrap_or_else(|_| "test_webhook_secret_for_development".to_string());
 
         // Create Paddle format signature: ts=timestamp;h1=signature
@@ -438,6 +447,15 @@ mod payment_integration_tests {
 
     #[test]
     fn test_configuration_loading() {
+        // Set environment variables before creating config
+        unsafe {
+            std::env::set_var("PAYMENT_PADDLE_API_KEY", "pdl_test_api_key_for_testing");
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
+
         // Test that environment variables are loaded correctly
         let config = test_payment_config();
 
@@ -459,6 +477,155 @@ mod payment_integration_tests {
         assert!(
             !config.enforce_limits,
             "Should not enforce limits in development"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_webhook_event_cleanup() {
+        use chrono::Utc;
+        use diesel::prelude::*;
+        use scribe_backend::{
+            models::payment::{NewWebhookEvent, WebhookEvent},
+            schema::webhook_events,
+            services::payment::scheduler::PaymentScheduler,
+            test_helpers::{TestDataGuard, spawn_app},
+        };
+        use std::sync::Arc;
+
+        let app = spawn_app(false, false, false).await;
+        let _test_guard = TestDataGuard::new(app.db_pool.clone());
+
+        // Create webhook events with different ages
+        let now = Utc::now();
+        let old_event_91_days = NewWebhookEvent {
+            event_id: "evt_cleanup_test_91_days".to_string(),
+            event_type: "transaction.completed".to_string(),
+            paddle_signature: "test_signature_91".to_string(),
+            payload_hash: "hash_91".to_string(),
+            processing_status: "processed".to_string(),
+        };
+
+        let recent_event_30_days = NewWebhookEvent {
+            event_id: "evt_cleanup_test_30_days".to_string(),
+            event_type: "subscription.created".to_string(),
+            paddle_signature: "test_signature_30".to_string(),
+            payload_hash: "hash_30".to_string(),
+            processing_status: "processed".to_string(),
+        };
+
+        let today_event = NewWebhookEvent {
+            event_id: "evt_cleanup_test_today".to_string(),
+            event_type: "subscription.updated".to_string(),
+            paddle_signature: "test_signature_today".to_string(),
+            payload_hash: "hash_today".to_string(),
+            processing_status: "processed".to_string(),
+        };
+
+        // Insert events with specific created_at timestamps
+        let conn = app.db_pool.get().await.unwrap();
+        let old_event_id = old_event_91_days.event_id.clone();
+        let recent_event_id = recent_event_30_days.event_id.clone();
+        let today_event_id = today_event.event_id.clone();
+
+        // Clone for use in interact closure
+        let old_event_id_for_insert = old_event_id.clone();
+        let recent_event_id_for_insert = recent_event_id.clone();
+
+        conn.interact(move |conn| {
+            // Insert old event (91 days ago)
+            let old_timestamp = now - chrono::Duration::days(91);
+            diesel::insert_into(webhook_events::table)
+                .values(&old_event_91_days)
+                .execute(conn)
+                .unwrap();
+            diesel::update(
+                webhook_events::table.filter(webhook_events::event_id.eq(&old_event_id_for_insert)),
+            )
+            .set(webhook_events::created_at.eq(old_timestamp))
+            .execute(conn)
+            .unwrap();
+
+            // Insert recent event (30 days ago)
+            let recent_timestamp = now - chrono::Duration::days(30);
+            diesel::insert_into(webhook_events::table)
+                .values(&recent_event_30_days)
+                .execute(conn)
+                .unwrap();
+            diesel::update(
+                webhook_events::table
+                    .filter(webhook_events::event_id.eq(&recent_event_id_for_insert)),
+            )
+            .set(webhook_events::created_at.eq(recent_timestamp))
+            .execute(conn)
+            .unwrap();
+
+            // Insert today's event
+            diesel::insert_into(webhook_events::table)
+                .values(&today_event)
+                .execute(conn)
+                .unwrap();
+        })
+        .await
+        .unwrap();
+
+        // Verify all 3 events exist
+        let conn = app.db_pool.get().await.unwrap();
+        let count_before: i64 = conn
+            .interact(|conn| webhook_events::table.count().get_result(conn))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            count_before, 3,
+            "Should have 3 webhook events before cleanup"
+        );
+
+        // Create scheduler and run cleanup
+        let scheduler = Arc::new(PaymentScheduler::new(
+            app.config.clone(),
+            app.db_pool.clone(),
+        ));
+        scheduler
+            .cleanup_old_webhook_events()
+            .await
+            .expect("Cleanup should succeed");
+
+        // Verify old event deleted, recent events retained
+        let conn = app.db_pool.get().await.unwrap();
+        let remaining_events: Vec<WebhookEvent> = conn
+            .interact(move |conn| {
+                webhook_events::table
+                    .select(WebhookEvent::as_select())
+                    .load(conn)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            remaining_events.len(),
+            2,
+            "Should have 2 events remaining after cleanup"
+        );
+
+        // Verify old event was deleted
+        assert!(
+            !remaining_events.iter().any(|e| e.event_id == old_event_id),
+            "Old event (91 days) should be deleted"
+        );
+
+        // Verify recent events were retained
+        assert!(
+            remaining_events
+                .iter()
+                .any(|e| e.event_id == recent_event_id),
+            "Recent event (30 days) should be retained"
+        );
+        assert!(
+            remaining_events
+                .iter()
+                .any(|e| e.event_id == today_event_id),
+            "Today's event should be retained"
         );
     }
 }
