@@ -134,41 +134,44 @@ impl CreditService {
             return Err(AppError::BadRequest("Amount must be positive".to_string()));
         }
 
-        // Get current balance
-        let mut balance = self.get_balance(conn, user_id)?;
+        const MAX_RETRIES: u32 = 3;
 
-        // Update balance
-        let new_balance = balance.balance + amount;
+        for attempt in 0..MAX_RETRIES {
+            // Get current balance
+            let balance = self.get_balance(conn, user_id)?;
+            let current_version = balance.version;
 
-        // Check max balance limit
-        if new_balance > self.config.payment.max_credit_balance as i32 {
-            return Err(AppError::BadRequest(format!(
-                "Credit balance would exceed maximum limit of {}",
-                self.config.payment.max_credit_balance
-            )));
-        }
+            // Calculate new balance
+            let new_balance = balance.balance + amount;
 
-        // Encrypt transaction data with user DEK
-        let encrypted_data = self.encrypt_transaction_data(conn, user_id, description, metadata)?;
+            // Check max balance limit
+            if new_balance > self.config.payment.max_credit_balance as i32 {
+                return Err(AppError::BadRequest(format!(
+                    "Credit balance would exceed maximum limit of {}",
+                    self.config.payment.max_credit_balance
+                )));
+            }
 
-        // Create transaction record
-        let transaction = NewCreditTransaction {
-            id: Uuid::new_v4(),
-            user_id,
-            amount,
-            balance_after: new_balance,
-            transaction_type: transaction_type.to_string(),
-            description_encrypted: encrypted_data.description_encrypted,
-            description_nonce: encrypted_data.description_nonce,
-            metadata_encrypted: encrypted_data.metadata_encrypted,
-            metadata_nonce: encrypted_data.metadata_nonce,
-            reference_id,
-            created_at: Some(Utc::now()),
-        };
+            // Encrypt transaction data with user DEK
+            let encrypted_data =
+                self.encrypt_transaction_data(conn, user_id, description, metadata.clone())?;
 
-        // Update balance and record transaction in a single transaction
-        let result = conn.transaction::<_, AppError, _>(|conn| {
-            // Insert transaction
+            // Create transaction record
+            let transaction = NewCreditTransaction {
+                id: Uuid::new_v4(),
+                user_id,
+                amount,
+                balance_after: new_balance,
+                transaction_type: transaction_type.to_string(),
+                description_encrypted: encrypted_data.description_encrypted,
+                description_nonce: encrypted_data.description_nonce,
+                metadata_encrypted: encrypted_data.metadata_encrypted,
+                metadata_nonce: encrypted_data.metadata_nonce,
+                reference_id: reference_id.clone(),
+                created_at: Some(Utc::now()),
+            };
+
+            // Insert transaction first
             diesel::insert_into(credit_transactions::table)
                 .values(&transaction)
                 .execute(conn)
@@ -177,37 +180,77 @@ impl CreditService {
                     AppError::DatabaseQueryError(e.to_string())
                 })?;
 
-            // Update user balance
+            // Atomic update with version check (optimistic locking)
             use crate::schema::user_credits::dsl;
-            balance.balance = new_balance;
-            balance.lifetime_earned += amount;
-            balance.updated_at = Some(Utc::now());
+            let is_monthly_grant = transaction_type == "monthly_grant";
+            let rows_updated = if is_monthly_grant {
+                diesel::update(dsl::user_credits)
+                    .filter(dsl::user_id.eq(user_id))
+                    .filter(dsl::version.eq(current_version))
+                    .set((
+                        dsl::balance.eq(new_balance),
+                        dsl::lifetime_earned.eq(balance.lifetime_earned + amount),
+                        dsl::last_monthly_grant.eq(Some(Utc::now())),
+                        dsl::version.eq(current_version + 1),
+                        dsl::updated_at.eq(Some(Utc::now())),
+                    ))
+                    .execute(conn)
+            } else {
+                diesel::update(dsl::user_credits)
+                    .filter(dsl::user_id.eq(user_id))
+                    .filter(dsl::version.eq(current_version))
+                    .set((
+                        dsl::balance.eq(new_balance),
+                        dsl::lifetime_earned.eq(balance.lifetime_earned + amount),
+                        dsl::version.eq(current_version + 1),
+                        dsl::updated_at.eq(Some(Utc::now())),
+                    ))
+                    .execute(conn)
+            }
+            .map_err(|e| {
+                error!("Failed to update credit balance atomically: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
 
-            if transaction_type == "monthly_grant" {
-                balance.last_monthly_grant = Some(Utc::now());
+            if rows_updated == 1 {
+                // Success - version matched, update applied
+                let updated_balance = dsl::user_credits.find(user_id).first(conn).map_err(|e| {
+                    error!("Failed to retrieve updated balance: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+                // Log the credit addition in audit log (privacy-focused)
+                if let Err(e) = self.audit_service.log_credit_operation(
+                    conn,
+                    user_id,
+                    AuditEventType::CreditAdded,
+                    amount,
+                ) {
+                    error!("Failed to audit log credit addition: {}", e);
+                }
+
+                return Ok(updated_balance);
             }
 
-            diesel::update(dsl::user_credits.find(user_id))
-                .set(&balance)
-                .get_result(conn)
-                .map_err(|e| {
-                    error!("Failed to update credit balance: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })
-        })?;
-
-        // Log the credit addition in audit log (privacy-focused)
-        // Don't fail the transaction if audit logging fails
-        if let Err(e) = self.audit_service.log_credit_operation(
-            conn,
-            user_id,
-            AuditEventType::CreditAdded,
-            amount,
-        ) {
-            error!("Failed to audit log credit addition: {}", e);
+            // Version conflict - retry
+            if attempt < MAX_RETRIES - 1 {
+                warn!(
+                    "Version conflict on add_credits (user: {}, attempt: {}), retrying...",
+                    user_id,
+                    attempt + 1
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1) as u64));
+            }
         }
 
-        Ok(result)
+        // All retries exhausted
+        error!(
+            "Add credits failed after {} retries due to version conflicts (user: {})",
+            MAX_RETRIES, user_id
+        );
+        Err(AppError::Conflict(
+            "Credit addition failed due to concurrent modifications. Please try again.".to_string(),
+        ))
     }
 
     /// Deduct credits from user account (usage)
@@ -229,41 +272,44 @@ impl CreditService {
             return Err(AppError::BadRequest("Amount must be positive".to_string()));
         }
 
-        // Get current balance
-        let mut balance = self.get_balance(conn, user_id)?;
+        const MAX_RETRIES: u32 = 3;
 
-        // Check sufficient balance
-        if balance.balance < amount {
-            return Err(AppError::BadRequest(format!(
-                "Insufficient credits. Balance: {}, Required: {}",
-                balance.balance, amount
-            )));
-        }
+        for attempt in 0..MAX_RETRIES {
+            // Get current balance
+            let balance = self.get_balance(conn, user_id)?;
+            let current_version = balance.version;
 
-        // Update balance
-        let new_balance = balance.balance - amount;
+            // Check sufficient balance
+            if balance.balance < amount {
+                return Err(AppError::BadRequest(format!(
+                    "Insufficient credits. Balance: {}, Required: {}",
+                    balance.balance, amount
+                )));
+            }
 
-        // Encrypt transaction data with user DEK
-        let encrypted_data = self.encrypt_transaction_data(conn, user_id, description, metadata)?;
+            // Calculate new balance
+            let new_balance = balance.balance - amount;
 
-        // Create transaction record (negative amount for deduction)
-        let transaction = NewCreditTransaction {
-            id: Uuid::new_v4(),
-            user_id,
-            amount: -amount, // Negative for deductions
-            balance_after: new_balance,
-            transaction_type: "usage".to_string(),
-            description_encrypted: encrypted_data.description_encrypted,
-            description_nonce: encrypted_data.description_nonce,
-            metadata_encrypted: encrypted_data.metadata_encrypted,
-            metadata_nonce: encrypted_data.metadata_nonce,
-            reference_id: None,
-            created_at: Some(Utc::now()),
-        };
+            // Encrypt transaction data with user DEK
+            let encrypted_data =
+                self.encrypt_transaction_data(conn, user_id, description, metadata.clone())?;
 
-        // Update balance and record transaction
-        let result = conn.transaction::<_, AppError, _>(|conn| {
-            // Insert transaction
+            // Create transaction record (negative amount for deduction)
+            let transaction = NewCreditTransaction {
+                id: Uuid::new_v4(),
+                user_id,
+                amount: -amount, // Negative for deductions
+                balance_after: new_balance,
+                transaction_type: "usage".to_string(),
+                description_encrypted: encrypted_data.description_encrypted,
+                description_nonce: encrypted_data.description_nonce,
+                metadata_encrypted: encrypted_data.metadata_encrypted,
+                metadata_nonce: encrypted_data.metadata_nonce,
+                reference_id: None,
+                created_at: Some(Utc::now()),
+            };
+
+            // Insert transaction first
             diesel::insert_into(credit_transactions::table)
                 .values(&transaction)
                 .execute(conn)
@@ -272,37 +318,65 @@ impl CreditService {
                     AppError::DatabaseQueryError(e.to_string())
                 })?;
 
-            // Update user balance
+            // Atomic update with version check (optimistic locking)
             use crate::schema::user_credits::dsl;
-            balance.balance = new_balance;
-            balance.lifetime_spent += amount;
-            balance.updated_at = Some(Utc::now());
-
-            diesel::update(dsl::user_credits.find(user_id))
-                .set(&balance)
-                .get_result(conn)
+            let rows_updated = diesel::update(dsl::user_credits)
+                .filter(dsl::user_id.eq(user_id))
+                .filter(dsl::version.eq(current_version))
+                .set((
+                    dsl::balance.eq(new_balance),
+                    dsl::lifetime_spent.eq(balance.lifetime_spent + amount),
+                    dsl::version.eq(current_version + 1),
+                    dsl::updated_at.eq(Some(Utc::now())),
+                ))
+                .execute(conn)
                 .map_err(|e| {
-                    error!("Failed to update credit balance: {}", e);
+                    error!("Failed to update credit balance atomically: {}", e);
                     AppError::DatabaseQueryError(e.to_string())
-                })
-        })?;
+                })?;
 
-        // Log the credit deduction in audit log (privacy-focused)
-        // Don't fail the transaction if audit logging fails
-        if let Err(e) = self.audit_service.log_credit_operation(
-            conn,
-            user_id,
-            AuditEventType::CreditDeducted,
-            amount,
-        ) {
-            error!("Failed to audit log credit deduction: {}", e);
+            if rows_updated == 1 {
+                // Success - version matched, update applied
+                let updated_balance = dsl::user_credits.find(user_id).first(conn).map_err(|e| {
+                    error!("Failed to retrieve updated balance: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+                // Log the credit deduction in audit log (privacy-focused)
+                if let Err(e) = self.audit_service.log_credit_operation(
+                    conn,
+                    user_id,
+                    AuditEventType::CreditDeducted,
+                    amount,
+                ) {
+                    error!("Failed to audit log credit deduction: {}", e);
+                }
+
+                return Ok(updated_balance);
+            }
+
+            // Version conflict - retry
+            if attempt < MAX_RETRIES - 1 {
+                warn!(
+                    "Version conflict on deduct_credits (user: {}, attempt: {}), retrying...",
+                    user_id,
+                    attempt + 1
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1) as u64));
+            }
         }
 
-        Ok(result)
+        // All retries exhausted
+        error!(
+            "Deduct credits failed after {} retries due to version conflicts (user: {})",
+            MAX_RETRIES, user_id
+        );
+        Err(AppError::Conflict(
+            "Credit deduction failed due to concurrent modifications. Please try again."
+                .to_string(),
+        ))
     }
 
-    /// Reserve credits for a pending operation (creates a pending transaction)
-    /// Returns a reservation ID that must be used to confirm or refund
     pub fn reserve_credits(
         &self,
         conn: &mut PgConnection,
@@ -321,116 +395,158 @@ impl CreditService {
             return Err(AppError::BadRequest("Amount must be positive".to_string()));
         }
 
-        // Get current balance with a row lock to prevent concurrent modifications
-        use crate::schema::user_credits::dsl;
-        let balance_option = dsl::user_credits
-            .find(user_id)
-            .for_update() // Lock the row for this transaction
-            .first(conn)
-            .optional()
-            .map_err(|e| {
-                error!("Failed to query credit balance with lock: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
-
-        let mut balance: CreditBalance = match balance_option {
-            Some(b) => b,
-            None => {
-                // Create initial balance if not exists
-                let new_balance = NewCreditBalance {
-                    user_id,
-                    balance: 0,
-                    lifetime_earned: 0,
-                    lifetime_spent: 0,
-                    last_monthly_grant: None,
-                };
-
-                diesel::insert_into(dsl::user_credits)
-                    .values(&new_balance)
-                    .get_result::<CreditBalance>(conn)
-                    .map_err(|e| {
-                        error!("Failed to create initial credit balance: {}", e);
-                        AppError::DatabaseQueryError(e.to_string())
-                    })?
-            }
-        };
-
-        // Check sufficient balance
-        if balance.balance < amount {
-            return Err(AppError::BadRequest(format!(
-                "Insufficient credits. Balance: {}, Required: {}",
-                balance.balance, amount
-            )));
-        }
-
-        // Update balance (deduct reserved amount)
-        let new_balance = balance.balance - amount;
+        const MAX_RETRIES: u32 = 3;
         let reservation_id = Uuid::new_v4();
 
-        // Encrypt transaction data with user DEK
-        let mut metadata_with_status = metadata.unwrap_or_else(|| json!({}));
-        metadata_with_status["status"] = json!("pending");
-        metadata_with_status["reservation_id"] = json!(reservation_id.to_string());
-
-        let encrypted_data =
-            self.encrypt_transaction_data(conn, user_id, description, Some(metadata_with_status))?;
-
-        // Create pending transaction record
-        let transaction = NewCreditTransaction {
-            id: reservation_id,
-            user_id,
-            amount: -amount, // Negative for deductions
-            balance_after: new_balance,
-            transaction_type: "pending".to_string(),
-            description_encrypted: encrypted_data.description_encrypted,
-            description_nonce: encrypted_data.description_nonce,
-            metadata_encrypted: encrypted_data.metadata_encrypted,
-            metadata_nonce: encrypted_data.metadata_nonce,
-            reference_id: Some(reservation_id.to_string()),
-            created_at: Some(Utc::now()),
-        };
-
-        // Update balance and record pending transaction
-        let result = conn.transaction::<_, AppError, _>(|conn| {
-            // Insert pending transaction
-            diesel::insert_into(credit_transactions::table)
-                .values(&transaction)
-                .execute(conn)
+        for attempt in 0..MAX_RETRIES {
+            // Get current balance WITHOUT row lock (optimistic locking approach)
+            use crate::schema::user_credits::dsl;
+            let balance_option = dsl::user_credits
+                .find(user_id)
+                .first(conn)
+                .optional()
                 .map_err(|e| {
-                    error!("Failed to insert pending credit transaction: {}", e);
+                    error!("Failed to query credit balance: {}", e);
                     AppError::DatabaseQueryError(e.to_string())
                 })?;
 
-            // Update user balance
-            balance.balance = new_balance;
-            balance.updated_at = Some(Utc::now());
+            let balance: CreditBalance = match balance_option {
+                Some(b) => b,
+                None => {
+                    // Create initial balance if not exists
+                    let new_balance = NewCreditBalance {
+                        user_id,
+                        balance: 0,
+                        lifetime_earned: 0,
+                        lifetime_spent: 0,
+                        last_monthly_grant: None,
+                    };
 
-            diesel::update(dsl::user_credits.find(user_id))
-                .set(&balance)
-                .get_result(conn)
+                    diesel::insert_into(dsl::user_credits)
+                        .values(&new_balance)
+                        .get_result::<CreditBalance>(conn)
+                        .map_err(|e| {
+                            error!("Failed to create initial credit balance: {}", e);
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?
+                }
+            };
+
+            let current_version = balance.version;
+
+            // Check sufficient balance
+            if balance.balance < amount {
+                return Err(AppError::BadRequest(format!(
+                    "Insufficient credits. Balance: {}, Required: {}",
+                    balance.balance, amount
+                )));
+            }
+
+            // Calculate new balance
+            let new_balance = balance.balance - amount;
+
+            // Encrypt transaction data with user DEK
+            let mut metadata_with_status = metadata.clone().unwrap_or_else(|| json!({}));
+            metadata_with_status["status"] = json!("pending");
+            metadata_with_status["reservation_id"] = json!(reservation_id.to_string());
+
+            let encrypted_data = self.encrypt_transaction_data(
+                conn,
+                user_id,
+                description,
+                Some(metadata_with_status),
+            )?;
+
+            // Create pending transaction record
+            let transaction = NewCreditTransaction {
+                id: reservation_id,
+                user_id,
+                amount: -amount, // Negative for deductions
+                balance_after: new_balance,
+                transaction_type: "pending".to_string(),
+                description_encrypted: encrypted_data.description_encrypted,
+                description_nonce: encrypted_data.description_nonce,
+                metadata_encrypted: encrypted_data.metadata_encrypted,
+                metadata_nonce: encrypted_data.metadata_nonce,
+                reference_id: Some(reservation_id.to_string()),
+                created_at: Some(Utc::now()),
+            };
+
+            // Atomic update with version check (optimistic locking)
+            let rows_updated = diesel::update(dsl::user_credits)
+                .filter(dsl::user_id.eq(user_id))
+                .filter(dsl::version.eq(current_version))
+                .set((
+                    dsl::balance.eq(new_balance),
+                    dsl::version.eq(current_version + 1),
+                    dsl::updated_at.eq(Some(Utc::now())),
+                ))
+                .execute(conn)
                 .map_err(|e| {
-                    error!("Failed to update credit balance for reservation: {}", e);
+                    error!("Failed to update credit balance atomically: {}", e);
                     AppError::DatabaseQueryError(e.to_string())
-                })
-        })?;
+                })?;
 
-        // Log the credit reservation in audit log (privacy-focused)
-        // Don't fail the transaction if audit logging fails
-        if let Err(e) = self.audit_service.log_credit_operation(
-            conn,
-            user_id,
-            AuditEventType::CreditDeducted,
-            amount,
-        ) {
-            warn!("Failed to log credit reservation audit event: {}", e);
+            if rows_updated == 1 {
+                // Success - version matched, update applied
+                // Insert pending transaction
+                diesel::insert_into(credit_transactions::table)
+                    .values(&transaction)
+                    .execute(conn)
+                    .map_err(|e| {
+                        error!("Failed to insert pending credit transaction: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
+
+                // Get updated balance to return
+                let updated_balance = dsl::user_credits.find(user_id).first(conn).map_err(|e| {
+                    error!("Failed to retrieve updated balance: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+                // Log the credit reservation in audit log (privacy-focused)
+                // Don't fail the transaction if audit logging fails
+                if let Err(e) = self.audit_service.log_credit_operation(
+                    conn,
+                    user_id,
+                    AuditEventType::CreditDeducted,
+                    amount,
+                ) {
+                    warn!("Failed to log credit reservation audit event: {}", e);
+                }
+
+                info!(
+                    "Reserved {} credits for user {} (reservation: {}, attempt: {})",
+                    amount,
+                    user_id,
+                    reservation_id,
+                    attempt + 1
+                );
+
+                return Ok((updated_balance, reservation_id));
+            }
+
+            // Version conflict - another transaction modified the balance
+            if attempt < MAX_RETRIES - 1 {
+                warn!(
+                    "Version conflict on credit reservation (user: {}, attempt: {}), retrying...",
+                    user_id,
+                    attempt + 1
+                );
+                // Exponential backoff: 10ms, 20ms, 30ms
+                std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1) as u64));
+            }
         }
 
-        info!(
-            "Reserved {} credits for user {} (reservation: {})",
-            amount, user_id, reservation_id
+        // All retries exhausted
+        error!(
+            "Credit reservation failed after {} retries due to version conflicts (user: {})",
+            MAX_RETRIES, user_id
         );
-
-        Ok((result, reservation_id))
+        Err(AppError::Conflict(
+            "Credit reservation failed due to concurrent modifications. Please try again."
+                .to_string(),
+        ))
     }
 
     /// Confirm a credit reservation (converts pending to confirmed)

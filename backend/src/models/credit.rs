@@ -19,6 +19,9 @@ pub struct CreditBalance {
     pub last_monthly_grant: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    /// Version number for optimistic concurrency control
+    /// Incremented on each update to prevent race conditions
+    pub version: i32,
 }
 
 #[derive(Debug, Clone, Insertable)]

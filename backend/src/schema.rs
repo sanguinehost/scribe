@@ -786,6 +786,7 @@ diesel::table! {
         last_monthly_grant -> Nullable<Timestamptz>,
         created_at -> Nullable<Timestamptz>,
         updated_at -> Nullable<Timestamptz>,
+        version -> Int4,
     }
 }
 

@@ -378,4 +378,306 @@ mod payment_race_condition_tests {
         .expect("Failed to interact")
         .expect("Failed to perform isolation test");
     }
+
+    /// Test high-concurrency credit operations with 100 concurrent tasks
+    /// This verifies the system can handle realistic high-load scenarios
+    ///
+    /// With optimistic locking (version-based concurrency control):
+    /// - Each operation reads the current balance and version
+    /// - Updates only succeed if version hasn't changed
+    /// - Failed updates retry with exponential backoff (max 3 attempts)
+    /// - Exactly 20 operations should succeed (1000 / 50 = 20)
+    /// - Remaining 80 should fail with "Insufficient credits"
+    #[tokio::test]
+    async fn test_high_concurrency_credit_operations() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let user_id = Uuid::new_v4();
+        create_test_user(
+            &app.db_pool,
+            user_id,
+            "high_concurrency_test",
+            "high_concurrency@test.com",
+            None,
+        )
+        .await
+        .expect("Failed to create user");
+
+        let config = app.config.clone();
+
+        // Initialize user with 1000 credits
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact({
+            let config = config.clone();
+            move |conn| {
+                let service = CreditService::new(config.clone());
+                service.initialize_user_credits(conn, user_id)?;
+                service.add_credits(
+                    conn,
+                    user_id,
+                    1000,
+                    "high_concurrency_test",
+                    "Initial credits for high-concurrency test",
+                    None,
+                    None,
+                )
+            }
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to initialize user");
+
+        // Spawn 100 concurrent tasks attempting to reserve 50 credits each
+        // Total requested: 5000 credits
+        // Available: 1000 credits
+        //
+        // With optimistic locking:
+        // - Exactly 20 operations should succeed (1000 / 50 = 20)
+        // - Remaining 80 will fail with "Insufficient credits"
+        // - No race conditions or lost updates
+        let pool = app.db_pool.clone();
+        let mut tasks = JoinSet::new();
+
+        let successful_ops = Arc::new(AtomicU32::new(0));
+        let failed_ops = Arc::new(AtomicU32::new(0));
+
+        for i in 0..100 {
+            let pool = pool.clone();
+            let config = config.clone();
+            let successful = successful_ops.clone();
+            let failed = failed_ops.clone();
+
+            tasks.spawn(async move {
+                let conn = pool.get().await.expect("Failed to get connection");
+                let result = conn
+                    .interact(move |conn| {
+                        let service = CreditService::new(config.clone());
+                        service.reserve_credits(
+                            conn,
+                            user_id,
+                            50,
+                            &format!("High-concurrency reservation {}", i),
+                            None,
+                        )
+                    })
+                    .await
+                    .expect("Failed to interact");
+
+                match result {
+                    Ok(_) => successful.fetch_add(1, Ordering::SeqCst),
+                    Err(AppError::BadRequest(msg)) if msg.contains("Insufficient credits") => {
+                        failed.fetch_add(1, Ordering::SeqCst)
+                    }
+                    Err(AppError::Conflict(_)) => {
+                        // Optimistic locking conflict after max retries
+                        // This shouldn't happen often, but count as failed
+                        failed.fetch_add(1, Ordering::SeqCst)
+                    }
+                    Err(e) => panic!("Unexpected error: {:?}", e),
+                };
+            });
+        }
+
+        // Wait for all tasks to complete
+        while let Some(result) = tasks.join_next().await {
+            result.expect("Task panicked");
+        }
+
+        let successful_count = successful_ops.load(Ordering::SeqCst);
+        let failed_count = failed_ops.load(Ordering::SeqCst);
+
+        println!(
+            "High-concurrency test: {} succeeded, {} failed",
+            successful_count, failed_count
+        );
+
+        // Verify all operations completed
+        assert_eq!(
+            successful_count + failed_count,
+            100,
+            "All 100 operations should complete (either success or failure)"
+        );
+
+        // Verify final balance is correct (critical test for data consistency)
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let final_balance = conn
+            .interact({
+                let config = config.clone();
+                move |conn| {
+                    let service = CreditService::new(config.clone());
+                    service.get_balance(conn, user_id)
+                }
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get balance");
+
+        // With optimistic locking, we expect:
+        // - Exactly 20 successful operations (1000 / 50 = 20)
+        // - Final balance should be exactly 0
+        // - No over-spending or race conditions
+
+        println!("=== High-Concurrency Test Results ===");
+        println!("Successful operations: {}", successful_count);
+        println!("Failed operations: {}", failed_count);
+        println!("Final balance: {}", final_balance.balance);
+        println!("Expected balance: 0");
+
+        // Verify balance is exactly 0 (all available credits used, no over-spending)
+        assert_eq!(
+            final_balance.balance, 0,
+            "Final balance should be exactly 0 (1000 - 20*50 = 0), got: {}",
+            final_balance.balance
+        );
+
+        // Verify exactly 20 operations succeeded
+        assert_eq!(
+            successful_count, 20,
+            "Expected exactly 20 successful operations (1000 / 50), got: {}",
+            successful_count
+        );
+
+        // Verify exactly 80 operations failed
+        assert_eq!(
+            failed_count, 80,
+            "Expected exactly 80 failed operations (100 - 20), got: {}",
+            failed_count
+        );
+
+        println!("✅ Optimistic locking working correctly - no race conditions!");
+    }
+
+    /// Test optimistic locking retry behavior
+    /// Verifies that version conflicts trigger retries with exponential backoff
+    #[tokio::test]
+    async fn test_optimistic_locking_retry_on_version_conflict() {
+        let app = spawn_app(true, false, false).await;
+        let _guard = TestDataGuard::new(app.db_pool.clone());
+
+        let user_id = Uuid::new_v4();
+        create_test_user(&app.db_pool, user_id, "retry_test", "retry@test.com", None)
+            .await
+            .expect("Failed to create user");
+
+        let config = app.config.clone();
+
+        // Initialize user with 500 credits
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        conn.interact({
+            let config = config.clone();
+            move |conn| {
+                let service = CreditService::new(config.clone());
+                service.initialize_user_credits(conn, user_id)?;
+                service.add_credits(
+                    conn,
+                    user_id,
+                    500,
+                    "retry_test",
+                    "Initial credits for retry test",
+                    None,
+                    None,
+                )
+            }
+        })
+        .await
+        .expect("Failed to interact")
+        .expect("Failed to initialize user");
+
+        // Spawn 10 concurrent operations competing for the same credits
+        // This will cause version conflicts and trigger retries
+        let pool = app.db_pool.clone();
+        let mut tasks = JoinSet::new();
+
+        let successful_ops = Arc::new(AtomicU32::new(0));
+        let failed_ops = Arc::new(AtomicU32::new(0));
+        let conflict_ops = Arc::new(AtomicU32::new(0));
+
+        for i in 0..10 {
+            let pool = pool.clone();
+            let config = config.clone();
+            let successful = successful_ops.clone();
+            let failed = failed_ops.clone();
+            let conflicts = conflict_ops.clone();
+
+            tasks.spawn(async move {
+                let conn = pool.get().await.expect("Failed to get connection");
+                let result = conn
+                    .interact(move |conn| {
+                        let service = CreditService::new(config.clone());
+                        service.reserve_credits(
+                            conn,
+                            user_id,
+                            100,
+                            &format!("Retry test reservation {}", i),
+                            None,
+                        )
+                    })
+                    .await
+                    .expect("Failed to interact");
+
+                match result {
+                    Ok(_) => successful.fetch_add(1, Ordering::SeqCst),
+                    Err(AppError::BadRequest(msg)) if msg.contains("Insufficient credits") => {
+                        failed.fetch_add(1, Ordering::SeqCst)
+                    }
+                    Err(AppError::Conflict(_)) => {
+                        // Version conflict after max retries
+                        conflicts.fetch_add(1, Ordering::SeqCst)
+                    }
+                    Err(e) => panic!("Unexpected error: {:?}", e),
+                };
+            });
+        }
+
+        // Wait for all tasks to complete
+        while let Some(result) = tasks.join_next().await {
+            result.expect("Task panicked");
+        }
+
+        let successful_count = successful_ops.load(Ordering::SeqCst);
+        let failed_count = failed_ops.load(Ordering::SeqCst);
+        let conflict_count = conflict_ops.load(Ordering::SeqCst);
+
+        println!("=== Optimistic Locking Retry Test Results ===");
+        println!("Successful operations: {}", successful_count);
+        println!("Failed (insufficient): {}", failed_count);
+        println!("Failed (conflict): {}", conflict_count);
+
+        // Verify all operations completed
+        assert_eq!(
+            successful_count + failed_count + conflict_count,
+            10,
+            "All 10 operations should complete"
+        );
+
+        // Verify exactly 5 operations succeeded (500 / 100 = 5)
+        assert_eq!(
+            successful_count, 5,
+            "Expected exactly 5 successful operations (500 / 100), got: {}",
+            successful_count
+        );
+
+        // Verify final balance is correct
+        let conn = app.db_pool.get().await.expect("Failed to get connection");
+        let final_balance = conn
+            .interact({
+                let config = config.clone();
+                move |conn| {
+                    let service = CreditService::new(config.clone());
+                    service.get_balance(conn, user_id)
+                }
+            })
+            .await
+            .expect("Failed to interact")
+            .expect("Failed to get balance");
+
+        assert_eq!(
+            final_balance.balance, 0,
+            "Final balance should be 0 (500 - 5*100), got: {}",
+            final_balance.balance
+        );
+
+        println!("✅ Optimistic locking retries working correctly!");
+    }
 }
