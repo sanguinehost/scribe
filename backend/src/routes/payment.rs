@@ -17,6 +17,8 @@ use axum::{
     routing::{get, post},
 };
 #[cfg(feature = "payment")]
+use base64;
+#[cfg(feature = "payment")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
 use tracing::{error, warn};
@@ -200,6 +202,53 @@ pub struct PurchaseCreditsResponse {
 pub struct TransactionListQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+#[cfg(feature = "payment")]
+#[derive(Serialize)]
+pub struct PaymentTransactionResponse {
+    pub id: Uuid,
+    pub paddle_transaction_id: String,
+    pub status: String,
+    pub total_cents: i32,
+    pub currency_code: Option<String>,
+    pub customer_data: crate::models::payment::CustomerData, // DECRYPTED
+    pub items: serde_json::Value,
+    pub billed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Helper function to decrypt and convert PaymentTransaction to response DTO
+#[cfg(feature = "payment")]
+pub async fn payment_transaction_to_response(
+    transaction: crate::models::payment::PaymentTransaction,
+    encryption_service: &crate::services::encryption_service::EncryptionService,
+    encryption_key: &str,
+) -> Result<PaymentTransactionResponse, AppError> {
+    use base64::Engine;
+
+    // Decode base64 encryption key
+    let encryption_key_bytes = base64::engine::general_purpose::STANDARD
+        .decode(encryption_key)
+        .map_err(|e| AppError::ConfigurationError(format!("Invalid encryption key: {}", e)))?;
+
+    // Decrypt customer data
+    let customer_data =
+        transaction.decrypt_customer_data(encryption_service, &encryption_key_bytes)?;
+
+    Ok(PaymentTransactionResponse {
+        id: transaction.id,
+        paddle_transaction_id: transaction.paddle_transaction_id,
+        status: transaction.status,
+        total_cents: transaction.total_cents,
+        currency_code: transaction.currency_code,
+        customer_data, // Decrypted
+        items: transaction.items,
+        billed_at: transaction.billed_at,
+        completed_at: transaction.completed_at,
+        created_at: transaction.created_at,
+    })
 }
 
 /// Get current user's subscription information
@@ -1795,14 +1844,31 @@ async fn process_transaction_completed(
         // use crate::auth::session_dek::SessionDek;
         use diesel::prelude::*;
 
-        // TODO: Re-enable encryption when methods are available
-        // Get the user's DEK for encryption
-        // let user_id_for_dek = user.id.clone();
-        // let dek = app_state.auth_backend.get_dek_from_cache(&user_id_for_dek)
-        //     .ok_or_else(|| {
-        //         tracing::warn!("DEK not in cache for user {}, fetching from database", user_id_for_dek);
-        //         AppError::ValidationError("User encryption key not available".to_string())
-        //     })?;
+        // Get payment encryption key from configuration
+        // Note: We use a system-level encryption key rather than user DEK because
+        // webhooks arrive without user authentication context
+        let payment_key = app_state
+            .config
+            .payment
+            .data_encryption_key
+            .as_ref()
+            .ok_or_else(|| {
+                tracing::error!("Payment data encryption key not configured");
+                AppError::ConfigurationError(
+                    "Payment data encryption key not configured".to_string(),
+                )
+            })?;
+
+        // Decode base64 key to bytes
+        let payment_key_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, payment_key)
+                .map_err(|e| {
+                    tracing::error!("Failed to decode payment encryption key: {}", e);
+                    AppError::ConfigurationError(format!(
+                        "Invalid payment encryption key format: {}",
+                        e
+                    ))
+                })?;
 
         // Extract transaction details
         let total_cents = transaction_data
@@ -1855,32 +1921,35 @@ async fn process_transaction_completed(
             "billing_details": transaction_data.get("billing_details")
         });
 
-        // TODO: Re-enable encryption when methods are available
-        // Encrypt customer data
-        // let (customer_data_encrypted, customer_data_nonce) =
-        //     app_state.encryption_service.encrypt_with_nonce(
-        //         &serde_json::to_vec(&customer_data)
-        //             .map_err(|e| AppError::SerializationError(e.to_string()))?,
-        //         &dek.as_bytes()
-        //     ).map_err(|e| AppError::EncryptionError(e.to_string()))?;
-
-        // For now, store as plaintext (temporary until encryption methods are available)
-        let customer_data_encrypted = serde_json::to_vec(&customer_data)
+        // Serialize customer data to JSON string for encryption
+        let customer_data_json = serde_json::to_string(&customer_data)
             .map_err(|e| AppError::SerializationError(e.to_string()))?;
-        let customer_data_nonce = vec![0u8; 12]; // Placeholder nonce
 
-        // Encrypt full transaction data for debugging/reconciliation
-        // let (paddle_data_encrypted, paddle_data_nonce) =
-        //     app_state.encryption_service.encrypt_with_nonce(
-        //         &serde_json::to_vec(&transaction_data)
-        //             .map_err(|e| AppError::SerializationError(e.to_string()))?,
-        //         &dek.as_bytes()
-        //     ).map_err(|e| AppError::EncryptionError(e.to_string()))?;
+        // Encrypt customer data with AES-256-GCM
+        let (customer_data_encrypted, customer_data_nonce) = app_state
+            .encryption_service
+            .encrypt(&customer_data_json, &payment_key_bytes)?;
 
-        // For now, store as plaintext (temporary until encryption methods are available)
-        let paddle_data_encrypted = serde_json::to_vec(&transaction_data)
+        tracing::debug!(
+            transaction_id = %transaction_id,
+            encrypted_size = customer_data_encrypted.len(),
+            "Successfully encrypted customer data for transaction"
+        );
+
+        // Serialize full transaction data for encryption (for debugging/reconciliation)
+        let paddle_data_json = serde_json::to_string(&transaction_data)
             .map_err(|e| AppError::SerializationError(e.to_string()))?;
-        let paddle_data_nonce = vec![0u8; 12]; // Placeholder nonce
+
+        // Encrypt full transaction data with AES-256-GCM
+        let (paddle_data_encrypted, paddle_data_nonce) = app_state
+            .encryption_service
+            .encrypt(&paddle_data_json, &payment_key_bytes)?;
+
+        tracing::debug!(
+            transaction_id = %transaction_id,
+            encrypted_size = paddle_data_encrypted.len(),
+            "Successfully encrypted paddle transaction data"
+        );
 
         // Parse timestamps
         let billed_at = transaction_data
@@ -3445,6 +3514,136 @@ pub async fn get_credit_transactions(
     Ok(Json(decrypted_transactions))
 }
 
+/// Get user's payment transaction history
+#[cfg(feature = "payment")]
+pub async fn get_payment_transactions(
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+    Query(query): Query<TransactionListQuery>,
+) -> Result<Json<Vec<PaymentTransactionResponse>>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    // Get encryption key
+    let encryption_key = app_state
+        .config
+        .payment
+        .data_encryption_key
+        .as_ref()
+        .ok_or_else(|| {
+            AppError::ConfigurationError("Payment data encryption key not configured".to_string())
+        })?;
+
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+
+    let user_id = user.id;
+    let limit = query.limit.unwrap_or(50).min(100); // Max 100
+    let offset = query.offset.unwrap_or(0);
+
+    // Query payment transactions for user
+    let transactions = conn
+        .interact(move |conn| {
+            use crate::models::payment::PaymentTransaction;
+            use crate::schema::payment_transactions::dsl::*;
+            use diesel::prelude::*;
+
+            payment_transactions
+                .filter(user_id.eq(user_id))
+                .order(created_at.desc())
+                .limit(limit)
+                .offset(offset)
+                .load::<PaymentTransaction>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    // Decrypt and convert to response DTOs
+    let mut responses = Vec::new();
+    for transaction in transactions {
+        let response = payment_transaction_to_response(
+            transaction,
+            &app_state.encryption_service,
+            encryption_key,
+        )
+        .await?;
+        responses.push(response);
+    }
+
+    tracing::debug!(
+        transaction_count = responses.len(),
+        user_id = %loggable_user_id(user.id),
+        "Retrieved and decrypted payment transactions for user"
+    );
+
+    Ok(Json(responses))
+}
+
+/// Get a single payment transaction by ID
+#[cfg(feature = "payment")]
+pub async fn get_payment_transaction(
+    Path(transaction_id): Path<Uuid>,
+    auth_session: CurrentAuthSession,
+    State(app_state): State<AppState>,
+) -> Result<Json<PaymentTransactionResponse>, AppError> {
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    // Get encryption key
+    let encryption_key = app_state
+        .config
+        .payment
+        .data_encryption_key
+        .as_ref()
+        .ok_or_else(|| {
+            AppError::ConfigurationError("Payment data encryption key not configured".to_string())
+        })?;
+
+    let conn = app_state.pool.get().await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+
+    let user_id = user.id;
+
+    // Query transaction - ensure it belongs to the user
+    let transaction = conn
+        .interact(move |conn| {
+            use crate::models::payment::PaymentTransaction;
+            use crate::schema::payment_transactions::dsl::*;
+            use diesel::prelude::*;
+
+            payment_transactions
+                .filter(id.eq(transaction_id))
+                .filter(user_id.eq(user_id))
+                .first::<PaymentTransaction>(conn)
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => {
+                AppError::NotFound("Payment transaction not found".to_string())
+            }
+            _ => AppError::DatabaseQueryError(e.to_string()),
+        })?;
+
+    // Decrypt and convert to response
+    let response =
+        payment_transaction_to_response(transaction, &app_state.encryption_service, encryption_key)
+            .await?;
+
+    tracing::debug!(
+        transaction_id = %transaction_id,
+        user_id = %loggable_user_id(user.id),
+        "Retrieved and decrypted payment transaction"
+    );
+
+    Ok(Json(response))
+}
+
 /// Get model credit costs configuration
 #[cfg(feature = "payment")]
 pub async fn get_model_costs(
@@ -3502,6 +3701,8 @@ pub fn payment_routes() -> Router<AppState> {
             post(create_payment).layer(from_fn(credit_purchase_rate_limit_middleware)),
         ) // Rate limit payment creation
         .route("/transaction/:id/verify", get(verify_transaction)) // Transaction verification endpoint
+        .route("/transactions", get(get_payment_transactions)) // Payment transaction history
+        .route("/transaction/:id", get(get_payment_transaction)) // Get single payment transaction
         .route("/plans", get(get_plans))
         .route("/usage", get(get_usage))
         // Credit endpoints

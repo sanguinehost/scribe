@@ -284,6 +284,13 @@ pub struct PaymentConfig {
     /// Paddle webhook secret for signature verification
     pub paddle_webhook_secret: Option<String>,
 
+    /// Encryption key for payment transaction data at rest (base64 encoded 256-bit key)
+    /// CRITICAL: This key encrypts customer PII from Paddle webhooks
+    /// Generate with: openssl rand -base64 32
+    /// WARNING: Loss of this key means permanent loss of access to payment transaction customer data
+    #[serde(default)]
+    pub data_encryption_key: Option<String>,
+
     // Paddle subscription price IDs (from Secrets Manager)
     /// Paddle price ID for Basic plan - monthly billing
     pub paddle_basic_monthly_price_id: Option<String>,
@@ -380,6 +387,10 @@ impl std::fmt::Debug for PaymentConfig {
                 &self.paddle_webhook_secret.as_ref().map(|_| "[REDACTED]"),
             )
             .field(
+                "data_encryption_key",
+                &self.data_encryption_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
                 "paddle_basic_monthly_price_id",
                 &self.paddle_basic_monthly_price_id.as_deref(),
             )
@@ -438,6 +449,7 @@ impl Default for PaymentConfig {
         Self {
             paddle_api_key: None,
             paddle_webhook_secret: None,
+            data_encryption_key: None,
             paddle_basic_monthly_price_id: None,
             paddle_basic_yearly_price_id: None,
             paddle_premium_monthly_price_id: None,

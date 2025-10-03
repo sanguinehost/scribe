@@ -265,3 +265,57 @@ pub struct UpdatePaymentTransaction {
     pub paddle_data_nonce: Option<Vec<u8>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
+
+/// Decrypted customer data from payment transactions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerData {
+    pub email: String,
+    pub name: Option<JsonValue>,
+    pub billing_details: Option<JsonValue>,
+}
+
+#[cfg(feature = "payment")]
+impl PaymentTransaction {
+    /// Decrypt customer data using the payment encryption key
+    ///
+    /// # Arguments
+    /// * `encryption_service` - The encryption service for decryption
+    /// * `encryption_key_bytes` - The payment data encryption key (decoded from base64)
+    ///
+    /// # Returns
+    /// * `Ok(CustomerData)` - The decrypted customer data
+    /// * `Err(AppError)` - If decryption fails or data is missing
+    pub fn decrypt_customer_data(
+        &self,
+        encryption_service: &crate::services::encryption_service::EncryptionService,
+        encryption_key_bytes: &[u8],
+    ) -> Result<CustomerData, crate::errors::AppError> {
+        use crate::errors::AppError;
+
+        // Check if encrypted data exists
+        let customer_data_encrypted = self
+            .customer_data_encrypted
+            .as_ref()
+            .ok_or_else(|| AppError::NotFound("Customer data not found".to_string()))?;
+
+        let customer_data_nonce = self
+            .customer_data_nonce
+            .as_ref()
+            .ok_or_else(|| AppError::NotFound("Customer data nonce not found".to_string()))?;
+
+        // Decrypt the data
+        let decrypted_bytes = encryption_service.decrypt(
+            customer_data_encrypted,
+            customer_data_nonce,
+            encryption_key_bytes,
+        )?;
+
+        // Parse the decrypted JSON
+        let customer_data: CustomerData =
+            serde_json::from_slice(&decrypted_bytes).map_err(|e| {
+                AppError::SerializationError(format!("Failed to parse customer data: {}", e))
+            })?;
+
+        Ok(customer_data)
+    }
+}

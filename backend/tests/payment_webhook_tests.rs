@@ -1036,6 +1036,7 @@ mod payment_webhook_tests {
             max_credit_balance: 10000,
             usage_tracking_enabled: true,
             usage_reset_hour_utc: 0,
+            data_encryption_key: None,
         };
         let service = PaddleService::new(config);
 

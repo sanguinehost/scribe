@@ -1150,6 +1150,7 @@ mod tests {
             max_credit_balance: 10000,
             usage_tracking_enabled: false,
             usage_reset_hour_utc: 0,
+            data_encryption_key: None,
         }
     }
 
