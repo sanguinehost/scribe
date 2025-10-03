@@ -728,16 +728,18 @@ mod credit_service_tests {
             .await
             .expect("Failed to create user");
 
-        // Credits disabled by default
-        let config = app.config.clone();
-        let service = CreditService::new(config.clone());
+        // Override config to explicitly disable credits for this test
+        let mut config = (*app.config).clone();
+        config.payment.credits_enabled = false;
+        let config_arc = Arc::new(config);
+        let service = CreditService::new(config_arc.clone());
         assert!(!service.is_enabled());
 
         // Operations should fail when disabled
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let result = conn
             .interact(move |conn| {
-                let service = CreditService::new(config);
+                let service = CreditService::new(config_arc);
                 service.add_credits(conn, user_id, 100, "test", "Should fail", None, None)
             })
             .await

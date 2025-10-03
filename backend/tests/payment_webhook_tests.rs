@@ -240,31 +240,40 @@ mod payment_webhook_tests {
 
     #[tokio::test]
     async fn test_webhook_signature_with_real_paddle_format() {
+        unsafe {
+            std::env::set_var(
+                "PAYMENT_DATA_ENCRYPTION_KEY",
+                "KiPQq5EQ6mAopid3HxUC5S4uHD+qdI8nN0rkSPUDa3k=", // gitleaks:allow
+            );
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
         // Simplified but realistic Paddle webhook payload
+        // Note: Paddle sends transaction data directly in 'data', not nested under 'data.transaction'
         let payload = json!({
             "event_id": "evt_01hqmjk3n2p4r5s6t7u8v9w0x1",
             "event_type": "transaction.completed",
             "occurred_at": "2024-01-15T14:30:00.000Z",
             "notification_id": "ntf_01hqmjk3n2p4r5s6t7u8v9w0x2",
             "data": {
-                "transaction": {
-                    "id": "txn_01hqmjk3n2p4r5s6t7u8v9w0x3",
-                    "status": "completed",
-                    "customer_id": "cus_01hqmjk3n2p4r5s6t7u8v9w0x4",
-                    "currency_code": "USD",
-                    "details": {
-                        "totals": {
-                            "total": "500",
-                            "currency_code": "USD"
-                        },
-                        "line_items": [{
-                            "price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq",
-                            "quantity": 1
-                        }]
-                    }
+                "id": "txn_01hqmjk3n2p4r5s6t7u8v9w0x3",
+                "status": "completed",
+                "customer_id": "cus_01hqmjk3n2p4r5s6t7u8v9w0x4",
+                "currency_code": "USD",
+                "details": {
+                    "totals": {
+                        "total": "500",
+                        "currency_code": "USD"
+                    },
+                    "line_items": [{
+                        "price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq",
+                        "quantity": 1
+                    }]
                 },
                 "customer": {
                     "id": "cus_01hqmjk3n2p4r5s6t7u8v9w0x4",
@@ -338,6 +347,16 @@ mod payment_webhook_tests {
 
     #[tokio::test]
     async fn test_webhook_credit_allocation_via_transaction_completed() {
+        unsafe {
+            std::env::set_var(
+                "PAYMENT_DATA_ENCRYPTION_KEY",
+                "KiPQq5EQ6mAopid3HxUC5S4uHD+qdI8nN0rkSPUDa3k=", // gitleaks:allow
+            );
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
@@ -348,33 +367,31 @@ mod payment_webhook_tests {
             "occurred_at": "2024-01-15T14:30:00.000Z",
             "notification_id": "ntf_credit_purchase_001",
             "data": {
-                "transaction": {
-                    "id": "txn_credit_purchase_001",
-                    "status": "completed",
-                    "customer_id": "cus_credit_test_001",
-                    "currency_code": "USD",
-                    "details": {
+                "id": "txn_credit_purchase_001",
+                "status": "completed",
+                "customer_id": "cus_credit_test_001",
+                "currency_code": "USD",
+                "details": {
+                    "totals": {
+                        "subtotal": "1000",
+                        "total": "1000",
+                        "grand_total": "1000",
+                        "currency_code": "USD"
+                    },
+                    "line_items": [{
+                        "id": "txnitm_credit_purchase_001",
+                        "price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq", // Real 500 credit package price ID
+                        "quantity": 1,
                         "totals": {
                             "subtotal": "1000",
-                            "total": "1000",
-                            "grand_total": "1000",
-                            "currency_code": "USD"
+                            "total": "1000"
                         },
-                        "line_items": [{
-                            "id": "txnitm_credit_purchase_001",
-                            "price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq", // Real 500 credit package price ID
-                            "quantity": 1,
-                            "totals": {
-                                "subtotal": "1000",
-                                "total": "1000"
-                            },
-                            "product": {
-                                "id": "pro_01k5ejbmke0myye47nggy9c0e7",
-                                "name": "Credits_500",
-                                "description": "500 credits (Inc. tax)"
-                            }
-                        }]
-                    }
+                        "product": {
+                            "id": "pro_01k5ejbmke0myye47nggy9c0e7",
+                            "name": "Credits_500",
+                            "description": "500 credits (Inc. tax)"
+                        }
+                    }]
                 },
                 "customer": {
                     "id": "cus_credit_test_001",
@@ -864,6 +881,16 @@ mod payment_webhook_tests {
 
     #[tokio::test]
     async fn test_webhook_handles_transaction_completed_event() {
+        unsafe {
+            std::env::set_var(
+                "PAYMENT_DATA_ENCRYPTION_KEY",
+                "KiPQq5EQ6mAopid3HxUC5S4uHD+qdI8nN0rkSPUDa3k=", // gitleaks:allow
+            );
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
@@ -873,17 +900,15 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "transaction": {
-                    "id": "txn_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "subscription_id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
-                    "status": "completed",
-                    "total": "999",
-                    "currency_code": "USD",
-                    "billing_details": {
-                        "payment_method": {
-                            "type": "card"
-                        }
+                "id": "txn_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "customer_id": "cus_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "subscription_id": "sub_01h1vj2gx5jh2n3k4l5m6n7p8q",
+                "status": "completed",
+                "total": "999",
+                "currency_code": "USD",
+                "billing_details": {
+                    "payment_method": {
+                        "type": "card"
                     }
                 }
             }
@@ -1381,6 +1406,16 @@ mod payment_webhook_tests {
         use scribe_backend::schema::subscriptions;
         use uuid::Uuid;
 
+        unsafe {
+            std::env::set_var(
+                "PAYMENT_DATA_ENCRYPTION_KEY",
+                "KiPQq5EQ6mAopid3HxUC5S4uHD+qdI8nN0rkSPUDa3k=", // gitleaks:allow
+            );
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
@@ -1429,22 +1464,20 @@ mod payment_webhook_tests {
             "occurred_at": Utc::now().to_rfc3339(),
             "notification_id": "ntf_txn_sub_test_001",
             "data": {
-                "transaction": {
-                    "id": transaction_id,
-                    "status": "completed",
-                    "customer_id": paddle_customer_id,
-                    "subscription_id": paddle_subscription_id, // Subscription ID at top level
-                    "currency_code": "USD",
-                    "items": [{
-                        "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
-                        "quantity": 1
-                    }],
-                    "details": {
-                        "totals": {
-                            "total": "1000",
-                            "tax": "100",
-                            "currency_code": "USD"
-                        }
+                "id": transaction_id,
+                "status": "completed",
+                "customer_id": paddle_customer_id,
+                "subscription_id": paddle_subscription_id, // Subscription ID at top level
+                "currency_code": "USD",
+                "items": [{
+                    "price_id": "pri_01k4qbyetvn495nzv9nkqhxz02", // Basic monthly
+                    "quantity": 1
+                }],
+                "details": {
+                    "totals": {
+                        "total": "1000",
+                        "tax": "100",
+                        "currency_code": "USD"
                     }
                 },
                 "customer": {
@@ -1519,6 +1552,16 @@ mod payment_webhook_tests {
         use scribe_backend::schema::{credit_transactions, user_credits, users};
         use uuid::Uuid;
 
+        unsafe {
+            std::env::set_var(
+                "PAYMENT_DATA_ENCRYPTION_KEY",
+                "KiPQq5EQ6mAopid3HxUC5S4uHD+qdI8nN0rkSPUDa3k=", // gitleaks:allow
+            );
+            std::env::set_var(
+                "PAYMENT_PADDLE_WEBHOOK_SECRET",
+                "test_webhook_secret_for_development",
+            );
+        }
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone());
 
@@ -1564,27 +1607,25 @@ mod payment_webhook_tests {
             "event_id": event_id,
             "occurred_at": Utc::now().to_rfc3339(),
             "data": {
-                "transaction": {
-                    "id": transaction_id,
-                    "customer_id": paddle_customer_id.clone(),
-                    "status": "completed",
-                    "items": [{
-                        "price": {
-                            "id": "pri_credits_250" // Starter Pack - 250 credits
-                        },
-                        "quantity": 1
-                    }],
-                    "details": {
-                        "totals": {
-                            "total": "500", // $5.00 in cents
-                            "tax": "0",
-                            "discount": "0"
-                        }
+                "id": transaction_id,
+                "customer_id": paddle_customer_id.clone(),
+                "status": "completed",
+                "items": [{
+                    "price": {
+                        "id": "pri_01k5ej9f8281rvnzybmpxc9hpm" // Starter Pack - 250 credits (production price ID)
                     },
-                    "currency_code": "USD",
-                    "created_at": Utc::now().to_rfc3339(),
-                    "billed_at": Utc::now().to_rfc3339()
+                    "quantity": 1
+                }],
+                "details": {
+                    "totals": {
+                        "total": "500", // $5.00 in cents
+                        "tax": "0",
+                        "discount": "0"
+                    }
                 },
+                "currency_code": "USD",
+                "created_at": Utc::now().to_rfc3339(),
+                "billed_at": Utc::now().to_rfc3339(),
                 "customer": {
                     "id": paddle_customer_id.clone(),
                     "email": test_email
