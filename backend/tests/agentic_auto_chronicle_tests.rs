@@ -284,16 +284,34 @@ mod agentic_chronicle_tests {
             None, // Use default config
         );
 
+        // Simulate user opting in via dialog - create a chronicle first
+        let chronicle = chronicle_service
+            .create_chronicle(
+                user_id,
+                scribe_backend::models::chronicle::CreateChronicleRequest {
+                    name: "Alex's Adventure".to_string(),
+                    description: Some("The ongoing adventures of Alex the wizard".to_string()),
+                },
+            )
+            .await
+            .expect("Failed to create chronicle");
+
+        // Link the chronicle to the chat session (simulating the dialog opt-in flow)
+        chronicle_service
+            .link_chat_session(user_id, chat_session_id, chronicle.id)
+            .await
+            .expect("Failed to link chronicle to chat session");
+
         // Create test messages representing a new adventure starting
         let messages = create_test_messages(user_id, chat_session_id);
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
-        // Run the agentic workflow - should auto-create chronicle when no chronicle_id provided
+        // Run the agentic workflow - now WITH chronicle_id (simulating post-dialog flow)
         let result = agent_runner
             .process_narrative_event(
                 user_id,
                 chat_session_id,
-                None,
+                Some(chronicle.id), // Chronicle exists after user opted in
                 &messages,
                 &session_dek,
                 None,
@@ -303,28 +321,16 @@ mod agentic_chronicle_tests {
         // Verify the workflow succeeded
         assert!(
             result.is_ok(),
-            "Simplified chronicle workflow should succeed: {:?}",
+            "Chronicle workflow should succeed after user opt-in: {:?}",
             result.err()
         );
         let workflow_result = result.unwrap();
 
-        // Verify triage detected significance (simplified approach always returns true)
+        // Verify triage detected significance
         assert!(
             workflow_result.triage_result.is_significant,
-            "Simplified triage should always detect significant events"
+            "Triage should detect significant events"
         );
-
-        // Verify chronicle was auto-created in database
-        let chronicles = chronicle_service
-            .get_user_chronicles(user_id)
-            .await
-            .unwrap();
-
-        assert!(
-            !chronicles.is_empty(),
-            "Should have auto-created a chronicle"
-        );
-        let chronicle = &chronicles[0];
         // Chronicle name may be auto-generated with timestamp, which is acceptable for this test
         assert!(
             !chronicle.name.is_empty(),
