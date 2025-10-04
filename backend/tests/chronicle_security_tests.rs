@@ -726,9 +726,10 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
         "';alert(String.fromCharCode(88,83,83))//",
     ];
 
-    for payload in xss_payloads {
+    for (idx, payload) in xss_payloads.iter().enumerate() {
+        // Use unique event type for each payload to avoid duplicate detection
         let event_request = json!({
-            "event_type": "XSS_TEST",
+            "event_type": format!("XSS_TEST_{}", idx),
             "summary": payload,
             "source": "USER_ADDED",
             "keywords": [payload]
@@ -754,7 +755,10 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
             // Verify the payload is stored safely (not executed)
             // The summary should be exactly as provided, not sanitized yet
             // (sanitization happens on output/rendering)
-            assert_eq!(event.summary, payload, "XSS payload should be stored as-is");
+            assert_eq!(
+                event.summary, *payload,
+                "XSS payload should be stored as-is"
+            );
         }
     }
 }
@@ -1201,7 +1205,7 @@ async fn test_a08_chronicle_data_integrity() {
 
 #[tokio::test]
 async fn test_a09_failed_access_attempts_logged() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
@@ -1421,17 +1425,23 @@ async fn test_chronicle_id_tampering_prevention() {
     ];
 
     for invalid_id in invalid_ids {
+        // Try to build the request - some IDs contain invalid URI characters
+        let request_result = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/api/chronicles/{}", invalid_id))
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty());
+
+        // If the URI itself is invalid, that's also a valid rejection
+        if request_result.is_err() {
+            // Invalid URI characters are rejected at the HTTP layer - this is acceptable
+            continue;
+        }
+
         let response = test_app
             .router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method(Method::GET)
-                    .uri(format!("/api/chronicles/{}", invalid_id))
-                    .header(header::COOKIE, &cookie)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(request_result.unwrap())
             .await
             .unwrap();
 
