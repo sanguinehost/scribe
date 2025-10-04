@@ -706,13 +706,10 @@ async fn test_a03_sql_injection_in_chronicle_name() {
     );
 }
 
-// TODO: This test conflicts with the duplicate detection feature which treats
-// similar XSS payloads as duplicates. Need to either:
-// 1. Add a test-only flag to disable duplicate detection
-// 2. Refactor test to work with duplicate detection
-// 3. Test XSS handling at a different layer (unit tests for sanitization)
+/// Test that XSS payloads are stored as-is in chronicle events (not sanitized at input).
+/// Sanitization should happen on output/rendering if needed.
+/// Uses separate chronicles for each XSS payload to avoid triggering duplicate detection.
 #[tokio::test]
-#[ignore = "Conflicts with chronicle event duplicate detection"]
 async fn test_a03_xss_prevention_in_chronicle_events() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -720,11 +717,8 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
     let (cookie, _user_id) = create_authenticated_user(&test_app, "xss_test")
         .await
         .unwrap();
-    let chronicle = create_chronicle(&test_app, &cookie, "XSS Test Chronicle", None)
-        .await
-        .unwrap();
 
-    // XSS payloads
+    // XSS payloads to test
     let xss_payloads = vec![
         "<script>alert('XSS')</script>",
         "<img src=x onerror=alert('XSS')>",
@@ -734,22 +728,23 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
         "';alert(String.fromCharCode(88,83,83))//",
     ];
 
-    // Different story contexts for each XSS payload to avoid duplicate detection
-    let story_contexts = vec![
-        "The knight found a mysterious scroll in the ancient library",
-        "The merchant discovered a strange artifact in the marketplace",
-        "The wizard uncovered a forbidden spell in the tower archives",
-        "The thief stumbled upon a cryptic message in the shadows",
-        "The scholar decoded an ancient text in the monastery",
-        "The explorer unearthed a relic in the forgotten ruins",
-    ];
-
+    // Test each XSS payload in a separate chronicle to avoid duplicate detection
     for (idx, payload) in xss_payloads.iter().enumerate() {
-        // Use completely different story contexts to avoid duplicate detection
-        // while still testing XSS payload storage in keywords
+        // Create a separate chronicle for each XSS test
+        // This avoids triggering the duplicate detection system which would otherwise
+        // detect similar XSS payloads as duplicates within the same chronicle
+        let chronicle = create_chronicle(
+            &test_app,
+            &cookie,
+            &format!("XSS Test Chronicle {}", idx),
+            None,
+        )
+        .await
+        .unwrap();
+
         let event_request = json!({
-            "event_type": format!("STORY_EVENT_{}", idx),
-            "summary": story_contexts[idx],
+            "event_type": "XSS_TEST",
+            "summary": format!("Testing XSS payload: {}", payload),
             "source": "USER_ADDED",
             "keywords": [payload.to_string()]
         });
@@ -769,24 +764,25 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
             .await
             .unwrap();
 
-        if response.status() == StatusCode::CREATED {
-            let event: ChronicleEvent = parse_json_response(response).await.unwrap();
-            // Verify the XSS payload is stored safely in keywords (not executed)
-            // The keywords should contain the exact payload, not sanitized
-            // (sanitization happens on output/rendering if needed)
-            let keywords = event.get_keywords();
-            assert!(
-                keywords.contains(&payload.to_string()),
-                "XSS payload '{}' should be stored as-is in keywords, got: {:?}",
-                payload,
-                keywords
-            );
-            // Verify the summary matches the story context
-            assert_eq!(
-                event.summary, story_contexts[idx],
-                "Summary should match story context"
-            );
-        }
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "Failed to create event for XSS payload: {}",
+            payload
+        );
+
+        let event: ChronicleEvent = parse_json_response(response).await.unwrap();
+
+        // Verify the XSS payload is stored as-is in keywords (not sanitized at input)
+        // The keywords should contain the exact payload without modification
+        // (sanitization should happen on output/rendering if needed)
+        let keywords = event.get_keywords();
+        assert!(
+            keywords.contains(&payload.to_string()),
+            "XSS payload '{}' should be stored as-is in keywords, got: {:?}",
+            payload,
+            keywords
+        );
     }
 }
 
