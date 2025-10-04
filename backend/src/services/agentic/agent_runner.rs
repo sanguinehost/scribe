@@ -276,46 +276,31 @@ RULES:
             }
         }
 
-        // Auto-create chronicle if no chronicle is linked to the session
+        // Skip chronicle event creation if no chronicle is linked to the session
+        // This respects the user's choice not to enable chronicles
         let chronicle_id = match chronicle_id {
             Some(id) => id,
             None => {
                 info!(
-                    "No chronicle linked to chat session {}, auto-creating one",
+                    "No chronicle linked to chat session {}, skipping chronicle event creation",
                     chat_session_id
                 );
-
-                // Auto-create a new chronicle with timestamp-based name
-                let chronicle_name = format!(
-                    "Chronicle - {}",
-                    chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
-                );
-                let create_request = crate::models::chronicle::CreateChronicleRequest {
-                    name: chronicle_name,
-                    description: Some("Auto-created chronicle for narrative tracking".to_string()),
-                };
-
-                let new_chronicle = self
-                    .chronicle_service
-                    .create_chronicle(user_id, create_request)
-                    .await?;
-
-                info!(
-                    "Auto-created chronicle {} for user {}",
-                    new_chronicle.id, user_id
-                );
-
-                // Link the new chronicle to the chat session
-                self.chronicle_service
-                    .link_chat_session(user_id, chat_session_id, new_chronicle.id)
-                    .await?;
-
-                info!(
-                    "Linked chat session {} to auto-created chronicle {}",
-                    chat_session_id, new_chronicle.id
-                );
-
-                new_chronicle.id
+                // Return a default result indicating no chronicle processing was done
+                return Ok(NarrativeWorkflowResult {
+                    triage_result: TriageResult {
+                        is_significant: false,
+                        summary: "No chronicle linked - skipped processing".to_string(),
+                        event_type: "SKIPPED".to_string(),
+                        confidence: 0.0,
+                    },
+                    actions_taken,
+                    execution_results: vec![json!({
+                        "success": true,
+                        "skipped": true,
+                        "message": "No chronicle linked to session - skipped chronicle event creation"
+                    })],
+                    cost_estimate: 0.0,
+                });
             }
         };
 
