@@ -658,7 +658,7 @@ mod integration_tests {
             encrypted_event.event_type,
             encrypted_event_request.event_type
         );
-        assert_eq!(encrypted_event.summary, encrypted_event_request.summary); // Legacy field still has plaintext
+        assert_eq!(encrypted_event.summary, "[ENCRYPTED]"); // Placeholder replaces plaintext for security
         assert!(encrypted_event.has_encrypted_summary()); // Should have encrypted data
         assert!(encrypted_event.summary_encrypted.is_some());
         assert!(encrypted_event.summary_nonce.is_some());
