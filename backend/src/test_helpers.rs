@@ -665,6 +665,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         chronicle_id_for_search: Option<Uuid>,     // New parameter for chronicle search
         query_text: &str,
         limit: u64,
+        _session_dek: Option<&crate::auth::SessionDek>, // DEK for decryption
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         // Record the call
         self.calls

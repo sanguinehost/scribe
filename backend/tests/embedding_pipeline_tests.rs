@@ -521,6 +521,7 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
             None, // chronicle_id_for_search
             query,
             5,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -588,6 +589,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
             None,                 // chronicle_id_for_search
             "A query that finds nothing",
             5,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -703,6 +705,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             None, // chronicle_id_for_search
             "Query leading to Qdrant error",
             2,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -925,6 +928,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             None,                                // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1114,6 +1118,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1275,6 +1280,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1440,6 +1446,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1666,6 +1673,7 @@ async fn test_rag_context_injection_with_qdrant() {
             None,                    // chronicle_id_for_search
             query_text,              // query_text
             limit_per_source,        // limit_per_source
+            None,                    // No DEK for integration test
         )
         .await;
 
@@ -2113,6 +2121,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query1_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2141,6 +2150,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query2_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2169,6 +2179,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query3_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2189,6 +2200,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query4_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2217,6 +2229,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query5_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2464,6 +2477,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query1_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2492,6 +2506,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query2_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2520,6 +2535,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query3_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2540,6 +2556,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query4_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2568,6 +2585,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query5_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2594,6 +2612,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query6_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();

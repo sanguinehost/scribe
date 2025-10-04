@@ -1,5 +1,7 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
-use super::retrieval::{RetrievedChunk, RetrievedMetadata};
+use super::retrieval::{
+    RetrievedChunk, RetrievedMetadata, decrypt_chat_content, decrypt_lorebook_content,
+};
 use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
@@ -443,6 +445,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         chronicle_id_for_search: Option<Uuid>,
         query_text: &str,
         limit_per_source: u64,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         info!("Retrieving relevant chunks for query");
         let embedding_client = state.embedding_client.clone();
@@ -511,9 +514,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         match ChatMessageChunkMetadata::try_from(scored_point.payload.clone()) {
                             Ok(chat_meta) => {
                                 debug!(?chat_meta, %session_id, "Successfully parsed chat metadata (RAG)");
+                                let decrypted_text = decrypt_chat_content(&chat_meta, session_dek);
                                 combined_results.push(RetrievedChunk {
                                     score: scored_point.score,
-                                    text: chat_meta.text.clone(),
+                                    text: decrypted_text,
                                     metadata: RetrievedMetadata::Chat(chat_meta),
                                 });
                             }
@@ -615,9 +619,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                         ?lorebook_ids,
                                         "Successfully parsed lorebook metadata (RAG)"
                                     );
+                                    let decrypted_text =
+                                        decrypt_lorebook_content(&lorebook_meta, session_dek);
                                     combined_results.push(RetrievedChunk {
                                         score: scored_point.score,
-                                        text: lorebook_meta.chunk_text.clone(),
+                                        text: decrypted_text,
                                         metadata: RetrievedMetadata::Lorebook(lorebook_meta),
                                     });
                                 }

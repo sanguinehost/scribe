@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 /// Helper function to decrypt lorebook content (encryption required)
 #[allow(deprecated)]
-fn decrypt_lorebook_content(
+pub(super) fn decrypt_lorebook_content(
     metadata: &LorebookChunkMetadata,
     session_dek: Option<&SessionDek>,
 ) -> String {
@@ -46,7 +46,7 @@ fn decrypt_lorebook_content(
 
 /// Helper function to decrypt chat message content (encryption required)
 #[allow(deprecated)]
-fn decrypt_chat_content(
+pub(super) fn decrypt_chat_content(
     metadata: &ChatMessageChunkMetadata,
     session_dek: Option<&SessionDek>,
 ) -> String {

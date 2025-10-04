@@ -784,6 +784,11 @@ pub async fn get_session_data_for_generation(
         if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
             if !lorebook_ids.is_empty() {
                 info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
+                let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                    use secrecy::ExposeSecret;
+                    let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                    crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+                });
                 match state
                     .embedding_pipeline_service
                     .retrieve_relevant_chunks(
@@ -794,6 +799,7 @@ pub async fn get_session_data_for_generation(
                         None,                  // Not searching chronicles here (done separately)
                         &user_message_content, // query_text
                         rag_query_limit_per_source,
+                        session_dek_temp.as_ref(),
                     )
                     .await
                 {
@@ -811,7 +817,11 @@ pub async fn get_session_data_for_generation(
         // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
         if let Some(chronicle_id) = player_chronicle_id_from_session {
             info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
-
+            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                use secrecy::ExposeSecret;
+                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+            });
             match state
                 .embedding_pipeline_service
                 .retrieve_relevant_chunks(
@@ -821,7 +831,8 @@ pub async fn get_session_data_for_generation(
                     None,               // Not searching lorebooks here
                     Some(chronicle_id), // Search this chronicle
                     &user_message_content,
-                    10, // Limit to top 10 chronicle events
+                    10,                        // Limit to top 10 chronicle events
+                    session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
             {
@@ -840,6 +851,11 @@ pub async fn get_session_data_for_generation(
         // Retrieve Older Chat History Chunks (only if using database history)
         if frontend_history.is_none() {
             info!(%session_id, "Retrieving older chat history chunks for RAG (database mode).");
+            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                use secrecy::ExposeSecret;
+                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+            });
             match state
                 .embedding_pipeline_service
                 .retrieve_relevant_chunks(
@@ -850,6 +866,7 @@ pub async fn get_session_data_for_generation(
                     None,             // Not searching chronicles here (done separately above)
                     &user_message_content, // query_text
                     rag_query_limit_per_source,
+                    session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
             {
