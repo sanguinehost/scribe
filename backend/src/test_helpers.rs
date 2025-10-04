@@ -1445,7 +1445,13 @@ pub async fn spawn_app_with_rate_limiting_options(
 ) -> TestApp {
     ensure_tracing_initialized();
     ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
-    dotenv().ok();
+
+    // Load .env from project root (one directory up from backend/)
+    let project_root = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from(".."));
+    dotenvy::from_path(project_root.join(".env")).ok();
 
     let test_db_name_suffix = if multi_thread {
         Some(Uuid::new_v4().to_string()) // Ensure it's String for suffix
@@ -1743,7 +1749,12 @@ pub mod db {
     ///
     /// Panics if the `DATABASE_URL` environment variable is not set
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
-        dotenv().ok(); // Load .env
+        // Load .env from project root (one directory up from backend/)
+        let project_root = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::path::PathBuf::from(".."));
+        dotenvy::from_path(project_root.join(".env")).ok();
         let db_name = format!(
             "test_db_{}_{}",
             db_name_suffix.unwrap_or("default"),
