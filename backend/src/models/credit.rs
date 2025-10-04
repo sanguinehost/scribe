@@ -54,6 +54,7 @@ pub struct CreditTransaction {
     pub metadata_nonce: Option<Vec<u8>>,
     pub reference_id: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -70,6 +71,7 @@ pub struct NewCreditTransaction {
     pub metadata_nonce: Option<Vec<u8>>,
     pub reference_id: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// Decrypted version for API responses
@@ -84,6 +86,7 @@ pub struct CreditTransactionDto {
     pub metadata: Option<serde_json::Value>,
     pub reference_id: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 // ============================================================================

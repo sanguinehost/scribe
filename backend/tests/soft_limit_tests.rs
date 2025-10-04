@@ -250,6 +250,7 @@ mod soft_limit_tests {
                 cancellation_date: None,
                 trial_start_date: None,
                 last_payment_date: None,
+                grace_period_end: None,
             };
 
             use scribe_backend::schema::subscriptions::dsl;
@@ -340,6 +341,7 @@ mod soft_limit_tests {
             trial_start_date: None,
             last_payment_date: None,
             last_credit_grant: None,
+            grace_period_end: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -517,6 +519,7 @@ mod soft_limit_tests {
             trial_start_date: None,
             last_payment_date: None,
             last_credit_grant: None,
+            grace_period_end: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");

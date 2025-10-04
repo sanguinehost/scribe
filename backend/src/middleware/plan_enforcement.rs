@@ -133,7 +133,7 @@ async fn check_plan_limits(
             use crate::schema::subscriptions;
             use diesel::prelude::*;
 
-            // Get user's subscription
+            // Get user's subscription (excluding cancelled)
             let subscription = subscriptions::table
                 .filter(subscriptions::user_id.eq(user_id))
                 .filter(subscriptions::status.ne("cancelled"))
@@ -150,6 +150,35 @@ async fn check_plan_limits(
                         "Active subscription required for this operation".to_string(),
                     ),
                 ));
+            }
+
+            // Check grace period for past_due subscriptions
+            if let Some(ref sub) = subscription {
+                if sub.status == "past_due" {
+                    if let Some(grace_period_end) = sub.grace_period_end {
+                        if chrono::Utc::now() > grace_period_end {
+                            // Grace period expired, deny access
+                            return Ok::<EnforcementResult, AppError>(EnforcementResult::Block(
+                                AppError::BadRequest(
+                                    "Subscription past due - grace period expired. Please update your payment method.".to_string(),
+                                ),
+                            ));
+                        } else {
+                            // Within grace period, allow access but log warning
+                            tracing::warn!(
+                                "User {} accessing with past_due subscription (grace period ends: {})",
+                                user_id,
+                                grace_period_end
+                            );
+                        }
+                    } else {
+                        // Past due but no grace period end set - shouldn't happen, but allow for now
+                        tracing::error!(
+                            "Subscription {} is past_due but has no grace_period_end set",
+                            sub.id
+                        );
+                    }
+                }
             }
 
             // Check token limits if specified

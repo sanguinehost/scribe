@@ -395,6 +395,7 @@ diesel::table! {
         #[max_length = 255]
         reference_id -> Nullable<Varchar>,
         created_at -> Nullable<Timestamptz>,
+        expires_at -> Nullable<Timestamptz>,
     }
 }
 

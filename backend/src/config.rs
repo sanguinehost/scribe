@@ -533,7 +533,7 @@ fn default_soft_limits_enabled() -> bool {
 
 #[cfg(feature = "payment")]
 fn default_credit_expiry_days() -> u32 {
-    0 // Credits never expire by default
+    365 // Credits expire after 1 year by default
 }
 
 #[cfg(feature = "payment")]

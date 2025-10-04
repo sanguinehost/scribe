@@ -3211,6 +3211,19 @@ async fn process_subscription_updated(
         // Clone status for use in the closure and later logging
         let status_for_update = status.clone();
 
+        // Calculate grace_period_end if status is past_due
+        let grace_period_end_for_update: Option<chrono::DateTime<chrono::Utc>> =
+            if status == "past_due" {
+                let grace_period_days = app_state.config.payment.grace_period_days as i64;
+                Some(chrono::Utc::now() + chrono::Duration::days(grace_period_days))
+            } else if status == "active" {
+                // Clear grace_period_end when subscription becomes active again
+                None
+            } else {
+                // Keep existing value - we'll handle this by not updating the field
+                subscription.grace_period_end
+            };
+
         let updated_subscription = conn
             .interact(move |conn| {
                 use crate::schema::subscriptions;
@@ -3224,6 +3237,7 @@ async fn process_subscription_updated(
                         subscriptions::cancel_at_period_end.eq(cancel_at_period_end),
                         subscriptions::has_ever_paid.eq(has_ever_paid_for_update),
                         subscriptions::first_payment_date.eq(first_payment_date_for_update),
+                        subscriptions::grace_period_end.eq(grace_period_end_for_update),
                         subscriptions::updated_at.eq(chrono::Utc::now()),
                     ))
                     .returning(crate::models::payment::Subscription::as_returning())

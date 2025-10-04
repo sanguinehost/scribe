@@ -105,6 +105,7 @@ impl SubscriptionService {
             cancellation_date: None,
             trial_start_date: trial_end.map(|_| now),
             last_payment_date: None,
+            grace_period_end: None,
         };
 
         let subscription = diesel::insert_into(subscriptions::table)
@@ -643,6 +644,7 @@ impl Default for UpdateSubscription {
             credits_allocated_this_period: None,
             soft_limit_override: None,
             last_credit_grant: None,
+            grace_period_end: None,
         }
     }
 }

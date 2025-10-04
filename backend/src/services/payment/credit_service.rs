@@ -7,7 +7,7 @@ use crate::models::credit::{
 use crate::models::users::UserDbQuery;
 use crate::schema::{credit_transactions, users};
 use crate::services::payment::{AuditEventType, PaymentAuditService};
-use chrono::{Datelike, Utc};
+use chrono::{Datelike, Duration, Utc};
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -36,6 +36,13 @@ struct EncryptedTransactionData {
     description_nonce: Vec<u8>,
     metadata_encrypted: Option<Vec<u8>>,
     metadata_nonce: Option<Vec<u8>>,
+}
+
+/// Statistics from credit expiry cleanup operation
+#[derive(Debug, Clone)]
+pub struct CleanupStats {
+    pub users_affected: i32,
+    pub credits_expired: i32,
 }
 
 impl CreditService {
@@ -73,6 +80,136 @@ impl CreditService {
             Some(b) => Ok(b),
             None => self.initialize_user_credits(conn, user_id),
         }
+    }
+
+    /// Get user's available credit balance (excluding expired credits)
+    pub fn get_available_balance(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+    ) -> Result<i32, AppError> {
+        use diesel::dsl::sum;
+        use diesel::sql_types::{Integer, Nullable};
+
+        let available_balance: Option<i64> = credit_transactions::table
+            .filter(credit_transactions::user_id.eq(user_id))
+            .filter(
+                credit_transactions::expires_at
+                    .is_null()
+                    .or(credit_transactions::expires_at.gt(Utc::now())),
+            )
+            .select(sum(credit_transactions::amount))
+            .first(conn)
+            .optional()
+            .map_err(|e| {
+                error!("Failed to get available credit balance: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?
+            .flatten();
+
+        Ok(available_balance.unwrap_or(0) as i32)
+    }
+
+    /// Get user's expired credit balance
+    pub fn get_expired_balance(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+    ) -> Result<i32, AppError> {
+        use diesel::dsl::sum;
+
+        let expired_balance: Option<i64> = credit_transactions::table
+            .filter(credit_transactions::user_id.eq(user_id))
+            .filter(credit_transactions::expires_at.is_not_null())
+            .filter(credit_transactions::expires_at.le(Utc::now()))
+            .select(sum(credit_transactions::amount))
+            .first(conn)
+            .optional()
+            .map_err(|e| {
+                error!("Failed to get expired credit balance: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?
+            .flatten();
+
+        Ok(expired_balance.unwrap_or(0) as i32)
+    }
+
+    /// Cleanup expired credits for a user or all users
+    ///
+    /// Recalculates user_credits.balance to exclude expired credits.
+    /// Transaction history is preserved for audit trail.
+    ///
+    /// # Arguments
+    /// * `user_id` - If Some(user_id), cleanup for that user. If None, cleanup for all users.
+    ///
+    /// # Returns
+    /// CleanupStats with users_affected and credits_expired
+    pub fn cleanup_expired_credits(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Option<Uuid>,
+    ) -> Result<CleanupStats, AppError> {
+        use crate::schema::user_credits::dsl;
+
+        let mut users_affected = 0;
+        let mut total_credits_expired = 0;
+
+        // Get list of users to process
+        let user_ids: Vec<Uuid> = if let Some(uid) = user_id {
+            vec![uid]
+        } else {
+            dsl::user_credits
+                .select(dsl::user_id)
+                .load(conn)
+                .map_err(|e| {
+                    error!("Failed to get user list for cleanup: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?
+        };
+
+        for uid in user_ids {
+            // Calculate available balance (non-expired credits)
+            let available = self.get_available_balance(conn, uid)?;
+            let expired = self.get_expired_balance(conn, uid)?;
+
+            // Skip if no expired credits
+            if expired == 0 {
+                continue;
+            }
+
+            // Update user balance to reflect only non-expired credits
+            diesel::update(dsl::user_credits)
+                .filter(dsl::user_id.eq(uid))
+                .set(dsl::balance.eq(available))
+                .execute(conn)
+                .map_err(|e| {
+                    error!("Failed to update balance during cleanup: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+            users_affected += 1;
+            total_credits_expired += expired;
+
+            // Log cleanup action to audit trail
+            if let Err(e) = self.audit_service.log_credit_operation(
+                conn,
+                uid,
+                AuditEventType::CreditExpired,
+                expired,
+            ) {
+                warn!("Failed to log credit expiry cleanup: {}", e);
+            }
+
+            info!(
+                "Cleaned up {} expired credits for user {} (new balance: {})",
+                expired, uid, available
+            );
+        }
+
+        Ok(CleanupStats {
+            users_affected,
+            credits_expired: total_credits_expired,
+        })
     }
 
     /// Initialize credit account for new user
@@ -113,7 +250,6 @@ impl CreditService {
         Ok(result)
     }
 
-    /// Add credits to user account (purchase, grant, refund)
     pub fn add_credits(
         &self,
         conn: &mut PgConnection,
@@ -124,43 +260,63 @@ impl CreditService {
         reference_id: Option<String>,
         metadata: Option<serde_json::Value>,
     ) -> Result<CreditBalance, AppError> {
-        if !self.is_enabled() {
-            return Err(AppError::BadRequest(
-                "Credit system is not enabled".to_string(),
-            ));
-        }
+        use crate::schema::user_credits;
 
-        if amount <= 0 {
-            return Err(AppError::BadRequest("Amount must be positive".to_string()));
-        }
+        conn.transaction(|conn| {
+            // Get current balance with row-level lock
+            let mut balance = user_credits::table
+                .filter(user_credits::user_id.eq(user_id))
+                .for_update()
+                .first::<CreditBalance>(conn)
+                .map_err(|e| match e {
+                    diesel::NotFound => {
+                        AppError::NotFound("User credit balance not found".to_string())
+                    }
+                    _ => {
+                        error!("Failed to get credit balance for update: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    }
+                })?;
 
-        const MAX_RETRIES: u32 = 3;
+            // Check max balance limit (based on available credits, excluding expired)
+            let available_balance = self.get_available_balance(conn, user_id)?;
+            let max_limit = self.config.payment.max_credit_balance as i32;
 
-        for attempt in 0..MAX_RETRIES {
-            // Get current balance
-            let balance = self.get_balance(conn, user_id)?;
-            let current_version = balance.version;
+            // Cap the amount to add if it would exceed max balance
+            let amount_to_add = if available_balance + amount > max_limit {
+                max_limit - available_balance
+            } else {
+                amount
+            };
 
-            // Calculate new balance
-            let new_balance = balance.balance + amount;
-
-            // Check max balance limit
-            if new_balance > self.config.payment.max_credit_balance as i32 {
+            // If no credits can be added, return error
+            if amount_to_add <= 0 {
                 return Err(AppError::BadRequest(format!(
-                    "Credit balance would exceed maximum limit of {}",
+                    "Credit balance is at maximum limit of {}",
                     self.config.payment.max_credit_balance
                 )));
             }
+
+            // Calculate new balance (use available balance + capped amount)
+            // This effectively excludes expired credits from the balance
+            let new_balance = available_balance + amount_to_add;
 
             // Encrypt transaction data with user DEK
             let encrypted_data =
                 self.encrypt_transaction_data(conn, user_id, description, metadata.clone())?;
 
             // Create transaction record
+            let created_at = Utc::now();
+            let expires_at = if self.config.payment.credit_expiry_days > 0 {
+                Some(created_at + Duration::days(self.config.payment.credit_expiry_days as i64))
+            } else {
+                None // Credits never expire if expiry_days = 0
+            };
+
             let transaction = NewCreditTransaction {
                 id: Uuid::new_v4(),
                 user_id,
-                amount,
+                amount: amount_to_add, // Use capped amount
                 balance_after: new_balance,
                 transaction_type: transaction_type.to_string(),
                 description_encrypted: encrypted_data.description_encrypted,
@@ -168,11 +324,11 @@ impl CreditService {
                 metadata_encrypted: encrypted_data.metadata_encrypted,
                 metadata_nonce: encrypted_data.metadata_nonce,
                 reference_id: reference_id.clone(),
-                created_at: Some(Utc::now()),
+                created_at: Some(created_at),
+                expires_at,
             };
 
-            // Insert transaction first
-            diesel::insert_into(credit_transactions::table)
+            diesel::insert_into(crate::schema::credit_transactions::table)
                 .values(&transaction)
                 .execute(conn)
                 .map_err(|e| {
@@ -180,77 +336,52 @@ impl CreditService {
                     AppError::DatabaseQueryError(e.to_string())
                 })?;
 
-            // Atomic update with version check (optimistic locking)
-            use crate::schema::user_credits::dsl;
-            let is_monthly_grant = transaction_type == "monthly_grant";
-            let rows_updated = if is_monthly_grant {
-                diesel::update(dsl::user_credits)
-                    .filter(dsl::user_id.eq(user_id))
-                    .filter(dsl::version.eq(current_version))
-                    .set((
-                        dsl::balance.eq(new_balance),
-                        dsl::lifetime_earned.eq(balance.lifetime_earned + amount),
-                        dsl::last_monthly_grant.eq(Some(Utc::now())),
-                        dsl::version.eq(current_version + 1),
-                        dsl::updated_at.eq(Some(Utc::now())),
-                    ))
-                    .execute(conn)
-            } else {
-                diesel::update(dsl::user_credits)
-                    .filter(dsl::user_id.eq(user_id))
-                    .filter(dsl::version.eq(current_version))
-                    .set((
-                        dsl::balance.eq(new_balance),
-                        dsl::lifetime_earned.eq(balance.lifetime_earned + amount),
-                        dsl::version.eq(current_version + 1),
-                        dsl::updated_at.eq(Some(Utc::now())),
-                    ))
-                    .execute(conn)
-            }
-            .map_err(|e| {
-                error!("Failed to update credit balance atomically: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
-
-            if rows_updated == 1 {
-                // Success - version matched, update applied
-                let updated_balance = dsl::user_credits.find(user_id).first(conn).map_err(|e| {
-                    error!("Failed to retrieve updated balance: {}", e);
+            // Update balance (atomic with optimistic locking)
+            let rows_updated = diesel::update(user_credits::table)
+                .filter(user_credits::user_id.eq(user_id))
+                .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
+                .set((
+                    user_credits::balance.eq(new_balance),
+                    user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add), // Use capped amount
+                    user_credits::version.eq(balance.version + 1),
+                    user_credits::updated_at.eq(Utc::now()),
+                ))
+                .execute(conn)
+                .map_err(|e| {
+                    error!("Failed to update credit balance: {}", e);
                     AppError::DatabaseQueryError(e.to_string())
                 })?;
 
-                // Log the credit addition in audit log (privacy-focused)
-                if let Err(e) = self.audit_service.log_credit_operation(
-                    conn,
-                    user_id,
-                    AuditEventType::CreditAdded,
-                    amount,
-                ) {
-                    error!("Failed to audit log credit addition: {}", e);
-                }
-
-                return Ok(updated_balance);
+            if rows_updated == 0 {
+                return Err(AppError::Conflict(
+                    "Credit balance was modified by another transaction".to_string(),
+                ));
             }
 
-            // Version conflict - retry
-            if attempt < MAX_RETRIES - 1 {
-                warn!(
-                    "Version conflict on add_credits (user: {}, attempt: {}), retrying...",
-                    user_id,
-                    attempt + 1
-                );
-                std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1) as u64));
+            // Log the credit addition in audit log (privacy-focused)
+            if let Err(e) = self.audit_service.log_credit_operation(
+                conn,
+                user_id,
+                AuditEventType::CreditAdded,
+                amount_to_add, // Use capped amount
+            ) {
+                error!("Failed to audit log credit addition: {}", e);
             }
-        }
 
-        // All retries exhausted
-        error!(
-            "Add credits failed after {} retries due to version conflicts (user: {})",
-            MAX_RETRIES, user_id
-        );
-        Err(AppError::Conflict(
-            "Credit addition failed due to concurrent modifications. Please try again.".to_string(),
-        ))
+            // Update and return the balance
+            balance.balance = new_balance;
+            balance.lifetime_earned += amount_to_add; // Use capped amount
+            balance.version += 1;
+
+            debug!(
+                "Added {} credits for user {} (new balance: {})",
+                amount_to_add, // Use capped amount
+                user_id,
+                new_balance
+            );
+
+            Ok(balance)
+        })
     }
 
     /// Deduct credits from user account (usage)
@@ -279,12 +410,20 @@ impl CreditService {
             let balance = self.get_balance(conn, user_id)?;
             let current_version = balance.version;
 
-            // Check sufficient balance
-            if balance.balance < amount {
-                return Err(AppError::BadRequest(format!(
-                    "Insufficient credits. Balance: {}, Required: {}",
-                    balance.balance, amount
-                )));
+            // Check available balance (excluding expired credits)
+            let available_balance = self.get_available_balance(conn, user_id)?;
+
+            if available_balance < amount {
+                let expired_balance = self.get_expired_balance(conn, user_id)?;
+                return Err(AppError::InsufficientCredits {
+                    required: amount,
+                    available: available_balance,
+                    expired: if expired_balance > 0 {
+                        Some(expired_balance)
+                    } else {
+                        None
+                    },
+                });
             }
 
             // Calculate new balance
@@ -307,6 +446,7 @@ impl CreditService {
                 metadata_nonce: encrypted_data.metadata_nonce,
                 reference_id: None,
                 created_at: Some(Utc::now()),
+                expires_at: None, // Deductions don't have expiry
             };
 
             // Insert transaction first
@@ -470,6 +610,7 @@ impl CreditService {
                 metadata_nonce: encrypted_data.metadata_nonce,
                 reference_id: Some(reservation_id.to_string()),
                 created_at: Some(Utc::now()),
+                expires_at: None, // Reservations don't have expiry
             };
 
             // Atomic update with version check (optimistic locking)
@@ -693,6 +834,13 @@ impl CreditService {
             })),
         )?;
 
+        let created_at = Utc::now();
+        let expires_at = if self.config.payment.credit_expiry_days > 0 {
+            Some(created_at + Duration::days(self.config.payment.credit_expiry_days as i64))
+        } else {
+            None // Credits never expire if expiry_days = 0
+        };
+
         let refund_transaction = NewCreditTransaction {
             id: Uuid::new_v4(),
             user_id,
@@ -704,7 +852,8 @@ impl CreditService {
             metadata_encrypted: encrypted_data.metadata_encrypted,
             metadata_nonce: encrypted_data.metadata_nonce,
             reference_id: Some(reservation_id.to_string()),
-            created_at: Some(Utc::now()),
+            created_at: Some(created_at),
+            expires_at,
         };
 
         diesel::insert_into(credit_transactions::table)

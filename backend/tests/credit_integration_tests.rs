@@ -116,6 +116,7 @@ mod credit_integration_tests {
                     cancellation_date: None,
                     trial_start_date: None,
                     last_payment_date: None,
+                    grace_period_end: None,
                 };
 
                 use scribe_backend::schema::subscriptions::dsl;

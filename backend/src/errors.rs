@@ -251,6 +251,14 @@ pub enum AppError {
     #[error("Invalid webhook signature: {0}")]
     InvalidWebhookSignature(String),
 
+    #[cfg(feature = "payment")]
+    #[error("Insufficient credits. Required: {required}, Available: {available}, Expired: {}", .expired.map_or_else(|| "0".to_string(), |e| e.to_string()))]
+    InsufficientCredits {
+        required: i32,
+        available: i32,
+        expired: Option<i32>,
+    },
+
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationErrors),
 }

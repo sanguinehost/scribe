@@ -25,6 +25,7 @@ pub struct PaymentAuditService {
 pub enum AuditEventType {
     CreditAdded,
     CreditDeducted,
+    CreditExpired,
     SubscriptionCreated,
     SubscriptionActivated,
     SubscriptionUpdated,
@@ -40,6 +41,7 @@ impl AuditEventType {
         match self {
             Self::CreditAdded => "credit_added",
             Self::CreditDeducted => "credit_deducted",
+            Self::CreditExpired => "credit_expired",
             Self::SubscriptionCreated => "subscription_created",
             Self::SubscriptionActivated => "subscription_activated",
             Self::SubscriptionUpdated => "subscription_updated",
@@ -53,7 +55,7 @@ impl AuditEventType {
 
     fn category(&self) -> &'static str {
         match self {
-            Self::CreditAdded | Self::CreditDeducted => "credit",
+            Self::CreditAdded | Self::CreditDeducted | Self::CreditExpired => "credit",
             Self::SubscriptionCreated
             | Self::SubscriptionActivated
             | Self::SubscriptionUpdated

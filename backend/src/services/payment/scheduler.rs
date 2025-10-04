@@ -5,6 +5,7 @@
 //! - Daily usage reset at midnight UTC
 //! - Subscription renewal processing
 //! - Expired subscription cleanup
+//! - Credit expiry cleanup (daily)
 
 use chrono::{Datelike, NaiveTime, Timelike, Utc};
 use deadpool_diesel::Pool;
@@ -85,6 +86,14 @@ impl PaymentScheduler {
         // Task 4: Webhook event cleanup (daily)
         tokio::spawn(async move {
             scheduler_for_cleanup.run_webhook_cleanup_task().await;
+        });
+
+        // Task 5: Credit expiry cleanup (daily)
+        let scheduler_for_credit_cleanup = self.clone();
+        tokio::spawn(async move {
+            scheduler_for_credit_cleanup
+                .run_credit_expiry_cleanup_task()
+                .await;
         });
 
         info!("Payment scheduler tasks started");
@@ -424,10 +433,15 @@ impl PaymentScheduler {
                 );
             } else {
                 // Mark as past due during grace period
+                // Calculate grace_period_end based on current_period_end + grace_period_days
+                let grace_period_end =
+                    subscription.current_period_end + chrono::Duration::days(grace_period_days);
+
                 conn.interact(move |conn| {
                     diesel::update(subscriptions::table.find(subscription_id))
                         .set((
                             subscriptions::status.eq(SubscriptionStatus::PastDue.to_string()),
+                            subscriptions::grace_period_end.eq(Some(grace_period_end)),
                             subscriptions::updated_at.eq(Utc::now()),
                         ))
                         .execute(conn)
@@ -446,9 +460,10 @@ impl PaymentScheduler {
                 })?;
 
                 warn!(
-                    "Marked subscription {} as past due (grace period: {} days remaining)",
+                    "Marked subscription {} as past due (grace period: {} days remaining, ends: {})",
                     subscription_id,
-                    grace_period_days - days_overdue
+                    grace_period_days - days_overdue,
+                    grace_period_end
                 );
             }
         }
@@ -502,6 +517,52 @@ impl PaymentScheduler {
         info!(
             "Successfully deleted {} webhook events older than {} days",
             deleted_count, retention_days
+        );
+
+        Ok(())
+    }
+
+    /// Credit expiry cleanup task - runs daily
+    async fn run_credit_expiry_cleanup_task(&self) {
+        let mut interval = interval(Duration::from_secs(24 * 60 * 60)); // 24 hours
+
+        loop {
+            interval.tick().await;
+
+            if let Err(e) = self.cleanup_expired_credits().await {
+                error!("Failed to clean up expired credits: {}", e);
+            } else {
+                info!("Credit expiry cleanup completed");
+            }
+        }
+    }
+
+    /// Clean up expired credits for all users
+    pub async fn cleanup_expired_credits(&self) -> Result<(), AppError> {
+        info!(
+            "Starting credit expiry cleanup at {}",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        );
+
+        let conn = self.pool.get().await?;
+        let credit_service = self.credit_service.clone();
+
+        // Cleanup expired credits for all users
+        let stats = conn
+            .interact(move |conn| credit_service.cleanup_expired_credits(conn, None))
+            .await
+            .map_err(|e| {
+                error!("Database error during credit expiry cleanup: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?
+            .map_err(|e| {
+                error!("Failed to cleanup expired credits: {}", e);
+                e
+            })?;
+
+        info!(
+            "Successfully cleaned up {} expired credits for {} users",
+            stats.credits_expired, stats.users_affected
         );
 
         Ok(())
