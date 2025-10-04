@@ -92,7 +92,9 @@ use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
+    GovernorLayer,
+    governor::GovernorConfigBuilder,
+    key_extractor::{GlobalKeyExtractor, SmartIpKeyExtractor},
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_sessions::{
@@ -1658,7 +1660,8 @@ pub async fn spawn_app_with_rate_limiting_options(
                 GovernorConfigBuilder::default()
                     .per_second(rate_limit_per_second)
                     .burst_size(rate_limit_burst_size)
-                    .key_extractor(SmartIpKeyExtractor)
+                    // Use GlobalKeyExtractor for tests (doesn't require ConnectInfo)
+                    .key_extractor(GlobalKeyExtractor)
                     .finish()
                     .unwrap(),
             ),
@@ -1677,7 +1680,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         )
         .layer(axum::middleware::from_fn(test_request_logging_middleware));
 
-    let router_for_test_app = router_for_server.clone(); // Clone before moving
+    let router_for_test_app = router_for_server.clone(); // Clone for test app
 
     tokio::spawn(async move {
         axum::serve(
