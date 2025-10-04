@@ -878,7 +878,7 @@ async fn update_chat_settings_success_full() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     let request = Request::builder()
@@ -972,7 +972,7 @@ async fn update_chat_settings_success_partial() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     let request = Request::builder()
@@ -1087,7 +1087,7 @@ async fn update_chat_settings_forbidden() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     // User2 tries to update user1's chat session settings
@@ -1157,7 +1157,7 @@ async fn update_chat_settings_not_found() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     let request = Request::builder()
@@ -1214,7 +1214,7 @@ async fn update_chat_settings_unauthorized() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     let request = Request::builder()
@@ -1352,7 +1352,7 @@ async fn debug_system_prompt_encryption_decryption() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     println!(
@@ -1588,7 +1588,7 @@ async fn test_actual_api_route_for_system_prompt() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     println!(
@@ -1738,7 +1738,7 @@ async fn test_chat_chronicle_association() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     let update_request = Request::builder()
@@ -1807,7 +1807,7 @@ async fn test_chat_chronicle_association() {
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
-        prompt_template_id: Some("default".to_string()),
+        prompt_template_id: Some("neutral_roleplay".to_string()),
     };
 
     let remove_request = Request::builder()
