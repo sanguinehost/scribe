@@ -1,9 +1,13 @@
 use crate::auth::{self, AuthError, recover_user_password_with_phrase}; // Added recover_user_password_with_phrase
 use crate::errors::AppError;
+use crate::logging::security_events::SecurityEvent;
+use crate::metrics::SECURITY_METRICS;
 use crate::models::auth::{
     AuthResponse, ChangePasswordPayload, LoginPayload, RecoverPasswordPayload, RegisterPayload,
 }; // Added RecoverPasswordPayload
 use crate::models::email_verification::VerifyEmailPayload;
+use crate::privacy::ip_anonymization::extract_and_anonymize_ip;
+use crate::privacy::logging::loggable_user_id;
 use crate::state::{AppState, DbPool}; // Added DbPool import
 use axum::Json;
 use axum::extract::State;
@@ -200,9 +204,13 @@ pub async fn login_handler(
     State(state): State<AppState>, // Added AppState
     mut auth_session: CurrentAuthSession,
     session: Session,                  // tower_sessions session, extracted directly
+    headers: axum::http::HeaderMap,    // For IP extraction
     Json(payload): Json<LoginPayload>, // Use LoginPayload
 ) -> Result<Response, AppError> {
-    info!("Attempting login");
+    // SECURITY MONITORING: Extract client IP for auth tracking
+    let client_ip = extract_and_anonymize_ip(&headers);
+
+    info!(client_ip = %client_ip, "Attempting login");
 
     // Use axum-login's authenticate method which will call our AuthBackend::authenticate
     // This ensures the DEK is properly cached
@@ -252,6 +260,10 @@ pub async fn login_handler(
                 ));
             }
             info!(user_id = %user_id, "Login successful via authenticate");
+
+            // SECURITY MONITORING: Record successful authentication
+            let user_hash = loggable_user_id(user_id);
+            SECURITY_METRICS.record_auth_success(&user_hash.to_string(), &client_ip);
 
             // Log the session ID AFTER auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
@@ -331,7 +343,25 @@ pub async fn login_handler(
         }
         Ok(None) => {
             // Authentication failed - wrong credentials
-            warn!("Login failed: Wrong credentials.");
+            warn!(client_ip = %client_ip, "Login failed: Wrong credentials.");
+
+            // SECURITY MONITORING: Record authentication failure
+            // Use "unknown" for user hash since we don't know the user ID on failed login
+            SECURITY_METRICS.record_auth_failure("unknown", &client_ip);
+
+            // Log security event for potential credential stuffing detection
+            let security_event = SecurityEvent::AuthFailure {
+                timestamp: chrono::Utc::now(),
+                user_hash: "unknown".to_string(),
+                ip_address: client_ip.clone(),
+                failure_reason: "wrong_credentials".to_string(),
+                attempt_count: 1,
+            };
+
+            if let Ok(json) = security_event.to_json() {
+                tracing::warn!(event_type = "security_event", severity = "P2", "{}", json);
+            }
+
             Err(AppError::Unauthorized(
                 "Invalid identifier or password".to_string(),
             ))
@@ -344,7 +374,11 @@ pub async fn login_handler(
                     // Extract our AuthError from the axum_login wrapper
                     match auth_err {
                         AuthError::WrongCredentials | AuthError::UserNotFound => {
-                            warn!("Login failed: Wrong credentials.");
+                            warn!(client_ip = %client_ip, "Login failed: Wrong credentials.");
+
+                            // SECURITY MONITORING: Record authentication failure
+                            SECURITY_METRICS.record_auth_failure("unknown", &client_ip);
+
                             Err(AppError::Unauthorized(
                                 "Invalid identifier or password".to_string(),
                             ))

@@ -7,6 +7,12 @@
 //! - Plan information retrieval
 
 #[cfg(feature = "payment")]
+use crate::logging::security_events::SecurityEvent;
+#[cfg(feature = "payment")]
+use crate::metrics::SECURITY_METRICS;
+#[cfg(feature = "payment")]
+use crate::privacy::ip_anonymization::extract_and_anonymize_ip;
+#[cfg(feature = "payment")]
 use crate::privacy::logging::{loggable_user_id, sanitize_json_value, sanitize_personal_info};
 #[cfg(feature = "payment")]
 use axum::{
@@ -1502,7 +1508,16 @@ pub async fn paddle_webhook(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<WebhookResponse>, AppError> {
-    tracing::info!("Received Paddle webhook");
+    // Start timing webhook processing (for security monitoring)
+    let start_time = std::time::Instant::now();
+
+    // Extract and anonymize client IP for security monitoring
+    let client_ip = extract_and_anonymize_ip(&headers);
+
+    tracing::info!(
+        client_ip = %client_ip,
+        "Received Paddle webhook"
+    );
 
     // Log webhook metadata for debugging (payload contains PII and is not logged)
     tracing::debug!("Received webhook payload of {} bytes", body.len());
@@ -1527,7 +1542,29 @@ pub async fn paddle_webhook(
 
     // 3. Verify webhook signature
     if let Err(e) = paddle_service.verify_webhook_signature(&body, signature) {
-        tracing::error!("WEBHOOK ERROR: Signature verification failed: {}", e);
+        tracing::error!(
+            client_ip = %client_ip,
+            "WEBHOOK ERROR: Signature verification failed: {}", e
+        );
+
+        // SECURITY MONITORING: Record webhook signature failure
+        SECURITY_METRICS.record_webhook_signature_failure();
+
+        // Log security event for attack detection
+        let security_event = SecurityEvent::WebhookSignatureFailure {
+            timestamp: chrono::Utc::now(),
+            ip_address: client_ip.clone(),
+            endpoint: "/webhook/paddle".to_string(),
+            user_agent: headers
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+        };
+
+        if let Ok(json) = security_event.to_json() {
+            tracing::warn!(event_type = "security_event", severity = "P1", "{}", json);
+        }
+
         return Err(e);
     }
     tracing::info!("Webhook signature verified successfully");
@@ -1788,6 +1825,16 @@ pub async fn paddle_webhook(
             // Don't fail the request - the webhook was processed successfully
         }
     }
+
+    // SECURITY MONITORING: Record webhook processing time
+    let processing_duration = start_time.elapsed().as_secs_f64();
+    SECURITY_METRICS.record_webhook_processing_time(processing_duration);
+
+    tracing::info!(
+        client_ip = %client_ip,
+        processing_duration_seconds = processing_duration,
+        "Webhook processed successfully"
+    );
 
     Ok(Json(WebhookResponse {
         success: true,

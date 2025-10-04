@@ -145,6 +145,10 @@ tower_governor = "0.5.0"
 hmac = { version = "0.12", optional = true }  # For webhook signature verification
 subtle = { version = "2.5", optional = true }  # For constant-time comparisons
 
+# Security monitoring and metrics
+prometheus = "0.13"  # For security metrics collection
+lazy_static = "1.4"  # For global metrics registry
+
 [dev-dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests, ADDED tokio feature
 axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Mirror main deps features

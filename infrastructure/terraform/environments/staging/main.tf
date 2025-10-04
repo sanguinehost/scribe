@@ -247,6 +247,18 @@ module "monitoring" {
   enable_cloudtrail    = var.enable_cloudtrail
   cloudtrail_bucket_name = var.cloudtrail_bucket_name
 
+  # Security monitoring (Task 10)
+  backend_log_group_name      = module.ecs.backend_log_group_name
+  enable_security_alarms      = var.enable_security_alarms
+  alert_email_p0              = var.alert_email_p0
+  alert_email_p1              = var.alert_email_p1
+  alert_email_p2              = var.alert_email_p2
+  alert_email_p3              = var.alert_email_p3
+  enable_kinesis_firehose     = var.enable_kinesis_firehose
+  firehose_buffer_size_mb     = var.firehose_buffer_size_mb
+  firehose_buffer_interval_seconds = var.firehose_buffer_interval_seconds
+  siem_log_retention_days     = var.siem_log_retention_days
+
   depends_on = [module.ecs, module.alb, module.rds]
 }
 

@@ -3,6 +3,7 @@ use std::fmt;
 use uuid::Uuid;
 
 pub mod examples;
+pub mod ip_anonymization;
 pub mod logging;
 pub mod middleware;
 

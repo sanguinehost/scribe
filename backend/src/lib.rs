@@ -5,6 +5,7 @@ pub mod crypto;
 pub mod errors;
 pub mod llm;
 pub mod logging;
+pub mod metrics;
 pub mod middleware;
 pub mod models;
 pub mod privacy;

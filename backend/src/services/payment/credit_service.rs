@@ -1,10 +1,12 @@
 use crate::config::Config;
 use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;
+use crate::metrics::SECURITY_METRICS;
 use crate::models::credit::{
     CreditBalance, CreditTransaction, NewCreditBalance, NewCreditTransaction,
 };
 use crate::models::users::UserDbQuery;
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::{credit_transactions, users};
 use crate::services::payment::{AuditEventType, PaymentAuditService};
 use chrono::{Datelike, Duration, Utc};
@@ -368,6 +370,14 @@ impl CreditService {
                 error!("Failed to audit log credit addition: {}", e);
             }
 
+            // SECURITY MONITORING: Record credit operation for anomaly detection
+            let user_hash = loggable_user_id(user_id);
+            SECURITY_METRICS.record_credit_operation(
+                &user_hash.to_string(),
+                "add",
+                amount_to_add as f64,
+            );
+
             // Update and return the balance
             balance.balance = new_balance;
             balance.lifetime_earned += amount_to_add; // Use capped amount
@@ -491,6 +501,14 @@ impl CreditService {
                 ) {
                     error!("Failed to audit log credit deduction: {}", e);
                 }
+
+                // SECURITY MONITORING: Record credit deduction for anomaly detection
+                let user_hash = loggable_user_id(user_id);
+                SECURITY_METRICS.record_credit_operation(
+                    &user_hash.to_string(),
+                    "deduct",
+                    amount as f64,
+                );
 
                 return Ok(updated_balance);
             }
