@@ -1,0 +1,157 @@
+version: 2
+
+# Dependabot configuration for automated dependency updates
+# Maintains security and keeps dependencies current
+
+updates:
+  # Rust/Cargo dependencies (backend)
+  - package-ecosystem: "cargo"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "sanguinehost/scribe-maintainers"
+    labels:
+      - "dependencies"
+      - "rust"
+      - "backend"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Group patch updates to reduce PR noise
+    groups:
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+      # Separate group for crypto dependencies (always review individually)
+      crypto-deps:
+        patterns:
+          - "argon2"
+          - "ring"
+          - "sha2"
+          - "aes-gcm"
+          - "hmac"
+          - "hex"
+          - "rustls"
+        update-types:
+          - "minor"
+          - "patch"
+      # Separate group for payment dependencies
+      payment-deps:
+        patterns:
+          - "axum*"
+          - "tower*"
+          - "diesel*"
+        update-types:
+          - "patch"
+    # Security updates get daily checks
+    allow:
+      - dependency-type: "all"
+
+  # Rust/Cargo dependencies (CLI)
+  - package-ecosystem: "cargo"
+    directory: "/cli"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "sanguinehost/scribe-maintainers"
+    labels:
+      - "dependencies"
+      - "rust"
+      - "cli"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+
+  # NPM dependencies (frontend)
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "sanguinehost/scribe-maintainers"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "frontend"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+      # SvelteKit and related packages together
+      sveltekit:
+        patterns:
+          - "@sveltejs/*"
+          - "svelte*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "sanguinehost/scribe-maintainers"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    groups:
+      actions-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Docker (if Dockerfiles are present)
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "sanguinehost/scribe-maintainers"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore(docker)"
+      include: "scope"

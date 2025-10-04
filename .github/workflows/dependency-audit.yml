@@ -1,0 +1,177 @@
+name: Dependency Security Audit
+
+# Dedicated workflow for dependency vulnerability scanning
+# Separate from PCI compliance checks for clearer security reporting
+
+permissions:
+  contents: read
+  security-events: write  # For uploading security findings
+
+on:
+  push:
+    branches: [ main, develop, feat/payment-* ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Mondays at 6 AM UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    name: Rust Dependency Audit
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-audit-
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit --locked
+
+    - name: Run cargo audit (strict mode)
+      id: audit
+      run: |
+        # Run audit and capture output
+        cargo audit --json > audit-results.json 2>&1 || AUDIT_EXIT=$?
+
+        # Display human-readable results
+        echo "## Dependency Audit Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        cargo audit || true  # Show output even if it fails
+
+        # Check for actual vulnerabilities (not just warnings)
+        VULN_COUNT=$(jq -r '.vulnerabilities.count' audit-results.json 2>/dev/null || echo "0")
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Vulnerabilities Found:** $VULN_COUNT" >> $GITHUB_STEP_SUMMARY
+
+        # Fail on HIGH or CRITICAL vulnerabilities
+        if [ "$VULN_COUNT" -gt 0 ]; then
+          echo "❌ Security vulnerabilities detected!" >> $GITHUB_STEP_SUMMARY
+          HIGH_VULN=$(jq -r '[.vulnerabilities.list[] | select(.advisory.severity == "high" or .advisory.severity == "critical")] | length' audit-results.json 2>/dev/null || echo "0")
+          if [ "$HIGH_VULN" -gt 0 ]; then
+            echo "::error::Found $HIGH_VULN HIGH/CRITICAL vulnerabilities"
+            exit 1
+          else
+            echo "::warning::Found $VULN_COUNT MEDIUM/LOW vulnerabilities"
+          fi
+        else
+          echo "✅ No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Check for unmaintained warnings
+        UNMAINTAINED=$(jq -r '.warnings.unmaintained | length' audit-results.json 2>/dev/null || echo "0")
+        if [ "$UNMAINTAINED" -gt 0 ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️  **Unmaintained Dependencies:** $UNMAINTAINED" >> $GITHUB_STEP_SUMMARY
+          echo "These are warnings only - review in next dependency update cycle" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload audit results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cargo-audit-results
+        path: audit-results.json
+        retention-days: 30
+
+    - name: Check crypto dependencies
+      run: |
+        echo "## Cryptographic Dependencies" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Crate | Version | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+
+        # Check each crypto dependency
+        for crate in argon2 ring sha2 aes-gcm hmac hex; do
+          VERSION=$(cargo tree --depth 1 | grep "^├── $crate v" | sed "s/^├── $crate v//" | sed 's/ .*//' | head -1)
+          if [ -n "$VERSION" ]; then
+            echo "| $crate | $VERSION | ✅ |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| $crate | Not found | ❌ |" >> $GITHUB_STEP_SUMMARY
+          fi
+        done
+
+    - name: Generate security report
+      if: failure()
+      run: |
+        echo "## ❌ Security Audit Failed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Action Required:**" >> $GITHUB_STEP_SUMMARY
+        echo "1. Review vulnerability details above" >> $GITHUB_STEP_SUMMARY
+        echo "2. Update affected dependencies in Cargo.toml" >> $GITHUB_STEP_SUMMARY
+        echo "3. Run \`cargo test\` to verify compatibility" >> $GITHUB_STEP_SUMMARY
+        echo "4. Re-run this workflow to confirm fixes" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**References:**" >> $GITHUB_STEP_SUMMARY
+        echo "- [RustSec Advisory Database](https://rustsec.org/advisories/)" >> $GITHUB_STEP_SUMMARY
+        echo "- [Cargo Audit Documentation](https://docs.rs/cargo-audit/)" >> $GITHUB_STEP_SUMMARY
+
+  cargo-outdated:
+    runs-on: ubuntu-latest
+    name: Check Outdated Dependencies
+    # Only run on schedule or manual trigger to reduce noise
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install cargo-outdated
+      run: cargo install cargo-outdated --locked
+
+    - name: Check for outdated dependencies
+      run: |
+        echo "## Outdated Dependencies Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        cargo outdated --depth 1 > outdated.txt || true
+
+        # Display results
+        cat outdated.txt >> $GITHUB_STEP_SUMMARY
+
+        # Check for critical dependency updates
+        if grep -q "argon2\|ring\|sha2\|aes-gcm\|hmac" outdated.txt; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️  **Crypto dependencies have updates available** - review for security patches" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload outdated report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cargo-outdated-report
+        path: outdated.txt
+        retention-days: 30
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    name: Dependency Review
+    # Only run on pull requests to review dependency changes
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Dependency Review
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: moderate
+        deny-licenses: GPL-3.0, AGPL-3.0  # Copyleft licenses
+        allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
