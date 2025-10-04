@@ -1,3 +1,5 @@
+#![cfg(feature = "payment")]
+
 use diesel::prelude::*;
 /// Credit Transaction Encryption Test Suite
 ///
