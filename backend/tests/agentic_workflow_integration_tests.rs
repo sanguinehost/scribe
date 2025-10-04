@@ -336,10 +336,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 
     assert!(extraction_result.success, "Extraction should be successful");
     assert_eq!(extraction_result.mode_used, ExtractionMode::AgenticOnly);
-    assert!(
-        extraction_result.duration_ms > 0,
-        "Should have measurable duration"
-    );
+    // Note: duration_ms can be 0 with mocked AI calls that complete in microseconds
     assert!(
         extraction_result.ai_calls_made > 0,
         "Should have made AI calls"

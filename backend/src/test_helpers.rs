@@ -69,7 +69,7 @@ use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
 use diesel_migrations::{EmbeddedMigrations, embed_migrations};
-use dotenvy::dotenv; // Removed var
+// Removed var
 use futures::TryStreamExt;
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
@@ -92,9 +92,7 @@ use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_governor::{
-    GovernorLayer,
-    governor::GovernorConfigBuilder,
-    key_extractor::{GlobalKeyExtractor, SmartIpKeyExtractor},
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_sessions::{
@@ -1732,7 +1730,7 @@ pub mod db {
     use deadpool_diesel::postgres::{
         Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
     };
-    use dotenvy::dotenv; // For .env file loading
+    // For .env file loading
     use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
     // Ensure RegisterPayload is imported
     use super::{
