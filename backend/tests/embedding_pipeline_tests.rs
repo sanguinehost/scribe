@@ -623,7 +623,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         encryption_service_for_test_5.clone(),
     ));
     let tokenizer_service_for_test_5 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_5 = Arc::new(HybridTokenCounter::new_local_only(
@@ -734,7 +734,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         encryption_service_for_test_6.clone(),
     ));
     let tokenizer_service_for_test_6 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_6 = Arc::new(HybridTokenCounter::new_local_only(
@@ -959,7 +959,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         encryption_service_for_test_7.clone(),
     ));
     let tokenizer_service_for_test_7 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_7 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1149,7 +1149,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         encryption_service_for_test_8.clone(),
     ));
     let tokenizer_service_for_test_8 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_8 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1311,7 +1311,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         encryption_service_for_test_9.clone(),
     ));
     let tokenizer_service_for_test_9 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_9 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1550,7 +1550,7 @@ async fn test_rag_context_injection_with_qdrant() {
         encryption_service_for_test_10.clone(),
     ));
     let tokenizer_service_for_test_10 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_10 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1927,7 +1927,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         encryption_service.clone(),
     ));
     let tokenizer_service = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
@@ -2282,7 +2282,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         encryption_service.clone(),
     ));
     let tokenizer_service = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));

@@ -460,7 +460,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
     );
     let tokenizer_service_for_test =
         scribe_backend::services::tokenizer_service::TokenizerService::new(
-            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+            "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
         )
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(

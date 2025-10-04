@@ -12,6 +12,7 @@ use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
 /// Helper function to decrypt lorebook content (encryption required)
+#[allow(deprecated)]
 fn decrypt_lorebook_content(
     metadata: &LorebookChunkMetadata,
     session_dek: Option<&SessionDek>,
@@ -39,11 +40,12 @@ fn decrypt_lorebook_content(
         }
     }
 
-    // No encrypted content available
+    // No encrypted content available - encryption is required
     "[no encrypted content]".to_string()
 }
 
 /// Helper function to decrypt chat message content (encryption required)
+#[allow(deprecated)]
 fn decrypt_chat_content(
     metadata: &ChatMessageChunkMetadata,
     session_dek: Option<&SessionDek>,
@@ -71,7 +73,7 @@ fn decrypt_chat_content(
         }
     }
 
-    // No encrypted content available
+    // No encrypted content available - encryption is required
     "[no encrypted content]".to_string()
 }
 

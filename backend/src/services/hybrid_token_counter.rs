@@ -68,7 +68,7 @@ impl HybridTokenCounter {
     pub fn new_api_only(api_client: GeminiTokenClient, default_model: impl Into<String>) -> Self {
         // Still need a tokenizer for fallback
         let tokenizer = TokenizerService::new(
-            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+            "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
         )
         .expect("Failed to create tokenizer for fallback");
 
@@ -401,9 +401,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn get_test_model_path() -> PathBuf {
-        PathBuf::from(
-            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-        )
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model")
     }
 
     #[test]

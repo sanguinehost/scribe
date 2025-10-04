@@ -1412,7 +1412,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     );
     let tokenizer_service_for_test =
         scribe_backend::services::tokenizer_service::TokenizerService::new(
-            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+            "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
         )
         .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test = Arc::new(

@@ -429,9 +429,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn get_test_model_path() -> PathBuf {
-        PathBuf::from(
-            "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-        )
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model")
     }
 
     fn get_test_image_path() -> PathBuf {
