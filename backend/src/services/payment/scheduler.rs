@@ -96,6 +96,14 @@ impl PaymentScheduler {
                 .await;
         });
 
+        // Task 6: Scheduled plan changes (daily)
+        let scheduler_for_plan_changes = self.clone();
+        tokio::spawn(async move {
+            scheduler_for_plan_changes
+                .run_scheduled_plan_changes_task()
+                .await;
+        });
+
         info!("Payment scheduler tasks started");
     }
 
@@ -564,6 +572,142 @@ impl PaymentScheduler {
             "Successfully cleaned up {} expired credits for {} users",
             stats.credits_expired, stats.users_affected
         );
+
+        Ok(())
+    }
+
+    /// Scheduled plan changes task - runs daily
+    async fn run_scheduled_plan_changes_task(&self) {
+        let mut interval = interval(Duration::from_secs(24 * 60 * 60)); // 24 hours
+
+        loop {
+            interval.tick().await;
+
+            if let Err(e) = self.apply_scheduled_plan_changes().await {
+                error!("Failed to apply scheduled plan changes: {}", e);
+            } else {
+                info!("Scheduled plan changes check completed");
+            }
+        }
+    }
+
+    /// Apply scheduled plan changes that are due
+    pub async fn apply_scheduled_plan_changes(&self) -> Result<(), AppError> {
+        use crate::services::payment::audit_service::{AuditEventType, PaymentAuditService};
+
+        info!(
+            "Checking for scheduled plan changes at {}",
+            Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        );
+
+        let conn = self.pool.get().await?;
+
+        // Get all subscriptions with scheduled changes that are due
+        let subscriptions_with_changes = conn
+            .interact(move |conn| {
+                subscriptions::table
+                    .filter(subscriptions::scheduled_plan_change.is_not_null())
+                    .filter(subscriptions::scheduled_change_date.le(Utc::now()))
+                    .select(Subscription::as_select())
+                    .load::<Subscription>(conn)
+            })
+            .await
+            .map_err(|e| {
+                error!(
+                    "Failed to fetch subscriptions with scheduled changes: {}",
+                    e
+                );
+                AppError::DatabaseQueryError(e.to_string())
+            })?
+            .map_err(|e| {
+                error!("Failed to query subscriptions: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        if subscriptions_with_changes.is_empty() {
+            info!("No scheduled plan changes due");
+            return Ok(());
+        }
+
+        info!(
+            "Processing {} scheduled plan changes",
+            subscriptions_with_changes.len()
+        );
+
+        let audit_service = Arc::new(PaymentAuditService::new());
+
+        // Process each scheduled change
+        for subscription in subscriptions_with_changes {
+            let conn = self.pool.get().await?;
+
+            let subscription_id = subscription.id;
+            let user_id = subscription.user_id;
+            let old_plan = subscription.plan_type.clone();
+            let new_plan = subscription
+                .scheduled_plan_change
+                .clone()
+                .unwrap_or_default();
+            let paddle_subscription_id = subscription.paddle_subscription_id.clone();
+
+            info!(
+                "Applying scheduled plan change for user {}: {} -> {}",
+                user_id, old_plan, new_plan
+            );
+
+            let audit_service_for_task = audit_service.clone();
+            let old_plan_for_log = old_plan.clone();
+            let new_plan_for_log = new_plan.clone();
+
+            match conn
+                .interact(move |conn| {
+                    // 1. Update subscription to new plan
+                    diesel::update(subscriptions::table.find(subscription_id))
+                        .set((
+                            subscriptions::plan_type.eq(&new_plan),
+                            subscriptions::scheduled_plan_change.eq::<Option<String>>(None),
+                            subscriptions::scheduled_change_date
+                                .eq::<Option<chrono::DateTime<chrono::Utc>>>(None),
+                            subscriptions::updated_at.eq(Utc::now()),
+                        ))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                    // 2. Audit log the downgrade
+                    audit_service_for_task.log_plan_change(
+                        conn,
+                        user_id,
+                        AuditEventType::PlanDowngraded,
+                        &old_plan,
+                        &new_plan,
+                        paddle_subscription_id.as_deref(),
+                    )?;
+
+                    Ok::<_, AppError>(())
+                })
+                .await
+            {
+                Ok(Ok(_)) => {
+                    info!(
+                        "Successfully applied plan change for user {}: {} -> {}",
+                        user_id, old_plan_for_log, new_plan_for_log
+                    );
+                }
+                Ok(Err(e)) => {
+                    error!(
+                        "Failed to apply plan change for user {}: {} -> {} - {}",
+                        user_id, old_plan_for_log, new_plan_for_log, e
+                    );
+                    // Continue with other subscriptions
+                }
+                Err(e) => {
+                    error!(
+                        "Database error applying plan change for user {}: {}",
+                        user_id, e
+                    );
+                    // Continue with other subscriptions
+                }
+            }
+        }
 
         Ok(())
     }

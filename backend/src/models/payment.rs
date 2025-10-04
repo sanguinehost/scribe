@@ -100,6 +100,8 @@ pub struct Subscription {
     pub trial_start_date: Option<DateTime<Utc>>,
     pub last_payment_date: Option<DateTime<Utc>>,
     pub grace_period_end: Option<DateTime<Utc>>,
+    pub scheduled_plan_change: Option<String>,
+    pub scheduled_change_date: Option<DateTime<Utc>>,
 }
 
 /// New subscription for database insertion
@@ -126,6 +128,8 @@ pub struct NewSubscription {
     pub trial_start_date: Option<DateTime<Utc>>,
     pub last_payment_date: Option<DateTime<Utc>>,
     pub grace_period_end: Option<DateTime<Utc>>,
+    pub scheduled_plan_change: Option<String>,
+    pub scheduled_change_date: Option<DateTime<Utc>>,
 }
 
 /// Update subscription for database updates
@@ -144,6 +148,8 @@ pub struct UpdateSubscription {
     pub soft_limit_override: Option<i32>,
     pub last_credit_grant: Option<DateTime<Utc>>,
     pub grace_period_end: Option<DateTime<Utc>>,
+    pub scheduled_plan_change: Option<String>,
+    pub scheduled_change_date: Option<DateTime<Utc>>,
 }
 
 /// Plan features model for database queries

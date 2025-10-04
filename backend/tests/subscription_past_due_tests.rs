@@ -106,6 +106,8 @@ mod subscription_past_due_tests {
             trial_start_date: None,
             last_payment_date: Some(Utc::now() - Duration::days(30)),
             grace_period_end: None,
+            scheduled_plan_change: None,
+            scheduled_change_date: None,
         };
 
         // Insert the subscription
@@ -196,6 +198,8 @@ mod subscription_past_due_tests {
             trial_start_date: None,
             last_payment_date: Some(Utc::now() - Duration::days(15)),
             grace_period_end: None,
+            scheduled_plan_change: None,
+            scheduled_change_date: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -306,6 +310,8 @@ mod subscription_past_due_tests {
             trial_start_date: None,
             last_payment_date: Some(Utc::now() - Duration::days(35)),
             grace_period_end: Some(grace_end),
+            scheduled_plan_change: None,
+            scheduled_change_date: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -373,6 +379,8 @@ mod subscription_past_due_tests {
             trial_start_date: None,
             last_payment_date: Some(Utc::now() - Duration::days(40)),
             grace_period_end: Some(grace_end),
+            scheduled_plan_change: None,
+            scheduled_change_date: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -441,6 +449,8 @@ mod subscription_past_due_tests {
             trial_start_date: None,
             last_payment_date: Some(Utc::now() - Duration::days(35)),
             grace_period_end: Some(grace_end),
+            scheduled_plan_change: None,
+            scheduled_change_date: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -541,6 +551,8 @@ mod subscription_past_due_tests {
             trial_start_date: None,
             last_payment_date: Some(Utc::now() - Duration::days(30)),
             grace_period_end: None,
+            scheduled_plan_change: None,
+            scheduled_change_date: None,
         };
 
         let conn = app.db_pool.get().await.expect("Failed to get connection");

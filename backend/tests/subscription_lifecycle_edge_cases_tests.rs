@@ -92,6 +92,8 @@ mod subscription_lifecycle_edge_cases_tests {
                 trial_start_date: None,
                 last_payment_date: Some(Utc::now() - Duration::days(5)),
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             // Insert the subscription
@@ -210,6 +212,8 @@ mod subscription_lifecycle_edge_cases_tests {
                 trial_start_date: None,
                 last_payment_date: Some(Utc::now() - Duration::days(10)),
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             // Insert the subscription

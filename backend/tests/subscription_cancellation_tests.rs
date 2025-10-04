@@ -92,6 +92,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -132,6 +134,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -172,6 +176,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -212,6 +218,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let result = service.is_cancelled_trial_expired(&subscription);
@@ -253,6 +261,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -313,6 +323,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -380,6 +392,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -439,6 +453,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -498,6 +514,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -568,6 +586,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -629,6 +649,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -692,6 +714,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -761,6 +785,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -865,6 +891,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let sub_id = subscription.id;
@@ -945,6 +973,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -1034,6 +1064,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let sub_id = trial_sub.id;
@@ -1161,6 +1193,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let sub_id = trial_sub.id;
@@ -1245,6 +1279,8 @@ mod subscription_cancellation_tests {
                 trial_start_date: None,
                 last_payment_date: None,
                 grace_period_end: None,
+                scheduled_plan_change: None,
+                scheduled_change_date: None,
             };
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");

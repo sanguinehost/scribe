@@ -19,9 +19,13 @@ use axum::{
 #[cfg(feature = "payment")]
 use base64;
 #[cfg(feature = "payment")]
+use diesel::PgConnection;
+#[cfg(feature = "payment")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
-use tracing::{error, warn};
+use std::sync::Arc;
+#[cfg(feature = "payment")]
+use tracing::{error, info, warn};
 #[cfg(feature = "payment")]
 use uuid::Uuid;
 
@@ -33,6 +37,7 @@ use crate::{
     models::payment::{PlanFeatures, Subscription},
     services::payment::{
         CreditService, PaddleService, PaymentAuditService, SubscriptionService,
+        audit_service::AuditEventType,
         paddle_service::{
             CreateTransactionRequest, PaddleEventType, PaddleWebhook, TransactionCheckout,
             TransactionItem,
@@ -3254,6 +3259,117 @@ async fn process_subscription_updated(
             status
         );
 
+        // PLAN CHANGE DETECTION: Check if price_id indicates a plan change
+        if let Some(items) = subscription_data.get("items").and_then(|v| v.as_array()) {
+            if let Some(first_item) = items.first() {
+                if let Some(price_id) = first_item
+                    .get("price")
+                    .and_then(|p| p.get("id"))
+                    .and_then(|id| id.as_str())
+                {
+                    tracing::debug!("Detected price_id in subscription.updated: {}", price_id);
+
+                    // Map price_id to plan_type
+                    match map_price_id_to_plan(price_id, &app_state.config) {
+                        Ok(new_plan) => {
+                            let old_plan = &updated_subscription.plan_type;
+
+                            // Only process if plan actually changed
+                            if new_plan != *old_plan {
+                                tracing::info!(
+                                    "Plan change detected: {} -> {} for user {}",
+                                    old_plan,
+                                    new_plan,
+                                    updated_subscription.user_id
+                                );
+
+                                // Determine upgrade or downgrade
+                                match is_higher_tier(&new_plan, old_plan) {
+                                    Ok(is_upgrade) => {
+                                        let conn =
+                                            app_state.pool.get().await.map_err(|e| {
+                                                AppError::DbPoolError(e.to_string())
+                                            })?;
+
+                                        let credit_service =
+                                            Arc::new(CreditService::new(app_state.config.clone()));
+                                        let audit_service = Arc::new(PaymentAuditService::new());
+                                        let subscription_for_handler = updated_subscription.clone();
+                                        let new_plan_clone = new_plan.clone();
+                                        let old_plan_clone = old_plan.clone();
+                                        let config_clone = app_state.config.clone();
+
+                                        if is_upgrade {
+                                            // Handle immediate upgrade
+                                            if let Err(e) = conn
+                                                .interact(move |conn| {
+                                                    handle_plan_upgrade(
+                                                        conn,
+                                                        &subscription_for_handler,
+                                                        &new_plan_clone,
+                                                        &old_plan_clone,
+                                                        &config_clone,
+                                                        &credit_service,
+                                                        &audit_service,
+                                                    )
+                                                })
+                                                .await
+                                                .map_err(|e| {
+                                                    AppError::DbInteractError(e.to_string())
+                                                })?
+                                            {
+                                                error!(
+                                                    "Failed to process plan upgrade {} -> {}: {}",
+                                                    old_plan, new_plan, e
+                                                );
+                                                // Don't block webhook processing on upgrade failure
+                                            }
+                                        } else {
+                                            // Handle scheduled downgrade
+                                            if let Err(e) = conn
+                                                .interact(move |conn| {
+                                                    handle_plan_downgrade(
+                                                        conn,
+                                                        &subscription_for_handler,
+                                                        &new_plan_clone,
+                                                        &old_plan_clone,
+                                                        &audit_service,
+                                                    )
+                                                })
+                                                .await
+                                                .map_err(|e| {
+                                                    AppError::DbInteractError(e.to_string())
+                                                })?
+                                            {
+                                                error!(
+                                                    "Failed to schedule plan downgrade {} -> {}: {}",
+                                                    old_plan, new_plan, e
+                                                );
+                                                // Don't block webhook processing on downgrade failure
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to determine upgrade/downgrade for {} -> {}: {}",
+                                            old_plan, new_plan, e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to map price_id {} to plan_type: {}. Continuing with status update only.",
+                                price_id, e
+                            );
+                            // Continue processing - the status update was successful
+                        }
+                    }
+                }
+            }
+        }
+
         // Log update in audit log
         use crate::services::payment::PaymentAuditService;
         let audit_service = PaymentAuditService::new();
@@ -3345,6 +3461,210 @@ async fn process_subscription_updated(
             paddle_subscription_id
         );
     }
+
+    Ok(())
+}
+
+/// Map Paddle price_id to plan_type by reading subscription_tiers.json
+#[cfg(feature = "payment")]
+fn map_price_id_to_plan(
+    price_id: &str,
+    config: &crate::config::Config,
+) -> Result<String, AppError> {
+    let config_path = &config.payment.subscription_config_path;
+    let config_str = std::fs::read_to_string(config_path).map_err(|e| {
+        AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
+    })?;
+
+    let tiers: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+        AppError::ConfigurationError(format!("Invalid subscription config JSON: {}", e))
+    })?;
+
+    // Search all tiers for matching price_id
+    if let Some(tiers_obj) = tiers["tiers"].as_object() {
+        for (tier_name, tier_data) in tiers_obj {
+            // Check monthly price_id
+            if let Some(monthly_id) = tier_data
+                .get("paddle_price_id_monthly")
+                .and_then(|v| v.as_str())
+            {
+                if monthly_id == price_id {
+                    return Ok(tier_name.to_string());
+                }
+            }
+            // Check yearly price_id
+            if let Some(yearly_id) = tier_data
+                .get("paddle_price_id_yearly")
+                .and_then(|v| v.as_str())
+            {
+                if yearly_id == price_id {
+                    return Ok(tier_name.to_string());
+                }
+            }
+        }
+    }
+
+    Err(AppError::BadRequest(format!(
+        "Unknown price_id: {}",
+        price_id
+    )))
+}
+
+/// Check if new_plan is higher tier than old_plan
+#[cfg(feature = "payment")]
+fn is_higher_tier(new_plan: &str, old_plan: &str) -> Result<bool, AppError> {
+    let tier_order = vec!["free", "basic", "premium"];
+
+    let new_idx = tier_order
+        .iter()
+        .position(|&p| p == new_plan)
+        .ok_or_else(|| AppError::BadRequest(format!("Unknown plan: {}", new_plan)))?;
+
+    let old_idx = tier_order
+        .iter()
+        .position(|&p| p == old_plan)
+        .ok_or_else(|| AppError::BadRequest(format!("Unknown plan: {}", old_plan)))?;
+
+    Ok(new_idx > old_idx)
+}
+
+/// Calculate credit difference between plans for upgrades
+#[cfg(feature = "payment")]
+fn calculate_credit_difference(
+    old_plan: &str,
+    new_plan: &str,
+    config: &crate::config::Config,
+) -> Result<i32, AppError> {
+    let config_path = &config.payment.subscription_config_path;
+    let config_str = std::fs::read_to_string(config_path).map_err(|e| {
+        AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
+    })?;
+
+    let tiers: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+        AppError::ConfigurationError(format!("Invalid subscription config JSON: {}", e))
+    })?;
+
+    let old_credits = tiers["tiers"][old_plan]["credits"]["included_monthly"]
+        .as_i64()
+        .unwrap_or(0) as i32;
+
+    let new_credits = tiers["tiers"][new_plan]["credits"]["included_monthly"]
+        .as_i64()
+        .unwrap_or(0) as i32;
+
+    Ok(new_credits - old_credits)
+}
+
+/// Handle immediate plan upgrade with credit adjustment
+#[cfg(feature = "payment")]
+fn handle_plan_upgrade(
+    conn: &mut PgConnection,
+    subscription: &Subscription,
+    new_plan: &str,
+    old_plan: &str,
+    config: &crate::config::Config,
+    credit_service: &Arc<CreditService>,
+    audit_service: &Arc<PaymentAuditService>,
+) -> Result<(), AppError> {
+    use crate::schema::subscriptions::dsl::*;
+    use diesel::prelude::*;
+
+    info!(
+        "Processing immediate upgrade: {} -> {} for user {}",
+        old_plan, new_plan, subscription.user_id
+    );
+
+    // 1. Calculate credit difference (only if positive - don't remove credits)
+    let credit_diff = calculate_credit_difference(old_plan, new_plan, config)?;
+
+    if credit_diff > 0 {
+        // Add upgrade bonus credits
+        credit_service.add_credits(
+            conn,
+            subscription.user_id,
+            credit_diff,
+            "plan_upgrade",
+            "Credits added from plan upgrade",
+            subscription.paddle_subscription_id.clone(),
+            None,
+        )?;
+
+        info!(
+            "Added {} upgrade bonus credits for user {}",
+            credit_diff, subscription.user_id
+        );
+    }
+
+    // 2. Update subscription to new plan (clear any pending downgrades)
+    diesel::update(subscriptions.find(subscription.id))
+        .set((
+            plan_type.eq(new_plan),
+            scheduled_plan_change.eq::<Option<String>>(None),
+            scheduled_change_date.eq::<Option<chrono::DateTime<chrono::Utc>>>(None),
+            updated_at.eq(chrono::Utc::now()),
+        ))
+        .execute(conn)
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    // 3. Audit log the upgrade
+    audit_service.log_plan_change(
+        conn,
+        subscription.user_id,
+        AuditEventType::PlanUpgraded,
+        old_plan,
+        new_plan,
+        subscription.paddle_subscription_id.as_deref(),
+    )?;
+
+    info!(
+        "Upgrade completed: {} -> {} for user {}",
+        old_plan, new_plan, subscription.user_id
+    );
+
+    Ok(())
+}
+
+/// Handle scheduled plan downgrade (preserve access until period end)
+#[cfg(feature = "payment")]
+fn handle_plan_downgrade(
+    conn: &mut PgConnection,
+    subscription: &Subscription,
+    new_plan: &str,
+    old_plan: &str,
+    audit_service: &Arc<PaymentAuditService>,
+) -> Result<(), AppError> {
+    use crate::schema::subscriptions::dsl::*;
+    use diesel::prelude::*;
+
+    info!(
+        "Scheduling downgrade: {} -> {} for user {} at period end {}",
+        old_plan, new_plan, subscription.user_id, subscription.current_period_end
+    );
+
+    // 1. Schedule downgrade for period end (don't apply immediately)
+    diesel::update(subscriptions.find(subscription.id))
+        .set((
+            scheduled_plan_change.eq(new_plan),
+            scheduled_change_date.eq(subscription.current_period_end),
+            updated_at.eq(chrono::Utc::now()),
+        ))
+        .execute(conn)
+        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+    // 2. Audit log the scheduled downgrade
+    audit_service.log_plan_change_scheduled(
+        conn,
+        subscription.user_id,
+        old_plan,
+        new_plan,
+        subscription.current_period_end,
+        subscription.paddle_subscription_id.as_deref(),
+    )?;
+
+    info!(
+        "Downgrade scheduled: {} -> {} for user {} at {}",
+        old_plan, new_plan, subscription.user_id, subscription.current_period_end
+    );
 
     Ok(())
 }

@@ -34,6 +34,9 @@ pub enum AuditEventType {
     PaymentProcessed,
     PaymentFailed,
     WebhookReceived,
+    PlanUpgraded,        // Immediate upgrade applied
+    PlanDowngraded,      // Downgrade applied at period end
+    PlanChangeScheduled, // Downgrade scheduled for future
 }
 
 impl AuditEventType {
@@ -50,6 +53,9 @@ impl AuditEventType {
             Self::PaymentProcessed => "payment_processed",
             Self::PaymentFailed => "payment_failed",
             Self::WebhookReceived => "webhook_received",
+            Self::PlanUpgraded => "plan_upgraded",
+            Self::PlanDowngraded => "plan_downgraded",
+            Self::PlanChangeScheduled => "plan_change_scheduled",
         }
     }
 
@@ -60,7 +66,10 @@ impl AuditEventType {
             | Self::SubscriptionActivated
             | Self::SubscriptionUpdated
             | Self::SubscriptionPaused
-            | Self::SubscriptionCancelled => "subscription",
+            | Self::SubscriptionCancelled
+            | Self::PlanUpgraded
+            | Self::PlanDowngraded
+            | Self::PlanChangeScheduled => "subscription",
             Self::PaymentProcessed | Self::PaymentFailed => "payment",
             Self::WebhookReceived => "webhook",
         }
@@ -178,6 +187,86 @@ impl PaymentAuditService {
             })?;
 
         debug!("Audit logged: {}", event_type.as_str());
+        Ok(())
+    }
+
+    /// Log a plan change event (upgrade or downgrade)
+    pub fn log_plan_change(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        event_type: AuditEventType,
+        old_plan: &str,
+        new_plan: &str,
+        external_ref: Option<&str>,
+    ) -> Result<(), AppError> {
+        use crate::schema::payment_audit_logs;
+
+        let log_entry = PaymentAuditLog {
+            id: Uuid::new_v4(),
+            user_id_hash: Self::hash_user_id(&user_id),
+            event_type: event_type.as_str().to_string(),
+            amount: None,
+            event_category: event_type.category().to_string(),
+            success: true,
+            error_code: None,
+            external_reference_hash: external_ref.map(Self::hash_reference),
+            created_at: Utc::now(),
+        };
+
+        diesel::insert_into(payment_audit_logs::table)
+            .values(&log_entry)
+            .execute(conn)
+            .map_err(|e| {
+                error!("Failed to insert audit log: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        debug!(
+            "Plan change logged: {} -> {} ({})",
+            old_plan,
+            new_plan,
+            event_type.as_str()
+        );
+        Ok(())
+    }
+
+    /// Log a scheduled plan change (for downgrades)
+    pub fn log_plan_change_scheduled(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        current_plan: &str,
+        scheduled_plan: &str,
+        scheduled_date: DateTime<Utc>,
+        external_ref: Option<&str>,
+    ) -> Result<(), AppError> {
+        use crate::schema::payment_audit_logs;
+
+        let log_entry = PaymentAuditLog {
+            id: Uuid::new_v4(),
+            user_id_hash: Self::hash_user_id(&user_id),
+            event_type: AuditEventType::PlanChangeScheduled.as_str().to_string(),
+            amount: None,
+            event_category: AuditEventType::PlanChangeScheduled.category().to_string(),
+            success: true,
+            error_code: None,
+            external_reference_hash: external_ref.map(Self::hash_reference),
+            created_at: Utc::now(),
+        };
+
+        diesel::insert_into(payment_audit_logs::table)
+            .values(&log_entry)
+            .execute(conn)
+            .map_err(|e| {
+                error!("Failed to insert audit log: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        debug!(
+            "Plan change scheduled: {} -> {} at {}",
+            current_plan, scheduled_plan, scheduled_date
+        );
         Ok(())
     }
 

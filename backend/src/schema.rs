@@ -731,6 +731,9 @@ diesel::table! {
         #[max_length = 50]
         collection_mode -> Nullable<Varchar>,
         billing_details -> Nullable<Jsonb>,
+        #[max_length = 50]
+        scheduled_plan_change -> Nullable<Varchar>,
+        scheduled_change_date -> Nullable<Timestamptz>,
     }
 }
 
