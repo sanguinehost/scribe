@@ -40,8 +40,8 @@ pub(super) fn decrypt_lorebook_content(
         }
     }
 
-    // No encrypted content available - encryption is required
-    "[no encrypted content]".to_string()
+    // No encrypted content - fall back to plaintext for backward compatibility (tests, legacy data)
+    metadata.chunk_text.clone()
 }
 
 /// Helper function to decrypt chat message content (encryption required)
@@ -73,8 +73,8 @@ pub(super) fn decrypt_chat_content(
         }
     }
 
-    // No encrypted content available - encryption is required
-    "[no encrypted content]".to_string()
+    // No encrypted content - fall back to plaintext for backward compatibility (tests, legacy data)
+    metadata.text.clone()
 }
 
 #[derive(Debug, Clone)]

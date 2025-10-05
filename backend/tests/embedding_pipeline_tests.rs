@@ -1673,7 +1673,7 @@ async fn test_rag_context_injection_with_qdrant() {
             None,                    // chronicle_id_for_search
             query_text,              // query_text
             limit_per_source,        // limit_per_source
-            None,                    // No DEK for integration test
+            Some(&session_dek),      // Provide DEK to decrypt encrypted content
         )
         .await;
 
@@ -1699,7 +1699,7 @@ async fn test_rag_context_injection_with_qdrant() {
     let mut found_lore_chunk = false;
 
     for chunk in retrieved_chunks {
-        match chunk.metadata {
+        match &chunk.metadata {
             RetrievedMetadata::Chat(meta) => {
                 assert_eq!(
                     meta.session_id, chat_session_id,
@@ -1716,8 +1716,8 @@ async fn test_rag_context_injection_with_qdrant() {
                     "Chat metadata source_type mismatch"
                 );
                 assert!(
-                    meta.text.contains("dragons for RAG"),
-                    "Chat metadata text content mismatch"
+                    chunk.text.contains("dragons for RAG"),
+                    "Chat decrypted text content mismatch"
                 );
                 found_chat_chunk = true;
             }
@@ -1731,17 +1731,14 @@ async fn test_rag_context_injection_with_qdrant() {
                     "Lorebook metadata original_lorebook_entry_id mismatch"
                 );
                 assert_eq!(meta.user_id, user_id, "Lorebook metadata user_id mismatch");
-                assert_eq!(
-                    meta.entry_title, lore_entry_title,
-                    "Lorebook metadata entry_title mismatch"
-                );
+                // entry_title is encrypted in metadata, but we can verify the decrypted content
                 assert_eq!(
                     meta.source_type, "lorebook_entry",
                     "Lorebook metadata source_type mismatch"
                 );
                 assert!(
-                    meta.chunk_text.contains("ancient dragons"),
-                    "Lorebook metadata chunk_text content mismatch"
+                    chunk.text.contains("ancient dragons"),
+                    "Lorebook decrypted text content mismatch"
                 );
                 found_lore_chunk = true;
             }
@@ -1766,9 +1763,15 @@ async fn test_rag_context_injection_with_qdrant() {
         embed_calls[0].0, chat_message_content,
         "First embed call should be chat content"
     );
+    // Lorebook embedding includes title formatting
+    let expected_lore_embed = format!(
+        "Title: {}\n\n{}",
+        lore_entry_title.as_ref().unwrap(),
+        lore_entry_content
+    );
     assert_eq!(
-        embed_calls[1].0, lore_entry_content,
-        "Second embed call should be lore content"
+        embed_calls[1].0, expected_lore_embed,
+        "Second embed call should be formatted lore content with title"
     );
     assert_eq!(
         embed_calls[2].0, query_text,
@@ -2356,12 +2359,12 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let user_c_id = Uuid::new_v4();
     let user_d_id = Uuid::new_v4();
 
-    // Create mock session_deks for the users
+    // Create mock session_deks for the users (must be exactly 32 bytes for AES-256-GCM)
     let user_c_session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32_bytes_long!".to_vec())),
+        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32bytes_long!!01".to_vec())),
     );
     let user_d_session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32_bytes_long!".to_vec())),
+        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32bytes_long!!02".to_vec())),
     );
 
     let lorebook_c1_id = Uuid::new_v4(); // User C's first lorebook
@@ -2477,7 +2480,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query1_text,
             limit,
-            None, // No DEK for integration test
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2489,7 +2492,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     if let RetrievedMetadata::Lorebook(meta) = &chunks1[0].metadata {
         assert_eq!(meta.user_id, user_c_id);
         assert_eq!(meta.lorebook_id, lorebook_c1_id);
-        assert!(meta.chunk_text.contains("Elves"));
+        assert!(
+            chunks1[0].text.contains("Elves"),
+            "Expected decrypted text to contain 'Elves'"
+        );
     } else {
         panic!("Query 1: Expected Lorebook metadata");
     }
@@ -2506,7 +2512,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query2_text,
             limit,
-            None, // No DEK for integration test
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2518,7 +2524,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     if let RetrievedMetadata::Lorebook(meta) = &chunks2[0].metadata {
         assert_eq!(meta.user_id, user_c_id);
         assert_eq!(meta.lorebook_id, lorebook_c2_id);
-        assert!(meta.chunk_text.contains("Dwarves"));
+        assert!(
+            chunks2[0].text.contains("Dwarves"),
+            "Expected decrypted text to contain 'Dwarves'"
+        );
     } else {
         panic!("Query 2: Expected Lorebook metadata");
     }
@@ -2535,7 +2544,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query3_text,
             limit,
-            None, // No DEK for integration test
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2556,7 +2565,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query4_text,
             limit,
-            None, // No DEK for integration test
+            Some(&user_d_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2568,7 +2577,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     if let RetrievedMetadata::Lorebook(meta) = &chunks4[0].metadata {
         assert_eq!(meta.user_id, user_d_id);
         assert_eq!(meta.lorebook_id, lorebook_d1_id);
-        assert!(meta.chunk_text.contains("Orcs"));
+        assert!(
+            chunks4[0].text.contains("Orcs"),
+            "Expected decrypted text to contain 'Orcs'"
+        );
     } else {
         panic!("Query 4: Expected Lorebook metadata");
     }
@@ -2585,7 +2597,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query5_text,
             limit,
-            None, // No DEK for integration test
+            Some(&user_d_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2612,7 +2624,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query6_text,
             limit,
-            None, // No DEK for integration test
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2627,10 +2639,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let mut found_c2_in_q6 = false;
     for chunk in chunks6 {
         if let RetrievedMetadata::Lorebook(meta) = &chunk.metadata {
-            if meta.lorebook_id == lorebook_c1_id && meta.chunk_text.contains("Elves") {
+            if meta.lorebook_id == lorebook_c1_id && chunk.text.contains("Elves") {
                 found_c1_in_q6 = true;
             }
-            if meta.lorebook_id == lorebook_c2_id && meta.chunk_text.contains("Dwarves") {
+            if meta.lorebook_id == lorebook_c2_id && chunk.text.contains("Dwarves") {
                 found_c2_in_q6 = true;
             }
         }
@@ -2651,9 +2663,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         3 + 5 + 1,
         "Expected 3 entry processing calls + 6 query calls (9 total) to embedding client"
     );
-    assert_eq!(calls[0].0, entry_c1_content);
-    assert_eq!(calls[1].0, entry_c2_content);
-    assert_eq!(calls[2].0, entry_d1_content);
+    // Lorebook embeddings include title formatting
+    assert_eq!(calls[0].0, format!("Title: Elves\n\n{}", entry_c1_content));
+    assert_eq!(
+        calls[1].0,
+        format!("Title: Dwarves\n\n{}", entry_c2_content)
+    );
+    assert_eq!(calls[2].0, format!("Title: Orcs\n\n{}", entry_d1_content));
     assert_eq!(calls[3].0, query1_text);
     assert_eq!(calls[4].0, query2_text);
     assert_eq!(calls[5].0, query3_text); // User C, Lorebook D1

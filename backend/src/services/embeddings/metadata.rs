@@ -163,9 +163,10 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                 let chunk_text = "[encrypted]".to_string();
                 (chunk_text, encrypted_bytes, nonce_bytes)
             } else {
-                // No encrypted content - this should not happen in production
-                // Return placeholder for deprecated field
-                let chunk_text = "[no encrypted content]".to_string();
+                // No encrypted content - extract plaintext from payload for backward compatibility (tests, legacy data)
+                let chunk_text =
+                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")
+                        .unwrap_or_else(|_| "[no encrypted content]".to_string());
                 (chunk_text, None, None)
             };
 
