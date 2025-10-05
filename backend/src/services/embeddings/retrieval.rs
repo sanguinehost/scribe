@@ -40,8 +40,12 @@ pub(super) fn decrypt_lorebook_content(
         }
     }
 
-    // No encrypted content - fall back to plaintext for backward compatibility (tests, legacy data)
-    metadata.chunk_text.clone()
+    // SECURITY: Missing encryption is a critical error - all data must be encrypted at rest
+    warn!(
+        "SECURITY VIOLATION: Lorebook content missing encryption (entry_id: {:?})",
+        metadata.original_lorebook_entry_id
+    );
+    "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
 }
 
 /// Helper function to decrypt chat message content (encryption required)
@@ -73,8 +77,12 @@ pub(super) fn decrypt_chat_content(
         }
     }
 
-    // No encrypted content - fall back to plaintext for backward compatibility (tests, legacy data)
-    metadata.text.clone()
+    // SECURITY: Missing encryption is a critical error - all data must be encrypted at rest
+    warn!(
+        "SECURITY VIOLATION: Chat message missing encryption (message_id: {:?})",
+        metadata.message_id
+    );
+    "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
 }
 
 #[derive(Debug, Clone)]

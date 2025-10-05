@@ -51,13 +51,18 @@ fn assert_retrieved_chunks_content(
         "Expected score ~0.95, got {}",
         retrieved_chunks[0].score
     );
-    assert_eq!(retrieved_chunks[0].text, "Chunk 1 text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[0].metadata {
         assert_eq!(meta.session_id, test_session_id);
         assert_eq!(meta.message_id, message_id_1);
         assert_eq!(meta.user_id, test_user_id);
         assert_eq!(meta.speaker, "User");
-        assert_eq!(meta.text, "Chunk 1 text");
+        // SECURITY: Deprecated field contains placeholder when encryption is missing
+        assert_eq!(meta.text, "[MISSING ENCRYPTION]");
         assert_eq!(meta.source_type, "chat_message");
     } else {
         panic!("Expected Chat metadata for retrieved_chunks[0]");
@@ -69,13 +74,18 @@ fn assert_retrieved_chunks_content(
         "Expected score ~0.88, got {}",
         retrieved_chunks[1].score
     );
-    assert_eq!(retrieved_chunks[1].text, "Chunk 2 text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[1].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[1].metadata {
         assert_eq!(meta.session_id, test_session_id);
         assert_eq!(meta.message_id, message_id_2);
         assert_eq!(meta.user_id, test_user_id);
         assert_eq!(meta.speaker, "Assistant");
-        assert_eq!(meta.text, "Chunk 2 text");
+        // SECURITY: Deprecated field contains placeholder when encryption is missing
+        assert_eq!(meta.text, "[MISSING ENCRYPTION]");
         assert_eq!(meta.source_type, "chat_message");
     } else {
         panic!("Expected Chat metadata for retrieved_chunks[1]");
@@ -944,7 +954,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "Valid text 1");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 #[tokio::test]
@@ -1135,7 +1149,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "More text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 #[tokio::test]
@@ -1297,7 +1315,11 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "Some text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 #[tokio::test]
@@ -1463,7 +1485,11 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "Final text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 // TODO: Add tests for retrieve_relevant_chunks integration if needed,
@@ -1622,7 +1648,7 @@ async fn test_rag_context_injection_with_qdrant() {
         .process_and_embed_message(
             app_state_for_rag.clone(),
             chat_message.clone(), // Clone chat_message
-            None,
+            Some(&session_dek),   // SECURITY: Provide DEK for encryption
         )
         .await;
     assert!(

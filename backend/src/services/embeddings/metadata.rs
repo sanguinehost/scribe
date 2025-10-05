@@ -80,9 +80,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
 
             (text, encrypted_bytes, nonce_bytes)
         } else {
-            // Legacy plaintext mode
-            let text = extract_string_from_payload(&payload, "text", "ChatMessageChunkMetadata")?;
-            (text, None, None)
+            // SECURITY: All chat messages must be encrypted - no plaintext mode allowed
+            tracing::warn!("SECURITY VIOLATION: Chat message payload missing encrypted_text field");
+            ("[MISSING ENCRYPTION]".to_string(), None, None)
         };
 
         let source_type =
@@ -163,11 +163,11 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                 let chunk_text = "[encrypted]".to_string();
                 (chunk_text, encrypted_bytes, nonce_bytes)
             } else {
-                // No encrypted content - extract plaintext from payload for backward compatibility (tests, legacy data)
-                let chunk_text =
-                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")
-                        .unwrap_or_else(|_| "[no encrypted content]".to_string());
-                (chunk_text, None, None)
+                // SECURITY: All lorebook content must be encrypted - no plaintext mode allowed
+                tracing::warn!(
+                    "SECURITY VIOLATION: Lorebook chunk payload missing encrypted_chunk_text field"
+                );
+                ("[MISSING ENCRYPTION]".to_string(), None, None)
             };
 
         // Handle encrypted title
@@ -195,6 +195,8 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                 let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
                 (entry_title, encrypted_bytes, nonce_bytes)
             } else {
+                // SECURITY: Titles should also be encrypted - warn if missing
+                tracing::warn!("Lorebook entry title not encrypted (may be legacy data)");
                 let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
                 (entry_title, None, None)
             };

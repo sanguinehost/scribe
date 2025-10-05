@@ -182,10 +182,39 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             // 2b. Prepare metadata
             let speaker_str = format!("{:?}", message.message_type);
 
-            // TODO: When SessionDek is available, encrypt the content here
-            // For now, we store plaintext for backward compatibility
-            // Future implementation:
-            // let (encrypted_text, text_nonce) = encrypt_gcm(chunk.content.as_bytes(), &session_dek)?;
+            // Encrypt chunk content if SessionDek is available
+            let (text_for_storage, encrypted_text, text_nonce) = if let Some(ref dek) = session_dek
+            {
+                // We have SessionDek, encrypt the chunk content
+                match crate::crypto::encrypt_gcm(chunk.content.as_bytes(), &dek.0) {
+                    Ok((encrypted_content, content_nonce)) => {
+                        debug!(
+                            chunk_index = index,
+                            "Successfully encrypted chat message chunk for Qdrant storage"
+                        );
+                        (
+                            "[encrypted]".to_string(),
+                            Some(encrypted_content),
+                            Some(content_nonce),
+                        )
+                    }
+                    Err(e) => {
+                        error!(
+                            chunk_index = index,
+                            error = %e,
+                            "Failed to encrypt chat message chunk, falling back to plaintext"
+                        );
+                        (chunk.content.clone(), None, None)
+                    }
+                }
+            } else {
+                // No SessionDek, store plaintext (backward compatibility for tests/legacy)
+                warn!(
+                    chunk_index = index,
+                    "No SessionDek available for chat message chunk, storing plaintext in Qdrant"
+                );
+                (chunk.content.clone(), None, None)
+            };
 
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
@@ -194,11 +223,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 user_id: message.user_id, // Added user_id from the message
                 speaker: speaker_str,
                 timestamp: message.created_at,
-                text: chunk.content.clone(), // Store original chunk text (will be "[encrypted]" when encryption is enabled)
+                text: text_for_storage, // Placeholder when encrypted, plaintext otherwise
                 source_type: "chat_message".to_string(),
-                // Encryption fields - will be populated when SessionDek is available
-                encrypted_text: None, // Will store encrypted_text
-                text_nonce: None,     // Will store text_nonce
+                // Encryption fields - populated when SessionDek is available
+                encrypted_text,
+                text_nonce,
             };
 
             // 2c. Create Qdrant point
