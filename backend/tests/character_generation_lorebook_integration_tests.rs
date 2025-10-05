@@ -238,6 +238,7 @@ async fn test_character_generation_with_lorebook_context() {
 
 #[tokio::test]
 #[ignore] // Use real AI for this test
+#[allow(deprecated)] // Test uses deprecated chunk_text field for backward compatibility testing
 async fn test_alternate_greeting_generation_with_lorebook() {
     let test_app = test_helpers::spawn_app(true, true, false).await;
 
