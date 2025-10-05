@@ -2,7 +2,10 @@
 
 use diesel::prelude::*;
 use scribe_backend::{
-    models::{AnalysisType, NewAgentContextAnalysis, chronicle::CreateChronicleRequest},
+    models::{
+        AnalysisType, MessageRole, NewAgentContextAnalysis, NewChatMessage,
+        chronicle::CreateChronicleRequest,
+    },
     services::{
         ChronicleService,
         agentic::{narrative_tools::SearchKnowledgeBaseTool, tools::ScribeTool},
@@ -390,6 +393,66 @@ async fn test_agent_analysis_storage_security() {
     // Create message IDs for the analyses
     let user1_message_id = Uuid::new_v4();
     let user2_message_id = Uuid::new_v4();
+
+    // Create chat messages in database to satisfy foreign key constraint
+    // (agent_context_analysis.message_id references chat_messages.id)
+    conn.interact(move |conn| {
+        use diesel::insert_into;
+        use scribe_backend::schema::chat_messages;
+
+        // Insert user1's message
+        let new_message1 = NewChatMessage {
+            id: user1_message_id,
+            session_id: user1_session_id,
+            user_id: user1.id,
+            message_type: MessageRole::User,
+            content: b"Test message for user1".to_vec(),
+            content_nonce: None,
+            role: Some("user".to_string()),
+            parts: None,
+            attachments: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
+            model_name: "gemini-2.5-flash-lite".to_string(),
+        };
+
+        insert_into(chat_messages::table)
+            .values(&new_message1)
+            .execute(conn)?;
+
+        // Insert user2's message
+        let new_message2 = NewChatMessage {
+            id: user2_message_id,
+            session_id: user2_session_id,
+            user_id: user2.id,
+            message_type: MessageRole::User,
+            content: b"Test message for user2".to_vec(),
+            content_nonce: None,
+            role: Some("user".to_string()),
+            parts: None,
+            attachments: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
+            model_name: "gemini-2.5-flash-lite".to_string(),
+        };
+
+        insert_into(chat_messages::table)
+            .values(&new_message2)
+            .execute(conn)?;
+
+        Ok::<(), diesel::result::Error>(())
+    })
+    .await
+    .expect("Failed to interact with database")
+    .expect("Failed to create chat messages");
 
     // Store agent analysis for each user with required message_id
     let user1_analysis = NewAgentContextAnalysis::new_encrypted(
