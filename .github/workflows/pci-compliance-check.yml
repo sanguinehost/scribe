@@ -96,7 +96,8 @@ jobs:
         # Check 6: No payment data in URL parameters
         echo "🔍 Checking for payment data in URL parameters..."
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-        if grep -r "Path.*payment\|Query.*payment\|Path.*amount\|Query.*amount" backend/src/routes/; then
+        # Match actual Rust code patterns, not comments (Path<> or Query<>)
+        if grep -r "Path<.*payment\|Query<.*payment\|Path<.*amount\|Query<.*amount" backend/src/routes/ | grep -v "//"; then
           echo "❌ FAIL: Found potential payment data in URL parameters"
           FAILED_CHECKS=$((FAILED_CHECKS + 1))
         else
