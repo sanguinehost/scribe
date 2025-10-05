@@ -265,6 +265,8 @@ pub async fn handle_resume_chat_session_action<H: IoHandler, C: HttpClient>(
                 presence_penalty: None,
                 top_k: None,
                 top_p: None,
+                active_custom_persona_id: None,
+                prompt_template_id: None,
                 seed: None,
                 stop_sequences: None,
                 history_management_strategy: None,

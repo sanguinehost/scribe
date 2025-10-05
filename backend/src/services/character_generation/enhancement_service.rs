@@ -52,7 +52,7 @@ impl EnhancementService {
 
         let generation_result = self
             .field_generator
-            .generate_field(field_request, user_id)
+            .generate_field(field_request, user_id, None)
             .await?;
 
         // Analyze what changes were made (simplified approach)

@@ -68,9 +68,9 @@ variable "from_email" {
 locals {
   # Construct full domain dynamically
   full_domain = var.subdomain_prefix != "" ? "${var.subdomain_prefix}.${var.app_subdomain}.${var.base_domain}" : "${var.app_subdomain}.${var.base_domain}"
-  
+
   api_domain = var.subdomain_prefix != "" ? "api.${var.subdomain_prefix}.${var.app_subdomain}.${var.base_domain}" : "api.${var.app_subdomain}.${var.base_domain}"
-  
+
   from_email = var.from_email != "" ? var.from_email : "noreply@${var.app_subdomain}.${var.base_domain}"
 }
 
@@ -90,7 +90,7 @@ variable "subject_alternative_names" {
 variable "postgres_version" {
   description = "PostgreSQL version"
   type        = string
-  default     = "15.4"
+  default     = "16.8"
 }
 
 variable "db_instance_class" {
@@ -228,6 +228,61 @@ variable "cloudtrail_bucket_name" {
   default     = ""
 }
 
+# Security monitoring configuration (Task 10)
+variable "enable_security_alarms" {
+  description = "Enable security alarm actions (set to false for calibration mode)"
+  type        = bool
+  default     = false  # Keep disabled for initial calibration period
+}
+
+variable "alert_email_p0" {
+  description = "Email address for P0 critical security alerts"
+  type        = string
+  default     = ""
+}
+
+variable "alert_email_p1" {
+  description = "Email address for P1 high security alerts"
+  type        = string
+  default     = ""
+}
+
+variable "alert_email_p2" {
+  description = "Email address for P2 medium security alerts"
+  type        = string
+  default     = ""
+}
+
+variable "alert_email_p3" {
+  description = "Email address for P3 low security alerts"
+  type        = string
+  default     = ""
+}
+
+variable "enable_kinesis_firehose" {
+  description = "Enable Kinesis Firehose for SIEM log streaming"
+  type        = bool
+  default     = true
+}
+
+variable "firehose_buffer_size_mb" {
+  description = "Kinesis Firehose buffer size in MB (1-128)"
+  type        = number
+  default     = 5
+}
+
+variable "firehose_buffer_interval_seconds" {
+  description = "Kinesis Firehose buffer interval in seconds (60-900)"
+  type        = number
+  default     = 60
+}
+
+variable "siem_log_retention_days" {
+  description = "S3 log retention period in days for SIEM integration"
+  type        = number
+  default     = 365
+}
+
 # Application secrets (should be provided via terraform.tfvars or environment variables)
 variable "gemini_api_key" {
   description = "Gemini API key"
@@ -241,4 +296,120 @@ variable "qdrant_api_key" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+# Payment configuration (optional - only used if payment features are enabled)
+variable "enable_payments" {
+  description = "Whether to enable payment features in the deployment"
+  type        = bool
+  default     = false
+}
+
+variable "paddle_api_key" {
+  description = "Paddle API key for payment processing (required if enable_payments is true)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_webhook_secret" {
+  description = "Paddle webhook secret for signature verification (required if enable_payments is true)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_sandbox_mode" {
+  description = "Whether to use Paddle sandbox mode (recommended for staging)"
+  type        = bool
+  default     = true
+}
+
+variable "payment_base_url" {
+  description = "Base URL for payment completion redirects (will be computed from domain if not specified)"
+  type        = string
+  default     = ""
+}
+
+variable "free_tier_token_limit" {
+  description = "Monthly token limit for free tier users"
+  type        = number
+  default     = 50000
+}
+
+variable "enforce_payment_limits" {
+  description = "Whether to enforce payment limits (can disable for testing)"
+  type        = bool
+  default     = false  # Disabled by default for staging
+}
+
+variable "payment_grace_period_days" {
+  description = "Grace period in days after subscription expires"
+  type        = number
+  default     = 7
+}
+
+# Paddle subscription price IDs (should be provided via terraform.tfvars or environment variables)
+variable "paddle_basic_monthly_price_id" {
+  description = "Paddle price ID for Basic plan - monthly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k4qbyetvn495nzv9nkqhxz02"  # From .env PADDLE_BASIC_MONTHLY_PRICE_ID
+}
+
+variable "paddle_basic_yearly_price_id" {
+  description = "Paddle price ID for Basic plan - yearly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejs7h9zmw4d888r3pjjqna"  # From .env PADDLE_BASIC_YEARLY_PRICE_ID
+}
+
+variable "paddle_premium_monthly_price_id" {
+  description = "Paddle price ID for Premium plan - monthly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ej7wzvpcj6j65vcbpam6t4"  # From .env PADDLE_PREMIUM_MONTHLY_PRICE_ID
+}
+
+variable "paddle_premium_yearly_price_id" {
+  description = "Paddle price ID for Premium plan - yearly billing"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejva0cwqzbtgzd2c9qk0d4"  # From .env PADDLE_PREMIUM_YEARLY_PRICE_ID
+}
+
+# Paddle credit package price IDs
+variable "paddle_credits_250_price_id" {
+  description = "Paddle price ID for 250 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ej9f8281rvnzybmpxc9hpm"  # From .env PADDLE_CREDITS_250_PRICE_ID
+}
+
+variable "paddle_credits_500_price_id" {
+  description = "Paddle price ID for 500/550 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejc7dkwxfty64nfvenj8yq"  # From .env PADDLE_CREDITS_500_PRICE_ID
+}
+
+variable "paddle_credits_1500_price_id" {
+  description = "Paddle price ID for 1500 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejdg0hzzem86wzd28zmd2q"  # From .env PADDLE_CREDITS_1500_PRICE_ID
+}
+
+variable "paddle_credits_3500_price_id" {
+  description = "Paddle price ID for 3500 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejenme5xjtje37jwfpbxe2"  # From .env PADDLE_CREDITS_3500_PRICE_ID
+}
+
+variable "paddle_credits_8000_price_id" {
+  description = "Paddle price ID for 8000 credits package"
+  type        = string
+  sensitive   = true
+  default     = "pri_01k5ejfy6t65v6d28fqf0c4kmr"  # From .env PADDLE_CREDITS_8000_PRICE_ID
 }

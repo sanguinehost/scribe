@@ -53,7 +53,7 @@ async fn test_agent_analysis_error_handling() {
     conn.interact(move |conn| {
         // Use raw SQL to insert message since the enum handling is complex
         diesel::sql_query(
-            "INSERT INTO chat_messages (id, session_id, user_id, message_type, content, model_name, created_at, updated_at) 
+            "INSERT INTO chat_messages (id, session_id, user_id, message_type, content, model_name, created_at, updated_at)
              VALUES ($1, $2, $3, 'User', $4, $5, NOW(), NOW())"
         )
         .bind::<diesel::sql_types::Uuid, _>(message_id)

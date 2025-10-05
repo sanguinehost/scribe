@@ -133,6 +133,9 @@ pub struct UserDbQuery {
     pub total_token_cost_cents: i64,
     pub tokens_last_reset_at: Option<DateTime<Utc>>,
     pub token_usage_updated_at: DateTime<Utc>,
+    pub cached_credit_balance: Option<i32>,
+    pub cached_subscription_tier: Option<String>,
+    pub last_daily_usage_reset: Option<DateTime<Utc>>,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -164,6 +167,9 @@ impl std::fmt::Debug for UserDbQuery {
             .field("total_token_cost_cents", &self.total_token_cost_cents)
             .field("tokens_last_reset_at", &self.tokens_last_reset_at)
             .field("token_usage_updated_at", &self.token_usage_updated_at)
+            .field("cached_credit_balance", &self.cached_credit_balance)
+            .field("cached_subscription_tier", &self.cached_subscription_tier)
+            .field("last_daily_usage_reset", &self.last_daily_usage_reset)
             .finish()
     }
 }
@@ -433,6 +439,11 @@ mod tests {
                 account_status: Some("active".to_string()),
                 recovery_phrase: None, // Add the recovery_phrase field
                 default_persona_id: params.default_persona_id,
+                token_usage_updated_at: chrono::Utc::now(),
+                tokens_last_reset_at: None,
+                total_completion_tokens: 0,
+                total_token_cost_cents: 0,
+                total_prompt_tokens: 0,
             }
         }
     }
@@ -519,6 +530,11 @@ mod tests {
             recovery_dek_nonce: None,
             role: UserRole::User,
             account_status: AccountStatus::Active,
+            token_usage_updated_at: chrono::Utc::now(),
+            tokens_last_reset_at: None,
+            total_completion_tokens: 0,
+            total_prompt_tokens: 0,
+            total_token_cost_cents: 0,
         };
 
         assert_eq!(new_user.username, username);

@@ -1,8 +1,8 @@
 // frontend/src/lib/stores/modelLifecycle.svelte.ts
 
-import { browser } from '$app/environment';
+import { browser as _browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import { toast } from 'svelte-sonner';
 
 interface ModelLifecycleState {
@@ -37,13 +37,13 @@ export class ModelLifecycleStore {
 	/**
 	 * Activate a local model
 	 */
-	async activateModel(modelId: string): Promise<boolean> {
-		if (!browser) return false;
+	async activateModel(_modelId: string): Promise<boolean> {
+		if (!_browser) return false;
 
 		this.state.isActivating = true;
 
 		try {
-			const response = await fetch(`/api/llm/models/${modelId}/activate`, {
+			const response = await fetch(`/api/llm/models/${_modelId}/activate`, {
 				method: 'POST',
 				credentials: 'include'
 			});
@@ -55,14 +55,14 @@ export class ModelLifecycleStore {
 			const result = await response.json();
 
 			if (result.success) {
-				this.state.activeModel = modelId;
+				this.state.activeModel = _modelId;
 				this.resetInactivityTimer();
 				return true;
 			} else {
 				throw new Error(result.message || 'Failed to activate model');
 			}
-		} catch (error) {
-			console.error('Failed to activate model:', error);
+		} catch (_error) {
+			console.error('Failed to activate model:', _error);
 			toast.error('Failed to start local model');
 			return false;
 		} finally {
@@ -74,7 +74,7 @@ export class ModelLifecycleStore {
 	 * Deactivate the current model
 	 */
 	async deactivateModel(): Promise<void> {
-		if (!browser || !this.state.activeModel) return;
+		if (!_browser || !this.state.activeModel) return;
 
 		try {
 			const response = await fetch('/api/llm/models/deactivate', {
@@ -95,8 +95,8 @@ export class ModelLifecycleStore {
 			} else {
 				console.error('Failed to deactivate model:', result.message);
 			}
-		} catch (error) {
-			console.error('Failed to deactivate model:', error);
+		} catch (_error) {
+			console.error('Failed to deactivate model:', _error);
 		}
 	}
 
@@ -104,7 +104,7 @@ export class ModelLifecycleStore {
 	 * Reset the inactivity timer (call on message send)
 	 */
 	resetInactivityTimer(): void {
-		if (!browser) return;
+		if (!_browser) return;
 
 		this.state.lastActivityTime = Date.now();
 		this.clearInactivityTimer();
@@ -128,8 +128,8 @@ export class ModelLifecycleStore {
 	/**
 	 * Check if a model is currently active
 	 */
-	isModelActive(modelId: string): boolean {
-		return this.state.activeModel === modelId;
+	isModelActive(_modelId: string): boolean {
+		return this.state.activeModel === _modelId;
 	}
 
 	/**

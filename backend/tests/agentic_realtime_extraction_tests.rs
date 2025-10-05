@@ -20,7 +20,7 @@ use scribe_backend::{
     services::agentic::factory::AgenticNarrativeFactory,
     test_helpers::{MockAiClient, TestApp, TestDataGuard},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -55,6 +55,11 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
 
     let user_db: UserDbQuery = conn
@@ -135,6 +140,8 @@ fn create_chat_message(
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     })
 }
 
@@ -206,7 +213,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
         model_integrity_verifier: None,
     };
 
-    let mut app_state = scribe_backend::state::AppState::new(
+    let app_state = scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         services,
@@ -215,7 +222,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
     let app_state_arc = Arc::new(app_state);
 
     // Add narrative intelligence service after AppState construction to break circular dependency
-    let narrative_intelligence_service =
+    let _narrative_intelligence_service =
         Arc::new(scribe_backend::services::NarrativeIntelligenceService::new(
             test_app.ai_client.clone(),
             Arc::new(scribe_backend::services::ChronicleService::new(
@@ -676,7 +683,7 @@ mod realtime_extraction_tests {
             .unwrap();
         assert!(!events.is_empty(), "Should have recorded combat events");
 
-        let combat_event = &events[0];
+        let _combat_event = &events[0];
         // Note: Event summaries may be encrypted and show as "[ENCRYPTED]"
         // The key verification is that the combat event was created successfully
     }
@@ -827,7 +834,7 @@ mod realtime_extraction_tests {
             "Should have recorded the revelation event"
         );
 
-        let revelation_event = &events[0];
+        let _revelation_event = &events[0];
         // Note: Event summaries may be encrypted and show as "[ENCRYPTED]"
         // The key verification is that the revelation event was created successfully
     }

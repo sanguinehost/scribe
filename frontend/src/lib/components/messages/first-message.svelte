@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn';
+	import { cn as _cn } from '$lib/utils/shadcn';
 	import SparklesIcon from '../icons/sparkles.svelte';
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
-	import { Button } from '../ui/button';
+	import { Button as ButtonComponent } from '../ui/button';
 	import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 	import { Markdown } from '../markdown';
 	import { fly } from 'svelte/transition';
@@ -12,24 +12,24 @@
 
 	let {
 		message,
-		readonly,
+		_readonly,
 		loading,
 		alternateGreetings = [],
 		currentGreetingIndex = 0,
 		character = null,
-		user = undefined,
+		_user = undefined,
 		substituteTemplateVariables = undefined,
-		userPersonaName = 'User'
+		_userPersonaName = 'User'
 	}: {
 		message: ScribeChatMessage;
-		readonly: boolean;
+		_readonly: boolean;
 		loading: boolean;
 		alternateGreetings?: string[];
 		currentGreetingIndex?: number;
 		character?: CharacterDataForClient | null; // Use CharacterDataForClient
-		user?: User | undefined; // Use User type
+		_user?: User | undefined; // Use User type
 		substituteTemplateVariables?: (text: string, characterName: string) => string;
-		userPersonaName?: string;
+		_userPersonaName?: string;
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -92,11 +92,13 @@
 		<div class="flex w-full flex-col gap-4">
 			<!-- Message content -->
 			<div
-				class={cn(
+				class={_cn(
 					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2'
 				)}
 			>
-				<Markdown md={currentGreeting} />
+				{#key `${message.id}-greeting-${currentGreetingIndex}`}
+					<Markdown md={currentGreeting} />
+				{/key}
 				{#if loading}
 					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
 				{/if}
@@ -112,7 +114,7 @@
 					{/if}
 					<Tooltip>
 						<TooltipTrigger>
-							<Button
+							<ButtonComponent
 								variant="ghost"
 								size="icon"
 								class="h-6 w-6 text-foreground"
@@ -120,7 +122,7 @@
 								disabled={!canGoPrevious}
 							>
 								<ChevronLeft size={12} />
-							</Button>
+							</ButtonComponent>
 						</TooltipTrigger>
 						<TooltipContent>
 							<p>Previous greeting</p>
@@ -133,7 +135,7 @@
 
 					<Tooltip>
 						<TooltipTrigger>
-							<Button
+							<ButtonComponent
 								variant="ghost"
 								size="icon"
 								class="h-6 w-6 text-foreground"
@@ -141,7 +143,7 @@
 								disabled={!canGoNext}
 							>
 								<ChevronRight size={12} />
-							</Button>
+							</ButtonComponent>
 						</TooltipTrigger>
 						<TooltipContent>
 							<p>Next greeting</p>

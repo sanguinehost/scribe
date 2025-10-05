@@ -431,6 +431,7 @@ struct ChatSessionInsertParams {
     default_history_management_strategy: String,
     default_history_management_limit: i32,
     player_chronicle_id: Option<Uuid>,
+    prompt_template_id: String,
 }
 
 /// Inserts the chat session into the database
@@ -454,6 +455,7 @@ fn insert_chat_session(
                 .eq(params.default_history_management_strategy),
             chat_sessions::history_management_limit.eq(params.default_history_management_limit),
             chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
+            chat_sessions::prompt_template_id.eq(params.prompt_template_id),
         ))
         .returning(Chat::as_returning())
         .get_result(transaction_conn)
@@ -490,7 +492,7 @@ fn validate_lorebook_ownership(
 }
 
 /// Fetches lorebooks associated with a character
-
+///
 /// Associates lorebooks with the chat session
 /// Associates explicitly provided lorebooks with the chat session.
 /// Character-derived lorebooks are handled implicitly by the frontend/listing logic
@@ -678,6 +680,7 @@ fn create_session_in_transaction(
             default_history_management_strategy,
             default_history_management_limit,
             player_chronicle_id: chronicle_id,
+            prompt_template_id: "neutral_roleplay".to_string(), // Default template
         },
         transaction_conn,
     )?;

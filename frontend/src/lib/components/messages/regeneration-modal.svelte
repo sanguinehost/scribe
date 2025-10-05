@@ -1,10 +1,10 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import { RadioGroupItem } from '$lib/components/ui/radio-group';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import { Zap, Brain, X } from 'lucide-svelte';
 
 	export type AnalysisMode = 'existing' | 'refresh' | 'skip';
@@ -118,7 +118,7 @@
 			<!-- Optional Guidance Section -->
 			<div class="space-y-2 border-t pt-4">
 				<Label for="guidance" class="text-sm font-medium">Add guidance (optional)</Label>
-				<Textarea
+				<TextareaComponent
 					id="guidance"
 					bind:value={guidance}
 					placeholder="e.g., 'Focus more on the emotional aspects' or 'Be more concise'"
@@ -131,8 +131,8 @@
 		</div>
 
 		<Dialog.Footer>
-			<Button variant="outline" onclick={handleCancel}>Cancel</Button>
-			<Button onclick={handleConfirm}>Regenerate</Button>
+			<ButtonComponent variant="outline" onclick={handleCancel}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={handleConfirm}>Regenerate</ButtonComponent>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

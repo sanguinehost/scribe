@@ -947,6 +947,11 @@ async fn test_create_chat_session_success() {
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
         chat_mode: scribe_backend::models::chats::ChatMode::Character,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
         player_chronicle_id: None,
         agent_mode: None,
     };
@@ -1155,6 +1160,8 @@ fn test_generate_chat_request_serde() {
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let serialized = serde_json::to_string(&original).expect("Serialization failed");

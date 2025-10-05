@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn';
+	/* eslint-disable svelte/valid-compile */
+	import { cn as _cn } from '$lib/utils/shadcn';
 	import type { Snippet } from 'svelte';
 
 	let {
@@ -26,7 +27,7 @@
 	<div
 		class="mt-4 w-full rounded-md border border-black/10 bg-black/5 p-2 shadow-sm dark:border-white/10 dark:bg-white/5"
 	>
-		<code class={cn('whitespace-pre-wrap break-words text-sm', c)} {...rest}>
+		<code class={_cn('whitespace-pre-wrap break-words text-sm', c)} {...rest}>
 			{@render children?.()}
 		</code>
 	</div>

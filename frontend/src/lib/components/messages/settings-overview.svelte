@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { fly } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
-	import { Button } from '../ui/button';
+	import { fly as _fly } from 'svelte/transition';
+	import { quintOut as _quintOut } from 'svelte/easing';
+	import { Button as ButtonComponent } from '../ui/button';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
+	import { MembershipSettings } from '$lib/components/membership';
+	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -43,36 +45,72 @@
 			new chats and can be overridden per-chat.
 		</p>
 
-		<div class="flex flex-col gap-4">
-			<Button onclick={showConsolidatedSettings} class="w-full">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="16"
-					height="16"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					class="lucide lucide-sliders mr-2"
-				>
-					<line x1="4" x2="4" y1="21" y2="14" />
-					<line x1="4" x2="4" y1="10" y2="3" />
-					<line x1="12" x2="12" y1="21" y2="12" />
-					<line x1="12" x2="12" y1="8" y2="3" />
-					<line x1="20" x2="20" y1="21" y2="16" />
-					<line x1="20" x2="20" y1="12" y2="3" />
-					<line x1="1" x2="7" y1="14" y2="14" />
-					<line x1="9" x2="15" y1="8" y2="8" />
-					<line x1="17" x2="23" y1="16" y2="16" />
-				</svg>
-				Configure Settings
-			</Button>
+		<!-- Membership Settings Card - Make it prominent -->
+		{#if ENABLE_PAYMENTS}
+			<div class="w-full">
+				<MembershipSettings />
+			</div>
+			<div class="mt-4">
+				<ButtonComponent onclick={showConsolidatedSettings} class="w-full" variant="outline">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						class="lucide lucide-sliders mr-2"
+					>
+						<line x1="4" x2="4" y1="21" y2="14" />
+						<line x1="4" x2="4" y1="10" y2="3" />
+						<line x1="12" x2="12" y1="21" y2="12" />
+						<line x1="12" x2="12" y1="8" y2="3" />
+						<line x1="20" x2="20" y1="21" y2="16" />
+						<line x1="20" x2="20" y1="12" y2="3" />
+						<line x1="1" x2="7" y1="14" y2="14" />
+						<line x1="9" x2="15" y1="8" y2="8" />
+						<line x1="17" x2="23" y1="16" y2="16" />
+					</svg>
+					Advanced Settings
+				</ButtonComponent>
+			</div>
+		{:else}
+			<div class="flex flex-col gap-4">
+				<ButtonComponent onclick={showConsolidatedSettings} class="w-full">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						class="lucide lucide-sliders mr-2"
+					>
+						<line x1="4" x2="4" y1="21" y2="14" />
+						<line x1="4" x2="4" y1="10" y2="3" />
+						<line x1="12" x2="12" y1="21" y2="12" />
+						<line x1="12" x2="12" y1="8" y2="3" />
+						<line x1="20" x2="20" y1="21" y2="16" />
+						<line x1="20" x2="20" y1="12" y2="3" />
+						<line x1="1" x2="7" y1="14" y2="14" />
+						<line x1="9" x2="15" y1="8" y2="8" />
+						<line x1="17" x2="23" y1="16" y2="16" />
+					</svg>
+					Configure Settings
+				</ButtonComponent>
+			</div>
+		{/if}
 
-			<Button onclick={closeSettings} variant="link" class="w-full text-muted-foreground">
+		<div class="mt-4">
+			<ButtonComponent onclick={closeSettings} variant="link" class="w-full text-muted-foreground">
 				Close Settings
-			</Button>
+			</ButtonComponent>
 		</div>
 
 		<div class="mt-4 text-sm text-muted-foreground">

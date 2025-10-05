@@ -44,24 +44,24 @@ log_header() {
 # Check prerequisites
 check_prerequisites() {
     local missing=()
-    
+
     # Check for required tools
     if ! command -v openssl &> /dev/null; then
         missing+=("openssl")
     fi
-    
+
     if ! command -v base64 &> /dev/null; then
         missing+=("base64")
     fi
-    
+
     if ! command -v head &> /dev/null; then
         missing+=("head")
     fi
-    
+
     if ! command -v tr &> /dev/null; then
         missing+=("tr")
     fi
-    
+
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_error "Missing required tools: ${missing[*]}"
         log_info "Please install the missing tools and try again."
@@ -100,30 +100,30 @@ validate_gemini_key() {
 # Prompt for user input
 prompt_for_gemini_key() {
     local gemini_key=""
-    
+
     echo >&2
     log_info "Please enter your Gemini API key." >&2
     log_info "Get one at: https://aistudio.google.com/app/apikey" >&2
     echo >&2
-    
+
     while true; do
         echo -n "Gemini API Key: " >&2
         read -r gemini_key
-        
+
         if [[ -z "$gemini_key" ]]; then
             log_warn "Gemini API key cannot be empty. Please try again." >&2
             continue
         fi
-        
+
         if ! validate_gemini_key "$gemini_key"; then
             log_warn "Invalid Gemini API key format. Keys should start with 'AIza' followed by 35 characters." >&2
             log_info "Please check your key and try again." >&2
             continue
         fi
-        
+
         break
     done
-    
+
     echo "$gemini_key"
 }
 
@@ -134,17 +134,17 @@ check_existing_env() {
         log_warn "Existing .env file found."
         echo -n "Do you want to backup the existing file and create a new one? [y/N]: "
         read -r backup_choice
-        
+
         if [[ "$backup_choice" != "y" && "$backup_choice" != "Y" ]]; then
             log_info "Operation cancelled. Existing .env file preserved."
             exit 0
         fi
-        
+
         # Create backup with timestamp
         local timestamp
         timestamp=$(date +"%Y%m%d_%H%M%S")
         local backup_file="$PROJECT_ROOT/.env.backup.$timestamp"
-        
+
         cp "$ENV_FILE" "$backup_file"
         log_success "Existing .env backed up to: $(basename "$backup_file")"
     fi
@@ -153,20 +153,20 @@ check_existing_env() {
 # Generate the .env file
 generate_env_file() {
     local gemini_key="$1"
-    
+
     log_info "Generating secure random secrets..."
-    
+
     # Generate all secrets
     local jwt_secret
     local encryption_key
     local session_secret
     local cookie_signing_key
-    
+
     jwt_secret=$(generate_jwt_secret)
     encryption_key=$(generate_encryption_key)
     session_secret=$(generate_session_secret)
     cookie_signing_key=$(generate_cookie_signing_key)
-    
+
     # Create .env file
     cat > "$ENV_FILE" << EOF
 # Sanguine Scribe Environment Configuration
@@ -305,7 +305,7 @@ show_completion_info() {
     echo "   ✓ Your Gemini API key"
     echo "   ✓ Securely generated JWT secret"
     echo "   ✓ Securely generated encryption key (32 chars)"
-    echo "   ✓ Securely generated session secret"  
+    echo "   ✓ Securely generated session secret"
     echo "   ✓ Securely generated cookie signing key (128 hex chars)"
     echo "   ✓ Local development defaults"
     echo
@@ -321,15 +321,15 @@ show_completion_info() {
 # Main execution
 main() {
     local gemini_key="${1:-}"
-    
+
     log_header "🔧 Sanguine Scribe Environment Setup"
     echo "====================================="
     echo
     log_info "This wizard will help you create a .env file for local development."
-    
+
     check_prerequisites
     check_existing_env
-    
+
     # If no API key provided as argument, prompt for it
     if [[ -z "$gemini_key" ]]; then
         gemini_key=$(prompt_for_gemini_key)
@@ -342,7 +342,7 @@ main() {
         fi
         log_info "Using provided Gemini API key."
     fi
-    
+
     echo
     generate_env_file "$gemini_key"
     show_completion_info

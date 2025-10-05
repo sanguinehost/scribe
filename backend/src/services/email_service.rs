@@ -65,7 +65,7 @@ pub trait EmailService: Send + Sync {
 
 /// Development email service that logs verification links to console
 /// instead of sending actual emails
-/// 
+///
 /// ⚠️  SECURITY WARNING: This service is for DEVELOPMENT ONLY!
 /// It logs email verification information to console and should NEVER be used in production.
 /// Sensitive data (emails, tokens) are redacted in logs but still visible in console output.
@@ -93,7 +93,7 @@ impl EmailService for LoggingEmailService {
         let redacted_token = redact_token(verification_token);
         let masked_email = mask_email(to_email);
         let redacted_link = format!("{}/verify-email?token={}", self.base_url, redacted_token);
-        
+
         // Create the actual verification link (not logged)
         let verification_link = format!(
             "{}/verify-email?token={}",
@@ -172,25 +172,25 @@ impl EmailService for SesEmailService {
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
                     <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Sanguine Scribe</h1>
                 </div>
-                
+
                 <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #ddd;">
                     <h2 style="color: #333; margin-top: 0;">Hi {}!</h2>
-                    
+
                     <p>Thank you for signing up for Sanguine Scribe. To complete your registration and start your journey into creative writing with AI, please verify your email address.</p>
-                    
+
                     <div style="text-align: center; margin: 30px 0;">
                         <a href="{}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Verify Email Address</a>
                     </div>
-                    
+
                     <p>If the button above doesn't work, you can also click on this link:</p>
                     <p style="word-break: break-all; color: #667eea;"><a href="{}" style="color: #667eea;">{}</a></p>
-                    
+
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-                    
+
                     <p style="font-size: 14px; color: #666;">
                         This verification link will expire in 24 hours. If you didn't create an account with us, you can safely ignore this email.
                     </p>
-                    
+
                     <p style="font-size: 14px; color: #666;">
                         Best regards,<br>
                         The Sanguine Scribe Team
@@ -298,7 +298,9 @@ pub async fn create_email_service(
             Ok(Arc::new(service))
         }
         _ => {
-            info!("Creating logging email service for development - sensitive data will be redacted in logs");
+            info!(
+                "Creating logging email service for development - sensitive data will be redacted in logs"
+            );
             Ok(Arc::new(LoggingEmailService::new(base_url)))
         }
     }
@@ -314,12 +316,12 @@ mod tests {
         let long_token = "abcdef1234567890wxyz1234567890";
         let redacted = redact_token(long_token);
         assert_eq!(redacted, "abcdef12***7890");
-        
+
         // Test short token
         let short_token = "abc123";
         let redacted = redact_token(short_token);
         assert_eq!(redacted, "abc1***");
-        
+
         // Test very short token
         let tiny_token = "ab";
         let redacted = redact_token(tiny_token);
@@ -332,17 +334,17 @@ mod tests {
         let email = "john.doe@example.com";
         let masked = mask_email(email);
         assert_eq!(masked, "j***@example.com");
-        
+
         // Test single char local part
         let email = "a@example.com";
         let masked = mask_email(email);
         assert_eq!(masked, "***@example.com");
-        
+
         // Test invalid email (no @)
         let email = "notanemail";
         let masked = mask_email(email);
         assert_eq!(masked, "n***");
-        
+
         // Test very short invalid email
         let email = "no";
         let masked = mask_email(email);

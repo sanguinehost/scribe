@@ -1377,6 +1377,7 @@ mod tests {
     // Helper struct to simulate V2 data for testing V2Fallback path
     // In reality, this would likely be defined elsewhere if needed outside tests
     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+    #[allow(dead_code)]
     struct CharacterCardDataV2Sim {
         name: Option<String>,
         description: String,

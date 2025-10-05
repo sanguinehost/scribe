@@ -1,12 +1,20 @@
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import type {
 	Lorebook,
 	LorebookEntry,
 	CreateLorebookPayload,
 	UpdateLorebookPayload,
 	CreateLorebookEntryPayload,
-	UpdateLorebookEntryPayload
+	UpdateLorebookEntryPayload,
+	LorebookUploadPayload
 } from '$lib/types';
+
+interface SillyTavernLorebookFormat {
+	name?: string;
+	description?: string;
+	entries?: Record<string, unknown>;
+	[key: string]: unknown;
+}
 
 interface LorebookStore {
 	lorebooks: Lorebook[];
@@ -51,7 +59,7 @@ function createLorebookStore() {
 		async loadLorebooks() {
 			state.isLoading = true;
 			state.error = null;
-			const result = await apiClient.getLorebooks();
+			const result = await _apiClient.getLorebooks();
 			if (result.isOk()) {
 				state.lorebooks = result.value;
 			} else {
@@ -63,7 +71,7 @@ function createLorebookStore() {
 		async createLorebook(payload: CreateLorebookPayload): Promise<Lorebook | null> {
 			state.isLoading = true;
 			state.error = null;
-			const result = await apiClient.createLorebook(payload);
+			const result = await _apiClient.createLorebook(payload);
 			if (result.isOk()) {
 				const newLorebook = result.value;
 				state.lorebooks.push(newLorebook);
@@ -79,7 +87,7 @@ function createLorebookStore() {
 		async updateLorebook(id: string, payload: UpdateLorebookPayload): Promise<boolean> {
 			state.isLoading = true;
 			state.error = null;
-			const result = await apiClient.updateLorebook(id, payload);
+			const result = await _apiClient.updateLorebook(id, payload);
 			if (result.isOk()) {
 				const updatedLorebook = result.value;
 
@@ -103,7 +111,7 @@ function createLorebookStore() {
 		async deleteLorebook(id: string): Promise<boolean> {
 			state.isLoading = true;
 			state.error = null;
-			const result = await apiClient.deleteLorebook(id);
+			const result = await _apiClient.deleteLorebook(id);
 			if (result.isOk()) {
 				state.lorebooks = state.lorebooks.filter((l) => l.id !== id);
 
@@ -120,10 +128,10 @@ function createLorebookStore() {
 			}
 		},
 
-		async selectLorebook(lorebook: Lorebook | null) {
-			state.selectedLorebook = lorebook;
-			if (lorebook) {
-				await this.loadEntries(lorebook.id);
+		async selectLorebook(_lorebook: Lorebook | null) {
+			state.selectedLorebook = _lorebook;
+			if (_lorebook) {
+				await this.loadEntries(_lorebook.id);
 			} else {
 				state.entries = [];
 			}
@@ -132,7 +140,7 @@ function createLorebookStore() {
 		async loadEntries(lorebookId: string) {
 			state.isLoadingEntries = true;
 			state.error = null;
-			const result = await apiClient.getLorebookEntries(lorebookId);
+			const result = await _apiClient.getLorebookEntries(lorebookId);
 			if (result.isOk()) {
 				state.entries = result.value;
 			} else {
@@ -147,7 +155,7 @@ function createLorebookStore() {
 		): Promise<LorebookEntry | null> {
 			state.isLoadingEntries = true;
 			state.error = null;
-			const result = await apiClient.createLorebookEntry(lorebookId, payload);
+			const result = await _apiClient.createLorebookEntry(lorebookId, payload);
 			if (result.isOk()) {
 				const newEntry = result.value;
 				state.entries.push(newEntry);
@@ -167,7 +175,7 @@ function createLorebookStore() {
 		): Promise<boolean> {
 			state.isLoadingEntries = true;
 			state.error = null;
-			const result = await apiClient.updateLorebookEntry(lorebookId, entryId, payload);
+			const result = await _apiClient.updateLorebookEntry(lorebookId, entryId, payload);
 			if (result.isOk()) {
 				const updatedEntry = result.value;
 
@@ -187,7 +195,7 @@ function createLorebookStore() {
 		async deleteEntry(lorebookId: string, entryId: string): Promise<boolean> {
 			state.isLoadingEntries = true;
 			state.error = null;
-			const result = await apiClient.deleteLorebookEntry(lorebookId, entryId);
+			const result = await _apiClient.deleteLorebookEntry(lorebookId, entryId);
 			if (result.isOk()) {
 				state.entries = state.entries.filter((e) => e.id !== entryId);
 				state.isLoadingEntries = false;
@@ -206,10 +214,10 @@ function createLorebookStore() {
 		async exportLorebook(
 			lorebookId: string,
 			format: 'scribe_minimal' | 'silly_tavern_full' = 'silly_tavern_full'
-		): Promise<any | null> {
+		): Promise<unknown | null> {
 			state.isLoading = true;
 			state.error = null;
-			const result = await apiClient.exportLorebook(lorebookId, format);
+			const result = await _apiClient.exportLorebook(lorebookId, format);
 			if (result.isOk()) {
 				state.isLoading = false;
 				return result.value;
@@ -220,19 +228,32 @@ function createLorebookStore() {
 			}
 		},
 
-		async importLorebook(data: any): Promise<Lorebook | null> {
+		async importLorebook(_data: Record<string, unknown>): Promise<Lorebook | null> {
 			state.isLoading = true;
 			state.error = null;
 
 			// Convert the SillyTavern format to our upload payload
-			const payload = {
-				name: data.name || 'Imported Lorebook',
-				description: data.description || null,
-				is_public: false,
-				entries: data.entries || {}
+			const sillyTavernData = _data as SillyTavernLorebookFormat;
+			const payload: LorebookUploadPayload = {
+				name: sillyTavernData.name || 'Imported Lorebook',
+				description: sillyTavernData.description || undefined,
+				entries: Object.values(sillyTavernData.entries || {}).map((entry: unknown) => {
+					const e = entry as {
+						name?: string;
+						title?: string;
+						content?: string;
+						keys?: string[];
+						keywords?: string[];
+					};
+					return {
+						name: e.name || e.title || 'Unnamed Entry',
+						content: e.content || '',
+						keywords: e.keys || e.keywords || []
+					};
+				})
 			};
 
-			const result = await apiClient.importLorebook(payload);
+			const result = await _apiClient.importLorebook(payload);
 			if (result.isOk()) {
 				const newLorebook = result.value;
 				state.lorebooks.push(newLorebook);

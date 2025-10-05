@@ -6,7 +6,7 @@
 		CreateLorebookEntryPayload,
 		UpdateLorebookEntryPayload
 	} from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
 	import { ArrowLeft, Edit, Download, Trash } from 'lucide-svelte';
 	import LorebookForm from './LorebookForm.svelte';
@@ -20,7 +20,7 @@
 		onBack?: () => void;
 		onUpdateLorebook?: (id: string, data: UpdateLorebookPayload) => Promise<boolean>;
 		onDeleteLorebook?: (id: string) => Promise<boolean>;
-		onExportLorebook?: (lorebook: Lorebook) => void;
+		onExportLorebook?: (_lorebook: Lorebook) => void;
 		onCreateEntry?: (
 			lorebookId: string,
 			data: CreateLorebookEntryPayload
@@ -45,7 +45,7 @@
 		onCreateEntry,
 		onUpdateEntry,
 		onDeleteEntry,
-		onToggleEntry
+		onToggleEntry: _onToggleEntry
 	}: Props = $props();
 
 	let showEditLorebook = $state(false);
@@ -54,9 +54,9 @@
 	let editingEntry = $state<LorebookEntry | null>(null);
 	let showDeleteLorebook = $state(false);
 
-	async function handleUpdateLorebook(data: UpdateLorebookPayload) {
+	async function handleUpdateLorebook(_data: UpdateLorebookPayload) {
 		if (onUpdateLorebook) {
-			const success = await onUpdateLorebook(lorebook.id, data);
+			const success = await onUpdateLorebook(lorebook.id, _data);
 			if (success) {
 				showEditLorebook = false;
 			}
@@ -89,10 +89,10 @@
 		showDeleteLorebook = false;
 	}
 
-	async function handleCreateEntry(data: CreateLorebookEntryPayload | UpdateLorebookEntryPayload) {
-		if (onCreateEntry && 'entry_title' in data) {
+	async function handleCreateEntry(_data: CreateLorebookEntryPayload | UpdateLorebookEntryPayload) {
+		if (onCreateEntry && 'entry_title' in _data) {
 			// This is a CreateLorebookEntryPayload (has required entry_title)
-			const entry = await onCreateEntry(lorebook.id, data as CreateLorebookEntryPayload);
+			const entry = await onCreateEntry(lorebook.id, _data as CreateLorebookEntryPayload);
 			if (entry) {
 				showCreateEntry = false;
 			}
@@ -104,9 +104,9 @@
 		showEditEntry = true;
 	}
 
-	async function handleUpdateEntry(data: UpdateLorebookEntryPayload) {
+	async function handleUpdateEntry(_data: UpdateLorebookEntryPayload) {
 		if (onUpdateEntry && editingEntry) {
-			const success = await onUpdateEntry(lorebook.id, editingEntry.id, data);
+			const success = await onUpdateEntry(lorebook.id, editingEntry.id, _data);
 			if (success) {
 				showEditEntry = false;
 				editingEntry = null;
@@ -132,10 +132,10 @@
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-4">
 			{#if onBack}
-				<Button variant="ghost" size="sm" onclick={onBack}>
+				<ButtonComponent variant="ghost" size="sm" onclick={onBack}>
 					<ArrowLeft class="mr-2 h-4 w-4" />
 					Back to Lorebooks
-				</Button>
+				</ButtonComponent>
 			{/if}
 			<div>
 				<h1 class="text-3xl font-bold">{lorebook.name}</h1>
@@ -147,22 +147,22 @@
 
 		<div class="flex gap-2">
 			<!-- Edit Lorebook -->
-			<Button variant="outline" onclick={() => (showEditLorebook = true)}>
+			<ButtonComponent variant="outline" onclick={() => (showEditLorebook = true)}>
 				<Edit class="mr-2 h-4 w-4" />
 				Edit
-			</Button>
+			</ButtonComponent>
 
 			<!-- Export Lorebook -->
-			<Button variant="outline" onclick={handleExportLorebook}>
+			<ButtonComponent variant="outline" onclick={handleExportLorebook}>
 				<Download class="mr-2 h-4 w-4" />
 				Export
-			</Button>
+			</ButtonComponent>
 
 			<!-- Delete Lorebook -->
-			<Button variant="destructive" onclick={() => (showDeleteLorebook = true)}>
+			<ButtonComponent variant="destructive" onclick={() => (showDeleteLorebook = true)}>
 				<Trash class="mr-2 h-4 w-4" />
 				Delete
-			</Button>
+			</ButtonComponent>
 		</div>
 	</div>
 
@@ -258,8 +258,10 @@
 				</p>
 			</div>
 			<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
-				<Button variant="outline" onclick={handleCancelDelete}>Cancel</Button>
-				<Button variant="destructive" onclick={handleDeleteLorebook}>Delete Lorebook</Button>
+				<ButtonComponent variant="outline" onclick={handleCancelDelete}>Cancel</ButtonComponent>
+				<ButtonComponent variant="destructive" onclick={handleDeleteLorebook}
+					>Delete Lorebook</ButtonComponent
+				>
 			</div>
 		</DialogContent>
 	</Dialog>

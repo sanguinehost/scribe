@@ -86,6 +86,8 @@ pub type SettingsTuple = (
     Option<String>, // agent_mode
     // -- Active Persona --
     Option<Uuid>, // active_custom_persona_id
+    // -- Prompt Template --
+    String, // prompt_template_id
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -123,6 +125,7 @@ pub struct Chat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
+    pub prompt_template_id: String,
 }
 
 impl std::fmt::Debug for Chat {
@@ -227,6 +230,7 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
+    pub prompt_template_id: String,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -1436,7 +1440,7 @@ pub struct GenerateChatRequest {
     pub model: Option<String>,
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
-    pub guidance: Option<String>, // Optional guidance text for regeneration steering
+    pub guidance: Option<String>,      // Optional guidance text for regeneration steering
     pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
 }
 
@@ -1647,6 +1651,8 @@ pub struct ChatSettingsResponse {
     pub agent_mode: Option<String>,
     // Active custom persona for this chat session
     pub active_custom_persona_id: Option<Uuid>,
+    // Prompt template to use for this chat session
+    pub prompt_template_id: Option<String>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -1678,6 +1684,7 @@ impl std::fmt::Debug for ChatSettingsResponse {
             .field("chronicle_id", &self.chronicle_id)
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
+            .field("prompt_template_id", &self.prompt_template_id)
             .finish()
     }
 }
@@ -1702,6 +1709,7 @@ impl From<Chat> for ChatSettingsResponse {
             chronicle_id: chat.player_chronicle_id,
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
+            prompt_template_id: Some(chat.prompt_template_id),
         }
     }
 }
@@ -1744,6 +1752,9 @@ pub struct UpdateChatSettingsRequest {
     pub agent_mode: Option<String>,
     // Active custom persona for this chat session
     pub active_custom_persona_id: Option<Uuid>,
+    // Prompt template to use for this chat session
+    #[validate(custom(function = "validate_optional_template_id"))]
+    pub prompt_template_id: Option<String>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -1945,7 +1956,6 @@ pub struct MessageVariantResponse {
     pub model_name: Option<String>,
 }
 
-
 // MessageResponse struct for API responses
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MessageResponse {
@@ -1963,13 +1973,13 @@ pub struct MessageResponse {
     pub model_name: Option<String>, // Optional for backward compatibility with existing messages
     pub status: String,
     pub error_message: Option<String>,
-    
+
     // Variant metadata
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub is_variant: bool,
     pub parent_message_id: Option<Uuid>,
-    
+
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
 }
@@ -1994,7 +2004,13 @@ impl std::fmt::Debug for MessageResponse {
             .field("current_variant_index", &self.current_variant_index)
             .field("is_variant", &self.is_variant)
             .field("parent_message_id", &self.parent_message_id)
-            .field("variants", &self.variants.as_ref().map(|v| format!("[{} variants]", v.len())))
+            .field(
+                "variants",
+                &self
+                    .variants
+                    .as_ref()
+                    .map(|v| format!("[{} variants]", v.len())),
+            )
             .finish()
     }
 }
@@ -2143,6 +2159,45 @@ impl std::fmt::Debug for ImpersonateResponse {
     }
 }
 
+fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationError> {
+    use regex::Regex;
+    use std::sync::LazyLock;
+
+    static TEMPLATE_ID_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^[a-zA-Z0-9_]+$").expect("Failed to compile template ID regex")
+    });
+
+    // Check template ID format
+    if template_id.is_empty() {
+        let mut err = ValidationError::new("template_id_empty");
+        err.message = Some("Template ID cannot be empty".into());
+        return Err(err);
+    }
+
+    if template_id.len() > 50 {
+        let mut err = ValidationError::new("template_id_too_long");
+        err.message = Some("Template ID too long (max 50 characters)".into());
+        return Err(err);
+    }
+
+    if !TEMPLATE_ID_REGEX.is_match(template_id) {
+        let mut err = ValidationError::new("template_id_invalid_format");
+        err.message =
+            Some("Template ID must contain only alphanumeric characters and underscores".into());
+        return Err(err);
+    }
+
+    // Check if template exists using the global template manager
+    use crate::prompt_templates::TEMPLATE_MANAGER;
+    if !TEMPLATE_MANAGER.has_template(template_id) {
+        let mut err = ValidationError::new("template_not_found");
+        err.message = Some(format!("Template '{}' not found", template_id).into());
+        return Err(err);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2193,6 +2248,11 @@ mod tests {
             model_name: "gemini-2.5-flash".to_string(),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
+            estimated_cost_cents: 0,
+            prompt_template_id: "default".to_string(),
+            tokens_counted_at: Utc::now(),
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -2258,6 +2318,8 @@ mod tests {
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
             status: "completed".to_string(),
+            current_variant_index: 0,
+            variant_count: 1,
             error_message: None,
             superseded_at: None,
         }
@@ -2451,6 +2513,7 @@ mod tests {
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
+            prompt_template_id: None,
         }
     }
 
@@ -2507,6 +2570,7 @@ mod tests {
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
+            prompt_template_id: Some("neutral_roleplay".to_string()),
         }
     }
 

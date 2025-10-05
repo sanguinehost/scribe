@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './button';
+	import { Button as ButtonComponent } from './button';
 	import { onMount } from 'svelte';
 
 	let {
@@ -14,21 +14,21 @@
 		onClose?: () => void;
 	} = $props();
 
-	let lightboxElement: HTMLDivElement;
-	let imageElement: HTMLImageElement;
+	let lightboxElement = $state<HTMLDivElement>();
+	let imageElement = $state<HTMLImageElement>();
 	let isImageLoaded = $state(false);
 	let isImageError = $state(false);
 
 	// Handle keyboard events
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+	function handleKeydown(_event: KeyboardEvent) {
+		if (_event.key === 'Escape') {
 			closeModal();
 		}
 	}
 
 	// Handle backdrop click
-	function handleBackdropClick(event: MouseEvent) {
-		if (event.target === event.currentTarget) {
+	function handleBackdropClick(_event: MouseEvent) {
+		if (_event.target === _event.currentTarget) {
 			closeModal();
 		}
 	}
@@ -88,11 +88,11 @@
 		aria-label="Image lightbox"
 	>
 		<!-- Close button -->
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			onclick={closeModal}
-			class="absolute right-4 top-4 h-8 w-8 p-0 text-white hover:bg-white/20 hover:text-white z-10"
+			class="absolute right-4 top-4 z-10 h-8 w-8 p-0 text-white hover:bg-white/20 hover:text-white"
 			aria-label="Close lightbox"
 		>
 			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,14 +103,16 @@
 					d="M6 18L18 6M6 6l12 12"
 				/>
 			</svg>
-		</Button>
+		</ButtonComponent>
 
 		<!-- Image container -->
 		<div class="relative max-h-[90vh] max-w-[90vw]">
 			{#if !isImageLoaded && !isImageError}
 				<!-- Loading state -->
 				<div class="flex h-64 w-64 items-center justify-center">
-					<div class="h-8 w-8 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>
+					<div
+						class="h-8 w-8 animate-spin rounded-full border-4 border-white/20 border-t-white"
+					></div>
 				</div>
 			{/if}
 
@@ -144,7 +146,9 @@
 
 			{#if alt && isImageLoaded}
 				<!-- Image caption -->
-				<div class="absolute bottom-0 left-0 right-0 bg-black/50 p-2 text-center text-sm text-white backdrop-blur-sm">
+				<div
+					class="absolute bottom-0 left-0 right-0 bg-black/50 p-2 text-center text-sm text-white backdrop-blur-sm"
+				>
 					{alt}
 				</div>
 			{/if}
@@ -157,7 +161,7 @@
 	:global(.lightbox-enter) {
 		animation: lightboxFadeIn 0.2s ease-out;
 	}
-	
+
 	:global(.lightbox-exit) {
 		animation: lightboxFadeOut 0.2s ease-in;
 	}

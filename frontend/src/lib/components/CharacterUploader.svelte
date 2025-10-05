@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { apiClient } from '$lib/api';
-	import { Button } from '$lib/components/ui/button';
+	import { apiClient as _apiClient } from '$lib/api';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import {
@@ -15,19 +15,21 @@
 	import Loader from './icons/loader.svelte'; // Assuming a loader icon exists
 
 	// Props to control the dialog visibility
-	export let open = false;
-	export let onOpenChange: (value: boolean) => void;
+	let {
+		_open = $bindable(false),
+		onOpenChange
+	}: { _open: boolean; onOpenChange: (_value: boolean) => void } = $props();
 
-	let selectedFile: File | null = null;
-	let fileName = '';
-	let isLoading = false;
-	let error: string | null = null;
+	let selectedFile = $state<File | null>(null);
+	let fileName = $state('');
+	let isLoading = $state(false);
+	let error = $state<string | null>(null);
 	// let fileInput: HTMLInputElement; // Remove binding variable
 
 	const dispatch = createEventDispatcher();
 
-	function handleFileChange(event: Event) {
-		const target = event.target as HTMLInputElement;
+	function handleFileChange(_event: Event) {
+		const target = _event.target as HTMLInputElement;
 		if (target.files && target.files.length > 0) {
 			const file = target.files[0];
 			if (file.type === 'image/png' || file.type === 'application/json') {
@@ -56,7 +58,7 @@
 		error = null;
 
 		try {
-			const result = await apiClient.uploadCharacter(selectedFile);
+			const result = await _apiClient.uploadCharacter(selectedFile);
 
 			if (result.isOk()) {
 				console.log('Character upload successful:', result.value);
@@ -66,9 +68,9 @@
 				console.error('Character upload failed:', result.error);
 				error = result.error.message;
 			}
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error('Upload failed:', e);
-			error = e.message || 'An unexpected error occurred during upload.';
+			error = e instanceof Error ? e.message : 'An unexpected error occurred during upload.';
 		} finally {
 			isLoading = false;
 		}
@@ -89,7 +91,7 @@
 </script>
 
 <Dialog
-	{open}
+	open={_open}
 	onOpenChange={(value) => {
 		if (!value) closeDialog();
 		else onOpenChange(value);
@@ -119,13 +121,15 @@
 			{/if}
 		</div>
 		<DialogFooter>
-			<Button variant="outline" onclick={closeDialog} disabled={isLoading}>Cancel</Button>
-			<Button type="submit" onclick={handleUpload} disabled={isLoading || !selectedFile}>
+			<ButtonComponent variant="outline" onclick={closeDialog} disabled={isLoading}
+				>Cancel</ButtonComponent
+			>
+			<ButtonComponent type="submit" onclick={handleUpload} disabled={isLoading || !selectedFile}>
 				{#if isLoading}
 					<Loader class="mr-2 h-4 w-4 animate-spin" />
 				{/if}
 				Upload
-			</Button>
+			</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

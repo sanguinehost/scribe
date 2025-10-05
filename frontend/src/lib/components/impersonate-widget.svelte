@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { toast } from 'svelte-sonner';
 	import { User, Expand } from 'lucide-svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 
 	type Props = {
 		value: string;
@@ -32,7 +32,7 @@
 			isExpanding = true;
 
 			// Call the backend API to expand the text using the user's persona
-			const result = await apiClient.expandText(chatId, value.trim());
+			const result = await _apiClient.expandText(chatId, value.trim());
 
 			if (result.isOk()) {
 				const expandedText = result.value.expanded_text;
@@ -42,8 +42,8 @@
 				console.error('Failed to expand text:', result.error);
 				toast.error(result.error?.message || 'Failed to expand text');
 			}
-		} catch (error) {
-			console.error('Error expanding text:', error);
+		} catch (_error) {
+			console.error('Error expanding text:', _error);
 			toast.error('An error occurred while expanding text');
 		} finally {
 			isExpanding = false;
@@ -60,7 +60,7 @@
 			isImpersonating = true;
 
 			// Call the backend API to generate a full user response based on chat context
-			const result = await apiClient.impersonate(chatId);
+			const result = await _apiClient.impersonate(chatId);
 
 			if (result.isOk()) {
 				const response = result.value.generated_response;
@@ -70,8 +70,8 @@
 				console.error('Failed to generate response:', result.error);
 				toast.error(result.error?.message || 'Failed to generate response');
 			}
-		} catch (error) {
-			console.error('Error generating response:', error);
+		} catch (_error) {
+			console.error('Error generating response:', _error);
 			toast.error('An error occurred while generating response');
 		} finally {
 			isImpersonating = false;
@@ -82,7 +82,7 @@
 <div class="flex items-center gap-1">
 	<!-- Expand button - only show when there's text to expand -->
 	{#if value.trim()}
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			class="h-7 w-7 p-1.5"
@@ -108,12 +108,12 @@
 			{:else}
 				<Expand size={14} />
 			{/if}
-		</Button>
+		</ButtonComponent>
 	{/if}
 
 	<!-- Impersonate button - always available when chat exists -->
 	{#if chatId}
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			class="h-7 w-7 p-1.5"
@@ -139,6 +139,6 @@
 			{:else}
 				<User size={14} />
 			{/if}
-		</Button>
+		</ButtonComponent>
 	{/if}
 </div>

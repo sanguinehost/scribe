@@ -5,7 +5,7 @@
 #
 # Three deployment strategies:
 #   1. Compose: Quick development workflows (up/down cycles)
-#   2. Quadlet: Persistent systemd-managed services  
+#   2. Quadlet: Persistent systemd-managed services
 #   3. Legacy: Docker compatibility fallback
 
 set -euo pipefail
@@ -44,7 +44,7 @@ DEPLOYMENT STRATEGIES:
     • Better integration with system services
     • Ideal for long-running development infrastructure
 
-🐋 legacy [up|down|logs|ps]  
+🐋 legacy [up|down|logs|ps]
     Docker Compose compatibility fallback
     • For systems without Podman
     • Maintains existing docker-compose.yml workflows
@@ -81,7 +81,7 @@ detect_runtime() {
     if command -v podman &>/dev/null; then
         echo "podman"
     elif command -v docker &>/dev/null; then
-        echo "docker" 
+        echo "docker"
     else
         echo "none"
     fi
@@ -109,21 +109,21 @@ show_status() {
             return 1
             ;;
     esac
-    
+
     echo ""
     echo -e "${BLUE}=== Running Containers ===${NC}"
-    
+
     # Check for running containers with various approaches
     if command -v podman &>/dev/null; then
         echo "Podman containers:"
         podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "No podman containers running"
     fi
-    
+
     if command -v docker &>/dev/null; then
-        echo "Docker containers:"  
+        echo "Docker containers:"
         docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "No docker containers running"
     fi
-    
+
     echo ""
     echo -e "${BLUE}=== Systemd Services (Quadlets) ===${NC}"
     if systemctl --user is-active postgres.service &>/dev/null; then
@@ -131,7 +131,7 @@ show_status() {
     else
         echo -e "PostgreSQL: ${RED}inactive${NC}"
     fi
-    
+
     if systemctl --user is-active qdrant.service &>/dev/null; then
         echo -e "Qdrant: ${GREEN}active${NC}"
     else
@@ -151,30 +151,30 @@ case "$STRATEGY" in
         echo -e "${GREEN}🐧 Using Modern Podman Compose Strategy${NC}"
         "$PROJECT_ROOT/scripts/podman-dev.sh" "${COMMAND:-up}"
         ;;
-        
+
     quadlet)
         echo -e "${GREEN}⚙️ Using Systemd Quadlet Strategy${NC}"
         "$PROJECT_ROOT/scripts/quadlet-dev.sh" "${COMMAND:-start}"
         ;;
-        
-    legacy) 
+
+    legacy)
         echo -e "${YELLOW}🐋 Using Legacy Docker Strategy${NC}"
         echo "Note: Consider migrating to 'compose' strategy for better security"
         "$PROJECT_ROOT/scripts/dev_db.sh" "${COMMAND:-up}"
         ;;
-        
+
     certs)
         generate_certs
         ;;
-        
+
     status)
         show_status
         ;;
-        
+
     help|--help|-h)
         usage
         ;;
-        
+
     *)
         if [[ -n "${STRATEGY:-}" ]]; then
             echo -e "${RED}Error: Unknown strategy '$STRATEGY'${NC}"

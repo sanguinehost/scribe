@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Tooltip as TooltipPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = TooltipPrimitive.ContentProps;
 
@@ -11,7 +11,7 @@
 
 <TooltipPrimitive.Content
 	{sideOffset}
-	class={cn(
+	class={_cn(
 		'z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md',
 		className
 	)}

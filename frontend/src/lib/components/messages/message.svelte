@@ -1,30 +1,46 @@
 <script lang="ts">
 	import { cn } from '$lib/utils/shadcn';
 	import SparklesIcon from '../icons/sparkles.svelte';
-	import { Button } from '../ui/button';
-	import { Textarea } from '../ui/textarea';
-	import PencilEditIcon from '../icons/pencil-edit.svelte';
-	import PreviewAttachment from '../preview-attachment.svelte';
+	import { Button as ButtonComponent } from '../ui/button';
+	import { Textarea as TextareaComponent } from '../ui/textarea';
 	import { Markdown } from '../markdown';
-	import MessageReasoning from '../message-reasoning.svelte';
 	import MessageActions from './message-actions.svelte';
-	import TokenUsageDisplay from '../token-usage-display.svelte';
 	import TypewriterMessage from '../TypewriterMessage.svelte';
 	import { fly } from 'svelte/transition';
-	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types'; // Import User and ScribeCharacter
+	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import ImageLightbox from '$lib/components/ui/image-lightbox.svelte';
 	import { env } from '$env/dynamic/public';
 	import { getLock } from '$lib/hooks/lock';
-	import { streamingService } from '$lib/services/StreamingService.svelte';
+	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
 
 	// Make reactive to streaming service state
-	let streamingState = $derived(streamingService.getState());
+	let _streamingState = $derived(streamingService.getState());
+
+	// Helper function to convert ScribeChatMessage to StreamingMessage
+	function toStreamingMessage(msg: ScribeChatMessage): StreamingMessage {
+		return {
+			id: msg.id,
+			content: msg.content,
+			displayedContent: msg.content,
+			sender: msg.message_type === 'User' ? 'user' : 'assistant',
+			created_at: msg.created_at || new Date().toISOString(),
+			isAnimating: false,
+			isRegenerating: msg.loading,
+			error: msg.error || undefined,
+			retryable: msg.retryable,
+			prompt_tokens: msg.prompt_tokens || undefined,
+			completion_tokens: msg.completion_tokens || undefined,
+			model_name: msg.model_name || undefined,
+			backend_id: msg.backend_id,
+			status: msg.status
+		};
+	}
 
 	let {
 		message,
 		readonly,
-		loading,
+		loading: _loading,
 		user, // Add user prop
 		character, // Add character prop
 		chat,
@@ -38,7 +54,7 @@
 		hasVariants = false,
 		variantInfo = null,
 		substituteTemplateVariables = undefined,
-		userPersonaName = 'User'
+		userPersonaName: _userPersonaName = 'User'
 	}: {
 		message: ScribeChatMessage;
 		readonly: boolean;
@@ -170,11 +186,11 @@
 	});
 
 	// Function to detect if a message is the first message from a character
-	function isFirstMessage(message: ScribeChatMessage): boolean {
+	function _isFirstMessage(_message: ScribeChatMessage): boolean {
 		// Check if it's an Assistant message and has the expected first-message ID pattern
 		// Note: We're being more conservative here and only checking the ID pattern
 		// since this component doesn't have access to message position context
-		return message.message_type === 'Assistant' && message.id.startsWith('first-message-');
+		return _message.message_type === 'Assistant' && _message.id.startsWith('first-message-');
 	}
 
 	// Debug logging removed for production
@@ -201,8 +217,10 @@
 		<!-- Avatar container (simplified) -->
 		<div class="size-8 shrink-0">
 			{#if message.message_type === 'Assistant'}
-				<Avatar 
-					class="size-8 transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''}"
+				<Avatar
+					class="size-8 transition-transform hover:scale-105 {characterAvatarSrc
+						? 'cursor-pointer'
+						: ''}"
 					onclick={() => {
 						if (characterAvatarSrc && character) {
 							avatarLightboxSrc = characterAvatarSrc;
@@ -212,17 +230,14 @@
 					}}
 				>
 					{#if characterAvatarSrc && character}
-						<AvatarImage 
-							src={characterAvatarSrc} 
-							alt={character.name} 
-						/>
+						<AvatarImage src={characterAvatarSrc} alt={character.name} />
 					{/if}
 					<AvatarFallback>
 						{getInitials(character?.name)}
 					</AvatarFallback>
 				</Avatar>
 			{:else if message.message_type === 'User'}
-				<Avatar 
+				<Avatar
 					class="size-8 transition-transform hover:scale-105 {user?.avatar ? 'cursor-pointer' : ''}"
 					onclick={() => {
 						if (user?.avatar) {
@@ -234,10 +249,7 @@
 				>
 					{#if user?.avatar}
 						<!-- Assuming user.avatar will be a URL -->
-						<AvatarImage 
-							src={user.avatar} 
-							alt={user.username} 
-						/>
+						<AvatarImage src={user.avatar} alt={user.username} />
 					{/if}
 					<AvatarFallback>
 						{getInitials(user?.username)}
@@ -264,7 +276,7 @@
 				{#if isEditing && message.message_type === 'User'}
 					<!-- Edit mode for user messages -->
 					<div class="space-y-3">
-						<Textarea
+						<TextareaComponent
 							bind:value={editedContent}
 							onkeydown={handleKeydown}
 							placeholder="Edit your message..."
@@ -272,14 +284,16 @@
 							autofocus
 						/>
 						<div class="flex justify-end gap-2">
-							<Button variant="outline" size="sm" onclick={cancelEditing}>Cancel</Button>
-							<Button
+							<ButtonComponent variant="outline" size="sm" onclick={cancelEditing}
+								>Cancel</ButtonComponent
+							>
+							<ButtonComponent
 								size="sm"
 								onclick={saveEdit}
 								disabled={!editedContent.trim() || editedContent.trim() === message.content}
 							>
 								Save & Send
-							</Button>
+							</ButtonComponent>
 						</div>
 					</div>
 				{:else}
@@ -313,7 +327,7 @@
 										{message.error}
 									</p>
 									{#if message.retryable && onRetryFailedMessage}
-										<Button
+										<ButtonComponent
 											variant="outline"
 											size="sm"
 											class="mt-2 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/30"
@@ -333,7 +347,7 @@
 												/>
 											</svg>
 											Retry
-										</Button>
+										</ButtonComponent>
 									{/if}
 								</div>
 							</div>
@@ -341,7 +355,9 @@
 								<!-- Show partial content if any was generated before the error -->
 								<div class="mt-3 border-t border-red-200 pt-3 dark:border-red-800">
 									<p class="mb-2 text-xs text-red-600 dark:text-red-400">Partial response:</p>
-									<Markdown md={processedContent} />
+									{#key `${message.id}-partial-${message.current_variant_index || 0}`}
+										<Markdown md={processedContent} />
+									{/key}
 								</div>
 							{/if}
 						{:else}
@@ -349,7 +365,7 @@
 							{#if message.message_type === 'Assistant'}
 								<!-- FORCE TypewriterMessage for ALL Assistant messages to prevent transition -->
 								<TypewriterMessage
-									message={message as any}
+									message={toStreamingMessage(message)}
 									showTypewriter={message.loading}
 									className="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								/>
@@ -358,7 +374,9 @@
 								<div
 									class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								>
-									<Markdown md={processedContent} />
+									{#key `${message.id}-${message.current_variant_index || 0}`}
+										<Markdown md={processedContent} />
+									{/key}
 								</div>
 							{/if}
 						{/if}
@@ -379,7 +397,7 @@
 					{@const formatCost = (cost: number) =>
 						cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
 					{@const hasTokens = !!(message.prompt_tokens || message.completion_tokens)}
-					{@const isCompleted = !message.loading && !(message as any).isAnimating}
+					{@const isCompleted = !message.loading}
 
 					<!-- Always render container, control visibility with opacity -->
 					<div
@@ -388,7 +406,7 @@
 							: 'opacity-0'}"
 						title={isCompleted && hasTokens
 							? `Model: ${model}${'\n'}Input: ${message.prompt_tokens || 0} tokens (${formatCost(inputCost)})${'\n'}Output: ${message.completion_tokens || 0} tokens (${formatCost(outputCost)})${'\n'}Total cost: ${formatCost(totalCost)}`
-							: message.loading || (message as any).isAnimating
+							: message.loading
 								? 'Generating...'
 								: 'Tokens loading...'}
 					>
@@ -416,7 +434,7 @@
 							{:else}
 								<!-- Placeholder content to maintain layout during loading/waiting -->
 								<span class="text-[10px] text-muted-foreground/30">
-									{message.loading || (message as any).isAnimating ? '⋯' : '•••'}
+									{message.loading ? '⋯' : '•••'}
 								</span>
 							{/if}
 						</div>
@@ -425,7 +443,7 @@
 
 				<!-- Modern message actions - always reserve space, show when ready -->
 				{#if !isEditing}
-					{@const isLoadingOrAnimating = message.loading || (message as any).isAnimating}
+					{@const isLoadingOrAnimating = message.loading}
 					<div
 						class="absolute bottom-2 right-2 transition-opacity duration-200"
 						class:opacity-0={isLoadingOrAnimating || readonly}

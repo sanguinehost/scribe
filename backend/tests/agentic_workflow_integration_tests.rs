@@ -5,7 +5,6 @@
 
 use chrono::Utc;
 use diesel::{ExpressionMethods, RunQueryDsl};
-use reqwest::StatusCode;
 use secrecy::SecretBox;
 use serde_json::json;
 use std::sync::Arc;
@@ -14,20 +13,12 @@ use uuid::Uuid;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     config::{ExtractionMode, NarrativeFeatureFlags},
-    llm::{AiClient, EmbeddingClient},
-    models::{
-        chats::{ChatMessage, MessageRole},
-        chronicle::CreateChronicleRequest,
-        lorebook_dtos::CreateLorebookEntryPayload,
-    },
+    llm::EmbeddingClient,
+    models::chats::{ChatMessage, MessageRole},
     schema::chat_sessions,
     services::{
-        ChronicleService, EncryptionService, LorebookService,
-        agentic::{
-            AgenticNarrativeFactory, NarrativeAgentRunner, NarrativeWorkflowConfig,
-            NarrativeWorkflowResult,
-        },
-        extraction_dispatcher::{ExtractionDispatcher, ExtractionResult},
+        ChronicleService, EncryptionService, LorebookService, agentic::AgenticNarrativeFactory,
+        extraction_dispatcher::ExtractionDispatcher,
     },
     test_helpers::{MockAiClient, TestDataGuard, db::create_test_user, spawn_app},
 };
@@ -169,6 +160,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -189,6 +182,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
     ];
 
@@ -320,6 +315,8 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     }];
 
     // Create session DEK for testing
@@ -339,10 +336,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 
     assert!(extraction_result.success, "Extraction should be successful");
     assert_eq!(extraction_result.mode_used, ExtractionMode::AgenticOnly);
-    assert!(
-        extraction_result.duration_ms > 0,
-        "Should have measurable duration"
-    );
+    // Note: duration_ms can be 0 with mocked AI calls that complete in microseconds
     assert!(
         extraction_result.ai_calls_made > 0,
         "Should have made AI calls"
@@ -432,6 +426,8 @@ async fn test_dual_mode_extraction_comparison() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -449,6 +445,8 @@ async fn test_dual_mode_extraction_comparison() {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         },
     ];
 
@@ -545,6 +543,8 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     }];
 
     // Create session DEK for testing
@@ -574,7 +574,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
 
 #[tokio::test]
 async fn test_feature_flag_user_rollout() {
-    let test_app = spawn_app(false, false, false).await;
+    let _test_app = spawn_app(false, false, false).await;
 
     // Test user not in rollout (0% rollout)
     let mut feature_flags = NarrativeFeatureFlags::default();

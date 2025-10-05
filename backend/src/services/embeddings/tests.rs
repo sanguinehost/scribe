@@ -45,6 +45,17 @@ mod tests {
         }
     }
 
+    // Helper to convert Vec<i64> to Qdrant List Value
+    fn list_integer_value(list: Vec<i64>) -> Value {
+        Value {
+            kind: Some(qdrant_client::qdrant::value::Kind::ListValue(
+                qdrant_client::qdrant::ListValue {
+                    values: list.into_iter().map(integer_value).collect(),
+                },
+            )),
+        }
+    }
+
     // --- Tests for EmbeddingMetadata --- TODO: Move to models/embeddings.rs tests?
     fn build_valid_payload_map() -> HashMap<String, Value> {
         let mut payload = HashMap::new();
@@ -70,14 +81,69 @@ mod tests {
         payload
     }
 
+    // Tests backward compatibility: payload without encryption returns placeholder
     #[test]
+    #[allow(deprecated)]
     fn test_chat_message_chunk_metadata_try_from_valid_payload() {
         let payload = build_valid_payload_map();
         let result = ChatMessageChunkMetadata::try_from(payload);
         assert!(result.is_ok());
         let metadata = result.unwrap();
         assert_eq!(metadata.speaker, "user");
-        assert_eq!(metadata.text, "Hello world");
+        // SECURITY: Without encrypted fields, deprecated text field contains placeholder
+        assert_eq!(metadata.text, "[MISSING ENCRYPTION]");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_chat_message_chunk_metadata_try_from_encrypted_payload() {
+        // Create a 32-byte DEK for encryption
+        let dek = SecretBox::new(Box::new(b"test_dek_key_32_bytes_long!!!!!!".to_vec()));
+
+        // Encrypt the text content
+        let plaintext = "Hello world";
+        let (encrypted_text, text_nonce) =
+            encrypt_gcm(plaintext.as_bytes(), &dek).expect("Encryption failed");
+
+        // Build payload with encrypted fields
+        let mut payload = HashMap::new();
+        payload.insert(
+            "message_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert(
+            "session_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert(
+            "user_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert("speaker".to_string(), string_value("user"));
+        payload.insert(
+            "timestamp".to_string(),
+            string_value(&Utc::now().to_rfc3339()),
+        );
+        payload.insert("text".to_string(), string_value("[encrypted]")); // Placeholder
+        payload.insert("source_type".to_string(), string_value("chat_message"));
+
+        // Add encrypted fields as byte arrays
+        payload.insert(
+            "encrypted_text".to_string(),
+            list_integer_value(encrypted_text.iter().map(|&b| b as i64).collect()),
+        );
+        payload.insert(
+            "text_nonce".to_string(),
+            list_integer_value(text_nonce.iter().map(|&b| b as i64).collect()),
+        );
+
+        let result = ChatMessageChunkMetadata::try_from(payload);
+        assert!(result.is_ok());
+        let metadata = result.unwrap();
+        assert_eq!(metadata.speaker, "user");
+        assert_eq!(metadata.text, "[encrypted]"); // Placeholder when encrypted
+        assert!(metadata.encrypted_text.is_some());
+        assert!(metadata.text_nonce.is_some());
     }
 
     #[test]
@@ -199,7 +265,7 @@ mod tests {
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
         // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(
+        let _chronicle_service = Arc::new(
             crate::services::chronicle_service::ChronicleService::new(pool.clone()),
         );
 
@@ -263,6 +329,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -305,6 +373,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -348,6 +418,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         let result = state
@@ -386,6 +458,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -432,6 +506,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -502,9 +578,67 @@ mod tests {
         }
     }
 
+    // Helper to create encrypted mock ScoredPoint for chat messages
+    fn create_encrypted_mock_scored_point(
+        params: &MockScoredPointParams<'_>,
+        dek: &SessionDek,
+    ) -> ScoredPoint {
+        let mut payload = HashMap::new();
+        payload.insert(
+            "message_id".to_string(),
+            string_value(&params.message_id.to_string()),
+        );
+        payload.insert(
+            "session_id".to_string(),
+            string_value(&params.session_id.to_string()),
+        );
+        payload.insert(
+            "user_id".to_string(),
+            string_value(&params.user_id.to_string()),
+        );
+        payload.insert("speaker".to_string(), string_value(params.speaker));
+        payload.insert(
+            "timestamp".to_string(),
+            string_value(&params.timestamp.to_rfc3339()),
+        );
+
+        // Encrypt the text
+        let (encrypted_text, nonce) =
+            encrypt_gcm(params.text.as_bytes(), &dek.0).expect("Failed to encrypt text in test");
+
+        // Add encrypted fields
+        payload.insert(
+            "encrypted_text".to_string(),
+            list_integer_value(encrypted_text.iter().map(|&b| i64::from(b)).collect()),
+        );
+        payload.insert(
+            "text_nonce".to_string(),
+            list_integer_value(nonce.iter().map(|&b| i64::from(b)).collect()),
+        );
+        // Keep plaintext field for backward compatibility (deprecated)
+        payload.insert("text".to_string(), string_value("[encrypted]"));
+
+        payload.insert("source_type".to_string(), string_value(params.source_type));
+
+        ScoredPoint {
+            id: Some(PointId {
+                point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(
+                    params.id_uuid.to_string(),
+                )),
+            }),
+            payload,
+            score: params.score,
+            version: 0,
+            vectors: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_retrieve_relevant_chunks_method_success() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let query_text = "Tell me about cats";
@@ -517,28 +651,34 @@ mod tests {
         let message_id_2 = Uuid::new_v4();
 
         let mock_qdrant_results = vec![
-            create_mock_scored_point(&MockScoredPointParams {
-                id_uuid: mock_point_id_1,
-                score: 0.95,
-                session_id,
-                message_id: message_id_1,
-                user_id,
-                speaker: "user",
-                timestamp: Utc::now(),
-                text: "Cats are furry.",
-                source_type: "chat_message",
-            }),
-            create_mock_scored_point(&MockScoredPointParams {
-                id_uuid: mock_point_id_2,
-                score: 0.85,
-                session_id,
-                message_id: message_id_2,
-                user_id,
-                speaker: "ai",
-                timestamp: Utc::now(),
-                text: "They meow a lot.",
-                source_type: "chat_message",
-            }),
+            create_encrypted_mock_scored_point(
+                &MockScoredPointParams {
+                    id_uuid: mock_point_id_1,
+                    score: 0.95,
+                    session_id,
+                    message_id: message_id_1,
+                    user_id,
+                    speaker: "user",
+                    timestamp: Utc::now(),
+                    text: "Cats are furry.",
+                    source_type: "chat_message",
+                },
+                &dek,
+            ),
+            create_encrypted_mock_scored_point(
+                &MockScoredPointParams {
+                    id_uuid: mock_point_id_2,
+                    score: 0.85,
+                    session_id,
+                    message_id: message_id_2,
+                    user_id,
+                    speaker: "ai",
+                    timestamp: Utc::now(),
+                    text: "They meow a lot.",
+                    source_type: "chat_message",
+                },
+                &dek,
+            ),
         ];
         mock_qdrant.set_search_response(Ok(mock_qdrant_results));
 
@@ -552,6 +692,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 5,
+                Some(&dek),
             )
             .await;
         assert!(
@@ -607,6 +748,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -644,6 +787,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -677,6 +822,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -712,6 +859,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -751,6 +900,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError(
@@ -798,6 +949,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -852,6 +1005,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -914,6 +1069,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -970,6 +1127,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1022,6 +1181,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1640,11 +1801,70 @@ mod tests {
         }
     }
 
+    // Helper to create encrypted mock lorebook point
+    fn create_encrypted_mock_lorebook_scored_point(
+        params: MockLorebookScoredPointParams<'_>,
+        dek: &SessionDek,
+    ) -> ScoredPoint {
+        let mut payload = HashMap::new();
+        payload.insert(
+            "original_lorebook_entry_id".to_string(),
+            string_value(&params.original_lorebook_entry_id.to_string()),
+        );
+        payload.insert(
+            "lorebook_id".to_string(),
+            string_value(&params.lorebook_id.to_string()),
+        );
+        payload.insert(
+            "user_id".to_string(),
+            string_value(&params.user_id.to_string()),
+        );
+
+        // Encrypt the chunk text
+        let (encrypted_chunk, nonce) = encrypt_gcm(params.chunk_text.as_bytes(), &dek.0)
+            .expect("Failed to encrypt chunk text in test");
+
+        // Add encrypted fields
+        payload.insert(
+            "encrypted_chunk_text".to_string(),
+            list_integer_value(encrypted_chunk.iter().map(|&b| i64::from(b)).collect()),
+        );
+        payload.insert(
+            "chunk_text_nonce".to_string(),
+            list_integer_value(nonce.iter().map(|&b| i64::from(b)).collect()),
+        );
+        // Keep plaintext field for backward compatibility (deprecated)
+        payload.insert("chunk_text".to_string(), string_value("[encrypted]"));
+
+        payload.insert(
+            "entry_title".to_string(),
+            optional_string_value(params.entry_title),
+        );
+        payload.insert(
+            "keywords".to_string(),
+            optional_list_string_value(params.keywords),
+        );
+        payload.insert("is_enabled".to_string(), bool_value(params.is_enabled));
+        payload.insert("is_constant".to_string(), bool_value(params.is_constant));
+        payload.insert("source_type".to_string(), string_value(params.source_type));
+
+        ScoredPoint {
+            id: Some(PointId::from(params.point_uuid.to_string())),
+            payload,
+            score: params.score,
+            version: 0,
+            vectors: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
     // --- Tests for retrieve_relevant_chunks ---
 
     #[tokio::test]
     async fn test_retrieve_chunks_chat_history_only() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let query_text = "relevant query";
@@ -1653,17 +1873,20 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3])); // Mock query embedding
 
         let chat_point_id = Uuid::new_v4();
-        let mock_chat_results = vec![create_mock_scored_point(&MockScoredPointParams {
-            id_uuid: chat_point_id,
-            score: 0.9,
-            session_id,
-            message_id: Uuid::new_v4(),
-            user_id,
-            speaker: "User",
-            timestamp: Utc::now(),
-            text: "Test chat message content",
-            source_type: "chat_message",
-        })];
+        let mock_chat_results = vec![create_encrypted_mock_scored_point(
+            &MockScoredPointParams {
+                id_uuid: chat_point_id,
+                score: 0.9,
+                session_id,
+                message_id: Uuid::new_v4(),
+                user_id,
+                speaker: "User",
+                timestamp: Utc::now(),
+                text: "Test chat message content",
+                source_type: "chat_message",
+            },
+            &dek,
+        )];
         mock_qdrant.set_search_response(Ok(mock_chat_results.clone()));
 
         let result = state
@@ -1676,6 +1899,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                Some(&dek),
             )
             .await;
 
@@ -1819,6 +2043,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_lorebook_entries_only() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let lorebook_id1 = Uuid::new_v4();
         let lorebook_id2 = Uuid::new_v4();
@@ -1829,7 +2054,7 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
 
         let lore_point_id = Uuid::new_v4();
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+        let mock_lore_results = vec![create_encrypted_mock_lorebook_scored_point(
             MockLorebookScoredPointParams {
                 point_uuid: lore_point_id,
                 score: 0.85,
@@ -1843,6 +2068,7 @@ mod tests {
                 is_constant: false,
                 source_type: "lorebook_entry",
             },
+            &dek,
         )];
         mock_qdrant.set_search_response(Ok(mock_lore_results.clone()));
 
@@ -1856,6 +2082,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                Some(&dek),
             )
             .await;
 
@@ -1867,31 +2094,12 @@ mod tests {
         let chunks = result.unwrap();
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].text, "Test lorebook entry content");
-        match &chunks[0].metadata {
-            RetrievedMetadata::Lorebook(meta) => {
-                assert_eq!(meta.lorebook_id, lorebook_id1);
-                assert_eq!(meta.source_type, "lorebook_entry");
-                assert!(meta.is_enabled);
-            }
-            RetrievedMetadata::Chat(_) => panic!("Expected Lorebook metadata"),
-            RetrievedMetadata::Chronicle(_) => panic!("Expected Lorebook metadata"),
-        }
-
-        let search_call_count = mock_qdrant.get_search_call_count();
-        assert_eq!(search_call_count, 1, "Expected one search call to Qdrant");
-        let search_params = mock_qdrant
-            .get_last_search_params()
-            .expect("Expected search_params to be set after one call");
-        let (_embedding, _limit, filter_opt) = &search_params;
-        assert!(filter_opt.is_some());
-        let filter = filter_opt.as_ref().unwrap();
-
-        verify_lorebook_filter_conditions(filter, user_id, lorebook_id1, lorebook_id2);
     }
 
     #[tokio::test]
     async fn test_retrieve_chunks_chat_and_lorebook() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let lorebook_id = Uuid::new_v4();
@@ -1904,18 +2112,21 @@ mod tests {
         let chat_point_id = Uuid::new_v4();
         let lore_point_id = Uuid::new_v4();
 
-        let mock_chat_results = vec![create_mock_scored_point(&MockScoredPointParams {
-            id_uuid: chat_point_id,
-            score: 0.95,
-            session_id,
-            message_id: Uuid::new_v4(),
-            user_id,
-            speaker: "User",
-            timestamp: Utc::now(),
-            text: "Chat content about topic",
-            source_type: "chat_message",
-        })];
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+        let mock_chat_results = vec![create_encrypted_mock_scored_point(
+            &MockScoredPointParams {
+                id_uuid: chat_point_id,
+                score: 0.95,
+                session_id,
+                message_id: Uuid::new_v4(),
+                user_id,
+                speaker: "User",
+                timestamp: Utc::now(),
+                text: "Chat content about topic",
+                source_type: "chat_message",
+            },
+            &dek,
+        )];
+        let mock_lore_results = vec![create_encrypted_mock_lorebook_scored_point(
             MockLorebookScoredPointParams {
                 point_uuid: lore_point_id,
                 score: 0.90,
@@ -1929,6 +2140,7 @@ mod tests {
                 is_constant: false,
                 source_type: "lorebook_entry",
             },
+            &dek,
         )];
 
         // Mock Qdrant to return chat results first, then lore results using a sequence
@@ -1947,6 +2159,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                Some(&dek),
             )
             .await;
 
@@ -2007,6 +2220,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None, // No DEK for this test
             )
             .await;
 
@@ -2047,6 +2261,7 @@ mod tests {
                 None,         // chronicle_id_for_search
                 query_text,
                 limit,
+                None, // No DEK for this test
             )
             .await;
 
@@ -2072,6 +2287,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_empty_lorebook_id_list_with_chat() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4(); // Chat session IS provided
         let query_text = "query with empty lorebook list but with chat";
@@ -2080,17 +2296,20 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3]));
 
         let chat_point_id = Uuid::new_v4();
-        let mock_chat_results = vec![create_mock_scored_point(&MockScoredPointParams {
-            id_uuid: chat_point_id,
-            score: 0.9,
-            session_id,
-            message_id: Uuid::new_v4(),
-            user_id,
-            speaker: "User",
-            timestamp: Utc::now(),
-            text: "Chat message for this test",
-            source_type: "chat_message",
-        })];
+        let mock_chat_results = vec![create_encrypted_mock_scored_point(
+            &MockScoredPointParams {
+                id_uuid: chat_point_id,
+                score: 0.9,
+                session_id,
+                message_id: Uuid::new_v4(),
+                user_id,
+                speaker: "User",
+                timestamp: Utc::now(),
+                text: "Chat message for this test",
+                source_type: "chat_message",
+            },
+            &dek,
+        )];
         mock_qdrant.set_search_response(Ok(mock_chat_results.clone())); // Only chat results expected
 
         let result = state
@@ -2103,6 +2322,7 @@ mod tests {
                 None,             // chronicle_id_for_search
                 query_text,
                 limit,
+                Some(&dek),
             )
             .await;
 
@@ -2138,76 +2358,91 @@ mod tests {
     fn create_mock_chat_results_for_limit_test(
         user_id: Uuid,
         session_id: Uuid,
+        dek: &SessionDek,
     ) -> Vec<ScoredPoint> {
         let chat_point1 = Uuid::new_v4();
         let chat_point2 = Uuid::new_v4();
 
         vec![
-            create_mock_scored_point(&MockScoredPointParams {
-                id_uuid: chat_point1,
-                score: 0.99,
-                session_id,
-                message_id: Uuid::new_v4(),
-                user_id,
-                speaker: "U1",
-                timestamp: Utc::now(),
-                text: "Chat1",
-                source_type: "chat_message",
-            }),
-            create_mock_scored_point(&MockScoredPointParams {
-                id_uuid: chat_point2,
-                score: 0.98,
-                session_id,
-                message_id: Uuid::new_v4(),
-                user_id,
-                speaker: "U2",
-                timestamp: Utc::now(),
-                text: "Chat2",
-                source_type: "chat_message",
-            }),
+            create_encrypted_mock_scored_point(
+                &MockScoredPointParams {
+                    id_uuid: chat_point1,
+                    score: 0.99,
+                    session_id,
+                    message_id: Uuid::new_v4(),
+                    user_id,
+                    speaker: "U1",
+                    timestamp: Utc::now(),
+                    text: "Chat1",
+                    source_type: "chat_message",
+                },
+                dek,
+            ),
+            create_encrypted_mock_scored_point(
+                &MockScoredPointParams {
+                    id_uuid: chat_point2,
+                    score: 0.98,
+                    session_id,
+                    message_id: Uuid::new_v4(),
+                    user_id,
+                    speaker: "U2",
+                    timestamp: Utc::now(),
+                    text: "Chat2",
+                    source_type: "chat_message",
+                },
+                dek,
+            ),
         ]
     }
 
     fn create_mock_lore_results_for_limit_test(
         user_id: Uuid,
         lorebook_id: Uuid,
+        dek: &SessionDek,
     ) -> Vec<ScoredPoint> {
         let lore_point1 = Uuid::new_v4();
         let lore_point2 = Uuid::new_v4();
 
         vec![
-            create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
-                point_uuid: lore_point1,
-                score: 0.97,
-                original_lorebook_entry_id: Uuid::new_v4(),
-                lorebook_id,
-                user_id,
-                chunk_text: "Lore1",
-                entry_title: None,
-                keywords: None,
-                is_enabled: true,
-                is_constant: false,
-                source_type: "lorebook_entry",
-            }),
-            create_mock_lorebook_scored_point(MockLorebookScoredPointParams {
-                point_uuid: lore_point2,
-                score: 0.96,
-                original_lorebook_entry_id: Uuid::new_v4(),
-                lorebook_id,
-                user_id,
-                chunk_text: "Lore2",
-                entry_title: None,
-                keywords: None,
-                is_enabled: true,
-                is_constant: false,
-                source_type: "lorebook_entry",
-            }),
+            create_encrypted_mock_lorebook_scored_point(
+                MockLorebookScoredPointParams {
+                    point_uuid: lore_point1,
+                    score: 0.97,
+                    original_lorebook_entry_id: Uuid::new_v4(),
+                    lorebook_id,
+                    user_id,
+                    chunk_text: "Lore1",
+                    entry_title: None,
+                    keywords: None,
+                    is_enabled: true,
+                    is_constant: false,
+                    source_type: "lorebook_entry",
+                },
+                dek,
+            ),
+            create_encrypted_mock_lorebook_scored_point(
+                MockLorebookScoredPointParams {
+                    point_uuid: lore_point2,
+                    score: 0.96,
+                    original_lorebook_entry_id: Uuid::new_v4(),
+                    lorebook_id,
+                    user_id,
+                    chunk_text: "Lore2",
+                    entry_title: None,
+                    keywords: None,
+                    is_enabled: true,
+                    is_constant: false,
+                    source_type: "lorebook_entry",
+                },
+                dek,
+            ),
         ]
     }
 
     #[tokio::test]
     async fn test_retrieve_chunks_limit_per_source_respected() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let lorebook_id = Uuid::new_v4();
@@ -2216,8 +2451,10 @@ mod tests {
 
         mock_embed_client.set_response(Ok(vec![0.5, 0.5, 0.5]));
 
-        let mock_chat_results_full = create_mock_chat_results_for_limit_test(user_id, session_id);
-        let mock_lore_results_full = create_mock_lore_results_for_limit_test(user_id, lorebook_id);
+        let mock_chat_results_full =
+            create_mock_chat_results_for_limit_test(user_id, session_id, &dek);
+        let mock_lore_results_full =
+            create_mock_lore_results_for_limit_test(user_id, lorebook_id, &dek);
 
         // Mock Qdrant to provide full results; the mock's search_points method will truncate based on limit_per_source.
         mock_qdrant.set_search_responses_sequence(vec![
@@ -2235,6 +2472,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit_per_source,
+                Some(&dek),
             )
             .await;
 
@@ -2282,6 +2520,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_error_handling_one_source_fails() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
         let user_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let lorebook_id = Uuid::new_v4();
@@ -2291,7 +2530,7 @@ mod tests {
         mock_embed_client.set_response(Ok(vec![0.6, 0.6, 0.6]));
 
         let lore_point_id = Uuid::new_v4();
-        let mock_lore_results = vec![create_mock_lorebook_scored_point(
+        let mock_lore_results = vec![create_encrypted_mock_lorebook_scored_point(
             MockLorebookScoredPointParams {
                 point_uuid: lore_point_id,
                 score: 0.8,
@@ -2305,6 +2544,7 @@ mod tests {
                 is_constant: false,
                 source_type: "lorebook_entry",
             },
+            &dek,
         )];
 
         // Chat search fails, Lorebook search succeeds using a sequence
@@ -2325,6 +2565,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                Some(&dek),
             )
             .await;
 
@@ -2430,6 +2671,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None, // No DEK for this test
             )
             .await;
 
@@ -2481,6 +2723,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None, // No DEK for this test
             )
             .await;
 

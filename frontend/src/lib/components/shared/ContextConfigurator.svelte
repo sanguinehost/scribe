@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 
 	import { llmStore } from '$lib/stores/llm.svelte';
+	import { subscriptionStore } from '$lib/stores/subscription.svelte';
+	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { onMount } from 'svelte';
 
 	let {
@@ -33,8 +35,33 @@
 		return 200000;
 	});
 
-	// Calculate max allowed tokens (derived from model and total limit)
-	const max_allowed = $derived(() => Math.min(total_token_limit, maxContextSize));
+	// Get subscription tier limit (if payment feature is enabled)
+	const subscriptionLimit = $derived(() => {
+		if (ENABLE_PAYMENTS && subscriptionStore.planFeatures?.max_context_tokens) {
+			return subscriptionStore.planFeatures.max_context_tokens;
+		}
+		return null;
+	});
+
+	// Calculate max allowed tokens (model limit, subscription tier limit, or conservative default)
+	const max_allowed = $derived(() => {
+		const modelMax = maxContextSize();
+		const tierLimit = subscriptionLimit();
+
+		// If we have a subscription tier limit, use the minimum of model max and tier limit
+		if (tierLimit !== null) {
+			return Math.min(total_token_limit, modelMax, tierLimit);
+		}
+
+		// Otherwise just use model max
+		return Math.min(total_token_limit, modelMax);
+	});
+
+	// Check if user is hitting their subscription tier limit
+	const isAtTierLimit = $derived(() => {
+		const tierLimit = subscriptionLimit();
+		return tierLimit !== null && total_token_limit >= tierLimit;
+	});
 
 	// Load model capabilities on mount
 	onMount(() => {
@@ -43,14 +70,16 @@
 
 	// Constraint validation - only runs when dependencies change
 	$effect(() => {
+		const maxAllowed = max_allowed();
+
 		// Clamp recent history budget
-		if (recent_history_budget > max_allowed) {
-			recent_history_budget = max_allowed;
+		if (recent_history_budget > maxAllowed) {
+			recent_history_budget = maxAllowed;
 		}
 
 		// Clamp RAG budget to remaining space
-		if (rag_budget > max_allowed - recent_history_budget) {
-			rag_budget = max_allowed - recent_history_budget;
+		if (rag_budget > maxAllowed - recent_history_budget) {
+			rag_budget = maxAllowed - recent_history_budget;
 		}
 
 		// Ensure minimum budgets
@@ -105,21 +134,25 @@
 	}
 
 	// Apply a preset value to all budget settings
-	function applyPreset(value: number) {
-		total_token_limit = value;
-		const budgets = calculatePresetBudgets(value);
+	function applyPreset(_value: number) {
+		total_token_limit = _value;
+		const budgets = calculatePresetBudgets(_value);
 		recent_history_budget = budgets.history;
 		rag_budget = budgets.rag;
 	}
 
-	// Generate dynamic preset buttons based on model capabilities
+	// Generate dynamic preset buttons based on model capabilities and subscription tier
 	const presetButtons = $derived(() => {
 		const modelMax = maxContextSize();
+		const tierLimit = subscriptionLimit();
 		const presets = [4000, 8000, 16000, 32000, 64000, 128000, 200000, 1000000];
 
-		// Filter presets to only show those within model capabilities
+		// Determine effective maximum (considering both model and subscription limits)
+		const effectiveMax = tierLimit !== null ? Math.min(modelMax, tierLimit) : modelMax;
+
+		// Filter presets to only show those within effective capabilities
 		return presets
-			.filter((preset) => preset <= modelMax)
+			.filter((preset) => preset <= effectiveMax)
 			.map((preset) => ({
 				value: preset,
 				label: preset >= 1000000 ? `${preset / 1000000}M` : `${preset / 1000}K`,
@@ -154,7 +187,7 @@
 					<Label for="total-context-limit">Total Context Window (tokens)</Label>
 					<div class="flex flex-wrap gap-1">
 						{#each presetButtons() as preset}
-							<Button
+							<ButtonComponent
 								variant="ghost"
 								size="sm"
 								class="h-6 px-2 text-xs"
@@ -162,7 +195,7 @@
 								onclick={() => applyPreset(preset.value)}
 							>
 								{preset.label}
-							</Button>
+							</ButtonComponent>
 						{/each}
 					</div>
 				</div>
@@ -170,7 +203,7 @@
 					id="total-context-limit"
 					type="number"
 					min={4000}
-					max={maxContextSize()}
+					max={subscriptionLimit() ?? maxContextSize()}
 					step={1000}
 					bind:value={total_token_limit}
 				/>
@@ -180,6 +213,12 @@
 						{@const capabilities = llmStore.getModelCapabilities(selectedModelId)}
 						{#if capabilities}
 							<br />Current model: {capabilities.context_window_size.toLocaleString()} tokens max
+						{/if}
+					{/if}
+					{#if ENABLE_PAYMENTS && subscriptionLimit()}
+						<br /><strong>Your plan limit: {subscriptionLimit()?.toLocaleString()} tokens</strong>
+						{#if isAtTierLimit()}
+							<span class="text-amber-600 dark:text-amber-400"> (at plan maximum) </span>
 						{/if}
 					{/if}
 				</p>
@@ -253,43 +292,60 @@
 			<!-- Presets -->
 			<div class="space-y-2">
 				<Label>Quick Presets</Label>
+				{#snippet presetButtons()}
+					{@const tierLimit = subscriptionLimit()}
+					{@const effectiveMax = tierLimit ?? maxContextSize()}
+
+					<!-- Efficient preset (64k) -->
+					{#if 64000 <= effectiveMax}
+						<ButtonComponent
+							variant="outline"
+							size="sm"
+							onclick={() => {
+								total_token_limit = 64000;
+								recent_history_budget = 40000;
+								rag_budget = 20000; // Budget-friendly
+							}}
+						>
+							Efficient<br />
+							<span class="text-xs text-muted-foreground">64k total</span>
+						</ButtonComponent>
+					{/if}
+
+					<!-- Balanced preset (200k) -->
+					{#if 200000 <= effectiveMax}
+						<ButtonComponent
+							variant="outline"
+							size="sm"
+							onclick={() => {
+								total_token_limit = 200000;
+								recent_history_budget = 120000;
+								rag_budget = 70000; // Cost-effective maximum
+							}}
+						>
+							Balanced<br />
+							<span class="text-xs text-muted-foreground">200k total</span>
+						</ButtonComponent>
+					{/if}
+
+					<!-- Large preset (400k) - only if tier allows -->
+					{#if 400000 <= effectiveMax}
+						<ButtonComponent
+							variant="outline"
+							size="sm"
+							onclick={() => {
+								total_token_limit = 400000;
+								recent_history_budget = 240000;
+								rag_budget = 140000; // High cost, complex tasks
+							}}
+						>
+							Large<br />
+							<span class="text-xs text-muted-foreground">400k total</span>
+						</ButtonComponent>
+					{/if}
+				{/snippet}
 				<div class="grid grid-cols-3 gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => {
-							total_token_limit = 64000;
-							recent_history_budget = 40000;
-							rag_budget = 20000; // Budget-friendly
-						}}
-					>
-						Efficient<br />
-						<span class="text-xs text-muted-foreground">64k total</span>
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => {
-							total_token_limit = 200000;
-							recent_history_budget = 120000;
-							rag_budget = 70000; // Cost-effective maximum
-						}}
-					>
-						Balanced<br />
-						<span class="text-xs text-muted-foreground">200k total</span>
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => {
-							total_token_limit = 400000;
-							recent_history_budget = 240000;
-							rag_budget = 140000; // High cost, complex tasks
-						}}
-					>
-						Large<br />
-						<span class="text-xs text-muted-foreground">400k total</span>
-					</Button>
+					{@render presetButtons()}
 				</div>
 			</div>
 
@@ -299,6 +355,16 @@
 					to preserve the most important context (system prompts + recent 8 messages) while intelligently
 					managing older conversation history. This ensures optimal narrative continuity and cost efficiency.
 				</div>
+				{#if ENABLE_PAYMENTS && isAtTierLimit()}
+					<div class="rounded-lg bg-purple-50 p-3 text-xs dark:bg-purple-950">
+						<strong>📊 Subscription Limit:</strong>
+						<span class="text-muted-foreground">
+							You're using the maximum context size for your
+							<strong class="text-foreground">{subscriptionStore.getPlanDisplayName()}</strong> plan
+							({subscriptionLimit()?.toLocaleString()} tokens). Upgrade to access larger context windows.
+						</span>
+					</div>
+				{/if}
 				<div class="rounded-lg bg-amber-50 p-3 text-xs text-muted-foreground dark:bg-amber-950">
 					<strong>⚠️ Note:</strong> Larger contexts use more resources and increase costs. Settings are
 					conservative to ensure the backend's hard token limits are respected during strategic processing.

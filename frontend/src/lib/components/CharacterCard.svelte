@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Card, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import {
 		AlertDialog,
 		AlertDialogAction,
@@ -15,7 +15,7 @@
 	import PencilEdit from '$lib/components/icons/pencil-edit.svelte';
 	import TrashIcon from '$lib/components/icons/trash.svelte';
 	import { createEventDispatcher } from 'svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
 
 	import type { CharacterDataForClient } from '$lib/types';
@@ -50,7 +50,7 @@
 	async function handleDelete() {
 		isDeleting = true;
 		try {
-			const result = await apiClient.deleteCharacter(character.id);
+			const result = await _apiClient.deleteCharacter(character.id);
 			if (result.isOk()) {
 				dispatch('delete', { characterId: character.id });
 				showDeleteDialog = false;
@@ -58,8 +58,8 @@
 				console.error('Failed to delete character:', result.error);
 				// TODO: Show error toast
 			}
-		} catch (error) {
-			console.error('Error deleting character:', error);
+		} catch (_error) {
+			console.error('Error deleting character:', _error);
 		} finally {
 			isDeleting = false;
 		}
@@ -125,7 +125,7 @@
 	<div
 		class="absolute right-0.5 top-0.5 flex gap-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100"
 	>
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="icon"
 			class="h-5 w-5"
@@ -133,8 +133,8 @@
 			aria-label={`Edit character ${character.name}`}
 		>
 			<PencilEdit class="h-2.5 w-2.5" />
-		</Button>
-		<Button
+		</ButtonComponent>
+		<ButtonComponent
 			variant="ghost"
 			size="icon"
 			class="h-5 w-5 text-destructive hover:text-destructive"
@@ -142,7 +142,7 @@
 			aria-label={`Delete character ${character.name}`}
 		>
 			<TrashIcon class="h-2.5 w-2.5" />
-		</Button>
+		</ButtonComponent>
 	</div>
 </Card>
 

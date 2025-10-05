@@ -106,7 +106,7 @@ For secure database administration without exposing RDS to the public internet, 
 *   **Subnet Routing**: Advertises the VPC CIDR (10.0.0.0/16) to the Tailscale network
 *   **Security**: End-to-end encrypted WireGuard tunnels via Tailscale
 *   **Access Control**: Managed through Tailscale ACLs and AWS security groups
-*   **Benefits**: 
+*   **Benefits**:
     *   No bastion host complexity or SSH key management
     *   Zero-trust network access with MFA support
     *   Easy to enable/disable access as needed

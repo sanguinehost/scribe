@@ -142,8 +142,29 @@ module "secrets" {
   encryption_key     = random_password.encryption_key.result
   session_secret     = random_password.session_secret.result
   cookie_signing_key = local.cookie_signing_key_hex
-  tls_cert_pem       = file("${path.module}/../../../../.internal-certs/internal-cert.pem")
-  tls_key_pem        = file("${path.module}/../../../../.internal-certs/internal-key.pem")
+  tls_cert_pem       = file("${path.module}/../../../../.certs-backend/cert.pem")
+  tls_key_pem        = file("${path.module}/../../../../.certs-backend/key.pem")
+
+  # Payment configuration (optional)
+  enable_payments             = var.enable_payments
+  paddle_api_key             = var.paddle_api_key
+  paddle_webhook_secret      = var.paddle_webhook_secret
+  paddle_sandbox_mode        = var.paddle_sandbox_mode
+  payment_base_url           = var.payment_base_url != "" ? var.payment_base_url : "https://${local.api_domain}"
+  free_tier_token_limit      = var.free_tier_token_limit
+  enforce_payment_limits     = var.enforce_payment_limits
+  payment_grace_period_days  = var.payment_grace_period_days
+
+  # Paddle price IDs
+  paddle_basic_monthly_price_id  = var.paddle_basic_monthly_price_id
+  paddle_basic_yearly_price_id   = var.paddle_basic_yearly_price_id
+  paddle_premium_monthly_price_id = var.paddle_premium_monthly_price_id
+  paddle_premium_yearly_price_id = var.paddle_premium_yearly_price_id
+  paddle_credits_250_price_id    = var.paddle_credits_250_price_id
+  paddle_credits_500_price_id    = var.paddle_credits_500_price_id
+  paddle_credits_1500_price_id   = var.paddle_credits_1500_price_id
+  paddle_credits_3500_price_id   = var.paddle_credits_3500_price_id
+  paddle_credits_8000_price_id   = var.paddle_credits_8000_price_id
 }
 
 # Application Load Balancer module
@@ -176,7 +197,7 @@ module "ecs" {
   # Security groups
   backend_security_group_id = module.networking.backend_security_group_id
   qdrant_security_group_id  = module.networking.qdrant_security_group_id
-  efs_security_group_id     = module.networking.efs_security_group_id
+  # efs_security_group_id     = module.networking.efs_security_group_id  # No longer needed - using EBS
 
   # ALB integration
   backend_target_group_arn = module.alb.backend_target_group_arn
@@ -193,14 +214,14 @@ module "ecs" {
   qdrant_cpu              = var.qdrant_cpu
   qdrant_memory           = var.qdrant_memory
   qdrant_desired_count    = var.qdrant_desired_count
-  efs_provisioned_throughput = var.efs_provisioned_throughput
+  # efs_provisioned_throughput = var.efs_provisioned_throughput  # No longer needed - using EBS
 
   # Backend secrets
   backend_secrets = module.secrets.backend_secrets_list
-  
+
   # Email configuration
   from_email = local.from_email
-  
+
   # Domain configuration
   domain_name     = local.full_domain
   api_domain_name = local.api_domain
@@ -226,6 +247,18 @@ module "monitoring" {
   enable_cloudtrail    = var.enable_cloudtrail
   cloudtrail_bucket_name = var.cloudtrail_bucket_name
 
+  # Security monitoring (Task 10)
+  backend_log_group_name      = module.ecs.backend_log_group_name
+  enable_security_alarms      = var.enable_security_alarms
+  alert_email_p0              = var.alert_email_p0
+  alert_email_p1              = var.alert_email_p1
+  alert_email_p2              = var.alert_email_p2
+  alert_email_p3              = var.alert_email_p3
+  enable_kinesis_firehose     = var.enable_kinesis_firehose
+  firehose_buffer_size_mb     = var.firehose_buffer_size_mb
+  firehose_buffer_interval_seconds = var.firehose_buffer_interval_seconds
+  siem_log_retention_days     = var.siem_log_retention_days
+
   depends_on = [module.ecs, module.alb, module.rds]
 }
 
@@ -243,4 +276,3 @@ module "ses" {
 
   depends_on = [module.ecs]
 }
-

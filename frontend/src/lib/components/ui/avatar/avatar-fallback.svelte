@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Avatar as AvatarPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = AvatarPrimitive.FallbackProps;
 
@@ -9,7 +9,7 @@
 </script>
 
 <AvatarPrimitive.Fallback
-	class={cn('flex h-full w-full items-center justify-center rounded-full bg-muted', className)}
+	class={_cn('flex h-full w-full items-center justify-center rounded-full bg-muted', className)}
 	{...$$restProps}
 >
 	<slot />

@@ -338,7 +338,7 @@ impl ModelSelection {
         (compressed_size_gb * 1024.0 * 1024.0 * 1024.0) as u64
     }
 
-    /// Get the approximate download size in GB  
+    /// Get the approximate download size in GB
     pub fn download_size_gb(&self) -> f32 {
         self.download_size_bytes() as f32 / (1024.0 * 1024.0 * 1024.0)
     }
@@ -394,7 +394,7 @@ impl ModelSelection {
         self.base_model.context_window
     }
 
-    /// Get the maximum output tokens for this model  
+    /// Get the maximum output tokens for this model
     pub fn max_output_tokens(&self) -> u32 {
         // Conservative max output to leave room for input context (6% of context window)
         (self.base_model.context_window as f32 * 0.06) as u32

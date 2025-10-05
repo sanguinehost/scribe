@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Removed VercelIcon and MessageIcon imports
 	// Removed Button and SettingsStore imports
-	import { fly } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
+	import { fly as _fly } from 'svelte/transition';
+	import { quintOut as _quintOut } from 'svelte/easing';
 </script>
 
 <div class="flex h-full w-full items-start justify-center p-6 pt-[20vh]">

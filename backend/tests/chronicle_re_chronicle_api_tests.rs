@@ -290,10 +290,11 @@ async fn create_chat_session_with_messages(
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: chronicle_id,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     conn.interact(move |conn| {
@@ -308,7 +309,7 @@ async fn create_chat_session_with_messages(
 
     // Create messages
     for i in 0..message_count {
-        let message_id = Uuid::new_v4();
+        let _message_id = Uuid::new_v4();
         let role = if i % 2 == 0 {
             MessageRole::User
         } else {
@@ -347,6 +348,8 @@ async fn create_chat_session_with_messages(
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
             error_message: None,
+            variant_count: 1,
+            current_variant_index: 0,
         };
 
         conn.interact(move |conn| {

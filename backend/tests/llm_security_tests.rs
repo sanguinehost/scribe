@@ -3,22 +3,16 @@
 // Comprehensive security tests for Local LLM integration
 // Tests all OWASP Top 10 LLM vulnerabilities
 
-use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
     response::Response,
 };
-use diesel::prelude::*;
 use http_body_util::BodyExt;
-use scribe_backend::{
-    schema,
-    test_helpers::{self, TestApp, TestDataGuard},
-};
+use scribe_backend::test_helpers::{self, TestDataGuard};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tower::util::ServiceExt;
-use uuid::Uuid;
 
 /// Extract session cookie from response
 fn extract_session_cookie(response: &Response) -> Option<String> {
@@ -47,10 +41,10 @@ async fn test_llm01_prompt_injection_prevention() {
         .expect("Failed to start LLM server for testing");
 
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser".to_string(),
         "SecurePassword123!".to_string(),
@@ -176,10 +170,10 @@ async fn test_llm02_sensitive_information_filtering() {
         .expect("Failed to start LLM server for testing");
 
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser".to_string(),
         "SecurePassword123!".to_string(),

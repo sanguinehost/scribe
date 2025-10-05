@@ -1,24 +1,34 @@
 <script lang="ts">
+	/* eslint-disable svelte/valid-compile */
+	// Disable custom elements to avoid props inference issues
 	import { onMount } from 'svelte';
-	import { cn } from '$lib/utils/shadcn';
+	import type { Snippet } from 'svelte';
+	import { cn as _cn } from '$lib/utils/shadcn';
 
 	let {
 		children,
-		inline,
 		class: c,
 		...props
 	}: {
-		children: any;
-		inline?: boolean;
+		children?: Snippet;
 		class?: string;
-		[key: string]: any;
+		[key: string]: unknown;
 	} = $props();
 
 	let element = $state<HTMLElement | null>(null);
 	let hasProcessed = $state(false);
 
+	// Detect if this is inline code by checking if we're inside a pre element
+	let isInlineCode = $state(true); // Default to inline
+
 	onMount(() => {
-		if (!element || hasProcessed || inline) return; // Only process block code, not inline
+		if (!element) return;
+
+		// Check if this code element is inside a pre element
+		const preParent = element.closest('pre');
+		isInlineCode = !preParent;
+
+		if (hasProcessed || isInlineCode) return; // Only process block code for game status styling
 
 		const rawText = element.textContent || '';
 		// Trim the entire text content to remove leading/trailing whitespace
@@ -26,7 +36,7 @@
 
 		// Check if this looks like a status block
 		const isStatusBlock =
-			/^(CURRENT STATE|INVENTORY|STATUS|STATS|CHARACTER|PARTY|LOCATION|HEALTH|EQUIPMENT)[\s\(].*:/im.test(
+			/^(CURRENT STATE|INVENTORY|STATUS|STATS|CHARACTER|PARTY|LOCATION|HEALTH|EQUIPMENT)[\s(].*:/im.test(
 				text
 			) || /Health:\s*\d+|Location:|Status:|Inventory:|Power Path:|Attainment:|CARRIED/i.test(text);
 
@@ -84,7 +94,7 @@
 			}
 
 			// Inventory items (numbered, bulleted, or bracketed lists) - match against trimmed line
-			const inventoryMatch = line.trim().match(/^(\d+x|\*|\-|\[)\s*(.+)$/);
+			const inventoryMatch = line.trim().match(/^(\d+x|\*|-|\[)\s*(.+)$/);
 			if (inventoryMatch) {
 				const [, bullet, item] = inventoryMatch;
 				// For brackets, don't add space since it's already part of the text
@@ -113,19 +123,19 @@
 	});
 </script>
 
-{#if inline}
-	<code bind:this={element} class={cn('whitespace-pre-wrap break-words text-sm', c)} {...props}
-		>{@render children?.()}</code
+{#if isInlineCode}
+	<code
+		bind:this={element}
+		class={_cn(
+			'inline-block break-words rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground',
+			c
+		)}
+		{...props}>{@render children?.()}</code
 	>
 {:else}
-	<div class="not-prose mt-4 flex flex-col">
-		<pre
-			class="w-full overflow-x-auto rounded-xl border border-zinc-200 p-4 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"><code
-				bind:this={element}
-				class="whitespace-pre-wrap break-words"
-				{...props}>{@render children?.()}</code
-			></pre>
-	</div>
+	<code bind:this={element} class="whitespace-pre-wrap break-words" {...props}
+		>{@render children?.()}</code
+	>
 {/if}
 
 <style>

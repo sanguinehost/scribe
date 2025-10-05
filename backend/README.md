@@ -15,7 +15,7 @@ High-performance Rust backend for Sanguine Scribe's privacy-first character AI p
 ## Prerequisites
 
 - **Rust 1.75+** with Cargo
-- **PostgreSQL 16+** 
+- **PostgreSQL 16+**
 - **Qdrant v1.14+**
 - **Gemini API key** from [Google AI Studio](https://aistudio.google.com/app/apikey)
 
@@ -37,7 +37,7 @@ Edit `.env` with your settings:
 # Database
 DATABASE_URL=postgresql://user:password@localhost:5432/scribe_dev
 
-# Vector Database  
+# Vector Database
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=your-qdrant-key-if-needed
 
@@ -104,7 +104,7 @@ Security tests covering OWASP Top 10 vulnerabilities:
 # Context enrichment security
 cargo test --test context_enrichment_security_tests
 
-# Chronicle security  
+# Chronicle security
 cargo test --test chronicle_security_tests
 
 # All security tests
@@ -265,7 +265,7 @@ Example security test files:
 - Check connection string in `.env`
 - Ensure database exists: `createdb scribe_dev`
 
-### Qdrant Connection Issues  
+### Qdrant Connection Issues
 - Verify Qdrant is running: `curl http://localhost:6333/`
 - Check API key if using authentication
 - Review network configuration

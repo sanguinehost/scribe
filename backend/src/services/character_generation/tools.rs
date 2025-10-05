@@ -75,7 +75,7 @@ impl CharacterGenerationTool {
 
         let result = self
             .field_generator
-            .generate_field(request, user_id)
+            .generate_field(request, user_id, None)
             .await?;
         Ok(serde_json::to_value(result)?)
     }

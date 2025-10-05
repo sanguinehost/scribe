@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Check from 'lucide-svelte/icons/check';
 	import { Select as SelectPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = SelectPrimitive.ItemProps;
 
@@ -16,7 +16,7 @@
 	{value}
 	{disabled}
 	{label}
-	class={cn(
+	class={_cn(
 		'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50',
 		className
 	)}

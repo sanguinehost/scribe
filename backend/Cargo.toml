@@ -6,7 +6,8 @@ edition = "2024"
 [features]
 default = []
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
-production = []  # Explicitly excludes local-llm code
+payment = ["dep:hmac", "dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
+production = ["payment"]  # Include payment in production builds
 
 [[bin]]
 name = "re_embed_chronicles"
@@ -42,6 +43,8 @@ aes-gcm = "0.10.3" # For AES-GCM encryption
 ring = "0.17.8" # Add ring
 sha2 = "0.10.8" # For SHA-256 hashing in integrity checks
 zip = "4.0.0"
+# Fix zlib-rs compilation issue by forcing flate2 to use zlib backend
+flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 
@@ -98,6 +101,8 @@ icu_locid = "1.5"
 
 validator = { version = "0.20", features = ["derive"] }
 regex = "1.10.4"
+blake3 = "1.5.1"
+nanoid = "0.4.0"
 # Add missing dependencies needed by test_helpers
 tonic = "0.12.3"
 testcontainers = "0.23.3"
@@ -125,12 +130,24 @@ tokio-stream = "0.1"
 # Tokenization
 sentencepiece = "0.11.3"
 
+# Template engine for prompt templates
+minijinja = { version = "2.0", features = ["json", "loader"] }
+once_cell = "1.21.3"
+
 # AWS SDK for SES email service
 aws-config = "1.6.3"
 aws-sdk-ses = "1.75.0"
 
 # Rate limiting
 tower_governor = "0.5.0"
+
+# Payment processing (optional - only with payment feature)
+hmac = { version = "0.12", optional = true }  # For webhook signature verification
+subtle = { version = "2.5", optional = true }  # For constant-time comparisons
+
+# Security monitoring and metrics
+prometheus = "0.14"  # For security metrics collection (0.14.0 fixes RUSTSEC-2024-0437)
+lazy_static = "1.4"  # For global metrics registry
 
 [dev-dependencies]
 axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests, ADDED tokio feature
@@ -176,4 +193,3 @@ path = "src/lib.rs"
 # name = "integration_tests" # Example name
 # path = "tests/integration.rs" # Example path
 # harness = true
-

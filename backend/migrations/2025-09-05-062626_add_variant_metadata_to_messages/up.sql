@@ -6,14 +6,14 @@ ALTER TABLE chat_messages ADD COLUMN current_variant_index INTEGER NOT NULL DEFA
 CREATE INDEX IF NOT EXISTS idx_message_variants_parent ON message_variants(parent_message_id);
 
 -- Migrate existing data: set variant_count for messages that have variants
-UPDATE chat_messages 
+UPDATE chat_messages
 SET variant_count = (
-    SELECT COUNT(*) 
-    FROM message_variants 
+    SELECT COUNT(*)
+    FROM message_variants
     WHERE message_variants.parent_message_id = chat_messages.id
 )
 WHERE EXISTS (
-    SELECT 1 
-    FROM message_variants 
+    SELECT 1
+    FROM message_variants
     WHERE message_variants.parent_message_id = chat_messages.id
 );

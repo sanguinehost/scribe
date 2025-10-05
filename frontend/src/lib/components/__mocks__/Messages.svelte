@@ -1,19 +1,22 @@
 <script lang="ts">
-	import type { ScribeChatMessage, MessageRole } from '$lib/types';
+	import type {
+		ScribeChatMessage as _ScribeChatMessage,
+		MessageRole as _MessageRole
+	} from '$lib/types';
 
 	let {
 		messages: incomingMessages,
 		isSending: incomingIsSending,
 		currentUserId: incomingCurrentUserId
 	} = $props<{
-		messages?: ScribeChatMessage[];
+		messages?: _ScribeChatMessage[];
 		isSending?: boolean;
 		currentUserId?: string;
 	}>();
 
 	let messages = $state(incomingMessages || []);
 	let isSending = $state(incomingIsSending || false);
-	let currentUserId = $state(incomingCurrentUserId);
+	let _currentUserId = $state(incomingCurrentUserId);
 
 	// This helper function can be used to determine if a message is from the current user
 	// For styling or logic if needed, though not strictly required for basic mock rendering.
@@ -24,7 +27,7 @@
 		// Update local state if props change
 		messages = incomingMessages || [];
 		isSending = incomingIsSending || false;
-		currentUserId = incomingCurrentUserId;
+		_currentUserId = incomingCurrentUserId;
 	});
 </script>
 
@@ -42,8 +45,8 @@
 			{#if message.loading}
 				<span data-testid="message-loading"> (loading...)</span>
 			{/if}
-			{#if message.message_type === 'Assistant' && (message as any).error}
-				<p data-testid="message-error" style="color: red;">Error: {(message as any).error}</p>
+			{#if message.message_type === 'Assistant' && message.error}
+				<p data-testid="message-error" style="color: red;">Error: {message.error}</p>
 			{/if}
 		</div>
 	{/each}

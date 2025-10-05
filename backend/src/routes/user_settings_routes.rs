@@ -17,7 +17,7 @@ use crate::{
     // models::{user_personas::UserPersona, users::User}, // UserPersona is unused
     auth::user_store::Backend as AuthBackend, // Import the backend
     errors::AppError,
-    models::{user_settings::UpdateUserSettingsRequest, users::User, usage::TokenUsageSummary},
+    models::{usage::TokenUsageSummary, user_settings::UpdateUserSettingsRequest, users::User},
     services::{
         user_persona_service::UserPersonaService, user_settings_service::UserSettingsService,
     },

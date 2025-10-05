@@ -4,8 +4,6 @@
 #[cfg(feature = "local-llm")]
 use std::env;
 #[cfg(feature = "local-llm")]
-use std::ffi::OsStr;
-#[cfg(feature = "local-llm")]
 use std::path::{Path, PathBuf};
 #[cfg(feature = "local-llm")]
 use std::process::Command;
@@ -46,7 +44,7 @@ fn build_llamacpp() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Setup llama.cpp source
-    let llamacpp_dir = setup_llamacpp_source(&out_path)?;
+    let llamacpp_dir = setup_llamacpp_source(out_path)?;
 
     // Configure and build
     let build_dir = llamacpp_dir.join("build");
@@ -54,7 +52,7 @@ fn build_llamacpp() -> Result<(), Box<dyn std::error::Error>> {
     build_llamacpp_project(&build_dir)?;
 
     // Copy the built server binary to a location we can find at runtime
-    copy_server_binary(&build_dir, &out_path)?;
+    copy_server_binary(&build_dir, out_path)?;
 
     println!("cargo:warning=llama.cpp build completed successfully");
     Ok(())
@@ -65,6 +63,7 @@ fn build_llamacpp() -> Result<(), Box<dyn std::error::Error>> {
 struct BuildConfiguration {
     platform: Platform,
     acceleration: Acceleration,
+    #[allow(dead_code)]
     threads: Option<usize>,
 }
 
@@ -82,7 +81,7 @@ enum Acceleration {
     Cuda,
     Metal,
     OpenCL,
-    CPU,
+    Cpu,
 }
 
 #[cfg(feature = "local-llm")]
@@ -110,10 +109,8 @@ fn detect_build_configuration() -> Result<BuildConfiguration, Box<dyn std::error
 #[cfg(feature = "local-llm")]
 fn detect_acceleration_support() -> Result<Acceleration, Box<dyn std::error::Error>> {
     // Check for CUDA
-    if cfg!(target_os = "linux") || cfg!(target_os = "windows") {
-        if is_cuda_available() {
-            return Ok(Acceleration::Cuda);
-        }
+    if (cfg!(target_os = "linux") || cfg!(target_os = "windows")) && is_cuda_available() {
+        return Ok(Acceleration::Cuda);
     }
 
     // Check for Metal on macOS
@@ -127,7 +124,7 @@ fn detect_acceleration_support() -> Result<Acceleration, Box<dyn std::error::Err
     }
 
     // Fall back to CPU
-    Ok(Acceleration::CPU)
+    Ok(Acceleration::Cpu)
 }
 
 #[cfg(feature = "local-llm")]
@@ -324,7 +321,7 @@ fn configure_llamacpp(
         Acceleration::OpenCL => {
             cmake_cmd.arg("-DGGML_OPENCL=ON");
         }
-        Acceleration::CPU => {
+        Acceleration::Cpu => {
             // CPU-only build, no special flags needed
         }
     }

@@ -12,7 +12,7 @@ DROP INDEX IF EXISTS idx_chronicle_events_chronicle_id;
 DROP INDEX IF EXISTS idx_player_chronicles_user_id;
 
 -- Remove player_chronicle_id column from chat_sessions
-ALTER TABLE chat_sessions 
+ALTER TABLE chat_sessions
 DROP COLUMN player_chronicle_id;
 
 -- Drop tables (order matters due to foreign keys)

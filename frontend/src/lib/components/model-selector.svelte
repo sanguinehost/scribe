@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -8,14 +8,21 @@
 	} from './ui/dropdown-menu';
 	import CheckCircleFillIcon from './icons/check-circle-fill.svelte';
 	import ChevronDownIcon from './icons/chevron-down.svelte';
-	import { cn } from '$lib/utils/shadcn';
-	import { chatModels, getAllAvailableModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
+	import { cn as _cn } from '$lib/utils/shadcn';
+	import {
+		chatModels as _chatModels,
+		getAllAvailableModels,
+		DEFAULT_CHAT_MODEL as _DEFAULT_CHAT_MODEL
+	} from '$lib/ai/models';
 	import type { ClassValue } from 'svelte/elements';
 	import type { ScribeChatSession } from '$lib/types';
 	import { SelectedModel } from '$lib/hooks/selected-model.svelte';
 	import { LLMStore } from '$lib/stores/llm.svelte';
 	import { ModelLifecycleStore } from '$lib/stores/modelLifecycle.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
+	import { creditStore } from '$lib/stores/credits';
+	import { PAYMENT_FEATURES } from '$lib/utils/features';
+	import { Coins } from 'lucide-svelte';
 
 	let {
 		class: c,
@@ -32,7 +39,7 @@
 
 	// When we have a chat, load and manage its model override
 	let chatModelOverride = $state<string>('');
-	let isLoadingChatSettings = $state(false);
+	let _isLoadingChatSettings = $state(false);
 
 	// Load chat settings when chat changes
 	$effect(() => {
@@ -46,18 +53,18 @@
 	async function loadChatSettings() {
 		if (!chat?.id) return;
 
-		isLoadingChatSettings = true;
+		_isLoadingChatSettings = true;
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				chatModelOverride = result.value.model_name || '';
 			} else {
 				console.error('Failed to load chat settings:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to load chat settings:', error);
+		} catch (_error) {
+			console.error('Failed to load chat settings:', _error);
 		} finally {
-			isLoadingChatSettings = false;
+			_isLoadingChatSettings = false;
 		}
 	}
 
@@ -69,7 +76,7 @@
 		const provider = selectedModel?.isLocal ? 'local' : 'gemini';
 
 		try {
-			const result = await apiClient.updateChatSessionSettings(chat.id, {
+			const result = await _apiClient.updateChatSessionSettings(chat.id, {
 				model_name: modelId || null,
 				model_provider: modelId ? provider : null
 			});
@@ -79,8 +86,8 @@
 			} else {
 				console.error('Failed to update chat model override:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to update chat model override:', error);
+		} catch (_error) {
+			console.error('Failed to update chat model override:', _error);
 		}
 	}
 
@@ -103,6 +110,19 @@
 		availableModels().find((model) => model.id === currentEffectiveModel())
 	);
 
+	// Get credit cost for a model (feature-gated)
+	function getModelCreditCost(modelId: string): number {
+		if (!PAYMENT_FEATURES.credits) return 0;
+		return creditStore.getModelCreditCost(modelId);
+	}
+
+	// Check if user has sufficient credits for a model (feature-gated)
+	function hasSufficientCredits(modelId: string): boolean {
+		if (!PAYMENT_FEATURES.credits) return true;
+		const cost = getModelCreditCost(modelId);
+		return creditStore.hasSufficientCredits(cost);
+	}
+
 	function handleModelSelect(modelId: string) {
 		open = false;
 		if (chat) {
@@ -118,17 +138,17 @@
 <DropdownMenu {open} onOpenChange={(val) => (open = val)}>
 	<DropdownMenuTrigger>
 		{#snippet child({ props })}
-			<Button
+			<ButtonComponent
 				{...props}
 				variant="outline"
-				class={cn(
+				class={_cn(
 					'w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground md:h-[34px] md:px-2',
 					c
 				)}
 			>
 				{selectedChatModelDetails?.name}
 				<ChevronDownIcon />
-			</Button>
+			</ButtonComponent>
 		{/snippet}
 	</DropdownMenuTrigger>
 	<DropdownMenuContent align="start" class="min-w-[300px]">
@@ -144,6 +164,26 @@
 					<div class="text-xs text-muted-foreground">
 						{availableModels().find((m) => m.id === selectedChatModel.value)?.name ||
 							'Default Model'}
+						{#if PAYMENT_FEATURES.credits}
+							{@const defaultModel = availableModels().find(
+								(m) => m.id === selectedChatModel.value
+							)}
+							{#if defaultModel && !defaultModel.isLocal}
+								{@const creditCost = getModelCreditCost(defaultModel.id)}
+								{@const hasCredits = hasSufficientCredits(defaultModel.id)}
+								<div class="mt-1 flex items-center gap-1">
+									<Coins class="h-3 w-3" />
+									<span class={hasCredits ? '' : 'text-red-500'}>
+										{creditCost} credits per message
+									</span>
+								</div>
+							{:else if defaultModel && defaultModel.isLocal}
+								<div class="mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
+									<Coins class="h-3 w-3" />
+									<span>Free (local model)</span>
+								</div>
+							{/if}
+						{/if}
 					</div>
 				</div>
 
@@ -155,12 +195,16 @@
 			</DropdownMenuItem>
 		{/if}
 		{#each availableModels() as chatModel (chatModel.id)}
+			{@const hasCredits = hasSufficientCredits(chatModel.id)}
 			<DropdownMenuItem
-				onSelect={() => handleModelSelect(chatModel.id)}
-				class="group/item flex flex-row items-center justify-between gap-4"
+				onSelect={() => (hasCredits ? handleModelSelect(chatModel.id) : undefined)}
+				class="group/item flex flex-row items-center justify-between gap-4 {!hasCredits
+					? 'cursor-not-allowed opacity-50'
+					: ''}"
 				data-active={chat
 					? chatModelOverride === chatModel.id
 					: chatModel.id === selectedChatModel.value}
+				disabled={!hasCredits}
 			>
 				<div class="flex flex-col items-start gap-1">
 					<div class="flex items-center gap-2">
@@ -192,6 +236,24 @@
 					</div>
 					<div class="text-xs text-muted-foreground">
 						{chatModel.description}
+						{#if PAYMENT_FEATURES.credits && !chatModel.isLocal}
+							{@const creditCost = getModelCreditCost(chatModel.id)}
+							{@const hasCredits = hasSufficientCredits(chatModel.id)}
+							<div class="mt-1 flex items-center gap-1">
+								<Coins class="h-3 w-3" />
+								<span class={hasCredits ? '' : 'text-red-500'}>
+									{creditCost} credits per message
+								</span>
+								{#if !hasCredits}
+									<span class="text-xs text-red-500">(insufficient credits)</span>
+								{/if}
+							</div>
+						{:else if PAYMENT_FEATURES.credits && chatModel.isLocal}
+							<div class="mt-1 flex items-center gap-1 text-green-600 dark:text-green-400">
+								<Coins class="h-3 w-3" />
+								<span>Free (local model)</span>
+							</div>
+						{/if}
 					</div>
 				</div>
 

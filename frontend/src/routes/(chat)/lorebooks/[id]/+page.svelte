@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { LorebookDetailView, ExportDialog } from '$lib/components/lorebooks';
@@ -53,7 +53,7 @@
 	}
 
 	function handleBack() {
-		goto('/lorebooks');
+		_goto('/lorebooks');
 	}
 
 	async function handleUpdateLorebook(id: string, data: UpdateLorebookPayload): Promise<boolean> {
@@ -74,14 +74,14 @@
 		const success = await lorebookStore.deleteLorebook(id);
 		if (success) {
 			toast.success('Lorebook deleted successfully!');
-			goto('/lorebooks');
+			_goto('/lorebooks');
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to delete lorebook: ${lorebookStore.error}`);
 		}
 		return success;
 	}
 
-	function handleExportLorebook(lorebook: Lorebook) {
+	function handleExportLorebook(_lorebook: Lorebook) {
 		showExportDialog = true;
 	}
 

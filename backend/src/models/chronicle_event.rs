@@ -252,6 +252,24 @@ pub struct UpdateChronicleEvent {
     pub keywords: Option<Vec<String>>,
 }
 
+/// Validate keywords count to prevent resource exhaustion
+fn validate_keywords_count(keywords: &[String]) -> Result<(), validator::ValidationError> {
+    const MAX_KEYWORDS: usize = 100;
+    if keywords.len() > MAX_KEYWORDS {
+        let mut err = validator::ValidationError::new("keywords_too_many");
+        err.message = Some(
+            format!(
+                "Too many keywords: maximum {} allowed, got {}",
+                MAX_KEYWORDS,
+                keywords.len()
+            )
+            .into(),
+        );
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// DTO for event creation from API
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct CreateEventRequest {
@@ -269,6 +287,7 @@ pub struct CreateEventRequest {
     pub summary: String,
     #[serde(default = "default_event_source")]
     pub source: EventSource,
+    #[validate(custom(function = "validate_keywords_count"))]
     pub keywords: Option<Vec<String>>,
     pub timestamp_iso8601: Option<DateTime<Utc>>,
     pub chat_session_id: Option<Uuid>,

@@ -240,7 +240,7 @@ async fn test_a01_cannot_access_other_users_chronicle() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
-    let (user1_cookie, user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
+    let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
 
     // User1 creates a chronicle
@@ -273,7 +273,7 @@ async fn test_a01_cannot_access_other_users_chronicle() {
 
 #[tokio::test]
 async fn test_a01_cannot_update_other_users_chronicle() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
@@ -334,7 +334,7 @@ async fn test_a01_cannot_update_other_users_chronicle() {
 
 #[tokio::test]
 async fn test_a01_cannot_delete_other_users_chronicle() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
@@ -432,7 +432,7 @@ async fn test_a01_cannot_add_events_to_other_users_chronicle() {
 
 #[tokio::test]
 async fn test_a01_cannot_delete_other_users_chronicle_events() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
@@ -509,7 +509,7 @@ async fn test_a02_chronicle_events_are_encrypted_at_rest() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create authenticated user
-    let (cookie, user_id) = create_authenticated_user(&test_app, "crypto_test")
+    let (cookie, _user_id) = create_authenticated_user(&test_app, "crypto_test")
         .await
         .unwrap();
 
@@ -626,7 +626,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
 
 #[tokio::test]
 async fn test_a03_sql_injection_in_chronicle_name() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "sql_inject")
@@ -677,7 +677,9 @@ async fn test_a03_sql_injection_in_chronicle_name() {
             assert!(
                 response.status() == StatusCode::BAD_REQUEST
                     || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
-                "Expected validation error for SQL injection attempt"
+                "Expected validation error for SQL injection attempt, got: {} for payload: {}",
+                response.status(),
+                payload
             );
         }
     }
@@ -704,19 +706,19 @@ async fn test_a03_sql_injection_in_chronicle_name() {
     );
 }
 
+/// Test that XSS payloads are stored as-is in chronicle events (not sanitized at input).
+/// Sanitization should happen on output/rendering if needed.
+/// Uses separate chronicles for each XSS payload to avoid triggering duplicate detection.
 #[tokio::test]
 async fn test_a03_xss_prevention_in_chronicle_events() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "xss_test")
         .await
         .unwrap();
-    let chronicle = create_chronicle(&test_app, &cookie, "XSS Test Chronicle", None)
-        .await
-        .unwrap();
 
-    // XSS payloads
+    // XSS payloads to test
     let xss_payloads = vec![
         "<script>alert('XSS')</script>",
         "<img src=x onerror=alert('XSS')>",
@@ -726,12 +728,25 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
         "';alert(String.fromCharCode(88,83,83))//",
     ];
 
-    for payload in xss_payloads {
+    // Test each XSS payload in a separate chronicle to avoid duplicate detection
+    for (idx, payload) in xss_payloads.iter().enumerate() {
+        // Create a separate chronicle for each XSS test
+        // This avoids triggering the duplicate detection system which would otherwise
+        // detect similar XSS payloads as duplicates within the same chronicle
+        let chronicle = create_chronicle(
+            &test_app,
+            &cookie,
+            &format!("XSS Test Chronicle {}", idx),
+            None,
+        )
+        .await
+        .unwrap();
+
         let event_request = json!({
             "event_type": "XSS_TEST",
-            "summary": payload,
+            "summary": format!("Testing XSS payload: {}", payload),
             "source": "USER_ADDED",
-            "keywords": [payload]
+            "keywords": [payload.to_string()]
         });
 
         let response = test_app
@@ -749,19 +764,31 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
             .await
             .unwrap();
 
-        if response.status() == StatusCode::CREATED {
-            let event: ChronicleEvent = parse_json_response(response).await.unwrap();
-            // Verify the payload is stored safely (not executed)
-            // The summary should be exactly as provided, not sanitized yet
-            // (sanitization happens on output/rendering)
-            assert_eq!(event.summary, payload, "XSS payload should be stored as-is");
-        }
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "Failed to create event for XSS payload: {}",
+            payload
+        );
+
+        let event: ChronicleEvent = parse_json_response(response).await.unwrap();
+
+        // Verify the XSS payload is stored as-is in keywords (not sanitized at input)
+        // The keywords should contain the exact payload without modification
+        // (sanitization should happen on output/rendering if needed)
+        let keywords = event.get_keywords();
+        assert!(
+            keywords.contains(&payload.to_string()),
+            "XSS payload '{}' should be stored as-is in keywords, got: {:?}",
+            payload,
+            keywords
+        );
     }
 }
 
 #[tokio::test]
 async fn test_a03_json_injection_in_event_data() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "json_inject")
@@ -1117,7 +1144,7 @@ async fn test_a07_invalid_session_token_rejected() {
 
 #[tokio::test]
 async fn test_a08_chronicle_data_integrity() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     let (cookie, user_id) = create_authenticated_user(&test_app, "integrity_test")
@@ -1201,7 +1228,7 @@ async fn test_a08_chronicle_data_integrity() {
 
 #[tokio::test]
 async fn test_a09_failed_access_attempts_logged() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     // Create two users
@@ -1325,7 +1352,7 @@ async fn test_a10_ssrf_prevention_in_event_data() {
         // Should either safely store the data or reject suspicious URLs
         // The system should NOT make requests to these URLs
         if response.status() == StatusCode::CREATED {
-            let event: ChronicleEvent = parse_json_response(response).await.unwrap();
+            let _event: ChronicleEvent = parse_json_response(response).await.unwrap();
             // Event should be created but URLs should not be fetched
             // Event stored successfully with the payload in keywords or summary
         }
@@ -1403,7 +1430,7 @@ async fn test_chronicle_name_validation() {
 
 #[tokio::test]
 async fn test_chronicle_id_tampering_prevention() {
-    let test_app = test_helpers::spawn_app(false, false, false).await;
+    let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "tamper_test")
@@ -1421,25 +1448,32 @@ async fn test_chronicle_id_tampering_prevention() {
     ];
 
     for invalid_id in invalid_ids {
+        // Try to build the request - some IDs contain invalid URI characters
+        let request_result = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/api/chronicles/{}", invalid_id))
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty());
+
+        // If the URI itself is invalid, that's also a valid rejection
+        if request_result.is_err() {
+            // Invalid URI characters are rejected at the HTTP layer - this is acceptable
+            continue;
+        }
+
         let response = test_app
             .router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method(Method::GET)
-                    .uri(format!("/api/chronicles/{}", invalid_id))
-                    .header(header::COOKIE, &cookie)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(request_result.unwrap())
             .await
             .unwrap();
 
         assert!(
             response.status() == StatusCode::BAD_REQUEST
                 || response.status() == StatusCode::NOT_FOUND,
-            "Should safely handle invalid chronicle ID: {}",
-            invalid_id
+            "Should safely handle invalid chronicle ID: {}, got status: {}",
+            invalid_id,
+            response.status()
         );
     }
 }

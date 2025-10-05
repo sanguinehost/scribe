@@ -357,9 +357,7 @@ impl ChronicleDeduplicationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::*;
     use chrono::Utc;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_deduplication_service_creation() {
@@ -440,37 +438,6 @@ mod tests {
             summary_nonce: None,
             timestamp_iso8601: Utc::now(),
             keywords: None,
-            keywords_encrypted: None,
-            keywords_nonce: None,
-            chat_session_id: None,
-        }
-    }
-
-    fn create_test_event_with_actors(action: &str, actors: Vec<(Uuid, &str)>) -> ChronicleEvent {
-        // Since actors are no longer a direct field, we can include them in the summary or keywords
-        let actors_summary = actors
-            .iter()
-            .map(|(id, role)| format!("{}:{}", role, id))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let summary = format!(
-            "Test event with action: {} and actors: {}",
-            action, actors_summary
-        );
-
-        ChronicleEvent {
-            id: Uuid::new_v4(),
-            chronicle_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            event_type: "TEST.EVENT".to_string(),
-            summary,
-            source: "AI_EXTRACTED".to_string(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            summary_encrypted: None,
-            summary_nonce: None,
-            timestamp_iso8601: Utc::now(),
-            keywords: Some(vec![Some(action.to_string())]), // Store action as keyword
             keywords_encrypted: None,
             keywords_nonce: None,
             chat_session_id: None,

@@ -7,7 +7,6 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use chrono::Utc;
 use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
@@ -18,17 +17,9 @@ use diesel::RunQueryDsl;
 use diesel::prelude::*;
 
 // Crate imports
-use scribe_backend::models::character_card::NewCharacter;
-use scribe_backend::models::characters::Character as DbCharacter;
 use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, CreateChatSessionPayload};
-use scribe_backend::schema::{characters, chat_sessions};
+use scribe_backend::schema::chat_sessions;
 use scribe_backend::test_helpers;
-use secrecy::{ExposeSecret, SecretBox};
-use std::sync::Arc;
-use tracing::debug;
-
-use scribe_backend::crypto;
-use scribe_backend::models::users::User;
 
 // Helper function to authenticate and get auth cookie
 async fn authenticate_user(router: &axum::Router<()>, username: &str, password: &str) -> String {
@@ -333,7 +324,7 @@ async fn test_chat_mode_validation_errors() {
 #[ignore] // For CI
 async fn test_character_operations_fail_for_non_character_modes() {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "operation_user".to_string(),
         "testpass".to_string(),
@@ -537,7 +528,7 @@ async fn test_chat_mode_database_constraints() {
     .await
     .expect("Failed to create test user");
 
-    let mut conn = test_app
+    let conn = test_app
         .db_pool
         .get()
         .await

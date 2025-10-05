@@ -15,7 +15,7 @@ use crate::models::chronicle_event::{
     ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, NewChronicleEvent,
 };
 use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
-use crate::services::{ChronicleDeduplicationService, DeduplicationConfig};
+use crate::services::ChronicleDeduplicationService;
 
 /// ChronicleService handles all Chronicle-related database operations
 #[derive(Clone)]
@@ -969,7 +969,6 @@ impl ChronicleService {
             .interact(
                 move |conn| -> Result<Option<ChronicleAnalysisInfo>, AppError> {
                     use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
-                    use diesel::dsl::count;
 
                     // First, get the chronicle ID from the chat session
                     let chronicle_id_opt: Option<Uuid> = chat_sessions::table

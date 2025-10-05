@@ -13,7 +13,7 @@ async fn test_alternate_greeting_generation() {
     let test_app = test_helpers::spawn_app(true, true, false).await; // Use real AI, mock vector DB
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "testuser@example.com".to_string(),
         "password123".to_string(),
@@ -201,7 +201,7 @@ async fn test_alternate_greeting_generation() {
 async fn test_simple_wizard_description() {
     let test_app = test_helpers::spawn_app(true, true, false).await;
 
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "wizard@example.com".to_string(),
         "password123".to_string(),

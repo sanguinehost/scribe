@@ -157,7 +157,7 @@ impl ModelRegistry {
             .collect()
     }
 
-    /// Get all local models  
+    /// Get all local models
     pub fn get_local_models(&self) -> HashMap<String, &ModelCapabilities> {
         self.models
             .iter()

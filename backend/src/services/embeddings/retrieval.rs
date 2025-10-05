@@ -1,5 +1,6 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata};
 use super::utils::{extract_string_from_payload, extract_uuid_from_payload};
+use crate::auth::SessionDek;
 use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
@@ -9,6 +10,80 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
+
+/// Helper function to decrypt lorebook content (encryption required)
+#[allow(deprecated)]
+pub(super) fn decrypt_lorebook_content(
+    metadata: &LorebookChunkMetadata,
+    session_dek: Option<&SessionDek>,
+) -> String {
+    // Try to decrypt if we have encrypted content
+    if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+        metadata.encrypted_chunk_text.as_ref(),
+        metadata.chunk_text_nonce.as_ref(),
+    ) {
+        // We have encrypted content
+        if let Some(dek) = session_dek {
+            match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, &dek.0) {
+                Ok(decrypted_secret) => {
+                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                    return String::from_utf8_lossy(decrypted_bytes).to_string();
+                }
+                Err(e) => {
+                    warn!("Failed to decrypt lorebook content: {}", e);
+                    return "[decryption failed]".to_string();
+                }
+            }
+        } else {
+            // No DEK available
+            return "[encrypted - no DEK available]".to_string();
+        }
+    }
+
+    // SECURITY: Missing encryption is a critical error - all data must be encrypted at rest
+    warn!(
+        "SECURITY VIOLATION: Lorebook content missing encryption (entry_id: {:?})",
+        metadata.original_lorebook_entry_id
+    );
+    "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
+}
+
+/// Helper function to decrypt chat message content (encryption required)
+#[allow(deprecated)]
+pub(super) fn decrypt_chat_content(
+    metadata: &ChatMessageChunkMetadata,
+    session_dek: Option<&SessionDek>,
+) -> String {
+    // Try to decrypt if we have encrypted content
+    if let (Some(ref encrypted_text), Some(ref nonce)) = (
+        metadata.encrypted_text.as_ref(),
+        metadata.text_nonce.as_ref(),
+    ) {
+        // We have encrypted content
+        if let Some(dek) = session_dek {
+            match crate::crypto::decrypt_gcm(encrypted_text, nonce, &dek.0) {
+                Ok(decrypted_secret) => {
+                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                    return String::from_utf8_lossy(decrypted_bytes).to_string();
+                }
+                Err(e) => {
+                    warn!("Failed to decrypt chat message: {}", e);
+                    return "[decryption failed]".to_string();
+                }
+            }
+        } else {
+            // No DEK available
+            return "[encrypted - no DEK available]".to_string();
+        }
+    }
+
+    // SECURITY: Missing encryption is a critical error - all data must be encrypted at rest
+    warn!(
+        "SECURITY VIOLATION: Chat message missing encryption (message_id: {:?})",
+        metadata.message_id
+    );
+    "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
+}
 
 #[derive(Debug, Clone)]
 pub struct ChronicleEventMetadata {
@@ -69,6 +144,7 @@ pub struct RetrievedChunk {
 // This is kept for potential direct testing of retrieval logic if the service wrapper is complex
 #[allow(dead_code)]
 #[instrument(skip(qdrant_service, embedding_client), err)]
+#[allow(deprecated)]
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
@@ -93,15 +169,17 @@ async fn retrieve_relevant_chunks_standalone(
         if payload_map.is_empty() {
             warn!(point_id = %scored_point.id.as_ref().map(|id| format!("{id:?}")).unwrap_or_default(), "Scored point has an empty payload (standalone)");
         } else if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
+            let text = decrypt_lorebook_content(&lorebook_meta, None); // No DEK in standalone search
             retrieved_chunks.push(RetrievedChunk {
                 score: scored_point.score,
-                text: lorebook_meta.chunk_text.clone(),
+                text,
                 metadata: RetrievedMetadata::Lorebook(lorebook_meta),
             });
         } else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map) {
+            let text = decrypt_chat_content(&chat_meta, None); // No DEK in standalone search
             retrieved_chunks.push(RetrievedChunk {
                 score: scored_point.score,
-                text: chat_meta.text.clone(),
+                text,
                 metadata: RetrievedMetadata::Chat(chat_meta),
             });
         } else {

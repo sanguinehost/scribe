@@ -87,6 +87,7 @@ struct ChatSessionUpdateBuilder {
     player_chronicle_id: DatabaseUpdate<Option<Uuid>>,
     agent_mode: DatabaseUpdate<String>,
     active_custom_persona_id: DatabaseUpdate<Option<Uuid>>,
+    prompt_template_id: DatabaseUpdate<String>,
     updated_at: DatabaseUpdate<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -165,6 +166,10 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetNull => Some(None),
                 DatabaseUpdate::NoChange => None,
             },
+            prompt_template_id: match self.prompt_template_id {
+                DatabaseUpdate::SetValue(v) => Some(v),
+                _ => None,
+            },
             updated_at: match self.updated_at {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
@@ -194,6 +199,7 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
             || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
             || !matches!(self.active_custom_persona_id, DatabaseUpdate::NoChange)
+            || !matches!(self.prompt_template_id, DatabaseUpdate::NoChange)
     }
 }
 
@@ -225,6 +231,7 @@ struct ChatSessionUpdateChangeset {
     player_chronicle_id: Option<Option<Uuid>>,
     agent_mode: Option<String>,
     active_custom_persona_id: Option<Option<Uuid>>,
+    prompt_template_id: Option<String>,
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 /// Verifies session ownership and returns the owner ID
@@ -263,10 +270,10 @@ fn decrypt_system_prompt(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
-    info!(%session_id, %user_id, 
-          has_ciphertext = ciphertext.is_some(), 
+    info!(%session_id, %user_id,
+          has_ciphertext = ciphertext.is_some(),
           ciphertext_len = ciphertext.map(|c| c.len()).unwrap_or(0),
-          has_nonce = nonce.is_some(), 
+          has_nonce = nonce.is_some(),
           nonce_len = nonce.map(|n| n.len()).unwrap_or(0),
           has_dek = user_dek.is_some(),
           "decrypt_system_prompt: Input parameters");
@@ -346,6 +353,7 @@ pub async fn get_session_settings(
                 chat_sessions::player_chronicle_id,
                 chat_sessions::agent_mode,
                 chat_sessions::active_custom_persona_id,
+                chat_sessions::prompt_template_id,
             ))
             .first::<SettingsTuple>(conn)
             .map_err(|e| {
@@ -372,6 +380,7 @@ pub async fn get_session_settings(
             player_chronicle_id,
             agent_mode,
             active_custom_persona_id,
+            prompt_template_id,
         ) = settings_tuple;
 
         let decrypted_system_prompt = decrypt_system_prompt(
@@ -382,7 +391,7 @@ pub async fn get_session_settings(
             user_id,
         )?;
 
-        info!(%session_id, %user_id, 
+        info!(%session_id, %user_id,
               decrypted_system_prompt_is_some = decrypted_system_prompt.is_some(),
               decrypted_system_prompt_len = decrypted_system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
               "get_session_settings: Creating ChatSettingsResponse");
@@ -405,9 +414,10 @@ pub async fn get_session_settings(
             chronicle_id: player_chronicle_id,
             agent_mode,
             active_custom_persona_id,
+            prompt_template_id: Some(prompt_template_id),
         };
 
-        info!(%session_id, %user_id, 
+        info!(%session_id, %user_id,
               response_system_prompt_is_some = response.system_prompt.is_some(),
               response_system_prompt_len = response.system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
               "get_session_settings: Response created successfully");
@@ -529,6 +539,11 @@ fn apply_payload_to_builder(
             // to distinguish between "not provided" and "set to null"
             update_builder.active_custom_persona_id = DatabaseUpdate::SetValue(None);
         }
+    }
+
+    // Prompt template ID handling
+    if let Some(template_id) = payload.prompt_template_id {
+        update_builder.prompt_template_id = DatabaseUpdate::SetValue(template_id);
     }
 
     Ok(update_builder)

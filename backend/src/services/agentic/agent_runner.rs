@@ -84,6 +84,7 @@ pub struct NarrativeAgentRunner {
     token_counter: Arc<HybridTokenCounter>,
 }
 
+#[allow(dead_code)]
 impl NarrativeAgentRunner {
     pub fn new(
         ai_client: Arc<dyn AiClient>,
@@ -348,8 +349,8 @@ RULES:
     /// Step 1: Always mark conversations as significant for chronicle generation
     async fn perform_triage(
         &self,
-        user_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        _user_id: Uuid,
+        _chronicle_id: Option<Uuid>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<&super::UserPersonaContext>,
@@ -456,9 +457,9 @@ Respond with a simple JSON object:
     async fn generate_action_plan(
         &self,
         triage_result: &TriageResult,
-        knowledge_context: &Value,
+        _knowledge_context: &Value,
         chronicle_id: Option<Uuid>,
-        chronicle_was_just_created: bool,
+        _chronicle_was_just_created: bool,
         persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<ActionPlan, AppError> {
         debug!("Generating chronicle event for: {}", triage_result.summary);
@@ -1206,7 +1207,7 @@ Your task is to analyze fictional roleplay content and create chronicle summarie
     async fn call_ai_structured(&self, model: &str, prompt: &str) -> Result<Value, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRole,
-            HarmBlockThreshold, HarmCategory, MessageContent, SafetySetting,
+            MessageContent,
         };
 
         debug!("Making structured AI call to model: {}", model);
@@ -1704,7 +1705,7 @@ mod tests {
     #[test]
     fn test_calculate_conversation_timespan_empty_messages() {
         // Create a mock agent runner (we only need the method, not full setup)
-        let config = NarrativeWorkflowConfig::default();
+        let _config = NarrativeWorkflowConfig::default();
         // We can't easily construct a full NarrativeAgentRunner for tests without mocking
         // so we'll test the logic manually
 
@@ -1712,7 +1713,7 @@ mod tests {
 
         // Simulate the logic from calculate_conversation_timespan
         let now = Utc::now();
-        let (start_time, duration) = if messages.is_empty() {
+        let (_start_time, duration) = if messages.is_empty() {
             (now, Duration::hours(1))
         } else {
             (now, Duration::minutes(30))
@@ -1792,7 +1793,7 @@ mod tests {
     fn test_temporal_exclusion_logic() {
         let now = Utc::now();
         let conversation_start = now - Duration::hours(1);
-        let conversation_duration = Duration::hours(1);
+        let _conversation_duration = Duration::hours(1);
 
         // Calculate exclusion cutoff (15 minutes before conversation start)
         let exclusion_cutoff = conversation_start - Duration::minutes(15);
@@ -1846,6 +1847,8 @@ mod tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         }
     }
 
@@ -1875,7 +1878,7 @@ mod tests {
     #[test]
     fn test_exclusion_cutoff_calculation() {
         let conversation_start = Utc::now() - Duration::hours(2);
-        let conversation_duration = Duration::hours(1);
+        let _conversation_duration = Duration::hours(1);
 
         // This matches the logic in get_recent_chronicle_context
         let exclusion_cutoff = conversation_start - Duration::minutes(15);

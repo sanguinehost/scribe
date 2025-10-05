@@ -1,4 +1,5 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import { Toaster as Sonner, type ToasterProps as SonnerProps } from 'svelte-sonner';
 	import { mode } from 'mode-watcher';
 

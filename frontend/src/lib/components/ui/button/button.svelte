@@ -38,9 +38,10 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
-	interface $$Events {
+	interface _$$Events {
 		click: MouseEvent;
 	}
 	let {
@@ -56,13 +57,18 @@
 </script>
 
 {#if href}
-	<a bind:this={ref} class={cn(buttonVariants({ variant, size }), className)} {href} {...restProps}>
+	<a
+		bind:this={ref}
+		class={_cn(buttonVariants({ variant, size }), className)}
+		{href}
+		{...restProps}
+	>
 		{@render children?.()}
 	</a>
 {:else}
 	<button
 		bind:this={ref}
-		class={cn(buttonVariants({ variant, size }), className)}
+		class={_cn(buttonVariants({ variant, size }), className)}
 		{type}
 		{...restProps}
 	>

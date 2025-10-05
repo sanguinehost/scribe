@@ -111,6 +111,8 @@ pub async fn handle_chat_config_action<H: IoHandler, C: HttpClient>(
         model_provider: None, // Will be determined by backend based on model
         chronicle_id: None,   // Not relevant for CLI
         agent_mode: None,     // Not used in CLI
+        active_custom_persona_id: None,
+        prompt_template_id: None,
     };
 
     // 4. Configure model

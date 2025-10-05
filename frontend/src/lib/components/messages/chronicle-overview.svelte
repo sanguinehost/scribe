@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { apiClient } from '$lib/api';
+	import { goto as _goto } from '$app/navigation';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { SelectedChronicleStore } from '$lib/stores/selected-chronicle.svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import type {
@@ -13,16 +13,16 @@
 		EventSource
 	} from '$lib/types';
 	import { toast } from 'svelte-sonner';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardFooter,
 		CardHeader,
-		CardTitle
+		CardTitle as _CardTitle
 	} from '$lib/components/ui/card';
 	import {
 		Dialog,
@@ -43,17 +43,17 @@
 		AlertDialogTitle
 	} from '$lib/components/ui/alert-dialog';
 	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
 		ScrollText,
 		Plus,
 		Calendar,
-		MessageSquare,
+		MessageSquare as _MessageSquare,
 		FileText,
 		Trash2,
 		Edit,
-		ArrowLeft,
+		ArrowLeft as _ArrowLeft,
 		Clock,
 		User,
 		Bot,
@@ -110,8 +110,8 @@
 
 	// Listen for chronicle event updates
 	onMount(() => {
-		const handleEventsUpdated = async (event: CustomEvent) => {
-			const { chronicleId: eventChronicleId } = event.detail;
+		const handleEventsUpdated = async (_event: CustomEvent) => {
+			const { chronicleId: eventChronicleId } = _event.detail;
 			if (eventChronicleId === chronicleId) {
 				console.log('[Chronicle Overview] Events updated, refreshing');
 				await loadEvents();
@@ -120,13 +120,13 @@
 
 		window.addEventListener(
 			'chronicle-events-updated',
-			handleEventsUpdated as unknown as EventListener
+			handleEventsUpdated as unknown as () => void
 		);
 
 		return () => {
 			window.removeEventListener(
 				'chronicle-events-updated',
-				handleEventsUpdated as unknown as EventListener
+				handleEventsUpdated as unknown as () => void
 			);
 		};
 	});
@@ -134,7 +134,7 @@
 	async function loadChronicle() {
 		isLoadingChronicle = true;
 		try {
-			const result = await apiClient.getChronicle(chronicleId);
+			const result = await _apiClient.getChronicle(chronicleId);
 			if (result.isOk()) {
 				chronicle = result.value;
 			} else {
@@ -155,7 +155,7 @@
 			if (filterSource) filter.source = filterSource as EventSource;
 			filter.order_by = 'created_at_desc';
 
-			const result = await apiClient.getChronicleEvents(chronicleId, filter);
+			const result = await _apiClient.getChronicleEvents(chronicleId, filter);
 			if (result.isOk()) {
 				events = result.value;
 			} else {
@@ -185,7 +185,7 @@
 				description: editDescription.trim() || undefined
 			};
 
-			const result = await apiClient.updateChronicle(chronicleId, data);
+			const result = await _apiClient.updateChronicle(chronicleId, data);
 			if (result.isOk()) {
 				chronicle = result.value;
 				isEditingChronicle = false;
@@ -231,7 +231,7 @@
 				timestamp_iso8601: timestamp
 			};
 
-			const result = await apiClient.createChronicleEvent(chronicleId, data);
+			const result = await _apiClient.createChronicleEvent(chronicleId, data);
 			if (result.isOk()) {
 				toast.success('Event created successfully');
 				createEventDialogOpen = false;
@@ -251,8 +251,8 @@
 		}
 	}
 
-	function handleDeleteEventClick(event: ChronicleEvent) {
-		eventToDelete = event;
+	function handleDeleteEventClick(_event: ChronicleEvent) {
+		eventToDelete = _event;
 		deleteEventDialogOpen = true;
 	}
 
@@ -261,7 +261,7 @@
 
 		isDeletingEvent = true;
 		try {
-			const result = await apiClient.deleteChronicleEvent(chronicleId, eventToDelete.id);
+			const result = await _apiClient.deleteChronicleEvent(chronicleId, eventToDelete.id);
 			if (result.isOk()) {
 				toast.success('Event deleted successfully');
 				await loadEvents();
@@ -286,7 +286,7 @@
 
 		isDeletingChronicle = true;
 		try {
-			const result = await apiClient.deleteChronicle(chronicleId);
+			const result = await _apiClient.deleteChronicle(chronicleId);
 			if (result.isOk()) {
 				toast.success('Chronicle deleted successfully');
 				// Refresh the chronicle store to update all components
@@ -301,7 +301,7 @@
 
 				// Navigate back to chronicles list by showing the list view
 				selectedChronicleStore.showList();
-				goto('/');
+				_goto('/');
 			} else {
 				toast.error('Failed to delete chronicle', {
 					description: result.error.message
@@ -376,7 +376,7 @@
 							</div>
 							<div>
 								<Label for="edit-description">Description</Label>
-								<Textarea
+								<TextareaComponent
 									id="edit-description"
 									bind:value={editDescription}
 									placeholder="Chronicle description (optional)"
@@ -385,12 +385,12 @@
 								/>
 							</div>
 							<div class="flex gap-2">
-								<Button onclick={saveChronicleChanges} disabled={isSavingChronicle}>
+								<ButtonComponent onclick={saveChronicleChanges} disabled={isSavingChronicle}>
 									{isSavingChronicle ? 'Saving...' : 'Save Changes'}
-								</Button>
-								<Button variant="outline" onclick={() => (isEditingChronicle = false)}>
+								</ButtonComponent>
+								<ButtonComponent variant="outline" onclick={() => (isEditingChronicle = false)}>
 									Cancel
-								</Button>
+								</ButtonComponent>
 							</div>
 						</div>
 					{:else}
@@ -417,22 +417,22 @@
 								</div>
 							</div>
 							<div class="flex gap-1">
-								<Button
+								<ButtonComponent
 									variant="ghost"
 									size="icon"
 									onclick={startEditingChronicle}
 									title="Edit chronicle"
 								>
 									<Edit class="h-4 w-4" />
-								</Button>
-								<Button
+								</ButtonComponent>
+								<ButtonComponent
 									variant="ghost"
 									size="icon"
 									onclick={handleDeleteChronicleClick}
 									title="Delete chronicle"
 								>
 									<Trash2 class="h-4 w-4 text-destructive" />
-								</Button>
+								</ButtonComponent>
 							</div>
 						</div>
 					{/if}
@@ -467,10 +467,10 @@
 							<option value="GAME_API">Game API</option>
 							<option value="SYSTEM">System</option>
 						</select>
-						<Button onclick={() => (createEventDialogOpen = true)} class="gap-2">
+						<ButtonComponent onclick={() => (createEventDialogOpen = true)} class="gap-2">
 							<Plus class="h-4 w-4" />
 							Add Event
-						</Button>
+						</ButtonComponent>
 					</div>
 				</div>
 
@@ -494,10 +494,10 @@
 								<p class="mb-6 text-sm text-muted-foreground">
 									Add events to track important moments in your chronicle
 								</p>
-								<Button onclick={() => (createEventDialogOpen = true)} class="gap-2">
+								<ButtonComponent onclick={() => (createEventDialogOpen = true)} class="gap-2">
 									<Plus class="h-4 w-4" />
 									Add First Event
-								</Button>
+								</ButtonComponent>
 							</CardContent>
 						</Card>
 					{:else}
@@ -508,7 +508,7 @@
 										<div class="flex items-start justify-between">
 											<div class="min-w-0 flex-1">
 												<div class="flex items-center gap-2">
-													<Badge variant="outline" class="gap-1">
+													<BadgeComponent variant="outline" class="gap-1">
 														{#if event.source === 'USER_ADDED'}
 															<User class="h-3 w-3" />
 														{:else if event.source === 'AI_EXTRACTED'}
@@ -521,14 +521,16 @@
 															<FileText class="h-3 w-3" />
 														{/if}
 														{getSourceLabel(event.source)}
-													</Badge>
-													<Badge>{event.event_type}</Badge>
+													</BadgeComponent>
+													<BadgeComponent>{event.event_type}</BadgeComponent>
 												</div>
 												<CardDescription class="mt-2">{event.summary}</CardDescription>
 												{#if event.keywords && event.keywords.length > 0}
 													<div class="mt-2 flex flex-wrap gap-1">
 														{#each event.keywords as keyword}
-															<Badge variant="secondary" class="text-xs">{keyword}</Badge>
+															<BadgeComponent variant="secondary" class="text-xs"
+																>{keyword}</BadgeComponent
+															>
 														{/each}
 													</div>
 												{/if}
@@ -539,14 +541,14 @@
 													</div>
 												{/if}
 											</div>
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="icon"
 												onclick={() => handleDeleteEventClick(event)}
 												title="Delete event"
 											>
 												<Trash2 class="h-4 w-4 text-destructive" />
-											</Button>
+											</ButtonComponent>
 										</div>
 									</CardHeader>
 									<CardFooter class="pt-0">
@@ -575,7 +577,7 @@
 		<div class="space-y-4 py-4">
 			<div class="space-y-2">
 				<Label for="event-summary">Summary</Label>
-				<Textarea
+				<TextareaComponent
 					id="event-summary"
 					bind:value={eventSummary}
 					placeholder="Describe what happened in your story..."
@@ -630,16 +632,16 @@
 		</div>
 
 		<DialogFooter>
-			<Button
+			<ButtonComponent
 				variant="outline"
 				onclick={() => (createEventDialogOpen = false)}
 				disabled={isCreatingEvent}
 			>
 				Cancel
-			</Button>
-			<Button onclick={createEvent} disabled={isCreatingEvent || !eventSummary.trim()}>
+			</ButtonComponent>
+			<ButtonComponent onclick={createEvent} disabled={isCreatingEvent || !eventSummary.trim()}>
 				{isCreatingEvent ? 'Creating...' : 'Create Event'}
-			</Button>
+			</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

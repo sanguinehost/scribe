@@ -54,7 +54,7 @@ impl FullCharacterGenerator {
 
         let description_result = self
             .field_generator
-            .generate_field(description_request, user_id)
+            .generate_field(description_request, user_id, None)
             .await?;
 
         // Extract character name from description or generate one
@@ -93,7 +93,7 @@ impl FullCharacterGenerator {
 
         let personality_result = self
             .field_generator
-            .generate_field(personality_request, user_id)
+            .generate_field(personality_request, user_id, None)
             .await?;
 
         // Update context with personality
@@ -117,7 +117,7 @@ impl FullCharacterGenerator {
 
         let first_mes_result = self
             .field_generator
-            .generate_field(first_mes_request, user_id)
+            .generate_field(first_mes_request, user_id, None)
             .await?;
 
         // Generate basic scenario
@@ -135,7 +135,7 @@ impl FullCharacterGenerator {
 
         let scenario_result = self
             .field_generator
-            .generate_field(scenario_request, user_id)
+            .generate_field(scenario_request, user_id, None)
             .await?;
 
         // Generate tags
@@ -153,7 +153,7 @@ impl FullCharacterGenerator {
 
         let tags_result = self
             .field_generator
-            .generate_field(tags_request, user_id)
+            .generate_field(tags_request, user_id, None)
             .await?;
         let tags = self.parse_tags(&tags_result.content);
 
@@ -240,7 +240,7 @@ impl FullCharacterGenerator {
 
         let name_result = self
             .field_generator
-            .generate_field(name_request, user_id)
+            .generate_field(name_request, user_id, None)
             .await?;
 
         // Extract just the name from the generated content

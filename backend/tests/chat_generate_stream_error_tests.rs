@@ -148,10 +148,11 @@ async fn generate_chat_response_streaming_ai_error() {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -473,10 +474,11 @@ async fn generate_chat_response_streaming_initiation_error() {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -722,10 +724,11 @@ async fn generate_chat_response_streaming_error_before_content() {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -980,10 +983,11 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

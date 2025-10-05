@@ -9,7 +9,7 @@ use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
     ChatRequest as GenAiChatRequest, ChatRole, ChatStreamEvent as GeminiResponseChunkAlias,
-    HarmBlockThreshold, HarmCategory, ReasoningEffort, SafetySetting, ToolCall,
+    ReasoningEffort,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -26,6 +26,7 @@ use crate::{
         chats::DbInsertableChatMessage, // ChatMessage and MessageRole will be from super::types
         lorebooks::ChatSessionLorebook, // User is used by get_session_data_for_generation
     },
+    privacy::logging::loggable_user_id,
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
         embeddings::RetrievedChunk, // For RAG chunks
@@ -38,6 +39,12 @@ use crate::{
     },
 };
 // Corrected QdrantClient import
+
+// Conditional import for payment features
+#[cfg(feature = "payment")]
+use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "payment")]
+use crate::services::payment::{SoftLimitService, SubscriptionService};
 
 // Type aliases for complex types
 type GeminiStreamResult = Result<
@@ -124,7 +131,10 @@ pub async fn get_session_data_for_generation(
                     })?;
 
                 let user_db_query = user_db_query_result.map_err(|e| {
-                    AppError::NotFound(format!("UserDbQuery for user {user_id} not found: {e}"))
+                    AppError::NotFound(format!(
+                        "UserDbQuery for user {} not found: {e}",
+                        loggable_user_id(user_id)
+                    ))
                 })?;
                 user_db_query.into()
             };
@@ -617,6 +627,55 @@ pub async fn get_session_data_for_generation(
         .default_context_total_token_limit
         .map(|v| v as usize)
         .unwrap_or(state.config.context_total_token_limit);
+
+    // Enforce subscription tier's max_context_tokens limit
+    #[cfg(feature = "payment")]
+    {
+        let conn_for_plan_check = state.pool.get().await?;
+        let subscription_service =
+            SubscriptionService::new(state.config.as_ref().clone(), EncryptionService::new());
+
+        // Get user's subscription
+        let subscription_service_clone_1 = subscription_service.clone();
+        let user_subscription = conn_for_plan_check
+            .interact(move |conn| {
+                subscription_service_clone_1.get_user_subscription_sync(conn, user_id)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+        // Get plan features
+        let plan_type = user_subscription
+            .as_ref()
+            .map(|s| s.plan_type.clone())
+            .unwrap_or_else(|| "free".to_string());
+
+        let conn_for_features = state.pool.get().await?;
+        let subscription_service_clone_2 = subscription_service.clone();
+        let plan_type_for_query = plan_type.clone();
+        let plan_features = conn_for_features
+            .interact(move |conn| {
+                subscription_service_clone_2.get_plan_features_sync(conn, &plan_type_for_query)
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+
+        // Enforce max_context_tokens if set
+        if let Some(max_tokens) = plan_features.and_then(|pf| pf.max_context_tokens) {
+            if context_total_token_limit > max_tokens as usize {
+                info!(
+                    %session_id,
+                    %user_id,
+                    requested = %context_total_token_limit,
+                    plan_max = %max_tokens,
+                    plan_type = %plan_type,
+                    "Enforcing subscription tier context limit - capping user's requested limit to plan maximum"
+                );
+                context_total_token_limit = max_tokens as usize;
+            }
+        }
+    }
+
     let recent_history_token_budget = user_settings
         .default_context_recent_history_budget
         .map(|v| v as usize)
@@ -716,7 +775,6 @@ pub async fn get_session_data_for_generation(
     );
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
-    let mut current_rag_tokens_used: usize = 0;
     let mut combined_rag_candidates: Vec<RetrievedChunk> = Vec::new();
     let rag_query_limit_per_source: u64 = 15; // Example limit, cast to u64 for service call
     debug!(target: "test_debug", %session_id, %available_rag_tokens, "RAG token budget check. available_rag_tokens > 0: {}", available_rag_tokens > 0);
@@ -726,6 +784,11 @@ pub async fn get_session_data_for_generation(
         if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
             if !lorebook_ids.is_empty() {
                 info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
+                let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                    use secrecy::ExposeSecret;
+                    let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                    crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+                });
                 match state
                     .embedding_pipeline_service
                     .retrieve_relevant_chunks(
@@ -736,6 +799,7 @@ pub async fn get_session_data_for_generation(
                         None,                  // Not searching chronicles here (done separately)
                         &user_message_content, // query_text
                         rag_query_limit_per_source,
+                        session_dek_temp.as_ref(),
                     )
                     .await
                 {
@@ -753,7 +817,11 @@ pub async fn get_session_data_for_generation(
         // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
         if let Some(chronicle_id) = player_chronicle_id_from_session {
             info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
-
+            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                use secrecy::ExposeSecret;
+                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+            });
             match state
                 .embedding_pipeline_service
                 .retrieve_relevant_chunks(
@@ -763,7 +831,8 @@ pub async fn get_session_data_for_generation(
                     None,               // Not searching lorebooks here
                     Some(chronicle_id), // Search this chronicle
                     &user_message_content,
-                    10, // Limit to top 10 chronicle events
+                    10,                        // Limit to top 10 chronicle events
+                    session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
             {
@@ -782,6 +851,11 @@ pub async fn get_session_data_for_generation(
         // Retrieve Older Chat History Chunks (only if using database history)
         if frontend_history.is_none() {
             info!(%session_id, "Retrieving older chat history chunks for RAG (database mode).");
+            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                use secrecy::ExposeSecret;
+                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+            });
             match state
                 .embedding_pipeline_service
                 .retrieve_relevant_chunks(
@@ -792,6 +866,7 @@ pub async fn get_session_data_for_generation(
                     None,             // Not searching chronicles here (done separately above)
                     &user_message_content, // query_text
                     rag_query_limit_per_source,
+                    session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
             {
@@ -907,7 +982,7 @@ pub async fn get_session_data_for_generation(
                             actual_tokens_used += estimate.total;
                         }
                     }
-                    current_rag_tokens_used = actual_tokens_used;
+                    let current_rag_tokens_used = actual_tokens_used;
 
                     debug!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, %available_rag_tokens, "Unified RAG selection finished.");
                     info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0), "Unified RAG context selection complete.");
@@ -915,7 +990,8 @@ pub async fn get_session_data_for_generation(
                 Err(e) => {
                     warn!(%session_id, error = %e, "Dynamic RAG selection failed. Proceeding without RAG context.");
                     rag_context_items = Vec::new();
-                    current_rag_tokens_used = 0;
+                    // Reset for clarity (value not used after this point)
+                    let _ = 0; // current_rag_tokens_used would be reset here
                 }
             }
         }
@@ -1440,8 +1516,6 @@ pub async fn stream_ai_response_and_save_message(
                 .with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
         }
     }
-    // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
-    // The `gemini_enable_code_execution` variable will still affect tool declaration logic below.
 
     // Disable all safety filters to prevent content filtering errors
     let safety_settings = create_unrestricted_safety_settings();
@@ -1739,6 +1813,60 @@ pub async fn stream_ai_response_and_save_message(
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
 
+                        // Track daily message usage with SoftLimitService
+                        #[cfg(feature = "payment")]
+                        {
+                            let soft_limit_service = SoftLimitService::new(state_for_full_save.config.clone());
+                            let user_id_for_tracking = full_user_id_clone;
+                            let model_for_tracking = service_model_name_clone_full.clone();
+                            let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0) as i64;
+
+                            // Get a connection from the pool for usage tracking
+                            match state_for_full_save.pool.get().await {
+                                Ok(conn) => {
+                                    let tracking_result = conn.interact(move |c| {
+                                        soft_limit_service.record_usage(
+                                            c,
+                                            user_id_for_tracking,
+                                            &model_for_tracking,
+                                            tokens_for_tracking,
+                                        )
+                                    }).await;
+
+                                    match tracking_result {
+                                        Ok(Ok(daily_usage)) => {
+                                            debug!(
+                                                session_id = %full_session_id_clone,
+                                                message_count = daily_usage.message_count,
+                                                "Successfully updated daily message count"
+                                            );
+                                        }
+                                        Ok(Err(e)) => {
+                                            warn!(
+                                                session_id = %full_session_id_clone,
+                                                error = ?e,
+                                                "Failed to update daily message count, but continuing"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                session_id = %full_session_id_clone,
+                                                error = ?e,
+                                                "Database interaction error during usage tracking, but continuing"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        session_id = %full_session_id_clone,
+                                        error = ?e,
+                                        "Failed to get database connection for usage tracking, but continuing"
+                                    );
+                                }
+                            }
+                        }
+
                         // Send message ID first (for raw prompt modal)
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");
                         let _ = token_sender_clone.send(ScribeSseEvent::MessageSaved {
@@ -2015,19 +2143,20 @@ async fn get_message_content_with_variant(
             }
             _ => {
                 // Message is not encrypted (legacy or test data)
-                String::from_utf8(message.content.clone())
-                    .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}")))
+                String::from_utf8(message.content.clone()).map_err(|e| {
+                    AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}"))
+                })
             }
         }
     } else {
         // Get variant content from variants table
-        use crate::schema::message_variants;
         use crate::models::chats::MessageVariant;
+        use crate::schema::message_variants;
         use diesel::prelude::*;
 
         let message_id = message.id;
         let current_variant_index = message.current_variant_index;
-        
+
         let variant_opt = pool
             .get()
             .await
@@ -2054,24 +2183,24 @@ async fn get_message_content_with_variant(
                 message.current_variant_index,
                 message.id
             );
-            
+
             match message.content_nonce.as_ref() {
                 Some(nonce) if !nonce.is_empty() => {
                     match crate::crypto::decrypt_gcm(&message.content, nonce, dek) {
                         Ok(decrypted_secret_box) => {
                             let decrypted_bytes = decrypted_secret_box.expose_secret();
-                            String::from_utf8(decrypted_bytes.clone())
-                                .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))
+                            String::from_utf8(decrypted_bytes.clone()).map_err(|e| {
+                                AppError::DecryptionError(format!("Invalid UTF-8: {e}"))
+                            })
                         }
                         Err(e) => Err(AppError::DecryptionError(format!(
                             "Failed to decrypt original message content: {e}"
                         ))),
                     }
                 }
-                _ => {
-                    String::from_utf8(message.content.clone())
-                        .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}")))
-                }
+                _ => String::from_utf8(message.content.clone()).map_err(|e| {
+                    AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}"))
+                }),
             }
         }
     }

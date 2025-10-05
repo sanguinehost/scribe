@@ -126,19 +126,19 @@ fi
 # Step 3: Start services with docker-compose if requested
 if [ "$START_SERVICES" = true ]; then
     log_info "🚀 Starting all services with docker-compose..."
-    
+
     # Start services
     if ! docker-compose up -d; then
         log_error "Failed to start services with docker-compose"
         exit 1
     fi
-    
+
     log_success "All services started successfully!"
-    
+
     # Show status
     log_info "📊 Service status:"
     docker-compose ps
-    
+
     log_info "🌐 Access points:"
     log_info "  Backend API: https://localhost:8080"
     log_info "  PostgreSQL: localhost:5432"

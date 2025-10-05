@@ -1,4 +1,4 @@
-# Local development environment overrides for Podman Compose  
+# Local development environment overrides for Podman Compose
 # For running backend locally with cargo while using containerized postgres/qdrant
 # Use with: podman-compose -f podman-compose.yml -f podman-compose.local.yml up postgres qdrant
 
@@ -14,7 +14,7 @@ services:
       - "5432:5432"
     volumes:
       - ../configs/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,Z
-    
+
   qdrant:
     ports:
       - "6333:6333"

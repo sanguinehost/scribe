@@ -1,9 +1,9 @@
-import { apiClient } from '$lib/api';
-import type { TokenCountRequest, TokenCountResponse } from '$lib/types';
+import { apiClient as _apiClient } from '$lib/api';
+import type { TokenCountRequest, TokenCountResponse as _TokenCountResponse } from '$lib/types';
 
 interface TokenCountState {
 	loading: boolean;
-	data: TokenCountResponse | null;
+	data: _TokenCountResponse | null;
 	error: string | null;
 }
 
@@ -20,13 +20,13 @@ export function useTokenCounter() {
 	/**
 	 * Count tokens for the given text
 	 */
-	async function countTokens(request: TokenCountRequest): Promise<TokenCountResponse | null> {
+	async function countTokens(request: TokenCountRequest): Promise<_TokenCountResponse | null> {
 		state.loading = true;
 		state.error = null;
 		state.data = null;
 
 		try {
-			const result = await apiClient.countTokens(request);
+			const result = await _apiClient.countTokens(request);
 
 			if (result.isOk()) {
 				state.data = result.value;
@@ -36,10 +36,10 @@ export function useTokenCounter() {
 				console.error('Token counting failed:', result.error);
 				return null;
 			}
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+		} catch (_error) {
+			const errorMessage = _error instanceof Error ? _error.message : 'Unknown error occurred';
 			state.error = errorMessage;
-			console.error('Token counting error:', error);
+			console.error('Token counting error:', _error);
 			return null;
 		} finally {
 			state.loading = false;
@@ -53,7 +53,7 @@ export function useTokenCounter() {
 		text: string,
 		model?: string,
 		useApiCounting = false
-	): Promise<TokenCountResponse | null> {
+	): Promise<_TokenCountResponse | null> {
 		return countTokens({
 			text,
 			model,
@@ -90,7 +90,7 @@ export function useTokenCounter() {
  * Utility function to estimate cost from token count response
  */
 export function estimateCost(
-	tokenData: TokenCountResponse,
+	tokenData: _TokenCountResponse,
 	isOutput = false
 ): { cost: number; formattedCost: string } {
 	// Gemini pricing (per 1M tokens) - Updated with correct official pricing

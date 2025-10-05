@@ -11,7 +11,6 @@ use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
     models::{
-        chats::{Chat, ChatMode, DbInsertableChatMessage, MessageRole},
         chronicle::{
             CreateChronicleRequest, PlayerChronicle, PlayerChronicleWithCounts,
             UpdateChronicleRequest,
@@ -330,7 +329,7 @@ mod api_tests {
             .unwrap();
 
         // Test: Create Event
-        let event_data = json!({
+        let _event_data = json!({
             "location": "Misty Forest",
             "weather": "foggy",
             "danger_level": "moderate"

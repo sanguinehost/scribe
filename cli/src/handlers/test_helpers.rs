@@ -159,7 +159,7 @@ pub struct MockHttpClient {
     pub called_endpoints: Arc<std::sync::Mutex<Vec<String>>>,
 
     // Expected endpoint patterns for validation
-    
+
     pub expected_endpoints: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 

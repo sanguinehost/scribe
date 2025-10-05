@@ -79,6 +79,58 @@ resource "aws_cloudwatch_log_group" "qdrant_logs" {
   }
 }
 
+# IAM Role for ECS Infrastructure (for EBS volume management)
+resource "aws_iam_role" "ecs_infrastructure_role" {
+  name = "${var.environment}-scribe-ecs-infrastructure-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.environment}-scribe-ecs-infrastructure-role"
+    Environment = var.environment
+    Project     = "scribe"
+  }
+}
+
+# IAM Role Policy Attachment for ECS Infrastructure
+resource "aws_iam_role_policy_attachment" "ecs_infrastructure_policy" {
+  role       = aws_iam_role.ecs_infrastructure_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRolePolicyForVolumes"
+}
+
+# Additional permissions for EBS volume management
+resource "aws_iam_role_policy" "ecs_infrastructure_additional" {
+  name = "${var.environment}-ecs-infrastructure-additional"
+  role = aws_iam_role.ecs_infrastructure_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_task_execution_role" {
   name = "${var.environment}-scribe-ecs-task-execution-role"
@@ -152,31 +204,9 @@ resource "aws_iam_role" "ecs_task_role" {
   }
 }
 
-# EFS File System for Qdrant data persistence
-resource "aws_efs_file_system" "qdrant_efs" {
-  creation_token = "${var.environment}-scribe-qdrant-efs"
-  encrypted      = true
-
-  # Performance mode: generalPurpose is sufficient for most workloads
-  performance_mode = "generalPurpose"
-  throughput_mode  = "provisioned"
-  provisioned_throughput_in_mibps = var.efs_provisioned_throughput
-
-  tags = {
-    Name        = "${var.environment}-scribe-qdrant-efs"
-    Environment = var.environment
-    Project     = "scribe"
-  }
-}
-
-# EFS Mount Targets for each private subnet
-resource "aws_efs_mount_target" "qdrant_efs_mount" {
-  count = length(var.private_subnet_ids)
-
-  file_system_id  = aws_efs_file_system.qdrant_efs.id
-  subnet_id       = var.private_subnet_ids[count.index]
-  security_groups = [var.efs_security_group_id]
-}
+# Note: EFS removed in favor of EBS volumes for Qdrant
+# Qdrant v1.15+ requires block storage (not NFS-based storage like EFS)
+# EBS volumes are now configured directly in the ECS service definition
 
 # Backend ECS Task Definition
 resource "aws_ecs_task_definition" "backend_task" {
@@ -192,7 +222,7 @@ resource "aws_ecs_task_definition" "backend_task" {
     {
       name  = "backend"
       image = "${aws_ecr_repository.backend_repo.repository_url}:latest"
-      
+
       portMappings = [
         {
           containerPort = 8080
@@ -261,17 +291,15 @@ resource "aws_ecs_task_definition" "qdrant_task" {
 
   volume {
     name = "qdrant-data"
-    efs_volume_configuration {
-      file_system_id = aws_efs_file_system.qdrant_efs.id
-      root_directory = "/"
-    }
+    # Configure at launch for EBS volumes
+    configure_at_launch = true
   }
 
   container_definitions = jsonencode([
     {
       name  = "qdrant"
-      image = "qdrant/qdrant:latest"
-      
+      image = "qdrant/qdrant:v1.15.4"
+
       portMappings = [
         {
           containerPort = 6333
@@ -354,7 +382,29 @@ resource "aws_ecs_service" "qdrant_service" {
     registry_arn = aws_service_discovery_service.qdrant.arn
   }
 
-  depends_on = [aws_efs_mount_target.qdrant_efs_mount]
+  # EBS volume configuration for persistent storage
+  volume_configuration {
+    name = "qdrant-data"
+
+    managed_ebs_volume {
+      role_arn         = aws_iam_role.ecs_infrastructure_role.arn
+      size_in_gb       = 20  # Adjust based on needs
+      volume_type      = "gp3"
+      iops             = 3000
+      throughput       = 125
+      encrypted        = true
+      file_system_type = "xfs"  # RocksDB works well with XFS
+
+      tag_specifications {
+        resource_type = "volume"
+        tags = {
+          Name        = "${var.environment}-qdrant-ebs"
+          Environment = var.environment
+          Project     = "scribe"
+        }
+      }
+    }
+  }
 
   tags = {
     Name        = "${var.environment}-scribe-qdrant-service"

@@ -574,8 +574,8 @@ export type SessionResponse = {
 		id: string;
 		user_id: string;
 		expires_at: string | Date;
-	};
-	user: User;
+	} | null;
+	user: User | null;
 };
 
 export interface SuggestedActionItem {
@@ -616,6 +616,7 @@ export interface UpdateChatSessionSettingsRequest {
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
 	agent_mode?: string | null;
+	prompt_template_id?: string | null;
 }
 
 export interface ChatSessionSettingsResponse {
@@ -641,6 +642,7 @@ export interface ChatSessionSettingsResponse {
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
 	agent_mode?: string | null;
+	prompt_template_id?: string | null;
 }
 
 // Types for Global User Settings
@@ -720,9 +722,7 @@ export interface ExpandTextResponse {
 }
 
 // Impersonate request (for generating full user response)
-export interface ImpersonateRequest {
-	// Empty for now, uses chat context
-}
+export type ImpersonateRequest = object; // Uses chat context
 
 export interface ImpersonateResponse {
 	generated_response: string;
@@ -878,7 +878,7 @@ export interface ScribeAssistantResponse {
 	response: string; // Assistant's response
 	actions?: Array<{
 		type: 'generate_field' | 'create_character' | 'create_lorebook_entry';
-		payload: any; // Specific action data
+		payload: unknown; // Specific action data
 		description: string;
 	}>;
 	suggestions?: string[]; // Follow-up suggestions
@@ -978,8 +978,8 @@ export interface AgentAnalysisResponse {
 	chat_session_id: string;
 	analysis_type: string;
 	agent_reasoning: string | null;
-	planned_searches: any | null;
-	execution_log: any | null;
+	planned_searches: unknown | null;
+	execution_log: unknown | null;
 	retrieved_context: string | null;
 	analysis_summary: string | null;
 	total_tokens_used: number | null;
@@ -1016,7 +1016,7 @@ export interface DeleteChatRequest {
 export interface LlmInfoResponse {
 	local_llm_enabled: boolean; // Feature is available
 	server_running: boolean; // Server is actually running
-	hardware: any; // Hardware capabilities as JSON
+	hardware: Event; // Hardware capabilities as JSON
 	models: LocalModelInfo[];
 	download_progress?: DownloadProgressInfo | null;
 }
@@ -1105,4 +1105,158 @@ export interface GpuInfo {
 	vram_gb?: number | null;
 	cuda_capable: boolean;
 	device_id: number;
+}
+
+// Prompt Template Types
+
+export interface TemplateCompatibility {
+	requires_character: boolean;
+	supports_rag: boolean;
+	supports_personas: boolean;
+}
+
+export interface PromptTemplateInfo {
+	id: string;
+	version: string;
+	name: string;
+	description: string;
+	compatibility: TemplateCompatibility;
+}
+
+export interface PromptTemplateListResponse {
+	templates: PromptTemplateInfo[];
+}
+
+// ============================================================================
+// Payment & Subscription Types
+// ============================================================================
+
+export type SubscriptionStatus =
+	| 'active'
+	| 'canceled'
+	| 'past_due'
+	| 'trialing'
+	| 'unpaid'
+	| 'incomplete'
+	| 'expired'
+	| 'pending_cancellation';
+export type PlanType = 'free' | 'basic' | 'premium' | 'pro'; // Added 'pro' for legacy compatibility
+
+export interface Subscription {
+	id: string;
+	user_id: string;
+	paddle_customer_id?: string;
+	paddle_subscription_id?: string;
+	plan_type: PlanType;
+	status: SubscriptionStatus;
+	current_period_start: string; // ISO date
+	current_period_end: string; // ISO date
+	cancel_at_period_end?: boolean;
+	trial_end?: string; // ISO date
+	has_ever_paid?: boolean | null; // Tracks if subscription ever converted from trial to paid
+	first_payment_date?: string | null; // ISO date - when trial first converted to paid
+	created_at?: string; // ISO date
+	updated_at?: string; // ISO date
+}
+
+export interface BillingFeatures {
+	display_price: string;
+	billing_period: 'monthly' | 'yearly';
+	trial_days: number;
+	cancel_anytime: boolean;
+	monthly_equivalent?: string;
+	savings_message?: string;
+}
+
+export interface PlanFeatures {
+	plan_type: PlanType;
+	display_name: string;
+	description: string;
+	price_monthly: number;
+	price_yearly?: number;
+	annual_savings_percent?: number;
+	paddle_price_id_monthly?: string;
+	paddle_price_id_yearly?: string;
+	max_context_tokens?: number; // Subscription tier context limit
+	billing_features?: {
+		monthly: BillingFeatures;
+		yearly: BillingFeatures;
+	};
+	limits: {
+		daily_messages: number;
+		daily_limit_type: 'hard' | 'soft';
+		context_tokens: number;
+		chronicles_enabled: boolean;
+		lorebooks_enabled: boolean;
+		personas_enabled: boolean;
+		max_characters: number;
+		max_lorebooks: number;
+	};
+	credits: {
+		included_monthly: number;
+		welcome_bonus?: number;
+		rollover_enabled?: boolean;
+		rollover_max?: number;
+		purchase_discount?: number;
+	};
+	models: {
+		allowed: string[];
+		default: string;
+	};
+	features: {
+		priority_support?: boolean;
+		api_access?: boolean;
+		beta_features?: boolean;
+		export_enabled?: boolean;
+		import_enabled?: boolean;
+		custom_personas?: boolean;
+		priority_queue?: boolean;
+		advanced_analytics?: boolean;
+	};
+}
+
+export interface UsageLimitsResponse {
+	tokens_used_total: number;
+	period_start: string; // ISO date
+	period_end: string; // ISO date
+	is_unlimited: boolean;
+	// Daily usage fields
+	daily_message_count?: number;
+	is_throttled?: boolean;
+	throttle_delay?: number;
+}
+
+export interface SubscriptionResponse {
+	subscription?: Subscription;
+	plan_features?: PlanFeatures;
+	usage_limits?: UsageLimitsResponse;
+	customer_portal_url?: string;
+}
+
+export interface PlansResponse {
+	plans: PlanFeatures[];
+	current_plan?: PlanType;
+}
+
+export interface CreatePaymentRequest {
+	plan_type: PlanType;
+	success_url?: string;
+	cancel_url?: string;
+}
+
+export interface CreatePaymentResponse {
+	transaction_id: string;
+	checkout_url: string;
+	status: string;
+}
+
+export interface CancelSubscriptionRequest {
+	immediate?: boolean;
+}
+
+// Extended User type with subscription info
+export interface UserWithSubscription extends User {
+	subscription?: Subscription;
+	plan_features?: PlanFeatures;
+	usage_limits?: UsageLimitsResponse;
 }

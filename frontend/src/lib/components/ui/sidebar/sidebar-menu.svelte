@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
 
@@ -14,7 +15,7 @@
 <ul
 	bind:this={ref}
 	data-sidebar="menu"
-	class={cn('flex w-full min-w-0 flex-col gap-1', className)}
+	class={_cn('flex w-full min-w-0 flex-col gap-1', className)}
 	{...restProps}
 >
 	{@render children?.()}

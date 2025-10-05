@@ -1,5 +1,5 @@
 import type { ScribeChatSession } from '$lib/types.js';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 
 export async function load({ data, fetch }) {
 	const { user } = data;
@@ -8,8 +8,8 @@ export async function load({ data, fetch }) {
 	if (user) {
 		try {
 			// Initialize API client with server-side fetch
-			apiClient.setFetch(fetch);
-			const result = await apiClient.getChats();
+			_apiClient.setFetch(fetch);
+			const result = await _apiClient.getChats();
 
 			if (result.isOk()) {
 				chats = result.value;

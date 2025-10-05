@@ -88,6 +88,11 @@ impl From<AuthUserResponse> for User {
             recovery_phrase: None,                      // Add the recovery_phrase field
             account_status: Some("active".to_string()), // Default to active, may be overridden by login response
             default_persona_id: auth.default_persona_id,
+            token_usage_updated_at: chrono::Utc::now(),
+            tokens_last_reset_at: Some(chrono::Utc::now()),
+            total_completion_tokens: 0,
+            total_prompt_tokens: 0,
+            total_token_cost_cents: 0,
         }
     }
 }

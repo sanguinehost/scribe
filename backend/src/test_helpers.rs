@@ -1,6 +1,13 @@
 // backend/src/test_helpers.rs
 // Contains helper functions and structs for integration testing within the src directory.
 
+// Payment test helpers (only with payment feature)
+#[cfg(feature = "payment")]
+pub mod payment_test_helpers;
+
+use std::fmt;
+use std::net::SocketAddr;
+
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
@@ -28,7 +35,8 @@ use crate::{
         chronicles,
         documents::document_routes,
         health::health_check,
-        lorebook_routes, // Added lorebook_routes
+        lorebook_routes,           // Added lorebook_routes
+        payment as payment_routes, // Added payment_routes
         user_persona_routes,
         user_settings_routes,
     },
@@ -57,11 +65,11 @@ use axum::{
     extract::Request as AxumRequest,
     http::{Request, StatusCode}, // Removed unused Method, header
 };
-use axum_login::{AuthManagerLayerBuilder, AuthSession}; // Removed unused login_required
+use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
 use diesel_migrations::{EmbeddedMigrations, embed_migrations};
-use dotenvy::dotenv; // Removed var
+// Removed var
 use futures::TryStreamExt;
 use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
@@ -73,7 +81,6 @@ use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde_json::json;
 use std::collections::VecDeque; // Added for MockQdrantClientService response queue
-use std::fmt;
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
@@ -145,9 +152,9 @@ impl MockAiClient {
                 )],
                 reasoning_content: None,
                 usage: Usage {
-                    prompt_tokens: Some(20),      // Simulate ~20 tokens for prompt
-                    completion_tokens: Some(10),  // Simulate ~10 tokens for completion
-                    total_tokens: Some(30),       // Total of prompt + completion
+                    prompt_tokens: Some(20),     // Simulate ~20 tokens for prompt
+                    completion_tokens: Some(10), // Simulate ~10 tokens for completion
+                    total_tokens: Some(30),      // Total of prompt + completion
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
@@ -163,7 +170,7 @@ impl MockAiClient {
         // Estimate token count based on response text length (rough approximation: 1 token per 4 characters)
         let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as i32).max(1);
         let prompt_tokens = 15; // Default prompt token count
-        
+
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -658,6 +665,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         chronicle_id_for_search: Option<Uuid>,     // New parameter for chronicle search
         query_text: &str,
         limit: u64,
+        _session_dek: Option<&crate::auth::SessionDek>, // DEK for decryption
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         // Record the call
         self.calls
@@ -1435,7 +1443,13 @@ pub async fn spawn_app_with_rate_limiting_options(
 ) -> TestApp {
     ensure_tracing_initialized();
     ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
-    dotenv().ok();
+
+    // Load .env from project root (one directory up from backend/)
+    let project_root = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from(".."));
+    dotenvy::from_path(project_root.join(".env")).ok();
 
     let test_db_name_suffix = if multi_thread {
         Some(Uuid::new_v4().to_string()) // Ensure it's String for suffix
@@ -1455,6 +1469,13 @@ pub async fn spawn_app_with_rate_limiting_options(
         ));
     }
     config_loader.port = 0;
+
+    // Enable credit system for integration tests
+    #[cfg(feature = "payment")]
+    {
+        config_loader.payment.credits_enabled = true;
+    }
+
     let config_arc = Arc::new(config_loader);
 
     let (ai_client_for_state, mock_ai_client_for_test_app): (
@@ -1617,11 +1638,22 @@ pub async fn spawn_app_with_rate_limiting_options(
             "/user-settings",
             user_settings_routes::user_settings_routes(app_state_inner.clone()),
         ) // Add user settings routes
+        .nest("/payment", payment_routes::payment_routes()) // Add payment routes
         .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
             app_state_inner.clone(),
             auth_log_wrapper,
-        ));
+        ))
+        .route_layer(login_required!(AuthBackend)); // Apply authentication enforcement like in production
+
+    // Webhook routes (no authentication, no rate limiting - signature verified in handler)
+    #[cfg(feature = "payment")]
+    let webhook_routes_for_test = Router::new()
+        .nest("/api/payment", payment_routes::payment_webhook_routes()) // Webhook routes under /api/payment
+        .with_state(app_state_inner.clone());
+
+    #[cfg(not(feature = "payment"))]
+    let webhook_routes_for_test = Router::new();
 
     // Rate-limited API routes (both auth and protected routes)
     let rate_limited_api_routes = Router::new()
@@ -1632,6 +1664,7 @@ pub async fn spawn_app_with_rate_limiting_options(
                 GovernorConfigBuilder::default()
                     .per_second(rate_limit_per_second)
                     .burst_size(rate_limit_burst_size)
+                    // Use GlobalKeyExtractor for tests (doesn't require ConnectInfo)
                     .key_extractor(GlobalKeyExtractor)
                     .finish()
                     .unwrap(),
@@ -1640,6 +1673,7 @@ pub async fn spawn_app_with_rate_limiting_options(
 
     let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
         .merge(health_routes_for_test) // Health endpoint not rate limited
+        .merge(webhook_routes_for_test) // Webhook routes without auth
         .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
         .layer(CookieManagerLayer::new())
         .layer(auth_layer) // Re-enabled auth layer
@@ -1650,12 +1684,15 @@ pub async fn spawn_app_with_rate_limiting_options(
         )
         .layer(axum::middleware::from_fn(test_request_logging_middleware));
 
-    let router_for_test_app = router_for_server.clone(); // Clone before moving
+    let router_for_test_app = router_for_server.clone(); // Clone for test app
 
     tokio::spawn(async move {
-        axum::serve(listener, router_for_server.into_make_service()) // Use router_for_server
-            .await
-            .expect("Test server failed");
+        axum::serve(
+            listener,
+            router_for_server.into_make_service_with_connect_info::<SocketAddr>(),
+        ) // Use router_for_server
+        .await
+        .expect("Test server failed");
     });
 
     TestApp {
@@ -1693,7 +1730,7 @@ pub mod db {
     use deadpool_diesel::postgres::{
         Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
     };
-    use dotenvy::dotenv; // For .env file loading
+    // For .env file loading
     use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
     // Ensure RegisterPayload is imported
     use super::{
@@ -1710,7 +1747,12 @@ pub mod db {
     ///
     /// Panics if the `DATABASE_URL` environment variable is not set
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
-        dotenv().ok(); // Load .env
+        // Load .env from project root (one directory up from backend/)
+        let project_root = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::path::PathBuf::from(".."));
+        dotenvy::from_path(project_root.join(".env")).ok();
         let db_name = format!(
             "test_db_{}_{}",
             db_name_suffix.unwrap_or("default"),
@@ -2211,7 +2253,7 @@ impl TestDataGuard {
         }
 
         if !self.user_ids.is_empty() {
-            tracing::debug!(user_ids = ?self.user_ids, "Cleaning up test users");
+            tracing::debug!(user_count = self.user_ids.len(), "Cleaning up test users");
             let user_ids_clone = self.user_ids.clone();
             let diesel_op_result_users = conn
                 .interact(move |conn_interaction| {
@@ -2783,6 +2825,7 @@ pub async fn set_history_settings(
         chronicle_id: None,
         agent_mode: None,
         active_custom_persona_id: None,
+        prompt_template_id: None,
     };
 
     let client = reqwest::Client::new();
@@ -3208,7 +3251,6 @@ pub mod llm_server {
 #[cfg(not(feature = "local-llm"))]
 pub mod llm_server {
     //! Placeholder module when local-llm feature is not enabled
-    use std::fmt;
 
     #[derive(Debug)]
     pub struct LlmServerTestGuard;

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import {
 		LorebookList,
@@ -9,7 +9,7 @@
 		ImportLorebookDialog
 	} from '$lib/components/lorebooks';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
 	import type { Lorebook, CreateLorebookPayload, UpdateLorebookPayload } from '$lib/types';
 
@@ -29,24 +29,24 @@
 		showCreateDialog = true;
 	}
 
-	function handleSelectLorebook(lorebook: Lorebook) {
-		goto(`/lorebooks/${lorebook.id}`);
+	function handleSelectLorebook(_lorebook: Lorebook) {
+		_goto(`/lorebooks/${_lorebook.id}`);
 	}
 
-	function handleEditLorebook(lorebook: Lorebook) {
-		goto(`/lorebooks/${lorebook.id}?edit=true`);
+	function handleEditLorebook(_lorebook: Lorebook) {
+		_goto(`/lorebooks/${_lorebook.id}?edit=true`);
 	}
 
-	function handleDeleteLorebook(lorebook: Lorebook) {
-		console.log('Delete clicked for lorebook:', lorebook);
-		deletingLorebook = lorebook;
+	function handleDeleteLorebook(_lorebook: Lorebook) {
+		console.log('Delete clicked for lorebook:', _lorebook);
+		deletingLorebook = _lorebook;
 		console.log('Set deletingLorebook to:', deletingLorebook);
 		showDeleteDialog = true;
 		console.log('Set showDeleteDialog to true, deletingLorebook:', deletingLorebook);
 	}
 
-	function handleExportLorebook(lorebook: Lorebook) {
-		exportingLorebook = lorebook;
+	function handleExportLorebook(_lorebook: Lorebook) {
+		exportingLorebook = _lorebook;
 		showExportDialog = true;
 	}
 
@@ -72,13 +72,13 @@
 		exportingLorebook = null;
 	}
 
-	async function handleCreateSubmit(data: CreateLorebookPayload | UpdateLorebookPayload) {
+	async function handleCreateSubmit(_data: CreateLorebookPayload | UpdateLorebookPayload) {
 		// Since this is for creation, we know it's CreateLorebookPayload
-		const result = await lorebookStore.createLorebook(data as CreateLorebookPayload);
+		const result = await lorebookStore.createLorebook(_data as CreateLorebookPayload);
 		if (result) {
 			showCreateDialog = false;
 			toast.success('Lorebook created successfully!');
-			goto(`/lorebooks/${result.id}`);
+			_goto(`/lorebooks/${result.id}`);
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to create lorebook: ${lorebookStore.error}`);
 		}
@@ -156,8 +156,10 @@
 			</div>
 
 			<div class="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
-				<Button variant="outline" onclick={cancelDelete}>Cancel</Button>
-				<Button variant="destructive" onclick={confirmDelete}>Delete Lorebook</Button>
+				<ButtonComponent variant="outline" onclick={cancelDelete}>Cancel</ButtonComponent>
+				<ButtonComponent variant="destructive" onclick={confirmDelete}
+					>Delete Lorebook</ButtonComponent
+				>
 			</div>
 		</DialogContent>
 	</Dialog>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = HTMLAttributes<HTMLDivElement>;
 
@@ -8,6 +8,6 @@
 	export { className as class };
 </script>
 
-<div class={cn('flex items-center p-6 pt-0', className)} {...$$restProps}>
+<div class={_cn('flex items-center p-6 pt-0', className)} {...$$restProps}>
 	<slot />
 </div>

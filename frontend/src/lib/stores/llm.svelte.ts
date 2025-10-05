@@ -1,7 +1,7 @@
 // frontend/src/lib/stores/llm.svelte.ts
-import { browser } from '$app/environment';
+import { browser as _browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import type {
 	ModelCapabilities,
 	ModelInfo,
@@ -19,6 +19,12 @@ interface HardwareInfo {
 		cuda_capable: boolean;
 	}>;
 	has_cuda: boolean;
+}
+
+interface ModelMetadata {
+	size_gb?: string | number;
+	filename?: string;
+	[key: string]: unknown;
 }
 
 // Use the existing DownloadProgressInfo type instead of defining our own
@@ -88,7 +94,7 @@ export class LLMStore {
 	 * Fetch all available models and their capabilities from the API
 	 */
 	async fetchModels(force = false) {
-		if (!browser) return;
+		if (!_browser) return;
 
 		// Skip if already loading or recently fetched
 		if (this.state.loading || (!force && !this.isStale)) {
@@ -99,7 +105,7 @@ export class LLMStore {
 		this.state.error = null;
 
 		try {
-			const result = await apiClient.getAllModels();
+			const result = await _apiClient.getAllModels();
 
 			if (!result.isOk()) {
 				throw new Error(`Failed to fetch models: ${result.error.message}`);
@@ -110,43 +116,51 @@ export class LLMStore {
 			// Transform the response into our store format
 			const models: Record<string, ModelInfo> = {};
 			const capabilities: Record<string, ModelCapabilities> = {};
-			const recommendedSettings: Record<string, RecommendedContextSettings> = {};
+			const _recommendedSettings: Record<string, RecommendedContextSettings> = {};
 
-			for (const [modelId, data] of Object.entries(modelsData)) {
-				const modelData = data as any;
+			for (const [_modelId, data] of Object.entries(modelsData)) {
+				const modelData = data as Record<string, unknown>;
 
-				models[modelId] = {
-					id: modelId,
-					name: this.getModelDisplayName(modelId),
-					description: this.getModelDescription(modelId, modelData),
-					isLocal: modelData.is_local,
-					capabilities: modelData,
+				models[_modelId] = {
+					id: _modelId,
+					name: this.getModelDisplayName(_modelId),
+					description: this.getModelDescription(_modelId, modelData),
+					isLocal: modelData.is_local as boolean,
+					capabilities: modelData as unknown as ModelCapabilities,
 					recommended_settings: undefined, // Will be fetched separately if needed
 					// Map backend fields to expected ModelInfo fields
-					downloaded: modelData.is_local ? modelData.is_available : true, // Local models are downloaded if available, cloud models are always "available"
-					compatible: modelData.is_local ? this.calculateCompatibility(modelId, modelData) : true, // Local models need compatibility check, cloud models are always compatible
+					downloaded: modelData.is_local ? (modelData.is_available as boolean) : true, // Local models are downloaded if available, cloud models are always "available"
+					compatible: (modelData.is_local as boolean)
+						? this.calculateCompatibility(_modelId, modelData)
+						: true, // Local models need compatibility check, cloud models are always compatible
 					active: false, // TODO: Get actual active status
-					size_gb: parseFloat(modelData.metadata?.size_gb) || 0,
-					vram_required: this.getVramRequirement(modelId, modelData),
-					filename: modelData.metadata?.filename
+					size_gb:
+						parseFloat((modelData.metadata as ModelMetadata)?.size_gb?.toString() || '0') || 0,
+					vram_required: this.getVramRequirement(_modelId, modelData),
+					filename: (modelData.metadata as ModelMetadata)?.filename
 				};
 
-				capabilities[modelId] = {
-					context_window_size: modelData.context_window_size,
-					max_output_tokens: modelData.max_output_tokens,
-					provider: modelData.provider,
-					is_local: modelData.is_local,
-					is_available: modelData.is_available,
-					metadata: modelData.metadata || {}
+				capabilities[_modelId] = {
+					context_window_size: modelData.context_window_size as number,
+					max_output_tokens: modelData.max_output_tokens as number,
+					provider: modelData.provider as string,
+					is_local: modelData.is_local as boolean,
+					is_available: modelData.is_available as boolean,
+					metadata: Object.fromEntries(
+						Object.entries((modelData.metadata as ModelMetadata) || {}).map(([key, value]) => [
+							key,
+							String(value ?? '')
+						])
+					)
 				};
 			}
 
 			this.state.models = models;
 			this.state.capabilities = capabilities;
 			this.state.lastFetched = Date.now();
-		} catch (error) {
-			console.error('Failed to fetch models:', error);
-			this.state.error = error instanceof Error ? error.message : 'Unknown error occurred';
+		} catch (_error) {
+			console.error('Failed to fetch models:', _error);
+			this.state.error = _error instanceof Error ? _error.message : 'Unknown error occurred';
 		} finally {
 			this.state.loading = false;
 		}
@@ -163,7 +177,7 @@ export class LLMStore {
 			only_recommended?: boolean;
 		}
 	) {
-		if (!browser) return;
+		if (!_browser) return;
 
 		// Skip if already loading or recently fetched (unless filters are provided)
 		if (this.state.loading || (!force && !filters && !this.isStale)) {
@@ -174,7 +188,7 @@ export class LLMStore {
 		this.state.error = null;
 
 		try {
-			const result = await apiClient.getGroupedModels(filters);
+			const result = await _apiClient.getGroupedModels(filters);
 
 			if (!result.isOk()) {
 				throw new Error(`Failed to fetch grouped models: ${result.error.message}`);
@@ -193,9 +207,9 @@ export class LLMStore {
 			}
 
 			this.state.lastFetched = Date.now();
-		} catch (error) {
-			console.error('Failed to fetch grouped models:', error);
-			this.state.error = error instanceof Error ? error.message : 'Unknown error occurred';
+		} catch (_error) {
+			console.error('Failed to fetch grouped models:', _error);
+			this.state.error = _error instanceof Error ? _error.message : 'Unknown error occurred';
 		} finally {
 			this.state.loading = false;
 		}
@@ -204,37 +218,37 @@ export class LLMStore {
 	/**
 	 * Get capabilities for a specific model
 	 */
-	getModelCapabilities(modelId: string): ModelCapabilities | null {
-		return this.state.capabilities[modelId] || null;
+	getModelCapabilities(_modelId: string): ModelCapabilities | null {
+		return this.state.capabilities[_modelId] || null;
 	}
 
 	/**
 	 * Get recommended context settings for a specific model
 	 */
-	async getRecommendedSettings(modelId: string): Promise<RecommendedContextSettings | null> {
-		if (!browser) return null;
+	async getRecommendedSettings(_modelId: string): Promise<RecommendedContextSettings | null> {
+		if (!_browser) return null;
 
 		// Return cached settings if available
-		if (this.state.recommendedSettings[modelId]) {
-			return this.state.recommendedSettings[modelId];
+		if (this.state.recommendedSettings[_modelId]) {
+			return this.state.recommendedSettings[_modelId];
 		}
 
 		try {
-			const response = await fetch(`/api/llm/models/${modelId}/capabilities`);
+			const response = await fetch(`/api/llm/models/${_modelId}/capabilities`);
 
 			if (!response.ok) {
-				console.warn(`Failed to fetch capabilities for model ${modelId}: ${response.statusText}`);
+				console.warn(`Failed to fetch capabilities for model ${_modelId}: ${response.statusText}`);
 				return null;
 			}
 
 			const data = await response.json();
 
 			if (data.recommended_settings) {
-				this.state.recommendedSettings[modelId] = data.recommended_settings;
+				this.state.recommendedSettings[_modelId] = data.recommended_settings;
 				return data.recommended_settings;
 			}
-		} catch (error) {
-			console.error(`Failed to fetch recommended settings for ${modelId}:`, error);
+		} catch (_error) {
+			console.error(`Failed to fetch recommended settings for ${_modelId}:`, _error);
 		}
 
 		return null;
@@ -243,23 +257,23 @@ export class LLMStore {
 	/**
 	 * Check if a model is available
 	 */
-	isModelAvailable(modelId: string): boolean {
-		const capabilities = this.getModelCapabilities(modelId);
+	isModelAvailable(_modelId: string): boolean {
+		const capabilities = this.getModelCapabilities(_modelId);
 		return capabilities?.is_available ?? false;
 	}
 
 	/**
 	 * Get the maximum context window size for a model
 	 */
-	getMaxContextSize(modelId: string): number | null {
-		const capabilities = this.getModelCapabilities(modelId);
+	getMaxContextSize(_modelId: string): number | null {
+		const capabilities = this.getModelCapabilities(_modelId);
 		return capabilities?.context_window_size ?? null;
 	}
 
 	/**
 	 * Get a user-friendly display name for a model
 	 */
-	private getModelDisplayName(modelId: string): string {
+	private getModelDisplayName(_modelId: string): string {
 		const nameMap: Record<string, string> = {
 			'gemini-2.5-pro': 'Gemini 2.5 Pro',
 			'gemini-2.5-flash': 'Gemini 2.5 Flash',
@@ -270,13 +284,13 @@ export class LLMStore {
 			'gemma-3-27b-it-q4': 'Gemma 3 27B IT (Q4)'
 		};
 
-		return nameMap[modelId] || modelId;
+		return nameMap[_modelId] || _modelId;
 	}
 
 	/**
 	 * Calculate compatibility for local models
 	 */
-	private calculateCompatibility(modelId: string, data: any): boolean {
+	private calculateCompatibility(_modelId: string, _data: Record<string, unknown>): boolean {
 		// For now, assume all local models are compatible
 		// This could be enhanced with hardware detection
 		return true;
@@ -285,10 +299,15 @@ export class LLMStore {
 	/**
 	 * Get VRAM requirement for a model
 	 */
-	private getVramRequirement(modelId: string, data: any): number {
+	private getVramRequirement(_modelId: string, data: Record<string, unknown>): number {
 		// Try to get from metadata first
-		if (data.metadata?.vram_required) {
-			return data.metadata.vram_required;
+		if (
+			data.metadata &&
+			typeof data.metadata === 'object' &&
+			data.metadata !== null &&
+			'vram_required' in data.metadata
+		) {
+			return data.metadata.vram_required as number;
 		}
 
 		// Fallback to estimates based on model ID
@@ -299,16 +318,21 @@ export class LLMStore {
 			'gemma-3-27b-it-q4': 18
 		};
 
-		return vramEstimates[modelId] || 0;
+		return vramEstimates[_modelId] || 0;
 	}
 
 	/**
 	 * Get a description for a model
 	 */
-	private getModelDescription(modelId: string, data: any): string {
+	private getModelDescription(_modelId: string, data: Record<string, unknown>): string {
 		// Try to get description from metadata or use defaults
-		if (data.metadata?.description) {
-			return data.metadata.description;
+		if (
+			data.metadata &&
+			typeof data.metadata === 'object' &&
+			data.metadata !== null &&
+			'description' in data.metadata
+		) {
+			return data.metadata.description as string;
 		}
 
 		const descriptionMap: Record<string, string> = {
@@ -321,7 +345,7 @@ export class LLMStore {
 			'gemma-3-27b-it-q4': "Google's multimodal instruction-tuned model (27B parameters)"
 		};
 
-		return descriptionMap[modelId] || `${data.is_local ? 'Local' : 'Cloud'} model`;
+		return descriptionMap[_modelId] || `${data.is_local ? 'Local' : 'Cloud'} model`;
 	}
 
 	/**
@@ -366,7 +390,7 @@ export class LLMStore {
 	}
 
 	get downloadedModels() {
-		return Object.values(this.state.models).filter((m) => m.isLocal && m.downloaded) as any[];
+		return Object.values(this.state.models).filter((m) => m.isLocal && m.downloaded) as unknown[];
 	}
 
 	get activeModel() {
@@ -403,38 +427,38 @@ export class LLMStore {
 	}
 
 	// Compatibility methods for existing components
-	isModelDownloading(modelId: string): boolean {
-		return this.state.downloadingModels.has(modelId);
+	isModelDownloading(_modelId: string): boolean {
+		return this.state.downloadingModels.has(_modelId);
 	}
 
-	getDownloadProgress(modelId: string): DownloadProgressInfo | null {
-		return this.state.downloadProgress[modelId] || null;
+	getDownloadProgress(_modelId: string): DownloadProgressInfo | null {
+		return this.state.downloadProgress[_modelId] || null;
 	}
 
-	async activateModel(modelId: string): Promise<void> {
-		if (!browser) return;
+	async activateModel(_modelId: string): Promise<void> {
+		if (!_browser) return;
 
 		try {
-			const result = await apiClient.activateModel(modelId);
+			const result = await _apiClient.activateModel(_modelId);
 
 			if (!result.isOk()) {
 				throw new Error(`Failed to activate model: ${result.error.message}`);
 			}
 
 			// Update active model state
-			this.state.activeModelId = modelId;
+			this.state.activeModelId = _modelId;
 
 			// Refresh models to get updated active status
 			await Promise.all([this.fetchModels(true), this.fetchGroupedModels(true)]);
-		} catch (error) {
-			console.error('Failed to activate model:', error);
-			this.state.error = error instanceof Error ? error.message : 'Activation failed';
-			throw error;
+		} catch (_error) {
+			console.error('Failed to activate model:', _error);
+			this.state.error = _error instanceof Error ? _error.message : 'Activation failed';
+			throw _error;
 		}
 	}
 
 	async deactivateModel(): Promise<void> {
-		if (!browser) return;
+		if (!_browser) return;
 
 		try {
 			const response = await fetch('/api/llm/models/deactivate', {
@@ -448,48 +472,48 @@ export class LLMStore {
 
 			// Refresh models to get updated active status
 			await this.fetchModels(true);
-		} catch (error) {
-			console.error('Failed to deactivate model:', error);
-			throw error;
+		} catch (_error) {
+			console.error('Failed to deactivate model:', _error);
+			throw _error;
 		}
 	}
 
-	async deleteModel(modelId: string): Promise<void> {
-		if (!browser) return;
+	async deleteModel(_modelId: string): Promise<void> {
+		if (!_browser) return;
 
 		try {
-			const result = await apiClient.deleteModel(modelId);
+			const result = await _apiClient.deleteModel(_modelId);
 
 			if (!result.isOk()) {
 				throw new Error(`Failed to delete model: ${result.error.message}`);
 			}
 
 			// If this was the active model, clear the active status
-			if (this.state.activeModelId === modelId) {
+			if (this.state.activeModelId === _modelId) {
 				this.state.activeModelId = null;
 			}
 
 			// Refresh models to get updated status
 			await Promise.all([this.fetchModels(true), this.fetchGroupedModels(true)]);
-		} catch (error) {
-			console.error('Failed to delete model:', error);
-			this.state.error = error instanceof Error ? error.message : 'Delete failed';
-			throw error;
+		} catch (_error) {
+			console.error('Failed to delete model:', _error);
+			this.state.error = _error instanceof Error ? _error.message : 'Delete failed';
+			throw _error;
 		}
 	}
 
-	async downloadModel(modelId: string): Promise<void> {
-		if (!browser) return;
+	async downloadModel(_modelId: string): Promise<void> {
+		if (!_browser) return;
 
 		try {
-			console.log(`Starting download for model: ${modelId}`);
+			console.log(`Starting download for model: ${_modelId}`);
 			// Add to downloading models set
-			this.state.downloadingModels.add(modelId);
+			this.state.downloadingModels.add(_modelId);
 			console.log('Added model to downloading set:', Array.from(this.state.downloadingModels));
 			// Note: SSE stream disabled for now due to placeholder backend implementation
 			// this.startDownloadProgressStream();
 
-			const result = await apiClient.downloadModel(modelId);
+			const result = await _apiClient.downloadModel(_modelId);
 
 			if (!result.isOk()) {
 				throw new Error(`Failed to download model: ${result.error.message}`);
@@ -500,15 +524,15 @@ export class LLMStore {
 				throw new Error(`Download failed: ${result.value.message}`);
 			}
 
-			console.log(`Download request succeeded for ${modelId}`);
+			console.log(`Download request succeeded for ${_modelId}`);
 			// Download request succeeded - start polling for completion
-			this.pollDownloadCompletion(modelId);
-		} catch (error) {
-			console.error('Failed to download model:', error);
-			this.state.error = error instanceof Error ? error.message : 'Download failed';
+			this.pollDownloadCompletion(_modelId);
+		} catch (_error) {
+			console.error('Failed to download model:', _error);
+			this.state.error = _error instanceof Error ? _error.message : 'Download failed';
 			// Remove from downloading set on error
-			this.state.downloadingModels.delete(modelId);
-			throw error;
+			this.state.downloadingModels.delete(_modelId);
+			throw _error;
 		}
 	}
 
@@ -527,10 +551,10 @@ export class LLMStore {
 	}
 
 	async checkLocalLlmSupport(): Promise<void> {
-		if (!browser) return;
+		if (!_browser) return;
 
 		try {
-			const result = await apiClient.getLlmInfo();
+			const result = await _apiClient.getLlmInfo();
 			if (result.isOk()) {
 				this.state.localLlmEnabled = result.value.local_llm_enabled;
 				if (result.value.local_llm_enabled) {
@@ -544,8 +568,8 @@ export class LLMStore {
 				console.log('Local LLM support not available:', result.error);
 				this.state.localLlmEnabled = false;
 			}
-		} catch (error) {
-			console.error('Failed to check local LLM support:', error);
+		} catch (_error) {
+			console.error('Failed to check local LLM support:', _error);
 			this.state.localLlmEnabled = false;
 		}
 	}
@@ -553,7 +577,7 @@ export class LLMStore {
 	/**
 	 * Poll for download completion by checking model status
 	 */
-	private async pollDownloadCompletion(modelId: string): Promise<void> {
+	private async pollDownloadCompletion(_modelId: string): Promise<void> {
 		let attempts = 0;
 		let consecutiveNoProgressAttempts = 0;
 		let lastRefreshAttempt = 0;
@@ -561,7 +585,7 @@ export class LLMStore {
 		const poll = async (): Promise<void> => {
 			attempts++;
 			console.log(
-				`Polling download status for ${modelId} (attempt ${attempts}/${LLMStore.MAX_POLL_ATTEMPTS})`
+				`Polling download status for ${_modelId} (attempt ${attempts}/${LLMStore.MAX_POLL_ATTEMPTS})`
 			);
 
 			try {
@@ -571,22 +595,22 @@ export class LLMStore {
 					attempts === 1 || attempts % 3 === 0 || attempts > LLMStore.MAX_POLL_ATTEMPTS - 5;
 
 				if (shouldRefresh) {
-					console.log(`Refreshing models for ${modelId} (refresh ${++lastRefreshAttempt})`);
+					console.log(`Refreshing models for ${_modelId} (refresh ${++lastRefreshAttempt})`);
 					await this.fetchModels(true);
 					await this.fetchGroupedModels(true);
 				}
 
 				// Check if model is now downloaded (check both individual and grouped models)
-				const model = this.state.models?.[modelId];
+				const model = this.state.models?.[_modelId];
 
 				// Also check grouped models for the variant
 				let variantDownloaded = false;
 				if (this.state.groupedModels) {
 					for (const group of this.state.groupedModels) {
-						const variant = group.variants.find((v) => v.id === modelId);
+						const variant = group.variants.find((v) => v.id === _modelId);
 						if (variant?.downloaded) {
 							variantDownloaded = true;
-							console.log(`Found downloaded variant ${modelId} in group ${group.base_model_name}`);
+							console.log(`Found downloaded variant ${_modelId} in group ${group.base_model_name}`);
 							break;
 						}
 					}
@@ -594,12 +618,12 @@ export class LLMStore {
 
 				// Check if download completed in either location
 				if (model?.downloaded || variantDownloaded) {
-					console.log(`✅ Download completed for ${modelId}, cleaning up states`);
-					this.state.downloadingModels.delete(modelId);
+					console.log(`✅ Download completed for ${_modelId}, cleaning up states`);
+					this.state.downloadingModels.delete(_modelId);
 
 					// Clean up any download progress data
-					if (this.state.downloadProgress[modelId]) {
-						delete this.state.downloadProgress[modelId];
+					if (this.state.downloadProgress[_modelId]) {
+						delete this.state.downloadProgress[_modelId];
 					}
 
 					// Do one final refresh to ensure UI is fully updated
@@ -607,34 +631,34 @@ export class LLMStore {
 					await this.fetchModels(true);
 					await this.fetchGroupedModels(true);
 
-					console.log(`🎉 Download process complete for ${modelId}`);
+					console.log(`🎉 Download process complete for ${_modelId}`);
 					return;
 				}
 
 				// Check if we're still in progress (model exists but not downloaded)
 				const modelExists =
-					model || this.state.groupedModels?.some((g) => g.variants.some((v) => v.id === modelId));
+					model || this.state.groupedModels?.some((g) => g.variants.some((v) => v.id === _modelId));
 
 				if (modelExists) {
 					consecutiveNoProgressAttempts = 0; // Reset counter if model exists
 				} else {
 					consecutiveNoProgressAttempts++;
 					console.log(
-						`No model found for ${modelId}, consecutive attempts: ${consecutiveNoProgressAttempts}`
+						`No model found for ${_modelId}, consecutive attempts: ${consecutiveNoProgressAttempts}`
 					);
 				}
 
 				// If we haven't seen progress for too long, assume failure
 				if (consecutiveNoProgressAttempts >= LLMStore.MAX_NO_PROGRESS_ATTEMPTS) {
 					console.error(
-						`Download appears to have failed for ${modelId} - no model found for too long`
+						`Download appears to have failed for ${_modelId} - no model found for too long`
 					);
-					this.state.downloadingModels.delete(modelId);
+					this.state.downloadingModels.delete(_modelId);
 					// Clean up download progress on failure
-					if (this.state.downloadProgress[modelId]) {
-						delete this.state.downloadProgress[modelId];
+					if (this.state.downloadProgress[_modelId]) {
+						delete this.state.downloadProgress[_modelId];
 					}
-					this.state.error = `Download failed for ${modelId} - model not found in system`;
+					this.state.error = `Download failed for ${_modelId} - model not found in system`;
 					return;
 				}
 
@@ -643,23 +667,23 @@ export class LLMStore {
 					setTimeout(poll, LLMStore.POLL_INTERVAL_MS);
 				} else {
 					console.warn(
-						`Download polling timed out for ${modelId} after ${LLMStore.MAX_POLL_ATTEMPTS} attempts`
+						`Download polling timed out for ${_modelId} after ${LLMStore.MAX_POLL_ATTEMPTS} attempts`
 					);
-					this.state.downloadingModels.delete(modelId);
+					this.state.downloadingModels.delete(_modelId);
 					// Clean up download progress on timeout
-					if (this.state.downloadProgress[modelId]) {
-						delete this.state.downloadProgress[modelId];
+					if (this.state.downloadProgress[_modelId]) {
+						delete this.state.downloadProgress[_modelId];
 					}
-					this.state.error = `Download timed out for ${modelId} - please check server logs`;
+					this.state.error = `Download timed out for ${_modelId} - please check server logs`;
 				}
-			} catch (error) {
-				console.error(`Error polling download status for ${modelId}:`, error);
-				this.state.downloadingModels.delete(modelId);
+			} catch (_error) {
+				console.error(`Error polling download status for ${_modelId}:`, _error);
+				this.state.downloadingModels.delete(_modelId);
 				// Clean up download progress on error too
-				if (this.state.downloadProgress[modelId]) {
-					delete this.state.downloadProgress[modelId];
+				if (this.state.downloadProgress[_modelId]) {
+					delete this.state.downloadProgress[_modelId];
 				}
-				this.state.error = `Error checking download status: ${error instanceof Error ? error.message : 'Unknown error'}`;
+				this.state.error = `Error checking download status: ${_error instanceof Error ? _error.message : 'Unknown error'}`;
 			}
 		};
 
@@ -671,10 +695,10 @@ export class LLMStore {
 	 * Start listening for download progress updates via SSE
 	 */
 	private startDownloadProgressStream(): void {
-		if (!browser || this.progressEventSource) return;
+		if (!_browser || this.progressEventSource) return;
 
 		console.log('Starting download progress stream...');
-		this.progressEventSource = apiClient.createDownloadProgressStream();
+		this.progressEventSource = _apiClient.createDownloadProgressStream();
 		if (!this.progressEventSource) {
 			console.warn('Failed to create download progress stream');
 			return;
@@ -703,8 +727,8 @@ export class LLMStore {
 					this.fetchModels(true).catch(console.error);
 					this.fetchGroupedModels(true).catch(console.error);
 				}
-			} catch (error) {
-				console.error('Error parsing download progress:', error);
+			} catch (_error) {
+				console.error('Error parsing download progress:', _error);
 			}
 		};
 

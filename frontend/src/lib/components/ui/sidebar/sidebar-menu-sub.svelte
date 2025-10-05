@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
 
@@ -14,7 +15,7 @@
 <ul
 	bind:this={ref}
 	data-sidebar="menu-sub"
-	class={cn(
+	class={_cn(
 		'mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5',
 		'group-data-[collapsible=icon]:hidden',
 		className

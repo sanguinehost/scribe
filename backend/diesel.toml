@@ -6,4 +6,4 @@ file = "src/schema.rs"
 import_types = ["diesel::sql_types::*", "diesel_derive_enum::DbEnum"]
 
 [migrations_directory]
-dir = "migrations" 
+dir = "migrations"

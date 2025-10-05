@@ -233,10 +233,11 @@ async fn create_test_chat_session(
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
 
             diesel::insert_into(schema::chat_sessions::table)
@@ -380,6 +381,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -525,6 +528,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -570,6 +575,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
 #[tokio::test]
 // Removed ignore: #[ignore] // Integration test, relies on external services
 #[allow(clippy::too_many_lines)]
+#[allow(deprecated)]
 async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let user = test_helpers::db::create_test_user(
@@ -756,10 +762,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -825,6 +832,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: Some(query_text.to_string()),
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -900,11 +909,11 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     // Check for key prompt elements that matter for RAG functionality
     assert!(
-        system_prompt.contains("Character Assignment"),
+        system_prompt.contains("## Your Creative Mission"),
         "System prompt should contain character assignment section"
     );
     assert!(
-        system_prompt.contains("Information Structure"),
+        system_prompt.contains("## Information Structure"),
         "System prompt should explain information structure for RAG"
     );
     assert!(
@@ -916,13 +925,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         "System prompt should reference lorebook_entries section for RAG context"
     );
 
-    // Ensure the user message itself DOES contain the RAG context
-    let last_user_message_in_ai_request = last_ai_request
-        .messages
-        .iter()
-        .find(|m| matches!(m.role, genai::chat::ChatRole::User))
-        .expect("No user message found in AI request");
-
+    // Verify system prompt contains the RAG context (moved from user message to system prompt in new architecture)
     let speaker_from_meta = match &mock_retrieved_chunk.metadata {
         RetrievedMetadata::Chat(chat_meta) => chat_meta.speaker.as_str(),
         RetrievedMetadata::Lorebook(_) => "Unknown", // Should not happen in this test based on mock_retrieved_chunk setup
@@ -933,29 +936,36 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         speaker_from_meta,
         mock_chunk_text.trim()
     );
-    let expected_rag_context_start_tag = "<lorebook_entries>\n";
-    let expected_rag_context_end_tag = "</lorebook_entries>\n\n";
+
+    assert!(
+        system_prompt.contains("<lorebook_entries>"),
+        "System prompt should contain lorebook_entries opening tag"
+    );
+    assert!(
+        system_prompt.contains(&expected_rag_chunk_text),
+        "System prompt should contain RAG chunk text. Expected: '{expected_rag_chunk_text}'. System prompt: '{system_prompt}'"
+    );
+    assert!(
+        system_prompt.contains("</lorebook_entries>"),
+        "System prompt should contain lorebook_entries closing tag"
+    );
+    println!("Verified RAG context in system prompt");
+
+    // Verify user message contains the query (without RAG context, which is now in system prompt)
+    let last_user_message_in_ai_request = last_ai_request
+        .messages
+        .iter()
+        .find(|m| matches!(m.role, genai::chat::ChatRole::User))
+        .expect("No user message found in AI request");
 
     if let genai::chat::MessageContent::Text(user_content) =
         &last_user_message_in_ai_request.content
     {
         assert!(
-            user_content.starts_with(expected_rag_context_start_tag),
-            "User message content should start with RAG context start tag. Got: '{user_content}'"
+            user_content.contains(query_text),
+            "User message content should contain the original query. Expected to find: '{query_text}'. Got: '{user_content}'"
         );
-        assert!(
-            user_content.contains(&expected_rag_chunk_text),
-            "User message content should contain RAG chunk text. Expected: '{expected_rag_chunk_text}'. Got: '{user_content}'"
-        );
-        assert!(
-            user_content.contains(expected_rag_context_end_tag),
-            "User message content should contain RAG context end tag. Got: '{user_content}'"
-        );
-        assert!(
-            user_content.ends_with(query_text), // Original query should be at the end
-            "User message content should end with the original query. Got: '{user_content}'"
-        );
-        println!("Verified RAG context in user message: {user_content}");
+        println!("Verified user query in user message: {user_content}");
     } else {
         panic!("Expected user message to be text content");
     }
@@ -1152,10 +1162,11 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1200,6 +1211,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         model: Some("test-rag-err-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1236,7 +1249,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     // Test for key structural elements rather than exact content
     assert!(
-        system_prompt.contains("Character Assignment"),
+        system_prompt.contains("## Your Creative Mission"),
         "System prompt should contain character assignment section after RAG error"
     );
     assert!(
@@ -1514,10 +1527,11 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+                total_prompt_tokens: 0,
+                total_completion_tokens: 0,
+                estimated_cost_cents: 0,
+                tokens_counted_at: chrono::Utc::now(),
+                prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1551,6 +1565,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         model: Some("test-embed-trigger-model".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
@@ -1684,6 +1700,8 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1748,7 +1766,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
 
     // Test for key elements that should be present in a RAG-enabled chat prompt
     assert!(
-        system_prompt.contains("Character Assignment"),
+        system_prompt.contains("## Your Creative Mission"),
         "System prompt should contain character assignment section"
     );
     assert!(
@@ -1822,6 +1840,8 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -1882,8 +1902,8 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 
     // Test for structural elements that matter for functionality
     assert!(
-        system_prompt.contains("Character Assignment"),
-        "System prompt should contain character assignment section"
+        system_prompt.contains("## Your Creative Mission"),
+        "System prompt should contain creative mission section"
     );
     assert!(
         system_prompt.contains("<character_profile>"),
@@ -1949,6 +1969,8 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let request = Request::builder()
@@ -2009,8 +2031,8 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
 
     // Test for structural elements that matter for functionality
     assert!(
-        system_prompt.contains("Character Assignment"),
-        "System prompt should contain character assignment section"
+        system_prompt.contains("## Your Creative Mission"),
+        "System prompt should contain creative mission section"
     );
     assert!(
         system_prompt.contains("<character_profile>"),
@@ -2118,6 +2140,8 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         model: Some("gemini-2.5-flash".to_string()),
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     // Ensure responses are queued for this specific /generate call (system prompt + user message)

@@ -325,6 +325,8 @@ diesel::table! {
         total_completion_tokens -> Int4,
         estimated_cost_cents -> Int4,
         tokens_counted_at -> Timestamptz,
+        #[max_length = 50]
+        prompt_template_id -> Varchar,
     }
 }
 
@@ -350,6 +352,67 @@ diesel::table! {
         keywords_encrypted -> Nullable<Bytea>,
         keywords_nonce -> Nullable<Bytea>,
         chat_session_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    credit_packages (id) {
+        id -> Uuid,
+        #[max_length = 50]
+        package_id -> Varchar,
+        #[max_length = 100]
+        name -> Varchar,
+        credits -> Int4,
+        price_cents -> Int4,
+        bonus_percentage -> Nullable<Int4>,
+        #[max_length = 255]
+        paddle_price_id -> Nullable<Varchar>,
+        active -> Nullable<Bool>,
+        display_order -> Nullable<Int4>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    credit_transactions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        amount -> Int4,
+        balance_after -> Int4,
+        #[max_length = 50]
+        transaction_type -> Varchar,
+        description_encrypted -> Bytea,
+        description_nonce -> Bytea,
+        metadata_encrypted -> Nullable<Bytea>,
+        metadata_nonce -> Nullable<Bytea>,
+        #[max_length = 255]
+        reference_id -> Nullable<Varchar>,
+        created_at -> Nullable<Timestamptz>,
+        expires_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    daily_usage_tracking (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        date -> Date,
+        message_count -> Int4,
+        token_count -> Int8,
+        model_breakdown -> Nullable<Jsonb>,
+        soft_limit_triggered_at -> Nullable<Int4>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -477,6 +540,128 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    payment_audit_logs (id) {
+        id -> Uuid,
+        #[max_length = 64]
+        user_id_hash -> Varchar,
+        #[max_length = 50]
+        event_type -> Varchar,
+        amount -> Nullable<Int4>,
+        #[max_length = 30]
+        event_category -> Varchar,
+        success -> Bool,
+        #[max_length = 50]
+        error_code -> Nullable<Varchar>,
+        #[max_length = 64]
+        external_reference_hash -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    payment_transactions (id) {
+        id -> Uuid,
+        #[max_length = 255]
+        paddle_transaction_id -> Varchar,
+        user_id -> Uuid,
+        #[max_length = 50]
+        status -> Varchar,
+        #[max_length = 50]
+        collection_mode -> Nullable<Varchar>,
+        total_cents -> Int4,
+        tax_cents -> Nullable<Int4>,
+        discount_cents -> Nullable<Int4>,
+        #[max_length = 3]
+        currency_code -> Nullable<Varchar>,
+        #[max_length = 255]
+        paddle_customer_id -> Nullable<Varchar>,
+        customer_data_encrypted -> Nullable<Bytea>,
+        customer_data_nonce -> Nullable<Bytea>,
+        items -> Jsonb,
+        #[max_length = 255]
+        checkout_id -> Nullable<Varchar>,
+        billed_at -> Nullable<Timestamptz>,
+        completed_at -> Nullable<Timestamptz>,
+        paddle_data_encrypted -> Nullable<Bytea>,
+        paddle_data_nonce -> Nullable<Bytea>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    payment_usage_tracking (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        subscription_id -> Nullable<Uuid>,
+        tokens_used -> Int4,
+        tokens_limit -> Nullable<Int4>,
+        period_start -> Timestamptz,
+        period_end -> Timestamptz,
+        metadata_encrypted -> Nullable<Bytea>,
+        metadata_nonce -> Nullable<Bytea>,
+        created_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    payments (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        subscription_id -> Nullable<Uuid>,
+        #[max_length = 255]
+        paddle_transaction_id -> Nullable<Varchar>,
+        amount_cents -> Int4,
+        #[max_length = 3]
+        currency -> Nullable<Varchar>,
+        #[max_length = 50]
+        status -> Varchar,
+        failure_reason_encrypted -> Nullable<Bytea>,
+        failure_reason_nonce -> Nullable<Bytea>,
+        #[max_length = 512]
+        paddle_receipt_url -> Nullable<Varchar>,
+        created_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    plan_features (plan_type) {
+        #[max_length = 50]
+        plan_type -> Varchar,
+        monthly_token_limit -> Nullable<Int4>,
+        characters_limit -> Nullable<Int4>,
+        lorebooks_limit -> Nullable<Int4>,
+        price_cents -> Nullable<Int4>,
+        #[max_length = 255]
+        paddle_price_id -> Nullable<Varchar>,
+        features -> Nullable<Jsonb>,
+        #[max_length = 100]
+        display_name -> Varchar,
+        description -> Nullable<Text>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+        #[max_length = 255]
+        paddle_price_id_yearly -> Nullable<Varchar>,
+        max_context_tokens -> Nullable<Int4>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     player_chronicles (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -496,6 +681,59 @@ diesel::table! {
         id -> Text,
         expires -> Nullable<Timestamptz>,
         session -> Text,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    subscriptions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        #[max_length = 255]
+        paddle_customer_id -> Nullable<Varchar>,
+        #[max_length = 255]
+        paddle_subscription_id -> Nullable<Varchar>,
+        #[max_length = 50]
+        plan_type -> Varchar,
+        #[max_length = 50]
+        status -> Varchar,
+        current_period_start -> Timestamptz,
+        current_period_end -> Timestamptz,
+        cancel_at_period_end -> Nullable<Bool>,
+        trial_end -> Nullable<Timestamptz>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+        credits_allocated_this_period -> Nullable<Bool>,
+        soft_limit_override -> Nullable<Int4>,
+        last_credit_grant -> Nullable<Timestamptz>,
+        paddle_sync_attempted -> Bool,
+        first_payment_date -> Nullable<Timestamptz>,
+        has_ever_paid -> Nullable<Bool>,
+        cancellation_date -> Nullable<Timestamptz>,
+        trial_start_date -> Nullable<Timestamptz>,
+        last_payment_date -> Nullable<Timestamptz>,
+        grace_period_end -> Nullable<Timestamptz>,
+        previous_subscription_id -> Nullable<Uuid>,
+        cancellation_reason_encrypted -> Nullable<Bytea>,
+        cancellation_reason_nonce -> Nullable<Bytea>,
+        paddle_trial_end -> Nullable<Timestamptz>,
+        first_billed_at -> Nullable<Timestamptz>,
+        next_billed_at -> Nullable<Timestamptz>,
+        canceled_at -> Nullable<Timestamptz>,
+        paused_at -> Nullable<Timestamptz>,
+        trial_starts_at -> Nullable<Timestamptz>,
+        trial_ends_at -> Nullable<Timestamptz>,
+        scheduled_change -> Nullable<Jsonb>,
+        management_urls -> Nullable<Jsonb>,
+        discount -> Nullable<Jsonb>,
+        #[max_length = 50]
+        collection_mode -> Nullable<Varchar>,
+        billing_details -> Nullable<Jsonb>,
+        #[max_length = 50]
+        scheduled_plan_change -> Nullable<Varchar>,
+        scheduled_change_date -> Nullable<Timestamptz>,
     }
 }
 
@@ -537,6 +775,22 @@ diesel::table! {
         content_type -> Nullable<Varchar>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    user_credits (user_id) {
+        user_id -> Uuid,
+        balance -> Int4,
+        lifetime_earned -> Int4,
+        lifetime_spent -> Int4,
+        last_monthly_grant -> Nullable<Timestamptz>,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
+        version -> Int4,
     }
 }
 
@@ -635,6 +889,31 @@ diesel::table! {
         total_token_cost_cents -> Int8,
         tokens_last_reset_at -> Nullable<Timestamptz>,
         token_usage_updated_at -> Timestamptz,
+        cached_credit_balance -> Nullable<Int4>,
+        #[max_length = 50]
+        cached_subscription_tier -> Nullable<Varchar>,
+        last_daily_usage_reset -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    webhook_events (id) {
+        id -> Uuid,
+        #[max_length = 255]
+        event_id -> Varchar,
+        #[max_length = 100]
+        event_type -> Varchar,
+        #[max_length = 500]
+        paddle_signature -> Varchar,
+        #[max_length = 64]
+        payload_hash -> Varchar,
+        processed_at -> Timestamptz,
+        #[max_length = 50]
+        processing_status -> Varchar,
+        created_at -> Timestamptz,
     }
 }
 
@@ -661,6 +940,8 @@ diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(credit_transactions -> users (user_id));
+diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
@@ -671,10 +952,18 @@ diesel::joinable!(old_documents -> users (user_id));
 diesel::joinable!(old_suggestions -> users (user_id));
 diesel::joinable!(old_votes -> chat_messages (message_id));
 diesel::joinable!(old_votes -> chat_sessions (chat_id));
+diesel::joinable!(payment_transactions -> users (user_id));
+diesel::joinable!(payment_usage_tracking -> subscriptions (subscription_id));
+diesel::joinable!(payment_usage_tracking -> users (user_id));
+diesel::joinable!(payments -> subscriptions (subscription_id));
+diesel::joinable!(payments -> users (user_id));
 diesel::joinable!(player_chronicles -> users (user_id));
+diesel::joinable!(subscriptions -> plan_features (plan_type));
+diesel::joinable!(subscriptions -> users (user_id));
 diesel::joinable!(usage_tracking -> users (user_id));
 diesel::joinable!(user_assets -> user_personas (persona_id));
 diesel::joinable!(user_assets -> users (user_id));
+diesel::joinable!(user_credits -> users (user_id));
 diesel::joinable!(user_settings -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -688,6 +977,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    credit_packages,
+    credit_transactions,
+    daily_usage_tracking,
     email_verification_tokens,
     lorebook_entries,
     lorebooks,
@@ -695,11 +987,19 @@ diesel::allow_tables_to_appear_in_same_query!(
     old_documents,
     old_suggestions,
     old_votes,
+    payment_audit_logs,
+    payment_transactions,
+    payment_usage_tracking,
+    payments,
+    plan_features,
     player_chronicles,
     sessions,
+    subscriptions,
     usage_tracking,
     user_assets,
+    user_credits,
     user_personas,
     user_settings,
     users,
+    webhook_events,
 );

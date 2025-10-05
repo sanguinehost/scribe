@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { toast } from 'svelte-sonner';
 	import { Sparkles, Wand2, RefreshCw, Plus } from 'lucide-svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { GenerationMode, CharacterContext } from '$lib/types';
 
 	type Props = {
@@ -35,7 +35,7 @@
 			isGenerating = true;
 
 			// Use the character field generation API
-			const result = await apiClient.generateCharacterField({
+			const result = await _apiClient.generateCharacterField({
 				field_name: fieldName,
 				field_context: fieldValue || undefined,
 				character_context: characterContext,
@@ -58,8 +58,8 @@
 				console.error('Failed to generate content:', result.error);
 				toast.error(result.error?.message || 'Failed to generate content');
 			}
-		} catch (error) {
-			console.error('Error generating content:', error);
+		} catch (_error) {
+			console.error('Error generating content:', _error);
 			toast.error('An error occurred while generating content');
 		} finally {
 			isGenerating = false;
@@ -78,7 +78,7 @@
 	{#if mode === 'inline'}
 		<!-- Inline mode: similar to expand button in chat -->
 		{#if hasContent}
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-7 w-7 p-1.5"
@@ -104,12 +104,12 @@
 				{:else}
 					<Sparkles size={14} />
 				{/if}
-			</Button>
+			</ButtonComponent>
 		{/if}
 	{:else}
 		<!-- Standalone mode: full generation options for character editor -->
 		{#if canCreate}
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-7 px-2 text-xs"
@@ -137,11 +137,11 @@
 					<Plus size={14} class="mr-1" />
 					Generate
 				{/if}
-			</Button>
+			</ButtonComponent>
 		{/if}
 
 		{#if canEnhance}
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-7 px-2 text-xs"
@@ -169,11 +169,11 @@
 					<Sparkles size={14} class="mr-1" />
 					Enhance
 				{/if}
-			</Button>
+			</ButtonComponent>
 		{/if}
 
 		{#if canExpand}
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-7 px-2 text-xs"
@@ -201,11 +201,11 @@
 					<Wand2 size={14} class="mr-1" />
 					Expand
 				{/if}
-			</Button>
+			</ButtonComponent>
 		{/if}
 
 		{#if canRewrite}
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				class="h-7 px-2 text-xs"
@@ -233,7 +233,7 @@
 					<RefreshCw size={14} class="mr-1" />
 					Rewrite
 				{/if}
-			</Button>
+			</ButtonComponent>
 		{/if}
 	{/if}
 </div>

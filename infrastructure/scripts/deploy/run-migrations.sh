@@ -38,65 +38,65 @@ log_error() {
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     if ! command -v aws &> /dev/null; then
         log_error "AWS CLI is not installed. Please install AWS CLI first."
         exit 1
     fi
-    
+
     if ! command -v diesel &> /dev/null; then
         log_error "Diesel CLI is not installed. Please install with: cargo install diesel_cli --features postgres"
         exit 1
     fi
-    
+
     if ! aws sts get-caller-identity &> /dev/null; then
         log_error "AWS credentials are not configured. Please run 'aws configure' first."
         exit 1
     fi
-    
+
     log_success "All prerequisites met"
 }
 
 # Get database URL from AWS Secrets Manager
 get_database_url() {
     log_info "Retrieving database credentials from AWS Secrets Manager..."
-    
+
     local secret_value
     secret_value=$(aws secretsmanager get-secret-value \
         --secret-id "$SECRET_ID" \
         --region "$AWS_REGION" \
         --query 'SecretString' \
         --output text 2>/dev/null)
-    
+
     if [ $? -ne 0 ]; then
         log_error "Failed to retrieve database credentials from Secrets Manager"
         log_info "Make sure the secret '$SECRET_ID' exists and you have permission to access it"
         exit 1
     fi
-    
+
     # Extract the database URL from the JSON
     DATABASE_URL=$(echo "$secret_value" | jq -r '.url')
-    
+
     if [ "$DATABASE_URL" = "null" ] || [ -z "$DATABASE_URL" ]; then
         log_error "Database URL not found in secret"
         exit 1
     fi
-    
+
     log_success "Database credentials retrieved"
 }
 
 # Run migrations
 run_migrations() {
     log_info "Running database migrations..."
-    
+
     cd "$BACKEND_DIR"
-    
+
     # Export the database URL for Diesel
     export DATABASE_URL
-    
+
     # Run migrations
     diesel migration run
-    
+
     if [ $? -eq 0 ]; then
         log_success "Database migrations completed successfully"
     else
@@ -108,10 +108,10 @@ run_migrations() {
 # Show migration status
 show_migration_status() {
     log_info "Checking migration status..."
-    
+
     cd "$BACKEND_DIR"
     export DATABASE_URL
-    
+
     # List applied migrations
     diesel migration list
 }

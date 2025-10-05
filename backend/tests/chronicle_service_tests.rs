@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result as AnyhowResult};
 use bcrypt;
+use chrono::Utc;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use scribe_backend::{
     crypto,
@@ -133,6 +134,11 @@ mod integration_tests {
             dek_nonce,
             recovery_dek_nonce: None,
             account_status: AccountStatus::Active,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_token_cost_cents: 0,
+            tokens_last_reset_at: None,
+            token_usage_updated_at: Utc::now(),
         };
 
         let user_db: UserDbQuery = diesel::insert_into(users::table)
@@ -159,6 +165,11 @@ mod integration_tests {
             default_persona_id: user_db.default_persona_id,
             created_at: user_db.created_at,
             updated_at: user_db.updated_at,
+            total_prompt_tokens: user_db.total_prompt_tokens,
+            total_completion_tokens: user_db.total_completion_tokens,
+            total_token_cost_cents: user_db.total_token_cost_cents,
+            tokens_last_reset_at: user_db.tokens_last_reset_at,
+            token_usage_updated_at: user_db.token_usage_updated_at,
         };
 
         Ok(user)
@@ -283,7 +294,7 @@ mod integration_tests {
             .unwrap();
 
         // Test: Create Event
-        let event_data = json!({
+        let _event_data = json!({
             "location": "Starting Village",
             "mood": "mysterious",
             "npcs": ["Village Elder", "Suspicious Merchant"]
@@ -647,7 +658,7 @@ mod integration_tests {
             encrypted_event.event_type,
             encrypted_event_request.event_type
         );
-        assert_eq!(encrypted_event.summary, encrypted_event_request.summary); // Legacy field still has plaintext
+        assert_eq!(encrypted_event.summary, "[ENCRYPTED]"); // Placeholder replaces plaintext for security
         assert!(encrypted_event.has_encrypted_summary()); // Should have encrypted data
         assert!(encrypted_event.summary_encrypted.is_some());
         assert!(encrypted_event.summary_nonce.is_some());

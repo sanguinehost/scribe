@@ -62,7 +62,7 @@ pub async fn create_message_variant(
     let next_index = conn
         .interact(move |conn| get_next_variant_index(&mut *conn, message_id))
         .await??;
-    
+
     tracing::info!(
         "🔢 Next variant index for message {}: {}",
         message_id,
@@ -71,7 +71,7 @@ pub async fn create_message_variant(
 
     // Create new variant with encryption outside the closure
     let new_variant = NewMessageVariant::new(message_id, next_index, content, user_id, dek)?;
-    
+
     // Clone the DEK for use in the closure (create a new SecretBox from the exposed secret)
     let dek_for_closure = SecretBox::new(Box::new(dek.expose_secret().clone()));
 
@@ -100,7 +100,7 @@ pub async fn create_message_variant(
                         "🆕 Creating first variant for message {}, storing original as variant 0",
                         message_id
                     );
-                    
+
                     // Decrypt the original message content to store as variant 0
                     let original_content = if let Some(nonce) = &parent_message.content_nonce {
                         // Message is encrypted, decrypt it
@@ -203,7 +203,9 @@ pub async fn create_message_variant(
     // Get the content for the current variant (the newly created one)
     let current_content = if next_index == 0 {
         // Should not happen since variants start from index 1, but handle it
-        let client_message = updated_message.clone().into_decrypted_for_client(Some(dek))?;
+        let client_message = updated_message
+            .clone()
+            .into_decrypted_for_client(Some(dek))?;
         client_message.content
     } else {
         // Use the content we just created
@@ -219,8 +221,12 @@ pub async fn create_message_variant(
             .role
             .unwrap_or_else(|| updated_message.message_type.to_string()),
         content: current_content,
-        parts: updated_message.parts.unwrap_or_else(|| serde_json::json!([])),
-        attachments: updated_message.attachments.unwrap_or_else(|| serde_json::json!([])),
+        parts: updated_message
+            .parts
+            .unwrap_or_else(|| serde_json::json!([])),
+        attachments: updated_message
+            .attachments
+            .unwrap_or_else(|| serde_json::json!([])),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant creation
         prompt_tokens: updated_message.prompt_tokens,
@@ -432,7 +438,7 @@ pub async fn select_message_variant(
 ) -> Result<crate::models::chats::MessageResponse, AppError> {
     use crate::models::chats::Message;
     use crate::schema::chat_messages;
-    
+
     let conn = state.pool.get().await?;
 
     // First get the parent message to validate user ownership and variant bounds
@@ -453,9 +459,9 @@ pub async fn select_message_variant(
     if variant_index < 0 || variant_index >= parent_message.variant_count {
         return Err(AppError::BadRequest(format!(
             "Variant index {} is out of bounds. Message has {} variants (0-{})",
-            variant_index, 
-            parent_message.variant_count, // Total number of variants
-            parent_message.variant_count - 1 // Highest valid index
+            variant_index,
+            parent_message.variant_count,     // Total number of variants
+            parent_message.variant_count - 1  // Highest valid index
         )));
     }
 
@@ -463,33 +469,33 @@ pub async fn select_message_variant(
     let variant_content = if variant_index == 0 {
         // Index 0 is the original message content - decrypt from parent message
         use crate::crypto;
-        
+
         // Get the nonce for the parent message content
-        let nonce_bytes = parent_message.content_nonce
-            .as_ref()
-            .ok_or_else(|| AppError::DecryptionError("Missing content nonce for parent message".to_string()))?;
-        
-        let decrypted_content = crypto::decrypt_gcm(&parent_message.content, nonce_bytes, dek).map_err(|e| {
-            AppError::DecryptionError(format!("Failed to decrypt original message content: {e}"))
+        let nonce_bytes = parent_message.content_nonce.as_ref().ok_or_else(|| {
+            AppError::DecryptionError("Missing content nonce for parent message".to_string())
         })?;
+
+        let decrypted_content = crypto::decrypt_gcm(&parent_message.content, nonce_bytes, dek)
+            .map_err(|e| {
+                AppError::DecryptionError(format!(
+                    "Failed to decrypt original message content: {e}"
+                ))
+            })?;
         String::from_utf8(decrypted_content.expose_secret().clone()).map_err(|e| {
             AppError::DecryptionError(format!("Failed to decode original message content: {e}"))
         })?
     } else {
         // Get content from variants table
-        let variant_dto = get_message_variant_by_index(
-            state.clone(),
-            message_id,
-            variant_index,
-            user_id,
-            dek,
-        ).await?;
-        
+        let variant_dto =
+            get_message_variant_by_index(state.clone(), message_id, variant_index, user_id, dek)
+                .await?;
+
         match variant_dto {
             Some(dto) => dto.content,
             None => {
                 return Err(AppError::BadRequest(format!(
-                    "Variant with index {} not found", variant_index
+                    "Variant with index {} not found",
+                    variant_index
                 )));
             }
         }
@@ -521,8 +527,12 @@ pub async fn select_message_variant(
             .role
             .unwrap_or_else(|| updated_message.message_type.to_string()),
         content: variant_content, // Use the selected variant's content
-        parts: updated_message.parts.unwrap_or_else(|| serde_json::json!([])),
-        attachments: updated_message.attachments.unwrap_or_else(|| serde_json::json!([])),
+        parts: updated_message
+            .parts
+            .unwrap_or_else(|| serde_json::json!([])),
+        attachments: updated_message
+            .attachments
+            .unwrap_or_else(|| serde_json::json!([])),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,

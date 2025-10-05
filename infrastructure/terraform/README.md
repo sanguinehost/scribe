@@ -43,7 +43,7 @@ terraform/
    ```bash
    # macOS
    brew install terraform
-   
+
    # Or download from https://www.terraform.io/downloads.html
    ```
 

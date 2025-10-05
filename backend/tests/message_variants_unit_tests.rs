@@ -1,11 +1,14 @@
 #![cfg(test)]
 
 //! Unit tests for message variant system functionality
-//! 
+//!
 //! This test module provides basic unit tests for the variant functionality.
 //! Integration tests would require more complex setup and are left for future development.
 
-use scribe_backend::models::chats::{MessageResponse, MessageVariantResponse, SelectVariantRequest, CreateMessageVariantPayload, MessageRole};
+use scribe_backend::models::chats::{
+    CreateMessageVariantPayload, MessageResponse, MessageRole, MessageVariantResponse,
+    SelectVariantRequest,
+};
 use uuid::Uuid;
 
 /// Test that MessageResponse includes all required variant fields
@@ -57,15 +60,16 @@ fn test_message_variant_response_structure() {
     assert_eq!(variant_response.content, "Variant content");
     assert_eq!(variant_response.prompt_tokens, Some(100));
     assert_eq!(variant_response.completion_tokens, Some(150));
-    assert_eq!(variant_response.model_name, Some("gemini-1.5-pro".to_string()));
+    assert_eq!(
+        variant_response.model_name,
+        Some("gemini-1.5-pro".to_string())
+    );
 }
 
 /// Test SelectVariantRequest structure
 #[test]
 fn test_select_variant_request_structure() {
-    let select_request = SelectVariantRequest {
-        variant_index: 2,
-    };
+    let select_request = SelectVariantRequest { variant_index: 2 };
 
     assert_eq!(select_request.variant_index, 2);
 }
@@ -94,15 +98,18 @@ fn test_variant_json_serialization() {
 
     // Test serialization
     let json_str = serde_json::to_string(&variant_response).expect("Failed to serialize");
-    
+
     // Test deserialization
-    let deserialized: MessageVariantResponse = serde_json::from_str(&json_str)
-        .expect("Failed to deserialize");
-    
+    let deserialized: MessageVariantResponse =
+        serde_json::from_str(&json_str).expect("Failed to deserialize");
+
     assert_eq!(deserialized.index, variant_response.index);
     assert_eq!(deserialized.content, variant_response.content);
     assert_eq!(deserialized.prompt_tokens, variant_response.prompt_tokens);
-    assert_eq!(deserialized.completion_tokens, variant_response.completion_tokens);
+    assert_eq!(
+        deserialized.completion_tokens,
+        variant_response.completion_tokens
+    );
     assert_eq!(deserialized.model_name, variant_response.model_name);
 }
 

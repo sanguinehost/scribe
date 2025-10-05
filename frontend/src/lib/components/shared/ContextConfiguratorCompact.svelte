@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { subscriptionStore } from '$lib/stores/subscription.svelte';
+	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 
 	let {
 		total_token_limit = $bindable(),
@@ -16,6 +18,26 @@
 		title?: string;
 		description?: string;
 	}>();
+
+	// Get subscription tier limit (if payment feature is enabled)
+	const subscriptionLimit = $derived(() => {
+		if (ENABLE_PAYMENTS && subscriptionStore.planFeatures?.max_context_tokens) {
+			return subscriptionStore.planFeatures.max_context_tokens;
+		}
+		return null;
+	});
+
+	// Calculate effective max (considering subscription tier limits)
+	const effectiveMax = $derived(() => {
+		const tierLimit = subscriptionLimit();
+		return tierLimit ?? 2000000; // Fallback to 2M if no tier limit
+	});
+
+	// Check if user is hitting their subscription tier limit
+	const isAtTierLimit = $derived(() => {
+		const tierLimit = subscriptionLimit();
+		return tierLimit !== null && total_token_limit >= tierLimit;
+	});
 
 	// Constraint validation
 	$effect(() => {
@@ -124,82 +146,100 @@
 			<div class="flex items-center justify-between">
 				<Label for="total-context-limit-compact" class="text-xs">Total Context (tokens)</Label>
 				<div class="flex gap-1">
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-5 px-1 text-xs"
-						onclick={() => {
-							total_token_limit = 4096;
-							const budgets = calculatePresetBudgets(4096);
-							recent_history_budget = budgets.history;
-							rag_budget = budgets.rag;
-						}}
-					>
-						4K
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-5 px-1 text-xs"
-						onclick={() => {
-							total_token_limit = 8000;
-							const budgets = calculatePresetBudgets(8000);
-							recent_history_budget = budgets.history;
-							rag_budget = budgets.rag;
-						}}
-					>
-						8K
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-5 px-1 text-xs"
-						onclick={() => {
-							total_token_limit = 32000;
-							const budgets = calculatePresetBudgets(32000);
-							recent_history_budget = budgets.history;
-							rag_budget = budgets.rag;
-						}}
-					>
-						32K
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-5 px-1 text-xs"
-						onclick={() => {
-							total_token_limit = 128000;
-							const budgets = calculatePresetBudgets(128000);
-							recent_history_budget = budgets.history;
-							rag_budget = budgets.rag;
-						}}
-					>
-						128K
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="h-5 px-1 text-xs"
-						onclick={() => {
-							total_token_limit = 200000;
-							const budgets = calculatePresetBudgets(200000);
-							recent_history_budget = budgets.history;
-							rag_budget = budgets.rag;
-						}}
-					>
-						200K
-					</Button>
+					{#if 4096 <= effectiveMax()}
+						<ButtonComponent
+							variant="ghost"
+							size="sm"
+							class="h-5 px-1 text-xs"
+							onclick={() => {
+								total_token_limit = 4096;
+								const budgets = calculatePresetBudgets(4096);
+								recent_history_budget = budgets.history;
+								rag_budget = budgets.rag;
+							}}
+						>
+							4K
+						</ButtonComponent>
+					{/if}
+					{#if 8000 <= effectiveMax()}
+						<ButtonComponent
+							variant="ghost"
+							size="sm"
+							class="h-5 px-1 text-xs"
+							onclick={() => {
+								total_token_limit = 8000;
+								const budgets = calculatePresetBudgets(8000);
+								recent_history_budget = budgets.history;
+								rag_budget = budgets.rag;
+							}}
+						>
+							8K
+						</ButtonComponent>
+					{/if}
+					{#if 32000 <= effectiveMax()}
+						<ButtonComponent
+							variant="ghost"
+							size="sm"
+							class="h-5 px-1 text-xs"
+							onclick={() => {
+								total_token_limit = 32000;
+								const budgets = calculatePresetBudgets(32000);
+								recent_history_budget = budgets.history;
+								rag_budget = budgets.rag;
+							}}
+						>
+							32K
+						</ButtonComponent>
+					{/if}
+					{#if 128000 <= effectiveMax()}
+						<ButtonComponent
+							variant="ghost"
+							size="sm"
+							class="h-5 px-1 text-xs"
+							onclick={() => {
+								total_token_limit = 128000;
+								const budgets = calculatePresetBudgets(128000);
+								recent_history_budget = budgets.history;
+								rag_budget = budgets.rag;
+							}}
+						>
+							128K
+						</ButtonComponent>
+					{/if}
+					{#if 200000 <= effectiveMax()}
+						<ButtonComponent
+							variant="ghost"
+							size="sm"
+							class="h-5 px-1 text-xs"
+							onclick={() => {
+								total_token_limit = 200000;
+								const budgets = calculatePresetBudgets(200000);
+								recent_history_budget = budgets.history;
+								rag_budget = budgets.rag;
+							}}
+						>
+							200K
+						</ButtonComponent>
+					{/if}
 				</div>
 			</div>
 			<Input
 				id="total-context-limit-compact"
 				type="number"
 				min={4000}
-				max={2000000}
+				max={effectiveMax()}
 				step={1000}
 				bind:value={total_token_limit}
 				class="h-8 text-xs"
 			/>
+			{#if ENABLE_PAYMENTS && subscriptionLimit()}
+				<p class="text-xs text-muted-foreground">
+					Plan limit: {subscriptionLimit()?.toLocaleString()} tokens
+					{#if isAtTierLimit()}
+						<span class="text-amber-600 dark:text-amber-400">(at maximum)</span>
+					{/if}
+				</p>
+			{/if}
 		</div>
 
 		<div class="grid grid-cols-2 gap-2">
@@ -235,42 +275,48 @@
 	<div class="space-y-1">
 		<Label class="text-xs">Quick Presets</Label>
 		<div class="flex gap-1">
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => {
-					total_token_limit = 64000;
-					recent_history_budget = 40000;
-					rag_budget = 20000;
-				}}
-				class="h-7 flex-1 text-xs"
-			>
-				Efficient
-			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => {
-					total_token_limit = 200000;
-					recent_history_budget = 120000;
-					rag_budget = 70000;
-				}}
-				class="h-7 flex-1 text-xs"
-			>
-				Balanced
-			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => {
-					total_token_limit = 400000;
-					recent_history_budget = 240000;
-					rag_budget = 140000;
-				}}
-				class="h-7 flex-1 text-xs"
-			>
-				Large
-			</Button>
+			{#if 64000 <= effectiveMax()}
+				<ButtonComponent
+					variant="outline"
+					size="sm"
+					onclick={() => {
+						total_token_limit = 64000;
+						recent_history_budget = 40000;
+						rag_budget = 20000;
+					}}
+					class="h-7 flex-1 text-xs"
+				>
+					Efficient
+				</ButtonComponent>
+			{/if}
+			{#if 200000 <= effectiveMax()}
+				<ButtonComponent
+					variant="outline"
+					size="sm"
+					onclick={() => {
+						total_token_limit = 200000;
+						recent_history_budget = 120000;
+						rag_budget = 70000;
+					}}
+					class="h-7 flex-1 text-xs"
+				>
+					Balanced
+				</ButtonComponent>
+			{/if}
+			{#if 400000 <= effectiveMax()}
+				<ButtonComponent
+					variant="outline"
+					size="sm"
+					onclick={() => {
+						total_token_limit = 400000;
+						recent_history_budget = 240000;
+						rag_budget = 140000;
+					}}
+					class="h-7 flex-1 text-xs"
+				>
+					Large
+				</ButtonComponent>
+			{/if}
 		</div>
 	</div>
 
@@ -278,6 +324,15 @@
 		<div class="rounded-md bg-blue-50 p-2 text-xs text-muted-foreground dark:bg-blue-950">
 			<strong>🧠</strong> Strategic memory: preserves key context with middle-out truncation.
 		</div>
+		{#if ENABLE_PAYMENTS && isAtTierLimit()}
+			<div class="rounded-md bg-purple-50 p-2 text-xs dark:bg-purple-950">
+				<strong>📊</strong>
+				<span class="text-muted-foreground">
+					At your <strong class="text-foreground">{subscriptionStore.getPlanDisplayName()}</strong> plan
+					limit. Upgrade for larger contexts.
+				</span>
+			</div>
+		{/if}
 		<div class="rounded-md bg-amber-50 p-2 text-xs text-muted-foreground dark:bg-amber-950">
 			<strong>⚠️</strong> Larger contexts use more resources and may increase costs.
 		</div>

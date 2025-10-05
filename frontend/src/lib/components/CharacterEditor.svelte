@@ -7,29 +7,22 @@
 		DialogTitle,
 		DialogFooter
 	} from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Separator } from '$lib/components/ui/separator';
-	import { Badge } from '$lib/components/ui/badge';
-	import { apiClient } from '$lib/api';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
+	import { Checkbox as CheckboxComponent } from '$lib/components/ui/checkbox';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { Expand, X, Star, Heart, Globe, Plus, Trash2, HelpCircle } from 'lucide-svelte';
+	import { Expand, X as _X, Heart, Globe, Plus, HelpCircle } from 'lucide-svelte';
 	import GenerationWidget from './generation-widget.svelte';
-	import {
-		Tooltip,
-		TooltipProvider,
-		TooltipTrigger,
-		TooltipContent
-	} from '$lib/components/ui/tooltip';
-	import type { Character, Lorebook, CharacterContext } from '$lib/types';
+	import type { Character, CharacterDataForClient, Lorebook, CharacterContext } from '$lib/types';
 	import { writable } from 'svelte/store';
 	import { tick } from 'svelte';
 
 	export let characterId: string | null = null;
-	export let open = false;
+	export let _open = false;
 
 	let loading = false;
 	let saving = false;
@@ -38,20 +31,20 @@
 
 	async function loadLorebooks() {
 		try {
-			const result = await apiClient.getLorebooks();
+			const result = await _apiClient.getLorebooks();
 			if (result.isOk()) {
 				lorebooks.set(result.value);
 			} else {
 				toast.error('Failed to load lorebooks: ' + result.error.message);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to load lorebooks');
 		}
 	}
 
 	// Pop-out editor state
 	let popoutEditorOpen = false;
-	let popoutFieldName = '';
+	let _popoutFieldName = '';
 	let popoutFieldLabel = '';
 	let popoutContent = '';
 	let popoutFieldKey = ''; // Used to store the actual formData key
@@ -118,7 +111,7 @@
 	];
 
 	// Load character data when dialog opens or characterId changes
-	$: if (open && characterId) {
+	$: if (_open && characterId) {
 		loadCharacter();
 	}
 
@@ -130,7 +123,7 @@
 			// Ensure lorebooks are loaded before character data to populate the dropdown correctly.
 			await loadLorebooks();
 
-			const result = await apiClient.getCharacter(characterId);
+			const result = await _apiClient.getCharacter(characterId);
 			if (result.isOk()) {
 				character = result.value;
 				// Wait for the DOM to update after lorebooks have been loaded.
@@ -171,11 +164,11 @@
 				};
 			} else {
 				toast.error('Failed to load character: ' + result.error.message);
-				open = false;
+				_open = false;
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to load character');
-			open = false;
+			_open = false;
 		} finally {
 			loading = false;
 		}
@@ -187,7 +180,7 @@
 		saving = true;
 		try {
 			// Following the pattern from CharacterCreator.svelte to build the payload explicitly.
-			const updateData: { [key: string]: any } = {};
+			const updateData: Partial<CharacterDataForClient> = {};
 
 			// Core data - only add to payload if it has a value
 			if (formData.name) updateData.name = formData.name;
@@ -222,16 +215,16 @@
 			if (formData.depth_prompt_depth !== null)
 				updateData.depth_prompt_depth = formData.depth_prompt_depth;
 			if (formData.depth_prompt_role) updateData.depth_prompt_role = formData.depth_prompt_role;
-			updateData.talkativeness = formData.talkativeness; // Always send number
+			updateData.talkativeness = formData.talkativeness.toString(); // Convert number to string
 
-			const result = await apiClient.updateCharacter(characterId, updateData);
+			const result = await _apiClient.updateCharacter(characterId, updateData);
 			if (result.isOk()) {
 				toast.success('Character updated successfully');
-				open = false;
+				_open = false;
 			} else {
 				toast.error('Failed to update character: ' + result.error.message);
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Failed to update character');
 		} finally {
 			saving = false;
@@ -239,7 +232,7 @@
 	}
 
 	function handleCancel() {
-		open = false;
+		_open = false;
 		// Reset form
 		formData = {
 			// Core character data (encrypted & actively used)
@@ -273,7 +266,7 @@
 
 	function openPopoutEditor(fieldKey: string, fieldLabel: string, greetingIndex?: number) {
 		popoutFieldKey = fieldKey;
-		popoutFieldName = fieldKey;
+		_popoutFieldName = fieldKey;
 		popoutFieldLabel = fieldLabel;
 		popoutFieldType = 'text'; // Default to text
 
@@ -304,11 +297,17 @@
 			} else if (popoutFieldKey === 'depth_prompt_role') {
 				formData.depth_prompt_role = popoutContent;
 			} else {
-				(formData as any)[popoutFieldKey] = popoutContent;
+				// Type-safe way to update known formData fields
+				type FormDataKey = keyof typeof formData;
+				if (popoutFieldKey in formData) {
+					(formData as Record<FormDataKey, string | string[] | number | boolean | null>)[
+						popoutFieldKey as FormDataKey
+					] = popoutContent;
+				}
 			}
 			popoutEditorOpen = false;
 			popoutFieldKey = '';
-			popoutFieldName = '';
+			_popoutFieldName = '';
 			popoutFieldLabel = '';
 			popoutContent = '';
 			popoutFieldType = 'text';
@@ -318,7 +317,7 @@
 	function cancelPopoutEditor() {
 		popoutEditorOpen = false;
 		popoutFieldKey = '';
-		popoutFieldName = '';
+		_popoutFieldName = '';
 		popoutFieldLabel = '';
 		popoutContent = '';
 		popoutFieldType = 'text';
@@ -338,483 +337,444 @@
 		formData.tags = formData.tags.filter((tag) => tag !== tagToRemove);
 	}
 
-	function handleTagKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
+	function handleTagKeydown(_event: KeyboardEvent) {
+		if (_event.key === 'Enter') {
+			_event.preventDefault();
 			addTag();
 		}
 	}
 </script>
 
-<TooltipProvider>
-	<Dialog bind:open>
-		<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-			<DialogHeader>
-				<DialogTitle>Edit Character</DialogTitle>
-				<DialogDescription>
-					Edit the character's details. Leave fields empty to keep existing values.
-				</DialogDescription>
-			</DialogHeader>
+<Dialog bind:open={_open}>
+	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+		<DialogHeader>
+			<DialogTitle>Edit Character</DialogTitle>
+			<DialogDescription>
+				Edit the character's details. Leave fields empty to keep existing values.
+			</DialogDescription>
+		</DialogHeader>
 
-			{#if loading}
-				<div class="flex items-center justify-center py-8">
-					<div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
-				</div>
-			{:else if character}
-				<div class="grid gap-4 py-4">
-					<!-- Basic Information -->
-					<div class="space-y-4 border-b pb-4">
-						<div class="flex items-center gap-2">
-							<h3 class="text-lg font-semibold">Basic Information</h3>
-							<div class="ml-auto flex items-center gap-2">
-								<Tooltip>
-									<TooltipTrigger>
-										<Checkbox id="favorite" bind:checked={formData.fav} />
-									</TooltipTrigger>
-									<TooltipContent>Toggle to add or remove from favorites</TooltipContent>
-								</Tooltip>
-								<Label for="favorite" class="flex items-center gap-1 text-sm">
-									<Heart class="h-4 w-4" />
-									Favorite
-								</Label>
-							</div>
-						</div>
-
-						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-							<div class="grid gap-2">
-								<Label for="name">Name</Label>
-								<Input id="name" bind:value={formData.name} placeholder={character.name} />
-							</div>
-							<div class="grid gap-2">
-								<Label for="creator">Creator</Label>
-								<Input
-									id="creator"
-									bind:value={formData.creator}
-									placeholder={character.creator ?? 'Anonymous'}
-								/>
-							</div>
-						</div>
-
-						<div class="grid gap-2">
-							<Label>Tags</Label>
-							<div class="mb-2 flex flex-wrap gap-2">
-								{#each formData.tags as tag}
-									<Badge variant="secondary" class="flex items-center gap-1">
-										{tag}
-										<button
-											type="button"
-											onclick={() => removeTag(tag)}
-											class="hover:text-destructive"
-										>
-											<X class="h-3 w-3" />
-										</button>
-									</Badge>
-								{/each}
-							</div>
-							<div class="flex gap-2">
-								<Input
-									bind:value={newTag}
-									placeholder="Add a tag..."
-									onkeydown={handleTagKeydown}
-									class="flex-1"
-								/>
-								<Button type="button" onclick={addTag} size="sm" variant="outline">
-									<Plus class="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-
-						<div class="grid gap-2">
-							<div class="flex items-center justify-between">
-								<Label for="description">Description</Label>
-								<GenerationWidget
-									fieldName="description"
-									fieldValue={formData.description}
-									{characterContext}
-									onGenerated={(generatedText) => {
-										formData.description = generatedText;
-									}}
-									disabled={saving}
-								/>
-							</div>
-							<Textarea
-								id="description"
-								bind:value={formData.description}
-								placeholder={character.description ?? 'Character description...'}
-								rows={4}
-							/>
-						</div>
-
-						<div class="grid gap-2">
-							<div class="flex items-center justify-between">
-								<Label for="first_mes">First Message</Label>
-								<GenerationWidget
-									fieldName="first_mes"
-									fieldValue={formData.first_mes}
-									{characterContext}
-									onGenerated={(generatedText) => {
-										formData.first_mes = generatedText;
-									}}
-									disabled={saving}
-								/>
-							</div>
-							<Textarea
-								id="first_mes"
-								bind:value={formData.first_mes}
-								placeholder={character.first_mes ?? 'Initial greeting or first message...'}
-								rows={4}
-							/>
-						</div>
-
-						<div class="grid gap-2">
-							<Label class="flex items-center gap-1">
-								<Globe class="h-4 w-4" />
-								Lorebooks
+		{#if loading}
+			<div class="flex items-center justify-center py-8">
+				<div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
+			</div>
+		{:else if character}
+			<div class="grid gap-4 py-4">
+				<!-- Basic Information -->
+				<div class="space-y-4 border-b pb-4">
+					<div class="flex items-center gap-2">
+						<h3 class="text-lg font-semibold">Basic Information</h3>
+						<div class="ml-auto flex items-center gap-2">
+							<CheckboxComponent id="favorite" bind:checked={formData.fav} />
+							<Label for="favorite" class="flex items-center gap-1 text-sm">
+								<Heart class="h-4 w-4" />
+								Favorite
 							</Label>
-							<div
-								class="max-h-48 space-y-2 overflow-y-auto rounded-md border border-input bg-transparent p-3"
-							>
-								{#if $lorebooks && $lorebooks.length > 0}
-									{#each $lorebooks as lorebook}
-										<div class="flex items-center space-x-2">
-											<Checkbox
-												id={`lorebook-${lorebook.id}`}
-												checked={formData.selectedLorebooks.includes(lorebook.id)}
-												on:change={() => {
-													if (formData.selectedLorebooks.includes(lorebook.id)) {
-														formData.selectedLorebooks = formData.selectedLorebooks.filter(
-															(id) => id !== lorebook.id
-														);
-													} else {
-														formData.selectedLorebooks = [
-															...formData.selectedLorebooks,
-															lorebook.id
-														];
-													}
-												}}
-											/>
-											<Label for={`lorebook-${lorebook.id}`} class="text-sm font-normal">
-												{lorebook.name ?? 'Unnamed Lorebook'}
-											</Label>
-										</div>
-									{/each}
-								{:else}
-									<p class="text-sm text-muted-foreground">No lorebooks available</p>
-								{/if}
-							</div>
-							<p class="text-sm text-muted-foreground">
-								Select multiple lorebooks to provide additional context for this character.
-							</p>
 						</div>
+					</div>
 
+					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 						<div class="grid gap-2">
-							<div class="flex items-center justify-between">
-								<Label>Alternate Greetings</Label>
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									onclick={() => {
-										formData.alternate_greetings = [...formData.alternate_greetings, ''];
-									}}
-								>
-									Add Greeting
-								</Button>
-							</div>
-							{#if formData.alternate_greetings.length > 0}
-								<div class="space-y-2">
-									{#each formData.alternate_greetings as greeting, index (index)}
-										<div class="flex gap-2">
-											<Textarea
-												bind:value={formData.alternate_greetings[index]}
-												placeholder={`Alternate greeting ${index + 1}...`}
-												rows={4}
-												class="flex-1"
-											/>
-											<div class="flex flex-col gap-1">
-												<Button
-													type="button"
-													variant="outline"
-													size="icon"
-													onclick={() => {
-														formData.alternate_greetings = formData.alternate_greetings.filter(
-															(_, i) => i !== index
-														);
-													}}
-													class="h-8 w-8"
-												>
-													<X class="h-4 w-4" />
-												</Button>
-												<Button
-													type="button"
-													variant="outline"
-													size="icon"
-													onclick={() =>
-														openPopoutEditor(
-															'alternate_greeting',
-															`Alternate Greeting ${index + 1}`,
-															index
-														)}
-													class="h-8 w-8"
-												>
-													<Expand class="h-4 w-4" />
-												</Button>
-											</div>
-										</div>
-									{/each}
-								</div>
+							<Label for="name">Name</Label>
+							<Input id="name" bind:value={formData.name} placeholder={character.name} />
+						</div>
+						<div class="grid gap-2">
+							<Label for="creator">Creator</Label>
+							<Input
+								id="creator"
+								bind:value={formData.creator}
+								placeholder={character.creator ?? 'Anonymous'}
+							/>
+						</div>
+					</div>
+
+					<div class="grid gap-2">
+						<Label>Tags</Label>
+						<div class="mb-2 flex flex-wrap gap-2">
+							{#each formData.tags as tag}
+								<BadgeComponent variant="secondary" class="flex items-center gap-1">
+									{tag}
+									<button
+										type="button"
+										onclick={() => removeTag(tag)}
+										class="hover:text-destructive"
+									>
+										<svelte:component this={_X} class="h-3 w-3" />
+									</button>
+								</BadgeComponent>
+							{/each}
+						</div>
+						<div class="flex gap-2">
+							<Input
+								bind:value={newTag}
+								placeholder="Add a tag..."
+								onkeydown={handleTagKeydown}
+								class="flex-1"
+							/>
+							<ButtonComponent type="button" onclick={addTag} size="sm" variant="outline">
+								<Plus class="h-4 w-4" />
+							</ButtonComponent>
+						</div>
+					</div>
+
+					<div class="grid gap-2">
+						<div class="flex items-center justify-between">
+							<Label for="description">Description</Label>
+							<GenerationWidget
+								fieldName="description"
+								fieldValue={formData.description}
+								{characterContext}
+								onGenerated={(generatedText) => {
+									formData.description = generatedText;
+								}}
+								disabled={saving}
+							/>
+						</div>
+						<TextareaComponent
+							id="description"
+							bind:value={formData.description}
+							placeholder={character.description ?? 'Character description...'}
+							rows={4}
+						/>
+					</div>
+
+					<div class="grid gap-2">
+						<div class="flex items-center justify-between">
+							<Label for="first_mes">First Message</Label>
+							<GenerationWidget
+								fieldName="first_mes"
+								fieldValue={formData.first_mes}
+								{characterContext}
+								onGenerated={(generatedText) => {
+									formData.first_mes = generatedText;
+								}}
+								disabled={saving}
+							/>
+						</div>
+						<TextareaComponent
+							id="first_mes"
+							bind:value={formData.first_mes}
+							placeholder={character.first_mes ?? 'Initial greeting or first message...'}
+							rows={4}
+						/>
+					</div>
+
+					<div class="grid gap-2">
+						<Label class="flex items-center gap-1">
+							<Globe class="h-4 w-4" />
+							Lorebooks
+						</Label>
+						<div
+							class="max-h-48 space-y-2 overflow-y-auto rounded-md border border-input bg-transparent p-3"
+						>
+							{#if $lorebooks && $lorebooks.length > 0}
+								{#each $lorebooks as lorebook}
+									<div class="flex items-center space-x-2">
+										<CheckboxComponent
+											id={`lorebook-${lorebook.id}`}
+											checked={formData.selectedLorebooks.includes(lorebook.id)}
+											on:change={() => {
+												if (formData.selectedLorebooks.includes(lorebook.id)) {
+													formData.selectedLorebooks = formData.selectedLorebooks.filter(
+														(id) => id !== lorebook.id
+													);
+												} else {
+													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
+												}
+											}}
+										/>
+										<Label for={`lorebook-${lorebook.id}`} class="text-sm font-normal">
+											{lorebook.name ?? 'Unnamed Lorebook'}
+										</Label>
+									</div>
+								{/each}
 							{:else}
-								<p class="text-sm text-muted-foreground">
-									No alternate greetings. Add some to give users variety!
-								</p>
+								<p class="text-sm text-muted-foreground">No lorebooks available</p>
 							{/if}
 						</div>
+						<p class="text-sm text-muted-foreground">
+							Select multiple lorebooks to provide additional context for this character.
+						</p>
 					</div>
 
-					<!-- Collapsible Sections -->
-					<div class="space-y-2">
-						<details class="space-y-2 border-b py-2">
-							<summary class="cursor-pointer text-lg font-semibold">Definitions</summary>
-							<div class="grid gap-4 pt-2">
-								<div class="grid gap-2">
-									<div class="flex items-center justify-between">
-										<Label for="personality">Personality</Label>
-										<div class="flex items-center gap-2">
-											<GenerationWidget
-												fieldName="personality"
-												fieldValue={formData.personality}
-												{characterContext}
-												onGenerated={(generatedText) => {
-													formData.personality = generatedText;
-												}}
-												disabled={saving}
-											/>
-											<Button
-												type="button"
-												variant="ghost"
-												size="sm"
-												onclick={() => openPopoutEditor('personality', 'Personality')}
-												class="h-6 px-2 text-xs"
-											>
-												Expand
-											</Button>
-										</div>
-									</div>
-									<Textarea
-										id="personality"
-										bind:value={formData.personality}
-										placeholder={character.personality ?? 'Character personality traits...'}
-										rows={6}
-									/>
-								</div>
-								<div class="grid gap-2">
-									<div class="flex items-center justify-between">
-										<Label for="scenario">Scenario</Label>
-										<div class="flex items-center gap-2">
-											<GenerationWidget
-												fieldName="scenario"
-												fieldValue={formData.scenario}
-												{characterContext}
-												onGenerated={(generatedText) => {
-													formData.scenario = generatedText;
-												}}
-												disabled={saving}
-											/>
-											<Button
-												type="button"
-												variant="ghost"
-												size="sm"
-												onclick={() => openPopoutEditor('scenario', 'Scenario')}
-												class="h-6 px-2 text-xs"
-											>
-												Expand
-											</Button>
-										</div>
-									</div>
-									<Textarea
-										id="scenario"
-										bind:value={formData.scenario}
-										placeholder={character.scenario ?? 'Roleplay scenario...'}
-										rows={6}
-									/>
-								</div>
-								<div class="grid gap-2">
-									<div class="flex items-center justify-between">
-										<Label for="mes_example">Message Examples</Label>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => openPopoutEditor('mes_example', 'Message Example')}
-											class="h-6 px-2 text-xs"
-										>
-											Expand
-										</Button>
-									</div>
-									<Textarea
-										id="mes_example"
-										bind:value={formData.mes_example}
-										placeholder={character.mes_example ?? 'Example messages...'}
-										rows={6}
-									/>
-								</div>
-							</div>
-						</details>
-
-						<details class="space-y-2 border-b py-2">
-							<summary class="cursor-pointer text-lg font-semibold">Character's Note</summary>
-							<div class="space-y-4 pt-2">
-								<div
-									class="rounded-md border border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:bg-yellow-950"
-								>
-									<p class="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
-										Feature Not Yet Active
-									</p>
-									<p class="text-sm text-yellow-800 dark:text-yellow-200">
-										The Character's Note is a permanent instruction for the character. The backend
-										logic to apply it during chats is not yet implemented, but your settings will be
-										saved for future use.
-									</p>
-								</div>
-								<p class="text-sm text-muted-foreground">
-									Define permanent, underlying instructions for the character that apply to all
-									conversations.
-								</p>
-								<div class="grid gap-2">
-									<div class="flex items-center justify-between">
-										<Label for="depth_prompt">Content</Label>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => openPopoutEditor('depth_prompt', "Character's Note Content")}
-											class="h-6 px-2 text-xs"
-										>
-											Expand
-										</Button>
-									</div>
-									<Textarea
-										id="depth_prompt"
-										bind:value={formData.depth_prompt}
-										placeholder={character.depth_prompt ??
-											'e.g., "The character is secretly a dragon."'}
-										rows={3}
-									/>
-								</div>
-								<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-									<div class="grid gap-2">
-										<div class="flex items-center gap-1">
-											<Label for="depth_prompt_depth">Insertion Depth</Label>
-											<Tooltip>
-												<TooltipTrigger class="cursor-help">
-													<HelpCircle class="h-4 w-4 text-muted-foreground" />
-												</TooltipTrigger>
-												<TooltipContent>
-													<div class="max-w-xs space-y-2 p-2">
-														<p>
-															Insertion depth determines where the Character's Note is injected into
-															the conversation history sent to the AI. It's counted from the end of
-															the chat history.
-														</p>
-														<p class="font-semibold">Why use a deeper insertion?</p>
-														<p>
-															It makes the AI's change in behavior feel more natural. Instead of a
-															sudden command, the instruction feels like an established fact or a
-															thought the character has been having for a while.
-														</p>
-														<p class="mt-2 font-semibold">Example:</p>
-														<ul class="list-disc space-y-1 pl-4">
-															<li>
-																<strong>Depth 0:</strong> Inserting "[Character is now angry]" can feel
-																abrupt.
-															</li>
-															<li>
-																<strong>Depth 4:</strong> Inserting the same note 4 messages ago allows
-																the AI to build up to the anger more organically over its next few responses.
-															</li>
-														</ul>
-													</div>
-												</TooltipContent>
-											</Tooltip>
-										</div>
-										<Input
-											id="depth_prompt_depth"
-											type="number"
-											bind:value={formData.depth_prompt_depth}
-											placeholder={String(character.depth_prompt_depth ?? '0')}
-											min="0"
+					<div class="grid gap-2">
+						<div class="flex items-center justify-between">
+							<Label>Alternate Greetings</Label>
+							<ButtonComponent
+								type="button"
+								variant="outline"
+								size="sm"
+								onclick={() => {
+									formData.alternate_greetings = [...formData.alternate_greetings, ''];
+								}}
+							>
+								Add Greeting
+							</ButtonComponent>
+						</div>
+						{#if formData.alternate_greetings.length > 0}
+							<div class="space-y-2">
+								{#each formData.alternate_greetings as _greeting, index (index)}
+									<div class="flex gap-2">
+										<TextareaComponent
+											bind:value={formData.alternate_greetings[index]}
+											placeholder={`Alternate greeting ${index + 1}...`}
+											rows={4}
+											class="flex-1"
 										/>
-										<p class="text-sm text-muted-foreground">
-											How many messages from the end to insert the note before.
-										</p>
-									</div>
-									<div class="grid gap-2">
-										<div class="grid gap-2">
-											<div class="flex items-center gap-1">
-												<Label for="depth_prompt_role">Insertion Role</Label>
-												<Tooltip>
-													<TooltipTrigger class="cursor-help">
-														<HelpCircle class="h-4 w-4 text-muted-foreground" />
-													</TooltipTrigger>
-													<TooltipContent>
-														<div class="max-w-xs space-y-2 p-2">
-															{#each insertionRoles as role}
-																<p><strong>{role.label}:</strong> {role.description}</p>
-															{/each}
-														</div>
-													</TooltipContent>
-												</Tooltip>
-											</div>
-											<select
-												id="depth_prompt_role"
-												bind:value={formData.depth_prompt_role}
-												class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+										<div class="flex flex-col gap-1">
+											<ButtonComponent
+												type="button"
+												variant="outline"
+												size="icon"
+												onclick={() => {
+													formData.alternate_greetings = formData.alternate_greetings.filter(
+														(_, i) => i !== index
+													);
+												}}
+												class="h-8 w-8"
 											>
-												<option value="" disabled>Select a role...</option>
-												{#each insertionRoles as role}
-													<option value={role.value}>{role.label}</option>
-												{/each}
-											</select>
-											<p class="text-sm text-muted-foreground">
-												Controls how the note is injected into the prompt.
-											</p>
+												<svelte:component this={_X} class="h-4 w-4" />
+											</ButtonComponent>
+											<ButtonComponent
+												type="button"
+												variant="outline"
+												size="icon"
+												onclick={() =>
+													openPopoutEditor(
+														'alternate_greeting',
+														`Alternate Greeting ${index + 1}`,
+														index
+													)}
+												class="h-8 w-8"
+											>
+												<Expand class="h-4 w-4" />
+											</ButtonComponent>
 										</div>
 									</div>
-								</div>
+								{/each}
 							</div>
-						</details>
-
-						<details class="space-y-2 border-b py-2">
-							<summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
-							<div class="space-y-4 pt-2">
-								<div class="grid gap-2">
-									<Label for="system_prompt">System Instructions</Label>
-									<Textarea
-										id="system_prompt"
-										bind:value={formData.system_prompt}
-										placeholder={character.system_prompt ?? 'System instructions...'}
-										rows={5}
-									/>
-								</div>
-							</div>
-						</details>
+						{:else}
+							<p class="text-sm text-muted-foreground">
+								No alternate greetings. Add some to give users variety!
+							</p>
+						{/if}
 					</div>
 				</div>
-			{/if}
 
-			<DialogFooter>
-				<Button variant="outline" onclick={handleCancel} disabled={saving}>Cancel</Button>
-				<Button onclick={handleSave} disabled={saving || loading}>
-					{#if saving}
-						Saving...
-					{:else}
-						Save Changes
-					{/if}
-				</Button>
-			</DialogFooter>
-		</DialogContent>
-	</Dialog>
-</TooltipProvider>
+				<!-- Collapsible Sections -->
+				<div class="space-y-2">
+					<details class="space-y-2 border-b py-2">
+						<summary class="cursor-pointer text-lg font-semibold">Definitions</summary>
+						<div class="grid gap-4 pt-2">
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="personality">Personality</Label>
+									<div class="flex items-center gap-2">
+										<GenerationWidget
+											fieldName="personality"
+											fieldValue={formData.personality}
+											{characterContext}
+											onGenerated={(generatedText) => {
+												formData.personality = generatedText;
+											}}
+											disabled={saving}
+										/>
+										<ButtonComponent
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openPopoutEditor('personality', 'Personality')}
+											class="h-6 px-2 text-xs"
+										>
+											Expand
+										</ButtonComponent>
+									</div>
+								</div>
+								<TextareaComponent
+									id="personality"
+									bind:value={formData.personality}
+									placeholder={character.personality ?? 'Character personality traits...'}
+									rows={6}
+								/>
+							</div>
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="scenario">Scenario</Label>
+									<div class="flex items-center gap-2">
+										<GenerationWidget
+											fieldName="scenario"
+											fieldValue={formData.scenario}
+											{characterContext}
+											onGenerated={(generatedText) => {
+												formData.scenario = generatedText;
+											}}
+											disabled={saving}
+										/>
+										<ButtonComponent
+											type="button"
+											variant="ghost"
+											size="sm"
+											onclick={() => openPopoutEditor('scenario', 'Scenario')}
+											class="h-6 px-2 text-xs"
+										>
+											Expand
+										</ButtonComponent>
+									</div>
+								</div>
+								<TextareaComponent
+									id="scenario"
+									bind:value={formData.scenario}
+									placeholder={character.scenario ?? 'Roleplay scenario...'}
+									rows={6}
+								/>
+							</div>
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="mes_example">Message Examples</Label>
+									<ButtonComponent
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openPopoutEditor('mes_example', 'Message Example')}
+										class="h-6 px-2 text-xs"
+									>
+										Expand
+									</ButtonComponent>
+								</div>
+								<TextareaComponent
+									id="mes_example"
+									bind:value={formData.mes_example}
+									placeholder={character.mes_example ?? 'Example messages...'}
+									rows={6}
+								/>
+							</div>
+						</div>
+					</details>
+
+					<details class="space-y-2 border-b py-2">
+						<summary class="cursor-pointer text-lg font-semibold">Character's Note</summary>
+						<div class="space-y-4 pt-2">
+							<div
+								class="rounded-md border border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:bg-yellow-950"
+							>
+								<p class="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
+									Feature Not Yet Active
+								</p>
+								<p class="text-sm text-yellow-800 dark:text-yellow-200">
+									The Character's Note is a permanent instruction for the character. The backend
+									logic to apply it during chats is not yet implemented, but your settings will be
+									saved for future use.
+								</p>
+							</div>
+							<p class="text-sm text-muted-foreground">
+								Define permanent, underlying instructions for the character that apply to all
+								conversations.
+							</p>
+							<div class="grid gap-2">
+								<div class="flex items-center justify-between">
+									<Label for="depth_prompt">Content</Label>
+									<ButtonComponent
+										type="button"
+										variant="ghost"
+										size="sm"
+										onclick={() => openPopoutEditor('depth_prompt', "Character's Note Content")}
+										class="h-6 px-2 text-xs"
+									>
+										Expand
+									</ButtonComponent>
+								</div>
+								<TextareaComponent
+									id="depth_prompt"
+									bind:value={formData.depth_prompt}
+									placeholder={character.depth_prompt ??
+										'e.g., "The character is secretly a dragon."'}
+									rows={3}
+								/>
+							</div>
+							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+								<div class="grid gap-2">
+									<div class="flex items-center gap-1">
+										<Label for="depth_prompt_depth">Insertion Depth</Label>
+										<span
+											class="cursor-help"
+											title="Insertion depth determines where the Character's Note appears in the conversation history"
+										>
+											<HelpCircle class="h-4 w-4 text-muted-foreground" />
+										</span>
+									</div>
+									<Input
+										id="depth_prompt_depth"
+										type="number"
+										bind:value={formData.depth_prompt_depth}
+										placeholder={String(character.depth_prompt_depth ?? '0')}
+										min="0"
+									/>
+									<p class="text-sm text-muted-foreground">
+										How many messages from the end to insert the note before.
+									</p>
+								</div>
+								<div class="grid gap-2">
+									<div class="grid gap-2">
+										<div class="flex items-center gap-1">
+											<Label for="depth_prompt_role">Insertion Role</Label>
+											<span
+												class="cursor-help"
+												title="Determines the role or perspective for the Character's Note. System = instruction to AI, User = from user perspective, Assistant = from character perspective"
+											>
+												<HelpCircle class="h-4 w-4 text-muted-foreground" />
+											</span>
+										</div>
+										<select
+											id="depth_prompt_role"
+											bind:value={formData.depth_prompt_role}
+											class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+										>
+											<option value="" disabled>Select a role...</option>
+											{#each insertionRoles as role}
+												<option value={role.value}>{role.label}</option>
+											{/each}
+										</select>
+										<p class="text-sm text-muted-foreground">
+											Controls how the note is injected into the prompt.
+										</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					</details>
+
+					<details class="space-y-2 border-b py-2">
+						<summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
+						<div class="space-y-4 pt-2">
+							<div class="grid gap-2">
+								<Label for="system_prompt">System Instructions</Label>
+								<TextareaComponent
+									id="system_prompt"
+									bind:value={formData.system_prompt}
+									placeholder={character.system_prompt ?? 'System instructions...'}
+									rows={5}
+								/>
+							</div>
+						</div>
+					</details>
+				</div>
+			</div>
+		{/if}
+
+		<DialogFooter>
+			<ButtonComponent variant="outline" onclick={handleCancel} disabled={saving}
+				>Cancel</ButtonComponent
+			>
+			<ButtonComponent onclick={handleSave} disabled={saving || loading}>
+				{#if saving}
+					Saving...
+				{:else}
+					Save Changes
+				{/if}
+			</ButtonComponent>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
 
 <!-- Pop-out Editor Dialog -->
 <Dialog bind:open={popoutEditorOpen}>
@@ -828,7 +788,7 @@
 
 		<div class="py-4">
 			{#if popoutFieldType === 'text'}
-				<Textarea
+				<TextareaComponent
 					bind:value={popoutContent}
 					placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
 					rows={20}
@@ -845,8 +805,8 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={cancelPopoutEditor}>Cancel</Button>
-			<Button onclick={savePopoutEditor}>Save Changes</Button>
+			<ButtonComponent variant="outline" onclick={cancelPopoutEditor}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={savePopoutEditor}>Save Changes</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

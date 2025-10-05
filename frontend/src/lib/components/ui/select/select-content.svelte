@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Select as SelectPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = SelectPrimitive.ContentProps;
 
@@ -11,7 +11,7 @@
 
 <SelectPrimitive.Content
 	{sideOffset}
-	class={cn(
+	class={_cn(
 		'relative z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md outline-none',
 		className
 	)}

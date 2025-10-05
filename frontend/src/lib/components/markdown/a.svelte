@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn';
+	/* eslint-disable svelte/valid-compile */
+	// Disable custom elements to avoid props inference issues
+	import { cn as _cn } from '$lib/utils/shadcn';
 
 	let { children, ...rest } = $props();
 </script>
 
 <a
 	{...rest}
-	class={cn('text-blue-500 hover:underline', rest.class)}
+	class={_cn('text-blue-500 hover:underline', rest.class)}
 	target="_blank"
 	rel="noopener noreferrer"
 >

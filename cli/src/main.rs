@@ -19,7 +19,6 @@ use tracing_subscriber::{EnvFilter, fmt};
 use clap::Parser;
 use scribe_backend::models::users::User; // Corrected User import
 use scribe_cli::{
-    AdminArgs,
     AdminCommand,
     CharacterCommand,
     ChatCommand,
@@ -409,6 +408,8 @@ async fn main() -> Result<()> {
                             if let Some(recovery_key) = http_client.get_last_recovery_key() {
                                 io_handler.write_line("\n⚠️  IMPORTANT: RECOVERY KEY ⚠️")?;
                                 io_handler.write_line("Save this recovery key in a secure location. You will need it to recover your account if you lose access.")?;
+                                // LGTM[rust/cleartext-logging]: Recovery key must be displayed to CLI user for account recovery.
+                                // This is intentional user-facing output with explicit warnings, not server logging.
                                 io_handler
                                     .write_line(&format!("Recovery Key: {}", recovery_key))?;
                                 io_handler

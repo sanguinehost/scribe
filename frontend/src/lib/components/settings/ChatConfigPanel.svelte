@@ -1,27 +1,28 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import { Button } from '../ui/button';
+	import { Button as ButtonComponent } from '../ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 	import { Input } from '../ui/input';
 	import { Label } from '../ui/label';
-	import { Textarea } from '../ui/textarea';
-	import { Separator } from '../ui/separator';
+	import { Textarea as TextareaComponent } from '../ui/textarea';
+	import { Separator as _SeparatorComponent } from '../ui/separator';
 	import { Skeleton } from '../ui/skeleton';
-	import { Badge } from '../ui/badge';
-	import { Checkbox } from '../ui/checkbox';
+	import { Badge as BadgeComponent } from '../ui/badge';
+	import { Checkbox as _CheckboxComponent } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
 	import type {
 		ScribeChatSession,
 		EnhancedChatSessionLorebookAssociation,
-		PlayerChronicleWithCounts
+		PlayerChronicleWithCounts,
+		UserSettingsResponse
 	} from '$lib/types';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type {
 		UserPersona,
 		UpdateChatSessionSettingsRequest,
 		ChatSessionSettingsResponse,
-		UserSettingsResponse, // Import UserSettingsResponse
+		UserSettingsResponse as _UserSettingsResponse, // Import UserSettingsResponse
 		CreateChronicleRequest
 	} from '$lib/types';
 	import {
@@ -31,12 +32,13 @@
 		DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 		DEFAULT_CONTEXT_RAG_BUDGET
 	} from '$lib/ai/models';
-	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
+	import { SettingsStore as _SettingsStore } from '$lib/stores/settings.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ContextConfiguratorCompact from '$lib/components/shared/ContextConfiguratorCompact.svelte';
+	import TemplateSelector from '$lib/components/shared/TemplateSelector.svelte';
 
 	let {
 		chat,
@@ -68,7 +70,8 @@
 		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
 		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET, // Will be set from global or chat settings
-		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing' // Context enrichment agent mode
+		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing', // Context enrichment agent mode
+		prompt_template_id: 'neutral_roleplay' // Will be set from global or chat settings
 	});
 
 	// Expandable sections
@@ -76,6 +79,7 @@
 		persona: true,
 		lorebooks: true,
 		chronicles: true,
+		templates: true,
 		generation: false,
 		advanced: false
 	});
@@ -89,7 +93,7 @@
 	let currentChronicleId = $state<string | null>(null);
 	let availableChronicles = $state<PlayerChronicleWithCounts[]>([]);
 	let isLoadingChronicles = $state(false);
-	
+
 	// Chronicle creation state
 	let showChronicleCreationForm = $state(false);
 	let newChronicleName = $state('');
@@ -122,20 +126,17 @@
 
 	// Listen for chronicle creation events to refresh the chronicle list
 	onMount(() => {
-		const handleChronicleCreated = async (event: CustomEvent) => {
+		const handleChronicleCreated = async (_event: CustomEvent) => {
 			console.log('[Chat Config] New chronicle created, refreshing chronicles');
 			await loadChronicles();
 		};
 
-		window.addEventListener(
-			'chronicle-created',
-			handleChronicleCreated as unknown as EventListener
-		);
+		window.addEventListener('chronicle-created', handleChronicleCreated as unknown as () => void);
 
 		return () => {
 			window.removeEventListener(
 				'chronicle-created',
-				handleChronicleCreated as unknown as EventListener
+				handleChronicleCreated as unknown as () => void
 			);
 		};
 	});
@@ -175,7 +176,8 @@
 					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 				context_rag_budget:
 					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET,
-				agent_mode: 'disabled'
+				agent_mode: 'disabled',
+				prompt_template_id: 'neutral_roleplay'
 			};
 		}
 	});
@@ -183,7 +185,7 @@
 	async function loadChatSettings() {
 		if (!chat?.id) return;
 		isLoading = true;
-		const result = await apiClient.getChatSessionSettings(chat.id);
+		const result = await _apiClient.getChatSessionSettings(chat.id);
 		if (result.isOk()) {
 			const settings: ChatSessionSettingsResponse = result.value;
 
@@ -226,7 +228,8 @@
 					globalUserSettings?.default_context_rag_budget ??
 					DEFAULT_CONTEXT_RAG_BUDGET,
 				agent_mode:
-					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled'
+					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled',
+				prompt_template_id: settings.prompt_template_id ?? 'neutral_roleplay'
 			};
 
 			// IMPORTANT: Update currentChronicleId from the fresh backend settings
@@ -259,7 +262,7 @@
 		lastGlobalSettingsLoad = now;
 		isLoading = true;
 		try {
-			const userSettingsResult = await apiClient.getUserSettings();
+			const userSettingsResult = await _apiClient.getUserSettings();
 			if (userSettingsResult.isOk()) {
 				globalUserSettings = userSettingsResult.value;
 			} else {
@@ -275,8 +278,8 @@
 					toast.error('Failed to load global settings');
 				}
 			}
-		} catch (error) {
-			console.error('Failed to load global settings:', error);
+		} catch (_error) {
+			console.error('Failed to load global settings:', _error);
 			toast.error('Failed to load global settings');
 		} finally {
 			isLoading = false;
@@ -287,7 +290,7 @@
 		if (!chat?.id) return;
 
 		isLoadingLorebooks = true;
-		const result = await apiClient.getChatLorebookAssociations(chat.id, true); // Use enhanced API
+		const result = await _apiClient.getChatLorebookAssociations(chat.id, true); // Use enhanced API
 
 		if (result.isOk()) {
 			chatLorebookAssociations = result.value;
@@ -300,15 +303,15 @@
 	async function loadChronicles() {
 		isLoadingChronicles = true;
 		try {
-			const result = await apiClient.getChronicles();
+			const result = await _apiClient.getChronicles();
 			if (result.isOk()) {
 				availableChronicles = result.value;
 			} else {
 				console.error('Error loading chronicles:', result.error);
 				toast.error('Failed to load chronicles');
 			}
-		} catch (error) {
-			console.error('Error loading chronicles:', error);
+		} catch (_error) {
+			console.error('Error loading chronicles:', _error);
 			toast.error('Failed to load chronicles');
 		}
 		isLoadingChronicles = false;
@@ -323,7 +326,7 @@
 				chronicle_id: chronicleId
 			};
 
-			const result = await apiClient.updateChatSessionSettings(chat.id, updateRequest);
+			const result = await _apiClient.updateChatSessionSettings(chat.id, updateRequest);
 			if (result.isOk()) {
 				currentChronicleId = chronicleId;
 				// Update the chat object to reflect the change
@@ -338,8 +341,8 @@
 				toast.error('Failed to update chronicle association');
 				console.error('Error updating chronicle association:', result.error);
 			}
-		} catch (error) {
-			console.error('Error updating chronicle association:', error);
+		} catch (_error) {
+			console.error('Error updating chronicle association:', _error);
 			toast.error('Failed to update chronicle association');
 		}
 		isLoading = false;
@@ -358,7 +361,7 @@
 				description: newChronicleDescription.trim() || undefined
 			};
 
-			const result = await apiClient.createChronicle(data);
+			const result = await _apiClient.createChronicle(data);
 			if (result.isOk()) {
 				toast.success('Chronicle created successfully');
 				// Refresh chronicles list
@@ -375,8 +378,8 @@
 				toast.error('Failed to create chronicle');
 				console.error('Error creating chronicle:', result.error);
 			}
-		} catch (error) {
-			console.error('Error creating chronicle:', error);
+		} catch (_error) {
+			console.error('Error creating chronicle:', _error);
 			toast.error('Failed to create chronicle');
 		}
 		isCreatingChronicle = false;
@@ -409,10 +412,11 @@
 				context_recent_history_budget: localSettings.context_recent_history_budget,
 				context_rag_budget: localSettings.context_rag_budget,
 				chronicle_id: currentChronicleId,
-				agent_mode: localSettings.agent_mode
+				agent_mode: localSettings.agent_mode,
+				prompt_template_id: localSettings.prompt_template_id
 			};
 
-			const result = await apiClient.updateChatSessionSettings(chat.id, updateRequest);
+			const result = await _apiClient.updateChatSessionSettings(chat.id, updateRequest);
 
 			if (result.isOk()) {
 				// Update the chat object to reflect the chronicle association change
@@ -430,8 +434,8 @@
 			} else {
 				toast.error(`Failed to update settings: ${result.error.message}`);
 			}
-		} catch (error) {
-			console.error('Failed to save chat settings:', error);
+		} catch (_error) {
+			console.error('Failed to save chat settings:', _error);
 			toast.error('Failed to save chat settings');
 		} finally {
 			isLoading = false;
@@ -442,7 +446,7 @@
 		if (!chat?.id) return;
 
 		try {
-			const result = await apiClient.updateChatSessionSettings(chat.id, {
+			const result = await _apiClient.updateChatSessionSettings(chat.id, {
 				active_custom_persona_id: personaId
 			});
 
@@ -453,9 +457,36 @@
 			} else {
 				toast.error(`Failed to change persona: ${result.error.message}`);
 			}
-		} catch (error) {
-			console.error('Failed to change persona:', error);
+		} catch (_error) {
+			console.error('Failed to change persona:', _error);
 			toast.error('Failed to change persona');
+		}
+	}
+
+	async function handleTemplateChange(templateId: string) {
+		if (!chat?.id) return;
+
+		try {
+			localSettings.prompt_template_id = templateId;
+
+			const result = await _apiClient.updateChatSessionSettings(chat.id, {
+				prompt_template_id: templateId
+			});
+
+			if (result.isOk()) {
+				toast.success('Prompt template updated');
+				dispatch('settingsUpdated', { prompt_template_id: templateId });
+			} else {
+				console.error('Failed to update template:', result.error);
+				toast.error('Failed to update prompt template');
+				// Revert the local setting
+				await loadChatSettings();
+			}
+		} catch (_error) {
+			console.error('Failed to change template:', _error);
+			toast.error('Failed to change template');
+			// Revert the local setting
+			await loadChatSettings();
 		}
 	}
 
@@ -564,15 +595,15 @@
 		if (!chat?.id) return;
 
 		try {
-			const result = await apiClient.disassociateLorebookFromChat(chat.id, lorebookId);
+			const result = await _apiClient.disassociateLorebookFromChat(chat.id, lorebookId);
 			if (result.isOk()) {
 				await loadLorebookAssociations(); // Reload to get updated state
 				toast.success('Lorebook removed from chat');
 			} else {
 				toast.error(`Failed to remove lorebook: ${result.error.message}`);
 			}
-		} catch (error) {
-			console.error('Failed to remove lorebook:', error);
+		} catch (_error) {
+			console.error('Failed to remove lorebook:', _error);
 			toast.error('Failed to remove lorebook');
 		}
 	}
@@ -583,7 +614,7 @@
 		try {
 			// If there's already an override, remove it; otherwise, disable the character lorebook
 			if (currentAction) {
-				const result = await apiClient.removeCharacterLorebookOverride(chat.id, lorebookId);
+				const result = await _apiClient.removeCharacterLorebookOverride(chat.id, lorebookId);
 				if (result.isOk()) {
 					await loadLorebookAssociations();
 					toast.success('Override removed');
@@ -591,7 +622,11 @@
 					toast.error(`Failed to remove override: ${result.error.message}`);
 				}
 			} else {
-				const result = await apiClient.setCharacterLorebookOverride(chat.id, lorebookId, 'disable');
+				const result = await _apiClient.setCharacterLorebookOverride(
+					chat.id,
+					lorebookId,
+					'disable'
+				);
 				if (result.isOk()) {
 					await loadLorebookAssociations();
 					toast.success('Character lorebook disabled for this chat');
@@ -599,8 +634,8 @@
 					toast.error(`Failed to disable lorebook: ${result.error.message}`);
 				}
 			}
-		} catch (error) {
-			console.error('Failed to toggle lorebook override:', error);
+		} catch (_error) {
+			console.error('Failed to toggle lorebook override:', _error);
 			toast.error('Failed to toggle lorebook override');
 		}
 	}
@@ -630,14 +665,14 @@
 			</p>
 		</div>
 		{#if hasOverrides()}
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="sm"
 				onclick={clearAllOverrides}
 				class="text-muted-foreground hover:text-foreground"
 			>
 				Clear All
-			</Button>
+			</ButtonComponent>
 		{/if}
 	</div>
 
@@ -685,6 +720,35 @@
 					{/if}
 				</Card>
 
+				<!-- Prompt Template Selection -->
+				<Card>
+					<CardHeader
+						onclick={() => (expandedSections.templates = !expandedSections.templates)}
+						class="cursor-pointer {expandedSections.templates ? '' : 'pb-6'}"
+					>
+						<div class="flex items-center justify-between">
+							<CardTitle class="text-base">Prompt Style</CardTitle>
+							{#if expandedSections.templates}
+								<ChevronUp />
+							{:else}
+								<ChevronDown />
+							{/if}
+						</div>
+					</CardHeader>
+					{#if expandedSections.templates}
+						<CardContent class="space-y-3">
+							<TemplateSelector
+								bind:selectedTemplateId={localSettings.prompt_template_id}
+								onTemplateChange={handleTemplateChange}
+								currentChatMode={chat?.chat_mode || 'Character'}
+								showCompatibility={false}
+								disabled={isLoading}
+								hideLabel={true}
+							/>
+						</CardContent>
+					{/if}
+				</Card>
+
 				<!-- Chronicle Association -->
 				<Card>
 					<CardHeader
@@ -695,7 +759,7 @@
 							<CardTitle class="text-base">
 								Chronicle
 								{#if currentChronicleId}
-									<Badge variant="secondary" class="ml-2">Linked</Badge>
+									<BadgeComponent variant="secondary" class="ml-2">Linked</BadgeComponent>
 								{/if}
 							</CardTitle>
 							{#if expandedSections.chronicles}
@@ -718,14 +782,14 @@
 										<div class="space-y-2">
 											<div class="flex items-center justify-between">
 												<Label for="chronicle-select">Link to Chronicle</Label>
-												<Button
+												<ButtonComponent
 													variant="outline"
 													size="sm"
 													onclick={() => (showChronicleCreationForm = true)}
 													disabled={isCreatingChronicle}
 												>
 													Create New
-												</Button>
+												</ButtonComponent>
 											</div>
 											<select
 												id="chronicle-select"
@@ -739,8 +803,8 @@
 												{/each}
 											</select>
 											<p class="text-xs text-muted-foreground">
-												Link this chat to a chronicle to organize related conversations and make them
-												available for RAG queries.
+												Link this chat to a chronicle to organize related conversations and make
+												them available for RAG queries.
 											</p>
 										</div>
 									{:else}
@@ -748,14 +812,14 @@
 										<div class="space-y-3 rounded-md border p-3">
 											<div class="flex items-center justify-between">
 												<Label class="text-sm font-medium">Create New Chronicle</Label>
-												<Button
+												<ButtonComponent
 													variant="ghost"
 													size="sm"
 													onclick={cancelChronicleCreation}
 													disabled={isCreatingChronicle}
 												>
 													Cancel
-												</Button>
+												</ButtonComponent>
 											</div>
 											<div class="space-y-2">
 												<Label for="chronicle-name">Name</Label>
@@ -768,7 +832,7 @@
 											</div>
 											<div class="space-y-2">
 												<Label for="chronicle-description">Description (optional)</Label>
-												<Textarea
+												<TextareaComponent
 													id="chronicle-description"
 													bind:value={newChronicleDescription}
 													placeholder="Describe what this chronicle is about..."
@@ -776,13 +840,13 @@
 													rows={3}
 												/>
 											</div>
-											<Button
+											<ButtonComponent
 												onclick={createChronicle}
 												disabled={isCreatingChronicle || !newChronicleName.trim()}
 												class="w-full"
 											>
 												{isCreatingChronicle ? 'Creating...' : 'Create Chronicle'}
-											</Button>
+											</ButtonComponent>
 										</div>
 									{/if}
 
@@ -844,33 +908,33 @@
 											<div class="flex items-center justify-between">
 												<div class="flex items-center gap-2">
 													<span class="text-sm font-medium">{assoc.lorebook_name}</span>
-													<Badge
+													<BadgeComponent
 														variant={assoc.source === 'Chat' ? 'default' : 'secondary'}
 														class="text-xs"
 													>
 														{assoc.source === 'Chat' ? 'Chat' : 'Character'}
-													</Badge>
+													</BadgeComponent>
 													{#if assoc.is_overridden}
-														<Badge variant="outline" class="text-xs">
+														<BadgeComponent variant="outline" class="text-xs">
 															{assoc.override_action === 'disable' ? 'Disabled' : 'Enabled'}
-														</Badge>
+														</BadgeComponent>
 													{/if}
 												</div>
 											</div>
 
 											<div class="flex items-center gap-2" data-testid="lorebook-card">
 												{#if assoc.source === 'Chat'}
-													<Button
+													<ButtonComponent
 														variant="destructive"
 														size="sm"
 														onclick={() => removeLorebookAssociation(assoc.lorebook_id)}
 														class="text-xs"
 													>
 														Remove
-													</Button>
+													</ButtonComponent>
 												{:else if assoc.source === 'Character'}
 													<!-- Character lorebook -->
-													<Button
+													<ButtonComponent
 														variant={assoc.is_overridden && assoc.override_action === 'disable'
 															? 'outline'
 															: 'destructive'}
@@ -887,7 +951,7 @@
 														{:else}
 															Disable
 														{/if}
-													</Button>
+													</ButtonComponent>
 												{/if}
 												<span class="text-xs text-muted-foreground">
 													{#if assoc.source === 'Chat'}
@@ -904,13 +968,13 @@
 								</div>
 							{/if}
 
-							<Button
+							<ButtonComponent
 								variant="outline"
 								onclick={() => (isLorebookDialogOpen = true)}
 								class="w-full"
 							>
 								Manage Lorebooks
-							</Button>
+							</ButtonComponent>
 						</CardContent>
 					{/if}
 				</Card>
@@ -979,13 +1043,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="temperature">Temperature</Label>
 										{#if localSettings.temperature !== 1.0}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												onclick={() => clearOverride('temperature')}
 											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1001,13 +1065,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="max-tokens">Max Tokens</Label>
 										{#if localSettings.max_output_tokens !== 1000}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												onclick={() => clearOverride('max_output_tokens')}
 											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1025,9 +1089,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="top-p">Top P</Label>
 										{#if localSettings.top_p !== 0.95}
-											<Button variant="ghost" size="sm" onclick={() => clearOverride('top_p')}>
+											<ButtonComponent
+												variant="ghost"
+												size="sm"
+												onclick={() => clearOverride('top_p')}
+											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1043,9 +1111,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="top-k">Top K</Label>
 										{#if localSettings.top_k !== 40}
-											<Button variant="ghost" size="sm" onclick={() => clearOverride('top_k')}>
+											<ButtonComponent
+												variant="ghost"
+												size="sm"
+												onclick={() => clearOverride('top_k')}
+											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1064,13 +1136,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="freq-penalty">Frequency Penalty</Label>
 										{#if localSettings.frequency_penalty !== 0.0}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												onclick={() => clearOverride('frequency_penalty')}
 											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1086,13 +1158,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="presence-penalty">Presence Penalty</Label>
 										{#if localSettings.presence_penalty !== 0.0}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												onclick={() => clearOverride('presence_penalty')}
 											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1110,9 +1182,13 @@
 								<div class="flex items-center justify-between">
 									<Label for="seed">Seed (optional)</Label>
 									{#if localSettings.seed !== null}
-										<Button variant="ghost" size="sm" onclick={() => clearOverride('seed')}>
+										<ButtonComponent
+											variant="ghost"
+											size="sm"
+											onclick={() => clearOverride('seed')}
+										>
 											Clear
-										</Button>
+										</ButtonComponent>
 									{/if}
 								</div>
 								<Input
@@ -1168,13 +1244,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="thinking-budget">Thinking Budget</Label>
 										{#if localSettings.gemini_thinking_budget !== null}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												onclick={() => clearOverride('gemini_thinking_budget')}
 											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<Input
@@ -1189,13 +1265,13 @@
 									<div class="flex items-center justify-between">
 										<Label for="code-execution">Code Execution</Label>
 										{#if localSettings.gemini_enable_code_execution !== false}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												onclick={() => clearOverride('gemini_enable_code_execution')}
 											>
 												Clear
-											</Button>
+											</ButtonComponent>
 										{/if}
 									</div>
 									<select
@@ -1217,7 +1293,7 @@
 
 	<!-- Footer -->
 	<div class="border-t p-4">
-		<Button onclick={saveSettings} disabled={isLoading} class="w-full">
+		<ButtonComponent onclick={saveSettings} disabled={isLoading} class="w-full">
 			{#if isLoading}
 				<svg
 					class="-ml-1 mr-2 h-4 w-4 animate-spin"
@@ -1237,7 +1313,7 @@
 			{:else}
 				Save Chat Settings
 			{/if}
-		</Button>
+		</ButtonComponent>
 	</div>
 </div>
 

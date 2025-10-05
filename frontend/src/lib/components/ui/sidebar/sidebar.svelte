@@ -1,6 +1,7 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import * as Sheet from '$lib/components/ui/sheet/index.js';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { SIDEBAR_WIDTH_MOBILE } from './constants.js';
@@ -25,7 +26,7 @@
 
 {#if collapsible === 'none'}
 	<div
-		class={cn(
+		class={_cn(
 			'flex h-full w-[var(--sidebar-width)] flex-col bg-sidebar text-sidebar-foreground',
 			className
 		)}
@@ -59,7 +60,7 @@
 	>
 		<!-- This is what handles the sidebar gap on desktop -->
 		<div
-			class={cn(
+			class={_cn(
 				'relative h-svh w-[var(--sidebar-width)] bg-transparent transition-[width] duration-200 ease-linear',
 				'group-data-[collapsible=offcanvas]:w-0',
 				'group-data-[side=right]:rotate-180',
@@ -86,7 +87,7 @@
 			></div>
 		{/if}
 		<div
-			class={cn(
+			class={_cn(
 				'fixed inset-y-0 z-10 hidden h-svh w-[var(--sidebar-width)] transition-[left,right,width] duration-200 ease-linear md:flex',
 				side === 'left'
 					? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'

@@ -23,40 +23,42 @@ use std::time::Duration; // Add this import
 /// before they can be exposed to frontend clients.
 pub fn sanitize_error_message(error_msg: &str) -> String {
     use regex::Regex;
-    
+
     // Cache compiled regexes in lazy static to avoid recompilation
     static API_KEY_PATTERNS: &[&str] = &[
-        r"key=[\w-]+",                              // Gemini API key in URL parameters
-        r"authorization:\s*bearer\s+[\w.-]+",       // Bearer tokens in headers  
-        r"x-api-key:\s*[\w.-]+",                   // API key headers
-        r"token=[\w.-]+",                          // Generic tokens in URLs
-        r"access_token=[\w.-]+",                   // OAuth access tokens
-        r"api_key=[\w.-]+",                        // Generic API keys in URLs
+        r"key=[\w-]+",                        // Gemini API key in URL parameters
+        r"authorization:\s*bearer\s+[\w.-]+", // Bearer tokens in headers
+        r"x-api-key:\s*[\w.-]+",              // API key headers
+        r"token=[\w.-]+",                     // Generic tokens in URLs
+        r"access_token=[\w.-]+",              // OAuth access tokens
+        r"api_key=[\w.-]+",                   // Generic API keys in URLs
     ];
-    
+
     let mut sanitized = error_msg.to_string();
-    
+
     // Apply all sanitization patterns
     for pattern in API_KEY_PATTERNS {
         if let Ok(re) = Regex::new(&format!("(?i){}", pattern)) {
-            sanitized = re.replace_all(&sanitized, |caps: &regex::Captures| {
-                let matched = caps.get(0).unwrap().as_str();
-                if let Some(eq_pos) = matched.find('=') {
-                    format!("{}[REDACTED]", &matched[..eq_pos + 1])
-                } else if let Some(colon_pos) = matched.find(':') {
-                    format!("{}[REDACTED]", &matched[..colon_pos + 1])
-                } else {
-                    "[REDACTED]".to_string()
-                }
-            }).into_owned();
+            sanitized = re
+                .replace_all(&sanitized, |caps: &regex::Captures| {
+                    let matched = caps.get(0).unwrap().as_str();
+                    if let Some(eq_pos) = matched.find('=') {
+                        format!("{}[REDACTED]", &matched[..eq_pos + 1])
+                    } else if let Some(colon_pos) = matched.find(':') {
+                        format!("{}[REDACTED]", &matched[..colon_pos + 1])
+                    } else {
+                        "[REDACTED]".to_string()
+                    }
+                })
+                .into_owned();
         }
     }
-    
+
     // Additional cleanup for common patterns
     sanitized = sanitized
-        .replace("AIzaSy[REDACTED]", "[API_KEY_REDACTED]")  // Make Gemini key redaction clearer
+        .replace("AIzaSy[REDACTED]", "[API_KEY_REDACTED]") // Make Gemini key redaction clearer
         .replace("key=[REDACTED]", "key=[API_KEY_REDACTED]"); // Make key redaction clearer
-    
+
     sanitized
 }
 // Remove Send and Sync from derive list.
@@ -232,6 +234,31 @@ pub enum AppError {
     #[error("Text processing error: {0}")]
     TextProcessingError(String),
 
+    // Payment System Errors (gated behind payment feature)
+    #[cfg(feature = "payment")]
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
+    #[cfg(feature = "payment")]
+    #[error("External service error: {0}")]
+    ExternalServiceError(String),
+
+    #[cfg(feature = "payment")]
+    #[error("JSON parse error: {0}")]
+    JsonParseError(String),
+
+    #[cfg(feature = "payment")]
+    #[error("Invalid webhook signature: {0}")]
+    InvalidWebhookSignature(String),
+
+    #[cfg(feature = "payment")]
+    #[error("Insufficient credits. Required: {required}, Available: {available}, Expired: {}", .expired.map_or_else(|| "0".to_string(), |e| e.to_string()))]
+    InsufficientCredits {
+        required: i32,
+        available: i32,
+        expired: Option<i32>,
+    },
+
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationErrors),
 }
@@ -372,29 +399,60 @@ impl AppError {
     }
 
     const fn is_client_error(error: &Self) -> bool {
-        matches!(
-            error,
-            Self::BadRequest(_)
-                | Self::InvalidInput(_)
-                | Self::InvalidCredentials
-                | Self::Unauthorized(_)
-                | Self::DekMissing
-                | Self::Forbidden(_)
-                | Self::NotFound(_)
-                | Self::UserNotFound
-                | Self::SessionNotFound
-                | Self::Conflict(_)
-                | Self::UsernameTaken
-                | Self::EmailTaken
-                | Self::RateLimited(_)
-                | Self::FileUploadError(_)
-                | Self::CharacterParseError(_)
-                | Self::CharacterParsingError(_)
-                | Self::ParseIntError(_)
-                | Self::UuidError(_)
-                | Self::AuthError(_)
-                | Self::WebSocketReceiveError(_)
-        )
+        #[cfg(feature = "payment")]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+                    | Self::FileUploadError(_)
+                    | Self::CharacterParseError(_)
+                    | Self::CharacterParsingError(_)
+                    | Self::ParseIntError(_)
+                    | Self::UuidError(_)
+                    | Self::AuthError(_)
+                    | Self::WebSocketReceiveError(_)
+                    | Self::InvalidWebhookSignature(_)
+                    | Self::ConfigurationError(_)
+            )
+        }
+        #[cfg(not(feature = "payment"))]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+                    | Self::FileUploadError(_)
+                    | Self::CharacterParseError(_)
+                    | Self::CharacterParsingError(_)
+                    | Self::ParseIntError(_)
+                    | Self::UuidError(_)
+                    | Self::AuthError(_)
+                    | Self::WebSocketReceiveError(_)
+            )
+        }
     }
 
     const fn is_gateway_error(error: &Self) -> bool {
@@ -421,22 +479,46 @@ impl AppError {
     }
 
     const fn is_simple_client_error(error: &Self) -> bool {
-        matches!(
-            error,
-            Self::BadRequest(_)
-                | Self::InvalidInput(_)
-                | Self::InvalidCredentials
-                | Self::Unauthorized(_)
-                | Self::DekMissing
-                | Self::Forbidden(_)
-                | Self::NotFound(_)
-                | Self::UserNotFound
-                | Self::SessionNotFound
-                | Self::Conflict(_)
-                | Self::UsernameTaken
-                | Self::EmailTaken
-                | Self::RateLimited(_)
-        )
+        #[cfg(feature = "payment")]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+                    | Self::InvalidWebhookSignature(_)
+                    | Self::ConfigurationError(_)
+            )
+        }
+        #[cfg(not(feature = "payment"))]
+        {
+            matches!(
+                error,
+                Self::BadRequest(_)
+                    | Self::InvalidInput(_)
+                    | Self::InvalidCredentials
+                    | Self::Unauthorized(_)
+                    | Self::DekMissing
+                    | Self::Forbidden(_)
+                    | Self::NotFound(_)
+                    | Self::UserNotFound
+                    | Self::SessionNotFound
+                    | Self::Conflict(_)
+                    | Self::UsernameTaken
+                    | Self::EmailTaken
+                    | Self::RateLimited(_)
+            )
+        }
     }
 
     const fn is_logged_client_error(error: &Self) -> bool {
@@ -478,6 +560,10 @@ impl AppError {
                         .unwrap_or_default()
                 ),
             ),
+            #[cfg(feature = "payment")]
+            Self::InvalidWebhookSignature(msg) => (StatusCode::BAD_REQUEST, msg),
+            #[cfg(feature = "payment")]
+            Self::ConfigurationError(msg) => (StatusCode::BAD_REQUEST, msg),
             _ => unreachable!("Non-simple client error passed to handle_simple_client_error"),
         }
     }
@@ -1581,7 +1667,7 @@ mod tests {
         // Test that Gemini API key in URL is sanitized
         let error_with_key = "error sending request for url (https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=AIzaSyFAKE_TEST_KEY_DO_NOT_USE)";
         let sanitized = sanitize_error_message(error_with_key);
-        
+
         // Should contain [API_KEY_REDACTED] instead of actual key
         assert!(sanitized.contains("key=[API_KEY_REDACTED]"));
         assert!(!sanitized.contains("AIzaSyFAKE_TEST_KEY_DO_NOT_USE"));
@@ -1590,9 +1676,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_sanitize_error_message_bearer_token() {
-        let error_with_token = "Request failed with Authorization: Bearer sk-1234567890abcdef in headers";
+        let error_with_token =
+            "Request failed with Authorization: Bearer sk-1234567890abcdef in headers";
         let sanitized = sanitize_error_message(error_with_token);
-        
+
         assert!(sanitized.contains("Authorization:[REDACTED]"));
         assert!(!sanitized.contains("sk-1234567890abcdef"));
     }
@@ -1601,12 +1688,12 @@ mod tests {
     async fn test_sanitize_error_message_multiple_secrets() {
         let error_with_multiple = "Failed request to https://api.example.com/v1/chat?api_key=secret123&token=token456 with Authorization: Bearer bearer789";
         let sanitized = sanitize_error_message(error_with_multiple);
-        
+
         assert!(sanitized.contains("api_key=[API_KEY_REDACTED]"));
         assert!(sanitized.contains("token=[REDACTED]"));
         assert!(sanitized.contains("Authorization:[REDACTED]"));
         assert!(!sanitized.contains("secret123"));
-        assert!(!sanitized.contains("token456")); 
+        assert!(!sanitized.contains("token456"));
         assert!(!sanitized.contains("bearer789"));
     }
 
@@ -1614,7 +1701,7 @@ mod tests {
     async fn test_sanitize_error_message_no_secrets() {
         let clean_error = "Connection timeout occurred while connecting to API endpoint";
         let sanitized = sanitize_error_message(clean_error);
-        
+
         // Should be unchanged if no secrets present
         assert_eq!(sanitized, clean_error);
     }
@@ -1623,7 +1710,7 @@ mod tests {
     async fn test_sanitize_error_message_case_insensitive() {
         let error_upper = "Request failed with X-API-KEY: SENSITIVE123";
         let sanitized = sanitize_error_message(error_upper);
-        
+
         assert!(sanitized.contains("X-API-KEY:[REDACTED]"));
         assert!(!sanitized.contains("SENSITIVE123"));
     }
@@ -1633,7 +1720,7 @@ mod tests {
         // Test that genai::Error conversion sanitizes the error
         let error_string = "error sending request for url (https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=AIzaSyTestKey123) network error";
         let app_error = AppError::GeminiError(sanitize_error_message(error_string));
-        
+
         // Extract the error message that would be sent in response
         match app_error {
             AppError::GeminiError(msg) => {

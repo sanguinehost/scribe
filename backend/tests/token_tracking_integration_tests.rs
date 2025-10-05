@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use scribe_backend::models::{
     chats::{Chat, CreateChatRequest, CreateMessageRequest},
-    usage::{TokenUsageSummary, ChatTokenUsage},
+    usage::{ChatTokenUsage, TokenUsageSummary},
 };
 use scribe_backend::test_helpers::{
     TestDataGuard, db, login_user_via_api, spawn_app_permissive_rate_limiting,
@@ -45,7 +45,10 @@ where
         delay_ms = std::cmp::min(delay_ms * 2, 1000); // Exponential backoff, max 1s
     }
 
-    Err(format!("Token count not reached after {} attempts", max_attempts))
+    Err(format!(
+        "Token count not reached after {} attempts",
+        max_attempts
+    ))
 }
 
 #[tokio::test]
@@ -59,7 +62,7 @@ async fn test_user_token_usage_endpoint() {
         .await
         .unwrap();
     tdg.add_user(user_db.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Test initial token usage (should be zero)
@@ -69,10 +72,10 @@ async fn test_user_token_usage_endpoint() {
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
     let token_usage: TokenUsageSummary = response.json().await.unwrap();
-    
+
     assert_eq!(token_usage.total_prompt_tokens, 0);
     assert_eq!(token_usage.total_completion_tokens, 0);
     assert_eq!(token_usage.total_tokens, 0);
@@ -92,13 +95,14 @@ async fn test_chat_token_usage_endpoint() {
         .await
         .unwrap();
     tdg.add_user(user_db.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Create a character first
-    let character = db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
-        .await
-        .unwrap();
+    let character =
+        db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
+            .await
+            .unwrap();
     tdg.add_character(character.id);
 
     // Create a chat session
@@ -116,22 +120,25 @@ async fn test_chat_token_usage_endpoint() {
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::CREATED);
     let created_chat: Chat = response.json().await.unwrap();
     tdg.add_chat(created_chat.id);
 
     // Test initial chat token usage (should be zero)
     let response = client
-        .get(format!("{}/api/chats/{}/token-usage", app.address, created_chat.id))
+        .get(format!(
+            "{}/api/chats/{}/token-usage",
+            app.address, created_chat.id
+        ))
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
     let chat_token_usage: ChatTokenUsage = response.json().await.unwrap();
-    
+
     assert_eq!(chat_token_usage.chat_id, created_chat.id);
     assert_eq!(chat_token_usage.total_prompt_tokens, 0);
     assert_eq!(chat_token_usage.total_completion_tokens, 0);
@@ -155,7 +162,7 @@ async fn test_chat_token_usage_unauthorized() {
         .unwrap();
     tdg.add_user(user1.id);
     tdg.add_user(user2.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, "user1", "password123").await;
 
     // Create a character for user1
@@ -179,20 +186,23 @@ async fn test_chat_token_usage_unauthorized() {
         .send()
         .await
         .unwrap();
-    
+
     let created_chat: Chat = response.json().await.unwrap();
     tdg.add_chat(created_chat.id);
 
     // Now login as user2 and try to access user1's chat token usage
     let (client2, auth_cookie_str2) = login_user_via_api(&app, "user2", "password123").await;
-    
+
     let response = client2
-        .get(format!("{}/api/chats/{}/token-usage", app.address, created_chat.id))
+        .get(format!(
+            "{}/api/chats/{}/token-usage",
+            app.address, created_chat.id
+        ))
         .header(COOKIE, &auth_cookie_str2)
         .send()
         .await
         .unwrap();
-    
+
     // Should return 404 (not found) since user2 doesn't own the chat
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -208,17 +218,20 @@ async fn test_token_usage_without_authentication() {
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
     // Test chat token usage endpoint without auth
     let fake_chat_id = Uuid::new_v4();
     let response = client
-        .get(format!("{}/api/chats/{}/token-usage", app.address, fake_chat_id))
+        .get(format!(
+            "{}/api/chats/{}/token-usage",
+            app.address, fake_chat_id
+        ))
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -233,23 +246,26 @@ async fn test_chat_token_usage_not_found() {
         .await
         .unwrap();
     tdg.add_user(user_db.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Try to get token usage for non-existent chat
     let fake_chat_id = Uuid::new_v4();
     let response = client
-        .get(format!("{}/api/chats/{}/token-usage", app.address, fake_chat_id))
+        .get(format!(
+            "{}/api/chats/{}/token-usage",
+            app.address, fake_chat_id
+        ))
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 /// This test verifies that token counts are properly tracked and accumulated
-/// when messages are created. This requires the token tracking system to be 
+/// when messages are created. This requires the token tracking system to be
 /// working in the message handling service.
 #[tokio::test]
 async fn test_token_accumulation_integration() {
@@ -262,13 +278,14 @@ async fn test_token_accumulation_integration() {
         .await
         .unwrap();
     tdg.add_user(user_db.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Create a character
-    let character = db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
-        .await
-        .unwrap();
+    let character =
+        db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
+            .await
+            .unwrap();
     tdg.add_character(character.id);
 
     // Create a chat session
@@ -286,7 +303,7 @@ async fn test_token_accumulation_integration() {
         .send()
         .await
         .unwrap();
-    
+
     let created_chat: Chat = response.json().await.unwrap();
     tdg.add_chat(created_chat.id);
 
@@ -299,13 +316,16 @@ async fn test_token_accumulation_integration() {
     };
 
     let response = client
-        .post(format!("{}/api/chats/{}/messages", app.address, created_chat.id))
+        .post(format!(
+            "{}/api/chats/{}/messages",
+            app.address, created_chat.id
+        ))
         .json(&message_request)
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
-    
+
     // This might return 201 or 200 depending on implementation
     assert!(response.status().is_success());
 
@@ -314,49 +334,66 @@ async fn test_token_accumulation_integration() {
     let auth_cookie_clone = auth_cookie_str.clone();
     let address_clone = app.address.clone();
     let chat_id = created_chat.id;
-    
+
     poll_for_token_count(
         || async {
             let response = client_clone
-                .get(format!("{}/api/chats/{}/token-usage", address_clone, chat_id))
+                .get(format!(
+                    "{}/api/chats/{}/token-usage",
+                    address_clone, chat_id
+                ))
                 .header(COOKIE, &auth_cookie_clone)
                 .send()
                 .await
                 .map_err(|e| format!("Request failed: {}", e))?;
-            
+
             if response.status() != StatusCode::OK {
                 return Err(format!("Bad status: {}", response.status()));
             }
-            
-            let chat_token_usage: ChatTokenUsage = response.json().await
+
+            let chat_token_usage: ChatTokenUsage = response
+                .json()
+                .await
                 .map_err(|e| format!("JSON parsing failed: {}", e))?;
-            
+
             Ok(chat_token_usage.total_prompt_tokens)
         },
-        1, // Expect at least 1 token
+        1,  // Expect at least 1 token
         10, // Max 10 attempts
-    ).await.expect("Token count should be updated within retry limit");
+    )
+    .await
+    .expect("Token count should be updated within retry limit");
 
     // Get final token usage for assertions
     let response = client
-        .get(format!("{}/api/chats/{}/token-usage", app.address, created_chat.id))
+        .get(format!(
+            "{}/api/chats/{}/token-usage",
+            app.address, created_chat.id
+        ))
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
     let chat_token_usage: ChatTokenUsage = response.json().await.unwrap();
-    
+
     // Should have some prompt tokens from the user message
     println!("Chat token usage: {:?}", chat_token_usage);
-    assert!(chat_token_usage.total_prompt_tokens > 0, "Should have counted prompt tokens, got: {}", chat_token_usage.total_prompt_tokens);
+    assert!(
+        chat_token_usage.total_prompt_tokens > 0,
+        "Should have counted prompt tokens, got: {}",
+        chat_token_usage.total_prompt_tokens
+    );
     assert_eq!(chat_token_usage.total_completion_tokens, 0); // No AI response yet
     assert!(chat_token_usage.total_tokens > 0);
     // Note: With very small token counts (< ~30 tokens), cost might round to 0 cents due to low pricing
     // This is mathematically correct for real-world pricing - we don't assert cost > 0
-    println!("Estimated cost cents: {}, dollars: {}", chat_token_usage.estimated_cost_cents, chat_token_usage.estimated_cost_dollars);
-    
+    println!(
+        "Estimated cost cents: {}, dollars: {}",
+        chat_token_usage.estimated_cost_cents, chat_token_usage.estimated_cost_dollars
+    );
+
     // Cost should be non-negative (>= 0)
     assert!(chat_token_usage.estimated_cost_cents >= 0);
     assert!(chat_token_usage.estimated_cost_dollars >= 0.0);
@@ -368,14 +405,26 @@ async fn test_token_accumulation_integration() {
         .send()
         .await
         .unwrap();
-    
+
     assert_eq!(response.status(), StatusCode::OK);
     let user_token_usage: TokenUsageSummary = response.json().await.unwrap();
-    
-    assert_eq!(user_token_usage.total_prompt_tokens, chat_token_usage.total_prompt_tokens as i64);
-    assert_eq!(user_token_usage.total_completion_tokens, chat_token_usage.total_completion_tokens as i64);
-    assert_eq!(user_token_usage.total_tokens, chat_token_usage.total_tokens as i64);
-    assert_eq!(user_token_usage.total_cost_cents, chat_token_usage.estimated_cost_cents as i64);
+
+    assert_eq!(
+        user_token_usage.total_prompt_tokens,
+        chat_token_usage.total_prompt_tokens as i64
+    );
+    assert_eq!(
+        user_token_usage.total_completion_tokens,
+        chat_token_usage.total_completion_tokens as i64
+    );
+    assert_eq!(
+        user_token_usage.total_tokens,
+        chat_token_usage.total_tokens as i64
+    );
+    assert_eq!(
+        user_token_usage.total_cost_cents,
+        chat_token_usage.estimated_cost_cents as i64
+    );
 }
 
 /// This test verifies that token tracking works correctly across multiple chats
@@ -391,13 +440,14 @@ async fn test_multi_chat_token_accumulation() {
         .await
         .unwrap();
     tdg.add_user(user_db.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Create a character
-    let character = db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
-        .await
-        .unwrap();
+    let character =
+        db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
+            .await
+            .unwrap();
     tdg.add_character(character.id);
 
     // Create two chat sessions
@@ -417,7 +467,7 @@ async fn test_multi_chat_token_accumulation() {
             .send()
             .await
             .unwrap();
-        
+
         let created_chat: Chat = response.json().await.unwrap();
         chat_ids.push(created_chat.id);
         tdg.add_chat(created_chat.id);
@@ -439,7 +489,7 @@ async fn test_multi_chat_token_accumulation() {
             .send()
             .await
             .unwrap();
-        
+
         assert!(response.status().is_success());
     }
 
@@ -449,28 +499,35 @@ async fn test_multi_chat_token_accumulation() {
         let auth_cookie_clone = auth_cookie_str.clone();
         let address_clone = app.address.clone();
         let chat_id_clone = *chat_id;
-        
+
         poll_for_token_count(
             || async {
                 let response = client_clone
-                    .get(format!("{}/api/chats/{}/token-usage", address_clone, chat_id_clone))
+                    .get(format!(
+                        "{}/api/chats/{}/token-usage",
+                        address_clone, chat_id_clone
+                    ))
                     .header(COOKIE, &auth_cookie_clone)
                     .send()
                     .await
                     .map_err(|e| format!("Request failed: {}", e))?;
-                
+
                 if response.status() != StatusCode::OK {
                     return Err(format!("Bad status: {}", response.status()));
                 }
-                
-                let chat_token_usage: ChatTokenUsage = response.json().await
+
+                let chat_token_usage: ChatTokenUsage = response
+                    .json()
+                    .await
                     .map_err(|e| format!("JSON parsing failed: {}", e))?;
-                
+
                 Ok(chat_token_usage.total_prompt_tokens)
             },
-            1, // Expect at least 1 token
+            1,  // Expect at least 1 token
             10, // Max 10 attempts
-        ).await.expect("Token count should be updated within retry limit");
+        )
+        .await
+        .expect("Token count should be updated within retry limit");
     }
 
     // Check individual chat token usage
@@ -484,10 +541,10 @@ async fn test_multi_chat_token_accumulation() {
             .send()
             .await
             .unwrap();
-        
+
         let chat_token_usage: ChatTokenUsage = response.json().await.unwrap();
         assert!(chat_token_usage.total_prompt_tokens > 0);
-        
+
         total_expected_prompt_tokens += chat_token_usage.total_prompt_tokens as i64;
         total_expected_cost_cents += chat_token_usage.estimated_cost_cents as i64;
     }
@@ -499,10 +556,13 @@ async fn test_multi_chat_token_accumulation() {
         .send()
         .await
         .unwrap();
-    
+
     let user_token_usage: TokenUsageSummary = response.json().await.unwrap();
-    
-    assert_eq!(user_token_usage.total_prompt_tokens, total_expected_prompt_tokens);
+
+    assert_eq!(
+        user_token_usage.total_prompt_tokens,
+        total_expected_prompt_tokens
+    );
     assert_eq!(user_token_usage.total_cost_cents, total_expected_cost_cents);
     assert!(user_token_usage.total_tokens > 0);
 }
@@ -520,13 +580,14 @@ async fn test_concurrent_token_tracking() {
         .await
         .unwrap();
     tdg.add_user(user_db.id);
-    
+
     let (client, auth_cookie_str) = login_user_via_api(&app, username, password).await;
 
     // Create a character
-    let character = db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
-        .await
-        .unwrap();
+    let character =
+        db::create_test_character(&app.db_pool, user_db.id, "Test Character".to_string())
+            .await
+            .unwrap();
     tdg.add_character(character.id);
 
     // Create a chat session
@@ -544,7 +605,7 @@ async fn test_concurrent_token_tracking() {
         .send()
         .await
         .unwrap();
-    
+
     let created_chat: Chat = response.json().await.unwrap();
     tdg.add_chat(created_chat.id);
 
@@ -555,11 +616,14 @@ async fn test_concurrent_token_tracking() {
         let auth_cookie_clone = auth_cookie_str.clone();
         let address = app.address.clone();
         let chat_id = created_chat.id;
-        
+
         let task = tokio::spawn(async move {
             let message_request = CreateMessageRequest {
                 role: "user".to_string(),
-                content: format!("Concurrent test message number {} containing many words to generate sufficient tokens for meaningful cost calculation and verification of the token tracking system's accuracy", i),
+                content: format!(
+                    "Concurrent test message number {} containing many words to generate sufficient tokens for meaningful cost calculation and verification of the token tracking system's accuracy",
+                    i
+                ),
                 parts: None,
                 attachments: None,
             };
@@ -571,7 +635,7 @@ async fn test_concurrent_token_tracking() {
                 .send()
                 .await
         });
-        
+
         tasks.push(task);
     }
 
@@ -586,41 +650,54 @@ async fn test_concurrent_token_tracking() {
     let auth_cookie_clone = auth_cookie_str.clone();
     let address_clone = app.address.clone();
     let chat_id = created_chat.id;
-    
+
     poll_for_token_count(
         || async {
             let response = client_clone
-                .get(format!("{}/api/chats/{}/token-usage", address_clone, chat_id))
+                .get(format!(
+                    "{}/api/chats/{}/token-usage",
+                    address_clone, chat_id
+                ))
                 .header(COOKIE, &auth_cookie_clone)
                 .send()
                 .await
                 .map_err(|e| format!("Request failed: {}", e))?;
-            
+
             if response.status() != StatusCode::OK {
                 return Err(format!("Bad status: {}", response.status()));
             }
-            
-            let chat_token_usage: ChatTokenUsage = response.json().await
+
+            let chat_token_usage: ChatTokenUsage = response
+                .json()
+                .await
                 .map_err(|e| format!("JSON parsing failed: {}", e))?;
-            
+
             Ok(chat_token_usage.total_prompt_tokens)
         },
-        5, // Expect at least 5 tokens (one from each message minimum)
+        5,  // Expect at least 5 tokens (one from each message minimum)
         15, // Max 15 attempts for concurrent test
-    ).await.expect("Token count should be updated within retry limit");
+    )
+    .await
+    .expect("Token count should be updated within retry limit");
 
     // Get final token usage for assertions
     let response = client
-        .get(format!("{}/api/chats/{}/token-usage", app.address, created_chat.id))
+        .get(format!(
+            "{}/api/chats/{}/token-usage",
+            app.address, created_chat.id
+        ))
         .header(COOKIE, &auth_cookie_str)
         .send()
         .await
         .unwrap();
-    
+
     let chat_token_usage: ChatTokenUsage = response.json().await.unwrap();
-    
+
     // Should have substantial token count from 5 messages
-    assert!(chat_token_usage.total_prompt_tokens >= 5, "Should have tokens from at least 5 messages");
+    assert!(
+        chat_token_usage.total_prompt_tokens >= 5,
+        "Should have tokens from at least 5 messages"
+    );
     assert!(chat_token_usage.total_tokens >= 5);
     assert!(chat_token_usage.estimated_cost_cents >= 0);
 
@@ -631,10 +708,16 @@ async fn test_concurrent_token_tracking() {
         .send()
         .await
         .unwrap();
-    
+
     let user_token_usage: TokenUsageSummary = response.json().await.unwrap();
-    
+
     // User totals should match chat totals
-    assert_eq!(user_token_usage.total_prompt_tokens, chat_token_usage.total_prompt_tokens as i64);
-    assert_eq!(user_token_usage.total_cost_cents, chat_token_usage.estimated_cost_cents as i64);
+    assert_eq!(
+        user_token_usage.total_prompt_tokens,
+        chat_token_usage.total_prompt_tokens as i64
+    );
+    assert_eq!(
+        user_token_usage.total_cost_cents,
+        chat_token_usage.estimated_cost_cents as i64
+    );
 }

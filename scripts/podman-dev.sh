@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Modern Podman development utility script for Sanguine Scribe
-# Uses podman compose (not deprecated podman-compose) with docker-compose backend
+# Uses native podman compose functionality (Podman 4.1+)
 # Supports TLS-enabled PostgreSQL and Qdrant containers
 
 set -euo pipefail
@@ -27,25 +27,32 @@ usage() {
     echo "  certs   : Generate TLS certificates if missing"
     echo "  help    : Show this help message"
     echo ""
-    echo "This script uses 'podman compose' with docker-compose backend for"
-    echo "rootless, secure container management with TLS encryption."
+    echo "This script uses native 'podman compose' for rootless, secure"
+    echo "container management with TLS encryption."
     exit 1
 }
 
-# Setup podman environment for docker-compose compatibility
+# Setup podman environment
 setup_podman_env() {
     if ! command -v podman &>/dev/null; then
         echo "Error: podman not found. Please install podman." >&2
         exit 1
     fi
 
-    # Start podman socket for docker-compose compatibility
+    # Check podman version for native compose support (4.1+)
+    local podman_version=$(podman --version | awk '{print $3}')
+    local major_version=$(echo "$podman_version" | cut -d. -f1)
+    local minor_version=$(echo "$podman_version" | cut -d. -f2)
+
+    if [[ $major_version -lt 4 ]] || ([[ $major_version -eq 4 ]] && [[ $minor_version -lt 1 ]]); then
+        echo "Error: Podman 4.1+ required for native compose support. Current: $podman_version" >&2
+        exit 1
+    fi
+
+    # Start podman socket for API access
     echo "Ensuring podman socket is active..."
-    systemctl --user start podman.socket
-    
-    # Set DOCKER_HOST to use podman socket
-    export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
-    
+    systemctl --user start podman.socket 2>/dev/null || true
+
     # Clean up any problematic networks from previous runs
     podman network rm compose_default 2>/dev/null || true
 }
@@ -54,14 +61,10 @@ setup_podman_env() {
 check_deps() {
     setup_podman_env
 
-    # Set compose provider preference
-    if command -v docker-compose &>/dev/null; then
-        export PODMAN_COMPOSE_PROVIDER="docker-compose"
-    elif command -v podman-compose &>/dev/null; then
-        export PODMAN_COMPOSE_PROVIDER="podman-compose"
-        echo "Warning: Using deprecated podman-compose. Consider installing docker-compose." >&2
-    else
-        echo "Error: No compose provider found. Install docker-compose or podman-compose." >&2
+    # Verify native compose is available
+    if ! podman compose version &>/dev/null; then
+        echo "Error: Native podman compose not available." >&2
+        echo "Please ensure you have Podman 4.1+ installed." >&2
         exit 1
     fi
 }
@@ -85,18 +88,18 @@ case "$COMMAND" in
         echo "Starting Podman development environment..."
         check_deps
         ensure_certs
-        
-        echo "Using compose provider: ${PODMAN_COMPOSE_PROVIDER}"
+
+        echo "Using native podman compose..."
         echo "Starting PostgreSQL and Qdrant with TLS enabled..."
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             up -d postgres qdrant
-        
+
         echo "Waiting for database to initialize..."
         sleep 30
-        
+
         echo "Running database migrations..."
         if command -v diesel &>/dev/null; then
             (cd "$PROJECT_ROOT/backend" && DATABASE_URL="$DATABASE_URL" diesel migration run)
@@ -104,62 +107,62 @@ case "$COMMAND" in
             echo "Warning: diesel not found. Skipping migrations."
             echo "Install diesel-cli: cargo install diesel_cli --no-default-features --features postgres"
         fi
-        
+
         echo ""
         echo "✅ Development environment ready!"
         echo "📊 PostgreSQL: localhost:5432 (TLS enabled)"
         echo "🔍 Qdrant: https://localhost:6333, gRPC: https://localhost:6334"
         ;;
-        
+
     down)
         echo "Stopping development environment..."
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             down
         ;;
-        
+
     reset)
         echo "Resetting development environment (removing volumes)..."
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             down -v
         ;;
-        
+
     logs)
         echo "Following logs (Ctrl+C to stop)..."
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             logs -f
         ;;
-        
+
     ps)
         echo "Container status:"
         check_deps
-        
+
         podman compose \
             -f "$COMPOSE_DIR/podman-compose.yml" \
             -f "$COMPOSE_DIR/podman-compose.local.yml" \
             ps
         ;;
-        
+
     certs)
         echo "Generating TLS certificates..."
         "$PROJECT_ROOT/scripts/certs/manage.sh" local init
         ;;
-        
+
     help|--help|-h)
         usage
         ;;
-        
+
     *)
         echo "Error: Unknown command '$COMMAND'"
         echo ""

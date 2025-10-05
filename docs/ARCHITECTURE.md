@@ -94,7 +94,7 @@ graph TD
         CORE_LOGIC -- Uses --> VECTOR_SERVICE
         CORE_LOGIC -- Uses --> AI_CLIENT_FACTORY
         CORE_LOGIC -- Uses --> ENCRYPTION_SVC
-        
+
         AI_CLIENT_FACTORY -- Routes to --> GEMINI_CLIENT
         AI_CLIENT_FACTORY -- Routes to --> LOCAL_LLM
         %% For data encryption/decryption

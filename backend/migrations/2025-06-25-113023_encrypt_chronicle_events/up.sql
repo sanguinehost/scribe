@@ -1,7 +1,7 @@
 -- Encrypt chronicle event summaries to comply with encryption-at-rest architecture
 
 -- Add encrypted summary fields
-ALTER TABLE chronicle_events 
+ALTER TABLE chronicle_events
 ADD COLUMN summary_encrypted BYTEA,
 ADD COLUMN summary_nonce BYTEA;
 

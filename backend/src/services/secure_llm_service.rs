@@ -9,10 +9,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use genai::{
-    Client,
-    chat::{ChatMessage, ChatOptions, ChatRequest, ChatResponse},
-};
+use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -27,23 +24,23 @@ use crate::llm::llamacpp::{
 /// Secure LLM service that wraps AI client with security controls
 pub struct SecureLlmService {
     ai_client: Arc<dyn AiClient + Send + Sync>,
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>,
 }
 
 impl SecureLlmService {
     pub fn new(ai_client: Arc<dyn AiClient + Send + Sync>, app_state: Arc<AppState>) -> Self {
         Self {
             ai_client,
-            app_state,
+            _app_state: app_state,
         }
     }
 
     /// Secure chat execution with encryption, sanitization, and audit logging
     pub async fn secure_exec_chat(
         &self,
-        mut request: ChatRequest,
+        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))] mut request: ChatRequest,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        _session_dek: &SessionDek,
     ) -> Result<ChatResponse, AppError> {
         debug!("Starting secure chat execution for user: {}", user_id);
 
@@ -155,9 +152,9 @@ impl SecureLlmService {
     /// Secure streaming chat with real-time encryption
     pub async fn secure_stream_chat(
         &self,
-        mut request: ChatRequest,
+        #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))] mut request: ChatRequest,
         user_id: Uuid,
-        session_dek: &SessionDek,
+        _session_dek: &SessionDek,
     ) -> Result<ChatStream, AppError> {
         debug!("Starting secure streaming chat for user: {}", user_id);
 
@@ -400,7 +397,6 @@ fn extract_text_content(messages: &[ChatMessage]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     #[cfg(feature = "local-llm")]

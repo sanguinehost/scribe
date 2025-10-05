@@ -14,11 +14,13 @@
 	import H6 from './h6.svelte';
 	import P from './p.svelte';
 	import Code from './code.svelte';
+	import Pre from './pre.svelte';
 	import Hr from './hr.svelte';
 	let { md }: { md: string } = $props();
 
 	const renderer: ComponentsMap = {
 		code: Code,
+		pre: Pre,
 		ol: Ol,
 		li: Li,
 		ul: Ul,

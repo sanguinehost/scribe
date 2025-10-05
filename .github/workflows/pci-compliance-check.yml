@@ -1,0 +1,185 @@
+name: PCI DSS SAQ-A Compliance Check
+
+# This workflow helps maintain SAQ-A compliance by scanning for potential cardholder data
+# patterns that should never be committed to the repository.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main, develop, feat/payment-* ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  pci-compliance-scan:
+    runs-on: ubuntu-latest
+    name: Scan for Cardholder Data Patterns
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Run cardholder data pattern scan
+      run: |
+        python .pre-commit-card-scan.py --all
+
+    - name: Verify payment security architecture
+      run: |
+        echo "🔍 Verifying payment security architecture..."
+
+        # Initialize check counters
+        FAILED_CHECKS=0
+        TOTAL_CHECKS=0
+
+        # Check 1: Database schema safety
+        echo "🔍 Checking database schema for prohibited card data fields..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        if grep -r "card_number\|cvv\|cvc\|expir.*date" backend/src/schema.rs; then
+          echo "❌ FAIL: Found potential card data fields in database schema"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: No prohibited card data fields in database schema"
+        fi
+
+        # Check 2: Paddle reference fields
+        echo "🔍 Checking for required Paddle reference fields..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        if ! grep -q "paddle_transaction_id\|paddle_customer_id\|paddle_subscription_id" backend/src/schema.rs; then
+          echo "❌ FAIL: Paddle reference fields not found in schema"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: Paddle reference fields found in schema"
+        fi
+
+        # Check 3: Frontend hosted checkout
+        echo "🔍 Checking frontend uses Paddle hosted checkout..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        if ! grep -q "Paddle\.Checkout\.open" frontend/src/lib/components/payment/CheckoutOverlay.svelte; then
+          echo "❌ FAIL: Paddle hosted checkout not found in frontend"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: Frontend uses Paddle hosted checkout"
+        fi
+
+        # Check 4: Payment routes require authentication
+        echo "🔍 Checking payment routes require authentication..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        PAYMENT_ROUTES=$(grep -r "payment\|subscription\|credit" backend/src/routes/ | grep -E "post\|get\|put\|delete" | wc -l)
+        PROTECTED_ROUTES=$(grep -r "AuthSession\|require_auth" backend/src/routes/ | grep -E "payment\|subscription\|credit" | wc -l)
+        if [ "$PROTECTED_ROUTES" -eq 0 ] && [ "$PAYMENT_ROUTES" -gt 0 ]; then
+          echo "❌ FAIL: Payment routes found but authentication protection unclear"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: Payment routes appear to use authentication ($PROTECTED_ROUTES protected of $PAYMENT_ROUTES total)"
+        fi
+
+        # Check 5: Webhook signature validation
+        echo "🔍 Checking webhook signature validation..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        if ! grep -r -q "webhook.*signature\|signature.*webhook\|paddle.*verify" backend/src/routes/; then
+          echo "❌ FAIL: No webhook signature validation found"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: Webhook signature validation appears implemented"
+        fi
+
+        # Check 6: No payment data in URL parameters
+        echo "🔍 Checking for payment data in URL parameters..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        # Match actual Rust code patterns, not comments (Path<> or Query<>)
+        if grep -r "Path<.*payment\|Query<.*payment\|Path<.*amount\|Query<.*amount" backend/src/routes/ | grep -v "//"; then
+          echo "❌ FAIL: Found potential payment data in URL parameters"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: No obvious payment data in URL parameters"
+        fi
+
+        # Check 7: Environment variables for sensitive data
+        echo "🔍 Checking payment secrets use environment variables..."
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        if ! grep -q "paddle_api_key\|paddle_webhook_secret" backend/src/config.rs; then
+          echo "❌ FAIL: Paddle secrets not found in environment config"
+          FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        else
+          echo "✅ PASS: Paddle secrets configured via environment variables"
+        fi
+
+        # Summary
+        echo ""
+        echo "📊 Payment Security Architecture Summary:"
+        echo "   Checks passed: $((TOTAL_CHECKS - FAILED_CHECKS))/$TOTAL_CHECKS"
+        echo ""
+
+        if [ "$FAILED_CHECKS" -gt 0 ]; then
+          echo "❌ Payment security architecture checks failed ($FAILED_CHECKS failures)"
+          exit 1
+        else
+          echo "✅ Payment security architecture checks completed successfully"
+        fi
+
+    - name: Generate security scan summary
+      run: |
+        echo "## 🔍 Payment Security Architecture Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ✅ Basic Architecture Checks Completed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Automated Checks Performed:**" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ No obvious card data patterns detected in source code" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Database schema contains Paddle reference fields" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Database schema does not contain prohibited card data fields" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Frontend checkout implementation uses Paddle hosted pages" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**⚠️ Important Limitations:**" >> $GITHUB_STEP_SUMMARY
+        echo "- This scan only detects obvious patterns and architectural violations" >> $GITHUB_STEP_SUMMARY
+        echo "- Actual PCI DSS compliance requires comprehensive review and documentation" >> $GITHUB_STEP_SUMMARY
+        echo "- Runtime configuration and operational controls are not validated" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Manual Compliance Tasks Required:**" >> $GITHUB_STEP_SUMMARY
+        echo "- 📋 Complete annual SAQ-A self-assessment questionnaire" >> $GITHUB_STEP_SUMMARY
+        echo "- 🔍 Verify Paddle's current PCI DSS compliance certificate" >> $GITHUB_STEP_SUMMARY
+        echo "- 📄 Document service provider agreements with Paddle" >> $GITHUB_STEP_SUMMARY
+        echo "- 🔐 Review payment endpoint authentication and authorization" >> $GITHUB_STEP_SUMMARY
+        echo "- 🛡️ Validate webhook signature verification implementation" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Report generated:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # Optional: Add a job to check for security vulnerabilities
+  security-audit:
+    runs-on: ubuntu-latest
+    name: Security Audit
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust with clippy
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "security-audit"
+        cache-targets: "true"
+
+    - name: Run cargo audit
+      run: |
+        cargo install cargo-audit
+        cargo audit --ignore RUSTSEC-0000-0000 # Add specific ignores if needed
+
+    - name: Run cargo clippy for security lints
+      run: |
+        cargo clippy -- -W clippy::suspicious -W clippy::complexity -W clippy::perf

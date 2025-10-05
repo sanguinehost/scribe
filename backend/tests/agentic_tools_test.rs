@@ -191,7 +191,7 @@ async fn test_workflow_simulation() {
 
     // Step 3: Extract information
     if is_significant {
-        let events_response = json!({
+        let _events_response = json!({
             "events": [
                 {
                     "event_type": "EXPLORATION",
@@ -203,7 +203,7 @@ async fn test_workflow_simulation() {
             ]
         });
 
-        let concepts_response = json!({
+        let _concepts_response = json!({
             "concepts": [
                 {
                     "name": "Ancient Temple",

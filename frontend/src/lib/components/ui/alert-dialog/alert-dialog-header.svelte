@@ -1,7 +1,8 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	let {
 		ref = $bindable(null),
@@ -13,7 +14,7 @@
 
 <div
 	bind:this={ref}
-	class={cn('flex flex-col space-y-2 text-center sm:text-left', className)}
+	class={_cn('flex flex-col space-y-2 text-center sm:text-left', className)}
 	{...restProps}
 >
 	{@render children?.()}

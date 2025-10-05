@@ -5,7 +5,7 @@ CREATE TABLE character_lorebooks (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     -- Primary key on the combination to ensure uniqueness
     PRIMARY KEY (character_id, lorebook_id)
 );

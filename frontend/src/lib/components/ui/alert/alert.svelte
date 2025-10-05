@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import { type VariantProps, tv } from 'tailwind-variants';
 
 	const alertVariants = tv({
@@ -25,6 +25,6 @@
 	export { className as class };
 </script>
 
-<div role="alert" class={cn(alertVariants({ variant }), className)} {...$$restProps}>
+<div role="alert" class={_cn(alertVariants({ variant }), className)} {...$$restProps}>
 	<slot />
 </div>

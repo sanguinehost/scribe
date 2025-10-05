@@ -1,15 +1,10 @@
 // Test to reproduce and fix the SillyTavern lorebook import issue
 
-use axum_login::AuthSession;
 use scribe_backend::{
-    auth::session_dek::SessionDek,
     models::lorebook_dtos::SillyTavernImportPayload,
-    services::{EncryptionService, LorebookService},
     test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
 };
-use secrecy::SecretBox;
 use serde_json::json;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_sillytavern_lorebook_import_deserialization() {

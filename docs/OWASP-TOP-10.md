@@ -3,6 +3,7 @@
 The OWASP Top 10 is a standard awareness document representing a broad consensus about the most critical security risks to web applications.
 
 ## Table of Contents
+
 1. [A01:2021 - Broken Access Control](#a01-broken-access-control)
 2. [A02:2021 - Cryptographic Failures](#a02-cryptographic-failures)
 3. [A03:2021 - Injection](#a03-injection)

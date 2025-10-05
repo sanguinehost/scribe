@@ -2,7 +2,6 @@
 //! This is a basic compilation test to verify the new chronicle_id filtering is integrated
 
 use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
-use uuid::Uuid;
 
 #[tokio::test]
 async fn test_context_enrichment_compiles_with_chronicle_id() {

@@ -1,5 +1,4 @@
-use scribe_backend::services::character_generation::{field_generator::FieldGenerator, types::*};
-use std::sync::Arc;
+use scribe_backend::services::character_generation::types::*;
 use uuid::Uuid;
 
 // Mock implementations would go here for isolated unit testing
@@ -11,7 +10,7 @@ async fn test_lorebook_query_text_building() {
     // Test the query building logic for different field types
 
     // Description field should include appearance/personality keywords
-    let request = FieldGenerationRequest {
+    let _request = FieldGenerationRequest {
         field: CharacterField::Description,
         style: Some(DescriptionStyle::Narrative),
         user_prompt: "A mysterious wizard".to_string(),

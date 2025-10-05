@@ -1,7 +1,6 @@
 // backend/src/auth/user_store.rs
 use async_trait::async_trait;
 use axum_login::{AuthnBackend, UserId};
-use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::sync::Arc; // Keep Arc
@@ -13,6 +12,7 @@ use uuid::Uuid;
 use crate::auth::AuthError;
 use crate::models::auth::LoginPayload; // Import LoginPayload
 use crate::models::users::{AccountStatus, NewUser, SerializableSecretDek, User, UserDbQuery}; // Removed unused SerializableSecretDek, UserCredentials // Added SerializableSecretDek
+use crate::privacy::logging::loggable_user_id;
 // Remove UserCredentials import if no longer needed elsewhere in this file
 use crate::state::DbPool; // Assuming you use a DbPool
 use diesel::RunQueryDsl;
@@ -132,7 +132,7 @@ impl AuthnBackend for Backend {
         let id: uuid::Uuid = *user_id;
 
         // Added detailed logging for test_get_unauthorized debugging
-        tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {:?}", user_id);
+        tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {}", loggable_user_id(*user_id));
         tracing::warn!(target: "auth_debug", "AuthBackend::get_user (UUID): {}", id);
 
         info!(user_id = %id, "AuthBackend: Getting user via crate::auth::get_user...");

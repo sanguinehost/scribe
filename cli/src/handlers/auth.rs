@@ -73,6 +73,9 @@ pub async fn handle_registration_action<H: IoHandler, C: HttpClient>(
                 "1" => {
                     io_handler
                         .write_line("\n⚠️  RECOVERY KEY - DO NOT SHARE THIS WITH ANYONE ⚠️")?;
+                    // LGTM[rust/cleartext-logging]: Recovery key display is intentional and user-requested.
+                    // User explicitly chose to view it with option 1, and warnings are shown before/after.
+                    // This is CLI user interface output, not server logging.
                     io_handler.write_line(&format!("\n{recovery_key}"))?;
                     io_handler
                         .write_line("\n⚠️  Make sure to save this key in a secure location ⚠️")?;

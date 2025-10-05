@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Lorebook } from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Plus, Upload } from 'lucide-svelte';
 	import LorebookCard from './LorebookCard.svelte';
 	import { slideAndFade } from '$lib/utils/transitions';
@@ -10,10 +10,10 @@
 		isLoading?: boolean;
 		onCreateNew?: () => void;
 		onUpload?: () => void;
-		onSelectLorebook?: (lorebook: Lorebook) => void;
-		onEditLorebook?: (lorebook: Lorebook) => void;
-		onDeleteLorebook?: (lorebook: Lorebook) => void;
-		onExportLorebook?: (lorebook: Lorebook) => void;
+		onSelectLorebook?: (_lorebook: Lorebook) => void;
+		onEditLorebook?: (_lorebook: Lorebook) => void;
+		onDeleteLorebook?: (_lorebook: Lorebook) => void;
+		onExportLorebook?: (_lorebook: Lorebook) => void;
 	}
 
 	let {
@@ -34,16 +34,16 @@
 		<h2 class="text-2xl font-bold">Lorebooks</h2>
 		<div class="flex gap-2">
 			{#if onUpload}
-				<Button variant="outline" onclick={onUpload}>
+				<ButtonComponent variant="outline" onclick={onUpload}>
 					<Upload class="mr-2 h-4 w-4" />
 					Upload
-				</Button>
+				</ButtonComponent>
 			{/if}
 			{#if onCreateNew}
-				<Button onclick={onCreateNew}>
+				<ButtonComponent onclick={onCreateNew}>
 					<Plus class="mr-2 h-4 w-4" />
 					Create New
-				</Button>
+				</ButtonComponent>
 			{/if}
 		</div>
 	</div>
@@ -82,10 +82,10 @@
 				Create your first lorebook to start building your world's knowledge base.
 			</p>
 			{#if onCreateNew}
-				<Button onclick={onCreateNew}>
+				<ButtonComponent onclick={onCreateNew}>
 					<Plus class="mr-2 h-4 w-4" />
 					Create Your First Lorebook
-				</Button>
+				</ButtonComponent>
 			{/if}
 		</div>
 	{:else}

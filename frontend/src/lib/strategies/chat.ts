@@ -1,7 +1,7 @@
 // frontend/src/lib/strategies/chat.ts
 // Strategy pattern for handling different chat modes
 
-import type { ChatMode, ScribeChatSession, CharacterDataForClient } from '../types';
+import type { ChatMode as _ChatMode, ScribeChatSession, CharacterDataForClient } from '../types';
 
 /**
  * Interface for chat mode strategies
@@ -25,20 +25,20 @@ export interface ChatModeStrategy {
 	 */
 	shouldShowChatInterface(
 		session: ScribeChatSession | null,
-		character: CharacterDataForClient | null
+		_character: CharacterDataForClient | null
 	): boolean;
 
 	/**
 	 * Get the title for a new chat session
 	 * @param character - Character data (may be null for non-character modes)
 	 */
-	generateChatTitle(character: CharacterDataForClient | null): string;
+	generateChatTitle(_character: CharacterDataForClient | null): string;
 
 	/**
 	 * Get the placeholder text for the message input
 	 * @param character - Current character (may be null for non-character modes)
 	 */
-	getMessageInputPlaceholder(character: CharacterDataForClient | null): string;
+	getMessageInputPlaceholder(_character: CharacterDataForClient | null): string;
 
 	/**
 	 * Determine if character selection is required for this mode
@@ -51,8 +51,8 @@ export interface ChatModeStrategy {
 	 * @param character - Current character (may be null for non-character modes)
 	 */
 	getSuggestedActions(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): string[];
 
 	/**
@@ -71,15 +71,15 @@ export interface ChatModeStrategy {
 	 * @param character - Current character (may be null for non-character modes)
 	 */
 	canOperateWithContext(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): boolean;
 }
 
 /**
  * Factory function to create the appropriate strategy for a chat mode
  */
-export function createChatModeStrategy(mode: ChatMode): ChatModeStrategy {
+export function createChatModeStrategy(mode: _ChatMode): ChatModeStrategy {
 	switch (mode) {
 		case 'Character':
 			return new CharacterModeStrategy();
@@ -108,15 +108,15 @@ export class CharacterModeStrategy implements ChatModeStrategy {
 
 	shouldShowChatInterface(
 		session: ScribeChatSession | null,
-		character: CharacterDataForClient | null
+		_character: CharacterDataForClient | null
 	): boolean {
 		// Character mode requires both a session and a character
-		return session !== null && character !== null;
+		return session !== null && _character !== null;
 	}
 
-	generateChatTitle(character: CharacterDataForClient | null): string {
-		if (character) {
-			return `Chat with ${character.name}`;
+	generateChatTitle(_character: CharacterDataForClient | null): string {
+		if (_character) {
+			return `Chat with ${_character.name}`;
 		}
 		return 'Character Chat';
 	}
@@ -133,16 +133,16 @@ export class CharacterModeStrategy implements ChatModeStrategy {
 	}
 
 	getSuggestedActions(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): string[] {
 		const actions = ['Continue the conversation'];
 
-		if (character?.scenario) {
+		if (_character?.scenario) {
 			actions.push('Ask about the scenario');
 		}
 
-		if (character?.personality) {
+		if (_character?.personality) {
 			actions.push('Learn more about their personality');
 		}
 
@@ -160,13 +160,13 @@ export class CharacterModeStrategy implements ChatModeStrategy {
 	}
 
 	canOperateWithContext(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): boolean {
 		return (
-			session.chat_mode === 'Character' &&
-			character !== null &&
-			session.character_id === character.id
+			_session.chat_mode === 'Character' &&
+			_character !== null &&
+			_session.character_id === _character.id
 		);
 	}
 }
@@ -185,17 +185,17 @@ export class ScribeAssistantModeStrategy implements ChatModeStrategy {
 
 	shouldShowChatInterface(
 		session: ScribeChatSession | null,
-		character: CharacterDataForClient | null
+		_character: CharacterDataForClient | null
 	): boolean {
 		// Scribe Assistant mode only requires a session, no character needed
 		return session !== null && session.chat_mode === 'ScribeAssistant';
 	}
 
-	generateChatTitle(character: CharacterDataForClient | null): string {
+	generateChatTitle(_character: CharacterDataForClient | null): string {
 		return 'Scribe Assistant Session';
 	}
 
-	getMessageInputPlaceholder(character: CharacterDataForClient | null): string {
+	getMessageInputPlaceholder(_character: CharacterDataForClient | null): string {
 		return 'Ask me to help with character creation, worldbuilding, or writing...';
 	}
 
@@ -204,8 +204,8 @@ export class ScribeAssistantModeStrategy implements ChatModeStrategy {
 	}
 
 	getSuggestedActions(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): string[] {
 		return [
 			'Help me create a new character from scratch',
@@ -231,10 +231,10 @@ export class ScribeAssistantModeStrategy implements ChatModeStrategy {
 	}
 
 	canOperateWithContext(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): boolean {
-		return session.chat_mode === 'ScribeAssistant';
+		return _session.chat_mode === 'ScribeAssistant';
 	}
 }
 
@@ -252,17 +252,17 @@ export class RpgModeStrategy implements ChatModeStrategy {
 
 	shouldShowChatInterface(
 		session: ScribeChatSession | null,
-		character: CharacterDataForClient | null
+		_character: CharacterDataForClient | null
 	): boolean {
 		// RPG mode only requires a session, no character needed
 		return session !== null && session.chat_mode === 'Rpg';
 	}
 
-	generateChatTitle(character: CharacterDataForClient | null): string {
+	generateChatTitle(_character: CharacterDataForClient | null): string {
 		return 'RPG Session';
 	}
 
-	getMessageInputPlaceholder(character: CharacterDataForClient | null): string {
+	getMessageInputPlaceholder(_character: CharacterDataForClient | null): string {
 		return 'Describe your action or ask the GM a question...';
 	}
 
@@ -271,8 +271,8 @@ export class RpgModeStrategy implements ChatModeStrategy {
 	}
 
 	getSuggestedActions(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): string[] {
 		return [
 			'Start a new adventure',
@@ -295,9 +295,9 @@ export class RpgModeStrategy implements ChatModeStrategy {
 	}
 
 	canOperateWithContext(
-		session: ScribeChatSession,
-		character: CharacterDataForClient | null
+		_session: ScribeChatSession,
+		_character: CharacterDataForClient | null
 	): boolean {
-		return session.chat_mode === 'Rpg';
+		return _session.chat_mode === 'Rpg';
 	}
 }

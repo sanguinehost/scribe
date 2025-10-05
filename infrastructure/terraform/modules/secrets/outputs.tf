@@ -11,7 +11,7 @@ output "app_secret_arn" {
 
 output "backend_secrets_list" {
   description = "List of secrets for ECS backend container"
-  value = [
+  value = concat([
     {
       name      = "DATABASE_URL"
       valueFrom = "${aws_secretsmanager_secret.database_credentials.arn}:url::"
@@ -48,5 +48,39 @@ output "backend_secrets_list" {
       name      = "TLS_KEY_PEM"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:tls_key_pem::"
     }
-  ]
+  ], var.enable_payments ? [
+    # Payment secrets (only included if payments are enabled)
+    {
+      name      = "PAYMENT_PADDLE_API_KEY"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_api_key::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_WEBHOOK_SECRET"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_webhook_secret::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_SANDBOX_MODE"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_sandbox_mode::"
+    },
+    {
+      name      = "PAYMENT_PAYMENT_BASE_URL"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:payment_base_url::"
+    },
+    {
+      name      = "PAYMENT_FREE_TIER_TOKEN_LIMIT"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:free_tier_token_limit::"
+    },
+    {
+      name      = "PAYMENT_ENFORCE_LIMITS"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:enforce_payment_limits::"
+    },
+    {
+      name      = "PAYMENT_GRACE_PERIOD_DAYS"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:payment_grace_period_days::"
+    },
+    {
+      name      = "CREDITS_ENABLED"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CREDITS_ENABLED::"
+    }
+  ] : [])
 }

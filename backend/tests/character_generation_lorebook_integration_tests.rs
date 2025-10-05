@@ -13,7 +13,7 @@ async fn test_character_generation_with_lorebook_context() {
     let test_app = test_helpers::spawn_app(true, true, false).await; // Use real AI, mock vector DB
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "loreuser@example.com".to_string(),
         "password123".to_string(),
@@ -238,11 +238,12 @@ async fn test_character_generation_with_lorebook_context() {
 
 #[tokio::test]
 #[ignore] // Use real AI for this test
+#[allow(deprecated)] // Test uses deprecated chunk_text field for backward compatibility testing
 async fn test_alternate_greeting_generation_with_lorebook() {
     let test_app = test_helpers::spawn_app(true, true, false).await;
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "greetinguser@example.com".to_string(),
         "password123".to_string(),
@@ -338,9 +339,34 @@ async fn test_alternate_greeting_generation_with_lorebook() {
     tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
 
     // Set up mock response for retrieve_relevant_chunks (called during character generation)
+    // Return mock lorebook chunks with the content we just created
+    use scribe_backend::services::embeddings::metadata::LorebookChunkMetadata;
+    use scribe_backend::services::embeddings::{RetrievedChunk, RetrievedMetadata};
+    use uuid::Uuid;
+
+    let mock_lorebook_chunk = RetrievedChunk {
+        score: 0.95,
+        text: "The Grand Library of Mystic Academy contains thousands of ancient tomes and scrolls. Students often meet here for study sessions, but it's also where forbidden knowledge is hidden in the restricted section. The library is overseen by the stern but caring Librarian Thorne.".to_string(),
+        metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
+            original_lorebook_entry_id: Uuid::new_v4(),
+            lorebook_id: Uuid::parse_str(lorebook_id).unwrap(),
+            user_id: Uuid::new_v4(),
+            chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
+            entry_title: Some("Mystic Academy Library".to_string()),
+            keywords: Some(vec!["library".to_string(), "academy".to_string(), "study".to_string()]),
+            is_enabled: true,
+            is_constant: false,
+            source_type: "lorebook_entry".to_string(),
+            encrypted_chunk_text: Some(vec![1, 2, 3]), // Mock encrypted data
+            chunk_text_nonce: Some(vec![4, 5, 6]),     // Mock nonce
+            encrypted_title: None,
+            title_nonce: None,
+        }),
+    };
+
     test_app
         .mock_embedding_pipeline_service
-        .add_retrieve_response(Ok(vec![]));
+        .add_retrieve_response(Ok(vec![mock_lorebook_chunk]));
 
     // Test alternate greeting generation with lorebook context
     let generate_request = Request::builder()
@@ -417,7 +443,7 @@ async fn test_character_generation_without_lorebook() {
     let test_app = test_helpers::spawn_app(false, true, false).await; // Mock AI for faster testing
 
     // Create test user and login
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "nolorebook@example.com".to_string(),
         "password123".to_string(),
@@ -511,7 +537,7 @@ async fn test_character_generation_without_lorebook() {
 async fn test_character_generation_with_invalid_lorebook_id() {
     let test_app = test_helpers::spawn_app(false, true, false).await;
 
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "invalidlore@example.com".to_string(),
         "password123".to_string(),
@@ -616,7 +642,7 @@ async fn test_character_generation_with_invalid_lorebook_id() {
 async fn test_request_validation_with_lorebook_integration() {
     let test_app = test_helpers::spawn_app(false, true, false).await;
 
-    let user = test_helpers::db::create_test_user(
+    let _user = test_helpers::db::create_test_user(
         &test_app.db_pool,
         "validation@example.com".to_string(),
         "password123".to_string(),

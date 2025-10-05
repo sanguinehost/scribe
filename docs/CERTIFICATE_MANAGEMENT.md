@@ -60,7 +60,7 @@ cargo run --bin scribe-backend
 docker build -t scribe-backend:latest backend/
 
 # Start all containers
-cd infrastructure/containers/compose  
+cd infrastructure/containers/compose
 podman-compose -f podman-compose.yml -f podman-compose.container.yml up
 ```
 
@@ -169,7 +169,7 @@ match environment {
    # Old .env
    DATABASE_URL=postgres://...
    QDRANT_URL=https://localhost:6334
-   
+
    # New configs/local/.env
    ENVIRONMENT=local
    DATABASE_URL=postgresql://...
@@ -180,7 +180,7 @@ match environment {
    ```bash
    # Old command
    podman-compose -f podman-compose.yml -f podman-compose.dev.yml up
-   
+
    # New commands
    podman-compose -f podman-compose.yml -f podman-compose.local.yml up postgres qdrant  # For local backend
    podman-compose -f podman-compose.yml -f podman-compose.container.yml up              # For containerized
@@ -190,7 +190,7 @@ match environment {
    ```bash
    # Replace manual certificate generation
    ./scripts/dev_certs.sh generate
-   
+
    # With environment-aware initialization
    ./scripts/init-certs.sh local init
    ```
@@ -287,7 +287,7 @@ ls -la .certs/
 - Never commit certificates to version control
 - Rotate development certificates regularly
 
-### Production Environments  
+### Production Environments
 - Use valid CA-signed certificates only
 - Implement automated certificate rotation
 - Monitor certificate expiration
@@ -317,7 +317,7 @@ The combination ensures end-to-end security while maintaining operational flexib
 # Initialize certificates for environment
 ./scripts/init-certs.sh <environment> init
 
-# Check certificate status  
+# Check certificate status
 ./scripts/init-certs.sh <environment> check
 
 # Clean certificates
@@ -341,7 +341,7 @@ terraform apply -var-file="staging.tfvars"
 ```
 
 ### Troubleshooting
-```bash  
+```bash
 # Check certificate validity
 openssl x509 -in .certs/cert.pem -text -noout
 

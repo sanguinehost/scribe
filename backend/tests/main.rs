@@ -94,4 +94,9 @@ pub mod character_upload_tests;
 // Service level or other specific tests
 pub mod user_persona_service_tests;
 
+// Payment system tests (only with payment feature)
+pub mod payment_integration_tests;
+pub mod payment_webhook_tests;
+pub mod subscription_lifecycle_tests;
+
 // Test helper modules (removed - using inline helpers instead)

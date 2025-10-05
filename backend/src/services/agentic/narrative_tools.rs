@@ -301,7 +301,7 @@ CONVERSATION:
 
 Consider significant:
 - Character deaths, injuries, or major changes
-- Discovery of new locations, items, or lore  
+- Discovery of new locations, items, or lore
 - Combat or conflict with consequences
 - Major plot developments or revelations
 - Changes to relationships or world state
@@ -344,7 +344,7 @@ impl AnalyzeTextSignificanceTool {
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRole,
-            HarmBlockThreshold, HarmCategory, MessageContent, SafetySetting,
+            MessageContent,
         };
 
         let user_message = GenAiChatMessage {
@@ -590,7 +590,7 @@ impl SearchKnowledgeBaseTool {
         let associations_data = conn
             .interact(move |conn| {
                 // 1. Get chat session and character ID
-                let (session_found, character_id): (Uuid, Option<Uuid>) = chat_sessions::table
+                let (_session_found, character_id): (Uuid, Option<Uuid>) = chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
                     .filter(chat_sessions::user_id.eq(user_id))
                     .select((chat_sessions::id, chat_sessions::character_id))
@@ -802,6 +802,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         })
     }
 
+    #[allow(deprecated)]
     async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
         debug!(
             "Executing search_knowledge_base tool with params: {}",
@@ -1295,25 +1296,16 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt lorebook content: {}", e);
-                                    // Fall back to plaintext field if available
-                                    if lorebook_meta.chunk_text != "[encrypted]" {
-                                        lorebook_meta.chunk_text.clone()
-                                    } else {
-                                        "[decryption failed]".to_string()
-                                    }
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK available, return placeholder or plaintext
-                            if lorebook_meta.chunk_text != "[encrypted]" {
-                                lorebook_meta.chunk_text.clone()
-                            } else {
-                                "[encrypted - no DEK available]".to_string()
-                            }
+                            // No DEK available
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode
-                        lorebook_meta.chunk_text.clone()
+                        // No encrypted content available
+                        "[no encrypted content]".to_string()
                     };
 
                     let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
@@ -1407,25 +1399,16 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt chat message: {}", e);
-                                    // Fall back to plaintext field if available
-                                    if chat_meta.text != "[encrypted]" {
-                                        chat_meta.text.clone()
-                                    } else {
-                                        "[decryption failed]".to_string()
-                                    }
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK available, return placeholder or plaintext
-                            if chat_meta.text != "[encrypted]" {
-                                chat_meta.text.clone()
-                            } else {
-                                "[encrypted - no DEK available]".to_string()
-                            }
+                            // No DEK available
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode
-                        chat_meta.text.clone()
+                        // No encrypted content available
+                        "[no encrypted content]".to_string()
                     };
 
                     results.push(json!({
@@ -1484,37 +1467,22 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 }
                                 Err(e) => {
                                     warn!("Failed to decrypt chronicle event content: {}", e);
-                                    // Fall back to plaintext chunk_text if available
-                                    payload_map
-                                        .get("chunk_text")
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|| "[decryption failed]".to_string())
+                                    "[decryption failed]".to_string()
                                 }
                             }
                         } else {
-                            // No DEK or invalid encrypted data, try plaintext
-                            payload_map
-                                .get("chunk_text")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| "[encrypted - no DEK available]".to_string())
+                            // No DEK or invalid encrypted data
+                            "[encrypted - no DEK available]".to_string()
                         }
                     } else {
-                        // Legacy plaintext mode - get chunk_text directly
-                        payload_map
-                            .get("chunk_text")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| {
-                                // Fallback formatting if no chunk_text
-                                format!(
-                                    "Event type: {}, Chronicle: {}, Created: {}",
-                                    chronicle_meta.event_type,
-                                    chronicle_meta.chronicle_id,
-                                    chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")
-                                )
-                            })
+                        // No encrypted content available
+                        // Fallback formatting
+                        format!(
+                            "Event type: {}, Chronicle: {}, Created: {}",
+                            chronicle_meta.event_type,
+                            chronicle_meta.chronicle_id,
+                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")
+                        )
                     };
 
                     let result = json!({
@@ -1567,15 +1535,15 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
 /// Tool for updating existing lorebook entries
 pub struct UpdateLorebookEntryTool {
-    lorebook_service: Arc<LorebookService>,
-    app_state: Arc<AppState>,
+    _lorebook_service: Arc<LorebookService>,
+    _app_state: Arc<AppState>,
 }
 
 impl UpdateLorebookEntryTool {
     pub fn new(lorebook_service: Arc<LorebookService>, app_state: Arc<AppState>) -> Self {
         Self {
-            lorebook_service,
-            app_state,
+            _lorebook_service: lorebook_service,
+            _app_state: app_state,
         }
     }
 }

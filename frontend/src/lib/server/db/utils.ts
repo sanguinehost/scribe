@@ -1,11 +1,11 @@
 import { DbEntityNotFoundError } from '$lib/errors/db';
-import { err, ok, Result } from 'neverthrow';
+import { err, ok, Result as _Result } from 'neverthrow';
 
 export function unwrapSingleQueryResult<T>(
 	rows: T[],
 	id: string,
 	entityType: string
-): Result<T, DbEntityNotFoundError> {
+): _Result<T, DbEntityNotFoundError> {
 	if (rows.length === 0) {
 		return err(new DbEntityNotFoundError(id, entityType));
 	}

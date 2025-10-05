@@ -1,4 +1,5 @@
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import { cn } from '$lib/utils/shadcn.js';
 	import type { WithElementRef } from 'bits-ui';
 	import type { Snippet } from 'svelte';

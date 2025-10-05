@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { apiClient } from '$lib/api';
+	import { goto as _goto } from '$app/navigation';
+	import { apiClient as _apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
 	import type {
 		Character,
@@ -13,9 +13,9 @@
 	import { toast } from 'svelte-sonner';
 	import DOMPurify from 'dompurify';
 	// Removed transitions - handled at container level in messages.svelte
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
 	import { Card, CardHeader, CardContent } from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -84,7 +84,7 @@
 	let descriptionFullScreen = $state(false);
 	let scenarioFullScreen = $state(false);
 	let personalityFullScreen = $state(false);
-	
+
 	// Image lightbox state
 	let avatarLightboxOpen = $state(false);
 
@@ -199,7 +199,7 @@
 		try {
 			const currentUser = getCurrentUser();
 			if (currentUser?.default_persona_id) {
-				const personaResult = await apiClient.getUserPersona(currentUser.default_persona_id);
+				const personaResult = await _apiClient.getUserPersona(currentUser.default_persona_id);
 				if (personaResult.isOk()) {
 					currentUserPersona = personaResult.value;
 				} else {
@@ -213,8 +213,8 @@
 				// Create a fallback persona with username
 				currentUserPersona = { name: currentUser.username } as UserPersona;
 			}
-		} catch (error) {
-			console.warn('Error loading user persona:', error);
+		} catch (_error) {
+			console.warn('Error loading user persona:', _error);
 			// currentUserPersona remains null, so userPersonaName will be 'User'
 		}
 	}
@@ -229,7 +229,7 @@
 		await loadUserPersona();
 
 		// Load character details
-		const characterResult = await apiClient.getCharacter(characterId);
+		const characterResult = await _apiClient.getCharacter(characterId);
 		if (characterResult.isOk()) {
 			character = characterResult.value;
 			// Character loaded successfully
@@ -241,7 +241,7 @@
 		isLoadingCharacter = false;
 
 		// Load chats for this character
-		const chatsResult = await apiClient.getChatsByCharacter(characterId);
+		const chatsResult = await _apiClient.getChatsByCharacter(characterId);
 		if (chatsResult.isOk()) {
 			allChats = chatsResult.value;
 			// Show only first 5 chats initially
@@ -271,7 +271,7 @@
 		isSaving = true;
 
 		try {
-			const updateData: any = {};
+			const updateData: Record<string, string> = {};
 			const trimmedValue = editValue.trim();
 			let currentValue: string | null = null;
 
@@ -305,7 +305,7 @@
 
 			// Only make API call if there are changes
 			if (Object.keys(updateData).length > 0) {
-				const result = await apiClient.updateCharacter(character.id, updateData);
+				const result = await _apiClient.updateCharacter(character.id, updateData);
 				if (result.isOk()) {
 					// Update local character data
 					switch (editingField) {
@@ -334,9 +334,9 @@
 				editingField = null;
 				editValue = '';
 			}
-		} catch (error) {
+		} catch (_error) {
 			toast.error('Error updating character');
-			console.error('Error updating character:', error);
+			console.error('Error updating character:', _error);
 		} finally {
 			isSaving = false;
 		}
@@ -346,7 +346,7 @@
 		if (!character) return;
 
 		try {
-			const createChatResult = await apiClient.createChat({
+			const createChatResult = await _apiClient.createChat({
 				chat_mode: 'Character', // Character mode for character-based chats
 				character_id: characterId,
 				title: `Chat with ${character.name}`,
@@ -360,20 +360,20 @@
 				if (onStartChat) {
 					onStartChat(chat.id);
 				}
-				await goto(`/chat/${chat.id}`, { invalidateAll: true });
+				await _goto(`/chat/${chat.id}`, { invalidateAll: true });
 			} else {
 				toast.error('Failed to start chat', {
 					description: createChatResult.error.message
 				});
 			}
-		} catch (error) {
-			console.error('Error starting chat:', error);
+		} catch (_error) {
+			console.error('Error starting chat:', _error);
 			toast.error('An unexpected error occurred');
 		}
 	}
 
 	function handleSelectChat(chatId: string) {
-		goto(`/chat/${chatId}`);
+		_goto(`/chat/${chatId}`);
 	}
 
 	async function handleDeleteClick(e: MouseEvent, chat: ScribeChatSession) {
@@ -393,7 +393,7 @@
 			deleteDialogOpen = true;
 
 			try {
-				const result = await apiClient.getChatDeletionAnalysis(chat.id);
+				const result = await _apiClient.getChatDeletionAnalysis(chat.id);
 				if (result.isOk()) {
 					deletionAnalysis = result.value;
 					if (deletionAnalysis.has_chronicle && deletionAnalysis.chronicle?.can_delete_chronicle) {
@@ -405,8 +405,8 @@
 					// If analysis fails, fall back to simple deletion
 					deletionAnalysis = { has_chronicle: false };
 				}
-			} catch (error) {
-				console.error('Error fetching deletion analysis:', error);
+			} catch (_error) {
+				console.error('Error fetching deletion analysis:', _error);
 				deletionAnalysis = { has_chronicle: false };
 			} finally {
 				analysisLoading = false;
@@ -420,7 +420,7 @@
 		isDeletingChat = true;
 		try {
 			const action = deletionAnalysis?.has_chronicle ? selectedAction : undefined;
-			const result = await apiClient.deleteChatById(chatToDelete.id, action);
+			const result = await _apiClient.deleteChatById(chatToDelete.id, action);
 			if (result.isOk()) {
 				// Remove the chat from both lists
 				chats = chats.filter((c) => c.id !== chatToDelete!.id);
@@ -447,8 +447,8 @@
 					description: result.error.message
 				});
 			}
-		} catch (error) {
-			console.error('Error deleting chat:', error);
+		} catch (_error) {
+			console.error('Error deleting chat:', _error);
 			toast.error('An unexpected error occurred');
 		} finally {
 			isDeletingChat = false;
@@ -536,8 +536,10 @@
 				<CardHeader class="py-4">
 					<div class="flex items-center gap-4">
 						<!-- Compact Avatar -->
-						<Avatar 
-							class="h-16 w-16 border-2 border-muted transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''}" 
+						<Avatar
+							class="h-16 w-16 border-2 border-muted transition-transform hover:scale-105 {characterAvatarSrc
+								? 'cursor-pointer'
+								: ''}"
 							onclick={() => characterAvatarSrc && (avatarLightboxOpen = true)}
 						>
 							{#if characterAvatarSrc}
@@ -553,7 +555,7 @@
 							{#if editingField !== 'name'}
 								<div class="group relative">
 									<h1 class="truncate text-2xl font-bold">{character.name}</h1>
-									<Button
+									<ButtonComponent
 										variant="ghost"
 										size="sm"
 										class="absolute -right-2 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
@@ -561,7 +563,7 @@
 										aria-label="Edit character name"
 									>
 										<PencilEdit class="h-3 w-3" />
-									</Button>
+									</ButtonComponent>
 								</div>
 							{:else}
 								<div class="space-y-2">
@@ -576,7 +578,12 @@
 										}}
 									/>
 									<div class="flex gap-2">
-										<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+										<ButtonComponent
+											onclick={handleSaveField}
+											disabled={isSaving}
+											size="sm"
+											class="gap-2"
+										>
 											{#if isSaving}
 												<div
 													class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
@@ -586,8 +593,10 @@
 												<CheckCircleFill class="h-3 w-3" />
 												Save
 											{/if}
-										</Button>
-										<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+										</ButtonComponent>
+										<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm"
+											>Cancel</ButtonComponent
+										>
 									</div>
 								</div>
 							{/if}
@@ -598,12 +607,12 @@
 
 						<!-- Primary Actions -->
 						<div class="flex flex-shrink-0 gap-2">
-							<Button onclick={handleStartNewChat} size="default" class="gap-2">
+							<ButtonComponent onclick={handleStartNewChat} size="default" class="gap-2">
 								<PlusIcon class="h-4 w-4" />
 								New Chat
-							</Button>
+							</ButtonComponent>
 							{#if getMostRecentChat()}
-								<Button
+								<ButtonComponent
 									variant="outline"
 									size="default"
 									class="gap-2"
@@ -611,13 +620,13 @@
 								>
 									<MessageIcon class="h-4 w-4" />
 									Continue
-								</Button>
+								</ButtonComponent>
 							{/if}
-							<Button
+							<ButtonComponent
 								variant="outline"
 								size="default"
 								class="gap-2"
-								onclick={() => goto('/chronicles?character=' + characterId)}
+								onclick={() => _goto('/chronicles?character=' + characterId)}
 								title="View character's chronicles"
 							>
 								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -629,8 +638,8 @@
 									/>
 								</svg>
 								Chronicles
-							</Button>
-							<Button
+							</ButtonComponent>
+							<ButtonComponent
 								variant="outline"
 								size="default"
 								class="gap-1"
@@ -640,7 +649,7 @@
 							>
 								<SettingsIcon class="h-4 w-4" />
 								Edit
-							</Button>
+							</ButtonComponent>
 						</div>
 					</div>
 				</CardHeader>
@@ -693,7 +702,7 @@
 														{formatDate(chat.created_at)}
 													</p>
 												</div>
-												<Button
+												<ButtonComponent
 													variant="ghost"
 													size="sm"
 													class="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
@@ -701,7 +710,7 @@
 													aria-label="Delete chat"
 												>
 													<TrashIcon class="h-3 w-3 text-destructive" />
-												</Button>
+												</ButtonComponent>
 											</div>
 										</div>
 									{/each}
@@ -718,7 +727,7 @@
 									<h3 class="text-lg font-semibold">Scenario</h3>
 									<div class="flex items-center gap-2">
 										{#if character.scenario && editingField !== 'scenario'}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												class="h-6 w-6 p-0"
@@ -733,9 +742,9 @@
 														d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
 													/>
 												</svg>
-											</Button>
+											</ButtonComponent>
 										{/if}
-										<Button
+										<ButtonComponent
 											variant="ghost"
 											size="sm"
 											class="h-6 w-6 p-0"
@@ -743,7 +752,7 @@
 											aria-label="Edit scenario"
 										>
 											<PencilEdit class="h-3 w-3" />
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
 							</CardHeader>
@@ -751,7 +760,7 @@
 								{#if editingField === 'scenario'}
 									<div class="space-y-3">
 										<div class="flex gap-2">
-											<Textarea
+											<TextareaComponent
 												bind:value={editValue}
 												placeholder="Character scenario"
 												rows={calculateTextareaRows(character.scenario, 4)}
@@ -762,17 +771,22 @@
 												}}
 												class="flex-1"
 											/>
-											<Button
+											<ButtonComponent
 												variant="outline"
 												size="sm"
 												onclick={() => openPopoutEditor('scenario', 'Scenario', editValue)}
 												class="mt-1 self-start"
 											>
 												Expand
-											</Button>
+											</ButtonComponent>
 										</div>
 										<div class="flex gap-2">
-											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+											<ButtonComponent
+												onclick={handleSaveField}
+												disabled={isSaving}
+												size="sm"
+												class="gap-2"
+											>
 												{#if isSaving}
 													<div
 														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
@@ -782,8 +796,10 @@
 													<CheckCircleFill class="h-3 w-3" />
 													Save
 												{/if}
-											</Button>
-											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+											</ButtonComponent>
+											<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm"
+												>Cancel</ButtonComponent
+											>
 										</div>
 									</div>
 								{:else if character.scenario}
@@ -802,7 +818,7 @@
 								{:else}
 									<div class="py-8 text-center">
 										<p class="mb-3 text-sm text-muted-foreground">No scenario defined</p>
-										<Button
+										<ButtonComponent
 											variant="outline"
 											size="sm"
 											onclick={() => handleEditField('scenario', '')}
@@ -810,7 +826,7 @@
 										>
 											<PencilEdit class="h-3 w-3" />
 											Add Scenario
-										</Button>
+										</ButtonComponent>
 									</div>
 								{/if}
 							</CardContent>
@@ -823,7 +839,7 @@
 									<h3 class="text-lg font-semibold">Personality</h3>
 									<div class="flex items-center gap-2">
 										{#if character.personality && editingField !== 'personality'}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												class="h-6 w-6 p-0"
@@ -838,9 +854,9 @@
 														d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
 													/>
 												</svg>
-											</Button>
+											</ButtonComponent>
 										{/if}
-										<Button
+										<ButtonComponent
 											variant="ghost"
 											size="sm"
 											class="h-6 w-6 p-0"
@@ -848,7 +864,7 @@
 											aria-label="Edit personality"
 										>
 											<PencilEdit class="h-3 w-3" />
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
 							</CardHeader>
@@ -856,7 +872,7 @@
 								{#if editingField === 'personality'}
 									<div class="space-y-3">
 										<div class="flex gap-2">
-											<Textarea
+											<TextareaComponent
 												bind:value={editValue}
 												placeholder="Character personality"
 												rows={calculateTextareaRows(character.personality, 4)}
@@ -867,17 +883,22 @@
 												}}
 												class="flex-1"
 											/>
-											<Button
+											<ButtonComponent
 												variant="outline"
 												size="sm"
 												onclick={() => openPopoutEditor('personality', 'Personality', editValue)}
 												class="mt-1 self-start"
 											>
 												Expand
-											</Button>
+											</ButtonComponent>
 										</div>
 										<div class="flex gap-2">
-											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+											<ButtonComponent
+												onclick={handleSaveField}
+												disabled={isSaving}
+												size="sm"
+												class="gap-2"
+											>
 												{#if isSaving}
 													<div
 														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
@@ -887,8 +908,10 @@
 													<CheckCircleFill class="h-3 w-3" />
 													Save
 												{/if}
-											</Button>
-											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+											</ButtonComponent>
+											<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm"
+												>Cancel</ButtonComponent
+											>
 										</div>
 									</div>
 								{:else if character.personality}
@@ -907,7 +930,7 @@
 								{:else}
 									<div class="py-8 text-center">
 										<p class="mb-3 text-sm text-muted-foreground">No personality defined</p>
-										<Button
+										<ButtonComponent
 											variant="outline"
 											size="sm"
 											onclick={() => handleEditField('personality', '')}
@@ -915,7 +938,7 @@
 										>
 											<PencilEdit class="h-3 w-3" />
 											Add Personality
-										</Button>
+										</ButtonComponent>
 									</div>
 								{/if}
 							</CardContent>
@@ -932,7 +955,7 @@
 									<h3 class="text-lg font-semibold">Description</h3>
 									<div class="flex items-center gap-2">
 										{#if character.description && editingField !== 'description'}
-											<Button
+											<ButtonComponent
 												variant="ghost"
 												size="sm"
 												class="h-6 w-6 p-0"
@@ -947,9 +970,9 @@
 														d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
 													/>
 												</svg>
-											</Button>
+											</ButtonComponent>
 										{/if}
-										<Button
+										<ButtonComponent
 											variant="ghost"
 											size="sm"
 											class="h-6 w-6 p-0"
@@ -957,7 +980,7 @@
 											aria-label="Edit character description"
 										>
 											<PencilEdit class="h-3 w-3" />
-										</Button>
+										</ButtonComponent>
 									</div>
 								</div>
 							</CardHeader>
@@ -983,7 +1006,7 @@
 								{:else}
 									<div class="space-y-3">
 										<div class="flex gap-2">
-											<Textarea
+											<TextareaComponent
 												bind:value={editValue}
 												placeholder="Character description"
 												rows={calculateTextareaRows(character.description, 8)}
@@ -994,17 +1017,22 @@
 												}}
 												class="flex-1"
 											/>
-											<Button
+											<ButtonComponent
 												variant="outline"
 												size="sm"
 												onclick={() => openPopoutEditor('description', 'Description', editValue)}
 												class="mt-1 self-start"
 											>
 												Expand
-											</Button>
+											</ButtonComponent>
 										</div>
 										<div class="flex gap-2">
-											<Button onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+											<ButtonComponent
+												onclick={handleSaveField}
+												disabled={isSaving}
+												size="sm"
+												class="gap-2"
+											>
 												{#if isSaving}
 													<div
 														class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
@@ -1014,8 +1042,10 @@
 													<CheckCircleFill class="h-3 w-3" />
 													Save
 												{/if}
-											</Button>
-											<Button onclick={handleCancelEdit} variant="outline" size="sm">Cancel</Button>
+											</ButtonComponent>
+											<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm"
+												>Cancel</ButtonComponent
+											>
 										</div>
 									</div>
 								{/if}
@@ -1025,7 +1055,7 @@
 						<Card class="border-dashed shadow-sm">
 							<CardContent class="py-8 text-center">
 								<p class="mb-3 text-muted-foreground">No description available</p>
-								<Button
+								<ButtonComponent
 									variant="outline"
 									size="sm"
 									onclick={() => handleEditField('description', '')}
@@ -1033,7 +1063,7 @@
 								>
 									<PencilEdit class="h-3 w-3" />
 									Add Description
-								</Button>
+								</ButtonComponent>
 							</CardContent>
 						</Card>
 					{/if}
@@ -1063,7 +1093,7 @@
 				<h2 id="description-title" class="text-xl font-semibold">
 					{character.name} - Description
 				</h2>
-				<Button
+				<ButtonComponent
 					variant="ghost"
 					size="sm"
 					onclick={() => (descriptionFullScreen = false)}
@@ -1077,7 +1107,7 @@
 							d="M6 18L18 6M6 6l12 12"
 						/>
 					</svg>
-				</Button>
+				</ButtonComponent>
 			</div>
 			<div class="p-6">
 				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
@@ -1115,7 +1145,7 @@
 				<h2 id="scenario-title" class="text-xl font-semibold">
 					{character.name} - Scenario
 				</h2>
-				<Button
+				<ButtonComponent
 					variant="ghost"
 					size="sm"
 					onclick={() => (scenarioFullScreen = false)}
@@ -1129,7 +1159,7 @@
 							d="M6 18L18 6M6 6l12 12"
 						/>
 					</svg>
-				</Button>
+				</ButtonComponent>
 			</div>
 			<div class="p-6">
 				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
@@ -1167,7 +1197,7 @@
 				<h2 id="personality-title" class="text-xl font-semibold">
 					{character.name} - Personality
 				</h2>
-				<Button
+				<ButtonComponent
 					variant="ghost"
 					size="sm"
 					onclick={() => (personalityFullScreen = false)}
@@ -1181,7 +1211,7 @@
 							d="M6 18L18 6M6 6l12 12"
 						/>
 					</svg>
-				</Button>
+				</ButtonComponent>
 			</div>
 			<div class="p-6">
 				<div class="prose prose-sm dark:prose-invert max-w-none [&_*]:!text-foreground">
@@ -1201,16 +1231,12 @@
 
 <!-- Character Editor Dialog -->
 {#if character}
-	<CharacterEditor characterId={character.id} bind:open={characterEditorOpen} />
+	<CharacterEditor characterId={character.id} bind:_open={characterEditorOpen} />
 {/if}
 
 <!-- Avatar Image Lightbox -->
 {#if character && characterAvatarSrc}
-	<ImageLightbox
-		src={characterAvatarSrc}
-		alt={character.name}
-		bind:open={avatarLightboxOpen}
-	/>
+	<ImageLightbox src={characterAvatarSrc} alt={character.name} bind:open={avatarLightboxOpen} />
 {/if}
 
 <!-- Pop-out Editor Dialog for inline editing -->
@@ -1224,7 +1250,7 @@
 		</DialogHeader>
 
 		<div class="py-4">
-			<Textarea
+			<TextareaComponent
 				bind:value={popoutContent}
 				placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
 				rows={20}
@@ -1233,8 +1259,8 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={cancelPopoutEditor}>Cancel</Button>
-			<Button onclick={savePopoutEditor}>Save Changes</Button>
+			<ButtonComponent variant="outline" onclick={cancelPopoutEditor}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={savePopoutEditor}>Save Changes</ButtonComponent>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>

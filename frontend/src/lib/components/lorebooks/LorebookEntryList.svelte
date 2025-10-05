@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { LorebookEntry } from '$lib/types';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Plus } from 'lucide-svelte';
 	import LorebookEntryCard from './LorebookEntryCard.svelte';
 
@@ -35,10 +35,10 @@
 	<div class="flex items-center justify-between">
 		<h3 class="text-lg font-semibold">Entries ({entries.length})</h3>
 		{#if onCreateNew}
-			<Button onclick={onCreateNew}>
+			<ButtonComponent onclick={onCreateNew}>
 				<Plus class="mr-2 h-4 w-4" />
 				Add Entry
-			</Button>
+			</ButtonComponent>
 		{/if}
 	</div>
 
@@ -84,10 +84,10 @@
 				Add your first entry to start building this lorebook's knowledge base.
 			</p>
 			{#if onCreateNew}
-				<Button onclick={onCreateNew}>
+				<ButtonComponent onclick={onCreateNew}>
 					<Plus class="mr-2 h-4 w-4" />
 					Add Your First Entry
-				</Button>
+				</ButtonComponent>
 			{/if}
 		</div>
 	{:else}

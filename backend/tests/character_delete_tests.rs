@@ -5,6 +5,7 @@ use anyhow::Context;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode as AxumStatusCode, header};
 use bcrypt;
+use chrono::Utc;
 use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
 use reqwest::Client;
@@ -61,6 +62,11 @@ fn insert_test_user_with_password(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

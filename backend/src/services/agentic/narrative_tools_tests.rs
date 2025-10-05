@@ -1,11 +1,10 @@
 #[cfg(test)]
 mod tests {
     use super::super::narrative_tools::*;
-    use super::super::tools::{ScribeTool, ToolParams};
+    use super::super::tools::ScribeTool;
     use crate::test_helpers::MockAiClient;
     use serde_json::json;
     use std::sync::Arc;
-    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_analyze_text_significance_tool() {
@@ -85,7 +84,7 @@ mod tests {
 
         // Step 2: Extract based on significance
         if significance_result["is_significant"].as_bool().unwrap() {
-            let categories = significance_result["suggested_categories"]
+            let _categories = significance_result["suggested_categories"]
                 .as_array()
                 .unwrap();
 

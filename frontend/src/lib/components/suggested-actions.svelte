@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import { fly } from 'svelte/transition';
 	import { X, PenTool } from 'lucide-svelte';
 	// import { replaceState } from '$app/navigation'; // No longer needed here
@@ -7,7 +7,7 @@
 
 	// Accept sendMessage function and dynamic actions
 	let {
-		user,
+		user: _user,
 		sendMessage,
 		actions,
 		onClear,
@@ -27,7 +27,7 @@
 	<!-- Header with clear button -->
 	<div class="mb-2 flex items-center justify-between">
 		<span class="text-xs text-muted-foreground">Suggestions</span>
-		<Button
+		<ButtonComponent
 			variant="ghost"
 			size="sm"
 			onclick={onClear}
@@ -35,7 +35,7 @@
 			aria-label="Clear suggestions"
 		>
 			<X size={12} />
-		</Button>
+		</ButtonComponent>
 	</div>
 
 	<!-- Suggestions grid -->
@@ -50,7 +50,7 @@
 					Show items 3 and 4 only on 'sm' screens and up.
 				-->
 				<div class="group relative rounded-xl border">
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						onclick={async () => {
 							await sendMessage(suggestedItem.action);
@@ -59,9 +59,9 @@
 						aria-label={`Suggested action: ${suggestedItem.action}`}
 					>
 						<span class="font-medium">{suggestedItem.action}</span>
-					</Button>
+					</ButtonComponent>
 					<!-- Edit button overlay -->
-					<Button
+					<ButtonComponent
 						variant="ghost"
 						size="sm"
 						onclick={(e) => {
@@ -73,7 +73,7 @@
 						aria-label={`Edit suggestion: ${suggestedItem.action}`}
 					>
 						<PenTool size={12} />
-					</Button>
+					</ButtonComponent>
 				</div>
 			</div>
 		{/each}

@@ -9,7 +9,7 @@ This document outlines the improved testing patterns implemented to make the cod
 Previously, adding a new service to `AppStateServices` required updating every test file that created an instance, leading to:
 
 - **Brittle tests**: Any new service broke existing tests
-- **Code duplication**: Service initialization logic scattered across test files  
+- **Code duplication**: Service initialization logic scattered across test files
 - **Maintenance burden**: Changes required touching many files
 - **Developer friction**: Writing tests required boilerplate service setup
 
@@ -34,7 +34,7 @@ use scribe_backend::state_builder::AppStateServicesBuilder;
 // Create with minimal required dependencies
 let services = AppStateServicesBuilder::new(db_pool, config)
     .with_ai_client(mock_ai_client)
-    .with_embedding_client(mock_embedding_client) 
+    .with_embedding_client(mock_embedding_client)
     .with_qdrant_service(mock_qdrant_service)
     .build();
 
@@ -57,7 +57,7 @@ let app_state = TestFixtures::real_services_app_state(pool, config);
 // Custom builder for specific overrides
 let app_state = AppState::new(
     pool.clone(),
-    config.clone(), 
+    config.clone(),
     TestFixtures::custom_app_state(pool, config)
         .with_email_service(custom_email_service)
         .build()
@@ -93,7 +93,7 @@ fn create_test_app_state(test_app: TestApp) -> Arc<AppState> {
         .expect("Failed to create tokenizer");
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
     // ... many more lines of boilerplate
-    
+
     let services = AppStateServices {
         ai_client: test_app.mock_ai_client.clone().expect("Mock AI client"),
         embedding_client: test_app.mock_embedding_client.clone(),
@@ -195,7 +195,7 @@ let app_state = AppState::new(
     config.clone(),
     AppStateServicesBuilder::new(pool, config)
         .with_ai_client(mock_ai)
-        .with_embedding_client(mock_embedding) 
+        .with_embedding_client(mock_embedding)
         .with_qdrant_service(mock_qdrant)
         .with_lorebook_service(custom_lorebook_service) // Only override what you test
         .build()

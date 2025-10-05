@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount, createEventDispatcher } from 'svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { ScribeCharacter as Character } from '$lib/types';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import PlusIcon from './icons/plus.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { slideAndFade } from '$lib/utils/transitions';
@@ -25,7 +25,7 @@
 		isLoading = true;
 		error = null;
 		try {
-			const result = await apiClient.getCharacters();
+			const result = await _apiClient.getCharacters();
 
 			if (result.isOk()) {
 				characters = result.value;
@@ -35,7 +35,7 @@
 				error = 'Failed to load characters. Please try again later.';
 				characters = []; // Clear characters on error
 			}
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error('Failed to fetch characters:', e);
 			error = 'Failed to load characters. Please try again later.';
 			characters = []; // Clear characters on error
@@ -60,8 +60,8 @@
 	}
 
 	// Correct single definition of handleSelect
-	function handleSelect(event: CustomEvent<{ characterId: string }>) {
-		selectedCharacterId = event.detail.characterId;
+	function handleSelect(_event: CustomEvent<{ characterId: string }>) {
+		selectedCharacterId = _event.detail.characterId;
 		dispatch('selectCharacter', { characterId: selectedCharacterId });
 	}
 
@@ -69,12 +69,12 @@
 		dispatch('uploadCharacter');
 	}
 
-	function handleEdit(event: CustomEvent<{ characterId: string }>) {
-		editingCharacterId = event.detail.characterId;
+	function handleEdit(_event: CustomEvent<{ characterId: string }>) {
+		editingCharacterId = _event.detail.characterId;
 		showEditor = true;
 	}
 
-	function handleDelete(event: CustomEvent<{ characterId: string }>) {
+	function handleDelete(_event: CustomEvent<{ characterId: string }>) {
 		// Refresh the character list after successful deletion
 		fetchCharacters();
 	}
@@ -100,7 +100,7 @@
 	<div class="flex items-center justify-between border-b p-2">
 		<h2 class="px-2 text-lg font-semibold">Characters</h2>
 		<div class="flex gap-1">
-			<Button
+			<ButtonComponent
 				variant="ghost"
 				size="icon"
 				onclick={handleCreateClick}
@@ -108,8 +108,8 @@
 				title="Create Character"
 			>
 				<PlusIcon class="h-5 w-5" />
-			</Button>
-			<Button
+			</ButtonComponent>
+			<ButtonComponent
 				variant="ghost"
 				size="icon"
 				onclick={handleUploadClick}
@@ -124,7 +124,7 @@
 						d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
 					/>
 				</svg>
-			</Button>
+			</ButtonComponent>
 		</div>
 	</div>
 
@@ -167,6 +167,6 @@
 	</div>
 </div>
 
-<CharacterEditor characterId={editingCharacterId} bind:open={showEditor} />
+<CharacterEditor characterId={editingCharacterId} bind:_open={showEditor} />
 
-<CharacterCreator bind:open={showCreator} on:created={handleCharacterCreated} />
+<CharacterCreator bind:_open={showCreator} on:created={handleCharacterCreated} />

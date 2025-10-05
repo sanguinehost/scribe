@@ -1,7 +1,7 @@
 // No longer setting session cookies manually - axum-login handles this automatically
 import { fail, redirect, type ActionFailure } from '@sveltejs/kit';
 import { z } from 'zod';
-import { apiClient } from '$lib/api';
+import { apiClient as _apiClient } from '$lib/api';
 import { ApiResponseError } from '$lib/errors/api';
 
 // Define a type for the data returned on failure, matching FormFailureData
@@ -36,7 +36,7 @@ export const actions = {
 	default: async ({
 		request,
 		params,
-		cookies,
+		cookies: _cookies,
 		fetch
 	}): Promise<ActionFailure<AuthErrorData> | void | import('@sveltejs/kit').Redirect> => {
 		const formData = await request.formData();
@@ -92,7 +92,7 @@ export const actions = {
 				const username = usernameResult.data; // Use the validated username
 
 				// --- Signup API Call using apiClient ---
-				const signupResult = await apiClient.createUser({ email, username, password }, fetch);
+				const signupResult = await _apiClient.createUser({ email, username, password }, fetch);
 
 				if (signupResult.isErr()) {
 					const apiError = signupResult.error;
@@ -137,7 +137,7 @@ export const actions = {
 
 				// --- Signin API Call using apiClient ---
 				// Use a hypothetical 'authenticateUser' method. We'll need to add this to ApiClient.
-				const loginResult = await apiClient.authenticateUser({ identifier, password }, fetch);
+				const loginResult = await _apiClient.authenticateUser({ identifier, password }, fetch);
 
 				if (loginResult.isErr()) {
 					const apiError = loginResult.error;
@@ -182,15 +182,20 @@ export const actions = {
 				// Optionally, could pass a query param to /signin to show a "Registration successful" message
 				return redirect(303, '/signin?registration=success');
 			}
-		} catch (error) {
+		} catch (_error) {
 			// Re-throw redirect responses by checking shape, handle other errors
 			// SvelteKit throws an object with status and location for redirects
-			if (typeof error === 'object' && error !== null && 'status' in error && 'location' in error) {
-				throw error; // Re-throw if it looks like a redirect
+			if (
+				typeof _error === 'object' &&
+				_error !== null &&
+				'status' in _error &&
+				'location' in _error
+			) {
+				throw _error; // Re-throw if it looks like a redirect
 			}
 
 			// Catch unexpected errors during the process
-			console.error('Unexpected auth action error:', error);
+			console.error('Unexpected auth action error:', _error);
 			const errorData: AuthErrorData = {
 				success: false,
 				message: `An unexpected error occurred during ${authType === 'signup' ? 'sign up' : 'sign in'}.`

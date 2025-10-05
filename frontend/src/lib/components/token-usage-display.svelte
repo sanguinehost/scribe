@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
+	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import type { TokenCountResponse } from '$lib/types';
+	import type { TokenCountResponse as _TokenCountResponse } from '$lib/types';
 
 	let {
 		promptTokens = 0,
@@ -81,12 +81,12 @@
 		<span class="font-medium">{formatTokens(totalTokens)} total</span>
 
 		{#if showCost && totalCost() > 0}
-			<Badge variant="outline" class="font-mono text-xs">
+			<BadgeComponent variant="outline" class="font-mono text-xs">
 				{formatCost(totalCost())}
-			</Badge>
+			</BadgeComponent>
 		{/if}
 		{#if isEstimate}
-			<Badge variant="secondary" class="text-xs">Est.</Badge>
+			<BadgeComponent variant="secondary" class="text-xs">Est.</BadgeComponent>
 		{/if}
 	</div>
 {/if}

@@ -23,7 +23,7 @@ The primary chat flow remains fast and simple:
 After sending the response, optionally process in background:
 ```
 - Extract simple chronicle summaries from significant events
-- Generate keywords for search optimization  
+- Generate keywords for search optimization
 - Update lorebook entries if world-building elements detected
 ```
 
@@ -31,7 +31,7 @@ After sending the response, optionally process in background:
 When users reference something not in immediate context:
 ```
 User: "Remember when we fought the dragon?"
-Agent: 
+Agent:
   1. Detects reference to past event
   2. Searches chronicles for "dragon" keyword
   3. Searches chat history for dragon mentions

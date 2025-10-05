@@ -87,7 +87,7 @@ pub async fn set_character_override(
             let new_override = NewChatCharacterOverride {
                 id: Uuid::new_v4(), // Generate a new ID for insert, conflict target will handle existing
                 chat_session_id: session_id,
-                original_character_id: original_character_id,
+                original_character_id,
                 field_name: field_name_clone,
                 overridden_value: encrypted_value.clone(), // Clone for insert
                 overridden_value_nonce: nonce.clone(),     // Clone for insert

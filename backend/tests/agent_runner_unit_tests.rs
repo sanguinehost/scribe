@@ -130,6 +130,8 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         });
     }
 
@@ -279,7 +281,7 @@ mod agent_runner_conversation_tests {
             .expect("Failed to create test chat session");
 
         // Create messages with different roles including System messages
-        let mut messages = vec![
+        let messages = vec![
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id: chat_session_id,
@@ -296,6 +298,8 @@ mod agent_runner_conversation_tests {
                 status: "completed".to_string(),
                 error_message: None,
                 superseded_at: None,
+                variant_count: 1,
+                current_variant_index: 0,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -313,6 +317,8 @@ mod agent_runner_conversation_tests {
                 status: "completed".to_string(),
                 error_message: None,
                 superseded_at: None,
+                variant_count: 1,
+                current_variant_index: 0,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -332,6 +338,8 @@ mod agent_runner_conversation_tests {
                 status: "completed".to_string(),
                 error_message: None,
                 superseded_at: None,
+                variant_count: 1,
+                current_variant_index: 0,
             },
         ];
 
@@ -429,6 +437,8 @@ mod agent_runner_conversation_tests {
                 status: "completed".to_string(),
                 error_message: None,
                 superseded_at: None,
+                variant_count: 1,
+                current_variant_index: 0,
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -446,6 +456,8 @@ mod agent_runner_conversation_tests {
                 status: "completed".to_string(),
                 error_message: None,
                 superseded_at: None,
+                variant_count: 1,
+                current_variant_index: 0,
             },
         ];
 
@@ -754,6 +766,8 @@ mod agent_runner_duplicate_prevention_tests {
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         }
     }
 }

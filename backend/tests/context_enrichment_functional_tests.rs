@@ -208,10 +208,7 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
                 enrichment_result.model_used, "gemini-2.5-flash-lite",
                 "Model should be flash-lite"
             );
-            assert!(
-                enrichment_result.total_tokens_used >= 0,
-                "Token count should be valid"
-            );
+            // Token count is always valid (usize >= 0)
             assert!(
                 enrichment_result.execution_time_ms > 0,
                 "Should have taken some time"
@@ -535,10 +532,7 @@ async fn test_context_enrichment_error_handling() {
             );
 
             // Verify execution completed
-            assert!(
-                enrichment_result.total_tokens_used >= 0,
-                "Token count should be valid"
-            );
+            // Token count is always valid (usize >= 0)
             assert!(
                 enrichment_result.execution_time_ms > 0,
                 "Should have recorded execution time"
@@ -859,11 +853,7 @@ async fn test_context_enrichment_message_patterns() {
                     "Should have searches for {}",
                     test_name
                 );
-                assert!(
-                    enrichment_result.total_tokens_used >= 0,
-                    "Should have valid token count for {}",
-                    test_name
-                );
+                // Token count is always valid (usize >= 0)
                 assert!(
                     !enrichment_result.agent_reasoning.is_empty(),
                     "Should have reasoning for {}",

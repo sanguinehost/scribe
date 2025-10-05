@@ -13,9 +13,6 @@ use axum::{
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
-    models::lorebook_dtos::{
-        CreateLorebookEntryPayload, CreateLorebookPayload, UpdateLorebookPayload,
-    },
     schema,
     test_helpers::{self, TestApp, TestDataGuard},
 };
@@ -418,7 +415,7 @@ async fn test_a02_lorebook_entries_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (session_cookie, user_id) = create_authenticated_user(&test_app, "encrypt")
+    let (session_cookie, _user_id) = create_authenticated_user(&test_app, "encrypt")
         .await
         .unwrap();
 

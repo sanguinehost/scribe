@@ -8,7 +8,7 @@
 use reqwest;
 use scribe_backend::models::user_personas::UserPersonaDataForClient;
 use scribe_backend::test_helpers::{self, TestDataGuard, db::create_test_user, login_user_via_api};
-use serde_json::{Value, json};
+use serde_json::json;
 use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -211,7 +211,7 @@ async fn test_a03_injection_sql_injection_prevention() {
     }
 }
 
-/// A04:2021 - Insecure Design Tests  
+/// A04:2021 - Insecure Design Tests
 /// Ensures business logic security and proper validation
 #[tokio::test]
 async fn test_a04_insecure_design_persona_data_validation() {
@@ -331,7 +331,7 @@ async fn test_rate_limiting_persona_creation() {
 
     // Attempt rapid persona creation
     let mut success_count = 0;
-    let mut rate_limited = false;
+    let mut _rate_limited = false;
 
     for i in 0..10 {
         let create_response = client
@@ -348,7 +348,7 @@ async fn test_rate_limiting_persona_creation() {
         match create_response.status().as_u16() {
             201 => success_count += 1,
             429 => {
-                rate_limited = true;
+                _rate_limited = true;
                 break;
             }
             _ => {

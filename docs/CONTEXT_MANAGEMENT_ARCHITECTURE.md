@@ -5,7 +5,7 @@
 Sanguine Scribe implements a pragmatic, three-layer context management system that balances performance, cost, and narrative coherence. Rather than complex multi-agent orchestration, we use a straightforward combination of proven techniques:
 
 1. **Context Window Management** - Strategic truncation to preserve critical information
-2. **RAG (Retrieval-Augmented Generation)** - Semantic search for relevant background knowledge  
+2. **RAG (Retrieval-Augmented Generation)** - Semantic search for relevant background knowledge
 3. **Optional Context Enrichment** - Single-agent system that enhances context when chronicles are enabled
 
 ## Core Architecture
@@ -29,7 +29,7 @@ Sanguine Scribe implements a pragmatic, three-layer context management system th
 
 #### Layer 2: Strategic Truncation (Safety Net)
 - **Head Preservation**: System prompts, character definitions, persona data (always protected)
-- **Tail Preservation**: Recent conversation turns (configurable via `min_tail_messages_to_preserve`)  
+- **Tail Preservation**: Recent conversation turns (configurable via `min_tail_messages_to_preserve`)
 - **Middle Truncation**: Older conversation history less critical for immediate coherence
 
 **Implementation**: Located in `backend/src/prompt_builder.rs` as final safety check:
@@ -55,9 +55,9 @@ Sanguine Scribe implements a pragmatic, three-layer context management system th
 - **Retrieval**: Relevant past events are found through semantic similarity
 - **Integration**: Retrieved events provide narrative context as `<long_term_memory>`
 
-**Implementation**: 
+**Implementation**:
 - `backend/src/services/embeddings/` - Handles embedding and storage
-- `backend/src/vector_db/qdrant_client.rs` - Vector database interface  
+- `backend/src/vector_db/qdrant_client.rs` - Vector database interface
 - `backend/src/services/chat/generation.rs` - RAG integration during chat generation
 
 ### 3. Optional Context Enrichment
@@ -69,7 +69,7 @@ Sanguine Scribe implements a pragmatic, three-layer context management system th
 #### When Chronicles Are Enabled (Per-Chat Opt-In)
 - **Agent**: `backend/src/services/agentic/context_enrichment_agent.rs`
 - **Trigger**: Runs after each assistant response for chronicle-enabled chats
-- **Function**: 
+- **Function**:
   - Analyzes conversation for narrative significance
   - Creates chronicle events when meaningful events occur
   - Optionally creates lorebook entries for new world concepts
@@ -94,7 +94,7 @@ Sanguine Scribe implements a pragmatic, three-layer context management system th
 4. Strategic truncation applied if needed
 5. LLM generates response
 
-### Enhanced Chat Flow (Chronicles Enabled)  
+### Enhanced Chat Flow (Chronicles Enabled)
 1. User sends message
 2. System performs RAG query for lorebook entries AND chronicle events
 3. Prompt assembled with: system prompt + character data + RAG results + recent history
@@ -159,7 +159,7 @@ Sanguine Scribe implements a pragmatic, three-layer context management system th
 - **Metadata**: Rich metadata for filtering and relevance scoring
 
 ### Context Enrichment Agent
-- **Tools Available**: 
+- **Tools Available**:
   - `SearchKnowledgeBaseTool` - Query existing knowledge
   - `CreateChronicleEventTool` - Record significant events
   - `CreateLorebookEntryTool` - Capture world concepts
@@ -170,7 +170,7 @@ Sanguine Scribe implements a pragmatic, three-layer context management system th
 
 ### Latency
 - **Core Chat**: ~200-500ms for basic generation
-- **With RAG**: +50-100ms for vector queries  
+- **With RAG**: +50-100ms for vector queries
 - **With Enrichment**: +1-3s for post-processing (asynchronous)
 
 ### Scalability

@@ -1,12 +1,12 @@
 <script lang="ts">
 	// Removed Attachment import
 	import { toast } from 'svelte-sonner';
-	import { apiClient } from '$lib/api'; // Import apiClient
+	import { apiClient as _apiClient } from '$lib/api'; // Import apiClient
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import { tick } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
-	import type { User, ScribeCharacter } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
-	import type { ScribeChatSession, ScribeChatMessage, ChatMode } from '$lib/types'; // Import Scribe types
+	import type { User, ScribeCharacter, Message } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
+	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types'; // Import Scribe types
 	import type { UserPersona } from '$lib/types';
 	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import Messages from './messages.svelte';
@@ -24,6 +24,9 @@
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
 	import { browser } from '$app/environment';
 	import { getCurrentUser } from '$lib/auth.svelte';
+	import { subscriptionStore } from '$lib/stores/subscription.svelte';
+	import { UpgradePrompt } from './membership';
+	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -56,6 +59,23 @@
 
 	const chatHistory = ChatHistory.fromContext();
 
+	// Track first message variant selection for improved caching
+	let firstMessageVariantIndex = $state<number>(0);
+
+	// Initialize variant index immediately if chat ID is available
+	if (typeof window !== 'undefined' && chat?.id) {
+		const saved = localStorage.getItem(`greeting-variant-${chat.id}`);
+		if (saved) {
+			const variantIndex = parseInt(saved, 10);
+			if (!isNaN(variantIndex)) {
+				console.log(
+					`🎭 Immediately loading saved greeting variant ${variantIndex} for chat ${chat.id}`
+				);
+				firstMessageVariantIndex = variantIndex;
+			}
+		}
+	}
+
 	// Pagination state
 	let nextCursor = $state<string | null>(initialCursor || null);
 	let isLoadingMore = $state(false);
@@ -71,12 +91,15 @@
 
 	// Regeneration modal state
 	let showRegenerationModal = $state(false);
-	let pendingRegenerationData = $state<{ 
-		userMessage: string; 
-		messageId?: string; 
-		targetMessageIndex?: number; 
-		allMessages?: StreamingMessage[] 
+	let pendingRegenerationData = $state<{
+		userMessage: string;
+		messageId?: string;
+		targetMessageIndex?: number;
+		allMessages?: StreamingMessage[];
 	} | null>(null);
+
+	// Upgrade prompt modal state
+	let showUpgradePrompt = $state(false);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -116,6 +139,20 @@
 	// and cleaning them up when the chat changes or the component is destroyed.
 	let previousChatId = $state<string | null>(null);
 
+	// Load the saved greeting variant index when chat ID becomes available
+	$effect(() => {
+		if (typeof window !== 'undefined' && chat?.id) {
+			const saved = localStorage.getItem(`greeting-variant-${chat.id}`);
+			if (saved) {
+				const variantIndex = parseInt(saved, 10);
+				if (!isNaN(variantIndex) && variantIndex !== firstMessageVariantIndex) {
+					console.log(`🎭 Loading saved greeting variant ${variantIndex} for chat ${chat.id}`);
+					firstMessageVariantIndex = variantIndex;
+				}
+			}
+		}
+	});
+
 	$effect(() => {
 		const currentChatId = chat?.id;
 
@@ -135,33 +172,77 @@
 			if (currentChatId) {
 				let newInitialMessages: StreamingMessage[];
 
-				if (initialMessages.length === 0 && character?.first_mes) {
-					const firstMessageId = `first-message-${currentChatId}`;
-					newInitialMessages = [
+				if (initialMessages.length === 0 && character) {
+					// Determine which greeting to use based on the selected variant
+					let greetingContent = character.first_mes;
+
+					console.log(
+						`🎭 Creating initial message with variant index ${firstMessageVariantIndex}`,
 						{
-							id: firstMessageId,
-							sender: 'assistant',
-							content: character.first_mes,
-							displayedContent: character.first_mes, // Show immediately for initial message
-							created_at: chat.created_at ?? new Date().toISOString(),
-							isAnimating: false // Initial messages don't animate
+							chatId: currentChatId,
+							hasAlternateGreetings: !!character.alternate_greetings,
+							alternateGreetingsCount: character.alternate_greetings?.length || 0,
+							firstMessageVariantIndex
 						}
-					];
+					);
+
+					if (firstMessageVariantIndex > 0 && character.alternate_greetings) {
+						const altIndex = firstMessageVariantIndex - 1;
+						if (
+							altIndex < character.alternate_greetings.length &&
+							character.alternate_greetings[altIndex]
+						) {
+							greetingContent = character.alternate_greetings[altIndex];
+							console.log(
+								`🎭 Using alternate greeting ${firstMessageVariantIndex} (index ${altIndex})`,
+								{
+									greetingPreview: greetingContent.slice(0, 100) + '...'
+								}
+							);
+						} else {
+							console.log(
+								`🎭 Alternate greeting ${firstMessageVariantIndex} not found, using default`
+							);
+						}
+					} else {
+						console.log(`🎭 Using default greeting (first_mes)`, {
+							greetingPreview: greetingContent?.slice(0, 100) + '...'
+						});
+					}
+
+					if (greetingContent) {
+						const firstMessageId = `first-message-${currentChatId}`;
+						newInitialMessages = [
+							{
+								id: firstMessageId,
+								sender: 'assistant',
+								content: greetingContent,
+								displayedContent: greetingContent, // Show immediately for initial message
+								created_at: chat.created_at ?? new Date().toISOString(),
+								isAnimating: false, // Initial messages don't animate
+								current_variant_index: firstMessageVariantIndex
+							}
+						];
+					} else {
+						newInitialMessages = [];
+					}
 				} else {
 					// Flatten all loaded batches into a single array
 					const allLoadedMessages = loadedMessagesBatches.flat();
-					
+
 					console.log('🔄 Processing initial messages for chat:', {
 						currentChatId,
 						totalMessages: allLoadedMessages.length,
 						batchCount: loadedMessagesBatches.length
 					});
-					
+
 					// Log details of each message to identify duplicates
 					allLoadedMessages.forEach((msg, idx) => {
-						console.log(`📋 Initial Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`);
+						console.log(
+							`📋 Initial Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`
+						);
 					});
-					
+
 					newInitialMessages = allLoadedMessages.map(
 						(msg) =>
 							({
@@ -190,6 +271,52 @@
 				streamingService.clearMessages();
 				for (const message of newInitialMessages) {
 					streamingService.messages.push(message);
+				}
+
+				// Apply saved variant selection to the first assistant message (if it's a character greeting)
+				if (character && newInitialMessages.length > 0) {
+					const firstAssistantMessage = newInitialMessages.find(
+						(msg) => msg.sender === 'assistant'
+					);
+					if (firstAssistantMessage && typeof window !== 'undefined') {
+						const savedVariant = localStorage.getItem(`greeting-variant-${currentChatId}`);
+						if (savedVariant) {
+							const variantIndex = parseInt(savedVariant, 10);
+							console.log(
+								`🎭 Found saved variant ${variantIndex} for chat ${currentChatId}, applying to loaded message`
+							);
+
+							// Determine the correct greeting content
+							let greetingContent = character.first_mes;
+							if (variantIndex > 0 && character.alternate_greetings) {
+								const altIndex = variantIndex - 1;
+								if (
+									altIndex < character.alternate_greetings.length &&
+									character.alternate_greetings[altIndex]
+								) {
+									greetingContent = character.alternate_greetings[altIndex];
+									console.log(`🎭 Applying alternate greeting ${variantIndex} to loaded message`, {
+										greetingPreview: greetingContent.slice(0, 100) + '...'
+									});
+								}
+							}
+
+							// Update the message content and variant index
+							const messageIndex = streamingService.messages.findIndex(
+								(msg) => msg.id === firstAssistantMessage.id
+							);
+							if (messageIndex !== -1) {
+								streamingService.messages[messageIndex] = {
+									...streamingService.messages[messageIndex],
+									content: greetingContent || '',
+									displayedContent: greetingContent || '',
+									current_variant_index: variantIndex
+								};
+								firstMessageVariantIndex = variantIndex;
+								console.log(`🎭 Updated loaded message with variant ${variantIndex} content`);
+							}
+						}
+					}
 				}
 			}
 
@@ -229,7 +356,7 @@
 		suppressAutoScroll = true;
 
 		try {
-			const result = await apiClient.getMessagesByChatId(chat.id, {
+			const result = await _apiClient.getMessagesByChatId(chat.id, {
 				limit: 20,
 				cursor: nextCursor
 			});
@@ -251,13 +378,15 @@
 				});
 
 				// Log detailed message info to identify duplicates
-				newMessages.forEach((msg, idx) => {
-					console.log(`📋 Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`);
+				newMessages.forEach((msg: Message, idx: number) => {
+					console.log(
+						`📋 Message ${idx}: id=${msg.id}, type=${msg.message_type}, variant_count=${msg.variant_count}, current_variant_index=${msg.current_variant_index}`
+					);
 				});
 
 				// Convert to ScribeChatMessage format
 				const convertedMessages: ScribeChatMessage[] = newMessages.map(
-					(rawMsg): ScribeChatMessage => ({
+					(rawMsg: Message): ScribeChatMessage => ({
 						id: rawMsg.id,
 						backend_id: rawMsg.id,
 						session_id: rawMsg.session_id,
@@ -407,8 +536,8 @@
 				nextCursor = newCursor;
 				hasMoreMessages = newCursor !== null;
 			}
-		} catch (error) {
-			console.error('Error loading more messages:', error);
+		} catch (_error) {
+			console.error('Error loading more messages:', _error);
 			toast.error('Failed to load older messages');
 		} finally {
 			isLoadingMore = false;
@@ -433,7 +562,7 @@
 
 	// Object identity cache to prevent unnecessary component recreation
 	let messageCache = new Map<string, ScribeChatMessage>();
-	let lastStreamingMessages: any[] = [];
+	let lastStreamingMessages: unknown[] = [];
 
 	// Create a single, reactive source of truth for display messages with object identity preservation
 	let displayMessages = $derived.by(() => {
@@ -473,8 +602,7 @@
 					cached.completion_tokens !== msg.completion_tokens ||
 					cached.error !== msg.error ||
 					cached.variant_count !== msg.variant_count ||
-					cached.current_variant_index !== msg.current_variant_index ||
-					(cached as any).isRegenerating !== msg.isRegenerating;
+					cached.current_variant_index !== msg.current_variant_index;
 
 				if (hasChanged) {
 					// Message content changed
@@ -501,6 +629,7 @@
 						parent_message_id: msg.parent_message_id,
 						// Include regeneration flag for loading indicator
 						isRegenerating: msg.isRegenerating
+						// Note: _variantChangedAt removed due to type conflicts
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -524,10 +653,10 @@
 			});
 
 			// Only log when no messages are animating to avoid spam
-			const hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
+			const _hasAnimatingMessages = streamingMessages.some((m) => m.isAnimating);
 			return messages;
-		} catch (error) {
-			console.error('❌ Error in displayMessages derived:', error);
+		} catch (_error) {
+			console.error('❌ Error in displayMessages derived:', _error);
 			// Return cached messages if available, otherwise return empty array
 			return Array.from(messageCache.values());
 		}
@@ -587,9 +716,8 @@
 
 		displayMessages.forEach((message) => {
 			// Skip first messages (character greetings) - they shouldn't count toward usage
-			const isFirstMessage =
-				message.id.startsWith('first-message-') ||
-				(message.message_type === 'Assistant' && message.content === character?.first_mes);
+			// Note: Removed content comparison to support alternate greetings
+			const isFirstMessage = message.id.startsWith('first-message-');
 
 			if (!isFirstMessage) {
 				const messageInputTokens = message.prompt_tokens || 0;
@@ -645,8 +773,8 @@
 
 		try {
 			return createChatModeStrategy(chat.chat_mode);
-		} catch (error) {
-			console.error('Failed to create chat mode strategy:', error, 'for mode:', chat.chat_mode);
+		} catch (_error) {
+			console.error('Failed to create chat mode strategy:', _error, 'for mode:', chat.chat_mode);
 			return null;
 		}
 	});
@@ -709,7 +837,7 @@
 
 		lastPersonasLoad = now;
 		try {
-			const result = await apiClient.getUserPersonas();
+			const result = await _apiClient.getUserPersonas();
 			if (result.isOk()) {
 				availablePersonas = result.value;
 				console.log('Loaded personas:', availablePersonas.length);
@@ -723,8 +851,8 @@
 					toast.error(`Failed to load personas: ${result.error.message}`);
 				}
 			}
-		} catch (error) {
-			console.error('Failed to load personas:', error);
+		} catch (_error) {
+			console.error('Failed to load personas:', _error);
 			toast.error('Failed to load personas');
 		}
 	}
@@ -733,7 +861,7 @@
 		try {
 			const currentUser = getCurrentUser();
 			if (currentUser?.default_persona_id) {
-				const personaResult = await apiClient.getUserPersona(currentUser.default_persona_id);
+				const personaResult = await _apiClient.getUserPersona(currentUser.default_persona_id);
 				if (personaResult.isOk()) {
 					currentUserPersona = personaResult.value;
 				} else {
@@ -747,8 +875,8 @@
 				// Create a fallback persona with username
 				currentUserPersona = { name: currentUser.username } as UserPersona;
 			}
-		} catch (error) {
-			console.warn('Error loading user persona:', error);
+		} catch (_error) {
+			console.warn('Error loading user persona:', _error);
 			// currentUserPersona remains null, so userPersonaName will be 'User'
 		}
 	}
@@ -758,14 +886,14 @@
 		if (!chat?.id) return null;
 
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				return result.value.model_name || null;
 			} else {
 				console.error('Failed to get chat model:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to get chat model:', error);
+		} catch (_error) {
+			console.error('Failed to get chat model:', _error);
 		}
 		return null;
 	}
@@ -774,14 +902,14 @@
 	async function loadAgentMode() {
 		if (!chat?.id) return;
 		try {
-			const result = await apiClient.getChatSessionSettings(chat.id);
+			const result = await _apiClient.getChatSessionSettings(chat.id);
 			if (result.isOk()) {
 				agentMode = (result.value.agent_mode as typeof agentMode) || 'disabled';
 			} else {
 				console.error('Failed to load agent mode:', result.error);
 			}
-		} catch (error) {
-			console.error('Failed to load agent mode:', error);
+		} catch (_error) {
+			console.error('Failed to load agent mode:', _error);
 		}
 	}
 
@@ -794,7 +922,7 @@
 		agentMode = mode;
 
 		try {
-			const result = await apiClient.updateChatSessionSettings(chat.id, {
+			const result = await _apiClient.updateChatSessionSettings(chat.id, {
 				agent_mode: mode
 			});
 
@@ -813,12 +941,21 @@
 				console.error('Failed to save agent mode:', result.error);
 				toast.error('Failed to update context enrichment mode');
 			}
-		} catch (error) {
+		} catch (_error) {
 			// Revert on error
 			agentMode = previousMode;
-			console.error('Failed to save agent mode:', error);
+			console.error('Failed to save agent mode:', _error);
 			toast.error('Failed to update context enrichment mode');
 		}
+	}
+
+	// Function to handle token limit reached - show upgrade prompt instead of toast
+	function handleTokenLimitReached() {
+		if (ENABLE_PAYMENTS && subscriptionStore.isAtLimit) {
+			showUpgradePrompt = true;
+			return true; // Indicate that limit was reached
+		}
+		return false; // No limit reached
 	}
 
 	// Load personas when component mounts (regardless of chat)
@@ -835,7 +972,7 @@
 	});
 
 	// --- Token Counting Effect ---
-	let tokenCountTimeout: NodeJS.Timeout | null = null;
+	let tokenCountTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
 		// Clear existing timeout
@@ -855,8 +992,8 @@
 					);
 					// Only show if we actually got a meaningful result
 					showTokenUsage = !!(result && result.total > 0);
-				} catch (error) {
-					console.error('Token counting failed:', error);
+				} catch (_error) {
+					console.error('Token counting failed:', _error);
 					showTokenUsage = false;
 				}
 			}, 3000); // 3 second debounce to prevent rate limiting
@@ -893,7 +1030,7 @@
 			suggestionsError = null;
 			suggestionsRetryable = false;
 
-			const result = await apiClient.fetchSuggestedActions(chat.id);
+			const result = await _apiClient.fetchSuggestedActions(chat.id);
 
 			if (result.isOk()) {
 				const responseData = result.value; // This is { suggestions: [...], token_usage?: {...} }
@@ -955,12 +1092,12 @@
 				dynamicSuggestedActions = [];
 				toast.error(`Could not load suggested actions: ${cleanErrorMessage}`);
 			}
-		} catch (err: any) {
+		} catch (err: unknown) {
 			// Catch any unexpected errors during the API client call itself
 			console.error('Error fetching suggested actions:', err);
 
 			// Clean up error message for user display
-			let cleanErrorMessage = err.message || 'An unexpected error occurred.';
+			let cleanErrorMessage = (err as Error).message || 'An unexpected error occurred.';
 			if (
 				cleanErrorMessage.includes('PropertyNotFound("/content/parts")') ||
 				cleanErrorMessage.includes('PropertyNotFound("/candidates")')
@@ -1031,7 +1168,7 @@
 
 			try {
 				console.log('Generating AI chronicle name for chat:', chat.id);
-				const nameResult = await apiClient.generateChronicleName(chat.id);
+				const nameResult = await _apiClient.generateChronicleName(chat.id);
 
 				if (nameResult.isOk()) {
 					chronicleName = nameResult.value.name;
@@ -1040,13 +1177,13 @@
 					console.warn('Failed to generate AI chronicle name, using fallback:', nameResult.error);
 					// Continue with fallback name
 				}
-			} catch (error) {
-				console.warn('Error generating AI chronicle name, using fallback:', error);
+			} catch (_error) {
+				console.warn('Error generating AI chronicle name, using fallback:', _error);
 				// Continue with fallback name
 			}
 
 			// Create a new chronicle with the generated/fallback name
-			const chronicleResult = await apiClient.createChronicle({
+			const chronicleResult = await _apiClient.createChronicle({
 				name: chronicleName,
 				description: `Chronicle for ${chat.title || 'chat session'}`
 			});
@@ -1055,7 +1192,7 @@
 				const chronicle = chronicleResult.value;
 
 				// Update chat to associate with the chronicle
-				const updateResult = await apiClient.updateChatSessionSettings(chat.id, {
+				const updateResult = await _apiClient.updateChatSessionSettings(chat.id, {
 					chronicle_id: chronicle.id
 				});
 
@@ -1071,8 +1208,8 @@
 				console.error('Failed to create chronicle:', chronicleResult.error);
 				toast.error('Failed to create chronicle');
 			}
-		} catch (error) {
-			console.error('Error creating chronicle:', error);
+		} catch (_error) {
+			console.error('Error creating chronicle:', _error);
 			toast.error('An error occurred while creating chronicle');
 		}
 	}
@@ -1123,6 +1260,11 @@
 			return;
 		}
 
+		// Check token limits if payments are enabled
+		if (handleTokenLimitReached()) {
+			return;
+		}
+
 		// Build history from the single source of truth (NEW: use isAnimating instead of loading)
 		const existingHistoryForApi = (streamingService.messages as StreamingMessage[])
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
@@ -1130,6 +1272,16 @@
 				role: m.sender,
 				content: m.content // Use full content for API, not displayedContent
 			}));
+
+		// DEBUG: Log the first assistant message content to verify variant is applied
+		const firstAssistantInHistory = existingHistoryForApi.find((msg) => msg.role === 'assistant');
+		if (firstAssistantInHistory) {
+			console.log('🎭 First assistant message being sent to backend:', {
+				contentPreview: firstAssistantInHistory.content.slice(0, 150) + '...',
+				fullContentLength: firstAssistantInHistory.content.length,
+				currentVariantIndex: firstMessageVariantIndex
+			});
+		}
 
 		try {
 			// Use StreamingService for the connection
@@ -1148,9 +1300,24 @@
 				agentMode: agentMode
 			});
 			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
-		} catch (error) {
-			console.error('❌ Failed to send message:', error);
-			toast.error('Failed to send message. Please try again.');
+		} catch (_error) {
+			console.error('❌ Failed to send message:', _error);
+
+			// Check if this is a daily limit error
+			if (
+				_error instanceof Error &&
+				(_error.name === 'DailyLimitError' ||
+					_error.message.includes('Daily message limit reached'))
+			) {
+				// Show upgrade prompt for daily limit errors
+				if (ENABLE_PAYMENTS) {
+					showUpgradePrompt = true;
+				} else {
+					toast.error(_error.message);
+				}
+			} else {
+				toast.error('Failed to send message. Please try again.');
+			}
 		}
 	}
 
@@ -1162,6 +1329,11 @@
 
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
+			return;
+		}
+
+		// Check token limits if payments are enabled
+		if (handleTokenLimitReached()) {
 			return;
 		}
 
@@ -1189,9 +1361,24 @@
 				model: currentModel || undefined,
 				agentMode: agentMode
 			});
-		} catch (error) {
-			console.error('Failed to generate AI response:', error);
-			toast.error('Failed to generate response. Please try again.');
+		} catch (_error) {
+			console.error('Failed to generate AI response:', _error);
+
+			// Check if this is a daily limit error
+			if (
+				_error instanceof Error &&
+				(_error.name === 'DailyLimitError' ||
+					_error.message.includes('Daily message limit reached'))
+			) {
+				// Show upgrade prompt for daily limit errors
+				if (ENABLE_PAYMENTS) {
+					showUpgradePrompt = true;
+				} else {
+					toast.error(_error.message);
+				}
+			} else {
+				toast.error('Failed to generate response. Please try again.');
+			}
 		}
 	}
 
@@ -1217,6 +1404,11 @@
 	) {
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
+			return;
+		}
+
+		// Check token limits if payments are enabled
+		if (handleTokenLimitReached()) {
 			return;
 		}
 
@@ -1247,16 +1439,19 @@
 		try {
 			// Use StreamingService for regeneration - it will handle the streaming
 			const currentModel = await getCurrentChatModel();
-			
+
 			// Find the target message in the streaming service for variant update
 			let targetMessageIdForVariant: string | undefined;
 			if (originalMessageId) {
 				const currentMessages = streamingService.messages as StreamingMessage[];
 				console.log('🔍 Searching for originalMessageId:', originalMessageId);
-				console.log('🔍 Current messages:', currentMessages.map(m => ({ id: m.id, backend_id: m.backend_id, sender: m.sender })));
-				
-				const targetMessage = currentMessages.find(msg => 
-					msg.backend_id === originalMessageId || msg.id === originalMessageId
+				console.log(
+					'🔍 Current messages:',
+					currentMessages.map((m) => ({ id: m.id, backend_id: m.backend_id, sender: m.sender }))
+				);
+
+				const targetMessage = currentMessages.find(
+					(msg) => msg.backend_id === originalMessageId || msg.id === originalMessageId
 				);
 				if (targetMessage) {
 					targetMessageIdForVariant = targetMessage.id; // Use frontend ID for variant update
@@ -1271,14 +1466,14 @@
 			} else {
 				console.log('🎯 Generating new response (not a variant)');
 			}
-			
+
 			// Fix for retry bug: Only slice history if the last message isn't already a user message
 			// This happens when retrying a failed message - the failed assistant message was removed,
 			// so history already ends with the user message we want to regenerate from
 			const lastHistoryMessage = historyToSend[historyToSend.length - 1];
 			const shouldSliceHistory = lastHistoryMessage?.role !== 'user';
 			const finalHistory = shouldSliceHistory ? historyToSend.slice(0, -1) : historyToSend;
-			
+
 			console.log('📋 History construction:', {
 				historyLength: historyToSend.length,
 				lastRole: lastHistoryMessage?.role,
@@ -1286,7 +1481,7 @@
 				finalHistoryLength: finalHistory.length,
 				finalLastRole: finalHistory[finalHistory.length - 1]?.role
 			});
-			
+
 			await streamingService.connect({
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
@@ -1304,21 +1499,86 @@
 			// Note: StreamingService will handle message creation and updates
 			const preview = lastUserMessage.content.substring(0, 100);
 			chatHistory.updateChatPreview(chat.id, preview);
-		} catch (error) {
-			console.error('Failed to regenerate response:', error);
-			toast.error('Failed to regenerate response. Please try again.');
+		} catch (_error) {
+			console.error('Failed to regenerate response:', _error);
+
+			// Check if this is a daily limit error
+			if (
+				_error instanceof Error &&
+				(_error.name === 'DailyLimitError' ||
+					_error.message.includes('Daily message limit reached'))
+			) {
+				// Show upgrade prompt for daily limit errors
+				if (ENABLE_PAYMENTS) {
+					showUpgradePrompt = true;
+				} else {
+					toast.error(_error.message);
+				}
+			} else {
+				toast.error('Failed to regenerate response. Please try again.');
+			}
 		}
 	}
 
 	// Handle greeting changes from alternate greetings
-	function handleGreetingChanged(detail: { index: number; content: string }) {
-		const { content } = detail;
+	async function handleGreetingChanged(detail: { index: number; content: string }) {
+		const { content, index } = detail;
 
-		// Update the first message content in the messages array
+		console.log(`🎭 Greeting changed to variant ${index}`, {
+			chatId: chat?.id,
+			content: content.slice(0, 100) + '...'
+		});
+
+		// Track the selected variant index
+		firstMessageVariantIndex = index;
+
+		// Save to localStorage for persistence
+		if (typeof window !== 'undefined' && chat?.id) {
+			localStorage.setItem(`greeting-variant-${chat.id}`, index.toString());
+			console.log(`🎭 Saved greeting variant ${index} to localStorage for chat ${chat.id}`);
+		}
+
+		// Update the first message content in the messages array with variant metadata
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
+		const firstMessage = streamingService.messages.find((msg) => msg.id === firstMessageId);
+
+		// Optimistically update the UI
 		streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) =>
-			msg.id === firstMessageId ? { ...msg, content } : msg
+			msg.id === firstMessageId
+				? {
+						...msg,
+						content,
+						displayedContent: content,
+						current_variant_index: index,
+						// Force re-render by updating a timestamp
+						_variantChangedAt: Date.now()
+					}
+				: msg
 		);
+
+		// If this is a real backend message (has backend_id), persist the variant selection
+		if (firstMessage?.backend_id) {
+			try {
+				console.log('🔄 Persisting first message variant selection to backend:', {
+					messageId: firstMessage.backend_id,
+					variantIndex: index
+				});
+
+				const result = await _apiClient.selectMessageVariant(firstMessage.backend_id, {
+					variant_index: index
+				});
+
+				if (result.isOk()) {
+					console.log('✅ Successfully persisted first message variant selection to backend');
+				} else {
+					console.warn('⚠️ Failed to persist variant selection to backend:', result.error);
+					// Don't show error to user since the UI still works without backend sync
+				}
+			} catch (_error) {
+				console.warn('⚠️ Error persisting first message variant selection:', _error);
+				// Don't show error to user since this is not critical for functionality
+			}
+		}
 	}
 
 	// Message action handlers
@@ -1346,10 +1606,10 @@
 		// DEFER CHANGES: Only collect data for the modal, don't modify anything yet
 		// Pass the backend_id if available for variant creation
 		const backendMessageId = targetMessage.backend_id || messageId;
-		
+
 		// Store the data needed for cleanup after modal confirmation
-		pendingRegenerationData = { 
-			userMessage: userMessage.content, 
+		pendingRegenerationData = {
+			userMessage: userMessage.content,
 			messageId: backendMessageId,
 			// Store additional data needed for cleanup
 			targetMessageIndex: messageIndex,
@@ -1402,7 +1662,7 @@
 		// Delete trailing messages from backend (including embeddings)
 		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
 			try {
-				await apiClient.deleteTrailingMessages(removedMessages[0].backend_id);
+				await _apiClient.deleteTrailingMessages(removedMessages[0].backend_id);
 			} catch (err) {
 				console.warn('Failed to delete trailing messages from backend:', err);
 				// Continue with regeneration even if cleanup fails
@@ -1418,8 +1678,8 @@
 		console.log('⬅️ Previous variant:', messageId);
 
 		// Find the message to get current variant info (check both frontend ID and backend ID)
-		const message = streamingService.messages.find((msg) => 
-			msg.id === messageId || msg.backend_id === messageId
+		const message = streamingService.messages.find(
+			(msg) => msg.id === messageId || msg.backend_id === messageId
 		);
 		if (!message || (message.current_variant_index ?? 0) <= 0) return;
 
@@ -1430,15 +1690,17 @@
 		try {
 			// Use backend ID for API call if available, otherwise use frontend ID
 			const apiMessageId = message.backend_id || messageId;
-			const result = await apiClient.selectMessageVariant(apiMessageId, { variant_index: newIndex });
+			const result = await _apiClient.selectMessageVariant(apiMessageId, {
+				variant_index: newIndex
+			});
 
 			if (result.isOk()) {
 				const updatedMessage = result.value;
 				// Update the message in the streaming service (match by frontend or backend ID)
 				streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
 					if (msg.id === messageId || msg.backend_id === messageId) {
-						return { 
-							...msg, 
+						return {
+							...msg,
 							content: updatedMessage.content,
 							current_variant_index: updatedMessage.current_variant_index,
 							displayedContent: updatedMessage.content
@@ -1458,15 +1720,17 @@
 
 	async function handleNextVariant(messageId: string) {
 		// Find the message to get current variant info (check both frontend ID and backend ID)
-		const message = streamingService.messages.find((msg) => 
-			msg.id === messageId || msg.backend_id === messageId
+		const message = streamingService.messages.find(
+			(msg) => msg.id === messageId || msg.backend_id === messageId
 		);
 		if (!message) return;
 
 		const currentIndex = message.current_variant_index ?? 0;
 		const variantCount = message.variant_count ?? 0;
-		
-		console.log(`➡️ Next variant: messageId=${messageId}, currentIndex=${currentIndex}, variantCount=${variantCount}`);
+
+		console.log(
+			`➡️ Next variant: messageId=${messageId}, currentIndex=${currentIndex}, variantCount=${variantCount}`
+		);
 
 		// If we have saved variants and we're not at the latest one
 		if (variantCount > 0 && currentIndex < variantCount - 1) {
@@ -1476,22 +1740,26 @@
 			try {
 				// Use backend ID for API call if available, otherwise use frontend ID
 				const apiMessageId = message.backend_id || messageId;
-				const result = await apiClient.selectMessageVariant(apiMessageId, { variant_index: newIndex });
+				const result = await _apiClient.selectMessageVariant(apiMessageId, {
+					variant_index: newIndex
+				});
 
 				if (result.isOk()) {
 					const updatedMessage = result.value;
 					// Update the message in the streaming service (match by frontend or backend ID)
-					streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
-						if (msg.id === messageId || msg.backend_id === messageId) {
-							return { 
-								...msg, 
-								content: updatedMessage.content,
-								current_variant_index: updatedMessage.current_variant_index,
-								displayedContent: updatedMessage.content
-							};
+					streamingService.messages = (streamingService.messages as StreamingMessage[]).map(
+						(msg) => {
+							if (msg.id === messageId || msg.backend_id === messageId) {
+								return {
+									...msg,
+									content: updatedMessage.content,
+									current_variant_index: updatedMessage.current_variant_index,
+									displayedContent: updatedMessage.content
+								};
+							}
+							return msg;
 						}
-						return msg;
-					});
+					);
 				} else {
 					console.error('Failed to select next variant:', result.error);
 					toast.error('Failed to switch to next variant');
@@ -1506,15 +1774,15 @@
 			const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
 				(msg) => msg.id === messageId || msg.backend_id === messageId
 			);
-			
+
 			if (messageIndex > 0) {
 				const userMessage = (streamingService.messages as StreamingMessage[])[messageIndex - 1];
 				if (userMessage.sender === 'user') {
 					// Show regeneration modal for variant generation
 					const backendMessageId = message.backend_id || messageId;
-					pendingRegenerationData = { 
-						userMessage: userMessage.content, 
-						messageId: backendMessageId 
+					pendingRegenerationData = {
+						userMessage: userMessage.content,
+						messageId: backendMessageId
 					};
 					showRegenerationModal = true;
 				}
@@ -1555,7 +1823,7 @@
 		// Delete trailing messages from backend if they exist
 		if (messagesToRemove.length > 0 && messagesToRemove[0].backend_id) {
 			try {
-				await apiClient.deleteTrailingMessages(messagesToRemove[0].backend_id);
+				await _apiClient.deleteTrailingMessages(messagesToRemove[0].backend_id);
 			} catch (err) {
 				console.warn('Failed to delete trailing messages from backend during retry:', err);
 				// Continue with retry even if cleanup fails
@@ -1573,16 +1841,16 @@
 		if (!pendingRegenerationData) return;
 
 		const { userMessage, messageId, targetMessageIndex, allMessages } = pendingRegenerationData;
-		
+
 		// IMMEDIATELY set loading state for variant generation (instant feedback)
 		if (messageId) {
 			const existingMessageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
 				(msg) => msg.id === messageId || msg.backend_id === messageId
 			);
-			
+
 			if (existingMessageIndex !== -1) {
 				const existingMessage = streamingService.messages[existingMessageIndex];
-				
+
 				// Set immediate loading state
 				streamingService.messages[existingMessageIndex] = {
 					...existingMessage,
@@ -1592,7 +1860,7 @@
 					error: undefined,
 					retryable: false
 				};
-				
+
 				// Force Svelte reactivity
 				streamingService.messages = [...streamingService.messages];
 			}
@@ -1604,10 +1872,10 @@
 			console.log('🧹 Performing retry cleanup - deleting trailing messages');
 			// Only delete trailing messages from backend (messages after the one we're regenerating)
 			const messagesToDeleteFromBackend = allMessages.slice(targetMessageIndex + 1); // Messages AFTER the target
-			
+
 			if (messagesToDeleteFromBackend.length > 0 && messagesToDeleteFromBackend[0].backend_id) {
 				try {
-					await apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
+					await _apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
 				} catch (err) {
 					console.warn('Failed to delete trailing messages from backend:', err);
 					// Continue with regeneration even if cleanup fails
@@ -1657,7 +1925,7 @@
 		// Delete from backend if it has a backend ID
 		if (messageToDelete?.backend_id || messageToDelete?.id) {
 			try {
-				await apiClient.deleteMessage(messageToDelete.backend_id || messageToDelete.id);
+				await _apiClient.deleteMessage(messageToDelete.backend_id || messageToDelete.id);
 				console.log('Message deleted from backend successfully');
 			} catch (err) {
 				console.error('Failed to delete message from backend:', err);
@@ -1671,8 +1939,8 @@
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} />
-	{#key displayMessages.length}
-		<!-- Messages component render key -->
+	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
+		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}
 
 	<Messages
@@ -1824,6 +2092,20 @@
 				}}
 			>
 				{#if !readonly}
+					<!-- Upgrade Banner for Token Limit Warning -->
+					{#if ENABLE_PAYMENTS && (subscriptionStore.isAtLimit || subscriptionStore.isNearLimit)}
+						<div class="mb-3">
+							<UpgradePrompt
+								variant="banner"
+								title={subscriptionStore.isAtLimit ? 'Token Limit Reached' : 'Near Token Limit'}
+								message={subscriptionStore.isAtLimit
+									? "You've reached your monthly token limit. Upgrade to continue chatting."
+									: "You're approaching your monthly token limit. Consider upgrading to avoid interruptions."}
+								showCloseButton={!subscriptionStore.isAtLimit}
+							/>
+						</div>
+					{/if}
+
 					<MultimodalInput
 						bind:value={chatInput}
 						{isLoading}
@@ -1903,7 +2185,7 @@
 {/if}
 
 <!-- Chronicle Opt-in Dialog -->
-<ChronicleOptInDialog bind:open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
+<ChronicleOptInDialog bind:_open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
 
 <!-- Regeneration Options Modal -->
 <RegenerationModal
@@ -1911,3 +2193,12 @@
 	onConfirm={handleRegenerationConfirm}
 	onCancel={handleRegenerationCancel}
 />
+
+<!-- Upgrade Prompt Modal -->
+{#if showUpgradePrompt}
+	<UpgradePrompt
+		variant="modal"
+		on:close={() => (showUpgradePrompt = false)}
+		on:upgrade={() => (showUpgradePrompt = false)}
+	/>
+{/if}

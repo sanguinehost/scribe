@@ -15,9 +15,9 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 					Cookie: `id=${sessionCookie}`
 				}
 			});
-		} catch (error) {
+		} catch (_error) {
 			// If backend logout fails, still clear the cookie locally
-			console.error('Backend logout failed:', error);
+			console.error('Backend logout failed:', _error);
 		}
 	}
 
@@ -42,8 +42,8 @@ export const actions: Actions = {
 						Cookie: `id=${sessionCookie}`
 					}
 				});
-			} catch (error) {
-				console.error('Backend logout failed:', error);
+			} catch (_error) {
+				console.error('Backend logout failed:', _error);
 			}
 		}
 

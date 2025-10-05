@@ -1,8 +1,4 @@
-use axum::{
-    Router,
-    extract::DefaultBodyLimit,
-    routing::get, // Remove post
-};
+use axum::{Router, extract::DefaultBodyLimit, routing::get};
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
 };
@@ -24,6 +20,8 @@ use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
 use scribe_backend::routes::health::health_check;
+#[cfg(feature = "payment")]
+use scribe_backend::routes::payment::{payment_routes, payment_webhook_routes};
 use scribe_backend::routes::{
     avatars::avatar_routes,        // Added for avatar routes
     characters::characters_router, // Use the router function import
@@ -33,6 +31,7 @@ use scribe_backend::routes::{
     documents::document_routes,
     llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
+    templates,                        // Added for template routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
 };
@@ -72,7 +71,7 @@ use std::sync::Arc;
 use time::Duration;
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
@@ -136,12 +135,39 @@ async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumRe
 async fn main() -> Result<()> {
     initialize_runtime();
     let config = Arc::new(Config::load().context("Failed to load configuration")?);
+
+    // Validate configuration on startup
+    #[cfg(feature = "payment")]
+    {
+        tracing::info!("Validating payment system configuration...");
+        config
+            .validate()
+            .context("Configuration validation failed")?;
+        tracing::info!("Payment system configuration validation passed");
+    }
+
     let pool = setup_database_pool(&config);
     run_migrations(&pool).await?;
 
     let services = initialize_services(&config, &pool).await?;
 
     let (app_state, auth_layer) = setup_app_state_and_auth(&config, &pool, services)?;
+
+    // Start payment scheduler if payment feature is enabled
+    #[cfg(feature = "payment")]
+    {
+        if config.payment.credits_enabled || config.payment.soft_limits_enabled {
+            tracing::info!("Starting payment scheduler for periodic tasks...");
+            let scheduler = Arc::new(scribe_backend::services::payment::PaymentScheduler::new(
+                config.clone(),
+                pool.clone(),
+            ));
+            scheduler.start().await;
+            tracing::info!("Payment scheduler started successfully");
+        } else {
+            tracing::info!("Payment scheduler disabled (credits and soft limits are disabled)");
+        }
+    }
 
     let app = build_router(app_state, auth_layer);
 
@@ -245,7 +271,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     ));
 
     // --- Initialize Chronicle Service ---
-    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
@@ -319,7 +345,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     // --- Initialize Narrative Intelligence Service ---
     // Note: Will be initialized after AppState is created due to circular dependency
 
-    let mut services = AppStateServices {
+    let services = AppStateServices {
         ai_client: ai_client_arc,
         embedding_client: embedding_client_arc,
         qdrant_service,
@@ -517,25 +543,43 @@ fn build_router(
             "/characters",
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
-        .nest(
-            "/chat",
-            chat_routes(app_state.clone())
-                .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit for chat history
-                .layer(axum::middleware::from_fn_with_state(
-                    app_state.clone(),
-                    scribe_backend::middleware::llm_security::llm_security_middleware,
-                )),
-        )
+        .nest("/chat", {
+            #[cfg(feature = "payment")]
+            let routes = {
+                let routes =
+                    chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+
+                // Add soft limit enforcement before LLM security
+                routes.layer(axum::middleware::from_fn(
+                    scribe_backend::middleware::soft_limit_enforcement_middleware,
+                ))
+            };
+
+            #[cfg(not(feature = "payment"))]
+            let routes =
+                chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+
+            routes.layer(axum::middleware::from_fn_with_state(
+                app_state.clone(),
+                scribe_backend::middleware::llm_security::llm_security_middleware,
+            ))
+        })
         .nest("/chats", chats::chat_routes())
         .nest(
             "/chronicles",
             chronicles::create_chronicles_router(app_state.clone()),
         )
         .nest("/documents", document_routes())
-        .nest("/llm", llm_router()) // LLM management routes
+        .nest("/llm", llm_router()); // LLM management routes
+
+    #[cfg(feature = "payment")]
+    let protected_api_routes = protected_api_routes.nest("/payment", payment_routes()); // Payment routes
+
+    let protected_api_routes = protected_api_routes
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))
         .nest("/", lorebook_routes())
+        .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
         .route_layer(login_required!(AuthBackend));
@@ -545,30 +589,41 @@ fn build_router(
         .route("/api/health", get(health_check))
         .with_state(app_state.clone());
 
-    // Rate-limited API routes (both public and protected)
+    // Rate-limited API routes (both public and protected, but excluding webhooks)
     let rate_limited_api_routes = Router::new()
         .nest("/auth", auth_routes()) // Auth routes under /api/auth
         .merge(protected_api_routes) // Protected routes under /api
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()
-                    .per_second(2000) // Increased from 500 to allow more requests
-                    .burst_size(5000) // Increased from 1000 to handle rapid bursts
-                    .key_extractor(GlobalKeyExtractor)
+                    .per_second(5000) // Very high rate for development - 1ms per request
+                    .burst_size(5000) // High burst capacity for rapid development requests
+                    .key_extractor(SmartIpKeyExtractor)
                     .finish()
                     .unwrap(),
             ),
         });
+
+    // Webhook routes (no authentication, no rate limiting - signature verified in handler)
+    #[cfg(feature = "payment")]
+    tracing::info!("🎯 Setting up webhook routes in main.rs");
+    #[cfg(feature = "payment")]
+    let webhook_routes = Router::new()
+        .nest("/api/payment", payment_webhook_routes()) // Webhook routes under /api/payment
+        .with_state(app_state.clone());
+    #[cfg(feature = "payment")]
+    tracing::info!("🎯 Webhook routes configured");
 
     // Configure CORS for the frontend
     // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
     // via Vercel's edge proxy, but they'll have the correct origin headers
     let cors = CorsLayer::new()
         .allow_origin([
-            "https://staging.scribe.sanguinehost.com".parse().unwrap(), // Primary frontend domain
-            "https://localhost:5173".parse().unwrap(),                  // Local development
-            "http://localhost:5173".parse().unwrap(),                   // Local development (HTTP)
-            "http://localhost:3000".parse().unwrap(), // Local development alt port
+            "https://staging.scribe.sanguinehost.com".parse().unwrap(),
+            "https://scribe-frontend.vercel.app".parse().unwrap(),
+            "https://localhost:5173".parse().unwrap(),
+            "http://localhost:5173".parse().unwrap(),
+            "http://localhost:3000".parse().unwrap(),
         ])
         .allow_methods([
             axum::http::Method::GET,
@@ -586,12 +641,29 @@ fn build_router(
         ])
         .allow_credentials(true);
 
-    Router::new()
+    // Build authenticated API routes with auth layer
+    let authenticated_api = Router::new()
+        .nest("/api", rate_limited_api_routes) // All authenticated API routes are rate limited
+        .layer(auth_layer) // Auth layer only on authenticated routes
+        .with_state(app_state.clone());
+
+    // Combine all routes
+    #[cfg(feature = "payment")]
+    let final_router = {
+        let base_router = Router::new()
+            .merge(health_routes) // Health endpoint not rate limited
+            .merge(authenticated_api); // All authenticated API routes
+        base_router.merge(webhook_routes) // Webhook routes without auth
+    };
+
+    #[cfg(not(feature = "payment"))]
+    let final_router = Router::new()
         .merge(health_routes) // Health endpoint not rate limited
-        .nest("/api", rate_limited_api_routes) // All other API routes are rate limited
+        .merge(authenticated_api); // All authenticated API routes
+
+    final_router
         .layer(cors)
         .layer(CookieManagerLayer::new())
-        .layer(auth_layer)
         .with_state(app_state)
         .layer(axum_middleware::from_fn(
             scribe_backend::middleware::security_headers_middleware,
@@ -688,7 +760,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
     );
 
     axum_server::bind_rustls(addr, tls_config)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .context("HTTPS server failed to start")?;
 
@@ -724,7 +796,7 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
 // --- Test module remains unchanged ---
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     // Import the necessary trait
 
     // Use the r2d2 Pool directly from deadpool_diesel

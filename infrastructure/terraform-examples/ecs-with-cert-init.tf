@@ -40,7 +40,7 @@ resource "aws_ecs_task_definition" "backend_task_with_cert_init" {
       name      = "cert-init"
       image     = "${aws_ecr_repository.cert_init_repo.repository_url}:latest"
       essential = false  # Not essential - allows backend to start after this completes
-      
+
       # Environment variables for certificate setup
       environment = [
         {
@@ -48,7 +48,7 @@ resource "aws_ecs_task_definition" "backend_task_with_cert_init" {
           value = var.environment
         },
         {
-          name  = "CERT_DIR" 
+          name  = "CERT_DIR"
           value = "/shared/certs"
         }
       ]
@@ -187,7 +187,7 @@ resource "aws_ecs_task_definition" "backend_task_with_cert_init" {
       # Health check for backend service
       healthCheck = {
         command = [
-          "CMD-SHELL", 
+          "CMD-SHELL",
           "curl -f -k https://localhost:8080/health || exit 1"
         ]
         interval    = 30
@@ -374,17 +374,17 @@ resource "null_resource" "build_cert_init_image" {
   provisioner "local-exec" {
     command = <<-EOT
       cd ${path.module}/../../../infrastructure/containers/cert-init
-      
+
       # Build the certificate init container
       docker build -t scribe-cert-init:latest .
-      
+
       # Tag for ECR
       docker tag scribe-cert-init:latest ${aws_ecr_repository.cert_init_repo.repository_url}:latest
-      
+
       # Login to ECR
       aws ecr get-login-password --region ${var.aws_region} | \
         docker login --username AWS --password-stdin ${aws_ecr_repository.cert_init_repo.repository_url}
-      
+
       # Push to ECR
       docker push ${aws_ecr_repository.cert_init_repo.repository_url}:latest
     EOT

@@ -1,5 +1,7 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
-use super::retrieval::{RetrievedChunk, RetrievedMetadata};
+use super::retrieval::{
+    RetrievedChunk, RetrievedMetadata, decrypt_chat_content, decrypt_lorebook_content,
+};
 use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
@@ -42,6 +44,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     /// `AppError::SerializationError` if metadata serialization fails,
     /// Qdrant service errors if vector storage operations fail.
     #[instrument(skip_all, fields(message_id = %message.id, session_id = %message.session_id))]
+    #[allow(deprecated)]
     async fn process_and_embed_message(
         &self,
         state: Arc<AppState>, // Get clients from state
@@ -179,10 +182,39 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             // 2b. Prepare metadata
             let speaker_str = format!("{:?}", message.message_type);
 
-            // TODO: When SessionDek is available, encrypt the content here
-            // For now, we store plaintext for backward compatibility
-            // Future implementation:
-            // let (encrypted_text, text_nonce) = encrypt_gcm(chunk.content.as_bytes(), &session_dek)?;
+            // Encrypt chunk content if SessionDek is available
+            let (text_for_storage, encrypted_text, text_nonce) = if let Some(ref dek) = session_dek
+            {
+                // We have SessionDek, encrypt the chunk content
+                match crate::crypto::encrypt_gcm(chunk.content.as_bytes(), &dek.0) {
+                    Ok((encrypted_content, content_nonce)) => {
+                        debug!(
+                            chunk_index = index,
+                            "Successfully encrypted chat message chunk for Qdrant storage"
+                        );
+                        (
+                            "[encrypted]".to_string(),
+                            Some(encrypted_content),
+                            Some(content_nonce),
+                        )
+                    }
+                    Err(e) => {
+                        error!(
+                            chunk_index = index,
+                            error = %e,
+                            "Failed to encrypt chat message chunk, falling back to plaintext"
+                        );
+                        (chunk.content.clone(), None, None)
+                    }
+                }
+            } else {
+                // No SessionDek, store plaintext (backward compatibility for tests/legacy)
+                warn!(
+                    chunk_index = index,
+                    "No SessionDek available for chat message chunk, storing plaintext in Qdrant"
+                );
+                (chunk.content.clone(), None, None)
+            };
 
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
@@ -191,11 +223,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 user_id: message.user_id, // Added user_id from the message
                 speaker: speaker_str,
                 timestamp: message.created_at,
-                text: chunk.content.clone(), // Store original chunk text (will be "[encrypted]" when encryption is enabled)
+                text: text_for_storage, // Placeholder when encrypted, plaintext otherwise
                 source_type: "chat_message".to_string(),
-                // Encryption fields - will be populated when SessionDek is available
-                encrypted_text: None, // Will store encrypted_text
-                text_nonce: None,     // Will store text_nonce
+                // Encryption fields - populated when SessionDek is available
+                encrypted_text,
+                text_nonce,
             };
 
             // 2c. Create Qdrant point
@@ -234,6 +266,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         lorebook_id = %params.lorebook_id,
         user_id = %params.user_id
     ))]
+    #[allow(deprecated)]
     async fn process_and_embed_lorebook_entry(
         &self,
         state: Arc<AppState>,
@@ -407,7 +440,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         };
 
-        let mut points_to_upsert = vec![point];
+        let points_to_upsert = vec![point];
 
         if points_to_upsert.is_empty() {
             info!(%original_lorebook_entry_id, "No valid points generated for lorebook entry upserting.");
@@ -431,6 +464,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     /// `AppError::SerializationError` if metadata deserialization fails,
     /// Qdrant service errors if vector search operations fail.
     #[instrument(skip_all, fields(user_id = %user_id, query_length = query_text.len(), session_id_for_chat = ?session_id_for_chat_history, lorebook_ids = ?active_lorebook_ids_for_search, chronicle_id = ?chronicle_id_for_search))]
+    #[allow(deprecated)]
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,
@@ -440,6 +474,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         chronicle_id_for_search: Option<Uuid>,
         query_text: &str,
         limit_per_source: u64,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         info!("Retrieving relevant chunks for query");
         let embedding_client = state.embedding_client.clone();
@@ -508,9 +543,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         match ChatMessageChunkMetadata::try_from(scored_point.payload.clone()) {
                             Ok(chat_meta) => {
                                 debug!(?chat_meta, %session_id, "Successfully parsed chat metadata (RAG)");
+                                let decrypted_text = decrypt_chat_content(&chat_meta, session_dek);
                                 combined_results.push(RetrievedChunk {
                                     score: scored_point.score,
-                                    text: chat_meta.text.clone(),
+                                    text: decrypted_text,
                                     metadata: RetrievedMetadata::Chat(chat_meta),
                                 });
                             }
@@ -612,9 +648,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                         ?lorebook_ids,
                                         "Successfully parsed lorebook metadata (RAG)"
                                     );
+                                    let decrypted_text =
+                                        decrypt_lorebook_content(&lorebook_meta, session_dek);
                                     combined_results.push(RetrievedChunk {
                                         score: scored_point.score,
-                                        text: lorebook_meta.chunk_text.clone(),
+                                        text: decrypted_text,
                                         metadata: RetrievedMetadata::Lorebook(lorebook_meta),
                                     });
                                 }
@@ -1224,7 +1262,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         };
 
-        let mut points_to_upsert = vec![point];
+        let points_to_upsert = vec![point];
 
         // 3. Upsert points to Qdrant in batch
         if points_to_upsert.is_empty() {

@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { cn } from '$lib/utils/shadcn.js';
+	// Disable custom elements to avoid props inference issues
+	import { browser as _browser } from '$app/environment';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import {
 		SIDEBAR_COOKIE_MAX_AGE,
@@ -26,9 +27,9 @@
 
 	const sidebar = setSidebar({
 		open: () => open,
-		setOpen: (value: boolean) => {
-			open = value;
-			onOpenChange(value);
+		setOpen: (_value: boolean) => {
+			open = _value;
+			onOpenChange(_value);
 
 			// This sets the cookie to keep the sidebar state.
 			document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
@@ -40,7 +41,7 @@
 
 <div
 	style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
-	class={cn(
+	class={_cn(
 		'group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar',
 		className
 	)}

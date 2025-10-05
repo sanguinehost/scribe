@@ -20,9 +20,8 @@ async fn test_hybrid_token_counter_local() {
     }
 
     // Initialize the tokenizer service
-    let model_path = PathBuf::from(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-    );
+    let model_path =
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
 
     // Create a hybrid counter with local-only mode
@@ -119,9 +118,8 @@ async fn test_hybrid_token_counter_api() {
     };
 
     // Initialize the tokenizer service
-    let model_path = PathBuf::from(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-    );
+    let model_path =
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
 
     // Create API client

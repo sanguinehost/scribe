@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Select as SelectPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils/shadcn.js';
+	import { cn as _cn } from '$lib/utils/shadcn.js';
 
 	type $$Props = SelectPrimitive.GroupHeadingProps;
 
@@ -9,7 +9,7 @@
 </script>
 
 <SelectPrimitive.GroupHeading
-	class={cn('py-1.5 pl-8 pr-2 text-sm font-semibold', className)}
+	class={_cn('py-1.5 pl-8 pr-2 text-sm font-semibold', className)}
 	{...$$restProps}
 >
 	<slot />

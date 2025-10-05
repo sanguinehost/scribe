@@ -170,6 +170,7 @@ async fn debug_session_data(
 #[tokio::test]
 // Removed ignore flag to make sure this test runs in CI
 #[allow(clippy::too_many_lines)]
+#[allow(deprecated)]
 async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let _guard = TestDataGuard::new(test_app.db_pool.clone());
@@ -371,10 +372,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     info!(
@@ -966,10 +968,11 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1424,10 +1427,11 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let result = conn
@@ -1586,8 +1590,10 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
-    // client is from login_user_via_api
+
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -1775,10 +1781,11 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let result = conn
@@ -1922,8 +1929,10 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
-    // client is from login_user_via_api
+
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2110,10 +2119,11 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let result = conn
@@ -2258,8 +2268,10 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
-    // client is from login_user_via_api
+
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2508,10 +2520,11 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let result = conn
@@ -2620,8 +2633,10 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
-    // client is from login_user_via_api
+
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -2808,10 +2823,11 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let result = conn
@@ -2956,8 +2972,10 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
-    // client is from login_user_via_api
+
     let response = client
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -3120,10 +3138,11 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let create_session_result = conn
@@ -3405,10 +3424,11 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
@@ -3434,8 +3454,10 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
-    // client_b is from login_user_via_api
+
     let response = client_b
         .post(format!(
             "{}/api/chat/{}/generate",
@@ -3576,10 +3598,11 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        estimated_cost_cents: 0,
+        tokens_counted_at: chrono::Utc::now(),
+        prompt_template_id: "default".to_string(),
     };
 
     let session: DbChat = {
@@ -3634,6 +3657,8 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         model: None,
         query_text_for_rag: None,
         analysis_mode: None,
+        guidance: None,
+        variant_of: None,
     };
 
     let response = client

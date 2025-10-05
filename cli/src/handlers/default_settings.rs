@@ -55,8 +55,10 @@ impl DefaultSettings {
             history_management_limit: None,
             model_name: Some(self.model_name.clone()),
             model_provider: None, // Will be determined by backend based on model
-            chronicle_id: None,   // Not relevant for CLI
-            agent_mode: None,     // Not used in CLI default settings
+            active_custom_persona_id: None,
+            prompt_template_id: None,
+            chronicle_id: None, // Not relevant for CLI
+            agent_mode: None,   // Not used in CLI default settings
         }
     }
 }

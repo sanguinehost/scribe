@@ -21,14 +21,14 @@ CREATE TABLE user_assets (
     content_type VARCHAR(100), -- 'image/png', 'image/jpeg', etc.
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     -- Ensure user can't have multiple avatars (but can have multiple persona avatars)
     CONSTRAINT unique_user_avatar UNIQUE (user_id, asset_type) DEFERRABLE INITIALLY DEFERRED,
     -- Ensure persona can't have multiple avatars
     CONSTRAINT unique_persona_avatar UNIQUE (persona_id, asset_type) DEFERRABLE INITIALLY DEFERRED,
     -- Check constraint: either user avatar (persona_id is NULL) or persona avatar (persona_id is NOT NULL)
     CONSTRAINT check_user_or_persona CHECK (
-        (persona_id IS NULL AND asset_type = 'avatar') OR 
+        (persona_id IS NULL AND asset_type = 'avatar') OR
         (persona_id IS NOT NULL AND asset_type = 'avatar')
     )
 );

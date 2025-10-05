@@ -36,16 +36,16 @@ main() {
     echo
     log_error "ALL DATA WILL BE PERMANENTLY LOST!"
     echo
-    
+
     read -p "Type 'NUKE' to confirm complete database destruction: " confirm
     if [ "$confirm" != "NUKE" ]; then
         echo "Cancelled."
         exit 0
     fi
-    
+
     echo
     log_warning "Deleting RDS instance..."
-    
+
     # Delete the RDS instance without final snapshot (faster)
     aws rds delete-db-instance \
         --db-instance-identifier "$DB_INSTANCE_ID" \
@@ -53,25 +53,25 @@ main() {
         --region "$AWS_REGION" || {
         log_error "Failed to delete RDS instance. It might not exist."
     }
-    
+
     log_warning "Waiting for RDS instance to be deleted..."
     log_warning "This can take 5-10 minutes..."
-    
+
     # Wait for deletion to complete
     aws rds wait db-instance-deleted \
         --db-instance-identifier "$DB_INSTANCE_ID" \
         --region "$AWS_REGION" || {
         log_warning "Wait command failed, but continuing..."
     }
-    
+
     log_success "RDS instance deleted!"
-    
+
     # Change to terraform directory and recreate
     cd terraform/environments/staging
-    
+
     log_warning "Running terraform apply to recreate database..."
     terraform apply -auto-approve
-    
+
     if [ $? -eq 0 ]; then
         log_success "Database recreated successfully!"
         log_success "You can now register with any credentials."

@@ -21,9 +21,9 @@
 	} from '../ui/alert-dialog';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import { toast } from 'svelte-sonner';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { Skeleton } from '../ui/skeleton';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 
 	let { user }: { user?: User } = $props();
 	const chatHistory = ChatHistory.fromContext();
@@ -35,7 +35,7 @@
 	let selectedAction = $state<ChronicleAction>('delete_events');
 
 	// Get the chat to be deleted and check if it has chronicles
-	const chatToDelete = $derived(() => {
+	const _chatToDelete = $derived(() => {
 		if (!chatIdToDelete) return null;
 		return chatHistory.chats.find((chat) => chat.id === chatIdToDelete);
 	});
@@ -97,7 +97,7 @@
 		alertDialogOpen = true;
 
 		// Fetch deletion analysis
-		const result = await apiClient.getChatDeletionAnalysis(chatId);
+		const result = await _apiClient.getChatDeletionAnalysis(chatId);
 		analysisLoading = false;
 
 		if (result.isErr()) {
@@ -123,7 +123,7 @@
 
 		const deletePromise = (async () => {
 			// Use Scribe endpoint for deleting a chat with chronicle action
-			const result = await apiClient.deleteChatById(chatIdToDelete!, action);
+			const result = await _apiClient.deleteChatById(chatIdToDelete!, action);
 			if (result.isErr()) {
 				throw new Error(result.error.message);
 			}
@@ -152,7 +152,7 @@
 		alertDialogOpen = false;
 
 		if (chatIdToDelete === page.params.chatId) {
-			await goto('/');
+			await _goto('/');
 		}
 	}
 

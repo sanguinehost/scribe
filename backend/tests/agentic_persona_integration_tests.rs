@@ -22,7 +22,7 @@ use scribe_backend::{
     },
     test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -91,6 +91,11 @@ async fn create_test_user_with_persona(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
 
     let user_db: UserDbQuery = conn
@@ -170,7 +175,7 @@ fn create_lucas_roleplay_messages(
 
     let mut messages = Vec::new();
 
-    for (i, (role, content)) in messages_content.iter().enumerate() {
+    for (_i, (role, content)) in messages_content.iter().enumerate() {
         let message_role = match *role {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,
@@ -197,6 +202,8 @@ fn create_lucas_roleplay_messages(
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         });
     }
 
@@ -544,7 +551,7 @@ async fn test_triage_tool_persona_awareness() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
 
-    let (user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
+    let (_user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
 
     // Test messages with persona-specific content
     let messages = json!({

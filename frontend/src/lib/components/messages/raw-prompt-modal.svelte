@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Copy } from 'lucide-svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 
 	let {
 		open = $bindable(false),
@@ -17,7 +17,7 @@
 	let error = $state<string | null>(null);
 	let hasFetched = $state(false);
 	let retryCount = $state(0);
-	let retryTimeout = $state<NodeJS.Timeout | null>(null);
+	let retryTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
 
 	// Fetch raw prompt when modal opens
 	$effect(() => {
@@ -33,7 +33,7 @@
 		error = null;
 
 		try {
-			const result = await apiClient.getMessageById(messageId);
+			const result = await _apiClient.getMessageById(messageId);
 			if (result.isOk()) {
 				const message = result.value;
 
@@ -129,10 +129,10 @@
 			</div>
 			<div class="flex items-center gap-2">
 				{#if rawPrompt}
-					<Button variant="outline" size="sm" onclick={copyToClipboard} class="gap-2">
+					<ButtonComponent variant="outline" size="sm" onclick={copyToClipboard} class="gap-2">
 						<Copy size={14} />
 						Copy
-					</Button>
+					</ButtonComponent>
 				{/if}
 			</div>
 		</Dialog.Header>
@@ -157,7 +157,7 @@
 						<div class="mb-2 text-sm font-medium text-destructive">Error</div>
 						<p class="text-sm text-muted-foreground">{error}</p>
 					</div>
-					<Button
+					<ButtonComponent
 						variant="outline"
 						onclick={() => {
 							hasFetched = false;
@@ -171,7 +171,7 @@
 						disabled={isLoading}
 					>
 						Retry
-					</Button>
+					</ButtonComponent>
 				</div>
 			{:else if rawPrompt}
 				<div class="rounded-lg border bg-muted/20">

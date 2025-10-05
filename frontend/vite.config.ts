@@ -38,6 +38,8 @@ if (isDev) {
 export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
+		hmr: false,
+		watch: null,
 		host: true, // Listen on all network interfaces
 		...(certsExist && {
 			https: {
@@ -47,7 +49,7 @@ export default defineConfig({
 		}),
 		proxy: {
 			'/api': {
-				target: 'https://localhost:8080',
+				target: process.env.VITE_BACKEND_TARGET || 'https://localhost:8081',
 				changeOrigin: true,
 				secure: false,
 				cookieDomainRewrite: 'localhost',

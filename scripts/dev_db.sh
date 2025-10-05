@@ -31,15 +31,15 @@ usage() {
 detect_runtime() {
     if command -v podman &> /dev/null; then
         RUNTIME="podman"
-        
+
         # Setup podman environment for docker-compose compatibility
         echo "Setting up podman environment..."
         systemctl --user start podman.socket
         export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
-        
+
         # Clean up any problematic networks from previous runs
         podman network rm compose_default 2>/dev/null || true
-        
+
         # Check for compose providers
         if command -v docker-compose &> /dev/null; then
             export PODMAN_COMPOSE_PROVIDER="docker-compose"
@@ -68,11 +68,11 @@ detect_runtime() {
         echo "Install: podman (recommended) or docker"
         exit 1
     fi
-    
+
     echo "Using runtime: $RUNTIME_DESC"
 }
 
-# Change to the project root directory (one level up from scripts) 
+# Change to the project root directory (one level up from scripts)
 PROJECT_ROOT="$(dirname "$0")/.."
 cd "$PROJECT_ROOT" || exit
 
@@ -107,9 +107,9 @@ case "$COMMAND" in
 
     echo "Running database migrations..."
     if command -v diesel &> /dev/null; then
-        (cd "$PROJECT_ROOT/backend" && DATABASE_URL="$DATABASE_URL" diesel migration run) 
+        (cd "$PROJECT_ROOT/backend" && DATABASE_URL="$DATABASE_URL" diesel migration run)
         MIGRATION_STATUS=$?
-    else 
+    else
         echo "Warning: 'diesel' command not found. Skipping migrations."
         echo "Install: cargo install diesel_cli --no-default-features --features postgres"
         MIGRATION_STATUS=0
@@ -119,7 +119,7 @@ case "$COMMAND" in
         echo "Database migrations failed!"
         exit $MIGRATION_STATUS
     fi
-    
+
     if [ "$RUNTIME" = "podman" ]; then
         echo ""
         echo "✅ Podman development environment ready!"
@@ -140,7 +140,7 @@ case "$COMMAND" in
   reset-up)
     echo "Stopping services and removing volumes (clearing data)..."
     $DC_CMD $COMPOSE_FILES down -v
-    
+
     echo "Starting services in detached mode..."
     $DC_CMD $COMPOSE_FILES up -d $SERVICES
     UP_STATUS=$?
@@ -154,9 +154,9 @@ case "$COMMAND" in
 
     echo "Running database migrations..."
     if command -v diesel &> /dev/null; then
-        (cd "$PROJECT_ROOT/backend" && DATABASE_URL="$DATABASE_URL" diesel migration run) 
+        (cd "$PROJECT_ROOT/backend" && DATABASE_URL="$DATABASE_URL" diesel migration run)
         MIGRATION_STATUS=$?
-    else 
+    else
         echo "Warning: 'diesel' command not found. Skipping migrations."
         echo "Install: cargo install diesel_cli --no-default-features --features postgres"
         MIGRATION_STATUS=0

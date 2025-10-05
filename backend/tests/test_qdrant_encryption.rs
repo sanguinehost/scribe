@@ -4,10 +4,10 @@ use scribe_backend::services::embeddings::metadata::{
     ChatMessageChunkMetadata, LorebookChunkMetadata,
 };
 use secrecy::ExposeSecret;
-use serde_json::json;
 use uuid::Uuid;
 
 #[test]
+#[allow(deprecated)]
 fn test_lorebook_metadata_encryption_fields() {
     // Test that LorebookChunkMetadata can handle encrypted fields
     let metadata = LorebookChunkMetadata {
@@ -36,6 +36,7 @@ fn test_lorebook_metadata_encryption_fields() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_chat_message_metadata_encryption_fields() {
     // Test that ChatMessageChunkMetadata can handle encrypted fields
     let metadata = ChatMessageChunkMetadata {
@@ -80,6 +81,7 @@ fn test_encryption_decryption_flow() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_backward_compatibility_plaintext_only() {
     // Test that metadata can still work with plaintext-only (legacy) mode
     let metadata = LorebookChunkMetadata {
@@ -107,6 +109,7 @@ fn test_backward_compatibility_plaintext_only() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_mixed_mode_encrypted_and_plaintext() {
     // Test that we can have both encrypted and plaintext fields
     // (during migration period)

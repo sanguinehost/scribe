@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Button } from './ui/button';
-	import { Input } from './ui/input';
+	import { Button as ButtonComponent } from './ui/button';
+	import { Input as _InputComponent } from './ui/input';
 	import { Label } from './ui/label';
-	import { Textarea } from './ui/textarea';
+	import { Textarea as TextareaComponent } from './ui/textarea';
 	import {
 		Dialog,
 		DialogContent,
@@ -14,7 +14,7 @@
 	// import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 	import { toast } from 'svelte-sonner';
 	import { Bot, Sparkles, Wand, RefreshCw, Plus, FileText, Info, Bug } from 'lucide-svelte';
-	import { apiClient } from '$lib/api';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type {
 		GenerationMode,
 		CharacterContext,
@@ -188,8 +188,8 @@
 					`AI detected style: ${descriptionStyles[detectedStyle as keyof typeof descriptionStyles]?.name || detectedStyle}`
 				);
 			}
-		} catch (error) {
-			console.warn('Error in style analysis:', error);
+		} catch (_error) {
+			console.warn('Error in style analysis:', _error);
 			toast.error('Failed to analyze style');
 		} finally {
 			isAnalyzingStyle = false;
@@ -201,7 +201,7 @@
 
 		try {
 			// Create a temporary ScribeAssistant session for style analysis
-			const createSessionResult = await apiClient.createChat({
+			const createSessionResult = await _apiClient.createChat({
 				title: 'Style Analysis',
 				chat_mode: 'ScribeAssistant'
 			});
@@ -227,10 +227,10 @@ Text to analyze:
 
 Style classification:`;
 
-			const expandResult = await apiClient.expandText(session.id, analysisPrompt);
+			const expandResult = await _apiClient.expandText(session.id, analysisPrompt);
 
 			// Clean up the temporary session
-			await apiClient.deleteChatById(session.id);
+			await _apiClient.deleteChatById(session.id);
 
 			if (expandResult.isOk()) {
 				const response = expandResult.value.expanded_text.toLowerCase().trim();
@@ -241,8 +241,8 @@ Style classification:`;
 				if (response.includes('worldbuilding')) return 'worldbuilding';
 				if (response.includes('behavioral')) return 'behavioral';
 			}
-		} catch (error) {
-			console.warn('Error in AI style detection:', error);
+		} catch (_error) {
+			console.warn('Error in AI style detection:', _error);
 		}
 
 		// Fallback to auto if AI analysis fails
@@ -265,8 +265,8 @@ Style classification:`;
 				// Expand/enhance existing content using text expansion
 				await expandExistingText();
 			}
-		} catch (error) {
-			console.error('Error in AI generation:', error);
+		} catch (_error) {
+			console.error('Error in AI generation:', _error);
 			toast.error('An error occurred while generating content');
 		} finally {
 			isGenerating = false;
@@ -386,8 +386,8 @@ Style classification:`;
 
 			// Show results state instead of closing
 			showResults = true;
-		} catch (error) {
-			console.error('Error in character generation:', error);
+		} catch (_error) {
+			console.error('Error in character generation:', _error);
 			toast.error(`Failed to generate ${fieldName}`);
 		}
 	}
@@ -465,8 +465,8 @@ Style classification:`;
 			onGenerated(enhancementResponse.enhanced_content);
 			toast.success(`${fieldName} ${getModeDescription(selectedMode)} successfully`);
 			onOpenChange(false);
-		} catch (error) {
-			console.error('Error in character enhancement:', error);
+		} catch (_error) {
+			console.error('Error in character enhancement:', _error);
 			toast.error(`Failed to ${selectedMode} ${fieldName}`);
 		}
 	}
@@ -623,7 +623,7 @@ Style classification:`;
 					<Label>Generation Mode</Label>
 					<div class="flex flex-wrap gap-2">
 						{#each modeOptions as mode}
-							<Button
+							<ButtonComponent
 								variant={selectedMode === mode.value ? 'default' : 'outline'}
 								size="sm"
 								onclick={() => (selectedMode = mode.value as GenerationMode)}
@@ -631,7 +631,7 @@ Style classification:`;
 							>
 								<mode.icon size={14} />
 								{mode.label}
-							</Button>
+							</ButtonComponent>
 						{/each}
 					</div>
 				</div>
@@ -642,7 +642,7 @@ Style classification:`;
 						<div class="flex items-center justify-between">
 							<Label>Description Style</Label>
 							{#if userInput.trim().length > 20}
-								<Button
+								<ButtonComponent
 									variant="ghost"
 									size="sm"
 									onclick={() => analyzeStyle(userInput)}
@@ -675,7 +675,7 @@ Style classification:`;
 										<Bot size={12} class="mr-1" />
 										Re-analyze Style
 									{/if}
-								</Button>
+								</ButtonComponent>
 							{/if}
 						</div>
 						<div class="grid gap-3">
@@ -710,12 +710,12 @@ Style classification:`;
 						<Label for="user-input">
 							{selectedMode === 'create' ? 'Describe what you want' : 'Text to enhance'}
 						</Label>
-						<Button variant="ghost" size="sm" onclick={insertExample} class="text-xs">
+						<ButtonComponent variant="ghost" size="sm" onclick={insertExample} class="text-xs">
 							<FileText size={12} class="mr-1" />
 							Show Example
-						</Button>
+						</ButtonComponent>
 					</div>
-					<Textarea
+					<TextareaComponent
 						id="user-input"
 						bind:value={userInput}
 						placeholder={fieldName === 'description' && selectedStyle !== 'auto'
@@ -779,7 +779,7 @@ Style classification:`;
 				<!-- Results Footer -->
 				<div class="flex w-full items-center justify-between">
 					<div class="flex gap-2">
-						<Button
+						<ButtonComponent
 							variant="outline"
 							onclick={() => (showDebugModal = true)}
 							class="gap-2"
@@ -787,10 +787,10 @@ Style classification:`;
 						>
 							<Bug size={14} />
 							View Debug Info
-						</Button>
+						</ButtonComponent>
 					</div>
 					<div class="flex gap-2">
-						<Button
+						<ButtonComponent
 							variant="outline"
 							onclick={() => {
 								showResults = false;
@@ -800,19 +800,23 @@ Style classification:`;
 						>
 							<RefreshCw size={14} />
 							Generate Another
-						</Button>
-						<Button onclick={() => onOpenChange(false)}>Done</Button>
+						</ButtonComponent>
+						<ButtonComponent onclick={() => onOpenChange(false)}>Done</ButtonComponent>
 					</div>
 				</div>
 			{:else}
 				<!-- Generation Footer -->
 				<div class="flex w-full items-center justify-between">
 					<div class="flex gap-2">
-						<Button variant="outline" onclick={() => onOpenChange(false)} disabled={isGenerating}>
+						<ButtonComponent
+							variant="outline"
+							onclick={() => onOpenChange(false)}
+							disabled={isGenerating}
+						>
 							Cancel
-						</Button>
+						</ButtonComponent>
 						{#if lastGenerationResponse}
-							<Button
+							<ButtonComponent
 								variant="outline"
 								size="sm"
 								onclick={() => (showDebugModal = true)}
@@ -821,10 +825,10 @@ Style classification:`;
 							>
 								<Bug size={14} />
 								Debug
-							</Button>
+							</ButtonComponent>
 						{/if}
 					</div>
-					<Button onclick={handleGenerate} disabled={isGenerating}>
+					<ButtonComponent onclick={handleGenerate} disabled={isGenerating}>
 						{#if isGenerating}
 							<svg
 								class="mr-2 h-4 w-4 animate-spin"
@@ -850,7 +854,7 @@ Style classification:`;
 						{:else}
 							Generate {fieldName}
 						{/if}
-					</Button>
+					</ButtonComponent>
 				</div>
 			{/if}
 		</DialogFooter>

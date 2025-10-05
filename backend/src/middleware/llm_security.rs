@@ -162,7 +162,7 @@ pub struct RateLimitResponse {
 pub async fn llm_security_middleware(
     State(app_state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -270,7 +270,7 @@ pub async fn llm_security_middleware(
 
 /// Check if endpoint is an LLM endpoint that needs rate limiting
 fn is_llm_endpoint(path: &str) -> bool {
-    path.starts_with("/api/llm/chat") || 
+    path.starts_with("/api/llm/chat") ||
     path.starts_with("/api/llm/generate") ||
     path == "/api/llm/chat" ||
     path == "/api/llm/stream" ||
@@ -283,6 +283,7 @@ fn is_llm_endpoint(path: &str) -> bool {
 }
 
 /// Extract client IP from headers
+#[allow(dead_code)]
 fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-forwarded-for")
@@ -344,7 +345,6 @@ pub async fn security_headers_middleware(request: Request, next: Next) -> Respon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread::sleep;
 
     #[test]
     fn test_rate_limiter() {

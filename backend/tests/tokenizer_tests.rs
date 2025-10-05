@@ -4,9 +4,8 @@ use std::path::PathBuf;
 #[test]
 fn test_gemma_tokenizer_integration() {
     // Path to the Gemma model file
-    let model_path = PathBuf::from(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
-    );
+    let model_path =
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
 
     // Create a tokenizer instance
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");

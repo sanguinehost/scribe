@@ -20,6 +20,7 @@ use crate::models::chats::{
 };
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::{chat_messages, chat_sessions};
 use axum::{
     Router,
@@ -34,7 +35,9 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
 // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
-use diesel::{ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{
+    ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
+};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -77,7 +80,10 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/messages/:id",
             get(get_message_by_id_handler).delete(delete_message_handler),
         )
-        .route("/messages/:id/select-variant", post(select_message_variant_handler))
+        .route(
+            "/messages/:id/select-variant",
+            post(select_message_variant_handler),
+        )
         .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
@@ -130,7 +136,7 @@ pub async fn set_chat_character_override_handler(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %user.id, field_name = %payload.field_name, "Attempting to set chat character override");
+    tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %loggable_user_id(user.id), field_name = %payload.field_name, "Attempting to set chat character override");
 
     // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
     // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
@@ -408,7 +414,7 @@ pub async fn get_chat_deletion_analysis_handler(
 
     // First verify the user owns this chat
     let pool = state.pool.clone();
-    let chat = pool
+    let _chat = pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?
@@ -692,7 +698,10 @@ fn fetch_chat_with_ownership_check(
         ));
     }
 
-    tracing::debug!("Successfully verified chat ownership for user {}", user_id);
+    tracing::debug!(
+        "Successfully verified chat ownership for user {}",
+        loggable_user_id(user_id)
+    );
     Ok(chat)
 }
 
@@ -765,6 +774,7 @@ async fn fetch_paginated_chat_messages(
 }
 
 /// Helper function to get the default variant content for a message (variant index 0)
+#[allow(dead_code)]
 async fn get_default_variant_content(
     pool: PgPool,
     message_id: Uuid,
@@ -800,7 +810,6 @@ async fn get_default_variant_content(
     }
 }
 
-
 /// Helper function to decrypt and transform messages for client response with variant support
 async fn process_messages_for_response(
     messages_db: Vec<Message>,
@@ -833,11 +842,19 @@ async fn process_messages_for_response(
                 msg_db.current_variant_index,
                 msg_db.id
             );
-            match get_variant_content_by_index(pool.clone(), msg_db.id, msg_db.current_variant_index, user_id, dek).await? {
+            match get_variant_content_by_index(
+                pool.clone(),
+                msg_db.id,
+                msg_db.current_variant_index,
+                user_id,
+                dek,
+            )
+            .await?
+            {
                 Some(variant_content) => {
                     tracing::info!("✅ Found variant content for message {}", msg_db.id);
                     variant_content
-                },
+                }
                 None => {
                     // Fallback to original message content if variant not found
                     tracing::warn!(
@@ -891,10 +908,10 @@ async fn process_messages_for_response(
             variant_count: msg_db.variant_count,
             current_variant_index: msg_db.current_variant_index,
             is_variant: msg_db.variant_count > 0, // True if this message has variants
-            parent_message_id: None, // TODO: Add parent_message_id to Message struct
-            variants: None, // TODO: Load actual variants
+            parent_message_id: None,              // TODO: Add parent_message_id to Message struct
+            variants: None,                       // TODO: Load actual variants
         };
-        
+
         tracing::info!(
             "📤 Sending message response: id={}, variant_count={}, current_variant_index={}, is_variant={}",
             message_response.id,
@@ -902,7 +919,7 @@ async fn process_messages_for_response(
             message_response.current_variant_index,
             message_response.is_variant
         );
-        
+
         responses.push(message_response);
     }
 
@@ -945,7 +962,11 @@ pub async fn get_messages_by_chat_id_handler(
     let chat_id = parse_chat_id(&id)?;
     let user = get_authenticated_user(auth_session)?;
 
-    tracing::debug!("Parsed chat_id = {}, user_id = {}", chat_id, user.id);
+    tracing::debug!(
+        "Parsed chat_id = {}, user_id = {}",
+        chat_id,
+        loggable_user_id(user.id)
+    );
 
     // Fetch chat session and verify ownership
     let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
@@ -971,17 +992,6 @@ pub async fn get_messages_by_chat_id_handler(
     }))
 }
 
-// Create a message
-/// Creates a new message in a chat session.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Authentication fails
-/// - Chat not found or access denied
-/// - Validation fails
-/// - Database operation fails
-/// - Encryption fails
 pub async fn create_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
@@ -992,45 +1002,78 @@ pub async fn create_message_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    let user_id = user.id;
 
-    // Use the SessionDek which provides the user's DEK
+    // Parse the role into enum for validation
+    let message_role_enum = match payload.role.to_lowercase().as_str() {
+        "user" => MessageRole::User,
+        "assistant" => MessageRole::Assistant,
+        "system" => MessageRole::System,
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "Invalid role: {}",
+                payload.role
+            )));
+        }
+    };
+
+    // Fetch chat session and verify ownership
+    let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+
+    let user_id = user.id;
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
         dek.0.expose_secret().clone(),
     ))));
 
-    // Verify chat session ownership (existing logic is fine)
-    let chat = state
-        .pool
-        .get()
-        .await // Keep this verification block
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(chat_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    // Note: CreateMessageRequest doesn't have validation - basic validation happens in role parsing above
 
-    if chat.user_id != user.id {
-        return Err(AppError::Forbidden(
-            "Access denied to create message".to_string(),
-        ));
+    // Track daily usage for user messages (this happens synchronously, before token tracking)
+    #[cfg(feature = "payment")]
+    if message_role_enum == MessageRole::User {
+        use crate::services::payment::SoftLimitService;
+
+        let soft_limit_service = SoftLimitService::new(state.config.clone());
+        let pool = state.pool.clone();
+        let user_id_for_daily_tracking = user_id;
+
+        let _daily_usage_result = pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?
+            .interact(move |conn| {
+                soft_limit_service.record_usage(
+                    conn,
+                    user_id_for_daily_tracking,
+                    "manual_message",
+                    0,
+                )
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+        match _daily_usage_result {
+            Ok(_) => {
+                debug!(
+                    user_id = %user_id_for_daily_tracking,
+                    chat_id = %chat_id,
+                    "Successfully incremented daily usage for user message"
+                );
+            }
+            Err(e) => {
+                warn!(
+                    user_id = %user_id_for_daily_tracking,
+                    chat_id = %chat_id,
+                    error = %e,
+                    "Failed to increment daily usage for user message, but proceeding"
+                );
+            }
+        }
     }
 
-    let message_role_enum = if payload.role.to_lowercase() == "user" {
-        MessageRole::User
-    } else {
-        MessageRole::Assistant
-    };
-
-    // Save the message
-    let saved_db_message =
-        chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
-            state: Arc::new(state.clone()),
+    // Create the message using the save_message function
+    let app_state = Arc::new(state.clone());
+    let saved_db_message = crate::services::chat::message_handling::save_message(
+        crate::services::chat::message_handling::SaveMessageParams {
+            state: app_state,
             session_id: chat_id,
             user_id,
             message_type_enum: message_role_enum,
@@ -1040,12 +1083,89 @@ pub async fn create_message_handler(
             attachments: payload.attachments.clone(),
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
-            raw_prompt_debug: None, // Manual message creation doesn't need raw prompt debug
+            raw_prompt_debug: None,
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
-            variant_of: None, // Manual message creation doesn't create variants
-        })
-        .await?;
+            variant_of: None,
+        },
+    )
+    .await?;
+
+    // Track token usage for payment/quota tracking (for manually created user messages)
+    #[cfg(feature = "payment")]
+    if message_role_enum == MessageRole::User && saved_db_message.prompt_tokens.unwrap_or(0) > 0 {
+        use crate::services::encryption_service::EncryptionService;
+        use crate::services::payment::UsageTrackingService;
+
+        let usage_tracking_service =
+            UsageTrackingService::new((*state.config).clone(), EncryptionService::new());
+
+        let user_id_for_payment = user_id;
+        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0);
+        let model_name_for_tracking = chat.model_name.clone();
+
+        // Get a database connection for the usage tracking
+        match state.pool.get().await {
+            Ok(conn) => {
+                let subscription_id = None; // TODO: Get from user's subscription if needed
+                let mut model_usage = std::collections::HashMap::new();
+                model_usage.insert(model_name_for_tracking, tokens_used);
+
+                let metadata = Some(
+                    crate::services::payment::usage_tracking_service::UsageMetadata {
+                        model_usage,
+                        feature_usage: std::collections::HashMap::new(),
+                        request_count: 1,
+                        last_activity: chrono::Utc::now(),
+                    },
+                );
+
+                // Use interact to call the async track_usage method
+                let track_result = conn
+                    .interact(move |conn| {
+                        usage_tracking_service.track_usage_sync(
+                            conn,
+                            user_id_for_payment,
+                            subscription_id,
+                            tokens_used,
+                            metadata,
+                        )
+                    })
+                    .await;
+
+                match track_result {
+                    Ok(Ok(_)) => {
+                        debug!(
+                            chat_id = %chat_id,
+                            tokens_used = tokens_used,
+                            "Successfully tracked token usage for manually created user message"
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        warn!(
+                            chat_id = %chat_id,
+                            error = %e,
+                            "Failed to track token usage for manually created user message"
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            chat_id = %chat_id,
+                            error = %e,
+                            "Database interaction failed for token usage tracking"
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    chat_id = %chat_id,
+                    error = %e,
+                    "Failed to get database connection for token usage tracking"
+                );
+            }
+        }
+    }
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
     // saved_db_message is a ChatMessage. We need to construct a Message to call into_decrypted_for_client.
@@ -1094,14 +1214,14 @@ pub async fn create_message_handler(
         raw_prompt: client_message.raw_prompt,
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
-        model_name: Some(saved_db_message.model_name.clone()),
-        status: saved_db_message.status.clone(),
-        error_message: saved_db_message.error_message.clone(),
+        model_name: Some(saved_db_message.model_name),
+        status: saved_db_message.status,
+        error_message: saved_db_message.error_message,
         variant_count: saved_db_message.variant_count,
         current_variant_index: saved_db_message.current_variant_index,
-        is_variant: false,
-        parent_message_id: None,
-        variants: None,
+        is_variant: saved_db_message.variant_count > 0,
+        parent_message_id: None, // TODO: Add parent_message_id to ChatMessage struct
+        variants: None,          // TODO: Load actual variants
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -1556,7 +1676,7 @@ pub async fn delete_trailing_messages_handler(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Authentication fails  
+/// - Authentication fails
 /// - Message not found or access denied
 /// - Database operation fails
 pub async fn delete_message_handler(
@@ -1831,7 +1951,7 @@ async fn get_chat_token_usage_handler(
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
-    
+
     // Fetch the chat session to verify ownership and get token statistics
     let user_id = user.id;
     let conn = state.pool.get().await.map_err(|e| {
@@ -1911,7 +2031,7 @@ pub async fn select_message_variant_handler(
 
     let pool = state.pool.clone();
 
-    // Verify the message exists and user has access 
+    // Verify the message exists and user has access
     let message_db = pool
         .get()
         .await
@@ -1964,13 +2084,21 @@ pub async fn select_message_variant_handler(
     // Get the content for the selected variant
     let content = if payload.variant_index == 0 {
         // Variant 0 means use original message content
-        let client_message = updated_message.clone().into_decrypted_for_client(Some(&dek.0))?;
+        let client_message = updated_message
+            .clone()
+            .into_decrypted_for_client(Some(&dek.0))?;
         client_message.content
     } else {
         // Get content from the variants table
-        get_variant_content_by_index(pool.clone(), message_id, payload.variant_index, user.id, &dek)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Variant not found".to_string()))?
+        get_variant_content_by_index(
+            pool.clone(),
+            message_id,
+            payload.variant_index,
+            user.id,
+            &dek,
+        )
+        .await?
+        .ok_or_else(|| AppError::NotFound("Variant not found".to_string()))?
     };
 
     // Return the updated message response

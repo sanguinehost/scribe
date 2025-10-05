@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import {
 		useSidebar,
 		Sidebar,
@@ -9,9 +9,9 @@
 		SidebarMenu
 	} from './ui/sidebar';
 	import ChevronLeft from './icons/chevron-left.svelte';
-	import { Users, UserCircle, BookOpen, ScrollText, Sun, Moon } from 'lucide-svelte';
+	import { Users, User as UserCircle, BookOpen, ScrollText, Sun, Moon } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
@@ -44,8 +44,8 @@
 	let chronicleListComp = $state<ChroniclesSidebarList | undefined>(undefined); // Reference to ChroniclesSidebarList component instance
 
 	// Character handlers
-	async function handleSelectCharacter(event: CustomEvent<{ characterId: string }>) {
-		const characterId = event.detail.characterId;
+	async function handleSelectCharacter(_event: CustomEvent<{ characterId: string }>) {
+		const characterId = _event.detail.characterId;
 		console.log('Character selected:', characterId);
 
 		// Clear any selected persona, lorebook, chronicle and set the selected character
@@ -62,7 +62,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			goto('/', { replaceState: true });
+			_goto('/', { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
@@ -84,7 +84,7 @@
 		}
 	}
 
-	async function handlePersonaCreated() {
+	async function _handlePersonaCreated() {
 		console.log('Persona created, refreshing list...');
 		if (personaListComp) {
 			await personaListComp.refresh(); // Call refresh on the PersonaList instance
@@ -92,8 +92,8 @@
 	}
 
 	// Persona handlers
-	async function handleSelectPersona(event: CustomEvent<{ personaId: string }>) {
-		const personaId = event.detail.personaId;
+	async function handleSelectPersona(_event: CustomEvent<{ personaId: string }>) {
+		const personaId = _event.detail.personaId;
 		console.log('Persona selected:', personaId);
 
 		// Clear any selected character, lorebook, chronicle and set the selected persona
@@ -110,7 +110,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			goto('/', { replaceState: true });
+			_goto('/', { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
@@ -127,7 +127,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			goto('/', { replaceState: true });
+			_goto('/', { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
@@ -162,18 +162,20 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			await goto('/', { replaceState: true });
+			await _goto('/', { replaceState: true });
 			// Small delay to ensure navigation completes smoothly
 			await new Promise((resolve) => setTimeout(resolve, 50));
 		}
 
+		// Go directly to consolidated settings view, skipping the overview
+		settingsStore.setViewMode('consolidated');
 		settingsStore.show();
 		context.setOpenMobile(false); // Close mobile sidebar if open
 	}
 
 	// Lorebook handlers
-	async function handleSelectLorebook(event: CustomEvent<{ lorebookId: string }>) {
-		const lorebookId = event.detail.lorebookId;
+	async function handleSelectLorebook(_event: CustomEvent<{ lorebookId: string }>) {
+		const lorebookId = _event.detail.lorebookId;
 		console.log('Lorebook selected:', lorebookId);
 
 		// Clear any selected character, persona, chronicle and set selected lorebook
@@ -208,8 +210,8 @@
 	}
 
 	// Chronicle handlers
-	async function handleSelectChronicle(event: CustomEvent<{ chronicleId: string }>) {
-		const chronicleId = event.detail.chronicleId;
+	async function handleSelectChronicle(_event: CustomEvent<{ chronicleId: string }>) {
+		const chronicleId = _event.detail.chronicleId;
 		console.log('Chronicle selected:', chronicleId);
 
 		// Clear any selected character, persona, and lorebook, then set selected chronicle
@@ -226,7 +228,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			goto('/', { replaceState: true });
+			_goto('/', { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
@@ -248,7 +250,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			goto('/', { replaceState: true });
+			_goto('/', { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
@@ -265,7 +267,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			goto('/', { replaceState: true });
+			_goto('/', { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
@@ -291,14 +293,14 @@
 					</span>
 				</a>
 				<!-- Collapse button on desktop -->
-				<Button
+				<ButtonComponent
 					variant="ghost"
 					size="icon"
 					class="hidden h-8 w-8 md:flex"
 					onclick={() => context.toggle()}
 				>
 					<ChevronLeft class="h-4 w-4" />
-				</Button>
+				</ButtonComponent>
 			</div>
 		</SidebarMenu>
 	</SidebarHeader>
@@ -419,11 +421,11 @@
 	</SidebarContent>
 	<SidebarFooter class="flex flex-col gap-2">
 		<div class="flex gap-2">
-			<Button variant="ghost" class="flex-1 justify-start" onclick={openSettings}>
+			<ButtonComponent variant="ghost" class="flex-1 justify-start" onclick={openSettings}>
 				<SettingsIcon size={16} class="mr-2" />
 				Settings
-			</Button>
-			<Button
+			</ButtonComponent>
+			<ButtonComponent
 				variant="ghost"
 				size="icon"
 				onclick={toggleTheme}
@@ -434,7 +436,7 @@
 				{:else}
 					<Sun size={16} />
 				{/if}
-			</Button>
+			</ButtonComponent>
 		</div>
 		{#if getIsAuthenticated() && getCurrentUser()}
 			<SidebarUserNav />
@@ -444,7 +446,7 @@
 
 <!-- Add the CharacterUploader component (Dialog) -->
 <CharacterUploader
-	bind:open={isUploaderOpen}
+	bind:_open={isUploaderOpen}
 	onOpenChange={(value) => {
 		isUploaderOpen = value;
 	}}

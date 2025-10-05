@@ -1,20 +1,27 @@
 <script lang="ts">
 	import PreviewAttachment from './preview-attachment.svelte';
-	import { Textarea } from './ui/textarea';
-	import { cn } from '$lib/utils/shadcn';
+	import { Textarea as _TextareaComponent } from './ui/textarea';
+	import { cn as _cn } from '$lib/utils/shadcn';
 	import { onMount } from 'svelte';
 	// import { LocalStorage } from '$lib/hooks/local-storage.svelte'; // Unused? Let's remove for cleanup.
 	// import { innerWidth } from 'svelte/reactivity/window'; // Unused? Let's remove for cleanup.
 	import { toast } from 'svelte-sonner';
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import StopIcon from './icons/stop.svelte';
 	import ImpersonateWidget from './impersonate-widget.svelte';
 	import ContextEnrichmentButton from './context-enrichment-button.svelte';
 	// import { replaceState } from '$app/navigation'; // Unused? Let's remove for cleanup.
 
+	// Define attachment interface
+	interface AttachmentData {
+		name?: string;
+		url: string;
+		contentType?: string;
+	}
+
 	// Props definition
 	type Props = {
-		attachments?: any[]; // Make attachments optional
+		attachments?: AttachmentData[]; // Make attachments optional
 		value: string;
 		isLoading: boolean;
 		stopGeneration: () => void;
@@ -40,14 +47,14 @@
 	}: Props = $props();
 
 	// State variables
-	let mounted = $state(false);
+	let _mounted = $state(false);
 	let textareaElement = $state<HTMLTextAreaElement | null>(null);
 	let fileInputRef = $state<HTMLInputElement | null>(null);
 	let uploadQueue = $state<string[]>([]);
 
 	// Lifecycle
 	onMount(() => {
-		mounted = true;
+		_mounted = true;
 		// Initial height adjustment happens in bindTextarea now
 		// Focus logic can be added back if needed
 	});
@@ -133,8 +140,7 @@
 			<div class="flex flex-row items-end gap-2 overflow-x-scroll">
 				{#if attachments}
 					{#each attachments as attachment (attachment.url)}
-						<PreviewAttachment attachment={attachment as any} />
-						<!-- Cast to any for now, refine later if needed -->
+						<PreviewAttachment {attachment} />
 					{/each}
 				{/if}
 
@@ -156,7 +162,7 @@
 			use:bindTextarea
 			{placeholder}
 			bind:value
-			class={cn(
+			class={_cn(
 				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
 				c
 			)}
@@ -165,9 +171,9 @@
 				// Ensure height adjusts on any input change
 				adjustHeight();
 			}}
-			onkeydown={(event: KeyboardEvent) => {
-				if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-					event.preventDefault();
+			onkeydown={(_event: KeyboardEvent) => {
+				if (_event.key === 'Enter' && !_event.shiftKey && !_event.isComposing) {
+					_event.preventDefault();
 					// Trigger form submission
 					textareaElement?.form?.requestSubmit();
 				}
@@ -199,13 +205,13 @@
 </div>
 
 {#snippet stopButton()}
-	<Button
+	<ButtonComponent
 		class="h-fit rounded-full border p-1.5 dark:border-zinc-600"
-		onclick={(event: MouseEvent) => {
-			event.preventDefault();
+		onclick={(_event: MouseEvent) => {
+			_event.preventDefault();
 			stopGeneration(); // Use stopGeneration prop
 		}}
 	>
 		<StopIcon size={14} />
-	</Button>
+	</ButtonComponent>
 {/snippet}

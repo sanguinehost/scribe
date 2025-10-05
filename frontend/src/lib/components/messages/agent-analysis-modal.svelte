@@ -1,9 +1,28 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
-	import { Copy, Brain, Search, Sparkles, Clock, AlertCircle } from 'lucide-svelte';
-	import { apiClient } from '$lib/api';
+	import { Button as ButtonComponent } from '$lib/components/ui/button';
+	import { Copy, Brain, Search, Sparkles, Clock as _Clock, AlertCircle } from 'lucide-svelte';
+	import { apiClient as _apiClient } from '$lib/api';
 	import type { AgentAnalysisResponse } from '$lib/types';
+
+	// Interface for execution log steps
+	interface ExecutionStep {
+		step_number: number;
+		action_type: string;
+		thought?: string;
+		tokens_used?: number;
+		duration_ms?: number;
+		tool_call?: {
+			tool_name: string;
+			parameters: Record<string, unknown>;
+		};
+		result?: unknown;
+		observations?: string;
+	}
+
+	interface ExecutionLog {
+		steps: ExecutionStep[];
+	}
 
 	let {
 		open = $bindable(false),
@@ -35,7 +54,7 @@
 
 		try {
 			// Pass the messageId to fetch analysis specific to this message
-			const result = await apiClient.getAgentAnalysis(sessionId, undefined, messageId);
+			const result = await _apiClient.getAgentAnalysis(sessionId, undefined, messageId);
 
 			if (result.isOk()) {
 				const analyses = result.value;
@@ -116,7 +135,7 @@
 			</div>
 			{#if agentAnalysis}
 				<div class="flex items-center gap-2">
-					<Button
+					<ButtonComponent
 						variant="outline"
 						size="sm"
 						onclick={() => copyToClipboard(JSON.stringify(agentAnalysis, null, 2))}
@@ -124,7 +143,7 @@
 					>
 						<Copy size={14} />
 						Copy JSON
-					</Button>
+					</ButtonComponent>
 				</div>
 			{/if}
 		</Dialog.Header>
@@ -145,7 +164,7 @@
 						<div class="mb-2 text-sm font-medium text-destructive">Error</div>
 						<p class="text-sm text-muted-foreground">{error}</p>
 					</div>
-					<Button
+					<ButtonComponent
 						variant="outline"
 						onclick={() => {
 							hasFetched = false;
@@ -154,7 +173,7 @@
 						disabled={isLoading}
 					>
 						Retry
-					</Button>
+					</ButtonComponent>
 				</div>
 			{:else if agentAnalysis}
 				<div class="space-y-4">
@@ -248,9 +267,9 @@
 					{#if agentAnalysis.execution_log}
 						<div class="rounded-lg border p-4">
 							<h3 class="mb-3 font-medium">Execution Log</h3>
-							{#if agentAnalysis.execution_log?.steps && Array.isArray(agentAnalysis.execution_log.steps)}
+							{#if (agentAnalysis.execution_log as ExecutionLog)?.steps && Array.isArray((agentAnalysis.execution_log as ExecutionLog).steps)}
 								<div class="space-y-3">
-									{#each agentAnalysis.execution_log.steps as step}
+									{#each (agentAnalysis.execution_log as ExecutionLog).steps as step}
 										{@const Icon = getActionIcon(step.action_type)}
 										<div class="rounded border bg-background p-4">
 											<div class="mb-2 flex items-center justify-between">

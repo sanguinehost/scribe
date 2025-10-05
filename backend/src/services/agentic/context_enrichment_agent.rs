@@ -93,7 +93,7 @@ pub struct ToolCall {
 pub struct ContextEnrichmentAgent {
     state: Arc<AppState>,
     search_tool: Arc<SearchKnowledgeBaseTool>,
-    chronicle_service: Arc<ChronicleService>,
+    _chronicle_service: Arc<ChronicleService>,
     model: String, // Flash-Lite for lightweight operation
 }
 
@@ -107,7 +107,7 @@ impl ContextEnrichmentAgent {
         Self {
             state,
             search_tool,
-            chronicle_service,
+            _chronicle_service: chronicle_service,
             model: "gemini-2.5-flash-lite".to_string(), // Lightweight model for speed
         }
     }
@@ -355,7 +355,7 @@ impl ContextEnrichmentAgent {
 
         // Execute the AI call with retry logic including jailbreak prompts
         const MAX_RETRIES: usize = 2;
-        let mut last_error = None;
+        let mut _last_error = None;
 
         for retry_count in 0..=MAX_RETRIES {
             // Build the system prompt - use jailbreak on retries
@@ -363,7 +363,7 @@ impl ContextEnrichmentAgent {
                 "You are a context enrichment planning agent. Your role is to analyze roleplay conversations and identify what background information would be helpful.
 
 IMPORTANT: Generate search queries using broad, semantic terms that focus on:
-- Named entities (countries, organizations, people, locations)  
+- Named entities (countries, organizations, people, locations)
 - Key concepts (technologies, ideologies, events)
 - Core topics that might have rich background information
 
@@ -523,17 +523,18 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
                             "Safety filter detected on attempt {}, retrying with enhanced prompt",
                             retry_count + 1
                         );
-                        last_error = Some(AppError::GeminiError(format!(
+                        _last_error = Some(AppError::GeminiError(format!(
                             "Planning failed due to safety filter: {}",
                             e
                         )));
                         continue;
                     } else if retry_count < MAX_RETRIES {
-                        last_error = Some(AppError::GeminiError(format!("Planning failed: {}", e)));
+                        _last_error =
+                            Some(AppError::GeminiError(format!("Planning failed: {}", e)));
                         continue;
                     }
 
-                    last_error = Some(AppError::GeminiError(format!(
+                    _last_error = Some(AppError::GeminiError(format!(
                         "Planning failed after retries: {}",
                         e
                     )));
@@ -628,7 +629,7 @@ Type: [all/chronicles/lorebooks]
 
 SEARCH 2:
 Query: [broad keywords - entities/locations/concepts only]
-Reason: [why this search]  
+Reason: [why this search]
 Type: [all/chronicles/lorebooks]
 
 Examples of GOOD searches: \"China\", \"geopolitics\", \"Mount Everest\", \"climate change\"
@@ -935,7 +936,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         use diesel::prelude::*;
 
         // Convert session_dek to SecretBox
-        let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
+        let _dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
 
         let analysis_type_str = match mode {
             EnrichmentMode::PreProcessing => AnalysisType::PreProcessing,

@@ -9,6 +9,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
 use bcrypt;
+use chrono::Utc;
 use crc32fast;
 use deadpool_diesel::postgres::Pool;
 use diesel::{PgConnection, RunQueryDsl, prelude::*};
@@ -66,6 +67,11 @@ fn insert_test_user_with_password(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

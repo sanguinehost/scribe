@@ -6,12 +6,14 @@ use crate::{
     config::Config,
     errors::AppError,
     llm::AiClient,
-    models::user_settings::UserSettingsResponse,
     services::user_settings_service::UserSettingsService,
     state::{AppState, DbPool},
 };
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
+
+#[cfg(feature = "local-llm")]
+use tracing::error;
 use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
@@ -50,7 +52,7 @@ impl AiClientFactory {
         provider: Option<&str>,
         model_name: Option<&str>,
         session_dek: Option<&SessionDek>,
-        app_state: &Arc<AppState>,
+        _app_state: &Arc<AppState>,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         info!(%user_id, provider = ?provider, model_name = ?model_name, has_session_dek = session_dek.is_some(), "🔍 DEBUG: get_secure_client_for_provider called with params");
         let provider = provider.unwrap_or("gemini"); // Default to gemini if no provider specified
@@ -302,10 +304,7 @@ impl AiClientFactory {
 
     /// Create a local LLM client based on user settings (legacy method)
     #[cfg(feature = "local-llm")]
-    async fn create_local_llm_client(
-        &self,
-        user_settings: &UserSettingsResponse,
-    ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
+    async fn create_local_llm_client(&self) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get base config from environment
         let mut config = LlamaCppConfig::from_env();
 

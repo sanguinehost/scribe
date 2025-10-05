@@ -99,4 +99,3 @@ output "environment_info" {
     cluster_name   = module.ecs.ecs_cluster_name
   }
 }
-

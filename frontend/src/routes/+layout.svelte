@@ -2,15 +2,18 @@
 	import '../app.css';
 	import { ThemeProvider } from '@sejohnson/svelte-themes';
 	import { Toaster } from '$lib/components/ui/sonner';
+	import { TooltipProvider } from '$lib/components/ui/tooltip';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { ENABLE_LOCAL_LLM } from '$lib/utils/features';
+	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
+	import { PaddleLoader } from '$lib/components/payment';
+	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import {
 		initializeAuth,
 		setAuthenticated,
 		setUnauthenticated,
 		getIsAuthenticated
 	} from '$lib/auth.svelte'; // Import from new auth store
-	import { goto } from '$app/navigation';
+	import { goto as _goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types';
@@ -28,8 +31,8 @@
 			.then(({ initGlobalLlmStore }) => {
 				try {
 					initGlobalLlmStore();
-				} catch (error) {
-					console.warn('LlmStore initialization failed:', error);
+				} catch (_error) {
+					console.warn('LlmStore initialization failed:', _error);
 				}
 			})
 			.catch((error) => {
@@ -41,8 +44,8 @@
 			.then(({ initGlobalModelLifecycleStore }) => {
 				try {
 					initGlobalModelLifecycleStore();
-				} catch (error) {
-					console.warn('ModelLifecycleStore initialization failed:', error);
+				} catch (_error) {
+					console.warn('ModelLifecycleStore initialization failed:', _error);
 				}
 			})
 			.catch((error) => {
@@ -66,6 +69,11 @@
 			// or if we want to re-verify on client-side navigation to a page with this layout.
 			// It's designed to be safe to call even if already authenticated.
 			await initializeAuth();
+
+			// Initialize subscription store after auth is ready and payments are enabled
+			if (ENABLE_PAYMENTS && getIsAuthenticated()) {
+				subscriptionStore.initialize();
+			}
 			// Initialization logging removed for production
 		})();
 
@@ -75,7 +83,13 @@
 				'[Layout] Global auth:invalidated event received (legacy), redirecting to signin'
 			);
 			setUnauthenticated();
-			goto('/signin');
+
+			// Clear subscription data when auth is invalidated
+			if (ENABLE_PAYMENTS) {
+				subscriptionStore.clearData();
+			}
+
+			_goto('/signin');
 		};
 
 		window.addEventListener('auth:invalidated', handleAuthInvalidated);
@@ -96,7 +110,7 @@
 			});
 			// Redirect to signin after a brief delay
 			setTimeout(() => {
-				goto('/signin');
+				_goto('/signin');
 			}, 1000);
 		};
 
@@ -139,6 +153,11 @@
 						console.warn('Failed to retry LlmStore after auth success:', e);
 					});
 			}
+
+			// Initialize subscription store when authentication succeeds
+			if (ENABLE_PAYMENTS) {
+				subscriptionStore.initialize();
+			}
 		};
 
 		window.addEventListener('auth:connection-error', handleConnectionError);
@@ -170,6 +189,11 @@
 </script>
 
 <ThemeProvider attribute="class" disableTransitionOnChange>
-	<Toaster position="top-center" />
-	{@render children()}
+	<TooltipProvider>
+		<Toaster position="top-center" />
+		{#if ENABLE_PAYMENTS}
+			<PaddleLoader />
+		{/if}
+		{@render children()}
+	</TooltipProvider>
 </ThemeProvider>

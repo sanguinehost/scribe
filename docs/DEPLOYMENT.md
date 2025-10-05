@@ -22,7 +22,7 @@ The deployment creates a complete, production-ready AWS infrastructure:
    ```bash
    # AWS CLI (macOS)
    brew install awscli
-   
+
    # Terraform
    brew install terraform
    ```
@@ -50,12 +50,12 @@ The deployment creates a complete, production-ready AWS infrastructure:
    ```bash
    vim terraform.tfvars  # or your preferred editor
    ```
-   
+
    **Required Settings**:
    ```hcl
    # Domain configuration
    domain_name = "staging.scribe.sanguinehost.com"
-   
+
    # API Keys (REQUIRED)
    gemini_api_key = "your-gemini-api-key-here"
    ```
@@ -64,10 +64,10 @@ The deployment creates a complete, production-ready AWS infrastructure:
    ```hcl
    aws_region = "ap-southeast-4"
    environment = "staging"
-   
+
    # Database settings
    db_instance_class = "db.t4g.micro"  # Free tier
-   
+
    # ECS settings
    backend_cpu = 256      # 0.25 vCPU
    backend_memory = 512   # 512 MB
@@ -79,7 +79,7 @@ The deployment creates a complete, production-ready AWS infrastructure:
    ```bash
    ./scripts/terraform/deploy-staging.sh
    ```
-   
+
    This script will:
    - Initialize Terraform
    - Show deployment plan
@@ -116,7 +116,7 @@ DNS configuration is automated if you're using Route 53 for `sanguinehost.com`:
    ```bash
    ./scripts/deploy-backend.sh
    ```
-   
+
    This script will:
    - Build the Docker image
    - Push to ECR
@@ -134,7 +134,7 @@ DNS configuration is automated if you're using Route 53 for `sanguinehost.com`:
    pnpm build
    pnpm vercel deploy --prebuilt --prod
    ```
-   
+
    **Important**: After deploying to Vercel, you'll need to:
    - Note the new Vercel domain (e.g., `frontend-abc123-projects.vercel.app`)
    - Update the backend CORS configuration in `backend/src/main.rs` to include the new domain
@@ -300,7 +300,7 @@ For production use, request SES production access:
 
 The staging environment is configured with:
 - Domain identity: `sanguinehost.com` (verified)
-- Email identity: `noreply@sanguinehost.com` 
+- Email identity: `noreply@sanguinehost.com`
 - Sending from: `noreply@sanguinehost.com`
 - IAM policy: Allows sending to any recipient (when out of sandbox)
 

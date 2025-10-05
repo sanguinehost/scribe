@@ -9,5 +9,7 @@ pub mod documents;
 pub mod health;
 pub mod llm_routes;
 pub mod lorebook_routes;
+pub mod payment;
+pub mod templates;
 pub mod user_persona_routes;
 pub mod user_settings_routes;

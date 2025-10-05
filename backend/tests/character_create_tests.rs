@@ -6,6 +6,7 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+use chrono::Utc;
 use diesel_json::Json as DieselJson; // Added for explicit Json wrapping
 use scribe_backend::models::characters::CharacterDataForClient; // Updated import
 use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized}; // Removed TestUser as it's not a struct here
@@ -64,6 +65,11 @@ fn insert_test_user_with_password(
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

@@ -8,7 +8,7 @@ CREATE TABLE message_variants (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     -- Ensure unique variant indexes per parent message
     UNIQUE(parent_message_id, variant_index)
 );

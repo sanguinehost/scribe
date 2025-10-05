@@ -2,7 +2,7 @@
 // API routes for local LLM management
 
 use crate::{
-    auth::{SessionDek, user_store::Backend as AuthBackend},
+    auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     services::user_settings_service::UserSettingsService,
@@ -10,26 +10,25 @@ use crate::{
 };
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
-    response::{Json, Response, Sse, sse::Event},
-    routing::{delete, get, post, put},
+    response::Json,
+    routing::{get, put},
 };
 use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppClient, ModelManager, hardware::detect_hardware};
 #[cfg(feature = "local-llm")]
 use futures::Stream;
-use std::sync::Arc;
 #[cfg(feature = "local-llm")]
 use std::time::Duration;
 #[cfg(feature = "local-llm")]
 use tokio_stream::wrappers::UnboundedReceiverStream;
 #[cfg(feature = "local-llm")]
-use tracing::error;
+use tracing::{debug, error};
 
 #[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]
@@ -162,18 +161,18 @@ pub fn llm_router() -> Router<AppState> {
     {
         Router::new()
             .route("/info", get(get_llm_info))
-            .route("/models/download", post(download_model))
-            .route("/models/:model_id", delete(delete_model))
-            .route("/models/:model_id/activate", post(activate_model))
-            .route("/models/deactivate", post(deactivate_model))
+            .route("/models/download"(download_model))
+            .route("/models/:model_id"(delete_model))
+            .route("/models/:model_id/activate"(activate_model))
+            .route("/models/deactivate"(deactivate_model))
             .route("/download/progress", get(download_progress_stream))
             .route("/download/status/:model_id", get(get_download_status))
             .route("/recommendations", get(get_model_recommendations))
             .route("/recommendations/best", get(get_best_recommendation))
-            .route("/download/best", post(download_best_model))
+            .route("/download/best"(download_best_model))
             .route("/models/grouped", get(get_grouped_models))
             .route("/status", get(get_llm_status))
-            .route("/test", post(test_llm))
+            .route("/test"(test_llm))
             .route("/preferences", get(get_user_preferences))
             .route("/preferences", put(update_user_preferences))
             // Model capabilities endpoints
@@ -184,9 +183,9 @@ pub fn llm_router() -> Router<AppState> {
             )
             // Server management endpoints
             .route("/server/status", get(get_server_status))
-            .route("/server/restart", post(restart_server))
-            .route("/server/shutdown", post(shutdown_server))
-            .route("/models/switch/:model_id", post(switch_model))
+            .route("/server/restart"(restart_server))
+            .route("/server/shutdown"(shutdown_server))
+            .route("/models/switch/:model_id"(switch_model))
             .route("/models/current", get(get_current_model))
     }
 
@@ -1386,7 +1385,7 @@ async fn get_all_models(
 
     info!("Getting all available models");
 
-    let mut registry = ModelRegistry::new();
+    let registry = ModelRegistry::new();
 
     // First, populate the registry with ALL available models from ModelSelection
     #[cfg(feature = "local-llm")]

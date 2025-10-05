@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Button } from './ui/button';
+	import { Button as ButtonComponent } from './ui/button';
 	import Sparkles from './icons/sparkles.svelte';
-	import { cn } from '$lib/utils/shadcn';
+	import { cn as _cn } from '$lib/utils/shadcn';
 
 	type EnrichmentMode = 'disabled' | 'pre_processing' | 'post_processing';
 
@@ -45,13 +45,13 @@
 	);
 </script>
 
-<Button
+<ButtonComponent
 	variant={modeConfig.variant}
 	size="sm"
-	class={cn('h-7 w-7 p-1.5 transition-colors', modeConfig.className)}
+	class={_cn('h-7 w-7 p-1.5 transition-colors', modeConfig.className)}
 	onclick={cycleMode}
 	{disabled}
 	title={modeConfig.title}
 >
 	<Sparkles size={14} />
-</Button>
+</ButtonComponent>

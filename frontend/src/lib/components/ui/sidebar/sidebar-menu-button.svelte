@@ -26,6 +26,7 @@
 </script>
 
 <script lang="ts">
+	// Disable custom elements to avoid props inference issues
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { cn } from '$lib/utils/shadcn.js';
 	import { type WithElementRef, type WithoutChildrenOrChild } from 'bits-ui';
@@ -64,11 +65,11 @@
 	});
 </script>
 
-{#snippet Button({ props }: { props?: Record<string, unknown> })}
+{#snippet Button({ props: _props }: { props?: Record<string, unknown> })}
 	{#if child}
-		{@render child({ props: { ...buttonProps, ...props } })}
+		{@render child({ props: { ...buttonProps, ..._props } })}
 	{:else}
-		<button bind:this={ref} {...buttonProps} {...props}>
+		<button bind:this={ref} {...buttonProps} {..._props}>
 			{@render children?.()}
 		</button>
 	{/if}

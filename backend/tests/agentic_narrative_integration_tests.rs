@@ -11,20 +11,19 @@ use scribe_backend::{
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
-        chronicle_event::{EventFilter, EventSource},
-        users::{AccountStatus, NewUser, SerializableSecretDek, UserDbQuery, UserRole},
+        users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::users,
     services::{
         ChronicleService, LorebookService,
         agentic::{
-            AgenticNarrativeFactory, AnalyzeTextSignificanceTool, CreateChronicleEventTool,
-            ScribeTool, SearchKnowledgeBaseTool,
+            AnalyzeTextSignificanceTool, CreateChronicleEventTool, ScribeTool,
+            SearchKnowledgeBaseTool,
         },
     },
     test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
-use secrecy::{ExposeSecret, SecretBox, SecretString};
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -59,6 +58,11 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         dek_nonce,
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_token_cost_cents: 0,
+        tokens_last_reset_at: None,
+        token_usage_updated_at: Utc::now(),
     };
 
     let user_db: UserDbQuery = conn
@@ -76,6 +80,7 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
 }
 
 /// Helper to create test chat messages with realistic roleplay content
+#[allow(dead_code)]
 fn create_roleplay_messages(
     user_id: Uuid,
     session_id: Uuid,
@@ -107,7 +112,7 @@ fn create_roleplay_messages(
 
     let mut messages = Vec::new();
 
-    for (i, (role, content)) in messages_content.iter().enumerate() {
+    for (_i, (role, content)) in messages_content.iter().enumerate() {
         let message_role = match *role {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,
@@ -134,6 +139,8 @@ fn create_roleplay_messages(
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
         });
     }
 
@@ -157,6 +164,7 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
 }
 
 /// Helper to get first available lorebook for user (or skip if none)
+#[allow(dead_code)]
 async fn get_test_lorebook(_user_id: Uuid, _test_app: &TestApp) -> AnyhowResult<Option<Uuid>> {
     // For testing, we'll skip lorebook retrieval since it requires auth session
     // In a real integration, the agentic system would create lorebooks as needed

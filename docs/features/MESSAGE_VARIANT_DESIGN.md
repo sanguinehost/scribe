@@ -11,7 +11,7 @@ This document describes a clean, proper design for the message variant system in
 - **No Relationship Data**: Messages don't indicate if they ARE variants or HAVE variants
 - **Implicit Behavior**: The system silently substitutes variant content without telling the frontend
 
-### 2. Frontend Issues  
+### 2. Frontend Issues
 - **Complex Tracking**: Multiple Maps and state trackers trying to guess relationships
 - **Content-Based Matching**: Using content comparison to identify variants (unreliable)
 - **Race Conditions**: Async variant loading vs message display
@@ -36,21 +36,21 @@ pub struct MessageResponse {
     pub session_id: Uuid,
     pub message_type: String,
     pub role: String,
-    
+
     // Core content - always the CURRENTLY SELECTED variant
     pub content: String,
     pub parts: Value,
     pub attachments: Value,
-    
-    // Variant metadata 
+
+    // Variant metadata
     pub variant_count: i32,        // Total number of variants (0 if no variants)
     pub current_variant_index: i32, // Currently selected variant (0-based)
     pub is_variant: bool,           // True if this message IS a variant of another
     pub parent_message_id: Option<Uuid>, // If is_variant=true, ID of parent
-    
+
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariant>>, // All variants if requested
-    
+
     // Standard metadata
     pub created_at: DateTime<Utc>,
     pub prompt_tokens: Option<i64>,
@@ -78,14 +78,14 @@ export interface ScribeChatMessage {
     backend_id?: string;
     content: string;
     message_type: MessageRole;
-    
+
     // Variant information embedded (directly from backend)
     variant_count?: number;           // Total number of variants
     current_variant_index?: number;   // Currently displayed variant
     variants?: MessageVariant[];      // Complete variant data if provided
     is_variant?: boolean;             // Is this a variant of another message?
     parent_message_id?: string;       // Parent if this is a variant
-    
+
     // Rest of fields...
     created_at?: string;
     prompt_tokens?: number;
@@ -124,7 +124,7 @@ export interface MessageVariant {
 {
     "messages": [
         {
-            "id": "msg-1", 
+            "id": "msg-1",
             "content": "current variant content",
             "variant_count": 3,
             "current_variant_index": 0,
@@ -139,7 +139,7 @@ export interface MessageVariant {
                 },
                 {
                     "index": 1,
-                    "content": "Second variant content", 
+                    "content": "Second variant content",
                     "created_at": "2024-01-01T10:01:00Z",
                     "model_name": "gemini-2.5-flash"
                 }
@@ -178,7 +178,7 @@ Response:
 ```json
 {
     "id": "msg-1",
-    "content": "new variant content", 
+    "content": "new variant content",
     "variant_count": 4,
     "current_variant_index": 3,
     "variants": [
@@ -222,17 +222,17 @@ impl MessageService {
     ) -> Result<MessageWithVariants, AppError> {
         // 1. Load base message
         let message = self.get_message(message_id)?;
-        
+
         // 2. Count variants
         let variant_count = self.count_variants(message_id)?;
-        
+
         // 3. Get current variant content
         let current_content = if variant_count > 0 {
             self.get_variant_content(message_id, message.current_variant_index)?
         } else {
             message.decrypt_content()?
         };
-        
+
         Ok(MessageWithVariants {
             message,
             variant_count,
@@ -240,7 +240,7 @@ impl MessageService {
             current_content,
         })
     }
-    
+
     /// Switch to a different variant
     pub async fn select_variant(
         &self,
@@ -253,7 +253,7 @@ impl MessageService {
             .filter(chat_messages::id.eq(message_id))
             .set(chat_messages::current_variant_index.eq(variant_index))
             .execute(&self.conn)?;
-            
+
         self.get_message_with_variants(message_id, user_id)
     }
 }
@@ -274,7 +274,7 @@ pub async fn get_messages_by_chat_id_handler(
             if msg.is_variant_of.is_some() {
                 return None;
             }
-            
+
             let variants = get_message_variants(msg.id)?;
             Some(MessageResponse {
                 id: msg.id,
@@ -288,7 +288,7 @@ pub async fn get_messages_by_chat_id_handler(
         })
         .filter_map(|m| m)
         .collect();
-        
+
     Ok(Json(PaginatedMessagesResponse {
         messages: messages_with_variants,
         next_cursor,
@@ -302,7 +302,7 @@ pub async fn get_messages_by_chat_id_handler(
 
 **Remove:**
 - `messageVariants` Map
-- `currentVariantIndex` Map  
+- `currentVariantIndex` Map
 - `regenerationTracker` Map
 - `pendingRegeneration` state
 - `filterVariantMessages` function
@@ -318,10 +318,10 @@ pub async fn get_messages_by_chat_id_handler(
 async function handlePreviousVariant(messageId: string) {
     const message = messages.find(m => m.id === messageId);
     if (!message || !message.currentVariantIndex) return;
-    
+
     const newIndex = message.currentVariantIndex - 1;
     if (newIndex < 0) return;
-    
+
     // API call to switch variant
     const result = await apiClient.selectMessageVariant(messageId, newIndex);
     if (result.isOk()) {
@@ -336,10 +336,10 @@ async function handlePreviousVariant(messageId: string) {
 async function handleNextVariant(messageId: string) {
     const message = messages.find(m => m.id === messageId);
     if (!message) return;
-    
+
     const variantCount = message.variantCount || 0;
     const currentIndex = message.currentVariantIndex || 0;
-    
+
     if (currentIndex < variantCount - 1) {
         // Switch to existing variant
         const result = await apiClient.selectMessageVariant(messageId, currentIndex + 1);
@@ -364,18 +364,18 @@ async function regenerateMessage(messageId: string) {
     const messageIndex = messages.findIndex(m => m.id === messageId);
     const originalMessage = messages[messageIndex];
     messages.splice(messageIndex, 1);
-    
+
     // 2. Start streaming new response
     await streamingService.regenerate({
         parentMessageId: originalMessage.backend_id,
         // ... other params
     });
-    
+
     // 3. When complete, backend automatically:
     //    - Creates new variant
     //    - Updates parent's variant_count
     //    - Sets current_variant_index to new variant
-    
+
     // 4. Reload message to get updated variant info
     const updated = await apiClient.getMessage(originalMessage.backend_id);
     messages.splice(messageIndex, 0, updated);
@@ -389,8 +389,8 @@ async function regenerateMessage(messageId: string) {
 -- Migrate existing variants to new structure
 UPDATE chat_messages m
 SET variant_count = (
-    SELECT COUNT(*) 
-    FROM message_variants v 
+    SELECT COUNT(*)
+    FROM message_variants v
     WHERE v.parent_message_id = m.id
 ),
 current_variant_index = 0;
@@ -417,7 +417,7 @@ The StreamingService must be updated to handle the new message format:
 - No complex filtering or tracking
 - Clear parent-child relationships
 
-### 2. Performance  
+### 2. Performance
 - No duplicate messages in responses
 - No async variant loading race conditions
 - Reduced frontend state management

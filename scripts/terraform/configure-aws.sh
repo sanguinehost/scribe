@@ -43,14 +43,14 @@ check_aws_cli() {
 # Check current AWS configuration
 check_current_config() {
     log_info "Checking current AWS configuration..."
-    
+
     if aws sts get-caller-identity &> /dev/null; then
         log_info "Current AWS configuration:"
         aws sts get-caller-identity --output table
-        
+
         CURRENT_REGION=$(aws configure get region 2>/dev/null || echo "Not set")
         echo "Current region: $CURRENT_REGION"
-        
+
         echo
         read -p "Do you want to use the current configuration? (Y/n): " -n 1 -r
         echo
@@ -69,7 +69,7 @@ check_current_config() {
 # Configure AWS credentials
 configure_aws() {
     log_info "Configuring AWS credentials..."
-    
+
     echo
     log_info "You'll need:"
     echo "1. AWS Access Key ID"
@@ -77,7 +77,7 @@ configure_aws() {
     echo "3. Default region (recommended: ap-southeast-4)"
     echo "4. Default output format (recommended: json)"
     echo
-    
+
     log_warning "Make sure your AWS user has the following permissions:"
     echo "- EC2 (for VPC, security groups, load balancers)"
     echo "- ECS (for container services)"
@@ -88,17 +88,17 @@ configure_aws() {
     echo "- CloudWatch (for monitoring)"
     echo "- IAM (for role and policy management)"
     echo
-    
+
     read -p "Press Enter to continue with AWS configuration..."
     aws configure
-    
+
     verify_permissions
 }
 
 # Verify AWS permissions
 verify_permissions() {
     log_info "Verifying AWS permissions..."
-    
+
     # Test basic permissions
     if aws sts get-caller-identity &> /dev/null; then
         log_success "✓ Basic AWS access works"
@@ -106,42 +106,42 @@ verify_permissions() {
         log_error "✗ Cannot access AWS with current credentials"
         exit 1
     fi
-    
+
     # Test EC2 permissions
     if aws ec2 describe-regions --region ap-southeast-4 &> /dev/null; then
         log_success "✓ EC2 permissions verified"
     else
         log_warning "⚠ EC2 permissions may be insufficient"
     fi
-    
+
     # Test ECS permissions
     if aws ecs list-clusters --region ap-southeast-4 &> /dev/null; then
         log_success "✓ ECS permissions verified"
     else
         log_warning "⚠ ECS permissions may be insufficient"
     fi
-    
+
     # Test RDS permissions
     if aws rds describe-db-instances --region ap-southeast-4 &> /dev/null; then
         log_success "✓ RDS permissions verified"
     else
         log_warning "⚠ RDS permissions may be insufficient"
     fi
-    
+
     # Test Secrets Manager permissions
     if aws secretsmanager list-secrets --region ap-southeast-4 &> /dev/null; then
         log_success "✓ Secrets Manager permissions verified"
     else
         log_warning "⚠ Secrets Manager permissions may be insufficient"
     fi
-    
+
     log_info "Permission verification completed"
 }
 
 # Show recommended IAM policy
 show_iam_policy() {
     log_info "Recommended IAM policy for Terraform deployment:"
-    
+
     cat << 'EOF'
 {
     "Version": "2012-10-17",
@@ -172,7 +172,7 @@ show_iam_policy() {
     ]
 }
 EOF
-    
+
     echo
     log_warning "Note: This is a broad policy for development. For production, use more restrictive permissions."
 }
@@ -181,10 +181,10 @@ EOF
 main() {
     log_info "AWS CLI Configuration for Scribe Deployment"
     echo "=============================================="
-    
+
     check_aws_cli
     check_current_config
-    
+
     echo
     log_success "AWS CLI configuration completed!"
     log_info "You can now proceed with Terraform deployment using:"

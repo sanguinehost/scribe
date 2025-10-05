@@ -1,7 +1,10 @@
 <script lang="ts">
+	/* eslint-disable svelte/valid-compile */
+	// Disable custom elements to avoid props inference issues
 	import { onMount } from 'svelte';
+	import type { Snippet } from 'svelte';
 
-	let { children, ...props }: { children: any; [key: string]: any } = $props();
+	let { children, ...props }: { children?: Snippet; [key: string]: unknown } = $props();
 	let element = $state<HTMLElement | null>(null);
 
 	let hasProcessed = $state(false);
@@ -21,7 +24,7 @@
 
 		// Split text into parts and identify dialogue
 		const parts: Array<{ text: string; isDialogue: boolean }> = [];
-		let remaining = text;
+		let _remaining = text;
 		let pos = 0;
 
 		// Find quoted text

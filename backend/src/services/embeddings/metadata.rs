@@ -26,6 +26,7 @@ pub struct ChatMessageChunkMetadata {
 impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
     type Error = AppError;
 
+    #[allow(deprecated)]
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
         let message_id =
             extract_uuid_from_payload(&payload, "message_id", "ChatMessageChunkMetadata")?;
@@ -79,9 +80,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
 
             (text, encrypted_bytes, nonce_bytes)
         } else {
-            // Legacy plaintext mode
-            let text = extract_string_from_payload(&payload, "text", "ChatMessageChunkMetadata")?;
-            (text, None, None)
+            // SECURITY: All chat messages must be encrypted - no plaintext mode allowed
+            tracing::warn!("SECURITY VIOLATION: Chat message payload missing encrypted_text field");
+            ("[MISSING ENCRYPTION]".to_string(), None, None)
         };
 
         let source_type =
@@ -123,6 +124,7 @@ pub struct LorebookChunkMetadata {
 impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
     type Error = AppError;
 
+    #[allow(deprecated)]
     fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
         let original_lorebook_entry_id = extract_uuid_from_payload(
             &payload,
@@ -157,16 +159,15 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                     });
 
                 // If we have encrypted content, still need chunk_text for backward compat
-                let chunk_text =
-                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")
-                        .unwrap_or_else(|_| "[encrypted]".to_string());
-
+                // Encrypted content available - use placeholder for deprecated field
+                let chunk_text = "[encrypted]".to_string();
                 (chunk_text, encrypted_bytes, nonce_bytes)
             } else {
-                // Legacy plaintext mode
-                let chunk_text =
-                    extract_string_from_payload(&payload, "chunk_text", "LorebookChunkMetadata")?;
-                (chunk_text, None, None)
+                // SECURITY: All lorebook content must be encrypted - no plaintext mode allowed
+                tracing::warn!(
+                    "SECURITY VIOLATION: Lorebook chunk payload missing encrypted_chunk_text field"
+                );
+                ("[MISSING ENCRYPTION]".to_string(), None, None)
             };
 
         // Handle encrypted title
@@ -194,6 +195,8 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
                 let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
                 (entry_title, encrypted_bytes, nonce_bytes)
             } else {
+                // SECURITY: Titles should also be encrypted - warn if missing
+                tracing::warn!("Lorebook entry title not encrypted (may be legacy data)");
                 let entry_title = extract_optional_string_from_payload(&payload, "entry_title");
                 (entry_title, None, None)
             };

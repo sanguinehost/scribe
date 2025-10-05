@@ -42,7 +42,7 @@ async fn test_simple_deduplication() {
     let lucas_id = Uuid::new_v4();
     let location_id = Uuid::new_v4();
 
-    let event_data = serde_json::json!({
+    let _event_data = serde_json::json!({
         "actors": [
             {"entity_id": lucas_id, "role": "AGENT"},
             {"entity_id": location_id, "role": "PATIENT"}

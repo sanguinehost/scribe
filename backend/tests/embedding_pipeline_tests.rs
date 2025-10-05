@@ -31,6 +31,7 @@ use std::{collections::HashMap, sync::Arc}; // Removed env
 use uuid::Uuid; // For mock assertions
 
 // Helper to assert content and metadata of retrieved chunks
+#[allow(deprecated)]
 fn assert_retrieved_chunks_content(
     retrieved_chunks: &[scribe_backend::services::embeddings::RetrievedChunk],
     test_session_id: Uuid,
@@ -50,13 +51,18 @@ fn assert_retrieved_chunks_content(
         "Expected score ~0.95, got {}",
         retrieved_chunks[0].score
     );
-    assert_eq!(retrieved_chunks[0].text, "Chunk 1 text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[0].metadata {
         assert_eq!(meta.session_id, test_session_id);
         assert_eq!(meta.message_id, message_id_1);
         assert_eq!(meta.user_id, test_user_id);
         assert_eq!(meta.speaker, "User");
-        assert_eq!(meta.text, "Chunk 1 text");
+        // SECURITY: Deprecated field contains placeholder when encryption is missing
+        assert_eq!(meta.text, "[MISSING ENCRYPTION]");
         assert_eq!(meta.source_type, "chat_message");
     } else {
         panic!("Expected Chat metadata for retrieved_chunks[0]");
@@ -68,13 +74,18 @@ fn assert_retrieved_chunks_content(
         "Expected score ~0.88, got {}",
         retrieved_chunks[1].score
     );
-    assert_eq!(retrieved_chunks[1].text, "Chunk 2 text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[1].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
     if let RetrievedMetadata::Chat(meta) = &retrieved_chunks[1].metadata {
         assert_eq!(meta.session_id, test_session_id);
         assert_eq!(meta.message_id, message_id_2);
         assert_eq!(meta.user_id, test_user_id);
         assert_eq!(meta.speaker, "Assistant");
-        assert_eq!(meta.text, "Chunk 2 text");
+        // SECURITY: Deprecated field contains placeholder when encryption is missing
+        assert_eq!(meta.text, "[MISSING ENCRYPTION]");
         assert_eq!(meta.source_type, "chat_message");
     } else {
         panic!("Expected Chat metadata for retrieved_chunks[1]");
@@ -123,6 +134,7 @@ fn check_qdrant_url_and_skip(config: &scribe_backend::config::Config, test_name:
 }
 
 // Helper to verify Qdrant points after embedding
+#[allow(deprecated)]
 async fn verify_qdrant_points(
     qdrant_service_trait: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     test_message_id: Uuid,
@@ -251,6 +263,8 @@ async fn test_process_and_embed_message_integration() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     let embedding_dimension = 768;
@@ -313,6 +327,8 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     // Configure mock embedding client to always return an error
@@ -515,6 +531,7 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
             None, // chronicle_id_for_search
             query,
             5,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -582,6 +599,7 @@ async fn test_retrieve_relevant_chunks_no_results() {
             None,                 // chronicle_id_for_search
             "A query that finds nothing",
             5,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -617,7 +635,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         encryption_service_for_test_5.clone(),
     ));
     let tokenizer_service_for_test_5 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_5 = Arc::new(HybridTokenCounter::new_local_only(
@@ -697,6 +715,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             None, // chronicle_id_for_search
             "Query leading to Qdrant error",
             2,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -728,7 +747,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         encryption_service_for_test_6.clone(),
     ));
     let tokenizer_service_for_test_6 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_6 = Arc::new(HybridTokenCounter::new_local_only(
@@ -919,6 +938,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             None,                                // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -934,7 +954,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "Valid text 1");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 #[tokio::test]
@@ -953,7 +977,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         encryption_service_for_test_7.clone(),
     ));
     let tokenizer_service_for_test_7 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_7 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1108,6 +1132,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1124,7 +1149,11 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "More text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 #[tokio::test]
@@ -1143,7 +1172,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         encryption_service_for_test_8.clone(),
     ));
     let tokenizer_service_for_test_8 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_8 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1269,6 +1298,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1285,7 +1315,11 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "Some text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 #[tokio::test]
@@ -1305,7 +1339,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         encryption_service_for_test_9.clone(),
     ));
     let tokenizer_service_for_test_9 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_9 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1434,6 +1468,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None, // No DEK for integration test
         )
         .await;
 
@@ -1450,7 +1485,11 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         1,
         "Expected 1 chunk, the one with invalid metadata should be skipped"
     );
-    assert_eq!(retrieved_chunks[0].text, "Final text");
+    // SECURITY: Mock data without encryption returns security violation message
+    assert_eq!(
+        retrieved_chunks[0].text,
+        "[MISSING ENCRYPTION - SECURITY VIOLATION]"
+    );
 }
 
 // TODO: Add tests for retrieve_relevant_chunks integration if needed,
@@ -1459,6 +1498,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
 #[tokio::test]
 // #[ignore] // Test requires external Qdrant service // Temporarily un-ignore
 #[serial]
+#[allow(deprecated)]
 async fn test_rag_context_injection_with_qdrant() {
     // Setup: Initialize test environment with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await; // multi_thread = false, use_real_ai = false, use_real_qdrant = true
@@ -1520,6 +1560,8 @@ async fn test_rag_context_injection_with_qdrant() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     // Configure mock embedding client for a sequence of calls
@@ -1541,7 +1583,7 @@ async fn test_rag_context_injection_with_qdrant() {
         encryption_service_for_test_10.clone(),
     ));
     let tokenizer_service_for_test_10 = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter_for_test_10 = Arc::new(HybridTokenCounter::new_local_only(
@@ -1606,7 +1648,7 @@ async fn test_rag_context_injection_with_qdrant() {
         .process_and_embed_message(
             app_state_for_rag.clone(),
             chat_message.clone(), // Clone chat_message
-            None,
+            Some(&session_dek),   // SECURITY: Provide DEK for encryption
         )
         .await;
     assert!(
@@ -1657,6 +1699,7 @@ async fn test_rag_context_injection_with_qdrant() {
             None,                    // chronicle_id_for_search
             query_text,              // query_text
             limit_per_source,        // limit_per_source
+            Some(&session_dek),      // Provide DEK to decrypt encrypted content
         )
         .await;
 
@@ -1682,7 +1725,7 @@ async fn test_rag_context_injection_with_qdrant() {
     let mut found_lore_chunk = false;
 
     for chunk in retrieved_chunks {
-        match chunk.metadata {
+        match &chunk.metadata {
             RetrievedMetadata::Chat(meta) => {
                 assert_eq!(
                     meta.session_id, chat_session_id,
@@ -1699,8 +1742,8 @@ async fn test_rag_context_injection_with_qdrant() {
                     "Chat metadata source_type mismatch"
                 );
                 assert!(
-                    meta.text.contains("dragons for RAG"),
-                    "Chat metadata text content mismatch"
+                    chunk.text.contains("dragons for RAG"),
+                    "Chat decrypted text content mismatch"
                 );
                 found_chat_chunk = true;
             }
@@ -1714,17 +1757,14 @@ async fn test_rag_context_injection_with_qdrant() {
                     "Lorebook metadata original_lorebook_entry_id mismatch"
                 );
                 assert_eq!(meta.user_id, user_id, "Lorebook metadata user_id mismatch");
-                assert_eq!(
-                    meta.entry_title, lore_entry_title,
-                    "Lorebook metadata entry_title mismatch"
-                );
+                // entry_title is encrypted in metadata, but we can verify the decrypted content
                 assert_eq!(
                     meta.source_type, "lorebook_entry",
                     "Lorebook metadata source_type mismatch"
                 );
                 assert!(
-                    meta.chunk_text.contains("ancient dragons"),
-                    "Lorebook metadata chunk_text content mismatch"
+                    chunk.text.contains("ancient dragons"),
+                    "Lorebook decrypted text content mismatch"
                 );
                 found_lore_chunk = true;
             }
@@ -1749,9 +1789,15 @@ async fn test_rag_context_injection_with_qdrant() {
         embed_calls[0].0, chat_message_content,
         "First embed call should be chat content"
     );
+    // Lorebook embedding includes title formatting
+    let expected_lore_embed = format!(
+        "Title: {}\n\n{}",
+        lore_entry_title.as_ref().unwrap(),
+        lore_entry_content
+    );
     assert_eq!(
-        embed_calls[1].0, lore_entry_content,
-        "Second embed call should be lore content"
+        embed_calls[1].0, expected_lore_embed,
+        "Second embed call should be formatted lore content with title"
     );
     assert_eq!(
         embed_calls[2].0, query_text,
@@ -1879,6 +1925,7 @@ async fn test_mock_qdrant_update_collection_settings() {
 
 #[tokio::test]
 #[serial]
+#[allow(deprecated)]
 async fn test_rag_chat_history_isolation_by_user_and_session() {
     // 1. Setup TestApp with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await;
@@ -1917,7 +1964,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         encryption_service.clone(),
     ));
     let tokenizer_service = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
@@ -2001,6 +2048,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     let content_a2 = "User A Session 2 confidential cat strategies";
@@ -2021,6 +2070,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     let content_b1 = "User B Session 1 private alien agenda";
@@ -2041,6 +2092,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
+        variant_count: 1,
+        current_variant_index: 0,
     };
 
     // 4. Configure Mock Embeddings (one for each message chunk, one for each query)
@@ -2097,6 +2150,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query1_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2125,6 +2179,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query2_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2153,6 +2208,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query3_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2173,6 +2229,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query4_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2201,6 +2258,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             None, // chronicle_id_for_search
             query5_text,
             limit,
+            None, // No DEK for integration test
         )
         .await
         .unwrap();
@@ -2227,6 +2285,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
 }
 #[tokio::test]
 #[serial]
+#[allow(deprecated)]
 async fn test_rag_lorebook_isolation_by_user_and_id() {
     // 1. Setup TestApp with real Qdrant
     let test_app = test_helpers::spawn_app(false, false, true).await;
@@ -2265,7 +2324,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         encryption_service.clone(),
     ));
     let tokenizer_service = TokenizerService::new(
-        "/home/socol/Workspace/sanguine-scribe/backend/resources/tokenizers/gemma.model",
+        "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
     )
     .expect("Failed to create tokenizer for test");
     let hybrid_token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer_service));
@@ -2326,12 +2385,12 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let user_c_id = Uuid::new_v4();
     let user_d_id = Uuid::new_v4();
 
-    // Create mock session_deks for the users
+    // Create mock session_deks for the users (must be exactly 32 bytes for AES-256-GCM)
     let user_c_session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32_bytes_long!".to_vec())),
+        secrecy::SecretBox::new(Box::new(b"test_user_c_key_32bytes_long!!01".to_vec())),
     );
     let user_d_session_dek = scribe_backend::auth::session_dek::SessionDek(
-        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32_bytes_long!".to_vec())),
+        secrecy::SecretBox::new(Box::new(b"test_user_d_key_32bytes_long!!02".to_vec())),
     );
 
     let lorebook_c1_id = Uuid::new_v4(); // User C's first lorebook
@@ -2447,6 +2506,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query1_text,
             limit,
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2458,7 +2518,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     if let RetrievedMetadata::Lorebook(meta) = &chunks1[0].metadata {
         assert_eq!(meta.user_id, user_c_id);
         assert_eq!(meta.lorebook_id, lorebook_c1_id);
-        assert!(meta.chunk_text.contains("Elves"));
+        assert!(
+            chunks1[0].text.contains("Elves"),
+            "Expected decrypted text to contain 'Elves'"
+        );
     } else {
         panic!("Query 1: Expected Lorebook metadata");
     }
@@ -2475,6 +2538,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query2_text,
             limit,
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2486,7 +2550,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     if let RetrievedMetadata::Lorebook(meta) = &chunks2[0].metadata {
         assert_eq!(meta.user_id, user_c_id);
         assert_eq!(meta.lorebook_id, lorebook_c2_id);
-        assert!(meta.chunk_text.contains("Dwarves"));
+        assert!(
+            chunks2[0].text.contains("Dwarves"),
+            "Expected decrypted text to contain 'Dwarves'"
+        );
     } else {
         panic!("Query 2: Expected Lorebook metadata");
     }
@@ -2503,6 +2570,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query3_text,
             limit,
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2523,6 +2591,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query4_text,
             limit,
+            Some(&user_d_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2534,7 +2603,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     if let RetrievedMetadata::Lorebook(meta) = &chunks4[0].metadata {
         assert_eq!(meta.user_id, user_d_id);
         assert_eq!(meta.lorebook_id, lorebook_d1_id);
-        assert!(meta.chunk_text.contains("Orcs"));
+        assert!(
+            chunks4[0].text.contains("Orcs"),
+            "Expected decrypted text to contain 'Orcs'"
+        );
     } else {
         panic!("Query 4: Expected Lorebook metadata");
     }
@@ -2551,6 +2623,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query5_text,
             limit,
+            Some(&user_d_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2577,6 +2650,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             None, // chronicle_id_for_search
             query6_text,
             limit,
+            Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
         .unwrap();
@@ -2591,10 +2665,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let mut found_c2_in_q6 = false;
     for chunk in chunks6 {
         if let RetrievedMetadata::Lorebook(meta) = &chunk.metadata {
-            if meta.lorebook_id == lorebook_c1_id && meta.chunk_text.contains("Elves") {
+            if meta.lorebook_id == lorebook_c1_id && chunk.text.contains("Elves") {
                 found_c1_in_q6 = true;
             }
-            if meta.lorebook_id == lorebook_c2_id && meta.chunk_text.contains("Dwarves") {
+            if meta.lorebook_id == lorebook_c2_id && chunk.text.contains("Dwarves") {
                 found_c2_in_q6 = true;
             }
         }
@@ -2615,9 +2689,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         3 + 5 + 1,
         "Expected 3 entry processing calls + 6 query calls (9 total) to embedding client"
     );
-    assert_eq!(calls[0].0, entry_c1_content);
-    assert_eq!(calls[1].0, entry_c2_content);
-    assert_eq!(calls[2].0, entry_d1_content);
+    // Lorebook embeddings include title formatting
+    assert_eq!(calls[0].0, format!("Title: Elves\n\n{}", entry_c1_content));
+    assert_eq!(
+        calls[1].0,
+        format!("Title: Dwarves\n\n{}", entry_c2_content)
+    );
+    assert_eq!(calls[2].0, format!("Title: Orcs\n\n{}", entry_d1_content));
     assert_eq!(calls[3].0, query1_text);
     assert_eq!(calls[4].0, query2_text);
     assert_eq!(calls[5].0, query3_text); // User C, Lorebook D1

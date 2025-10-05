@@ -41,7 +41,7 @@ check_prerequisites() {
         log_error "AWS CLI is not installed. Please install AWS CLI first."
         exit 1
     fi
-    
+
     # Check AWS credentials
     if ! aws sts get-caller-identity &> /dev/null; then
         log_error "AWS credentials not configured. Please run 'aws configure' or set environment variables."
@@ -53,7 +53,7 @@ check_prerequisites() {
 list_log_streams() {
     local log_group=$1
     local service_name=$2
-    
+
     log_info "Available log streams for $service_name:"
     aws logs describe-log-streams \
         --log-group-name "$log_group" \
@@ -73,12 +73,12 @@ tail_logs() {
     local log_group=$1
     local service_name=$2
     local follow=${3:-true}
-    
+
     log_info "Tailing logs for $service_name..."
     log_info "Log group: $log_group"
     log_info "Press Ctrl+C to stop"
     echo ""
-    
+
     if [ "$follow" = "true" ]; then
         # Follow logs in real-time
         aws logs tail "$log_group" \
@@ -100,9 +100,9 @@ get_logs_range() {
     local service_name=$2
     local start_time=$3
     local end_time=${4:-$(date +%s)000}
-    
+
     log_info "Getting logs for $service_name from $(date -d @$((start_time/1000))) to $(date -d @$((end_time/1000)))"
-    
+
     aws logs filter-log-events \
         --log-group-name "$log_group" \
         --start-time "$start_time" \
@@ -120,11 +120,11 @@ search_logs() {
     local service_name=$2
     local pattern=$3
     local hours_back=${4:-1}
-    
+
     local start_time=$(($(date +%s) - hours_back * 3600))000
-    
+
     log_info "Searching $service_name logs for pattern: '$pattern' (last $hours_back hours)"
-    
+
     aws logs filter-log-events \
         --log-group-name "$log_group" \
         --start-time "$start_time" \
@@ -162,7 +162,7 @@ usage() {
 # Main execution
 main() {
     check_prerequisites
-    
+
     case "${1:-help}" in
         "tail")
             case "${2:-all}" in
@@ -236,7 +236,7 @@ main() {
                 echo "Usage: $0 search <service> <pattern> [hours]"
                 exit 1
             fi
-            
+
             local hours=${4:-1}
             case "${2}" in
                 "backend")
