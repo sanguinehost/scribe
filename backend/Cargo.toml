@@ -146,7 +146,7 @@ hmac = { version = "0.12", optional = true }  # For webhook signature verificati
 subtle = { version = "2.5", optional = true }  # For constant-time comparisons
 
 # Security monitoring and metrics
-prometheus = "0.13"  # For security metrics collection
+prometheus = "0.14"  # For security metrics collection (0.14.0 fixes RUSTSEC-2024-0437)
 lazy_static = "1.4"  # For global metrics registry
 
 [dev-dependencies]
