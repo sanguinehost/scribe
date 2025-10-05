@@ -174,3 +174,6 @@ jobs:
       with:
         fail-on-severity: moderate
         deny-licenses: GPL-3.0, AGPL-3.0  # Copyleft licenses (deny-only is more restrictive)
+        # Allow dependencies with valid licenses that the action can't parse correctly
+        # All three have MIT OR Apache-2.0 dual licensing (from RustCrypto)
+        allow-dependencies-licenses: 'pkg:cargo/zeroize, pkg:cargo/hmac, pkg:cargo/fs-err'
