@@ -33,7 +33,7 @@ chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
-tower-http = { version = "0.5.2", features = ["trace", "cors"] }
+tower-http = { version = "0.6.6", features = ["trace", "cors"] }
 tower-sessions = { version = "0.11.1", features = ["signed"] }
 axum-login = "0.14.0" # Compatible with axum 0.7.x
 bcrypt = "0.17.0"
