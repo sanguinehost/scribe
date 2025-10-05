@@ -132,8 +132,12 @@ IGNORE_PATTERNS = [
 
     # UUID patterns (not card numbers)
     r'00000000-0000-0000-0000-000000000000',  # NULL UUID pattern
+    r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',  # Standard UUID pattern
+    r'"user_id":\s*"[0-9a-f]{8}-[0-9a-f]{4}',  # user_id fields (always UUIDs)
+    r'user_id.*00000000-0000-0000-0000',  # Test user_id UUIDs
     r'uuid.*pattern',  # UUID references
     r'previd.*00000000',  # Migration prev IDs
+    r'payment_webhook_idempotency_tests\.rs',  # Test file with test UUIDs
 
     # Session/auth expiry (not payment expiry)
     r'session.*expiry|expiry.*session',  # Session expiry
