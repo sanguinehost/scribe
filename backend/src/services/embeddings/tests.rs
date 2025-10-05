@@ -81,6 +81,7 @@ mod tests {
         payload
     }
 
+    // Tests backward compatibility: payload without encryption returns placeholder
     #[test]
     #[allow(deprecated)]
     fn test_chat_message_chunk_metadata_try_from_valid_payload() {
@@ -89,7 +90,60 @@ mod tests {
         assert!(result.is_ok());
         let metadata = result.unwrap();
         assert_eq!(metadata.speaker, "user");
-        assert_eq!(metadata.text, "Hello world");
+        // SECURITY: Without encrypted fields, deprecated text field contains placeholder
+        assert_eq!(metadata.text, "[MISSING ENCRYPTION]");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_chat_message_chunk_metadata_try_from_encrypted_payload() {
+        // Create a 32-byte DEK for encryption
+        let dek = SecretBox::new(Box::new(b"test_dek_key_32_bytes_long!!!!!!".to_vec()));
+
+        // Encrypt the text content
+        let plaintext = "Hello world";
+        let (encrypted_text, text_nonce) =
+            encrypt_gcm(plaintext.as_bytes(), &dek).expect("Encryption failed");
+
+        // Build payload with encrypted fields
+        let mut payload = HashMap::new();
+        payload.insert(
+            "message_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert(
+            "session_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert(
+            "user_id".to_string(),
+            string_value(&Uuid::new_v4().to_string()),
+        );
+        payload.insert("speaker".to_string(), string_value("user"));
+        payload.insert(
+            "timestamp".to_string(),
+            string_value(&Utc::now().to_rfc3339()),
+        );
+        payload.insert("text".to_string(), string_value("[encrypted]")); // Placeholder
+        payload.insert("source_type".to_string(), string_value("chat_message"));
+
+        // Add encrypted fields as byte arrays
+        payload.insert(
+            "encrypted_text".to_string(),
+            list_integer_value(encrypted_text.iter().map(|&b| b as i64).collect()),
+        );
+        payload.insert(
+            "text_nonce".to_string(),
+            list_integer_value(text_nonce.iter().map(|&b| b as i64).collect()),
+        );
+
+        let result = ChatMessageChunkMetadata::try_from(payload);
+        assert!(result.is_ok());
+        let metadata = result.unwrap();
+        assert_eq!(metadata.speaker, "user");
+        assert_eq!(metadata.text, "[encrypted]"); // Placeholder when encrypted
+        assert!(metadata.encrypted_text.is_some());
+        assert!(metadata.text_nonce.is_some());
     }
 
     #[test]
