@@ -35,7 +35,7 @@
 		"@vercel/blob": "^0.27.3",
 		"@vitest/ui": "^3.2.4",
 		"autoprefixer": "^10.4.21",
-		"bcrypt-ts": "^5.0.3",
+		"bcrypt-ts": "^7.1.0",
 		"bits-ui": "1.8.0",
 		"clsx": "^2.1.1",
 		"date-fns": "^4.1.0",
