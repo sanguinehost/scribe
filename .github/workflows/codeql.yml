@@ -61,6 +61,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # Cache Rust dependencies for faster analysis
+    - name: Cache Rust dependencies
+      if: matrix.language == 'rust'
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "codeql-rust"
+        # CodeQL doesn't build, but caching deps helps with analysis
+        cache-targets: "false"
+
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node`
     # or others). This is typically only required for manual builds.

@@ -29,15 +29,13 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Cache cargo registry
-      uses: actions/cache@v4
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-audit-
+        # Cache key includes cargo-audit to isolate from other jobs
+        shared-key: "cargo-audit"
+        # Cache the cargo-audit binary installation
+        cache-targets: "true"
 
     - name: Install cargo-audit
       run: cargo install cargo-audit --locked
@@ -132,6 +130,12 @@ jobs:
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "cargo-outdated"
+        cache-targets: "true"
 
     - name: Install cargo-outdated
       run: cargo install cargo-outdated --locked
