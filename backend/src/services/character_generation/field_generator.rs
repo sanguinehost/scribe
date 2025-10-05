@@ -46,6 +46,7 @@ impl FieldGenerator {
         &self,
         request: FieldGenerationRequest,
         user_id: uuid::Uuid,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<FieldGenerationResult, AppError> {
         let start_time = Instant::now();
 
@@ -59,7 +60,7 @@ impl FieldGenerator {
 
         // Build the user message with context and instructions, capturing debug info
         let (user_message, debug_info) = self
-            .build_field_generation_user_message_with_debug(&request, user_id)
+            .build_field_generation_user_message_with_debug(&request, user_id, session_dek)
             .await?;
 
         // Create a simple message for generation
@@ -266,12 +267,13 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         &self,
         request: &FieldGenerationRequest,
         user_id: uuid::Uuid,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<String, AppError> {
         let mut message = String::new();
 
         // Query lorebook for relevant context if lorebook_id is provided
         let lorebook_context = if let Some(lorebook_id) = request.lorebook_id {
-            self.query_lorebook_context(user_id, lorebook_id, request)
+            self.query_lorebook_context(user_id, lorebook_id, request, session_dek)
                 .await?
         } else {
             None
@@ -454,6 +456,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         &self,
         request: &FieldGenerationRequest,
         user_id: uuid::Uuid,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<(String, DebugInfo), AppError> {
         let mut message = String::new();
         let mut debug_info = DebugInfo {
@@ -465,7 +468,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         // Query lorebook for relevant context if lorebook_id is provided
         let lorebook_context = if let Some(lorebook_id) = request.lorebook_id {
             let query_result = self
-                .query_lorebook_context_with_debug(user_id, lorebook_id, request)
+                .query_lorebook_context_with_debug(user_id, lorebook_id, request, session_dek)
                 .await?;
             debug_info.lorebook_context_included = query_result.context.is_some();
             debug_info.lorebook_entries_count = query_result.entries_count;
@@ -612,6 +615,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         user_id: uuid::Uuid,
         lorebook_id: uuid::Uuid,
         request: &FieldGenerationRequest,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<LorebookQueryResult, AppError> {
         // Build query text from character name and field content
         let mut query_parts = Vec::new();
@@ -656,8 +660,8 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                 Some(vec![lorebook_id]), // Query the specific lorebook
                 None,                    // No chronicle search for character generation
                 &query_text,
-                10,   // Limit to top 10 most relevant chunks
-                None, // No DEK available for character generation
+                10,          // Limit to top 10 most relevant chunks
+                session_dek, // SECURITY: Pass SessionDek for decrypting lorebook content
             )
             .await
         {
@@ -720,6 +724,7 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         user_id: uuid::Uuid,
         lorebook_id: uuid::Uuid,
         request: &FieldGenerationRequest,
+        session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<Option<String>, AppError> {
         // Build query text from character name and field content
         let mut query_parts = Vec::new();
@@ -764,8 +769,8 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
                 Some(vec![lorebook_id]), // Query the specific lorebook
                 None,                    // No chronicle search for character generation
                 &query_text,
-                10,   // Limit to top 10 most relevant chunks
-                None, // No DEK available for character generation
+                10,          // Limit to top 10 most relevant chunks
+                session_dek, // SECURITY: Pass SessionDek for decrypting lorebook content
             )
             .await
         {

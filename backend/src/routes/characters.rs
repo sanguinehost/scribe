@@ -1322,6 +1322,7 @@ pub async fn get_character_asset_handler(
 pub async fn generate_field_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
+    dek: SessionDek, // SECURITY: SessionDek required for decrypting lorebook content
     Json(payload): Json<FieldGenerationRequest>,
 ) -> Result<Json<FieldGenerationResult>, AppError> {
     let user = auth_session
@@ -1331,7 +1332,9 @@ pub async fn generate_field_handler(
     info!("Generating field {:?} for user request", payload.field);
 
     let field_generator = FieldGenerator::new(Arc::new(state));
-    let result = field_generator.generate_field(payload, user.id).await?;
+    let result = field_generator
+        .generate_field(payload, user.id, Some(&dek))
+        .await?;
 
     Ok(Json(result))
 }

@@ -338,9 +338,34 @@ async fn test_alternate_greeting_generation_with_lorebook() {
     tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
 
     // Set up mock response for retrieve_relevant_chunks (called during character generation)
+    // Return mock lorebook chunks with the content we just created
+    use scribe_backend::services::embeddings::metadata::LorebookChunkMetadata;
+    use scribe_backend::services::embeddings::{RetrievedChunk, RetrievedMetadata};
+    use uuid::Uuid;
+
+    let mock_lorebook_chunk = RetrievedChunk {
+        score: 0.95,
+        text: "The Grand Library of Mystic Academy contains thousands of ancient tomes and scrolls. Students often meet here for study sessions, but it's also where forbidden knowledge is hidden in the restricted section. The library is overseen by the stern but caring Librarian Thorne.".to_string(),
+        metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
+            original_lorebook_entry_id: Uuid::new_v4(),
+            lorebook_id: Uuid::parse_str(lorebook_id).unwrap(),
+            user_id: Uuid::new_v4(),
+            chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
+            entry_title: Some("Mystic Academy Library".to_string()),
+            keywords: Some(vec!["library".to_string(), "academy".to_string(), "study".to_string()]),
+            is_enabled: true,
+            is_constant: false,
+            source_type: "lorebook_entry".to_string(),
+            encrypted_chunk_text: Some(vec![1, 2, 3]), // Mock encrypted data
+            chunk_text_nonce: Some(vec![4, 5, 6]),     // Mock nonce
+            encrypted_title: None,
+            title_nonce: None,
+        }),
+    };
+
     test_app
         .mock_embedding_pipeline_service
-        .add_retrieve_response(Ok(vec![]));
+        .add_retrieve_response(Ok(vec![mock_lorebook_chunk]));
 
     // Test alternate greeting generation with lorebook context
     let generate_request = Request::builder()
