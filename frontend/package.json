@@ -32,7 +32,7 @@
 		"@types/lodash-es": "^4.17.12",
 		"@types/ms": "^2.1.0",
 		"@types/node": "^22.17.2",
-		"@vercel/blob": "^0.27.3",
+		"@vercel/blob": "^2.0.0",
 		"@vitest/ui": "^3.2.4",
 		"autoprefixer": "^10.4.21",
 		"bcrypt-ts": "^5.0.3",
