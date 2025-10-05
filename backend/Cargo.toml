@@ -139,7 +139,7 @@ aws-config = "1.6.3"
 aws-sdk-ses = "1.75.0"
 
 # Rate limiting
-tower_governor = "0.5.0"
+tower_governor = "0.8.0"
 
 # Payment processing (optional - only with payment feature)
 hmac = { version = "0.12", optional = true }  # For webhook signature verification
