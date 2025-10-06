@@ -707,6 +707,7 @@ pub async fn create_payment(
         }),
         // billing_details must be null for automatic collection mode per Paddle API
         billing_details: None,
+        custom_data: None,
     };
 
     tracing::debug!(
@@ -1449,6 +1450,7 @@ pub async fn create_subscription(
             cancel_url: Some(format!("{}/pricing", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
+        custom_data: None,
     };
 
     // Create transaction with Paddle
@@ -1944,6 +1946,22 @@ async fn process_transaction_completed(
         tracing::debug!("Step 1a complete: No customer email found");
     }
 
+    // Extract custom_data.user_id for additional fallback user lookup
+    tracing::debug!("Step 1b: Extracting custom_data.user_id");
+    let custom_data_user_id = transaction_data
+        .get("custom_data")
+        .and_then(|cd| cd.get("user_id"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+    if let Some(ref uid) = custom_data_user_id {
+        tracing::debug!(
+            custom_data_user_id = %uid,
+            "Step 1b complete: custom_data.user_id found"
+        );
+    } else {
+        tracing::debug!("Step 1b complete: No custom_data.user_id found");
+    }
+
     // Find user by paddle_customer_id or email
     tracing::debug!(
         "Step 2: Finding user by paddle_customer_id: {}",
@@ -1957,6 +1975,7 @@ async fn process_transaction_completed(
 
     let customer_id_for_closure = customer_id.clone();
     let customer_email_for_closure = customer_email.clone();
+    let custom_data_user_id_for_closure = custom_data_user_id;
 
     use crate::schema::{payment_transactions, subscriptions, users};
     use diesel::prelude::*;
@@ -1991,6 +2010,18 @@ async fn process_transaction_completed(
                     .first::<uuid::Uuid>(conn)
                 {
                     tracing::debug!("Found user by email fallback");
+                    return Ok(user);
+                }
+            }
+
+            // Fallback: Try to find user by custom_data.user_id
+            if let Some(user_id) = custom_data_user_id_for_closure {
+                if let Ok(user) = users::table
+                    .filter(users::id.eq(user_id))
+                    .select(users::id)
+                    .first::<uuid::Uuid>(conn)
+                {
+                    tracing::debug!("Found user by custom_data.user_id fallback");
                     return Ok(user);
                 }
             }
@@ -3920,7 +3951,15 @@ pub async fn purchase_credits(
         .create_customer(&user.email, Some(&user.username))
         .await?;
 
-    // Create transaction
+    // Create transaction with custom_data containing user_id and user_email for webhook lookup
+    let custom_data = serde_json::json!({
+        "user_id": user.id.to_string(),
+        "user_email": user.email.clone(),
+        "source": "purchase_credits",
+        "package_id": package.package_id.clone(),
+        "credits": package.credits,
+    });
+
     let transaction_request = CreateTransactionRequest {
         customer_id: customer.id.clone(),
         items: vec![TransactionItem {
@@ -3939,6 +3978,7 @@ pub async fn purchase_credits(
             cancel_url: Some(format!("{}/credits", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
+        custom_data: Some(custom_data),
     };
 
     let transaction = paddle_service

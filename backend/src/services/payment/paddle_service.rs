@@ -193,6 +193,8 @@ pub struct CreateTransactionRequest {
     pub checkout: Option<TransactionCheckout>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_details: Option<TransactionBillingDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
 }
 
 /// Transaction item
@@ -1056,15 +1058,14 @@ impl PaddleService {
             "https://api.paddle.com"
         };
 
-        // Create customer auth token request
-        let mut payload = HashMap::new();
-        payload.insert("customer_id", customer_id);
-
+        // Create customer auth token request (customer_id in URL path, not body)
         let response = self
             .client
-            .post(&format!("{}/customer-auth-tokens", base_url))
+            .post(&format!(
+                "{}/customers/{}/auth-tokens",
+                base_url, customer_id
+            ))
             .bearer_auth(api_key)
-            .json(&payload)
             .send()
             .await
             .map_err(|e| {
