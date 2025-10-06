@@ -31,20 +31,20 @@
 
 	const messages = {
 		dek_missing: {
-			title: 'Security Key Required',
-			description: 'System Update Detected',
+			title: 'Re-authentication Required',
+			description: 'Please sign in to continue',
 			explanation:
-				'Our servers were recently updated for security and performance improvements. For your security, your encryption key was not persisted during the update and must be re-derived from your password.',
-			note: 'Your session is still valid - we just need to verify your password to unlock your encrypted data. None of your data has been lost.',
-			icon: '🔄'
+				'Required after session expiry, server restarts/updates, or for security verification.',
+			note: '',
+			icon: '🔐'
 		},
 		session_expired: {
 			title: 'Session Expired',
-			description: 'Your session has expired',
+			description: 'Please sign in to continue',
 			explanation:
-				'For security reasons, sessions expire after a period of inactivity. Please sign in again to continue.',
+				'Required after session expiry, server restarts/updates, or for security verification.',
 			note: '',
-			icon: '⏱️'
+			icon: '🔐'
 		}
 	};
 

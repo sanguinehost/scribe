@@ -244,6 +244,10 @@
 			description: 'Your encryption key has been restored. You can continue using the app.',
 			duration: 3000
 		});
+
+		// Dispatch event to trigger data refresh in sidebar components
+		console.log('[Layout] Dispatching auth:reauth-complete event for sidebar refresh');
+		window.dispatchEvent(new CustomEvent('auth:reauth-complete'));
 	}
 </script>
 
