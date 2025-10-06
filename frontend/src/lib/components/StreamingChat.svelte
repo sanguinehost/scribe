@@ -267,11 +267,7 @@
 									{/if}
 
 									<!-- Message Content with Typewriter Effect -->
-									<TypewriterMessage
-										{message}
-										showTypewriter={message.isAnimating && message.content.length > 0}
-										className="text-foreground"
-									/>
+									<TypewriterMessage {message} className="text-foreground" />
 
 									<!-- Loading Indicator -->
 									{#if message.isAnimating && message.content.length === 0}

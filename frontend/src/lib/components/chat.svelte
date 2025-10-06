@@ -104,8 +104,7 @@
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
 		settingsStore.loadTypingSpeed();
-		// Update StreamingService with user's typing speed preference
-		streamingService.setTypingSpeed(settingsStore.typingSpeed);
+		// TODO: Animation speed will be handled in TypewriterMessage component
 	});
 
 	// Load saved chronicle preference from localStorage
@@ -252,6 +251,7 @@
 								displayedContent: msg.content, // Show immediately for existing messages
 								created_at: msg.created_at ?? new Date().toISOString(),
 								isAnimating: false, // Existing messages don't animate
+								shouldAnimate: msg.shouldAnimate ?? false, // Carry over shouldAnimate flag
 								error: msg.error,
 								retryable: msg.retryable,
 								prompt_tokens: msg.prompt_tokens,
@@ -404,6 +404,7 @@
 								: rawMsg.created_at.toISOString(),
 						user_id: '',
 						loading: false,
+						shouldAnimate: false, // Historical messages should not animate
 						raw_prompt: rawMsg.raw_prompt,
 						prompt_tokens: rawMsg.prompt_tokens,
 						completion_tokens: rawMsg.completion_tokens,
@@ -446,6 +447,7 @@
 							displayedContent: msg.content,
 							created_at: msg.created_at || new Date().toISOString(),
 							isAnimating: false,
+							shouldAnimate: msg.shouldAnimate ?? false, // Carry over shouldAnimate flag
 							error: msg.error || undefined,
 							retryable: msg.retryable,
 							prompt_tokens: msg.prompt_tokens || undefined,
@@ -628,7 +630,9 @@
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
 						// Include regeneration flag for loading indicator
-						isRegenerating: msg.isRegenerating
+						isRegenerating: msg.isRegenerating,
+						// Preserve shouldAnimate flag for animation control
+						shouldAnimate: msg.shouldAnimate
 						// Note: _variantChangedAt removed due to type conflicts
 					};
 

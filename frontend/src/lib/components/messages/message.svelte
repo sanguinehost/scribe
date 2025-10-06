@@ -26,6 +26,7 @@
 			sender: msg.message_type === 'User' ? 'user' : 'assistant',
 			created_at: msg.created_at || new Date().toISOString(),
 			isAnimating: false,
+			shouldAnimate: msg.shouldAnimate ?? false,
 			isRegenerating: msg.loading,
 			error: msg.error || undefined,
 			retryable: msg.retryable,
@@ -366,7 +367,6 @@
 								<!-- FORCE TypewriterMessage for ALL Assistant messages to prevent transition -->
 								<TypewriterMessage
 									message={toStreamingMessage(message)}
-									showTypewriter={message.loading}
 									className="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								/>
 							{:else}

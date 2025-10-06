@@ -74,6 +74,17 @@
 		prompt_template_id: 'neutral_roleplay' // Will be set from global or chat settings
 	});
 
+	// Typing speed state (client-side preference)
+	let typingSpeed = $state(30); // milliseconds per character
+
+	// Get SettingsStore reference during component initialization
+	let settingsStore: _SettingsStore;
+	try {
+		settingsStore = _SettingsStore.fromContext();
+	} catch (e) {
+		console.warn('SettingsStore not available in ChatConfigPanel context:', e);
+	}
+
 	// Expandable sections
 	let expandedSections = $state({
 		persona: true,
@@ -119,9 +130,10 @@
 		);
 	});
 
-	// Load global settings on component mount
+	// Load global settings and typing speed on component mount
 	$effect(() => {
 		loadGlobalSettings();
+		loadTypingSpeed();
 	});
 
 	// Listen for chronicle creation events to refresh the chronicle list
@@ -283,6 +295,36 @@
 			toast.error('Failed to load global settings');
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	async function loadTypingSpeed() {
+		try {
+			if (!settingsStore) {
+				console.warn('SettingsStore not available, using default typing speed');
+				typingSpeed = 30;
+				return;
+			}
+			await settingsStore.loadTypingSpeed();
+			typingSpeed = settingsStore.typingSpeed;
+		} catch (_error) {
+			console.warn('Failed to load typing speed, using default:', _error);
+			typingSpeed = 30; // Fallback to default
+		}
+	}
+
+	async function saveTypingSpeed() {
+		try {
+			if (!settingsStore) {
+				toast.error('Settings not available');
+				return;
+			}
+			settingsStore.typingSpeed = typingSpeed;
+			await settingsStore.saveTypingSpeed();
+			toast.success('Typing speed updated');
+		} catch (_error) {
+			console.error('Failed to save typing speed:', _error);
+			toast.error('Failed to save typing speed');
 		}
 	}
 
@@ -1283,6 +1325,27 @@
 										<option value={true}>Enabled</option>
 									</select>
 								</div>
+							</div>
+
+							<!-- Streaming Animation Speed -->
+							<div class="space-y-2">
+								<div class="flex items-center justify-between">
+									<Label for="typing-speed">Typing Animation Speed</Label>
+									<span class="text-xs text-muted-foreground">{typingSpeed}ms</span>
+								</div>
+								<input
+									id="typing-speed"
+									type="range"
+									min="1"
+									max="100"
+									step="1"
+									bind:value={typingSpeed}
+									onchange={() => saveTypingSpeed()}
+									class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+								/>
+								<p class="text-xs text-muted-foreground">
+									Lower = faster (1ms), Higher = slower (100ms). Default: 30ms
+								</p>
 							</div>
 						</CardContent>
 					{/if}

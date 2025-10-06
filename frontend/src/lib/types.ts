@@ -558,6 +558,7 @@ export interface ScribeChatMessage {
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
 	// UI state
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
+	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages
 }
 
 export type DocumentResponse = {

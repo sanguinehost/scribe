@@ -161,9 +161,18 @@
 		if (!(containerRef && endRef)) return;
 
 		const observer = new MutationObserver((mutations) => {
-			if (!endRef || scrollLock.locked) return;
+			if (!endRef || !containerRef || scrollLock.locked) return;
 
-			// Don't auto-scroll during streaming to allow user to freely scroll
+			// Check if user has scrolled away from bottom (allow free scrolling)
+			const scrollThreshold = 100; // pixels from bottom
+			const isAtBottom =
+				containerRef.scrollHeight - containerRef.scrollTop - containerRef.clientHeight <
+				scrollThreshold;
+
+			// Don't auto-scroll if user has scrolled away from bottom
+			if (!isAtBottom) return;
+
+			// Don't auto-scroll during loading/animation
 			const hasAnimatingMessages = messages.some((m) => m.loading);
 			if (hasAnimatingMessages) return;
 
