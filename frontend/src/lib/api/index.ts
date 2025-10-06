@@ -1,6 +1,12 @@
 import { Result as _Result, err, ok } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
-import { ApiResponseError, ApiNetworkError } from '$lib/errors/api';
+import {
+	ApiResponseError,
+	ApiNetworkError,
+	ApiServerRestartError,
+	ApiAuthError,
+	ApiDekMissingError
+} from '$lib/errors/api';
 import { ENABLE_LOCAL_LLM, PAYMENT_FEATURES } from '$lib/utils/features';
 import type {
 	User,
@@ -106,7 +112,6 @@ import type {
 } from '$lib/types/payment';
 import {
 	setConnectionError,
-	performLogout,
 	getHasConnectionError,
 	clearConnectionError,
 	debugCookies
@@ -210,54 +215,10 @@ class ApiClient {
 				);
 			}
 			if (!response.ok) {
-				// Handle 401 Unauthorized specifically
-				if (response.status === 401) {
-					// Check if this is a DEK missing error (specific message indicating server restart)
-					let isDekMissingError = false;
-					try {
-						const errorResponse = await response.clone().json();
-						isDekMissingError =
-							errorResponse.error &&
-							errorResponse.error.includes('Data Encryption Key not available');
-					} catch {
-						// If we can't parse the error, fall back to general handling
-					}
-
-					// Only update auth store and redirect if we're in the browser
-					if (_browser) {
-						// Import auth state check
-						const { getCurrentUser } = await import('$lib/auth.svelte');
-						const currentUser = getCurrentUser();
-
-						// Only show "session expired" if there was actually a user logged in
-						if (currentUser) {
-							if (isDekMissingError) {
-								console.log(
-									`[${new Date().toISOString()}] ApiClient.fetch: 401 DEK Missing. Server likely restarted, performing comprehensive logout.`
-								);
-							} else {
-								console.log(
-									`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Session expired, performing comprehensive logout.`
-								);
-							}
-							// Use comprehensive logout that clears both state and cookies
-							await performLogout('expired', true);
-						} else {
-							// User wasn't logged in anyway, just log without showing notification
-							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. User not authenticated.`
-							);
-							// Still perform logout to clean up any stale state, but without notification
-							await performLogout('expired', false);
-						}
-					} else {
-						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized on server-side fetch. Not redirecting.`
-						);
-					}
-				}
-
-				let errorData = { message: 'An unknown error occurred' };
+				// Parse error message for specific error type detection
+				let errorData: { message: string; error_code?: string } = {
+					message: 'An unknown error occurred'
+				};
 				let isProxyError = false;
 				try {
 					errorData = await response.json();
@@ -270,27 +231,86 @@ class ApiClient {
 					isProxyError = response.status >= 500;
 				}
 
-				// Handle proxy errors (Vite dev server can't reach backend) as connection issues
-				if (isProxyError && _browser) {
-					const isAuthEndpoint =
-						endpoint.includes('/api/auth/') ||
-						endpoint.includes('/api/characters') ||
-						endpoint.includes('/api/chats') ||
-						endpoint.includes('/api/personas') ||
-						endpoint.includes('/api/lorebooks');
+				const errorMessage = errorData.message || response.statusText;
+				const errorCode = errorData.error_code; // Structured error code from backend
 
-					if (isAuthEndpoint) {
+				// Handle 401 Unauthorized - distinguish between DEK missing and other auth failures
+				if (response.status === 401) {
+					// Check if this is a DEK missing error using structured error code
+					// Fallback to string matching for backward compatibility with older backend versions
+					const isDekMissingError =
+						errorCode === 'DEK_MISSING' ||
+						errorMessage.includes('Data Encryption Key') ||
+						errorMessage.includes('DEK not available') ||
+						errorMessage.includes('Encryption key missing');
+
+					if (isDekMissingError) {
 						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: Proxy error ${response.status} on endpoint ${endpoint}. Backend appears to be offline.`
+							`[${new Date().toISOString()}] ApiClient.fetch: 401 DEK Missing detected. Session valid but encryption key lost during restart.`
 						);
-						setConnectionError();
+
+						// IMMEDIATELY dispatch global event to show re-auth modal
+						// This ensures ANY API call that hits DEK missing triggers the modal
+						if (_browser) {
+							console.log(
+								`[${new Date().toISOString()}] ApiClient.fetch: Dispatching global auth:dek-missing event`
+							);
+							window.dispatchEvent(
+								new CustomEvent('auth:dek-missing', {
+									detail: { reason: 'dek_missing', immediate: true, endpoint }
+								})
+							);
+						}
+
+						return err(new ApiDekMissingError(errorMessage));
+					} else {
+						console.log(
+							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Invalid session or credentials.`
+						);
+						return err(new ApiAuthError(errorMessage, 401));
 					}
 				}
+
+				// Handle 403 Forbidden
+				if (response.status === 403) {
+					console.log(
+						`[${new Date().toISOString()}] ApiClient.fetch: 403 Forbidden. Access denied.`
+					);
+					return err(new ApiAuthError(errorMessage, 403));
+				}
+
+				// Handle 503 Service Unavailable and other 5xx errors - backend restarting
+				if (response.status === 503 || response.status >= 500) {
+					console.log(
+						`[${new Date().toISOString()}] ApiClient.fetch: ${response.status} error. Backend may be restarting.`
+					);
+
+					// Handle proxy errors (Vite dev server can't reach backend) as connection issues
+					if (isProxyError && _browser) {
+						const isAuthEndpoint =
+							endpoint.includes('/api/auth/') ||
+							endpoint.includes('/api/characters') ||
+							endpoint.includes('/api/chats') ||
+							endpoint.includes('/api/personas') ||
+							endpoint.includes('/api/lorebooks');
+
+						if (isAuthEndpoint) {
+							console.log(
+								`[${new Date().toISOString()}] ApiClient.fetch: Proxy error ${response.status} on endpoint ${endpoint}. Backend appears to be offline.`
+							);
+							setConnectionError();
+						}
+					}
+
+					return err(new ApiServerRestartError(errorMessage, response.status));
+				}
+
+				// Other errors
 				console.error(
 					`[${new Date().toISOString()}] ApiClient.fetch: EXIT - API Error ${response.status}`,
 					errorData
 				);
-				return err(new ApiResponseError(response.status, errorData.message));
+				return err(new ApiResponseError(response.status, errorMessage));
 			}
 
 			// Check if response is empty (like for a 204 No Content)
