@@ -1706,3 +1706,94 @@ async fn test_login_pending_verification() -> AnyhowResult<()> {
     guard.cleanup().await?;
     Ok(())
 }
+
+/// Test that the /api/auth/invalidate-session endpoint properly sends cookie deletion headers
+#[tokio::test(flavor = "multi_thread")]
+#[ignore] // Added ignore for CI
+async fn test_invalidate_session_endpoint() -> AnyhowResult<()> {
+    let test_app = test_helpers::spawn_app(true, false, false).await;
+    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+
+    // Ensure encryption columns exist
+    ensure_encryption_columns_exist(&test_app.db_pool).await?;
+
+    let username = format!("invalidate_session_{}", Uuid::new_v4());
+    let password = "password123";
+
+    // Create a test user
+    let user = test_helpers::db::create_test_user(
+        &test_app.db_pool,
+        username.to_string(),
+        password.to_string(),
+    )
+    .await?;
+
+    guard.add_user(user.id);
+
+    // 1. Login first to establish a session (though the endpoint doesn't require authentication)
+    let login_payload = json!({
+        "identifier": username,
+        "password": password
+    });
+
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(login_payload.to_string()))?;
+
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login failed before testing invalidate-session"
+    );
+
+    // 2. Call the invalidate-session endpoint
+    let invalidate_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/invalidate-session")
+        .body(Body::empty())?;
+
+    let invalidate_response = test_app.router.clone().oneshot(invalidate_request).await?;
+
+    // 3. Verify response status
+    assert_eq!(
+        invalidate_response.status(),
+        StatusCode::NO_CONTENT,
+        "Invalidate session should return 204 NO_CONTENT"
+    );
+
+    // 4. Verify Set-Cookie header is present with expired date
+    let set_cookie_header = invalidate_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("Invalidate session should send Set-Cookie header");
+
+    let cookie_str = set_cookie_header.to_str()?;
+
+    // 5. Verify cookie header contains the expected attributes for deletion
+    assert!(cookie_str.contains("id="), "Cookie should be named 'id'");
+    assert!(
+        cookie_str.contains("Expires=Thu, 01 Jan 1970 00:00:00 GMT"),
+        "Cookie should have expired date for deletion"
+    );
+    assert!(cookie_str.contains("Path=/"), "Cookie should have Path=/");
+    assert!(
+        cookie_str.contains("HttpOnly"),
+        "Cookie should have HttpOnly flag"
+    );
+    assert!(
+        cookie_str.contains("SameSite=Lax"),
+        "Cookie should have SameSite=Lax"
+    );
+
+    // Note: Secure and Domain flags depend on configuration
+    // In test environment, these may not be set, so we don't assert on them
+
+    info!("Invalidate session test completed successfully");
+
+    guard.cleanup().await?;
+    Ok(())
+}

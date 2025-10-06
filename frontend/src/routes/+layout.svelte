@@ -166,6 +166,7 @@
 		window.addEventListener('auth:success', handleAuthSuccess);
 
 		// Set up periodic auth check to detect session expiry during active use
+		// Reduced from 5 minutes to 2 minutes for faster detection of invalidated sessions
 		const periodicAuthCheck = setInterval(
 			() => {
 				// Only check if user thinks they're authenticated
@@ -173,8 +174,19 @@
 					initializeAuth(true); // Force recheck to bypass cached promise
 				}
 			},
-			5 * 60 * 1000
-		); // Check every 5 minutes
+			2 * 60 * 1000
+		); // Check every 2 minutes
+
+		// Set up visibility change listener to check session when user returns to tab
+		// This handles cases where backend is redeployed while user is away
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === 'visible' && getIsAuthenticated()) {
+				console.log('[Layout] Tab became visible, validating session...');
+				initializeAuth(true); // Force recheck when user returns to tab
+			}
+		};
+
+		document.addEventListener('visibilitychange', handleVisibilityChange);
 
 		// Cleanup
 		return () => {
@@ -183,6 +195,7 @@
 			window.removeEventListener('auth:session-expired', handleSessionExpired);
 			window.removeEventListener('auth:connection-restored', handleConnectionRestored);
 			window.removeEventListener('auth:success', handleAuthSuccess);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			clearInterval(periodicAuthCheck);
 		};
 	});

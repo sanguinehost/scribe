@@ -70,6 +70,7 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/login", post(login_handler))
         .route("/verify-email", post(verify_email_handler))
         .route("/logout", post(logout_handler))
+        .route("/invalidate-session", post(invalidate_session_handler))
         .route("/me", get(me_handler))
         .route("/change-password", post(change_password_handler))
         .route("/recover-password", post(recover_password_handler))
@@ -494,6 +495,57 @@ pub async fn logout_handler(
     info!("Logout process completed (session cleared if existed).");
 
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Explicitly invalidate session cookies by sending Set-Cookie headers with expired dates.
+/// This endpoint is called by the frontend to ensure HttpOnly cookies are properly cleared.
+///
+/// # Errors
+/// Returns `AppError` only if critical configuration is missing or invalid.
+#[instrument(skip(state), err)]
+pub async fn invalidate_session_handler(
+    State(state): State<AppState>,
+) -> Result<Response, AppError> {
+    info!("Invalidate session handler entered.");
+
+    // Build Set-Cookie header to delete the session cookie
+    // The cookie name used by tower-sessions is "id" by default
+    let cookie_name = "id";
+    let mut cookie_value = format!(
+        "{}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax",
+        cookie_name
+    );
+
+    // Add Secure flag if configured
+    if state.config.session_cookie_secure {
+        cookie_value.push_str("; Secure");
+    }
+
+    // Add Domain if configured (critical for production environments)
+    if let Some(ref domain) = state.config.cookie_domain {
+        cookie_value.push_str(&format!("; Domain={}", domain));
+        info!(domain = %domain, "Setting cookie deletion with domain");
+    } else {
+        info!("No cookie domain configured, using default cookie scope");
+    }
+
+    debug!(cookie_header = %cookie_value, "Sending Set-Cookie header to invalidate session");
+
+    // Build response with Set-Cookie header
+    use axum::http::header;
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        header::SET_COOKIE,
+        cookie_value.parse().map_err(|e| {
+            error!(error = ?e, "Failed to parse cookie header value");
+            AppError::InternalServerErrorGeneric(
+                "Failed to construct cookie deletion header".to_string(),
+            )
+        })?,
+    );
+
+    info!("Session cookie invalidation headers sent successfully");
+    Ok((StatusCode::NO_CONTENT, headers).into_response())
 }
 
 #[instrument(skip(auth_session), err)]
