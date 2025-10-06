@@ -232,10 +232,7 @@ mod tests {
             .find(|m| m.name() == "webhook_signature_failures_total")
             .expect("Webhook metric should exist");
 
-        assert_eq!(
-            webhook_metric.get_metric()[0].get_counter().value(),
-            2.0
-        );
+        assert_eq!(webhook_metric.get_metric()[0].get_counter().value(), 2.0);
     }
 
     #[test]
