@@ -163,8 +163,8 @@ mod credit_flow_tests {
         );
         assert_eq!(
             model_costs["gemini-2.5-pro"].as_i64().unwrap(),
-            50,
-            "gemini-2.5-pro should cost 50 credits"
+            20,
+            "gemini-2.5-pro should cost 20 credits (upfront reservation)"
         );
     }
 

@@ -890,6 +890,93 @@ impl CreditService {
         Ok(updated_balance)
     }
 
+    /// Adjust a pending reservation to reflect actual usage (partial refund)
+    /// This is used when actual token usage is less than the upfront reservation
+    pub fn adjust_reservation_to_actual_cost(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        reservation_id: Uuid,
+        actual_cost: i32,
+    ) -> Result<CreditBalance, AppError> {
+        use crate::schema::credit_transactions::dsl;
+
+        // Find the pending transaction
+        let transaction: CreditTransaction = dsl::credit_transactions
+            .filter(dsl::id.eq(reservation_id))
+            .filter(dsl::user_id.eq(user_id))
+            .filter(dsl::transaction_type.eq("pending"))
+            .first(conn)
+            .map_err(|e| {
+                error!(
+                    "Failed to find pending transaction for adjustment {}: {}",
+                    reservation_id, e
+                );
+                AppError::NotFound(format!("Reservation {} not found", reservation_id))
+            })?;
+
+        let reserved_amount = transaction.amount.abs();
+
+        // If actual cost is greater than or equal to reserved, no adjustment needed
+        if actual_cost >= reserved_amount {
+            info!(
+                reservation_id = %reservation_id,
+                reserved = reserved_amount,
+                actual = actual_cost,
+                "Actual cost >= reserved amount, no adjustment needed"
+            );
+            return self.get_balance(conn, user_id);
+        }
+
+        let refund_amount = reserved_amount - actual_cost;
+
+        // Update the pending transaction to reflect actual cost
+        diesel::update(dsl::credit_transactions.find(reservation_id))
+            .set(dsl::amount.eq(-(actual_cost))) // Negative for deduction
+            .execute(conn)
+            .map_err(|e| {
+                error!(
+                    "Failed to adjust reservation amount {}: {}",
+                    reservation_id, e
+                );
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Return the difference to user balance
+        use crate::schema::user_credits;
+        let mut balance: CreditBalance = user_credits::dsl::user_credits
+            .find(user_id)
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to get balance for adjustment: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        balance.balance += refund_amount;
+        balance.updated_at = Some(Utc::now());
+
+        let updated_balance: CreditBalance =
+            diesel::update(user_credits::dsl::user_credits.find(user_id))
+                .set(&balance)
+                .get_result(conn)
+                .map_err(|e| {
+                    error!("Failed to adjust user balance: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+        info!(
+            reservation_id = %reservation_id,
+            user_id = %user_id,
+            reserved = reserved_amount,
+            actual = actual_cost,
+            refunded = refund_amount,
+            new_balance = updated_balance.balance,
+            "Adjusted reservation to actual cost"
+        );
+
+        Ok(updated_balance)
+    }
+
     /// Grant monthly credits based on subscription tier
     pub fn grant_monthly_credits(
         &self,

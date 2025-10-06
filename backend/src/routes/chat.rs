@@ -1368,7 +1368,7 @@ pub async fn generate_chat_response(
 
                     // Calculate actual credit cost based on token usage
                     #[cfg(feature = "payment")]
-                    let _actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
+                    let actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
                         // Load token-based pricing from config
                         let config_path =
                             std::path::Path::new("backend/config/subscription_tiers.json");
@@ -1425,7 +1425,7 @@ pub async fn generate_chat_response(
 
                     // Confirm credit reservation on successful LLM response
                     #[cfg(feature = "payment")]
-                    if let Some((credit_service, reservation_id, _reserved_credits)) =
+                    if let Some((credit_service, reservation_id, reserved_credits)) =
                         &credit_reservation
                     {
                         let conn_result = state_arc.pool.get().await;
@@ -1434,9 +1434,52 @@ pub async fn generate_chat_response(
                                 let service_clone = credit_service.clone();
                                 let reservation_id_clone = *reservation_id; // Copy the UUID
 
-                                // If actual cost differs from reserved amount, adjust
-                                // For now, we'll just confirm the reservation
-                                // TODO: Implement partial refund if actual_credit_cost < reserved_credits
+                                // Adjust reservation if actual cost is less than reserved
+                                if actual_credit_cost < *reserved_credits {
+                                    let adjust_clone = credit_service.clone();
+                                    let adjust_result = conn
+                                        .interact(move |conn| {
+                                            adjust_clone.adjust_reservation_to_actual_cost(
+                                                conn,
+                                                user_id_value,
+                                                reservation_id_clone,
+                                                actual_credit_cost,
+                                            )
+                                        })
+                                        .await;
+
+                                    match adjust_result {
+                                        Ok(Ok(_balance)) => {
+                                            info!(
+                                                %session_id,
+                                                %reservation_id,
+                                                reserved = *reserved_credits,
+                                                actual = actual_credit_cost,
+                                                refunded = *reserved_credits - actual_credit_cost,
+                                                "Credit reservation adjusted to actual usage"
+                                            );
+                                        }
+                                        Ok(Err(e)) => {
+                                            error!(
+                                                %session_id,
+                                                %reservation_id,
+                                                error = %e,
+                                                "Failed to adjust credit reservation - will confirm full amount"
+                                            );
+                                            // Continue to confirmation even if adjustment fails
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                %session_id,
+                                                %reservation_id,
+                                                error = %e,
+                                                "Failed to interact with DB for adjustment - will confirm full amount"
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // Confirm the reservation (now adjusted to actual cost if applicable)
                                 let confirm_result = conn
                                     .interact(move |conn| {
                                         service_clone.confirm_reservation(
