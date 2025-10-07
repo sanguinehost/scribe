@@ -452,9 +452,29 @@ pub async fn generate_chat_response(
             )));
         }
 
-        // Check if this model requires credits based on tier and usage
-        let model_costs = &tiers_config["credit_system"]["model_costs"];
-        let base_model_cost = model_costs[&model_to_use].as_i64().unwrap_or(0) as i32;
+        // Get token-based pricing configuration for credit estimation
+        let token_pricing = &tiers_config["credit_system"]["token_pricing"];
+        let model_pricing = &token_pricing[&model_to_use];
+
+        // Extract token pricing rates (credits per 1k tokens)
+        let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
+            (
+                model_pricing["prompt_credits_per_1k"]
+                    .as_i64()
+                    .unwrap_or(10) as i32,
+                model_pricing["completion_credits_per_1k"]
+                    .as_i64()
+                    .unwrap_or(40) as i32,
+            )
+        } else {
+            // Default rates if model not in config
+            (10, 40)
+        };
+
+        // Get context window size for token estimation
+        let context_window = tier_config["limits"]["context_tokens"]
+            .as_i64()
+            .unwrap_or(32768) as i32;
 
         // Check daily message limits BEFORE processing the message
         let soft_limit_service =
@@ -481,13 +501,32 @@ pub async fn generate_chat_response(
 
                 // Free tier: gemini-2.5-pro blocked/requires credits
                 if model_to_use == "gemini-2.5-pro" {
-                    if base_model_cost > 0 {
-                        credits_required = base_model_cost;
-                    } else {
-                        return Err(AppError::BadRequest(
-                            "Premium model requires subscription or credits".to_string(),
-                        ));
-                    }
+                    // Estimate token usage for credit reservation
+                    // Conservative estimate: Use smaller of (40% context window or 50k) for input
+                    // Most messages use far less than full context, but we need buffer for safety
+                    let conservative_input_estimate =
+                        std::cmp::min((context_window as f64 * 0.4) as i32, 50000);
+                    let estimated_input_tokens = conservative_input_estimate;
+                    let estimated_output_tokens = 2000i32;
+
+                    // Calculate estimated credits based on token pricing
+                    let estimated_input_cost = (estimated_input_tokens * prompt_rate + 999) / 1000; // Round up
+                    let estimated_output_cost =
+                        (estimated_output_tokens * completion_rate + 999) / 1000; // Round up
+                    let estimated_total_cost = estimated_input_cost + estimated_output_cost;
+
+                    credits_required = estimated_total_cost;
+
+                    info!(
+                        %session_id,
+                        %user_tier,
+                        %model_to_use,
+                        %context_window,
+                        %estimated_input_tokens,
+                        %estimated_output_tokens,
+                        %estimated_total_cost,
+                        "Estimated token-based credits for Gemini Pro (free tier)"
+                    );
                 }
                 should_track_usage = true; // Track usage to enforce daily limits
             }
@@ -497,7 +536,32 @@ pub async fn generate_chat_response(
 
                 // For gemini-2.5-pro, always require credits regardless of tier
                 if model_to_use == "gemini-2.5-pro" {
-                    credits_required = base_model_cost;
+                    // Estimate token usage for credit reservation
+                    // Conservative estimate: Use smaller of (40% context window or 50k) for input
+                    // Most messages use far less than full context, but we need buffer for safety
+                    let conservative_input_estimate =
+                        std::cmp::min((context_window as f64 * 0.4) as i32, 50000);
+                    let estimated_input_tokens = conservative_input_estimate;
+                    let estimated_output_tokens = 2000i32;
+
+                    // Calculate estimated credits based on token pricing
+                    let estimated_input_cost = (estimated_input_tokens * prompt_rate + 999) / 1000; // Round up
+                    let estimated_output_cost =
+                        (estimated_output_tokens * completion_rate + 999) / 1000; // Round up
+                    let estimated_total_cost = estimated_input_cost + estimated_output_cost;
+
+                    credits_required = estimated_total_cost;
+
+                    info!(
+                        %session_id,
+                        %user_tier,
+                        %model_to_use,
+                        %context_window,
+                        %estimated_input_tokens,
+                        %estimated_output_tokens,
+                        %estimated_total_cost,
+                        "Estimated token-based credits for Gemini Pro (paid tier)"
+                    );
                 } else {
                     // For Flash/Flash-Lite, check if user has exceeded their soft limit
                     // Note: Basic/Premium users get soft limits (throttling) not hard blocks
