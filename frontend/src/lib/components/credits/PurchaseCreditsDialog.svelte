@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { browser } from '$app/environment';
+	import { page } from '$app/stores';
 	import {
 		Dialog,
 		DialogContent,
@@ -92,6 +93,31 @@
 			open = false;
 			dispatch('close');
 
+			// Get current user data for webhook processing
+			const currentUser = $page.data.user;
+			if (!currentUser?.user_id) {
+				throw new Error('User session not found. Please refresh the page and try again.');
+			}
+
+			// Build custom data for Paddle webhook
+			const customData = {
+				user_id: currentUser.user_id,
+				user_email: currentUser.email,
+				package_id: selectedPackage.package_id,
+				credits: selectedPackage.credits,
+				source: 'purchase_credits_dialog',
+				version: '1.0'
+			};
+
+			// Debug logging for verification
+			console.log('🔍 PADDLE DEBUG - User data:', {
+				user_id: currentUser.user_id,
+				user_email: currentUser.email,
+				has_user_id: !!currentUser.user_id,
+				has_email: !!currentUser.email
+			});
+			console.log('🔍 PADDLE DEBUG - Full customData being sent to Paddle:', customData);
+
 			// Open Paddle checkout overlay
 			window.Paddle.Checkout.open({
 				items: [
@@ -107,12 +133,7 @@
 					variant: 'one-page',
 					allowLogout: false
 				},
-				customData: {
-					package_id: selectedPackage.package_id,
-					credits: selectedPackage.credits,
-					source: 'purchase_credits_dialog',
-					version: '1.0'
-				}
+				customData: customData
 			});
 
 			// Reset state after successful checkout open

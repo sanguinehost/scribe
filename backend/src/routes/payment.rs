@@ -2318,7 +2318,113 @@ async fn process_transaction_completed(
             transaction_id
         );
 
-        // Check if this is a credit package purchase
+        // Primary: Check credit package mappings from config (resilient like subscription flow)
+        // This protects against database sync issues and provides guaranteed uptime for core products
+        let credit_package = if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_250_price_id
+                .as_deref()
+        {
+            Some(("250 Credits", 250))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_500_price_id
+                .as_deref()
+        {
+            Some(("550 Credits", 550))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_1500_price_id
+                .as_deref()
+        {
+            Some(("1500 Credits", 1500))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_3500_price_id
+                .as_deref()
+        {
+            Some(("3500 Credits", 3500))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_8000_price_id
+                .as_deref()
+        {
+            Some(("8000 Credits", 8000))
+        } else {
+            None
+        };
+
+        if let Some((package_name, credits)) = credit_package {
+            tracing::info!(
+                "Credit purchase detected (config mapping): {} ({} credits) for user {} in transaction {}",
+                package_name,
+                credits,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+
+            // Add credits to user account using config values
+            let credit_service =
+                crate::services::payment::CreditService::new(app_state.config.clone());
+
+            let conn = app_state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            let user_id_for_credits = user.id;
+            let credits_to_add = credits;
+            let package_name_clone = package_name.to_string();
+            let transaction_id_clone = transaction_id.clone();
+
+            let add_credits_result = conn
+                .interact(move |conn| {
+                    credit_service.add_credits(
+                        conn,
+                        user_id_for_credits,
+                        credits_to_add,
+                        "purchase",
+                        &format!("Credit package purchase: {}", package_name_clone),
+                        Some(transaction_id_clone),
+                        None,
+                    )
+                })
+                .await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+            // Log error if credit addition failed
+            if let Err(e) = add_credits_result {
+                tracing::error!(
+                    "Failed to add credits for transaction {}: {:?}",
+                    transaction_id,
+                    e
+                );
+                return Err(e);
+            }
+
+            tracing::info!(
+                "Successfully added {} credits to user {} from transaction {} (config mapping)",
+                credits,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+
+            // Credit purchase handled, no subscription to create
+            return Ok(());
+        }
+
+        // Fallback: Check database for credit package purchase (maintains flexibility for dynamic pricing)
         let conn_credit_check = app_state
             .pool
             .get()
