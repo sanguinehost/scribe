@@ -125,6 +125,7 @@ pub struct Chat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
+    pub total_credits_used: i32,
     pub prompt_template_id: String,
 }
 
@@ -230,6 +231,7 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
+    pub total_credits_used: i32,
     pub prompt_template_id: String,
 }
 
@@ -422,6 +424,34 @@ pub struct ChatMessage {
     pub superseded_at: Option<DateTime<Utc>>,
     pub variant_count: i32,
     pub current_variant_index: i32,
+    pub credits_charged: i32,
+    pub credits_cost: i32,
+}
+
+impl Default for ChatMessage {
+    fn default() -> Self {
+        Self {
+            id: uuid::Uuid::nil(),
+            session_id: uuid::Uuid::nil(),
+            user_id: uuid::Uuid::nil(),
+            message_type: MessageRole::User,
+            content: vec![],
+            content_nonce: None,
+            created_at: chrono::Utc::now(),
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
+            model_name: String::new(),
+            status: "completed".to_string(),
+            error_message: None,
+            superseded_at: None,
+            variant_count: 0,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: 0,
+        }
+    }
 }
 
 impl std::fmt::Debug for ChatMessage {
@@ -784,6 +814,8 @@ pub struct Message {
     pub superseded_at: Option<DateTime<Utc>>,
     pub variant_count: i32,
     pub current_variant_index: i32,
+    pub credits_charged: i32,
+    pub credits_cost: i32,
 }
 
 impl std::fmt::Debug for Message {
@@ -1198,6 +1230,8 @@ pub struct DbInsertableChatMessage {
     pub error_message: Option<String>,
     pub variant_count: i32,
     pub current_variant_index: i32,
+    pub credits_charged: i32,
+    pub credits_cost: i32,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1264,6 +1298,8 @@ impl DbInsertableChatMessage {
             error_message: None,
             variant_count: 0,
             current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: 0,
         }
     }
 
@@ -1317,6 +1353,14 @@ impl DbInsertableChatMessage {
     #[must_use]
     pub fn with_error_message(mut self, error_message: String) -> Self {
         self.error_message = Some(error_message);
+        self
+    }
+
+    /// Set both credits_charged and credits_cost
+    #[must_use]
+    pub fn with_credits(mut self, credits_charged: i32, credits_cost: i32) -> Self {
+        self.credits_charged = credits_charged;
+        self.credits_cost = credits_cost;
         self
     }
 }
@@ -1496,6 +1540,9 @@ pub struct ChatForClient {
     pub active_impersonated_character_id: Option<Uuid>,
     pub chat_mode: ChatMode,
     pub chronicle_id: Option<Uuid>, // Chronicle association (maps to player_chronicle_id in database)
+    pub total_prompt_tokens: i32,
+    pub total_completion_tokens: i32,
+    pub total_credits_used: i32,
 }
 
 impl Chat {
@@ -1619,6 +1666,9 @@ impl Chat {
             active_impersonated_character_id: self.active_impersonated_character_id,
             chat_mode: self.chat_mode,
             chronicle_id: self.player_chronicle_id, // Map database field to API field
+            total_prompt_tokens: self.total_prompt_tokens,
+            total_completion_tokens: self.total_completion_tokens,
+            total_credits_used: self.total_credits_used,
         })
     }
 }
@@ -2253,6 +2303,7 @@ mod tests {
             tokens_counted_at: Utc::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
+            total_credits_used: 0,
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -2322,6 +2373,8 @@ mod tests {
             variant_count: 1,
             error_message: None,
             superseded_at: None,
+            credits_charged: 0,
+            credits_cost: 0,
         }
     }
 

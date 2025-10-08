@@ -106,6 +106,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: 0,
         prompt_template_id: "default".to_string(),
     };
     let session_a: Chat = test_app

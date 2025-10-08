@@ -109,6 +109,8 @@ pub struct SaveMessageParams<'a> {
     pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
     pub error_message: Option<String>,               // Error message if status is failed
     pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
+    pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
+    pub credits_cost_override: Option<i32>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -129,6 +131,8 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         status,
         error_message,
         variant_of,
+        charge_credits,
+        credits_cost_override,
     } = params;
 
     // Clone model_name early for later use in token tracking
@@ -264,6 +268,53 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     trace!(prompt_tokens=?prompt_tokens_val, completion_tokens=?completion_tokens_val, "Calculated token counts for message");
 
+    // Calculate credit values based on tokens (do this before message creation so we can use in .with_credits())
+    #[cfg(feature = "payment")]
+    let (credits_cost, credits_charged) = {
+        // Calculate theoretical credit cost based on token usage
+        let credits_cost_calculated = if prompt_tokens_val.is_some()
+            || completion_tokens_val.is_some()
+        {
+            // Load token-based pricing from config
+            let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
+            let config_content = std::fs::read_to_string(config_path).unwrap_or_default();
+
+            if let Ok(tiers_config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+                let token_pricing = &tiers_config["credit_system"]["token_pricing"];
+                let model_pricing = &token_pricing[&model_name];
+
+                let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
+                    (
+                        model_pricing["prompt_credits_per_1k"]
+                            .as_f64()
+                            .unwrap_or(0.1),
+                        model_pricing["completion_credits_per_1k"]
+                            .as_f64()
+                            .unwrap_or(0.4),
+                    )
+                } else {
+                    (0.1, 0.4)
+                };
+
+                let prompt_tokens = prompt_tokens_val.unwrap_or(0);
+                let completion_tokens = completion_tokens_val.unwrap_or(0);
+                let prompt_cost = ((prompt_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
+                let completion_cost =
+                    ((completion_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
+                prompt_cost + completion_cost
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let cost = credits_cost_override.unwrap_or(credits_cost_calculated);
+        let charged = if charge_credits { cost } else { 0 };
+
+        (cost, charged)
+    };
+
     let (content_to_save, nonce_to_save) = if let Some(dek_arc) = &user_dek_secret_box {
         trace!(%session_id, "User DEK present, encrypting message content.");
         // We encrypt the main `content` string. `parts` and `attachments` are stored as JSONB (plaintext in DB).
@@ -303,6 +354,17 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     }
     new_message_to_insert =
         new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
+
+    // Set credit values
+    #[cfg(feature = "payment")]
+    {
+        new_message_to_insert = new_message_to_insert.with_credits(credits_charged, credits_cost);
+    }
+
+    #[cfg(not(feature = "payment"))]
+    {
+        new_message_to_insert = new_message_to_insert.with_credits(0, 0);
+    }
 
     // Encrypt and add raw prompt debug information if provided and user has DEK
     if let Some(raw_prompt) = raw_prompt_debug {
@@ -358,9 +420,30 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         #[cfg(feature = "payment")]
         let state_config_for_payment = state.config.clone();
 
+        // Clone credit values for the spawned task
+        #[cfg(feature = "payment")]
+        let credits_cost_for_task = credits_cost;
+
+        #[cfg(feature = "payment")]
+        let credits_charged_for_task = credits_charged;
+
         // Spawn async task to update token counts to avoid blocking message save
         tokio::spawn(async move {
-            if let Err(e) = update_cumulative_token_counts(
+            #[cfg(feature = "payment")]
+            let update_result = update_cumulative_token_counts(
+                &db_pool_for_tokens,
+                session_id_for_tokens,
+                user_id_for_tokens,
+                prompt_tokens,
+                completion_tokens,
+                estimated_cost_cents,
+                credits_charged_for_task,
+                credits_cost_for_task,
+            )
+            .await;
+
+            #[cfg(not(feature = "payment"))]
+            let update_result = update_cumulative_token_counts(
                 &db_pool_for_tokens,
                 session_id_for_tokens,
                 user_id_for_tokens,
@@ -368,8 +451,9 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 completion_tokens,
                 estimated_cost_cents,
             )
-            .await
-            {
+            .await;
+
+            if let Err(e) = update_result {
                 error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to update cumulative token counts");
             } else {
                 info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, "Successfully updated cumulative token counts");
@@ -538,6 +622,8 @@ async fn update_cumulative_token_counts(
     prompt_tokens: i32,
     completion_tokens: i32,
     estimated_cost_cents: i32,
+    #[cfg(feature = "payment")] credits_charged: i32,
+    #[cfg(feature = "payment")] credits_cost: i32,
 ) -> Result<(), AppError> {
     use crate::schema::{chat_sessions, users};
     use diesel::prelude::*;
@@ -548,17 +634,38 @@ async fn update_cumulative_token_counts(
         // Start a transaction to ensure atomicity
         conn.transaction::<_, diesel::result::Error, _>(|conn| {
             // Update chat session cumulative counts
-            diesel::update(chat_sessions::table.find(session_id))
-                .set((
-                    chat_sessions::total_prompt_tokens
-                        .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
-                    chat_sessions::total_completion_tokens
-                        .eq(chat_sessions::total_completion_tokens + completion_tokens),
-                    chat_sessions::estimated_cost_cents
-                        .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
-                    chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
-                ))
-                .execute(conn)?;
+            #[cfg(feature = "payment")]
+            {
+                diesel::update(chat_sessions::table.find(session_id))
+                    .set((
+                        chat_sessions::total_prompt_tokens
+                            .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
+                        chat_sessions::total_completion_tokens
+                            .eq(chat_sessions::total_completion_tokens + completion_tokens),
+                        chat_sessions::estimated_cost_cents
+                            .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
+                        // total_credits_used tracks actual charges (credits_charged), not theoretical cost
+                        chat_sessions::total_credits_used
+                            .eq(chat_sessions::total_credits_used + credits_charged),
+                        chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+            }
+
+            #[cfg(not(feature = "payment"))]
+            {
+                diesel::update(chat_sessions::table.find(session_id))
+                    .set((
+                        chat_sessions::total_prompt_tokens
+                            .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
+                        chat_sessions::total_completion_tokens
+                            .eq(chat_sessions::total_completion_tokens + completion_tokens),
+                        chat_sessions::estimated_cost_cents
+                            .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
+                        chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
+                    ))
+                    .execute(conn)?;
+            }
 
             // Update user cumulative counts
             diesel::update(users::table.find(user_id))

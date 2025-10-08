@@ -457,18 +457,19 @@ pub async fn generate_chat_response(
         let model_pricing = &token_pricing[&model_to_use];
 
         // Extract token pricing rates (credits per 1k tokens)
+        // Using f64 to support fractional credits (e.g., 0.018 credits/1k tokens)
         let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
             (
                 model_pricing["prompt_credits_per_1k"]
-                    .as_i64()
-                    .unwrap_or(10) as i32,
+                    .as_f64()
+                    .unwrap_or(0.1),
                 model_pricing["completion_credits_per_1k"]
-                    .as_i64()
-                    .unwrap_or(40) as i32,
+                    .as_f64()
+                    .unwrap_or(0.4),
             )
         } else {
             // Default rates if model not in config
-            (10, 40)
+            (0.1, 0.4)
         };
 
         // Get context window size for token estimation
@@ -509,10 +510,11 @@ pub async fn generate_chat_response(
                     let estimated_input_tokens = conservative_input_estimate;
                     let estimated_output_tokens = 2000i32;
 
-                    // Calculate estimated credits based on token pricing
-                    let estimated_input_cost = (estimated_input_tokens * prompt_rate + 999) / 1000; // Round up
+                    // Calculate estimated credits based on token pricing (using f64 for fractional credits)
+                    let estimated_input_cost =
+                        ((estimated_input_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
                     let estimated_output_cost =
-                        (estimated_output_tokens * completion_rate + 999) / 1000; // Round up
+                        ((estimated_output_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
                     let estimated_total_cost = estimated_input_cost + estimated_output_cost;
 
                     credits_required = estimated_total_cost;
@@ -544,10 +546,11 @@ pub async fn generate_chat_response(
                     let estimated_input_tokens = conservative_input_estimate;
                     let estimated_output_tokens = 2000i32;
 
-                    // Calculate estimated credits based on token pricing
-                    let estimated_input_cost = (estimated_input_tokens * prompt_rate + 999) / 1000; // Round up
+                    // Calculate estimated credits based on token pricing (using f64 for fractional credits)
+                    let estimated_input_cost =
+                        ((estimated_input_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
                     let estimated_output_cost =
-                        (estimated_output_tokens * completion_rate + 999) / 1000; // Round up
+                        ((estimated_output_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
                     let estimated_total_cost = estimated_input_cost + estimated_output_cost;
 
                     credits_required = estimated_total_cost;
@@ -725,6 +728,8 @@ pub async fn generate_chat_response(
             superseded_at: None,
             variant_count: 0,
             current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: 0,
         }
     } else {
         // Normal flow: save new user message
@@ -742,7 +747,9 @@ pub async fn generate_chat_response(
             raw_prompt_debug: None, // User messages don't need raw prompt debug
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
-            variant_of: None, // User messages don't create variants
+            variant_of: None,            // User messages don't create variants
+            charge_credits: false,       // User messages are never charged
+            credits_cost_override: None, // Let save_message calculate from tokens
         })
         .await
         {
@@ -1050,6 +1057,10 @@ pub async fn generate_chat_response(
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                     variant_of: payload.variant_of,
+                    #[cfg(feature = "payment")]
+                    charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                    #[cfg(not(feature = "payment"))]
+                    charge_credits: false,
                 },
             )
             .await
@@ -1452,23 +1463,25 @@ pub async fn generate_chat_response(
                         let token_pricing = &tiers_config["credit_system"]["token_pricing"];
                         let model_pricing = &token_pricing[&model_to_use];
 
+                        // Using f64 to support fractional credits (e.g., 0.018 credits/1k tokens)
                         let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
                             (
                                 model_pricing["prompt_credits_per_1k"]
-                                    .as_i64()
-                                    .unwrap_or(10) as i32,
+                                    .as_f64()
+                                    .unwrap_or(0.1),
                                 model_pricing["completion_credits_per_1k"]
-                                    .as_i64()
-                                    .unwrap_or(40) as i32,
+                                    .as_f64()
+                                    .unwrap_or(0.4),
                             )
                         } else {
                             // Default rates if model not in config
-                            (10, 40)
+                            (0.1, 0.4)
                         };
 
-                        let prompt_cost = (prompt_tokens as i32 * prompt_rate + 999) / 1000; // Round up
+                        let prompt_cost =
+                            ((prompt_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
                         let completion_cost =
-                            (completion_tokens as i32 * completion_rate + 999) / 1000; // Round up
+                            ((completion_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
                         let total_cost = prompt_cost + completion_cost;
 
                         info!(
@@ -1628,12 +1641,23 @@ pub async fn generate_chat_response(
                                 status: crate::models::chats::MessageStatus::Completed,
                                 error_message: None,
                                 variant_of: payload.variant_of, // Use variant_of from request payload
+                                #[cfg(feature = "payment")]
+                                charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                                #[cfg(not(feature = "payment"))]
+                                charge_credits: false,
+                                #[cfg(feature = "payment")]
+                                credits_cost_override: Some(actual_credit_cost), // Use pre-calculated cost
+                                #[cfg(not(feature = "payment"))]
+                                credits_cost_override: None,
                             },
                         )
                         .await
                         {
                             Ok(saved_message) => {
                                 debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
+
+                                // Note: Session totals (tokens, credits) are updated by the save_message function
+                                // in message_handling.rs - no need to duplicate that logic here
 
                                 // Update pre-processing analysis with assistant message ID if we have one
                                 if let Some(analysis_id) = pre_processing_analysis_id {
@@ -1908,6 +1932,10 @@ pub async fn generate_chat_response(
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                     variant_of: payload.variant_of,
+                    #[cfg(feature = "payment")]
+                    charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                    #[cfg(not(feature = "payment"))]
+                    charge_credits: false,
                 },
             )
             .await
@@ -3104,6 +3132,7 @@ pub async fn expand_text_handler(
         character_name: None,      // Text expansion doesn't have a character
         player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
         variant_of: None,          // Text expansion doesn't create variants
+        charge_credits: false,     // Text expansion is not charged (utility feature)
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3425,6 +3454,7 @@ pub async fn impersonate_handler(
         character_name: None,      // Impersonation doesn't have a character
         player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
         variant_of: None,          // Impersonation doesn't create variants
+        charge_credits: false,     // Impersonation is not charged (utility feature)
     };
 
     // Generate the response using the full pipeline

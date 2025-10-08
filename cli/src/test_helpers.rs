@@ -1116,6 +1116,7 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         tokens_counted_at: Utc::now(),
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
+        total_credits_used: 0,
     }
 }
 
@@ -1147,6 +1148,9 @@ pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClie
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
         chronicle_id: None, // Not used in CLI tests
+        total_prompt_tokens: 0,
+        total_completion_tokens: 0,
+        total_credits_used: 0,
     }
 }
 
@@ -1175,5 +1179,7 @@ pub fn mock_chat_message(
         superseded_at: None,
         variant_count: 0,
         current_variant_index: 0,
+        credits_charged: 0,
+        credits_cost: 0,
     }
 }

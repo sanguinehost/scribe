@@ -162,6 +162,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -184,6 +185,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
     ];
 
@@ -317,6 +319,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         superseded_at: None,
         variant_count: 1,
         current_variant_index: 0,
+        ..Default::default()
     }];
 
     // Create session DEK for testing
@@ -428,6 +431,7 @@ async fn test_dual_mode_extraction_comparison() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -447,6 +451,7 @@ async fn test_dual_mode_extraction_comparison() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
     ];
 
@@ -545,6 +550,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         superseded_at: None,
         variant_count: 1,
         current_variant_index: 0,
+        ..Default::default()
     }];
 
     // Create session DEK for testing

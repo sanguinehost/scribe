@@ -152,6 +152,7 @@ async fn generate_chat_response_streaming_ai_error() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: 0,
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
@@ -478,6 +479,7 @@ async fn generate_chat_response_streaming_initiation_error() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: 0,
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
@@ -728,6 +730,7 @@ async fn generate_chat_response_streaming_error_before_content() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: 0,
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
@@ -987,6 +990,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: 0,
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)

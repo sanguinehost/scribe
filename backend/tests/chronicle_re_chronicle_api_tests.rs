@@ -294,6 +294,7 @@ async fn create_chat_session_with_messages(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: 0,
         prompt_template_id: "default".to_string(),
     };
 
@@ -350,6 +351,8 @@ async fn create_chat_session_with_messages(
             error_message: None,
             variant_count: 1,
             current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: 0,
         };
 
         conn.interact(move |conn| {

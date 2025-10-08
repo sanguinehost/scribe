@@ -565,6 +565,8 @@ pub async fn get_session_data_for_generation(
                     superseded_at: None,
                     variant_count: 0,
                     current_variant_index: 0,
+                    credits_charged: 0,
+                    credits_cost: 0,
                 }
             })
             .collect()
@@ -1082,6 +1084,8 @@ pub async fn get_session_data_for_generation(
                 superseded_at: None,
                 variant_count: 0,
                 current_variant_index: 0,
+                credits_charged: 0,
+                credits_cost: 0,
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -1158,6 +1162,7 @@ pub struct StreamAiParams {
     pub character_name: Option<String>,    // For prefill generation
     pub player_chronicle_id: Option<Uuid>, // For narrative processing
     pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
+    pub charge_credits: bool,     // Whether credits should be charged for this message
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1392,6 +1397,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             character_name: params.character_name.clone(),
             player_chronicle_id: params.player_chronicle_id,
             variant_of: params.variant_of,
+            charge_credits: params.charge_credits, // Pass through from original params
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -1459,6 +1465,7 @@ pub async fn stream_ai_response_and_save_message(
         character_name: _, // Ignore character_name in the actual generation function
         player_chronicle_id,
         variant_of,
+        charge_credits,
     } = params;
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
@@ -1696,6 +1703,7 @@ pub async fn stream_ai_response_and_save_message(
                     let user_dek_arc_clone_partial = user_dek.clone(); // Clone Option<Arc<SecretBox>>
                     let state_for_partial_save = stream_state.clone();
                     let service_model_name_clone_partial = service_model_name.clone(); // Clone model name for this task
+                    let charge_credits_clone_partial = charge_credits; // Clone charge flag for this task
 
                     tokio::spawn(async move {
                         if partial_content_clone.is_empty() {
@@ -1718,6 +1726,8 @@ pub async fn stream_ai_response_and_save_message(
                                 status: crate::models::chats::MessageStatus::Partial,
                                 error_message: Some("Stream interrupted - partial content saved".to_string()),
                                 variant_of,
+                                charge_credits: charge_credits_clone_partial, // Use charge flag from params
+                                credits_cost_override: None, // Let save_message calculate from tokens
                            }).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
@@ -1787,6 +1797,7 @@ pub async fn stream_ai_response_and_save_message(
             let token_sender_clone = token_sender.clone(); // Clone the sender for the spawned task
             let accumulated_content_clone = accumulated_content.clone(); // Clone content for the spawned task
             let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
+            let charge_credits_clone_full = charge_credits; // Clone charge flag for this task
 
             tokio::spawn(async move {
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
@@ -1809,6 +1820,8 @@ pub async fn stream_ai_response_and_save_message(
                     status: crate::models::chats::MessageStatus::Completed,
                     error_message: None,
                     variant_of,
+                    charge_credits: charge_credits_clone_full, // Use charge flag from params
+                    credits_cost_override: None, // Let save_message calculate from tokens
                 }).await {
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");

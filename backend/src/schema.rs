@@ -263,6 +263,8 @@ diesel::table! {
         superseded_at -> Nullable<Timestamptz>,
         variant_count -> Int4,
         current_variant_index -> Int4,
+        credits_charged -> Int4,
+        credits_cost -> Int4,
     }
 }
 
@@ -327,6 +329,7 @@ diesel::table! {
         tokens_counted_at -> Timestamptz,
         #[max_length = 50]
         prompt_template_id -> Varchar,
+        total_credits_used -> Int4,
     }
 }
 

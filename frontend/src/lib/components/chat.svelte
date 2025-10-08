@@ -705,55 +705,47 @@
 	});
 
 	// Pricing per model (per 1M tokens)
+	// Model pricing with 20% markup (used for suggested actions cost estimation)
+	// Main chat session costs come from server-side credit tracking
 	const modelPricing = {
-		'gemini-2.5-flash': { input: 0.3, output: 2.5 },
-		'gemini-2.5-pro': { input: 1.25, output: 10.0 },
-		'gemini-2.5-flash-lite-preview': { input: 0.1, output: 0.4 }
+		'gemini-2.5-flash': { input: 0.36, output: 3.0 }, // 20% markup on $0.30/$2.50
+		'gemini-2.5-pro': { input: 1.5, output: 12.0 }, // 20% markup on $1.25/$10.00
+		'gemini-2.5-flash-lite-preview': { input: 0.12, output: 0.48 } // 20% markup on $0.10/$0.40
 	};
 
-	// Calculate cumulative usage from messages (backend already includes system context)
-	// Exclude first messages since they're pre-written content, not AI-generated
+	// Use server-side token totals instead of client-side calculation
+	// The backend tracks cumulative totals in the chat_sessions table
 	$effect(() => {
-		let inputTokens = 0;
-		let outputTokens = 0;
-		let totalCost = 0;
+		// Get totals from server-side session data
+		const serverInputTokens = chat?.total_prompt_tokens || 0;
+		const serverOutputTokens = chat?.total_completion_tokens || 0;
+		const serverCreditsUsed = chat?.total_credits_used || 0;
 
-		displayMessages.forEach((message) => {
-			// Skip first messages (character greetings) - they shouldn't count toward usage
-			// Note: Removed content comparison to support alternate greetings
-			const isFirstMessage = message.id.startsWith('first-message-');
+		let finalCost = 0;
 
-			if (!isFirstMessage) {
-				const messageInputTokens = message.prompt_tokens || 0;
-				const messageOutputTokens = message.completion_tokens || 0;
-
-				if (messageInputTokens > 0 || messageOutputTokens > 0) {
-					inputTokens += messageInputTokens;
-					outputTokens += messageOutputTokens;
-
-					// Calculate cost using the model used for THIS specific message
-					const messageModel = message.model_name || chat?.model_name || 'gemini-2.5-pro';
-					const pricing = modelPricing[messageModel as keyof typeof modelPricing] || {
-						input: 1.25,
-						output: 10.0
-					};
-
-					const messageCost =
-						(messageInputTokens / 1_000_000) * pricing.input +
-						(messageOutputTokens / 1_000_000) * pricing.output;
-					totalCost += messageCost;
-				}
-			}
-		});
+		// If credits are tracked and seem reasonable, use them
+		// Otherwise estimate from tokens (for sessions created before credit tracking)
+		if (serverCreditsUsed > 0) {
+			// Convert credits to dollars (1 credit = $0.001)
+			// This matches the 20% markup pricing configured on the backend
+			finalCost = serverCreditsUsed / 1000;
+		} else if (serverInputTokens > 0 || serverOutputTokens > 0) {
+			// Fallback: Estimate using Flash pricing (most common model)
+			// Flash rates with 20% markup: 0.018 credits/1k input, 0.15 credits/1k output
+			const estimatedInputCredits = (serverInputTokens / 1000) * 0.018;
+			const estimatedOutputCredits = (serverOutputTokens / 1000) * 0.15;
+			const estimatedTotalCredits = estimatedInputCredits + estimatedOutputCredits;
+			finalCost = estimatedTotalCredits / 1000;
+		}
 
 		cumulativeTokens = {
-			input: inputTokens + suggestedActionsTokens.input,
-			output: outputTokens + suggestedActionsTokens.output,
-			total: inputTokens + outputTokens + suggestedActionsTokens.total,
-			cost: totalCost + suggestedActionsTokens.cost
+			input: serverInputTokens + suggestedActionsTokens.input,
+			output: serverOutputTokens + suggestedActionsTokens.output,
+			total: serverInputTokens + serverOutputTokens + suggestedActionsTokens.total,
+			cost: finalCost + suggestedActionsTokens.cost
 		};
 
-		// Token calculation completed
+		// Token data retrieved from server
 	});
 	let availablePersonas = $state<UserPersona[]>([]);
 

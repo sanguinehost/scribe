@@ -169,14 +169,14 @@
         "description": "$0.005 per 1K prompt, $0.02 per 1K completion tokens"
       },
       "gemini-2.5-flash": {
-        "prompt_credits_per_1k": 15,
-        "completion_credits_per_1k": 60,
-        "description": "$0.015 per 1K prompt, $0.06 per 1K completion tokens"
+        "prompt_credits_per_1k": 0.018,
+        "completion_credits_per_1k": 0.15,
+        "description": "20% markup on API costs: $0.30/1M input, $2.50/1M output"
       },
       "gemini-2.5-pro": {
-        "prompt_credits_per_1k": 2,
-        "completion_credits_per_1k": 10,
-        "description": "$0.00125 per 1K prompt, $0.01 per 1K completion tokens"
+        "prompt_credits_per_1k": 0.075,
+        "completion_credits_per_1k": 0.6,
+        "description": "20% markup on API costs: $1.25/1M input, $10.00/1M output"
       },
       "gemini-2.0-flash-experimental": {
         "prompt_credits_per_1k": 10,

@@ -204,6 +204,7 @@ fn create_lucas_roleplay_messages(
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         });
     }
 

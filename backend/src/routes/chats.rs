@@ -1087,6 +1087,8 @@ pub async fn create_message_handler(
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
             variant_of: None,
+            charge_credits: false, // Manual message creation is not charged
+            credits_cost_override: None, // Let save_message calculate from tokens
         },
     )
     .await?;
@@ -1192,6 +1194,8 @@ pub async fn create_message_handler(
         superseded_at: saved_db_message.superseded_at,
         variant_count: saved_db_message.variant_count,
         current_variant_index: saved_db_message.current_variant_index,
+        credits_charged: saved_db_message.credits_charged,
+        credits_cost: saved_db_message.credits_cost,
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;

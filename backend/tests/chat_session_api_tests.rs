@@ -843,6 +843,7 @@ async fn test_get_chat_session_details_unauthorized() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: 0,
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions::table)

@@ -282,6 +282,7 @@ pub(super) async fn handle_non_streaming_chat_response(
                     superseded_at: None,
                     variant_count: 0,
                     current_variant_index: 0,
+                    ..Default::default()
                 });
             }
 
@@ -311,6 +312,7 @@ pub(super) async fn handle_non_streaming_chat_response(
             superseded_at: None,
             variant_count: 0,
             current_variant_index: 0,
+                    ..Default::default()
         });
     }
 
@@ -338,6 +340,7 @@ pub(super) async fn handle_non_streaming_chat_response(
                 superseded_at: None,
                 variant_count: 0,
                 current_variant_index: 0,
+                    ..Default::default()
             })
         }
         Err(e) => {

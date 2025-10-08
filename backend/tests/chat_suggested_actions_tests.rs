@@ -123,6 +123,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: 0,
         prompt_template_id: "default".to_string(),
     };
 
@@ -357,6 +358,7 @@ async fn create_test_chat_session_for_suggested_actions(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: 0,
         prompt_template_id: "default".to_string(),
     };
 

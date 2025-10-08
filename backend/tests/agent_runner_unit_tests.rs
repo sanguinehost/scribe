@@ -132,6 +132,7 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         });
     }
 
@@ -300,6 +301,7 @@ mod agent_runner_conversation_tests {
                 superseded_at: None,
                 variant_count: 1,
                 current_variant_index: 0,
+                ..Default::default()
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -319,6 +321,7 @@ mod agent_runner_conversation_tests {
                 superseded_at: None,
                 variant_count: 1,
                 current_variant_index: 0,
+                ..Default::default()
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -340,6 +343,7 @@ mod agent_runner_conversation_tests {
                 superseded_at: None,
                 variant_count: 1,
                 current_variant_index: 0,
+                ..Default::default()
             },
         ];
 
@@ -439,6 +443,7 @@ mod agent_runner_conversation_tests {
                 superseded_at: None,
                 variant_count: 1,
                 current_variant_index: 0,
+            ..Default::default()
             },
             ChatMessage {
                 id: Uuid::new_v4(),
@@ -458,6 +463,7 @@ mod agent_runner_conversation_tests {
                 superseded_at: None,
                 variant_count: 1,
                 current_variant_index: 0,
+            ..Default::default()
             },
         ];
 
@@ -768,6 +774,7 @@ mod agent_runner_duplicate_prevention_tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         }
     }
 }

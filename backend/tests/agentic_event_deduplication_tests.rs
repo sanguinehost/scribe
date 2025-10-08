@@ -191,6 +191,7 @@ fn create_duplicate_everest_messages(
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         });
     }
 

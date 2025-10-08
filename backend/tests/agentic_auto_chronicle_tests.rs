@@ -114,6 +114,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+        ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -133,6 +134,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+        ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -152,6 +154,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+        ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -171,6 +174,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+        ..Default::default()
         },
     ]
 }

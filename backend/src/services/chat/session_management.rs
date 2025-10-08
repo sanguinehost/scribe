@@ -747,6 +747,8 @@ async fn process_first_message(
                                         status: crate::models::chats::MessageStatus::Completed,
                                         error_message: None,
                                         variant_of: None, // First message doesn't create variants
+                                        charge_credits: false, // Character's first message is not charged
+                                        credits_cost_override: None, // Let save_message calculate from tokens
                                     })
                                     .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");

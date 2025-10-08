@@ -176,6 +176,9 @@ export interface ScribeChatSession {
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
+	total_prompt_tokens?: number;
+	total_completion_tokens?: number;
+	total_credits_used?: number;
 }
 
 // LoginSuccessData type matching the backend LoginSuccessResponse
