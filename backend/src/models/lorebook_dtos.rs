@@ -162,7 +162,7 @@ pub struct UploadedLorebookEntry {
     pub constant: Option<bool>,   // Maps to is_constant
     pub order: Option<i32>,       // Maps to insertion_order
     pub insertion_order: Option<i32>, // Alternative field name used in some SillyTavern exports
-    #[serde(deserialize_with = "deserialize_position")]
+    #[serde(default, deserialize_with = "deserialize_position")]
     pub position: Option<i32>, // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
     #[serde(skip_deserializing)]

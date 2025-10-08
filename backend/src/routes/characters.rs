@@ -494,7 +494,12 @@ pub async fn upload_character_handler(
                             crate::models::lorebook_dtos::UploadedLorebookEntry,
                         >(entry_value.clone())
                         {
-                            Ok(entry) => {
+                            Ok(mut entry) => {
+                                // Fallback: use insertion_order if position is None
+                                if entry.position.is_none() && entry.insertion_order.is_some() {
+                                    entry.position = entry.insertion_order;
+                                }
+
                                 let uid = entry
                                     .uid
                                     .map(|u| u.to_string())
@@ -523,7 +528,12 @@ pub async fn upload_character_handler(
                             crate::models::lorebook_dtos::UploadedLorebookEntry,
                         >(entry_value.clone())
                         {
-                            Ok(entry) => {
+                            Ok(mut entry) => {
+                                // Fallback: use insertion_order if position is None
+                                if entry.position.is_none() && entry.insertion_order.is_some() {
+                                    entry.position = entry.insertion_order;
+                                }
+
                                 tracing::info!(
                                     "Successfully parsed object entry {}: content length={}",
                                     uid,
