@@ -21,162 +21,164 @@ import argparse
 from pathlib import Path
 
 # Patterns that might indicate cardholder data (PCI DSS scope)
+# Pre-compiled for Python 3.13 compatibility
 CARD_PATTERNS = [
     # Credit card numbers (basic patterns)
-    (r'\b(?:\d{4}[-\s]?){3}\d{4}\b', 'Credit card number pattern'),
-    (r'\b\d{13,19}\b', 'Potential card number (13-19 digits)'),
+    (re.compile(r'\b(?:\d{4}[-\s]?){3}\d{4}\b', re.IGNORECASE), 'Credit card number pattern'),
+    (re.compile(r'\b\d{13,19}\b', re.IGNORECASE), 'Potential card number (13-19 digits)'),
 
     # Base64 encoded card numbers (only when explicitly near card data keywords)
-    (r'(credit.?card|card.?number|cvv.?code).*[A-Za-z0-9+/]{16,24}={0,2}', 'Potential base64 encoded card data'),
-    (r'[A-Za-z0-9+/]{16,24}={0,2}.*(credit.?card|card.?number|cvv.?code)', 'Potential base64 encoded card data'),
+    (re.compile(r'(credit.?card|card.?number|cvv.?code).*[A-Za-z0-9+/]{16,24}={0,2}', re.IGNORECASE), 'Potential base64 encoded card data'),
+    (re.compile(r'[A-Za-z0-9+/]{16,24}={0,2}.*(credit.?card|card.?number|cvv.?code)', re.IGNORECASE), 'Potential base64 encoded card data'),
 
     # CVV patterns
-    (r'\bcvv\s*[:=]\s*\d{3,4}\b', 'CVV code pattern'),
-    (r'\bcvc\s*[:=]\s*\d{3,4}\b', 'CVC code pattern'),
-    (r'"cvv":\s*"\d{3,4}"', 'JSON CVV pattern'),
-    (r'"cvc":\s*"\d{3,4}"', 'JSON CVC pattern'),
+    (re.compile(r'\bcvv\s*[:=]\s*\d{3,4}\b', re.IGNORECASE), 'CVV code pattern'),
+    (re.compile(r'\bcvc\s*[:=]\s*\d{3,4}\b', re.IGNORECASE), 'CVC code pattern'),
+    (re.compile(r'"cvv":\s*"\d{3,4}"', re.IGNORECASE), 'JSON CVV pattern'),
+    (re.compile(r'"cvc":\s*"\d{3,4}"', re.IGNORECASE), 'JSON CVC pattern'),
 
     # Expiration date patterns
-    (r'\bexp\w*\s*[:=]\s*\d{2}[/\-]\d{2,4}', 'Expiration date pattern'),
-    (r'\b\d{2}[/\-]\d{2,4}\s*exp', 'Expiration date pattern'),
-    (r'"expiry":\s*"\d{2}[/\-]\d{2,4}"', 'JSON expiry pattern'),
-    (r'"exp_month":\s*\d{1,2}', 'JSON expiry month pattern'),
-    (r'"exp_year":\s*\d{2,4}', 'JSON expiry year pattern'),
+    (re.compile(r'\bexp\w*\s*[:=]\s*\d{2}[/\-]\d{2,4}', re.IGNORECASE), 'Expiration date pattern'),
+    (re.compile(r'\b\d{2}[/\-]\d{2,4}\s*exp', re.IGNORECASE), 'Expiration date pattern'),
+    (re.compile(r'"expiry":\s*"\d{2}[/\-]\d{2,4}"', re.IGNORECASE), 'JSON expiry pattern'),
+    (re.compile(r'"exp_month":\s*\d{1,2}', re.IGNORECASE), 'JSON expiry month pattern'),
+    (re.compile(r'"exp_year":\s*\d{2,4}', re.IGNORECASE), 'JSON expiry year pattern'),
 
     # Common field names that suggest card data
-    (r'card_number|cardNumber|creditCardNumber', 'Card number field'),
-    (r'expiry_date|expiryDate|expiration_date', 'Expiry field'),
-    (r'"cvv":|"cvc":|cvv_code|cvc_code', 'CVV/CVC field'),
-    (r'cardholder_name|cardholderName', 'Cardholder name field'),
+    (re.compile(r'card_number|cardNumber|creditCardNumber', re.IGNORECASE), 'Card number field'),
+    (re.compile(r'expiry_date|expiryDate|expiration_date', re.IGNORECASE), 'Expiry field'),
+    (re.compile(r'"cvv":|"cvc":|cvv_code|cvc_code', re.IGNORECASE), 'CVV/CVC field'),
+    (re.compile(r'cardholder_name|cardholderName', re.IGNORECASE), 'Cardholder name field'),
 
     # Environment variables or configuration with card data
-    (r'CARD_NUMBER|CREDIT_CARD|CVV_CODE', 'Card data in environment variable'),
-    (r'card.*=.*\d{13,19}', 'Card assignment pattern'),
+    (re.compile(r'CARD_NUMBER|CREDIT_CARD|CVV_CODE', re.IGNORECASE), 'Card data in environment variable'),
+    (re.compile(r'card.*=.*\d{13,19}', re.IGNORECASE), 'Card assignment pattern'),
 
     # URL parameters or query strings with card data
-    (r'[?&]card_?number=\d+', 'Card number in URL parameter'),
-    (r'[?&]cvv=\d{3,4}', 'CVV in URL parameter'),
-    (r'[?&]expiry=\d{2}[/\-]\d{2,4}', 'Expiry in URL parameter'),
+    (re.compile(r'[?&]card_?number=\d+', re.IGNORECASE), 'Card number in URL parameter'),
+    (re.compile(r'[?&]cvv=\d{3,4}', re.IGNORECASE), 'CVV in URL parameter'),
+    (re.compile(r'[?&]expiry=\d{2}[/\-]\d{2,4}', re.IGNORECASE), 'Expiry in URL parameter'),
 
     # Log patterns that might leak card data
-    (r'card.*\d{13,19}', 'Card data in log-like format'),
-    (r'payment.*\d{13,19}', 'Payment data with potential card number'),
+    (re.compile(r'card.*\d{13,19}', re.IGNORECASE), 'Card data in log-like format'),
+    (re.compile(r'payment.*\d{13,19}', re.IGNORECASE), 'Payment data with potential card number'),
 
     # Form input names
-    (r'name=["\']card', 'Card data form input'),
-    (r'name=["\']cvv', 'CVV form input'),
-    (r'name=["\']exp', 'Expiry form input'),
+    (re.compile(r'name=["\']card', re.IGNORECASE), 'Card data form input'),
+    (re.compile(r'name=["\']cvv', re.IGNORECASE), 'CVV form input'),
+    (re.compile(r'name=["\']exp', re.IGNORECASE), 'Expiry form input'),
 
     # Database column names
-    (r'ALTER TABLE.*ADD.*card', 'Card column in database migration'),
-    (r'CREATE TABLE.*card_number', 'Card number in table creation'),
+    (re.compile(r'ALTER TABLE.*ADD.*card', re.IGNORECASE), 'Card column in database migration'),
+    (re.compile(r'CREATE TABLE.*card_number', re.IGNORECASE), 'Card number in table creation'),
 ]
 
 # Patterns to ignore (legitimate test data or documentation references)
+# Pre-compiled for Python 3.13 compatibility
 IGNORE_PATTERNS = [
     # Test card numbers (approved for sandbox testing)
-    r'4242\s*4242\s*4242\s*4242',  # Common test card number
-    r'4000\s*0566\s*5566\s*5556',  # Visa debit test card
-    r'4532-1234-5678-9012',  # Privacy detection test card
+    re.compile(r'4242\s*4242\s*4242\s*4242', re.IGNORECASE),
+    re.compile(r'4000\s*0566\s*5566\s*5556', re.IGNORECASE),
+    re.compile(r'4532-1234-5678-9012', re.IGNORECASE),
 
     # Test and documentation references
-    r'test.*card',  # Test card references
-    r'example.*card',  # Example references
-    r'paddle.*reference',  # Paddle reference patterns
-    r'transaction.*id',  # Transaction ID patterns
-    r'\.pre-commit-card-scan\.py',  # This script itself
-    r'pci-compliance-check\.yml',  # GitHub workflow file
+    re.compile(r'test.*card', re.IGNORECASE),
+    re.compile(r'example.*card', re.IGNORECASE),
+    re.compile(r'paddle.*reference', re.IGNORECASE),
+    re.compile(r'transaction.*id', re.IGNORECASE),
+    re.compile(r'\.pre-commit-card-scan\.py', re.IGNORECASE),
+    re.compile(r'pci-compliance-check\.yml', re.IGNORECASE),
 
     # Common non-card patterns that look like card numbers
-    r'port.*\d{13,19}',  # Port numbers
-    r'timestamp.*\d{13,19}',  # Unix timestamps
-    r'id.*\d{13,19}',  # Generic IDs
-    r'uuid.*\d{13,19}',  # UUIDs with numbers
-    r'version.*\d{13,19}',  # Version numbers
-    r'migration.*\d{13,19}',  # Migration timestamps
+    re.compile(r'port.*\d{13,19}', re.IGNORECASE),
+    re.compile(r'timestamp.*\d{13,19}', re.IGNORECASE),
+    re.compile(r'id.*\d{13,19}', re.IGNORECASE),
+    re.compile(r'uuid.*\d{13,19}', re.IGNORECASE),
+    re.compile(r'version.*\d{13,19}', re.IGNORECASE),
+    re.compile(r'migration.*\d{13,19}', re.IGNORECASE),
 
     # Base64 patterns that are not card data
-    r'jwt.*[A-Za-z0-9+/]+=*',  # JWT tokens
-    r'bearer.*[A-Za-z0-9+/]+=*',  # Bearer tokens
-    r'authorization.*[A-Za-z0-9+/]+=*',  # Auth headers
-    r'token.*[A-Za-z0-9+/]+=*',  # Generic tokens
-    r'secret.*[A-Za-z0-9+/]+=*',  # Encoded secrets (not card data)
+    re.compile(r'jwt.*[A-Za-z0-9+/]+=*', re.IGNORECASE),
+    re.compile(r'bearer.*[A-Za-z0-9+/]+=*', re.IGNORECASE),
+    re.compile(r'authorization.*[A-Za-z0-9+/]+=*', re.IGNORECASE),
+    re.compile(r'token.*[A-Za-z0-9+/]+=*', re.IGNORECASE),
+    re.compile(r'secret.*[A-Za-z0-9+/]+=*', re.IGNORECASE),
 
     # Legitimate expiry patterns (non-payment)
-    r'cache.*exp',  # Cache expiry
-    r'session.*exp',  # Session expiry
-    r'jwt.*exp',  # JWT expiry
+    re.compile(r'cache.*exp', re.IGNORECASE),
+    re.compile(r'session.*exp', re.IGNORECASE),
+    re.compile(r'jwt.*exp', re.IGNORECASE),
 
     # Character and UI card patterns (not payment cards)
-    r'character.*card',  # Character card references
-    r'charactercard',  # Character card types
-    r'card.*component',  # UI card components
-    r'ui/card',  # UI card imports
-    r'CardHeader|CardTitle|CardDescription|CardContent',  # UI card components
-    r'ParsedCharacterCard',  # Character card parsing
-    r'CharacterCardV[23]',  # Character card versions
-    r'LorebookCard|LorebookEntryCard',  # Lorebook UI cards
+    re.compile(r'character.*card', re.IGNORECASE),
+    re.compile(r'charactercard', re.IGNORECASE),
+    re.compile(r'card.*component', re.IGNORECASE),
+    re.compile(r'ui/card', re.IGNORECASE),
+    re.compile(r'CardHeader|CardTitle|CardDescription|CardContent', re.IGNORECASE),
+    re.compile(r'ParsedCharacterCard', re.IGNORECASE),
+    re.compile(r'CharacterCardV[23]', re.IGNORECASE),
+    re.compile(r'LorebookCard|LorebookEntryCard', re.IGNORECASE),
 
     # Legitimate payment system architecture (not card data)
-    r'payment.*service',  # Payment service classes
-    r'payment.*route',  # Payment API routes
-    r'credit.*service',  # Credit service classes
-    r'credit.*store',  # Credit stores/state management
-    r'subscription.*service',  # Subscription services
-    r'models::payment',  # Payment models
-    r'services::payment',  # Payment services
-    r'paddle.*transaction',  # Paddle transaction references
-    r'CreditService|CreditBalance|CreditTransaction',  # Credit-related types
-    r'payment.*feature',  # Payment feature flags
-    r'enable.*payment',  # Payment feature enablement
+    re.compile(r'payment.*service', re.IGNORECASE),
+    re.compile(r'payment.*route', re.IGNORECASE),
+    re.compile(r'credit.*service', re.IGNORECASE),
+    re.compile(r'credit.*store', re.IGNORECASE),
+    re.compile(r'subscription.*service', re.IGNORECASE),
+    re.compile(r'models::payment', re.IGNORECASE),
+    re.compile(r'services::payment', re.IGNORECASE),
+    re.compile(r'paddle.*transaction', re.IGNORECASE),
+    re.compile(r'CreditService|CreditBalance|CreditTransaction', re.IGNORECASE),
+    re.compile(r'payment.*feature', re.IGNORECASE),
+    re.compile(r'enable.*payment', re.IGNORECASE),
 
     # UUID patterns (not card numbers)
-    r'00000000-0000-0000-0000-000000000000',  # NULL UUID pattern
-    r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',  # Standard UUID pattern
-    r'"user_id":\s*"[0-9a-f]{8}-[0-9a-f]{4}',  # user_id fields (always UUIDs)
-    r'user_id.*00000000-0000-0000-0000',  # Test user_id UUIDs
-    r'uuid.*pattern',  # UUID references
-    r'previd.*00000000',  # Migration prev IDs
-    r'payment_webhook_idempotency_tests\.rs',  # Test file with test UUIDs
+    re.compile(r'00000000-0000-0000-0000-000000000000', re.IGNORECASE),
+    re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.IGNORECASE),
+    re.compile(r'"user_id":\s*"[0-9a-f]{8}-[0-9a-f]{4}', re.IGNORECASE),
+    re.compile(r'user_id.*00000000-0000-0000-0000', re.IGNORECASE),
+    re.compile(r'uuid.*pattern', re.IGNORECASE),
+    re.compile(r'previd.*00000000', re.IGNORECASE),
+    re.compile(r'payment_webhook_idempotency_tests\.rs', re.IGNORECASE),
 
     # Session/auth expiry (not payment expiry)
-    r'session.*expiry|expiry.*session',  # Session expiry
-    r'expires.*utc|utc.*expiry',  # UTC timestamp expiry
-    r'offset.*expiry|expiry.*offset',  # Offset expiry
-    r'auth_tests.*expiry_date',  # Auth test expiry dates
-    r'loaded_record.*expiry_date',  # Session record expiry
-    r'expiry_date.*time::duration',  # Time duration expiry
-    r'offsetdatetime.*expiry_date',  # OffsetDateTime expiry
-    r'expiry_date.*offsetdatetime',  # OffsetDateTime expiry
-    r'let expiry_date = offsetdatetime',  # Variable declarations
-    r'^\s*expiry_date,\s*$',  # Isolated variable name
-    r'backend/tests/auth_tests\.rs',  # Specific auth test file
+    re.compile(r'session.*expiry|expiry.*session', re.IGNORECASE),
+    re.compile(r'expires.*utc|utc.*expiry', re.IGNORECASE),
+    re.compile(r'offset.*expiry|expiry.*offset', re.IGNORECASE),
+    re.compile(r'auth_tests.*expiry_date', re.IGNORECASE),
+    re.compile(r'loaded_record.*expiry_date', re.IGNORECASE),
+    re.compile(r'expiry_date.*time::duration', re.IGNORECASE),
+    re.compile(r'offsetdatetime.*expiry_date', re.IGNORECASE),
+    re.compile(r'expiry_date.*offsetdatetime', re.IGNORECASE),
+    re.compile(r'let expiry_date = offsetdatetime', re.IGNORECASE),
+    re.compile(r'^\s*expiry_date,\s*$', re.IGNORECASE),
+    re.compile(r'backend/tests/auth_tests\.rs', re.IGNORECASE),
 
     # Build artifacts and generated files
-    r'\.vercel/',  # Vercel build output
-    r'\.svelte-kit/',  # SvelteKit build output
-    r'immutable/chunks/',  # JS chunks with hashes
-    r'version\.json',  # Version files with timestamps
-    r'_journal\.json',  # Migration journals
-    r'snapshot\.json',  # DB snapshots
+    re.compile(r'\.vercel/', re.IGNORECASE),
+    re.compile(r'\.svelte-kit/', re.IGNORECASE),
+    re.compile(r'immutable/chunks/', re.IGNORECASE),
+    re.compile(r'version\.json', re.IGNORECASE),
+    re.compile(r'_journal\.json', re.IGNORECASE),
+    re.compile(r'snapshot\.json', re.IGNORECASE),
 
     # Privacy examples (legitimate examples for detection testing)
-    r'privacy.*examples',  # Privacy detection examples
-    r'sensitive_content.*example',  # Example content for testing
-    r'4532-1234-5678-9012',  # Specific privacy detection test card
-    r'security\.rs.*credit_card',  # Security detection patterns in security.rs
-    r'llm/llamacpp/security\.rs',  # LLM security pattern definitions
+    re.compile(r'privacy.*examples', re.IGNORECASE),
+    re.compile(r'sensitive_content.*example', re.IGNORECASE),
+    re.compile(r'4532-1234-5678-9012', re.IGNORECASE),
+    re.compile(r'security\.rs.*credit_card', re.IGNORECASE),
+    re.compile(r'llm/llamacpp/security\.rs', re.IGNORECASE),
 
     # Encryption test files (legitimate test data for encryption verification)
-    r'backend/tests/credit_encryption_tests\.rs',  # Credit encryption test suite
-    r'backend/tests/payment_encryption_tests\.rs',  # Payment encryption test suite
-    r'backend/tests/payment_security_tests\.rs',  # Payment security test suite
-    r'encryption_tests.*4111',  # Test card in encryption tests
-    r'sensitive_description.*4111',  # Sensitive test descriptions
+    re.compile(r'backend/tests/credit_encryption_tests\.rs', re.IGNORECASE),
+    re.compile(r'backend/tests/payment_encryption_tests\.rs', re.IGNORECASE),
+    re.compile(r'backend/tests/payment_security_tests\.rs', re.IGNORECASE),
+    re.compile(r'encryption_tests.*4111', re.IGNORECASE),
+    re.compile(r'sensitive_description.*4111', re.IGNORECASE),
 
     # Build and compiled files (timestamped data, not card numbers)
-    r'"version":"[0-9]{13}"',  # Version timestamps
-    r'when.*[0-9]{13}',  # Migration timestamps
+    re.compile(r'"version":"[0-9]{13}"', re.IGNORECASE),
+    re.compile(r'when.*[0-9]{13}', re.IGNORECASE),
 ]
 
 def scan_file(file_path):
@@ -212,7 +214,7 @@ def scan_file(file_path):
         # Check if line should be ignored
         ignore = False
         for ignore_pattern in IGNORE_PATTERNS:
-            if re.search(ignore_pattern, line_lower, re.IGNORECASE) or re.search(ignore_pattern, file_path_str, re.IGNORECASE):
+            if ignore_pattern.search(line_lower) or ignore_pattern.search(file_path_str):
                 ignore = True
                 break
 
@@ -221,7 +223,7 @@ def scan_file(file_path):
 
         # Check for card data patterns
         for pattern, description in CARD_PATTERNS:
-            if re.search(pattern, line_lower, re.IGNORECASE):
+            if pattern.search(line_lower):
                 issues.append({
                     'file': file_path,
                     'line': i,
