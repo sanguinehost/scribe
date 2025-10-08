@@ -46,7 +46,7 @@ async fn generate_chat_response_streaming_unauthorized() {
         .unwrap();
     // No auth cookie
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_ne!(
         response
@@ -87,6 +87,7 @@ async fn generate_chat_response_streaming_not_found() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -130,7 +131,7 @@ async fn generate_chat_response_streaming_not_found() {
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_ne!(
         response
@@ -264,6 +265,7 @@ async fn generate_chat_response_streaming_forbidden() {
 
     let login_response2 = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request2)
         .await

@@ -141,7 +141,8 @@ struct TestLoginSuccessResponse {
 #[ignore] // Added ignore for CI
 async fn test_register_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -207,7 +208,8 @@ async fn test_register_success() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_register_duplicate_username() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -264,7 +266,8 @@ async fn test_register_duplicate_username() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_register_duplicate_email() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -342,7 +345,8 @@ async fn test_register_duplicate_email() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_login_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -408,7 +412,8 @@ async fn test_login_success() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_login_success_with_email() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -472,7 +477,8 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_login_wrong_password() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -526,7 +532,8 @@ async fn test_login_wrong_password() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_login_user_not_found() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -573,7 +580,8 @@ async fn test_login_user_not_found() -> AnyhowResult<()> {
 async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
     // Covers lines 156-157 in auth/mod.rs (verify_credentials -> HashingError)
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -664,7 +672,8 @@ async fn test_verify_credentials_invalid_hash_in_db() -> AnyhowResult<()> {
 async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
     // Covers line 110 in routes/auth.rs (Err(e) from auth_session.authenticate)
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -737,7 +746,8 @@ async fn test_login_hashing_error_in_db() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_logout_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -834,7 +844,8 @@ async fn test_logout_no_session() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_me_success() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -1287,7 +1298,8 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
     // Original: spawn_app(true, false, false) -> interpreted as use_qdrant=true. Correcting to not use real qdrant.
     // New: spawn_app(multi_thread, use_ai, use_qdrant)
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -1344,7 +1356,8 @@ async fn test_auth_backend_authenticate_hashing_error() -> AnyhowResult<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -1504,7 +1517,8 @@ async fn test_register_and_verify_dek_decryption() -> AnyhowResult<()> {
 #[ignore]
 async fn test_login_prevents_session_fixation() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -1561,7 +1575,8 @@ async fn test_login_prevents_session_fixation() -> AnyhowResult<()> {
 #[ignore]
 async fn test_session_rotation_after_login() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -1615,6 +1630,7 @@ async fn test_session_rotation_after_login() -> AnyhowResult<()> {
     let second_login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(second_login_request)
         .await?;
 
@@ -1657,7 +1673,8 @@ async fn test_session_rotation_after_login() -> AnyhowResult<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_login_pending_verification() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;
@@ -1712,7 +1729,8 @@ async fn test_login_pending_verification() -> AnyhowResult<()> {
 #[ignore] // Added ignore for CI
 async fn test_invalidate_session_endpoint() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Ensure encryption columns exist
     ensure_encryption_columns_exist(&test_app.db_pool).await?;

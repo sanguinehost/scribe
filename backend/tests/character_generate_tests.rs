@@ -171,7 +171,7 @@ async fn test_generate_character() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let username = format!("gen_user_{}", Uuid::new_v4());
     let password = "password123";
@@ -245,8 +245,8 @@ async fn test_generate_unauthorized() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app_state = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app_state.db_pool.clone();
-    let _guard = TestDataGuard::new(pool.clone());
-    let app_router = test_app_state.router;
+    let _guard = TestDataGuard::new(pool.clone(), None);
+    let app_router = test_app_state.router.clone();
     let server_addr = spawn_app(app_router).await;
     let client = Client::new();
 

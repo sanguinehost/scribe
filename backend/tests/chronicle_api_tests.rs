@@ -61,6 +61,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
     let register_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -131,6 +132,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -154,7 +156,8 @@ mod api_tests {
     #[tokio::test]
     async fn test_chronicle_lifecycle_api() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Test: Create Chronicle
@@ -165,6 +168,7 @@ mod api_tests {
 
         let create_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -190,6 +194,7 @@ mod api_tests {
         let list_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
@@ -214,6 +219,7 @@ mod api_tests {
         let get_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
@@ -237,6 +243,7 @@ mod api_tests {
 
         let update_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -264,6 +271,7 @@ mod api_tests {
         let delete_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::DELETE)
@@ -280,6 +288,7 @@ mod api_tests {
         // Test: Verify Chronicle Deleted
         let get_deleted_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -298,7 +307,8 @@ mod api_tests {
     #[tokio::test]
     async fn test_chronicle_events_api() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle first
@@ -309,6 +319,7 @@ mod api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -347,6 +358,7 @@ mod api_tests {
         let create_event_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -374,6 +386,7 @@ mod api_tests {
         let get_events_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
@@ -394,6 +407,7 @@ mod api_tests {
         // Test: Get Events with Query Parameters (filtering)
         let get_filtered_events_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -422,6 +436,7 @@ mod api_tests {
         let delete_event_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::DELETE)
@@ -441,6 +456,7 @@ mod api_tests {
         // Test: Verify Event Deleted
         let get_events_after_delete_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -463,11 +479,13 @@ mod api_tests {
     #[tokio::test]
     async fn test_chronicle_unauthorized_access() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // Test: Access without authentication
         let unauth_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -494,6 +512,7 @@ mod api_tests {
         let create_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -511,6 +530,7 @@ mod api_tests {
         // Test: User2 tries to access User1's chronicle
         let unauthorized_get_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -538,6 +558,7 @@ mod api_tests {
         let unauthorized_event_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -556,7 +577,8 @@ mod api_tests {
     #[tokio::test]
     async fn test_chronicle_validation_errors() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Test: Create chronicle with invalid data (empty name)
@@ -567,6 +589,7 @@ mod api_tests {
 
         let invalid_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -590,6 +613,7 @@ mod api_tests {
         let incomplete_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -611,7 +635,8 @@ mod api_tests {
     #[tokio::test]
     async fn test_nonexistent_resources() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         let nonexistent_id = Uuid::new_v4();
@@ -619,6 +644,7 @@ mod api_tests {
         // Test: Get nonexistent chronicle
         let get_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -645,6 +671,7 @@ mod api_tests {
 
         let event_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()

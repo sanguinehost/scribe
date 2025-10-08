@@ -19,7 +19,8 @@ use uuid::Uuid;
 #[ignore] // Ignored for CI
 async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Register a user without providing a recovery key
     let username = format!("recovery_test_{}", Uuid::new_v4());
@@ -142,7 +143,8 @@ async fn test_recovery_key_generation_during_registration() -> AnyhowResult<()> 
 #[ignore] // Ignored for CI
 async fn test_provided_recovery_key_is_used() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create a custom recovery key
     let custom_recovery_key = "my-custom-recovery-phrase";
@@ -198,7 +200,8 @@ async fn test_provided_recovery_key_is_used() -> AnyhowResult<()> {
 #[ignore] // Ignored for CI
 async fn test_recovery_key_decrypts_dek() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Register a user
     let username = format!("recovery_decrypt_{}", Uuid::new_v4());

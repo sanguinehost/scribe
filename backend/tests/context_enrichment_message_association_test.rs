@@ -26,7 +26,7 @@ use uuid::Uuid;
 #[tokio::test]
 async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -413,7 +413,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     use scribe_backend::schema::characters;
 
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(

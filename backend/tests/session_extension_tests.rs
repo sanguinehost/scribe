@@ -13,7 +13,7 @@ use tower::ServiceExt;
 async fn test_session_extends_on_authenticated_requests() {
     // Spawn test app
     let test_app = spawn_app(false, false, false).await;
-    let _test_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _test_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Register a test user
     let register_payload = json!({
@@ -33,6 +33,7 @@ async fn test_session_extends_on_authenticated_requests() {
 
     let register_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(register_request)
         .await
@@ -69,6 +70,7 @@ async fn test_session_extends_on_authenticated_requests() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -121,6 +123,7 @@ async fn test_session_extends_on_authenticated_requests() {
 
     let session_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(session_request)
         .await

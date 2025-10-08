@@ -18,7 +18,7 @@ use diesel::prelude::*;
 #[cfg(feature = "payment")]
 async fn test_payment_usage_tracking_direct() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create a real test user (needed for DEK encryption)
     let user_db = db::create_test_user(

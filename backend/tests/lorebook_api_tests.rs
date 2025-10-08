@@ -98,7 +98,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_create_lorebook_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new(); // Will use authenticated client
 
         let user_credentials = ("user_tcls@example.com", "password123");
@@ -140,7 +141,7 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_create_lorebook_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        // let mut _test_data_guard = TestDataGuard::new(test_app.db_pool.clone()); // Not strictly needed if not creating users in DB
+        // let mut _test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone()); // Not strictly needed if not creating users in DB
         let http_client = reqwest::Client::new();
 
         let payload = CreateLorebookDto {
@@ -162,7 +163,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_create_lorebook_validation_error_missing_name() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tclvemn@example.com", "password123");
@@ -203,7 +205,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_list_lorebooks_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tlls@example.com", "password123");
@@ -242,7 +245,7 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_list_lorebooks_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        // let mut _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        // let mut _test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let http_client = reqwest::Client::new();
 
         let response = http_client
@@ -258,7 +261,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_get_lorebook_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new(); // Will use authenticated client
 
         let user_credentials = ("user_tgls@example.com", "password123");
@@ -299,7 +303,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_get_lorebook_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tglu@example.com", "password123");
@@ -337,7 +342,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_get_lorebook_forbidden_or_not_found_other_user() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new(); // Will use specific clients
 
         let user1_credentials = ("user1_tglfou@example.com", "password123");
@@ -397,7 +403,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_get_lorebook_not_found_non_existent() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tglnfne@example.com", "password123");
@@ -432,7 +439,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_update_lorebook_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tuls@example.com", "password123");
@@ -478,7 +486,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_update_lorebook_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tulu@example.com", "password123");
@@ -521,7 +530,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_update_lorebook_forbidden_other_user() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user1_credentials = ("user1_tulfou@example.com", "password123");
@@ -583,7 +593,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_update_lorebook_validation_error() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tulve@example.com", "password123");
@@ -627,7 +638,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_update_lorebook_not_found_non_existent() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tulnfne@example.com", "password123");
@@ -667,7 +679,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_delete_lorebook_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tdls@example.com", "password123");
@@ -702,7 +715,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_delete_lorebook_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tdlu@example.com", "password123");
@@ -739,7 +753,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_delete_lorebook_forbidden_other_user() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user1_credentials = ("user1_tdlfou@example.com", "password123");
@@ -792,7 +807,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_delete_lorebook_not_found_non_existent() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tdlnfne@example.com", "password123");
@@ -827,7 +843,8 @@ mod lorebook_tests {
     #[tokio::test]
     async fn test_list_associated_chat_sessions_for_lorebook_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let user_credentials = ("user_tlacsfls@example.com", "password123");
         let user_data = scribe_backend::test_helpers::db::create_test_user(
@@ -920,7 +937,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_create_lorebook_entry_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tcles@example.com", "password123");
@@ -1018,7 +1036,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_create_lorebook_entry_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tcleu@example.com", "password123");
@@ -1067,7 +1086,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_create_lorebook_entry_forbidden_other_user_lorebook() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user1_credentials = ("user1_tclefoul@example.com", "password123");
@@ -1136,7 +1156,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_create_lorebook_entry_validation_error() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tcleve@example.com", "password123");
@@ -1180,7 +1201,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_create_lorebook_entry_lorebook_not_found() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tclelnf@example.com", "password123");
@@ -1227,7 +1249,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_list_lorebook_entries_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tlles@example.com", "password123");
@@ -1270,7 +1293,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_list_lorebook_entries_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tlleu@example.com", "password123");
@@ -1307,7 +1331,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_list_lorebook_entries_forbidden_other_user_lorebook() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user1_credentials = ("user1_tllefoul@example.com", "password123");
@@ -1363,7 +1388,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_list_lorebook_entries_lorebook_not_found() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tllelnf@example.com", "password123");
@@ -1398,7 +1424,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_get_lorebook_entry_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tgles@example.com", "password123");
@@ -1438,7 +1465,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_get_lorebook_entry_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tgleu@example.com", "password123");
@@ -1482,7 +1510,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_get_lorebook_entry_forbidden_other_user() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user1_credentials = ("user1_tglefou@example.com", "password123");
@@ -1545,7 +1574,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_get_lorebook_entry_lorebook_not_found() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tglelnf@example.com", "password123");
@@ -1581,7 +1611,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_get_lorebook_entry_entry_not_found() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tgleenf@example.com", "password123");
@@ -1617,7 +1648,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_update_lorebook_entry_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tules@example.com", "password123");
@@ -1664,7 +1696,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_update_lorebook_entry_unauthorized() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let unauth_http_client = reqwest::Client::new(); // For the actual unauth request
 
         let user_credentials = ("user_tuleu@example.com", "password123"); // Changed email for uniqueness
@@ -1720,7 +1753,8 @@ mod lorebook_entry_tests {
     #[tokio::test]
     async fn test_delete_lorebook_entry_success() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         // let http_client = reqwest::Client::new();
 
         let user_credentials = ("user_tdles@example.com", "password123");
@@ -1771,7 +1805,8 @@ mod chat_session_lorebook_association_tests {
     #[tokio::test]
     async fn test_new_chat_with_character_default_lorebooks_no_explicit_association() {
         let test_app = spawn_app(false, false, false).await;
-        let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _test_data_guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let conn = test_app
             .db_pool
             .get()
@@ -1902,7 +1937,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_with_chat_success() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_talwcs@example.com", "password123");
@@ -1930,7 +1965,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_unauthorized() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_talua@example.com", "password123");
@@ -1955,7 +1990,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_forbidden_other_user_chat() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user1_credentials = ("user1_talfouc@example.com", "password123");
@@ -1986,7 +2021,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_forbidden_other_user_lorebook() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user1_credentials = ("user1_talfoul@example.com", "password123");
@@ -2017,7 +2052,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_chat_not_found() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_talcnf@example.com", "password123");
@@ -2041,7 +2076,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_lorebook_not_found() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_tallnf@example.com", "password123");
@@ -2066,7 +2101,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_associate_lorebook_validation_error() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_talve@example.com", "password123");
@@ -2093,7 +2128,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_list_associated_lorebooks_success() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_tlals@example.com", "password123");
@@ -2123,7 +2158,7 @@ mod chat_session_lorebook_association_tests {
     //     #[tokio::test]
     //     async fn test_disassociate_lorebook_from_chat_success() {
     //         let test_app = spawn_app(false, false, false).await;
-    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    //         let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     //         let http_client = reqwest::Client::new();
     //
     //         let user_credentials = ("user_tdlfcs@example.com", "password123");
@@ -2152,7 +2187,8 @@ mod chat_session_lorebook_association_tests {
 #[tokio::test]
 async fn test_export_lorebook_success() {
     let test_app = spawn_app(false, false, false).await;
-    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_credentials = ("user_export@example.com", "password123");
     let user_data = scribe_backend::test_helpers::db::create_test_user(
@@ -2244,7 +2280,8 @@ async fn test_export_lorebook_success() {
 #[tokio::test]
 async fn test_import_lorebook_scribe_minimal_success() {
     let test_app = spawn_app(false, false, false).await;
-    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_credentials = ("user_import_scribe@example.com", "password123");
     let _user_data = scribe_backend::test_helpers::db::create_test_user(
@@ -2332,7 +2369,8 @@ async fn test_import_lorebook_scribe_minimal_success() {
 #[tokio::test]
 async fn test_import_lorebook_scribe_minimal_unauthorized() {
     let test_app = spawn_app(false, false, false).await;
-    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let unauth_http_client = reqwest::Client::new();
 
     let payload = serde_json::json!({
@@ -2356,7 +2394,8 @@ async fn test_import_lorebook_scribe_minimal_unauthorized() {
 #[tokio::test]
 async fn test_import_lorebook_scribe_minimal_validation_error() {
     let test_app = spawn_app(false, false, false).await;
-    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_credentials = ("user_import_scribe_val@example.com", "password123");
     let _user_data = scribe_backend::test_helpers::db::create_test_user(
@@ -2423,7 +2462,8 @@ async fn test_import_lorebook_scribe_minimal_validation_error() {
 #[tokio::test]
 async fn test_import_lorebook_silly_tavern_full_success() {
     let test_app = spawn_app(false, false, false).await;
-    let _test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_credentials = ("user_import_st@example.com", "password123");
     let user_data = scribe_backend::test_helpers::db::create_test_user(

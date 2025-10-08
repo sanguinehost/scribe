@@ -80,7 +80,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a05_security_headers_present() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -123,7 +123,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a05_cors_configuration() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -154,7 +154,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a05_error_information_disclosure() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -220,7 +220,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a05_debug_information_disabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -267,7 +267,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a06_dependency_security_headers() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -305,7 +305,7 @@ mod payment_owasp_comprehensive_tests {
         // This test would normally check for TLS version enforcement
         // In test environment, we'll verify the configuration expectation
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // In production, these should be configured:
         // - Minimum TLS 1.2
@@ -339,7 +339,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a07_session_fixation_prevention() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::builder()
             .cookie_store(true)
@@ -364,7 +364,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a07_session_timeout_enforcement() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -389,7 +389,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a07_concurrent_session_management() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -433,7 +433,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a07_brute_force_protection() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -476,7 +476,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a09_payment_operations_logged() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "logging_test", "logging@test.com")
@@ -522,7 +522,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a09_security_events_logged() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -570,7 +570,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a09_sensitive_data_not_logged() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -662,7 +662,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a10_webhook_url_validation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -712,7 +712,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a10_external_service_url_validation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test that payment service doesn't make requests to internal networks
         // This is a structural test - the payment service should not have
@@ -745,7 +745,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a10_dns_rebinding_protection() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -783,7 +783,7 @@ mod payment_owasp_comprehensive_tests {
     #[tokio::test]
     async fn test_a10_internal_network_access_prevention() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // This test verifies that the payment system doesn't have functionality
         // that could be exploited for SSRF attacks against internal networks

@@ -448,6 +448,7 @@ async fn test_lorebook_deletion_cleans_up_vectors() {
     let test_app = spawn_app(false, false, false).await;
     let mock_qdrant_service = test_app
         .mock_qdrant_service
+        .clone()
         .expect("Mock Qdrant service should be present in TestApp");
 
     // Create a user and get the authenticated client and user ID

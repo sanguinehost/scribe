@@ -87,6 +87,7 @@ async fn test_create_character_mode_chat_session() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -118,6 +119,7 @@ async fn test_create_character_mode_chat_session() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -166,6 +168,7 @@ async fn test_create_scribe_assistant_mode_chat_session() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -220,6 +223,7 @@ async fn test_create_rpg_mode_chat_session() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -273,6 +277,7 @@ async fn test_chat_mode_validation_errors() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -304,6 +309,7 @@ async fn test_chat_mode_validation_errors() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -353,6 +359,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -380,6 +387,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -405,6 +413,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -470,6 +479,7 @@ async fn test_chat_mode_persistence() {
         let response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(request)
             .await
             .expect("Failed to execute request");
@@ -496,6 +506,7 @@ async fn test_chat_mode_persistence() {
 
         let response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(request)
             .await

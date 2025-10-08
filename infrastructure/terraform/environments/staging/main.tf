@@ -119,6 +119,9 @@ module "rds" {
   multi_az_enabled          = var.multi_az_enabled
   monitoring_interval       = var.monitoring_interval
   performance_insights_enabled = var.performance_insights_enabled
+
+  # Explicit dependency to ensure proper destroy order
+  depends_on = [module.networking]
 }
 
 # Secrets Manager module
@@ -183,6 +186,9 @@ module "alb" {
   access_logs_bucket       = var.access_logs_bucket
   rate_limit_per_5min      = var.rate_limit_per_5min
   route53_zone_id          = data.aws_route53_zone.main.zone_id
+
+  # Explicit dependency to ensure proper destroy order
+  depends_on = [module.networking]
 }
 
 # ECS module
@@ -226,7 +232,8 @@ module "ecs" {
   domain_name     = local.full_domain
   api_domain_name = local.api_domain
 
-  depends_on = [module.alb]
+  # Explicit dependency to ensure proper destroy order
+  depends_on = [module.alb, module.networking]
 }
 
 # Monitoring module

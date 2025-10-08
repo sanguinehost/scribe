@@ -18,7 +18,7 @@ use scribe_backend::{
         ChronicleService, ScribeTool,
         agentic::{AgenticNarrativeFactory, SearchKnowledgeBaseTool},
     },
-    test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
+    test_helpers::{TestApp, TestAppGuard, TestDataGuard, spawn_app_permissive_rate_limiting},
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -236,7 +236,7 @@ async fn create_existing_everest_events(
 }
 
 // Helper to create AppState for tests
-async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::AppState> {
+async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::state::AppState> {
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
         test_app.db_pool.clone(),
@@ -333,7 +333,7 @@ async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::
 async fn test_search_knowledge_base_tool_functionality() {
     // Test that the SearchKnowledgeBaseTool can find existing events
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, _session_dek) = create_test_user(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
@@ -391,7 +391,7 @@ async fn test_search_knowledge_base_tool_functionality() {
 async fn test_deduplication_failure_multiple_everest_events() {
     // This test demonstrates the current de-duplication failure
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let session_id = Uuid::new_v4();
@@ -571,7 +571,7 @@ async fn test_deduplication_failure_multiple_everest_events() {
 async fn test_chronicle_context_retrieval_for_deduplication() {
     // Test that the get_recent_chronicle_context method can retrieve existing events
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, _session_dek) = create_test_user(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
@@ -618,7 +618,7 @@ async fn test_chronicle_context_retrieval_for_deduplication() {
 async fn test_ai_triage_with_existing_context() {
     // Test what happens when we provide existing context to the triage decision
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
@@ -716,7 +716,7 @@ async fn test_ai_triage_with_existing_context() {
 // async fn test_improved_deduplication_prevents_duplicates() {
 //     // This test will verify that the fixed deduplication system works
 //     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-//     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+//     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 //
 //     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
 //     let session_id = Uuid::new_v4();

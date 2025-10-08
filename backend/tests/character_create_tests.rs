@@ -113,7 +113,7 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -308,7 +308,7 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -464,7 +464,7 @@ async fn test_create_character_missing_required_fields() -> Result<(), anyhow::E
     let test_app =
         scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";

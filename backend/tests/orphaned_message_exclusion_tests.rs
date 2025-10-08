@@ -117,7 +117,8 @@ async fn test_frontend_history_vs_database_history() {
     // it should be used instead of querying the database
 
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let _guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test data
     let user = test_helpers::db::create_test_user(
@@ -297,7 +298,8 @@ async fn test_orphaned_message_exclusion_scenario() {
     // and we need to ensure that subsequent messages (orphans) are excluded
 
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let _guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test data
     let user = test_helpers::db::create_test_user(

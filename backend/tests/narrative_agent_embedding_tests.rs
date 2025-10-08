@@ -20,7 +20,7 @@ use serde_json::json;
 async fn test_narrative_agent_chronicle_events_are_embedded() {
     let test_app =
         scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create a test user
     let user = scribe_backend::test_helpers::db::create_test_user(
@@ -59,7 +59,7 @@ async fn test_narrative_agent_chronicle_events_are_embedded() {
 
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
-        test_app.config,
+        test_app.config.clone(),
         services,
     ));
 

@@ -28,7 +28,7 @@ use scribe_backend::{
 
 // Helper struct for common test setup
 struct TestContext {
-    test_app: test_helpers::TestApp,
+    test_app: test_helpers::TestAppGuard,
     auth_cookie: String,
     #[allow(dead_code)]
     user: scribe_backend::models::users::User,
@@ -221,6 +221,7 @@ async fn assert_rag_response(
     let response = test_context
         .test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await

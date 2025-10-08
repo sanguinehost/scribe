@@ -15,13 +15,15 @@ use scribe_backend::{
     },
     schema::{characters, user_personas, users}, // Added schema::characters
     services::chat::session_management::create_session_and_maybe_first_message,
-    test_helpers::{TestAppStateBuilder, TestDataGuard, db, login_user_via_router, spawn_app}, // Changed TestUser
+    test_helpers::{
+        TestAppGuard, TestAppStateBuilder, TestDataGuard, db, login_user_via_router, spawn_app,
+    }, // Changed TestUser
 };
 
 // Helper struct for common test setup
 struct TestSetup {
     tdg: TestDataGuard,
-    app: scribe_backend::test_helpers::TestApp,
+    app: TestAppGuard,
     user_db: User,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
     app_state_arc: Arc<scribe_backend::state::AppState>,
@@ -29,7 +31,7 @@ struct TestSetup {
 
 async fn setup_common_test_env(username: &str) -> TestSetup {
     let app = spawn_app(false, false, false).await;
-    let tdg = TestDataGuard::new(app.db_pool.clone());
+    let tdg = TestDataGuard::new(app.db_pool.clone(), app.test_db_name.clone());
 
     let user_db = db::create_test_user(
         &app.db_pool,

@@ -30,7 +30,7 @@ use scribe_backend::{
 #[tokio::test]
 async fn test_user_settings_auto_creation() {
     let app = spawn_app(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create a test user WITHOUT user settings
     let username = "testuser_auto_create";
@@ -91,7 +91,7 @@ async fn test_user_settings_auto_creation() {
 #[tokio::test]
 async fn test_chat_session_uses_user_default_model() {
     let app = spawn_app(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create a test user
     let username = "testuser_model";

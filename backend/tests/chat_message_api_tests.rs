@@ -219,7 +219,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_get_chat_messages_session_not_found() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let username = "get_messages_not_found_user";
     let password = "password";
     let user: User = test_helpers::db::create_test_user(

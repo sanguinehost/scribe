@@ -198,7 +198,8 @@ mod integration_tests {
     #[tokio::test]
     async fn test_chronicle_crud_operations() {
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup test user
@@ -276,7 +277,8 @@ mod integration_tests {
     #[tokio::test]
     async fn test_chronicle_event_operations() {
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup test user and chronicle
@@ -402,7 +404,8 @@ mod integration_tests {
     #[tokio::test]
     async fn test_chronicle_with_counts() {
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup test user and chronicle
@@ -453,7 +456,8 @@ mod integration_tests {
     #[tokio::test]
     async fn test_unauthorized_access() {
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup two test users
@@ -515,7 +519,8 @@ mod integration_tests {
     #[tokio::test]
     async fn test_nonexistent_chronicle_operations() {
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup test user
@@ -559,7 +564,8 @@ mod integration_tests {
     #[tokio::test]
     async fn test_cascade_delete() {
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup test user and chronicle
@@ -612,7 +618,8 @@ mod integration_tests {
         use scribe_backend::auth::session_dek::SessionDek;
 
         let test_app = test_helpers::spawn_app(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
 
         // Setup test user and chronicle

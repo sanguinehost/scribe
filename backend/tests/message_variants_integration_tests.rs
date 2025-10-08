@@ -149,6 +149,7 @@ async fn create_test_chat_session(
     let create_session_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(create_session_request)
         .await?;
     assert_eq!(create_session_response.status(), StatusCode::CREATED);
@@ -317,6 +318,7 @@ async fn select_variant(
     let select_variant_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(select_variant_request)
         .await?;
     assert_eq!(select_variant_response.status(), StatusCode::OK);
@@ -335,7 +337,8 @@ async fn select_variant(
 #[ignore] // Run with RUN_INTEGRATION_TESTS=true
 async fn test_variant_display_persistence() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user with proper DEK setup
     let username = "variant_persistence_user";
@@ -423,6 +426,7 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
     let get_messages_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(get_messages_request)
         .await?;
     assert_eq!(get_messages_response.status(), StatusCode::OK);
@@ -458,7 +462,8 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
 #[ignore] // Run with RUN_INTEGRATION_TESTS=true
 async fn test_ai_context_uses_selected_variant() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user with DEK
     let username = "variant_context_user";
@@ -545,7 +550,8 @@ async fn test_ai_context_uses_selected_variant() -> anyhow::Result<()> {
 #[ignore] // Run with RUN_INTEGRATION_TESTS=true
 async fn test_variant_selection_affects_subsequent_messages() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user with DEK
     let username = "variant_sequence_user";
@@ -621,6 +627,7 @@ async fn test_variant_selection_affects_subsequent_messages() -> anyhow::Result<
 
     let get_messages_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(get_messages_request)
         .await?;

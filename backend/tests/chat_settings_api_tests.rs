@@ -53,6 +53,7 @@ async fn create_user_and_login(
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -657,6 +658,7 @@ async fn test_get_chat_settings_not_found() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -759,6 +761,7 @@ async fn setup_update_test_env(
         .unwrap();
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -1129,6 +1132,7 @@ async fn update_chat_settings_not_found() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -1476,6 +1480,7 @@ async fn test_actual_api_route_for_system_prompt() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -1612,6 +1617,7 @@ async fn test_actual_api_route_for_system_prompt() {
     let update_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(update_api_request)
         .await
         .unwrap();
@@ -1646,6 +1652,7 @@ async fn test_actual_api_route_for_system_prompt() {
 
     let get_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(get_api_request)
         .await
@@ -1709,6 +1716,7 @@ async fn test_chat_chronicle_association() {
     let chronicle_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(create_chronicle_request)
         .await
         .unwrap();
@@ -1757,6 +1765,7 @@ async fn test_chat_chronicle_association() {
 
     let update_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(update_request)
         .await
@@ -1828,6 +1837,7 @@ async fn test_chat_chronicle_association() {
 
     let remove_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(remove_request)
         .await

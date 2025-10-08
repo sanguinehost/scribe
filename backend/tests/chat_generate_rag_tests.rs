@@ -41,7 +41,7 @@ use serde_json::json;
 
 // Add this struct definition after the imports
 pub struct RagTestContext {
-    pub app: test_helpers::TestApp,
+    pub app: test_helpers::TestAppGuard,
     pub auth_cookie: String,
     pub user: User,
     pub character: DbCharacter, // Updated to DbCharacter

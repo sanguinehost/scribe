@@ -56,6 +56,7 @@ async fn create_authenticated_user(
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -325,6 +326,7 @@ async fn test_first_mes_included_in_history() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await

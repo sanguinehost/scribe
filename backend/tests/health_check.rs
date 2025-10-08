@@ -27,6 +27,7 @@ async fn enhanced_health_check_works() {
     // Act - send the request
     let response = test_app
         .router
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");

@@ -34,7 +34,7 @@ fn create_test_dek_key() -> Vec<u8> {
 #[serial]
 async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
     let test_app = test_helpers::spawn_app(false, false, true).await; // Use real Qdrant
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user with DEK
     let user = test_helpers::db::create_test_user(
@@ -176,7 +176,7 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
 #[serial]
 async fn test_search_without_dek_returns_placeholders() -> Result<()> {
     let test_app = test_helpers::spawn_app(false, false, true).await; // Use real Qdrant
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = test_helpers::db::create_test_user(
@@ -279,7 +279,7 @@ async fn test_search_without_dek_returns_placeholders() -> Result<()> {
 #[serial]
 async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
     let test_app = test_helpers::spawn_app(false, false, true).await; // Use real Qdrant
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user with DEK
     let user = test_helpers::db::create_test_user(
@@ -447,7 +447,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
 #[serial]
 async fn test_encryption_isolation_between_users() -> Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await; // This test doesn't need Qdrant
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users with different DEKs
     let _user_a = test_helpers::db::create_test_user(

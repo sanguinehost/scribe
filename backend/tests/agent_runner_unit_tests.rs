@@ -180,7 +180,8 @@ mod agent_runner_conversation_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // Create test user
         let user = scribe_backend::test_helpers::db::create_test_user(
@@ -263,7 +264,8 @@ mod agent_runner_conversation_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // Create test user
         let user = scribe_backend::test_helpers::db::create_test_user(
@@ -405,7 +407,8 @@ mod agent_runner_conversation_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // Create test user
         let user = scribe_backend::test_helpers::db::create_test_user(
@@ -543,7 +546,8 @@ mod agent_runner_duplicate_prevention_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // Create test user
         let user = scribe_backend::test_helpers::db::create_test_user(

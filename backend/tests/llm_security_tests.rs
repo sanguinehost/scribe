@@ -41,7 +41,7 @@ async fn test_llm01_prompt_injection_prevention() {
         .expect("Failed to start LLM server for testing");
 
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user and login
     let _user = test_helpers::db::create_test_user(
@@ -68,6 +68,7 @@ async fn test_llm01_prompt_injection_prevention() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -170,7 +171,7 @@ async fn test_llm02_sensitive_information_filtering() {
         .expect("Failed to start LLM server for testing");
 
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user and login
     let _user = test_helpers::db::create_test_user(
@@ -197,6 +198,7 @@ async fn test_llm02_sensitive_information_filtering() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -349,7 +351,7 @@ async fn test_llm_authentication_requirements() {
 
     for (endpoint, method) in llm_endpoints {
         let test_app = test_helpers::spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let request = Request::builder()
             .method(method.clone())
@@ -358,7 +360,7 @@ async fn test_llm_authentication_requirements() {
             .body(Body::empty())
             .unwrap();
 
-        let response = test_app.router.oneshot(request).await.unwrap();
+        let response = test_app.router.clone().oneshot(request).await.unwrap();
 
         // Should require authentication (401) or not exist without local-llm feature (404)
         assert!(

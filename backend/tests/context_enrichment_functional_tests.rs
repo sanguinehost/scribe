@@ -100,7 +100,7 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp)
 #[tokio::test]
 async fn test_context_enrichment_complete_workflow_preprocessing() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -240,7 +240,7 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
 #[tokio::test]
 async fn test_context_enrichment_complete_workflow_postprocessing() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -358,7 +358,7 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
 #[tokio::test]
 async fn test_context_enrichment_search_types() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -469,7 +469,7 @@ async fn test_context_enrichment_search_types() {
 #[tokio::test]
 async fn test_context_enrichment_error_handling() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -561,7 +561,7 @@ async fn test_context_enrichment_error_handling() {
 #[tokio::test]
 async fn test_context_enrichment_analysis_storage() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -738,7 +738,7 @@ async fn test_context_enrichment_analysis_storage() {
 #[tokio::test]
 async fn test_context_enrichment_message_patterns() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(

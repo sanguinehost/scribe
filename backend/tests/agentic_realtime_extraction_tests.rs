@@ -18,7 +18,7 @@ use scribe_backend::{
     },
     schema::{chat_sessions, users},
     services::agentic::factory::AgenticNarrativeFactory,
-    test_helpers::{MockAiClient, TestApp, TestDataGuard},
+    test_helpers::{MockAiClient, TestApp, TestAppGuard, TestDataGuard},
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -147,7 +147,7 @@ fn create_chat_message(
 }
 
 // Helper to create AppState for tests
-async fn create_test_app_state(test_app: TestApp) -> Arc<scribe_backend::state::AppState> {
+async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::state::AppState> {
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
         test_app.db_pool.clone(),
@@ -248,7 +248,8 @@ mod realtime_extraction_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
@@ -399,7 +400,8 @@ mod realtime_extraction_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
@@ -549,7 +551,8 @@ mod realtime_extraction_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
@@ -694,7 +697,8 @@ mod realtime_extraction_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();
@@ -845,7 +849,8 @@ mod realtime_extraction_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
         let chat_session_id = Uuid::new_v4();

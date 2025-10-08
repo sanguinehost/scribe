@@ -32,7 +32,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_immediate_upgrade_basic_to_premium() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with basic subscription
         let user_id = Uuid::new_v4();
@@ -165,7 +165,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_scheduled_downgrade_premium_to_basic() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with premium subscription
         let user_id = Uuid::new_v4();
@@ -286,7 +286,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_downgrade_preserves_credits() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with premium subscription and 1500 credits
         let user_id = Uuid::new_v4();
@@ -390,7 +390,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_unknown_price_id_continues_webhook() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with subscription
         let user_id = Uuid::new_v4();
@@ -493,7 +493,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_upgrade_cancels_pending_downgrade() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let subscription_id = Uuid::new_v4();
@@ -596,7 +596,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_scheduler_handles_multiple_due_changes() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create 3 subscriptions with scheduled downgrades due now
         for i in 0..3 {
@@ -688,7 +688,7 @@ mod plan_change_tests {
     #[ignore]
     async fn test_plan_change_audit_trail() -> Result<(), AppError> {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
 

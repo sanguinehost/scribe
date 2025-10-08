@@ -75,7 +75,7 @@ mod subscription_past_due_tests {
     #[tokio::test]
     async fn test_scheduler_marks_past_due_with_grace_period() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -167,7 +167,7 @@ mod subscription_past_due_tests {
     #[tokio::test]
     async fn test_webhook_sets_past_due_with_grace_period() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -279,7 +279,7 @@ mod subscription_past_due_tests {
         // This test would need to test the plan enforcement middleware
         // For now, we'll verify the subscription state
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -348,7 +348,7 @@ mod subscription_past_due_tests {
     #[tokio::test]
     async fn test_access_denied_after_grace_period_expires() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -417,7 +417,7 @@ mod subscription_past_due_tests {
     #[tokio::test]
     async fn test_successful_payment_clears_past_due() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -520,7 +520,7 @@ mod subscription_past_due_tests {
     #[tokio::test]
     async fn test_scheduler_auto_cancels_after_grace_period() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)

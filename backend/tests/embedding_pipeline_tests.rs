@@ -92,7 +92,7 @@ fn assert_retrieved_chunks_content(
     }
 }
 
-async fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState> {
+async fn create_test_app_state(test_app: test_helpers::TestAppGuard) -> Arc<AppState> {
     // Use the new builder pattern - much simpler!
     let services = AppStateServicesBuilder::new(test_app.db_pool.clone(), test_app.config.clone())
         .with_ai_client(
@@ -109,7 +109,7 @@ async fn create_test_app_state(test_app: test_helpers::TestApp) -> Arc<AppState>
 
     Arc::new(AppState::new(
         test_app.db_pool.clone(),
-        test_app.config,
+        test_app.config.clone(),
         services,
     ))
 }

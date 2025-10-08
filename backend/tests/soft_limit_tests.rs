@@ -81,7 +81,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_daily_usage_creation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -124,7 +124,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_record_usage() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -174,7 +174,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_soft_limit_trigger() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -220,7 +220,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_throttling_delays() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -310,7 +310,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_tier_based_limits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -377,7 +377,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_usage_stats() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -439,7 +439,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_daily_reset() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -490,7 +490,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_subscription_override() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -556,7 +556,7 @@ mod soft_limit_tests {
     #[tokio::test]
     async fn test_soft_limits_disabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)

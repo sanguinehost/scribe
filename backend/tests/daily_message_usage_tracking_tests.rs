@@ -65,6 +65,7 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -119,6 +120,7 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
 
     let message_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -203,6 +205,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -236,6 +239,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
 
     let _assistant_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -282,6 +286,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
 
     let _user_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -366,6 +371,7 @@ async fn create_test_chat_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: 0,
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)

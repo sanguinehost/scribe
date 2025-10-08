@@ -62,6 +62,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
     let register_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -132,6 +133,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<String> {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -164,7 +166,8 @@ mod baseline_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle first
@@ -175,6 +178,7 @@ mod baseline_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -208,6 +212,7 @@ mod baseline_tests {
         let extract_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -234,7 +239,8 @@ mod baseline_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a mock chat session ID for testing error handling
@@ -250,6 +256,7 @@ mod baseline_tests {
         // Test the manual chronicle creation endpoint: POST /api/chronicles/from-chat
         let create_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -276,7 +283,8 @@ mod baseline_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle first
@@ -287,6 +295,7 @@ mod baseline_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -315,6 +324,7 @@ mod baseline_tests {
         let invalid_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -338,6 +348,7 @@ mod baseline_tests {
 
         let nonexistent_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -363,7 +374,8 @@ mod baseline_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         let chronicle_id = Uuid::new_v4();
         let chat_session_id = Uuid::new_v4();
@@ -376,6 +388,7 @@ mod baseline_tests {
 
         let unauthorized_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -401,7 +414,8 @@ mod baseline_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a lorebook first
@@ -412,6 +426,7 @@ mod baseline_tests {
 
         let create_lorebook_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -444,6 +459,7 @@ mod baseline_tests {
         let extract_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -469,7 +485,8 @@ mod baseline_tests {
         let test_app =
             scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false)
                 .await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let session_cookie = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -480,6 +497,7 @@ mod baseline_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -509,6 +527,7 @@ mod baseline_tests {
         let default_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -532,6 +551,7 @@ mod baseline_tests {
 
         let custom_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()

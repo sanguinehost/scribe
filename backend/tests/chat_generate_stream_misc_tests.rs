@@ -57,6 +57,7 @@ async fn setup_test_user_and_auth(
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -676,6 +677,7 @@ async fn setup_real_client_test_user_and_auth(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await

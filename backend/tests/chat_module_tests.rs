@@ -268,7 +268,7 @@ mod get_session_data_for_generation_tests {
         let user_dek_secret_vec = vec![0u8; 32];
         let user_dek = Some(Arc::new(SecretBox::new(Box::new(user_dek_secret_vec))));
 
-        let pool = setup_test_database(None).await;
+        let (pool, _test_db_name) = setup_test_database(None).await;
 
         // Create default character for DB if needed
         let _default_character_for_db = params

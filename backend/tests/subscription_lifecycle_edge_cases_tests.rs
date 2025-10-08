@@ -61,7 +61,7 @@ mod subscription_lifecycle_edge_cases_tests {
         #[tokio::test]
         async fn test_subscription_reactivation_after_cancellation() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -182,7 +182,7 @@ mod subscription_lifecycle_edge_cases_tests {
         #[tokio::test]
         async fn test_cancel_at_period_end_toggle_behavior() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)

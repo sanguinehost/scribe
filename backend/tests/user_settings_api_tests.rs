@@ -11,7 +11,7 @@ use scribe_backend::test_helpers::{
 #[tokio::test]
 async fn get_me_includes_default_persona_id() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "testuser_settings";
     let password = "password123";
@@ -115,7 +115,7 @@ async fn get_me_includes_default_persona_id() {
 #[tokio::test]
 async fn set_default_persona_success() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "testuser_set_default";
     let password = "password123";
@@ -172,7 +172,7 @@ async fn set_default_persona_success() {
 #[tokio::test]
 async fn clear_default_persona_success() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "testuser_clear_default";
     let password = "password123";
@@ -248,7 +248,7 @@ async fn clear_default_persona_success() {
 #[tokio::test]
 async fn set_default_persona_not_owned_fails() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let alice_username = "alice_set_foreign_default";
     let alice_password = "password123";
@@ -327,7 +327,7 @@ async fn set_default_persona_not_owned_fails() {
 #[tokio::test]
 async fn set_default_persona_requires_auth() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let tdg = TestDataGuard::new(app.db_pool.clone()); // tdg needed for potential cleanup if test fails early, removed mut
+    let tdg = TestDataGuard::new(app.db_pool.clone(), None); // tdg needed for potential cleanup if test fails early, removed mut
     let unauth_client = reqwest::Client::new();
     let persona_id = Uuid::new_v4(); // Dummy ID, request won't get far
 
@@ -346,7 +346,7 @@ async fn set_default_persona_requires_auth() {
 #[tokio::test]
 async fn clear_default_persona_requires_auth() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let tdg = TestDataGuard::new(app.db_pool.clone()); // Removed mut
+    let tdg = TestDataGuard::new(app.db_pool.clone(), None); // Removed mut
     let unauth_client = reqwest::Client::new();
 
     let response = unauth_client
@@ -366,7 +366,7 @@ async fn clear_default_persona_requires_auth() {
 #[tokio::test]
 async fn change_default_persona_success() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "testuser_change_default";
     let password = "password123";

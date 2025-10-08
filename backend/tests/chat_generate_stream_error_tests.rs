@@ -64,6 +64,7 @@ async fn generate_chat_response_streaming_ai_error() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -391,6 +392,7 @@ async fn generate_chat_response_streaming_initiation_error() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -641,6 +643,7 @@ async fn generate_chat_response_streaming_error_before_content() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -901,6 +904,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await

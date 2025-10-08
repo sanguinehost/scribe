@@ -42,7 +42,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     // API Login
@@ -241,7 +241,7 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     // Attempt to get suggested actions without logging in
@@ -394,7 +394,7 @@ async fn setup_suggested_actions_test_env(
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     let (_client, auth_cookie) =
@@ -600,7 +600,7 @@ async fn test_suggested_actions_session_not_found() -> anyhow::Result<()> {
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     // API Login
@@ -809,7 +809,7 @@ async fn test_suggested_actions_success_login_user_a() -> anyhow::Result<()> {
         "password123".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user_a.id);
 
     // Login user A

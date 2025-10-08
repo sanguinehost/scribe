@@ -57,7 +57,7 @@ async fn create_test_chat_session(
 #[tokio::test]
 async fn test_complete_agentic_workflow_with_mock_responses() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -238,7 +238,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
 #[tokio::test]
 async fn test_extraction_dispatcher_with_agentic_mode() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -351,7 +351,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 #[tokio::test]
 async fn test_dual_mode_extraction_comparison() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -480,7 +480,7 @@ async fn test_dual_mode_extraction_comparison() {
 #[tokio::test]
 async fn test_agentic_workflow_with_json_parsing_failure() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(

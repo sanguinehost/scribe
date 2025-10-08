@@ -84,6 +84,7 @@ async fn create_authenticated_user(
     let register_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -124,6 +125,7 @@ async fn create_authenticated_user(
         let verify_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -144,6 +146,7 @@ async fn create_authenticated_user(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -177,6 +180,7 @@ async fn create_chronicle(
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -215,6 +219,7 @@ async fn create_chronicle_event(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -237,7 +242,7 @@ async fn create_chronicle_event(
 #[tokio::test]
 async fn test_a01_cannot_access_other_users_chronicle() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -251,6 +256,7 @@ async fn test_a01_cannot_access_other_users_chronicle() {
     // User2 tries to access User1's chronicle
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -274,7 +280,7 @@ async fn test_a01_cannot_access_other_users_chronicle() {
 #[tokio::test]
 async fn test_a01_cannot_update_other_users_chronicle() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -293,6 +299,7 @@ async fn test_a01_cannot_update_other_users_chronicle() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -317,6 +324,7 @@ async fn test_a01_cannot_update_other_users_chronicle() {
     let verify_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -335,7 +343,7 @@ async fn test_a01_cannot_update_other_users_chronicle() {
 #[tokio::test]
 async fn test_a01_cannot_delete_other_users_chronicle() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -349,6 +357,7 @@ async fn test_a01_cannot_delete_other_users_chronicle() {
     // User2 tries to delete User1's chronicle
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -372,6 +381,7 @@ async fn test_a01_cannot_delete_other_users_chronicle() {
     let verify_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -389,7 +399,7 @@ async fn test_a01_cannot_delete_other_users_chronicle() {
 #[tokio::test]
 async fn test_a01_cannot_add_events_to_other_users_chronicle() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -409,6 +419,7 @@ async fn test_a01_cannot_add_events_to_other_users_chronicle() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -433,7 +444,7 @@ async fn test_a01_cannot_add_events_to_other_users_chronicle() {
 #[tokio::test]
 async fn test_a01_cannot_delete_other_users_chronicle_events() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -457,6 +468,7 @@ async fn test_a01_cannot_delete_other_users_chronicle_events() {
     // User2 tries to delete User1's event
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -483,6 +495,7 @@ async fn test_a01_cannot_delete_other_users_chronicle_events() {
     let verify_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -506,7 +519,7 @@ async fn test_a01_cannot_delete_other_users_chronicle_events() {
 #[tokio::test]
 async fn test_a02_chronicle_events_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create authenticated user
     let (cookie, _user_id) = create_authenticated_user(&test_app, "crypto_test")
@@ -565,7 +578,7 @@ async fn test_a02_chronicle_events_are_encrypted_at_rest() {
 #[tokio::test]
 async fn test_a02_api_responses_dont_leak_encrypted_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create authenticated user
     let (cookie, _user_id) = create_authenticated_user(&test_app, "no_leak")
@@ -590,6 +603,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     // Get events via API
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -627,7 +641,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
 #[tokio::test]
 async fn test_a03_sql_injection_in_chronicle_name() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "sql_inject")
         .await
@@ -651,6 +665,7 @@ async fn test_a03_sql_injection_in_chronicle_name() {
 
         let response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -688,6 +703,7 @@ async fn test_a03_sql_injection_in_chronicle_name() {
     let verify_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -712,7 +728,7 @@ async fn test_a03_sql_injection_in_chronicle_name() {
 #[tokio::test]
 async fn test_a03_xss_prevention_in_chronicle_events() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "xss_test")
         .await
@@ -752,6 +768,7 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
         let response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -789,7 +806,7 @@ async fn test_a03_xss_prevention_in_chronicle_events() {
 #[tokio::test]
 async fn test_a03_json_injection_in_event_data() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "json_inject")
         .await
@@ -825,6 +842,7 @@ async fn test_a03_json_injection_in_event_data() {
         let response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -853,7 +871,7 @@ async fn test_a03_json_injection_in_event_data() {
 #[tokio::test]
 async fn test_a04_rate_limiting_chronicle_creation() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "rate_limit")
         .await
@@ -871,6 +889,7 @@ async fn test_a04_rate_limiting_chronicle_creation() {
 
         let response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -902,7 +921,7 @@ async fn test_a04_rate_limiting_chronicle_creation() {
 #[tokio::test]
 async fn test_a04_resource_exhaustion_prevention() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "resource_test")
         .await
@@ -918,6 +937,7 @@ async fn test_a04_resource_exhaustion_prevention() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -955,6 +975,7 @@ async fn test_a04_resource_exhaustion_prevention() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -981,7 +1002,7 @@ async fn test_a04_resource_exhaustion_prevention() {
 #[tokio::test]
 async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "error_test")
         .await
@@ -991,6 +1012,7 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let fake_id = Uuid::new_v4();
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1037,7 +1059,7 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
 #[tokio::test]
 async fn test_a07_unauthenticated_access_prevented() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try to create chronicle without authentication
     let request_body = json!({
@@ -1047,6 +1069,7 @@ async fn test_a07_unauthenticated_access_prevented() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1069,6 +1092,7 @@ async fn test_a07_unauthenticated_access_prevented() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -1089,13 +1113,14 @@ async fn test_a07_unauthenticated_access_prevented() {
 #[tokio::test]
 async fn test_a07_invalid_session_token_rejected() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try with completely invalid session
     let fake_session = "id=totally-fake-session-id";
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1119,6 +1144,7 @@ async fn test_a07_invalid_session_token_rejected() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1145,7 +1171,7 @@ async fn test_a07_invalid_session_token_rejected() {
 #[tokio::test]
 async fn test_a08_chronicle_data_integrity() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, user_id) = create_authenticated_user(&test_app, "integrity_test")
         .await
@@ -1188,6 +1214,7 @@ async fn test_a08_chronicle_data_integrity() {
     let delete_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::DELETE)
@@ -1229,7 +1256,7 @@ async fn test_a08_chronicle_data_integrity() {
 #[tokio::test]
 async fn test_a09_failed_access_attempts_logged() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _) = create_authenticated_user(&test_app, "logger1")
@@ -1248,6 +1275,7 @@ async fn test_a09_failed_access_attempts_logged() {
     for _i in 0..5 {
         let _ = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -1271,6 +1299,7 @@ async fn test_a09_failed_access_attempts_logged() {
     // Verify chronicle still exists (wasn't deleted)
     let verify_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1297,7 +1326,7 @@ async fn test_a09_failed_access_attempts_logged() {
 #[tokio::test]
 async fn test_a10_ssrf_prevention_in_event_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "ssrf_test")
         .await
@@ -1337,6 +1366,7 @@ async fn test_a10_ssrf_prevention_in_event_data() {
         let response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -1366,7 +1396,7 @@ async fn test_a10_ssrf_prevention_in_event_data() {
 #[tokio::test]
 async fn test_chronicle_name_validation() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "validation_test")
         .await
@@ -1380,6 +1410,7 @@ async fn test_chronicle_name_validation() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1409,6 +1440,7 @@ async fn test_chronicle_name_validation() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -1431,7 +1463,7 @@ async fn test_chronicle_name_validation() {
 #[tokio::test]
 async fn test_chronicle_id_tampering_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (cookie, _user_id) = create_authenticated_user(&test_app, "tamper_test")
         .await
@@ -1463,6 +1495,7 @@ async fn test_chronicle_id_tampering_prevention() {
 
         let response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(request_result.unwrap())
             .await

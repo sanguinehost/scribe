@@ -222,7 +222,7 @@ mod tests {
     ) {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         let mock_embed_client = Arc::new(MockEmbeddingClient::new());
-        let pool = setup_test_database(None).await;
+        let (pool, _test_db_name) = setup_test_database(None).await;
         let config = Arc::new(Config::default());
         let ai_client = Arc::new(MockAiClient::new());
 

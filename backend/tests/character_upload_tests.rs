@@ -278,7 +278,7 @@ async fn test_upload_valid_v3_card() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -346,7 +346,7 @@ async fn test_upload_valid_v2_card_fallback() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -413,7 +413,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -483,7 +483,7 @@ async fn test_upload_not_png() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_not_png_user_{}", Uuid::new_v4());
@@ -543,7 +543,7 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_no_chunk_user_{}", Uuid::new_v4());
@@ -624,7 +624,7 @@ async fn test_upload_with_extra_field() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_extra_field_user_{}", Uuid::new_v4());
@@ -684,7 +684,7 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_invalid_json_user_{}", Uuid::new_v4());
@@ -786,9 +786,9 @@ async fn test_upload_unauthorized() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app_state = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app_state.db_pool.clone();
-    let _ = TestDataGuard::new(pool.clone()); // Guard is for cleanup, not directly used here
+    let _ = TestDataGuard::new(pool.clone(), None); // Guard is for cleanup, not directly used here
     // Use the router from spawn_app directly, no need for build_test_app_for_characters
-    let app_router = test_app_state.router;
+    let app_router = test_app_state.router.clone();
     let server_addr = spawn_app(app_router).await; // spawn_app now takes the router
     let client = Client::new();
 
@@ -825,7 +825,7 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let username = format!("upload_missing_field_user_{}", Uuid::new_v4());
     let password = "testpassword";
@@ -919,7 +919,7 @@ async fn test_upload_card_with_lorebook_insertion_order_fallback() -> Result<(),
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // Setup test user
     let test_password = "testpassword123";

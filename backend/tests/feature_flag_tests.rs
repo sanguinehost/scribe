@@ -25,7 +25,7 @@ mod feature_flag_tests {
     #[tokio::test]
     async fn test_credit_service_runtime_disabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create service with credits disabled in config
         let mut config = (*app.config).clone();
@@ -55,7 +55,7 @@ mod feature_flag_tests {
     #[tokio::test]
     async fn test_credit_service_runtime_enabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create service with credits enabled in config
         let mut config = (*app.config).clone();
@@ -133,7 +133,7 @@ mod feature_flag_tests {
     #[tokio::test]
     async fn test_soft_limit_service_runtime_disabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create service with soft limits disabled in config
         let mut config = (*app.config).clone();
@@ -211,7 +211,7 @@ mod feature_flag_tests {
     #[tokio::test]
     async fn test_soft_limit_service_runtime_enabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create service with soft limits enabled in config
         let mut config = (*app.config).clone();
@@ -293,7 +293,7 @@ mod feature_flag_tests {
     #[tokio::test]
     async fn test_both_services_can_be_independently_controlled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test with credits enabled, soft limits disabled
         let mut config1 = (*app.config).clone();

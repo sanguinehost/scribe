@@ -83,6 +83,7 @@ async fn create_authenticated_user(
     let register_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -123,6 +124,7 @@ async fn create_authenticated_user(
         let verify_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -143,6 +145,7 @@ async fn create_authenticated_user(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -178,6 +181,7 @@ async fn create_test_character(
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -217,6 +221,7 @@ async fn create_chat_session(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -248,6 +253,7 @@ async fn send_chat_message(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -269,7 +275,7 @@ async fn send_chat_message(
 #[tokio::test]
 async fn test_a01_cannot_access_other_users_chat_session() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -294,6 +300,7 @@ async fn test_a01_cannot_access_other_users_chat_session() {
     // User 2 tries to access User 1's chat session
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -321,7 +328,7 @@ async fn test_a01_cannot_access_other_users_chat_session() {
 #[tokio::test]
 async fn test_a01_cannot_send_message_to_other_users_chat() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -359,7 +366,7 @@ async fn test_a01_cannot_send_message_to_other_users_chat() {
 #[tokio::test]
 async fn test_a01_cannot_list_other_users_chat_messages() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -384,6 +391,7 @@ async fn test_a01_cannot_list_other_users_chat_messages() {
     // User 2 tries to list User 1's messages
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -411,7 +419,7 @@ async fn test_a01_cannot_list_other_users_chat_messages() {
 #[tokio::test]
 async fn test_a01_cannot_update_other_users_chat_settings() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -432,6 +440,7 @@ async fn test_a01_cannot_update_other_users_chat_settings() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -464,7 +473,7 @@ async fn test_a01_cannot_update_other_users_chat_settings() {
 #[tokio::test]
 async fn test_a02_chat_messages_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "encrypt")
         .await
@@ -522,7 +531,7 @@ async fn test_a02_chat_messages_are_encrypted_at_rest() {
 #[tokio::test]
 async fn test_a02_chat_session_titles_are_encrypted() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "title_encrypt")
         .await
@@ -572,7 +581,7 @@ async fn test_a02_chat_session_titles_are_encrypted() {
 #[tokio::test]
 async fn test_a02_api_responses_dont_leak_encrypted_data() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "noleak")
         .await
@@ -598,6 +607,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     // Get chat session via API
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -634,7 +644,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
 #[tokio::test]
 async fn test_a03_sql_injection_in_chat_message() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "sqli").await.unwrap();
 
@@ -688,6 +698,7 @@ async fn test_a03_sql_injection_in_chat_message() {
     let list_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -709,7 +720,7 @@ async fn test_a03_sql_injection_in_chat_message() {
 #[tokio::test]
 async fn test_a03_xss_prevention_in_chat_messages() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "xss").await.unwrap();
 
@@ -758,7 +769,7 @@ async fn test_a03_xss_prevention_in_chat_messages() {
 #[tokio::test]
 async fn test_a03_prompt_injection_in_chat_messages() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "promptinj")
         .await
@@ -820,7 +831,7 @@ async fn test_a03_prompt_injection_in_chat_messages() {
 #[tokio::test]
 async fn test_a04_rate_limiting_message_creation() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ratelimit")
         .await
@@ -868,7 +879,7 @@ async fn test_a04_rate_limiting_message_creation() {
 #[tokio::test]
 async fn test_a04_message_size_limits() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "sizelimit")
         .await
@@ -913,7 +924,7 @@ async fn test_a04_message_size_limits() {
 #[tokio::test]
 async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak")
         .await
@@ -923,6 +934,7 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let fake_uuid = Uuid::new_v4();
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -967,7 +979,7 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
 #[tokio::test]
 async fn test_a07_unauthenticated_access_prevented() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try to create chat session without authentication
     let request_body = json!({
@@ -976,6 +988,7 @@ async fn test_a07_unauthenticated_access_prevented() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -994,6 +1007,7 @@ async fn test_a07_unauthenticated_access_prevented() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -1010,7 +1024,7 @@ async fn test_a07_unauthenticated_access_prevented() {
 #[tokio::test]
 async fn test_a07_invalid_session_token_rejected() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try to create chat session with invalid session cookie
     let request_body = json!({
@@ -1019,6 +1033,7 @@ async fn test_a07_invalid_session_token_rejected() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1038,7 +1053,7 @@ async fn test_a07_invalid_session_token_rejected() {
 #[tokio::test]
 async fn test_a07_session_fixation_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create and authenticate user
     let (original_cookie, _user_id) = create_authenticated_user(&test_app, "fixation")
@@ -1060,6 +1075,7 @@ async fn test_a07_session_fixation_prevention() {
     let _logout_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -1074,6 +1090,7 @@ async fn test_a07_session_fixation_prevention() {
     // Try to access chat session with old cookie (should fail)
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1097,7 +1114,7 @@ async fn test_a07_session_fixation_prevention() {
 #[tokio::test]
 async fn test_a08_chat_message_integrity() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "integrity")
         .await
@@ -1159,6 +1176,7 @@ async fn test_a08_chat_message_integrity() {
     let tamper_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
@@ -1186,7 +1204,7 @@ async fn test_a08_chat_message_integrity() {
 #[tokio::test]
 async fn test_a09_failed_access_attempts_logged() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
@@ -1200,6 +1218,7 @@ async fn test_a09_failed_access_attempts_logged() {
     // User 2 attempts unauthorized access (this should be logged)
     let _response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1215,6 +1234,7 @@ async fn test_a09_failed_access_attempts_logged() {
     // Attempt with invalid UUID format (should be logged as suspicious)
     let _response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1237,7 +1257,7 @@ async fn test_a09_failed_access_attempts_logged() {
 #[tokio::test]
 async fn test_a10_ssrf_prevention_in_chat_messages() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ssrf").await.unwrap();
 
@@ -1308,7 +1328,7 @@ async fn test_a10_ssrf_prevention_in_chat_messages() {
 #[tokio::test]
 async fn test_chat_session_id_tampering_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "tamper")
         .await
@@ -1317,6 +1337,7 @@ async fn test_chat_session_id_tampering_prevention() {
     // Test with malformed UUID
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1335,6 +1356,7 @@ async fn test_chat_session_id_tampering_prevention() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -1352,7 +1374,7 @@ async fn test_chat_session_id_tampering_prevention() {
 #[tokio::test]
 async fn test_concurrent_session_access_safety() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "concurrent")
         .await

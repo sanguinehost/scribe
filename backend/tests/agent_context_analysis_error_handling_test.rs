@@ -9,7 +9,8 @@ use uuid::Uuid;
 async fn test_agent_analysis_error_handling() {
     // Setup test application (multi_thread=true, use_real_ai=false, use_real_qdrant=false)
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let _guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create a test user
     let username = format!("test_user_{}", Uuid::new_v4());

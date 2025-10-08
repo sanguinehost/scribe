@@ -79,7 +79,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_credit_balance_lifecycle() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create a test user first
         let user_id = Uuid::new_v4();
@@ -124,7 +124,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_add_credits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -190,7 +190,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_deduct_credits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -259,7 +259,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_monthly_grant() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -319,7 +319,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_monthly_grant_premium_tier() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -379,7 +379,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_monthly_grant_free_tier_gets_zero() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -425,7 +425,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_transaction_history() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -501,7 +501,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_max_balance_limit() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -569,7 +569,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_credit_purchase_processing() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -655,7 +655,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_has_sufficient_credits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -721,7 +721,7 @@ mod credit_service_tests {
     #[tokio::test]
     async fn test_credits_disabled() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)

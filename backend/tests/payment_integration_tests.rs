@@ -495,7 +495,7 @@ mod payment_integration_tests {
         use std::sync::Arc;
 
         let app = spawn_app(false, false, false).await;
-        let _test_guard = TestDataGuard::new(app.db_pool.clone());
+        let _test_guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create webhook events with different ages
         let now = Utc::now();

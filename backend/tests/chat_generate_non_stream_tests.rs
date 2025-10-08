@@ -173,7 +173,7 @@ async fn debug_session_data(
 #[allow(deprecated)]
 async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let user = create_test_user(
@@ -809,7 +809,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_json_stream_initiation_error() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let user = create_test_user(
@@ -1279,7 +1279,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let username = "hist_slide_msg_user";
@@ -1634,7 +1635,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let username = "hist_slide_tok_user";
@@ -1973,7 +1975,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
 #[allow(clippy::too_many_lines)]
 async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let username = "hist_trunc_tok_user";
@@ -2375,7 +2378,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let username = "hist_none_user";
@@ -2679,7 +2683,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let username = "hist_trunc_tok_user1_dup"; // Changed username to avoid conflict
@@ -3085,7 +3090,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
 #[allow(clippy::too_many_lines)]
 async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let username = "get_messages_user";
     let password = "password";
     tracing::info!("Creating test user");
@@ -3270,7 +3276,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 #[allow(clippy::too_many_lines)]
 async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let conn = test_app.db_pool.get().await?;
 
     let username_a = "get_messages_user_a";
@@ -3523,7 +3530,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyhow::Error> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let user = create_test_user(
         &test_app.db_pool,
         "full_prompt_user".to_string(),

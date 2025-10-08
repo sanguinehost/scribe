@@ -18,7 +18,8 @@ use uuid::Uuid;
 async fn test_first_user_is_admin() -> AnyhowResult<()> {
     // Spawn a fresh app with an empty database
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Clear all users in the database to ensure we're testing with an empty user table
     let conn = test_app
@@ -137,7 +138,8 @@ async fn test_first_user_is_admin() -> AnyhowResult<()> {
 #[ignore] // Ignored for CI
 async fn test_are_there_any_users_function() -> AnyhowResult<()> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Clear all users in the database
     let conn = test_app

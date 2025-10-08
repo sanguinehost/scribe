@@ -66,6 +66,7 @@ async fn test_create_chat_session_success() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -183,7 +184,7 @@ async fn test_create_chat_session_success() {
         .header(header::COOKIE, auth_cookie)
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
         .unwrap();
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::CREATED);
     let body = response.into_body().collect().await.unwrap().to_bytes();
@@ -207,7 +208,7 @@ async fn test_create_chat_session_unauthorized() {
         .unwrap();
     // No login simulation
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -236,6 +237,7 @@ async fn test_create_chat_session_character_not_found() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -260,7 +262,7 @@ async fn test_create_chat_session_character_not_found() {
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -295,6 +297,7 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
         .unwrap();
     let login_response_user1 = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request_user1)
         .await
@@ -427,6 +430,7 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
     let login_response_user2 = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request_user2)
         .await
         .unwrap();
@@ -449,7 +453,7 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
         .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     Ok(())
@@ -480,6 +484,7 @@ async fn create_chat_session_character_not_found_integration() -> anyhow::Result
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -502,7 +507,7 @@ async fn create_chat_session_character_not_found_integration() -> anyhow::Result
         .header(header::COOKIE, auth_cookie)
         .body(Body::from(payload.to_string()))
         .unwrap();
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
@@ -536,6 +541,7 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
         .unwrap();
     let login_response_user1 = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request_user1)
         .await
@@ -667,6 +673,7 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
     let login_response_user2 = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request_user2)
         .await
         .unwrap();
@@ -686,7 +693,7 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
         .body(Body::empty())
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     Ok(())
@@ -865,7 +872,7 @@ async fn test_get_chat_session_details_unauthorized() {
         .body(Body::empty())
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -895,6 +902,7 @@ async fn test_get_chat_session_details_invalid_uuid() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -916,7 +924,7 @@ async fn test_get_chat_session_details_invalid_uuid() {
         .body(Body::empty())
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
@@ -925,7 +933,8 @@ async fn test_get_chat_session_details_invalid_uuid() {
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let username = "empty_first_mes_user";
     let password = "password";
     let user: User = test_helpers::db::create_test_user(
@@ -1093,7 +1102,8 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let username = "null_first_mes_user";
     let password = "password";
     let user: User = test_helpers::db::create_test_user(
@@ -1261,7 +1271,8 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
 #[allow(clippy::too_many_lines)]
 async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     let username = "save_first_mes_user";
     let password = "password";
     let user: User = test_helpers::db::create_test_user(
@@ -1605,7 +1616,8 @@ async fn create_test_lorebook(
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let username = "user_no_lorebooks";
     let password = "password";
@@ -1770,7 +1782,8 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let username = "user_one_lorebook";
     let password = "password";
@@ -1958,7 +1971,8 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let username = "user_multi_lorebooks";
     let password = "password";
@@ -2172,7 +2186,8 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let username = "user_empty_lorebook_list";
     let password = "password";
@@ -2337,7 +2352,8 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let username = "user_non_existent_lorebook";
     let password = "password";
@@ -2494,7 +2510,8 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
 #[allow(clippy::too_many_lines)]
 async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(), AnyhowError> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut test_data_guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut test_data_guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // User who will own the lorebook
     let owner_username = "lorebook_owner_user";

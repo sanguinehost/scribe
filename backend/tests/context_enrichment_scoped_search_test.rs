@@ -9,7 +9,7 @@ async fn test_context_enrichment_compiles_with_chronicle_id() {
     // Real integration testing would require proper setup with Qdrant and embeddings
 
     let app = spawn_app(false, false, false).await;
-    let _test_guard = TestDataGuard::new(app.db_pool.clone());
+    let _test_guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Test setup complete - the main validation is that the code compiles
     println!("✅ Context enrichment code compiles with chronicle_id filtering!");
@@ -31,7 +31,7 @@ async fn test_context_enrichment_scoped_search_integration() {
     // 3. Proper test data setup with chronicles and sessions
 
     let app = spawn_app(false, true, true).await; // Use real AI and Qdrant
-    let _test_guard = TestDataGuard::new(app.db_pool.clone());
+    let _test_guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Full integration test would go here
     // This would test that searches are properly scoped to the session/chronicle

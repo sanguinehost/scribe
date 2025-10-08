@@ -73,7 +73,7 @@ mod subscription_management_tests {
     #[tokio::test]
     async fn test_subscription_service_creation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test that SubscriptionService can be created with the app config
         let encryption_service = EncryptionService::new();
@@ -87,7 +87,7 @@ mod subscription_management_tests {
     #[tokio::test]
     async fn test_usage_tracking_service_creation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "usage_test", "usage@test.com", None)
@@ -105,7 +105,7 @@ mod subscription_management_tests {
     #[tokio::test]
     async fn test_subscription_service_integration() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "sub_test", "sub@test.com", None)
@@ -124,7 +124,7 @@ mod subscription_management_tests {
     #[tokio::test]
     async fn test_usage_tracking_service_integration() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(

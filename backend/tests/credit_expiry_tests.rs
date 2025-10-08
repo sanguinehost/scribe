@@ -94,7 +94,7 @@ mod credit_expiry_tests {
     #[tokio::test]
     async fn test_credit_expiry_enforcement() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -195,7 +195,7 @@ mod credit_expiry_tests {
     #[tokio::test]
     async fn test_credit_expiry_cleanup() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -331,7 +331,7 @@ mod credit_expiry_tests {
     #[tokio::test]
     async fn test_credit_purchase_with_expired_credits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -465,7 +465,7 @@ mod credit_expiry_tests {
     #[tokio::test]
     async fn test_monthly_grant_creates_new_expiry() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
