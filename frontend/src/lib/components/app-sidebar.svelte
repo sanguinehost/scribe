@@ -13,6 +13,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { goto as _goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
 	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
@@ -293,13 +294,17 @@
 	// Set up event listener for re-authentication completion
 	onMount(() => {
 		console.log('[AppSidebar] Setting up auth:reauth-complete event listener');
-		window.addEventListener('auth:reauth-complete', handleReAuthComplete);
+		if (browser) {
+			window.addEventListener('auth:reauth-complete', handleReAuthComplete);
+		}
 	});
 
 	// Clean up event listener
 	onDestroy(() => {
 		console.log('[AppSidebar] Cleaning up auth:reauth-complete event listener');
-		window.removeEventListener('auth:reauth-complete', handleReAuthComplete);
+		if (browser) {
+			window.removeEventListener('auth:reauth-complete', handleReAuthComplete);
+		}
 	});
 </script>
 
