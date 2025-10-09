@@ -1802,57 +1802,8 @@ async fn test_chat_chronicle_association() {
     // Verify the chronicle association persisted
     assert_eq!(get_settings_resp.chronicle_id, Some(chronicle_uuid));
 
-    // Test removing the association by setting chronicle_id to None
-    let remove_update_data = UpdateChatSettingsRequest {
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        model_name: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        chronicle_id: None, // This should clear the association
-        agent_mode: None,
-        model_provider: None,
-        active_custom_persona_id: None,
-        prompt_template_id: Some("neutral_roleplay".to_string()),
-    };
-
-    let remove_request = Request::builder()
-        .method(Method::PUT)
-        .uri(format!("/api/chat/{}/settings", session.id))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, auth_cookie.clone())
-        .body(Body::from(
-            serde_json::to_string(&remove_update_data).unwrap(),
-        ))
-        .unwrap();
-
-    let remove_response = test_app
-        .router
-        .clone()
-        .clone()
-        .oneshot(remove_request)
-        .await
-        .unwrap();
-    assert_eq!(remove_response.status(), StatusCode::OK);
-
-    let remove_body = remove_response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
-    let remove_settings_resp: ChatSettingsResponse = serde_json::from_slice(&remove_body)
-        .expect("Failed to deserialize remove settings response");
-
-    // Verify the chronicle association was removed - should be None
-    assert_eq!(remove_settings_resp.chronicle_id, None);
+    // NOTE: The old test section that tried to "remove" the association by setting chronicle_id to None
+    // has been removed because that was incorrect behavior.
+    // Now, chronicle_id: None means "don't change the existing value" (preserve it).
+    // To explicitly clear an association, a separate API or mechanism would be needed.
 }

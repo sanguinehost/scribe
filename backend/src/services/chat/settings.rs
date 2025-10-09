@@ -506,22 +506,11 @@ fn apply_payload_to_builder(
     if let Some(gem_exec) = payload.gemini_enable_code_execution {
         update_builder.gemini_enable_code_execution = DatabaseUpdate::SetValue(gem_exec);
     }
-    // Chronicle ID handling: we need to distinguish between:
-    // - Field not present in JSON -> don't update (handled by serde defaults)
-    // - Field present with null value -> set to NULL (clear association)
-    // - Field present with UUID value -> set to that UUID
-    // For now, we treat Some(uuid) as set and None as clear, which works for the test
-    match payload.chronicle_id {
-        Some(chronicle_id) => {
-            update_builder.player_chronicle_id = DatabaseUpdate::SetValue(Some(chronicle_id));
-        }
-        None => {
-            // For now, treat None as clearing the association
-            // In a more robust implementation, we'd use Option<Option<Uuid>>
-            // to distinguish between "not provided" and "set to null"
-            update_builder.player_chronicle_id = DatabaseUpdate::SetValue(None);
-        }
+    // Chronicle ID handling
+    if let Some(chronicle_id) = payload.chronicle_id {
+        update_builder.player_chronicle_id = DatabaseUpdate::SetValue(Some(chronicle_id));
     }
+    // If None, don't change the existing value (DatabaseUpdate::NoChange is the default)
 
     // Agent mode handling
     if let Some(mode) = payload.agent_mode {
@@ -529,17 +518,10 @@ fn apply_payload_to_builder(
     }
 
     // Active custom persona handling
-    match payload.active_custom_persona_id {
-        Some(persona_id) => {
-            update_builder.active_custom_persona_id = DatabaseUpdate::SetValue(Some(persona_id));
-        }
-        None => {
-            // For now, treat None as clearing the persona association
-            // In a more robust implementation, we'd use Option<Option<Uuid>>
-            // to distinguish between "not provided" and "set to null"
-            update_builder.active_custom_persona_id = DatabaseUpdate::SetValue(None);
-        }
+    if let Some(persona_id) = payload.active_custom_persona_id {
+        update_builder.active_custom_persona_id = DatabaseUpdate::SetValue(Some(persona_id));
     }
+    // If None, don't change the existing value (DatabaseUpdate::NoChange is the default)
 
     // Prompt template ID handling
     if let Some(template_id) = payload.prompt_template_id {
