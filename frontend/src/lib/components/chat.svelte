@@ -854,27 +854,49 @@
 	}
 
 	async function loadUserPersona() {
+		console.log('🔍 loadUserPersona: Starting persona load');
 		try {
 			const currentUser = getCurrentUser();
+			console.log('🔍 loadUserPersona: currentUser =', currentUser);
+
 			if (currentUser?.default_persona_id) {
+				console.log(
+					'🔍 loadUserPersona: Fetching persona with ID:',
+					currentUser.default_persona_id
+				);
 				const personaResult = await _apiClient.getUserPersona(currentUser.default_persona_id);
 				if (personaResult.isOk()) {
 					currentUserPersona = personaResult.value;
+					console.log('✅ loadUserPersona: Successfully loaded persona:', currentUserPersona);
 				} else {
-					console.warn('Failed to load user persona:', personaResult.error);
+					console.warn('⚠️ loadUserPersona: Failed to load user persona:', personaResult.error);
 					// Create a fallback persona with username
 					if (currentUser.username) {
 						currentUserPersona = { name: currentUser.username } as UserPersona;
+						console.log('🔄 loadUserPersona: Using username as fallback:', currentUserPersona);
 					}
 				}
 			} else if (currentUser?.username) {
 				// Create a fallback persona with username
 				currentUserPersona = { name: currentUser.username } as UserPersona;
+				console.log(
+					'🔄 loadUserPersona: No default_persona_id, using username:',
+					currentUserPersona
+				);
+			} else {
+				console.warn('⚠️ loadUserPersona: No default_persona_id and no username available');
 			}
 		} catch (_error) {
-			console.warn('Error loading user persona:', _error);
+			console.error('❌ loadUserPersona: Error loading user persona:', _error);
 			// currentUserPersona remains null, so userPersonaName will be 'User'
 		}
+
+		console.log(
+			'🔍 loadUserPersona: Completed. currentUserPersona =',
+			currentUserPersona,
+			', userPersonaName will be:',
+			currentUserPersona?.name || 'User'
+		);
 	}
 
 	// --- Get Current Chat Model ---
@@ -1126,7 +1148,53 @@
 	// Template substitution for frontend preview - following character-overview.svelte pattern
 	function substituteTemplateVariables(text: string, characterName: string): string {
 		if (!text) return text;
-		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, userPersonaName);
+
+		console.log('🔤 substituteTemplateVariables: Called with userPersonaName =', userPersonaName);
+		console.log('🔤 Text length:', text.length, 'chars');
+
+		// Find all {{user}} instances and log their context
+		const userTemplateRegex = /\{\{user\}\}/g;
+		let match;
+		let matchCount = 0;
+		while ((match = userTemplateRegex.exec(text)) !== null) {
+			matchCount++;
+			const start = Math.max(0, match.index - 20);
+			const end = Math.min(text.length, match.index + match[0].length + 20);
+			const context = text.substring(start, end);
+			console.log(
+				`🔤 Found {{user}} #${matchCount} at position ${match.index}:`,
+				JSON.stringify(context)
+			);
+		}
+		console.log(`🔤 Total {{user}} templates found: ${matchCount}`);
+
+		// Find all {{char}} instances
+		const charTemplateRegex = /\{\{char\}\}/g;
+		let _charMatch;
+		let charMatchCount = 0;
+		while ((_charMatch = charTemplateRegex.exec(text)) !== null) {
+			charMatchCount++;
+		}
+		console.log(`🔤 Total {{char}} templates found: ${charMatchCount}`);
+
+		// Perform replacements
+		const result = text
+			.replace(/\{\{char\}\}/g, characterName)
+			.replace(/\{\{user\}\}/g, userPersonaName);
+
+		// Check if any replacements actually happened
+		if (result === text) {
+			console.log('⚠️ substituteTemplateVariables: No replacements made!');
+		} else {
+			console.log(
+				'✅ substituteTemplateVariables: Replacements made. Result length:',
+				result.length
+			);
+			// Show a preview of the result
+			console.log('🔤 Result preview (first 200 chars):', result.substring(0, 200));
+		}
+
+		return result;
 	}
 
 	// Handle chronicle opt-in choice
