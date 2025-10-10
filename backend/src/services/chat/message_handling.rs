@@ -281,27 +281,52 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
             if let Ok(tiers_config) = serde_json::from_str::<serde_json::Value>(&config_content) {
                 let token_pricing = &tiers_config["credit_system"]["token_pricing"];
-                let model_pricing = &token_pricing[&model_name];
 
-                let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
+                // Get markup percentage (default 20%)
+                let markup_percentage = token_pricing["markup_percentage"].as_f64().unwrap_or(20.0);
+                let markup_multiplier = 1.0 + (markup_percentage / 100.0);
+
+                // Get base API costs for this model
+                let base_costs = &token_pricing["base_api_costs"][&model_name];
+
+                let (input_rate_per_million, output_rate_per_million) = if !base_costs.is_null() {
                     (
-                        model_pricing["prompt_credits_per_1k"]
-                            .as_f64()
-                            .unwrap_or(0.1),
-                        model_pricing["completion_credits_per_1k"]
-                            .as_f64()
-                            .unwrap_or(0.4),
+                        base_costs["input_per_million"].as_f64().unwrap_or(0.1),
+                        base_costs["output_per_million"].as_f64().unwrap_or(0.4),
                     )
                 } else {
+                    // Fallback to Flash-Lite pricing if model not found
+                    warn!(
+                        "Model '{}' not found in pricing config, using Flash-Lite pricing",
+                        model_name
+                    );
                     (0.1, 0.4)
                 };
 
                 let prompt_tokens = prompt_tokens_val.unwrap_or(0);
                 let completion_tokens = completion_tokens_val.unwrap_or(0);
-                let prompt_cost = ((prompt_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
-                let completion_cost =
-                    ((completion_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
-                prompt_cost + completion_cost
+
+                // Calculate cost in dollars with markup, then convert to credits
+                // 1 credit = $0.02 (based on Paddle pricing: 250 credits = $5)
+                let input_cost_dollars = (prompt_tokens as f64 / 1_000_000.0)
+                    * input_rate_per_million
+                    * markup_multiplier;
+                let output_cost_dollars = (completion_tokens as f64 / 1_000_000.0)
+                    * output_rate_per_million
+                    * markup_multiplier;
+                let total_cost_dollars = input_cost_dollars + output_cost_dollars;
+                let total_credits = (total_cost_dollars / 0.02).ceil() as i32;
+
+                trace!(
+                    model_name = %model_name,
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    markup_percentage = markup_percentage,
+                    total_credits = total_credits,
+                    "Calculated credit cost with markup"
+                );
+
+                total_credits
             } else {
                 0
             }
