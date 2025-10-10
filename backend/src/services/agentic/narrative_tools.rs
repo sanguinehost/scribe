@@ -19,6 +19,33 @@ use crate::{
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
+/// Generate JSON schema for text significance triage response
+fn get_text_significance_triage_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "is_significant": {
+                "type": "boolean",
+                "description": "Whether the conversation contains narratively significant events"
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Confidence level in the significance assessment (0.0-1.0)"
+            },
+            "reason": {
+                "type": "string",
+                "description": "Explanation of why this was deemed significant or not significant"
+            },
+            "suggested_categories": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Array of suggested categories like 'chronicle_events' or 'lorebook_entries'"
+            }
+        },
+        "required": ["is_significant", "confidence", "reason", "suggested_categories"]
+    })
+}
+
 /// Tool for creating a single chronicle event (atomic operation)
 pub struct CreateChronicleEventTool {
     chronicle_service: Arc<ChronicleService>,
@@ -340,11 +367,11 @@ Respond with JSON:
 }
 
 impl AnalyzeTextSignificanceTool {
-    /// Helper method to call AI for triage analysis
+    /// Helper method to call AI for triage analysis using structured outputs
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
         use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRole,
-            MessageContent,
+            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
+            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
         };
 
         let user_message = GenAiChatMessage {
@@ -361,8 +388,17 @@ impl AnalyzeTextSignificanceTool {
         let safety_settings = create_unrestricted_safety_settings();
         genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
 
-        let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording. Respond only with valid JSON.";
-        let chat_req = genai::chat::ChatRequest::new(vec![user_message]).with_system(system_prompt);
+        // Create JSON schema spec for structured output
+        let schema = get_text_significance_triage_schema();
+        let json_schema_spec = JsonSchemaSpec::new(schema);
+
+        // Add structured output format to chat options
+        genai_chat_options = genai_chat_options
+            .with_response_format(ChatResponseFormat::JsonSchemaSpec(json_schema_spec));
+
+        // CLEAN: No "Respond only with valid JSON" needed - Gemini 2.5+ enforces schema natively
+        let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.";
+        let chat_req = ChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         let response = self
             .ai_client
@@ -372,20 +408,8 @@ impl AnalyzeTextSignificanceTool {
 
         let content = response.first_content_text_as_str().unwrap_or_default();
 
-        // Parse JSON response
-        let cleaned_content = if content.trim().starts_with("```json") {
-            let start = content.find("```json").unwrap() + 7;
-            let end = content.rfind("```").unwrap_or(content.len());
-            content[start..end].trim()
-        } else if content.trim().starts_with("```") {
-            let start = content.find("```").unwrap() + 3;
-            let end = content.rfind("```").unwrap_or(content.len());
-            content[start..end].trim()
-        } else {
-            content.trim()
-        };
-
-        serde_json::from_str(cleaned_content)
+        // CLEAN: Direct JSON parsing (no markdown fence stripping needed)
+        serde_json::from_str(content)
             .map_err(|e| ToolError::ExecutionFailed(format!("JSON parse failed: {}", e)))
     }
 }
