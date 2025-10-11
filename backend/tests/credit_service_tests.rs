@@ -249,10 +249,16 @@ mod credit_service_tests {
             .expect("Failed to interact");
 
         assert!(result.is_err());
-        if let Err(AppError::BadRequest(msg)) = result {
-            assert!(msg.contains("Insufficient credits"));
+        if let Err(AppError::InsufficientCredits {
+            required,
+            available,
+            expired: _,
+        }) = result
+        {
+            assert_eq!(required, 100);
+            assert_eq!(available, 70);
         } else {
-            panic!("Expected insufficient credits error");
+            panic!("Expected InsufficientCredits error, got: {:?}", result);
         }
     }
 

@@ -62,6 +62,18 @@ pub enum DescriptionStyle {
 }
 
 impl DescriptionStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DescriptionStyle::Traits => "traits",
+            DescriptionStyle::Narrative => "narrative",
+            DescriptionStyle::Profile => "profile",
+            DescriptionStyle::Group => "group",
+            DescriptionStyle::Worldbuilding => "worldbuilding",
+            DescriptionStyle::System => "system",
+            DescriptionStyle::Auto => "auto",
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             DescriptionStyle::Traits => "Character Traits",

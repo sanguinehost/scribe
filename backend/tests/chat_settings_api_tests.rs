@@ -214,7 +214,7 @@ async fn create_test_chat_session(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
     };
 
     let chat_session = conn_pool
@@ -337,7 +337,7 @@ async fn setup_chat_settings_test_env(
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: Utc::now(),
-            total_credits_used: 0,
+            total_credits_used: BigDecimal::from(0),
         },
     };
 
@@ -562,7 +562,7 @@ async fn get_chat_settings_defaults() {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: 0,
+            total_credits_used: BigDecimal::from(0),
         }),
     )
     .await
@@ -831,7 +831,7 @@ async fn setup_update_test_env(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
     };
     let session: DbChat = test_app
         .db_pool
@@ -1326,7 +1326,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1566,7 +1566,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
             };
 
             diesel::insert_into(chat_sessions::table)

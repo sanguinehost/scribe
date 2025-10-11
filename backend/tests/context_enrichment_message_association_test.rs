@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use scribe_backend::{
     models::{
@@ -103,7 +104,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -486,7 +487,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 

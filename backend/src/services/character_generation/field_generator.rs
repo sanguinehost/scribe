@@ -1114,4 +1114,115 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
 
         Ok(total_tokens)
     }
+
+    /// Analyze the style of existing content using structured output
+    #[instrument(skip_all)]
+    pub async fn analyze_style(&self, content: &str) -> Result<StyleAnalysisOutput, AppError> {
+        let start_time = Instant::now();
+
+        info!(
+            "Starting style analysis for content with {} characters",
+            content.len()
+        );
+
+        // Build system prompt for style analysis
+        let system_prompt = r#"You are an expert in analyzing character description styles for creative writing and roleplay.
+Your task is to analyze the provided text and classify it into one of the following styles:
+
+**Style Types:**
+
+1. **traits**: Brief, punchy character traits and physical characteristics
+   - Uses short sentences or fragments
+   - Focuses on observable features
+   - Example: "Tall. Athletic build. Green eyes. Former soldier. Quiet. Strategic thinker."
+
+2. **narrative**: Story-like, flowing prose with complete sentences
+   - Uses descriptive, flowing language
+   - Tells a story or paints a picture
+   - Example: "Captain Elena stands at the helm, her weathered hands gripping the wheel as storm clouds gather..."
+
+3. **profile**: Structured biographical information with clear field labels
+   - Uses "Field: Value" format
+   - Organized like a character sheet
+   - Example: "Name: Elena\nAge: 34\nOccupation: Ship Captain\nPersonality: Determined, fair but firm"
+
+4. **group**: Multiple character descriptions using Characters() format
+   - Defines multiple characters in one text
+   - Uses Characters() notation
+   - Example: "Characters(\"Captain, Engineer, Navigator\")\nCaptain(\"A former pirate...\")"
+
+5. **worldbuilding**: Rich world context and lore with {{char}} placeholders
+   - Establishes character within a larger fictional universe
+   - Includes world lore and setting details
+   - May use {{char}} notation
+   - Example: "{{char}} is a Guardian of the Stellar Nexus, one of the ancient beings..."
+
+6. **system**: AI behavior instructions with {{char}} and {{user}} placeholders
+   - Defines what the AI will/won't do
+   - Uses technical roleplay notation
+   - Example: "{{char}} will generate random encounters. {{char}} will track {{user}}'s health and inventory."
+
+Analyze the text carefully and identify which style it most closely matches. Provide specific indicators and helpful recommendations."#;
+
+        // Build user message with the content to analyze
+        let user_message = format!(
+            r#"Analyze this character description and classify its style:
+
+**Content to Analyze:**
+{}
+
+Provide a detailed analysis including:
+- The detected style (one of: traits, narrative, profile, group, worldbuilding, system)
+- Your confidence level (0.0 to 1.0)
+- Specific features that indicate this style
+- Recommendations for improving or enhancing the content"#,
+            content
+        );
+
+        // Create messages for generation
+        let messages = vec![GenAiChatMessage {
+            role: ChatRole::User,
+            content: MessageContent::Text(user_message),
+            options: None,
+        }];
+
+        // Create a dummy request for compatibility with generate_with_structured_output
+        let dummy_request = FieldGenerationRequest {
+            field: CharacterField::Description, // Doesn't matter for analysis
+            user_prompt: String::new(),
+            style: None,
+            character_context: None,
+            generation_options: None,
+            lorebook_id: None,
+        };
+
+        // Generate using the LLM with structured output
+        let generated_output = self
+            .generate_with_structured_output(
+                &system_prompt,
+                &messages,
+                &get_style_analysis_schema(),
+                &dummy_request,
+            )
+            .await?;
+
+        // Parse the structured output
+        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output)
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to parse style analysis output: {}",
+                    e
+                ))
+            })?;
+
+        let generation_time = start_time.elapsed();
+        info!(
+            "Style analysis completed in {}ms with style: {:?}, confidence: {}",
+            generation_time.as_millis(),
+            style_analysis.detected_style,
+            style_analysis.confidence
+        );
+
+        Ok(style_analysis)
+    }
 }

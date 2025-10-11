@@ -34,6 +34,7 @@ use crate::{
         chats,
         chronicles,
         documents::document_routes,
+        generation_routes, // Added generation_routes
         health::health_check,
         lorebook_routes,           // Added lorebook_routes
         payment as payment_routes, // Added payment_routes
@@ -1763,6 +1764,7 @@ pub async fn spawn_app_with_rate_limiting_options(
             chronicles::create_chronicles_router(app_state_inner.clone()),
         ) // Add chronicles routes
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
+        .nest("/generation", generation_routes::router()) // AI generation routes
         .nest(
             "/personas",
             user_persona_routes::user_personas_router(app_state_inner.clone()),

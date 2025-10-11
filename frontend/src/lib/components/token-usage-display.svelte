@@ -37,13 +37,27 @@
 
 	const totalTokens = $derived((promptTokens || 0) + (completionTokens || 0));
 
+	function normalizeModelName(model: string | null | undefined): string {
+		if (!model) return 'gemini-2.5-pro';
+		const normalized = model.toLowerCase().trim();
+		// Handle common aliases and variations
+		const aliases: Record<string, string> = {
+			'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite-preview',
+			'flash-lite': 'gemini-2.5-flash-lite-preview',
+			flash: 'gemini-2.5-flash',
+			pro: 'gemini-2.5-pro'
+		};
+		return aliases[normalized] || normalized;
+	}
+
 	function calculateCost(tokens: number, rate: number): number {
 		if (!tokens || tokens === 0) return 0;
+		if (typeof rate !== 'number' || isNaN(rate)) return 0;
 		return (tokens / 1_000_000) * rate;
 	}
 
 	const totalCost = $derived(() => {
-		const model = modelName || 'gemini-2.5-pro';
+		const model = normalizeModelName(modelName);
 		const pricing = GEMINI_PRICING[model as keyof typeof GEMINI_PRICING];
 		if (!pricing) return 0;
 
@@ -53,6 +67,7 @@
 	});
 
 	function formatCost(cost: number): string {
+		if (typeof cost !== 'number' || isNaN(cost)) return '$0.00';
 		if (cost === 0) return '$0.00';
 		if (cost < 0.0001) {
 			return '<$0.0001';

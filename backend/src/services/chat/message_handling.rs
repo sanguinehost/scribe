@@ -110,7 +110,7 @@ pub struct SaveMessageParams<'a> {
     pub error_message: Option<String>,               // Error message if status is failed
     pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
-    pub credits_cost_override: Option<i32>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
+    pub credits_cost_override: Option<bigdecimal::BigDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -271,8 +271,8 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // Calculate credit values based on tokens (do this before message creation so we can use in .with_credits())
     #[cfg(feature = "payment")]
     let (credits_cost, credits_charged) = {
-        // Calculate theoretical credit cost based on token usage
-        let credits_cost_calculated = if prompt_tokens_val.is_some()
+        // Calculate base API cost (source of truth) and derive credits from marked-up cost
+        let (base_cost_dollars, credits_from_markup) = if prompt_tokens_val.is_some()
             || completion_tokens_val.is_some()
         {
             // Load token-based pricing from config
@@ -306,36 +306,50 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 let prompt_tokens = prompt_tokens_val.unwrap_or(0);
                 let completion_tokens = completion_tokens_val.unwrap_or(0);
 
-                // Calculate cost in dollars with markup, then convert to credits
+                // Calculate BASE API cost (NO markup) - this is the source of truth
+                let input_cost_dollars =
+                    (prompt_tokens as f64 / 1_000_000.0) * input_rate_per_million;
+                let output_cost_dollars =
+                    (completion_tokens as f64 / 1_000_000.0) * output_rate_per_million;
+                let base_cost = input_cost_dollars + output_cost_dollars;
+
+                // For production: derive credits from MARKED-UP cost
                 // 1 credit = $0.02 (based on Paddle pricing: 250 credits = $5)
-                let input_cost_dollars = (prompt_tokens as f64 / 1_000_000.0)
-                    * input_rate_per_million
-                    * markup_multiplier;
-                let output_cost_dollars = (completion_tokens as f64 / 1_000_000.0)
-                    * output_rate_per_million
-                    * markup_multiplier;
-                let total_cost_dollars = input_cost_dollars + output_cost_dollars;
-                let total_credits = (total_cost_dollars / 0.02).ceil() as i32;
+                let marked_up_cost = base_cost * markup_multiplier;
+                let credits = (marked_up_cost / 0.02).ceil() as i32;
 
                 trace!(
                     model_name = %model_name,
                     prompt_tokens = prompt_tokens,
                     completion_tokens = completion_tokens,
+                    base_cost_dollars = base_cost,
                     markup_percentage = markup_percentage,
-                    total_credits = total_credits,
-                    "Calculated credit cost with markup"
+                    marked_up_cost_dollars = marked_up_cost,
+                    credits_derived = credits,
+                    "Calculated base cost and derived credits from marked-up cost"
                 );
 
-                total_credits
+                (base_cost, credits)
             } else {
-                0
+                (0.0, 0)
             }
+        } else {
+            (0.0, 0)
+        };
+
+        // credits_cost stores base API cost in dollars (source of truth)
+        let cost = credits_cost_override.unwrap_or_else(|| {
+            use std::str::FromStr;
+            bigdecimal::BigDecimal::from_str(&base_cost_dollars.to_string())
+                .unwrap_or_else(|_| bigdecimal::BigDecimal::from(0))
+        });
+
+        // credits_charged stores credits derived from marked-up cost (for customer billing)
+        let charged = if charge_credits {
+            credits_from_markup
         } else {
             0
         };
-
-        let cost = credits_cost_override.unwrap_or(credits_cost_calculated);
-        let charged = if charge_credits { cost } else { 0 };
 
         (cost, charged)
     };
@@ -383,12 +397,14 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // Set credit values
     #[cfg(feature = "payment")]
     {
-        new_message_to_insert = new_message_to_insert.with_credits(credits_charged, credits_cost);
+        new_message_to_insert =
+            new_message_to_insert.with_credits(credits_charged, credits_cost.clone());
     }
 
     #[cfg(not(feature = "payment"))]
     {
-        new_message_to_insert = new_message_to_insert.with_credits(0, 0);
+        new_message_to_insert =
+            new_message_to_insert.with_credits(0, bigdecimal::BigDecimal::from(0));
     }
 
     // Encrypt and add raw prompt debug information if provided and user has DEK
@@ -447,7 +463,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
         // Clone credit values for the spawned task
         #[cfg(feature = "payment")]
-        let credits_cost_for_task = credits_cost;
+        let credits_cost_for_task = credits_cost.clone();
 
         #[cfg(feature = "payment")]
         let credits_charged_for_task = credits_charged;
@@ -648,7 +664,7 @@ async fn update_cumulative_token_counts(
     completion_tokens: i32,
     estimated_cost_cents: i32,
     #[cfg(feature = "payment")] credits_charged: i32,
-    #[cfg(feature = "payment")] credits_cost: i32,
+    #[cfg(feature = "payment")] credits_cost: bigdecimal::BigDecimal,
 ) -> Result<(), AppError> {
     use crate::schema::{chat_sessions, users};
     use diesel::prelude::*;
@@ -669,9 +685,9 @@ async fn update_cumulative_token_counts(
                             .eq(chat_sessions::total_completion_tokens + completion_tokens),
                         chat_sessions::estimated_cost_cents
                             .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
-                        // total_credits_used tracks actual charges (credits_charged), not theoretical cost
+                        // total_credits_used tracks base API cost in dollars (source of truth)
                         chat_sessions::total_credits_used
-                            .eq(chat_sessions::total_credits_used + credits_charged),
+                            .eq(chat_sessions::total_credits_used + credits_cost),
                         chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
                     ))
                     .execute(conn)?;

@@ -87,7 +87,7 @@
 						<div class="grid grid-cols-2 gap-4 p-4 text-sm md:grid-cols-4">
 							<div>
 								<div class="font-medium text-muted-foreground">Model</div>
-								<div class="mt-1">{generationResponse?.metadata?.model_used || 'Unknown'}</div>
+								<div class="mt-1">{generationResponse?.metadata?.model || 'Unknown'}</div>
 							</div>
 							<div>
 								<div class="font-medium text-muted-foreground">Tokens Used</div>
@@ -189,7 +189,7 @@
 									<ButtonComponent
 										variant="outline"
 										size="sm"
-										onclick={() => copyToClipboard(debugInfo.system_prompt, 'system')}
+										onclick={() => copyToClipboard(debugInfo.system_prompt!, 'system')}
 										class="h-7 gap-2 text-xs"
 									>
 										<Copy size={12} />
@@ -216,7 +216,7 @@
 									<ButtonComponent
 										variant="outline"
 										size="sm"
-										onclick={() => copyToClipboard(debugInfo.user_message, 'user')}
+										onclick={() => copyToClipboard(debugInfo.user_message!, 'user')}
 										class="h-7 gap-2 text-xs"
 									>
 										<Copy size={12} />

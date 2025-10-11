@@ -178,7 +178,7 @@ export interface ScribeChatSession {
 	context_rag_budget?: number | null;
 	total_prompt_tokens?: number;
 	total_completion_tokens?: number;
-	total_credits_used?: number;
+	total_credits_used?: number | string; // BigDecimal from backend may serialize as string
 }
 
 // LoginSuccessData type matching the backend LoginSuccessResponse
@@ -738,6 +738,69 @@ export interface ImpersonateResponse {
 
 export type GenerationMode = 'create' | 'enhance' | 'rewrite' | 'expand';
 
+/**
+ * Description styles for character field generation
+ * Based on proven style templates
+ */
+export type DescriptionStyle =
+	| 'auto' // Let AI choose based on input (recommended)
+	| 'traits' // Brief, comma-separated traits (e.g., "Tall. Silver hair. Former soldier.")
+	| 'narrative' // Story-like flowing prose
+	| 'profile' // Structured data fields (Name: Age: Height: etc.)
+	| 'group' // Multiple character definitions with Characters() format
+	| 'worldbuilding' // Rich lore and universe context
+	| 'system'; // Behavioral instructions for AI roleplay
+
+/**
+ * Comprehensive metadata for AI generation operations
+ * Provides transparency and debugging information
+ */
+export interface GenerationMetadata {
+	model: string; // Model used for generation
+	tokens_used: number; // Total tokens consumed
+	cost?: number; // Estimated cost in credits/dollars
+	generation_time_ms: number; // Time taken to generate
+	finish_reason?: string; // Why generation stopped (stop, length, etc.)
+	style_detected?: DescriptionStyle; // Auto-detected style if using 'auto'
+	system_prompt?: string; // System prompt used (for debugging)
+	user_prompt?: string; // User prompt sent (for debugging)
+	lorebook_context_included?: boolean; // Whether lorebook context was used
+	lorebook_entries_count?: number; // Number of lorebook entries included
+	query_text_used?: string; // Query text used to search lorebook
+	timestamp?: string; // ISO 8601 timestamp
+	// Debug info nested object (for component compatibility)
+	debug_info?: {
+		lorebook_context_included?: boolean;
+		lorebook_entries_count?: number;
+		query_text_used?: string;
+		model_used?: string;
+		system_prompt?: string;
+		user_message?: string;
+		user_prompt?: string;
+	};
+}
+
+/**
+ * Streaming chunk for real-time generation display
+ * Allows character-by-character streaming
+ */
+export interface GenerationChunk {
+	content: string; // Content chunk (may be partial)
+	done: boolean; // Whether generation is complete
+	metadata?: GenerationMetadata; // Full metadata (only present when done=true)
+}
+
+/**
+ * Style analysis response from backend
+ * Uses structured outputs for reliable style detection
+ */
+export interface StyleAnalysisResponse {
+	detected_style: DescriptionStyle; // The detected style
+	confidence: number; // Confidence level (0.0 to 1.0)
+	style_indicators: string[]; // Features that indicated this style
+	recommendations: string[]; // Suggestions for improving the content
+}
+
 export interface CharacterContext {
 	name?: string;
 	description?: string;
@@ -766,29 +829,21 @@ export interface CharacterLorebookEntry {
 // Character field generation
 export interface GenerateCharacterFieldRequest {
 	field_name: string; // "description", "personality", "scenario", etc.
-	field_context?: string; // Existing content to enhance
+	field_context?: string; // Existing content to enhance/expand/rewrite
 	character_context?: CharacterContext; // Existing character data for context
-	generation_prompt?: string; // User's specific instructions
-	generation_mode: GenerationMode;
+	generation_mode: GenerationMode; // create, enhance, expand, rewrite
+	// Enhanced parameters from independent editor
+	style?: DescriptionStyle; // Preferred description style
+	max_tokens?: number; // Token limit for generation (500-5000)
+	user_prompt?: string; // User's specific instructions/guidance
+	include_status_block?: boolean; // Whether to include character status in output
 }
 
 export interface GenerateCharacterFieldResponse {
-	content: string;
-	style_used: string;
-	metadata: {
-		tokens_used: number;
-		generation_time_ms: number;
-		style_detected?: string | null;
-		model_used: string;
-		timestamp: string;
-		debug_info?: {
-			system_prompt: string;
-			user_message: string;
-			lorebook_context_included: boolean;
-			lorebook_entries_count?: number | null;
-			query_text_used?: string | null;
-		} | null;
-	};
+	content: string; // Generated content
+	metadata: GenerationMetadata; // Comprehensive generation metadata
+	// Backwards compatibility fields
+	style_used?: string; // Deprecated: use metadata.style_detected instead
 }
 
 // Complete character generation

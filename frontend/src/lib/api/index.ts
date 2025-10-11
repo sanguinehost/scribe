@@ -52,6 +52,8 @@ import type {
 	ImpersonateResponse,
 	GenerateCharacterFieldRequest,
 	GenerateCharacterFieldResponse,
+	GenerationChunk,
+	StyleAnalysisResponse,
 	GenerateCompleteCharacterRequest,
 	GenerateCompleteCharacterResponse,
 	EnhanceCharacterRequest,
@@ -1139,6 +1141,103 @@ class ApiClient {
 		});
 	}
 
+	// Generate or enhance a specific character field with streaming support
+	// Returns an async generator that yields chunks of content as they arrive
+	async *generateCharacterFieldStream(
+		request: GenerateCharacterFieldRequest
+	): AsyncGenerator<GenerationChunk | GenerateCharacterFieldResponse, void, unknown> {
+		const fullUrl = `${this.baseUrl}/api/generation/character/field/stream`;
+
+		try {
+			const response = await fetch(fullUrl, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				credentials: 'include',
+				body: JSON.stringify(request)
+			});
+
+			if (!response.ok) {
+				let errorData = { message: 'An unknown error occurred' };
+				try {
+					errorData = await response.json();
+				} catch {
+					// Ignore parse errors
+				}
+				throw new Error(errorData.message || `HTTP ${response.status}`);
+			}
+
+			// Use ReadableStream to process SSE or chunked response
+			const reader = response.body?.getReader();
+			const decoder = new TextDecoder();
+
+			if (!reader) {
+				throw new Error('Response body is not readable');
+			}
+
+			let buffer = '';
+			let streamedContent = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+
+				if (done) {
+					// Send final chunk with complete content
+					if (streamedContent) {
+						yield {
+							content: streamedContent,
+							done: true
+						} as GenerationChunk;
+					}
+					break;
+				}
+
+				// Decode chunk and add to buffer
+				buffer += decoder.decode(value, { stream: true });
+
+				// Process complete lines (SSE format: "data: {...}\n\n")
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+				for (const line of lines) {
+					if (line.startsWith('data: ')) {
+						const jsonStr = line.slice(6); // Remove "data: " prefix
+						if (jsonStr.trim() === '[DONE]') {
+							// Stream complete signal
+							continue;
+						}
+
+						try {
+							const chunk = JSON.parse(jsonStr);
+							if (chunk.content) {
+								streamedContent += chunk.content;
+								yield {
+									content: chunk.content,
+									done: false
+								} as GenerationChunk;
+							}
+
+							// If metadata is present, this is the final chunk
+							if (chunk.done && chunk.metadata) {
+								yield {
+									content: streamedContent,
+									metadata: chunk.metadata,
+									done: true
+								} as GenerateCharacterFieldResponse;
+							}
+						} catch (parseError) {
+							console.error('[ApiClient] Failed to parse SSE chunk:', parseError);
+						}
+					}
+				}
+			}
+		} catch (error) {
+			console.error('[ApiClient] generateCharacterFieldStream error:', error);
+			throw error;
+		}
+	}
+
 	// Generate a complete character from a prompt
 	async generateCompleteCharacter(
 		request: GenerateCompleteCharacterRequest
@@ -1186,6 +1285,14 @@ class ApiClient {
 		return this.fetch<ScribeAssistantResponse>('/api/generation/scribe-assistant', {
 			method: 'POST',
 			body: JSON.stringify(request)
+		});
+	}
+
+	// Analyze character description style using structured outputs
+	async analyzeStyle(content: string): Promise<_Result<StyleAnalysisResponse, ApiError>> {
+		return this.fetch<StyleAnalysisResponse>('/api/characters/analyze/style', {
+			method: 'POST',
+			body: JSON.stringify({ content })
 		});
 	}
 

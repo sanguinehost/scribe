@@ -20,6 +20,45 @@ use crate::errors::AppError;
 use secrecy::ExposeSecret;
 use secrecy::SecretBox;
 
+/// Custom serializers for BigDecimal types
+mod bigdecimal_serde {
+    use bigdecimal::BigDecimal;
+    use serde::Serializer;
+    use std::str::FromStr;
+
+    /// Serialize BigDecimal as f64 for JSON compatibility
+    pub fn serialize_as_f64<S>(value: &BigDecimal, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Convert BigDecimal to string, then parse as f64
+        let s = value.to_string();
+        match f64::from_str(&s) {
+            Ok(f) => serializer.serialize_f64(f),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to serialize BigDecimal '{}' to f64: {}. Falling back to 0.0",
+                    s,
+                    e
+                );
+                serializer.serialize_f64(0.0)
+            }
+        }
+    }
+}
+
+/// Represents the cost breakdown for an LLM generation request
+///
+/// This struct separates the raw API cost (in dollars) from the user-facing
+/// credits charged, making the billing calculation clear and explicit.
+#[derive(Debug, Clone, Copy)]
+pub struct GenerationCost {
+    /// Raw cost from the LLM provider in dollars (before any markup)
+    pub api_cost_dollars: f64,
+    /// Integer credits deducted from the user's balance (after markup)
+    pub credits_charged: i32,
+}
+
 /// Represents the status of a chat message
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageStatus {
@@ -125,7 +164,8 @@ pub struct Chat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
-    pub total_credits_used: i32,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub total_credits_used: bigdecimal::BigDecimal,
     pub prompt_template_id: String,
 }
 
@@ -231,7 +271,7 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
-    pub total_credits_used: i32,
+    pub total_credits_used: BigDecimal,
     pub prompt_template_id: String,
 }
 
@@ -425,7 +465,7 @@ pub struct ChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: i32,
+    pub credits_cost: bigdecimal::BigDecimal,
 }
 
 impl Default for ChatMessage {
@@ -449,7 +489,7 @@ impl Default for ChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
         }
     }
 }
@@ -815,7 +855,7 @@ pub struct Message {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: i32,
+    pub credits_cost: bigdecimal::BigDecimal,
 }
 
 impl std::fmt::Debug for Message {
@@ -1231,7 +1271,7 @@ pub struct DbInsertableChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: i32,
+    pub credits_cost: bigdecimal::BigDecimal,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1299,7 +1339,7 @@ impl DbInsertableChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
         }
     }
 
@@ -1358,7 +1398,11 @@ impl DbInsertableChatMessage {
 
     /// Set both credits_charged and credits_cost
     #[must_use]
-    pub fn with_credits(mut self, credits_charged: i32, credits_cost: i32) -> Self {
+    pub fn with_credits(
+        mut self,
+        credits_charged: i32,
+        credits_cost: bigdecimal::BigDecimal,
+    ) -> Self {
         self.credits_charged = credits_charged;
         self.credits_cost = credits_cost;
         self
@@ -1542,7 +1586,7 @@ pub struct ChatForClient {
     pub chronicle_id: Option<Uuid>, // Chronicle association (maps to player_chronicle_id in database)
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    pub total_credits_used: i32,
+    pub total_credits_used: bigdecimal::BigDecimal,
 }
 
 impl Chat {
@@ -2303,7 +2347,7 @@ mod tests {
             tokens_counted_at: Utc::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_credits_used: 0,
+            total_credits_used: bigdecimal::BigDecimal::from(0),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -2374,7 +2418,7 @@ mod tests {
             error_message: None,
             superseded_at: None,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
         }
     }
 
