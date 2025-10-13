@@ -734,6 +734,11 @@ pub async fn generate_chat_response(
             current_variant_index: 0,
             credits_charged: 0,
             credits_cost: bigdecimal::BigDecimal::from(0),
+            // New cost tracking fields
+            actual_cost: bigdecimal::BigDecimal::from(0),
+            modified_cost: bigdecimal::BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: bigdecimal::BigDecimal::from(0),
         }
     } else {
         // Normal flow: save new user message
@@ -879,6 +884,7 @@ pub async fn generate_chat_response(
                         conn,
                         session_id,
                         AnalysisType::PreProcessing,
+                        user_message_id,
                     )
                 })
                 .await
