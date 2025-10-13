@@ -178,7 +178,7 @@ dotenvy = "0.15"
 # Testing utilities
 httpc-test = "0.1.10" # For testing axum handlers
 mockito = "1.7.0"
-httpmock = "0.7.0" # For mocking HTTP requests
+httpmock = "0.8.1" # For mocking HTTP requests
 mockall = "0.13.0" # Add mockall
 secrecy = { version = "0.10.3", features = ["serde"] } # Fix E0432: Add secrecy to dev-deps for tests
 
