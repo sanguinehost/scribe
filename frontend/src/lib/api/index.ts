@@ -64,6 +64,9 @@ import type {
 	GenerateLorebookEntryResponse,
 	ScribeAssistantRequest,
 	ScribeAssistantResponse,
+	GenerateAILorebookEntriesPayload,
+	GenerateAILorebookEntriesResponse,
+	AnalyzeAILorebookResponse,
 	PlayerChronicle,
 	PlayerChronicleWithCounts,
 	CreateChronicleRequest,
@@ -1104,6 +1107,39 @@ class ApiClient {
 		return this.fetch<ScribeMinimalLorebook | LorebookUploadPayload>(
 			`/api/lorebooks/${lorebookId}/export?format=${format}`
 		);
+	}
+
+	// ============================================================================
+	// AI-Powered Lorebook Methods
+	// ============================================================================
+
+	/**
+	 * Generate lorebook entries using AI based on a theme
+	 * Uses the agentic lorebook generation system
+	 */
+	async generateAILorebookEntries(
+		lorebookId: string,
+		payload: GenerateAILorebookEntriesPayload
+	): Promise<_Result<GenerateAILorebookEntriesResponse, ApiError>> {
+		return this.fetch<GenerateAILorebookEntriesResponse>(
+			`/api/lorebooks/${lorebookId}/ai/generate`,
+			{
+				method: 'POST',
+				body: JSON.stringify(payload)
+			}
+		);
+	}
+
+	/**
+	 * Analyze a lorebook for gaps, inconsistencies, and improvement suggestions
+	 * Uses AI to provide comprehensive analysis
+	 */
+	async analyzeAILorebook(
+		lorebookId: string
+	): Promise<_Result<AnalyzeAILorebookResponse, ApiError>> {
+		return this.fetch<AnalyzeAILorebookResponse>(`/api/lorebooks/${lorebookId}/ai/analyze`, {
+			method: 'POST'
+		});
 	}
 
 	// Text expansion method

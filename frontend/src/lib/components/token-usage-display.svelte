@@ -10,7 +10,11 @@
 		modelName = 'gemini-2.5-pro', // Default model for cost calculation
 		loading = false,
 		isEstimate = false,
-		showCost = true
+		showCost = true,
+		// Backend-provided cost values (preferred when available)
+		actualCost = null,
+		modifiedCost = null,
+		creditCost: _creditCost = null
 	} = $props<{
 		promptTokens?: number | null;
 		completionTokens?: number | null;
@@ -18,6 +22,10 @@
 		loading?: boolean;
 		isEstimate?: boolean;
 		showCost?: boolean;
+		// Cost values from backend
+		actualCost?: number | null;
+		modifiedCost?: number | null;
+		creditCost?: number | null;
 	}>();
 
 	// Gemini pricing (per 1M tokens)
@@ -57,6 +65,18 @@
 	}
 
 	const totalCost = $derived(() => {
+		// PREFER backend-provided cost values when available
+		// This ensures accuracy and consistency with billing
+		if (ENABLE_PAYMENTS && modifiedCost != null && modifiedCost > 0) {
+			// Payment feature enabled: use modified cost (with markup)
+			return modifiedCost;
+		} else if (actualCost != null && actualCost > 0) {
+			// Fall back to actual API cost (always calculated by backend)
+			return actualCost;
+		}
+
+		// FALLBACK: Calculate locally if backend values not available
+		// (backwards compatibility for old messages or during streaming)
 		const model = normalizeModelName(modelName);
 		const pricing = GEMINI_PRICING[model as keyof typeof GEMINI_PRICING];
 		if (!pricing) return 0;

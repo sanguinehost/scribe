@@ -43,6 +43,7 @@ impl EnhancementService {
         // Use the field generator with enhancement-specific prompt
         let field_request = FieldGenerationRequest {
             field: request.field.clone(),
+            mode: GenerationMode::Enhance,
             style: None, // Let it maintain the existing style
             user_prompt: enhancement_prompt,
             character_context: request.character_context.clone(),

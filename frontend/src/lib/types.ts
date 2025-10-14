@@ -553,6 +553,11 @@ export interface ScribeChatMessage {
 	model_name?: string; // Model used for this specific message
 	status?: string; // Message status: streaming, completed, failed, partial, pending
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
+	// Cost tracking fields (from backend)
+	actual_cost?: number | null; // Raw Google API cost in dollars (always calculated)
+	modified_cost?: number | null; // Cost with markup applied (when payment feature enabled)
+	credit_cost?: number | null; // Credits consumed (when credits actually used)
+	actual_charge?: number | null; // Actual dollar amount charged to user
 	// Variant metadata
 	variant_count?: number; // Number of variants for this message
 	current_variant_index?: number; // Currently selected variant index
@@ -828,15 +833,14 @@ export interface CharacterLorebookEntry {
 
 // Character field generation
 export interface GenerateCharacterFieldRequest {
-	field_name: string; // "description", "personality", "scenario", etc.
-	field_context?: string; // Existing content to enhance/expand/rewrite
-	character_context?: CharacterContext; // Existing character data for context
-	generation_mode: GenerationMode; // create, enhance, expand, rewrite
+	fieldName: string; // "description", "personality", "scenario", etc.
+	fieldValue?: string; // Existing content to enhance/expand/rewrite (renamed from field_context)
+	characterContext?: CharacterContext; // Existing character data for context
+	mode: GenerationMode; // create, enhance, expand, rewrite (renamed from generation_mode)
 	// Enhanced parameters from independent editor
 	style?: DescriptionStyle; // Preferred description style
-	max_tokens?: number; // Token limit for generation (500-5000)
-	user_prompt?: string; // User's specific instructions/guidance
-	include_status_block?: boolean; // Whether to include character status in output
+	maxTokens?: number; // Token limit for generation (500-5000)
+	userPrompt?: string; // User's specific instructions/guidance
 }
 
 export interface GenerateCharacterFieldResponse {
@@ -917,6 +921,67 @@ export interface GenerateLorebookEntriesResponse {
 		priority?: number;
 	}>;
 	world_summary?: string; // Overall description of the generated content
+}
+
+// ============================================================================
+// AI-Powered Lorebook Types (for /api/lorebooks/{id}/ai/* endpoints)
+// ============================================================================
+
+/**
+ * Payload for AI-powered lorebook entry generation
+ * Used by POST /api/lorebooks/{id}/ai/generate
+ */
+export interface GenerateAILorebookEntriesPayload {
+	/** Theme or context for generating entries (e.g., "medieval fantasy tavern", "sci-fi space station") */
+	theme: string;
+	/** Number of entries to generate (1-20) */
+	count: number;
+	/** Optional additional context to guide generation */
+	context?: string;
+}
+
+/**
+ * Preview information for a generated lorebook entry
+ */
+export interface GeneratedEntryPreview {
+	id: string;
+	entry_title: string;
+	keys_text?: string;
+}
+
+/**
+ * Response from AI-powered lorebook entry generation
+ */
+export interface GenerateAILorebookEntriesResponse {
+	success: boolean;
+	entries_generated: number;
+	/** Preview of generated entries (titles and IDs) */
+	entries: GeneratedEntryPreview[];
+	message: string;
+}
+
+/**
+ * Structured analysis of a lorebook
+ */
+export interface LorebookAnalysis {
+	/** Missing information or themes that would strengthen the lorebook */
+	gaps: string[];
+	/** Contradictions or inconsistencies found between entries */
+	consistency_issues: string[];
+	/** Specific suggestions for enhancing existing entries */
+	improvement_suggestions: string[];
+	/** New entry themes that would add value to the lorebook */
+	recommended_themes: string[];
+}
+
+/**
+ * Response from AI-powered lorebook analysis
+ * Used by POST /api/lorebooks/{id}/ai/analyze
+ */
+export interface AnalyzeAILorebookResponse {
+	success: boolean;
+	entries_analyzed: number;
+	analysis: LorebookAnalysis;
 }
 
 // Scribe Assistant (Chat mode for content creation)

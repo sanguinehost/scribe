@@ -163,7 +163,12 @@ async fn test_agent_analysis_error_handling() {
     let conn = test_app.db_pool.get().await.unwrap();
     let active_analysis = conn
         .interact(move |conn| {
-            AgentContextAnalysis::get_for_session(conn, session_id, AnalysisType::PreProcessing)
+            AgentContextAnalysis::get_for_session(
+                conn,
+                session_id,
+                AnalysisType::PreProcessing,
+                message_id,
+            )
         })
         .await
         .unwrap()
@@ -201,7 +206,12 @@ async fn test_agent_analysis_error_handling() {
     let conn = test_app.db_pool.get().await.unwrap();
     let new_active_analysis = conn
         .interact(move |conn| {
-            AgentContextAnalysis::get_for_session(conn, session_id, AnalysisType::PreProcessing)
+            AgentContextAnalysis::get_for_session(
+                conn,
+                session_id,
+                AnalysisType::PreProcessing,
+                message_id,
+            )
         })
         .await
         .unwrap()

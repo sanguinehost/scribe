@@ -567,6 +567,11 @@ pub async fn get_session_data_for_generation(
                     current_variant_index: 0,
                     credits_charged: 0,
                     credits_cost: bigdecimal::BigDecimal::from(0),
+                    // New cost tracking fields
+                    actual_cost: bigdecimal::BigDecimal::from(0),
+                    modified_cost: bigdecimal::BigDecimal::from(0),
+                    credit_cost: 0,
+                    actual_charge: bigdecimal::BigDecimal::from(0),
                 }
             })
             .collect()
@@ -1086,6 +1091,11 @@ pub async fn get_session_data_for_generation(
                 current_variant_index: 0,
                 credits_charged: 0,
                 credits_cost: bigdecimal::BigDecimal::from(0),
+                // New cost tracking fields
+                actual_cost: bigdecimal::BigDecimal::from(0),
+                modified_cost: bigdecimal::BigDecimal::from(0),
+                credit_cost: 0,
+                actual_charge: bigdecimal::BigDecimal::from(0),
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");

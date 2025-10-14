@@ -264,3 +264,161 @@ pub fn get_style_analysis_schema() -> serde_json::Value {
         "required": ["detected_style", "confidence"]
     })
 }
+
+// ============================================================================
+// Lorebook Generation Types and Schemas
+// ============================================================================
+
+/// Output for a single lorebook entry generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LorebookEntryOutput {
+    pub name: String,
+    pub content: String,
+    pub keys: Vec<String>,
+    pub category: Option<String>,
+    pub reasoning: Option<String>,
+}
+
+/// Output for batch lorebook entries generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchLorebookEntriesOutput {
+    pub entries: Vec<LorebookEntryOutput>,
+    pub reasoning: Option<String>,
+    pub quality_assessment: Option<String>,
+}
+
+/// Validation for lorebook entry output
+impl LorebookEntryOutput {
+    pub fn validate(&self) -> Result<(), AppError> {
+        if self.name.trim().is_empty() {
+            return Err(AppError::InvalidInput(
+                "Lorebook entry name cannot be empty".to_string(),
+            ));
+        }
+
+        if self.content.trim().is_empty() {
+            return Err(AppError::InvalidInput(
+                "Lorebook entry content cannot be empty".to_string(),
+            ));
+        }
+
+        if self.keys.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Lorebook entry must have at least one key".to_string(),
+            ));
+        }
+
+        // Check that keys are non-empty
+        for key in &self.keys {
+            if key.trim().is_empty() {
+                return Err(AppError::InvalidInput(
+                    "Lorebook entry keys cannot be empty".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validation for batch lorebook entries output
+impl BatchLorebookEntriesOutput {
+    pub fn validate(&self) -> Result<(), AppError> {
+        if self.entries.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Batch generation must produce at least one entry".to_string(),
+            ));
+        }
+
+        // Validate each entry
+        for entry in &self.entries {
+            entry.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
+/// JSON schema for single lorebook entry generation
+pub fn get_lorebook_entry_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "The title/name of the lorebook entry"
+            },
+            "content": {
+                "type": "string",
+                "description": "The detailed content/description for this lorebook entry"
+            },
+            "keys": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Keywords that will trigger this entry (names, places, concepts)"
+            },
+            "category": {
+                "type": "string",
+                "description": "Optional category for organizing entries (e.g., 'character', 'location', 'lore', 'item')"
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Explanation of why this entry was created and how it fits the world"
+            }
+        },
+        "required": ["name", "content", "keys"]
+    })
+}
+
+/// JSON schema for batch lorebook entries generation
+pub fn get_batch_lorebook_entries_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "The title/name of the lorebook entry"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The detailed content/description for this lorebook entry"
+                        },
+                        "keys": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Keywords that will trigger this entry"
+                        },
+                        "category": {
+                            "type": "string",
+                            "description": "Optional category for organizing entries"
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Explanation for this entry"
+                        }
+                    },
+                    "required": ["name", "content", "keys"]
+                },
+                "description": "Array of generated lorebook entries"
+            },
+            "reasoning": {
+                "type": "string",
+                "description": "Overall explanation of the generation strategy and how entries relate to each other"
+            },
+            "quality_assessment": {
+                "type": "string",
+                "description": "Assessment of the generated entries and suggestions for improvement"
+            }
+        },
+        "required": ["entries"]
+    })
+}

@@ -27,6 +27,9 @@
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { UpgradePrompt } from './membership';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
+	import LorebookExtractionDialog from './LorebookExtractionDialog.svelte';
+	import { lorebookStore } from '$lib/stores/lorebook.svelte';
+	import type { LorebookEntry } from '$lib/types';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -100,6 +103,10 @@
 
 	// Upgrade prompt modal state
 	let showUpgradePrompt = $state(false);
+
+	// Lorebook extraction state
+	let showExtractDialog = $state(false);
+	let availableLorebooks = $state<Array<{ id: string; name: string }>>([]);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -925,6 +932,32 @@
 		}
 	}
 
+	// --- Refresh Chat Metadata (Token Counts and Costs) ---
+	async function refreshChatMetadata() {
+		if (!chat?.id) return;
+
+		try {
+			const result = await _apiClient.getChatById(chat.id);
+			if (result.isOk()) {
+				// Mutate specific fields directly to avoid triggering full re-render
+				// In Svelte 5, direct mutation of props triggers fine-grained reactivity
+				chat.total_prompt_tokens = result.value.total_prompt_tokens;
+				chat.total_completion_tokens = result.value.total_completion_tokens;
+				chat.total_credits_used = result.value.total_credits_used;
+
+				console.log('✅ Refreshed chat metadata:', {
+					total_prompt_tokens: chat.total_prompt_tokens,
+					total_completion_tokens: chat.total_completion_tokens,
+					total_credits_used: chat.total_credits_used
+				});
+			} else {
+				console.error('Failed to refresh chat metadata:', result.error);
+			}
+		} catch (_error) {
+			console.error('Failed to refresh chat metadata:', _error);
+		}
+	}
+
 	// Function to handle token limit reached - show upgrade prompt instead of toast
 	function handleTokenLimitReached() {
 		if (ENABLE_PAYMENTS && subscriptionStore.isAtLimit) {
@@ -938,6 +971,20 @@
 	$effect(() => {
 		loadAvailablePersonas();
 		loadUserPersona();
+	});
+
+	// Load lorebooks when component mounts (for extraction dialog)
+	$effect(() => {
+		async function loadLorebooks() {
+			await lorebookStore.loadLorebooks();
+			// Map lorebooks to simple format needed by dialog
+			// Use the getter directly, not .state.lorebooks
+			availableLorebooks = (lorebookStore.lorebooks || []).map((lb) => ({
+				id: lb.id,
+				name: lb.name
+			}));
+		}
+		loadLorebooks();
 	});
 
 	// Load agent mode when chat changes
@@ -1322,6 +1369,9 @@
 				agentMode: agentMode
 			});
 			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
+
+			// Refresh chat metadata to update token counts and costs
+			await refreshChatMetadata();
 		} catch (_error) {
 			console.error('❌ Failed to send message:', _error);
 
@@ -1517,6 +1567,8 @@
 				variantOf: originalMessageId // Create response as variant of original message
 			});
 
+			// Refresh chat metadata to update token counts and costs
+			await refreshChatMetadata();
 			// Update chat preview after successful regeneration
 			// Note: StreamingService will handle message creation and updates
 			const preview = lastUserMessage.content.substring(0, 100);
@@ -1956,11 +2008,30 @@
 			}
 		}
 	}
+
+	// Handler to open extraction dialog
+	function handleOpenExtractDialog() {
+		if (!chat?.id) return;
+
+		showExtractDialog = true;
+	}
+
+	// Handler for successful extraction
+	function handleExtractionSuccess(entries: LorebookEntry[]) {
+		const count = entries.length;
+		if (count > 0) {
+			toast.success(
+				`Successfully extracted ${count} lorebook ${count === 1 ? 'entry' : 'entries'}`
+			);
+		} else {
+			toast.info('No entries were extracted from the selected messages');
+		}
+	}
 </script>
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
-	<ChatHeader {user} {chat} {readonly} />
+	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}
@@ -2233,5 +2304,21 @@
 		variant="modal"
 		on:close={() => (showUpgradePrompt = false)}
 		on:upgrade={() => (showUpgradePrompt = false)}
+	/>
+{/if}
+
+<!-- Lorebook Extraction Dialog -->
+{#if chat?.id}
+	<LorebookExtractionDialog
+		bind:open={showExtractDialog}
+		chatSessionId={chat.id}
+		messages={displayMessages.map((msg, index) => ({
+			role: msg.message_type.toLowerCase(),
+			content: msg.content,
+			index
+		}))}
+		lorebooks={availableLorebooks}
+		onOpenChange={(open) => (showExtractDialog = open)}
+		onSuccess={handleExtractionSuccess}
 	/>
 {/if}

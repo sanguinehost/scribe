@@ -183,6 +183,11 @@ impl NarrativeAgentRunner {
         }
     }
 
+    /// Get a reference to the tool registry for direct tool access
+    pub fn get_tool_registry(&self) -> Arc<ToolRegistry> {
+        self.tool_registry.clone()
+    }
+
     /// Deterministically create a chronicle event for every message exchange
     pub async fn process_narrative_event(
         &self,

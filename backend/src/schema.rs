@@ -265,6 +265,10 @@ diesel::table! {
         current_variant_index -> Int4,
         credits_charged -> Int4,
         credits_cost -> Numeric,
+        actual_cost -> Numeric,
+        modified_cost -> Numeric,
+        credit_cost -> Int4,
+        actual_charge -> Numeric,
     }
 }
 
@@ -330,6 +334,10 @@ diesel::table! {
         #[max_length = 50]
         prompt_template_id -> Varchar,
         total_credits_used -> Numeric,
+        total_actual_cost -> Numeric,
+        total_modified_cost -> Numeric,
+        total_credit_cost -> Int4,
+        total_actual_charge -> Numeric,
     }
 }
 

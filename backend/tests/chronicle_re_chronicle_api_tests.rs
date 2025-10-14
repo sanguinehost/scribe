@@ -355,6 +355,10 @@ async fn create_chat_session_with_messages(
             current_variant_index: 0,
             credits_charged: 0,
             credits_cost: BigDecimal::from(0),
+            actual_cost: BigDecimal::from(0),
+            modified_cost: BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: BigDecimal::from(0),
         };
 
         conn.interact(move |conn| {

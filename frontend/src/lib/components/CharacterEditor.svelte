@@ -51,13 +51,24 @@
 	let popoutFieldType: 'text' | 'number' | 'select' = 'text'; // Added to handle different input types
 
 	// Helper to get current character context for generation
+	// Comprehensive context matching CharacterCreator to ensure AI has full context
 	$: characterContext = (() => {
 		const context: CharacterContext = {};
 		if (formData.name) context.name = formData.name;
 		if (formData.description) context.description = formData.description;
 		if (formData.personality) context.personality = formData.personality;
 		if (formData.scenario) context.scenario = formData.scenario;
+		if (formData.first_mes) context.first_mes = formData.first_mes;
+		if (formData.mes_example) context.mes_example = formData.mes_example;
+		if (formData.system_prompt) context.system_prompt = formData.system_prompt;
+		if (formData.depth_prompt) context.depth_prompt = formData.depth_prompt;
 		if (formData.tags && formData.tags.length > 0) context.tags = formData.tags;
+		if (formData.alternate_greetings && formData.alternate_greetings.length > 0) {
+			context.alternate_greetings = formData.alternate_greetings;
+		}
+		if (formData.selectedLorebooks && formData.selectedLorebooks.length > 0) {
+			context.selectedLorebooks = formData.selectedLorebooks;
+		}
 		return context;
 	})();
 

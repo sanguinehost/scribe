@@ -397,14 +397,13 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 
 			try {
 				const stream = _apiClient.generateCharacterFieldStream({
-					field_name: fieldName,
-					field_context: undefined, // No existing content for "create" mode
-					character_context: context,
-					generation_mode: selectedMode,
+					fieldName: fieldName,
+					fieldValue: undefined, // No existing content for "create" mode
+					characterContext: context,
+					mode: selectedMode,
 					style: selectedStyle !== 'auto' ? (selectedStyle as DescriptionStyle) : undefined,
-					max_tokens: maxTokens,
-					user_prompt: userPrompt,
-					include_status_block: false
+					maxTokens: maxTokens,
+					userPrompt: userPrompt
 				});
 
 				// Iterate through the stream chunks
@@ -540,14 +539,13 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 
 			try {
 				const stream = _apiClient.generateCharacterFieldStream({
-					field_name: fieldName,
-					field_context: textToExpand, // Existing content to enhance/expand/rewrite
-					character_context: context,
-					generation_mode: selectedMode,
+					fieldName: fieldName,
+					fieldValue: textToExpand, // Existing content to enhance/expand/rewrite
+					characterContext: context,
+					mode: selectedMode,
 					style: selectedStyle !== 'auto' ? (selectedStyle as DescriptionStyle) : undefined,
-					max_tokens: maxTokens,
-					user_prompt: userPrompt,
-					include_status_block: false
+					maxTokens: maxTokens,
+					userPrompt: userPrompt
 				});
 
 				// Iterate through the stream chunks
@@ -744,19 +742,19 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 						<div class="rounded-lg border p-3">
 							<div class="font-medium text-muted-foreground">Tokens Used</div>
 							<div class="mt-1 text-lg font-semibold">
-								{lastGenerationResponse.metadata.tokens_used.toLocaleString()}
+								{(lastGenerationResponse.metadata.tokens_used ?? 0).toLocaleString()}
 							</div>
 						</div>
 						<div class="rounded-lg border p-3">
 							<div class="font-medium text-muted-foreground">Generation Time</div>
 							<div class="mt-1 text-lg font-semibold">
-								{lastGenerationResponse.metadata.generation_time_ms}ms
+								{lastGenerationResponse.metadata.generation_time_ms ?? 0}ms
 							</div>
 						</div>
 						<div class="rounded-lg border p-3">
 							<div class="font-medium text-muted-foreground">Style Applied</div>
 							<div class="mt-1 text-lg font-semibold capitalize">
-								{lastGenerationResponse.style_used}
+								{lastGenerationResponse.style_used ?? 'auto'}
 							</div>
 						</div>
 						<div class="rounded-lg border p-3">
@@ -905,7 +903,7 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 											<path
 												class="opacity-75"
 												fill="currentColor"
-												d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+												d="M4 12a8 8 0 0 1 8 -8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 											></path>
 										</svg>
 										Analyzing...
@@ -1133,7 +1131,7 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 								<path
 									class="opacity-75"
 									fill="currentColor"
-									d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+									d="M4 12a8 8 0 0 1 8 -8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 								></path>
 							</svg>
 							Generating...

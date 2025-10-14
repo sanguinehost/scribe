@@ -281,9 +281,9 @@
 		) {
 			setTimeout(() => {
 				if (endRef) {
-					endRef.scrollIntoView({ behavior: 'smooth' });
+					endRef.scrollIntoView({ behavior: 'instant', block: 'end' });
 				}
-			}, 100);
+			}, 500);
 		}
 	});
 

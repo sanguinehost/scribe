@@ -1116,7 +1116,12 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         tokens_counted_at: Utc::now(),
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
+        // New cost tracking fields
+        total_actual_cost: BigDecimal::from(0),
+        total_modified_cost: BigDecimal::from(0),
+        total_credit_cost: 0,
+        total_actual_charge: BigDecimal::from(0),
     }
 }
 
@@ -1150,7 +1155,7 @@ pub fn mock_chat_session_for_client(id: Uuid, character_id: Uuid) -> ChatForClie
         chronicle_id: None, // Not used in CLI tests
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
     }
 }
 
@@ -1180,6 +1185,11 @@ pub fn mock_chat_message(
         variant_count: 0,
         current_variant_index: 0,
         credits_charged: 0,
-        credits_cost: 0,
+        credits_cost: BigDecimal::from(0),
+        // New cost tracking fields
+        actual_cost: BigDecimal::from(0),
+        modified_cost: BigDecimal::from(0),
+        credit_cost: 0,
+        actual_charge: BigDecimal::from(0),
     }
 }
