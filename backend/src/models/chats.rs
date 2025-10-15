@@ -1,5 +1,5 @@
 use crate::schema::{chat_messages, chat_sessions, message_variants};
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::{DateTime, Utc};
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel::{BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
@@ -19,6 +19,45 @@ use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;
 use secrecy::ExposeSecret;
 use secrecy::SecretBox;
+
+/// Custom serializers for BigDecimal types
+mod bigdecimal_serde {
+    use bigdecimal::BigDecimal;
+    use serde::Serializer;
+    use std::str::FromStr;
+
+    /// Serialize BigDecimal as f64 for JSON compatibility
+    pub fn serialize_as_f64<S>(value: &BigDecimal, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Convert BigDecimal to string, then parse as f64
+        let s = value.to_string();
+        match f64::from_str(&s) {
+            Ok(f) => serializer.serialize_f64(f),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to serialize BigDecimal '{}' to f64: {}. Falling back to 0.0",
+                    s,
+                    e
+                );
+                serializer.serialize_f64(0.0)
+            }
+        }
+    }
+}
+
+/// Represents the cost breakdown for an LLM generation request
+///
+/// This struct separates the raw API cost (in dollars) from the user-facing
+/// credits charged, making the billing calculation clear and explicit.
+#[derive(Debug, Clone, Copy)]
+pub struct GenerationCost {
+    /// Raw cost from the LLM provider in dollars (before any markup)
+    pub api_cost_dollars: f64,
+    /// Integer credits deducted from the user's balance (after markup)
+    pub credits_charged: i32,
+}
 
 /// Represents the status of a chat message
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,8 +164,17 @@ pub struct Chat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
-    pub total_credits_used: i32,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub total_credits_used: bigdecimal::BigDecimal,
     pub prompt_template_id: String,
+    // New cost tracking fields
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub total_actual_cost: bigdecimal::BigDecimal,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub total_modified_cost: bigdecimal::BigDecimal,
+    pub total_credit_cost: i32,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub total_actual_charge: bigdecimal::BigDecimal,
 }
 
 impl std::fmt::Debug for Chat {
@@ -231,7 +279,7 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DateTime<Utc>,
-    pub total_credits_used: i32,
+    pub total_credits_used: BigDecimal,
     pub prompt_template_id: String,
 }
 
@@ -425,7 +473,15 @@ pub struct ChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: i32,
+    pub credits_cost: bigdecimal::BigDecimal,
+    // New cost tracking fields
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub actual_cost: bigdecimal::BigDecimal,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub modified_cost: bigdecimal::BigDecimal,
+    pub credit_cost: i32,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub actual_charge: bigdecimal::BigDecimal,
 }
 
 impl Default for ChatMessage {
@@ -449,7 +505,12 @@ impl Default for ChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
+            // New cost tracking fields
+            actual_cost: bigdecimal::BigDecimal::from(0),
+            modified_cost: bigdecimal::BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: bigdecimal::BigDecimal::from(0),
         }
     }
 }
@@ -783,6 +844,11 @@ impl ChatMessage {
             model_name: self.model_name,
             status: self.status,
             error_message: self.error_message,
+            // Convert BigDecimal cost values to f64 for JSON serialization
+            actual_cost: self.actual_cost.to_f64(),
+            modified_cost: self.modified_cost.to_f64(),
+            credit_cost: Some(self.credit_cost),
+            actual_charge: self.actual_charge.to_f64(),
         })
     }
 }
@@ -815,7 +881,12 @@ pub struct Message {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: i32,
+    pub credits_cost: bigdecimal::BigDecimal,
+    // Cost tracking fields (same as ChatMessage)
+    pub actual_cost: bigdecimal::BigDecimal,
+    pub modified_cost: bigdecimal::BigDecimal,
+    pub credit_cost: i32,
+    pub actual_charge: bigdecimal::BigDecimal,
 }
 
 impl std::fmt::Debug for Message {
@@ -1080,6 +1151,11 @@ impl Message {
             model_name: self.model_name,
             status: self.status,
             error_message: self.error_message,
+            // Convert BigDecimal cost values to f64 for JSON serialization
+            actual_cost: self.actual_cost.to_f64(),
+            modified_cost: self.modified_cost.to_f64(),
+            credit_cost: Some(self.credit_cost),
+            actual_charge: self.actual_charge.to_f64(),
         })
     }
 }
@@ -1125,6 +1201,11 @@ pub struct ChatMessageForClient {
     pub model_name: String,
     pub status: String,
     pub error_message: Option<String>,
+    // Cost tracking fields (for frontend display)
+    pub actual_cost: Option<f64>, // Raw Google API cost in dollars (always calculated)
+    pub modified_cost: Option<f64>, // Cost with markup applied (when payment feature enabled)
+    pub credit_cost: Option<i32>, // Credits consumed (when credits actually used)
+    pub actual_charge: Option<f64>, // Actual dollar amount charged to user
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -1143,6 +1224,10 @@ impl std::fmt::Debug for ChatMessageForClient {
                 "raw_prompt",
                 &self.raw_prompt.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("actual_cost", &self.actual_cost)
+            .field("modified_cost", &self.modified_cost)
+            .field("credit_cost", &self.credit_cost)
+            .field("actual_charge", &self.actual_charge)
             .finish()
     }
 }
@@ -1231,7 +1316,12 @@ pub struct DbInsertableChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: i32,
+    pub credits_cost: bigdecimal::BigDecimal,
+    // New cost tracking fields
+    pub actual_cost: bigdecimal::BigDecimal,
+    pub modified_cost: bigdecimal::BigDecimal,
+    pub credit_cost: i32,
+    pub actual_charge: bigdecimal::BigDecimal,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1299,7 +1389,12 @@ impl DbInsertableChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
+            // Initialize new cost tracking fields
+            actual_cost: bigdecimal::BigDecimal::from(0),
+            modified_cost: bigdecimal::BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: bigdecimal::BigDecimal::from(0),
         }
     }
 
@@ -1357,10 +1452,37 @@ impl DbInsertableChatMessage {
     }
 
     /// Set both credits_charged and credits_cost
+    /// DEPRECATED: Use with_cost_tracking for new code
     #[must_use]
-    pub fn with_credits(mut self, credits_charged: i32, credits_cost: i32) -> Self {
+    pub fn with_credits(
+        mut self,
+        credits_charged: i32,
+        credits_cost: bigdecimal::BigDecimal,
+    ) -> Self {
         self.credits_charged = credits_charged;
         self.credits_cost = credits_cost;
+        self
+    }
+
+    /// Set all cost tracking fields properly
+    #[must_use]
+    pub fn with_cost_tracking(
+        mut self,
+        actual_cost: bigdecimal::BigDecimal,
+        modified_cost: bigdecimal::BigDecimal,
+        credit_cost: i32,
+        actual_charge: bigdecimal::BigDecimal,
+        credits_charged: i32,
+    ) -> Self {
+        // Clone actual_cost for backwards compatibility before moving
+        let actual_cost_clone = actual_cost.clone();
+        self.actual_cost = actual_cost;
+        self.modified_cost = modified_cost;
+        self.credit_cost = credit_cost;
+        self.actual_charge = actual_charge;
+        self.credits_charged = credits_charged;
+        // Keep credits_cost for backwards compatibility
+        self.credits_cost = actual_cost_clone;
         self
     }
 }
@@ -1542,7 +1664,7 @@ pub struct ChatForClient {
     pub chronicle_id: Option<Uuid>, // Chronicle association (maps to player_chronicle_id in database)
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    pub total_credits_used: i32,
+    pub total_credits_used: bigdecimal::BigDecimal,
 }
 
 impl Chat {
@@ -2303,12 +2425,16 @@ mod tests {
             tokens_counted_at: Utc::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_credits_used: 0,
+            total_credits_used: bigdecimal::BigDecimal::from(0),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
             player_chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
+            total_actual_cost: bigdecimal::BigDecimal::from(0),
+            total_modified_cost: bigdecimal::BigDecimal::from(0),
+            total_credit_cost: 0,
+            total_actual_charge: bigdecimal::BigDecimal::from(0),
         }
     }
 
@@ -2374,7 +2500,11 @@ mod tests {
             error_message: None,
             superseded_at: None,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
+            actual_cost: bigdecimal::BigDecimal::from(0),
+            modified_cost: bigdecimal::BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: bigdecimal::BigDecimal::from(0),
         }
     }
 

@@ -4,11 +4,13 @@ use crate::{
     auth::session_dek::SessionDek,            // Import SessionDek
     auth::user_store::Backend as AuthBackend, // Import AuthBackend
     errors::AppError,
+    middleware::rate_limit::ai_lorebook_rate_limit_middleware, // Import AI rate limiter
     models::lorebook_dtos::{
-        AssociateLorebookToChatPayload, CharacterLorebookOverrideResponse,
+        AnalyzeLorebookResponse, AssociateLorebookToChatPayload, CharacterLorebookOverrideResponse,
         ChatLorebookAssociationsResponse, CreateLorebookEntryPayload, CreateLorebookPayload,
-        ExportFormat, SetCharacterLorebookOverridePayload, UpdateLorebookEntryPayload,
-        UpdateLorebookPayload,
+        ExportFormat, ExtractLorebookEntriesFromChatPayload, GenerateLorebookEntriesPayload,
+        GenerateLorebookEntriesResponse, GeneratedEntryPreview, LorebookAnalysis,
+        SetCharacterLorebookOverridePayload, UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
     services::LorebookService,
 };
@@ -16,11 +18,13 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
+    middleware,
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
 use axum_login::AuthSession;
 use axum_macros::debug_handler;
+use secrecy::ExposeSecret; // For exposing SessionDek secret
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::instrument; // Keep instrument
@@ -28,6 +32,23 @@ use uuid::Uuid;
 use validator::Validate; // For validating payloads
 
 pub fn lorebook_routes() -> Router<AppState> {
+    // Create a separate router for AI routes with rate limiting
+    let ai_routes = Router::new()
+        .route(
+            "/lorebooks/:lorebook_id/ai/generate",
+            post(ai_generate_entries_handler),
+        )
+        .route(
+            "/lorebooks/:lorebook_id/ai/analyze",
+            post(ai_analyze_lorebook_handler),
+        )
+        .route(
+            "/lorebooks/:lorebook_id/extract-from-chat",
+            post(extract_from_chat_handler),
+        )
+        .layer(middleware::from_fn(ai_lorebook_rate_limit_middleware));
+
+    // Main router with all lorebook routes
     Router::new()
         .route("/lorebooks", post(create_lorebook_handler))
         .route("/lorebooks", get(list_lorebooks_handler))
@@ -88,6 +109,8 @@ pub fn lorebook_routes() -> Router<AppState> {
             "/chats/:chat_session_id/lorebook-overrides",
             get(get_character_lorebook_overrides_handler),
         )
+        // Merge AI routes with rate limiting
+        .merge(ai_routes)
 }
 
 // --- Lorebook Handlers ---
@@ -646,4 +669,361 @@ async fn get_character_lorebook_overrides_handler(
         .collect();
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+// --- AI-Powered Lorebook Handlers ---
+
+#[debug_handler]
+#[instrument(skip(state, auth_session, dek, payload))]
+async fn ai_generate_entries_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek,
+    Path(lorebook_id): Path<Uuid>,
+    Json(payload): Json<GenerateLorebookEntriesPayload>,
+) -> Result<impl IntoResponse, AppError> {
+    payload.validate()?;
+
+    // Get user from auth session
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+    let user_id = user.id;
+
+    // Security logging: Track AI generation requests
+    let is_suspicious = payload.count > 15; // Flag requests for many entries
+    tracing::info!(
+        user_id = %user_id,
+        lorebook_id = %lorebook_id,
+        theme = %payload.theme,
+        count = payload.count,
+        has_context = payload.context.is_some(),
+        suspicious = is_suspicious,
+        "AI lorebook generation request initiated"
+    );
+
+    if is_suspicious {
+        tracing::warn!(
+            user_id = %user_id,
+            lorebook_id = %lorebook_id,
+            count = payload.count,
+            "Suspicious AI generation request: unusually high entry count"
+        );
+    }
+
+    // Access tool via registry
+    let narrative_service = state
+        .narrative_intelligence_service
+        .as_ref()
+        .ok_or_else(|| {
+            AppError::InternalServerErrorGeneric("Narrative service not available".to_string())
+        })?;
+
+    let registry = narrative_service.get_tool_registry();
+    let batch_tool = registry
+        .get_tool("create_batch_lorebook_entries")
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get tool from registry: {}", e))
+        })?;
+
+    // Build tool parameters
+    let session_dek_hex = hex::encode(dek.0.expose_secret());
+    let tool_params = serde_json::json!({
+        "user_id": user_id.to_string(),
+        "lorebook_id": lorebook_id.to_string(),
+        "session_dek": session_dek_hex,
+        "theme": payload.theme,
+        "count": payload.count,
+        "context": payload.context,
+    });
+
+    // Execute tool - it returns Value directly, not String
+    let result_json = batch_tool.execute(&tool_params).await.map_err(|e| {
+        AppError::InternalServerErrorGeneric(format!("Tool execution failed: {}", e))
+    })?;
+
+    // Extract and log token usage for cost tracking
+    if let Some(token_usage) = result_json.get("token_usage") {
+        let prompt_tokens = token_usage
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let completion_tokens = token_usage
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_tokens = token_usage
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        tracing::info!(
+            user_id = %user_id,
+            lorebook_id = %lorebook_id,
+            theme = %payload.theme,
+            count = payload.count,
+            prompt_tokens = prompt_tokens,
+            completion_tokens = completion_tokens,
+            total_tokens = total_tokens,
+            "AI lorebook batch generation token usage"
+        );
+    }
+
+    // Extract entries from result (tool returns "created_entries")
+    let entries_generated = result_json
+        .get("entries_created")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+
+    let entries: Vec<GeneratedEntryPreview> = result_json
+        .get("created_entries")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|entry| {
+                    // Tool returns "entry_id" and "title"
+                    let id = entry
+                        .get("entry_id")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| Uuid::parse_str(s).ok())?;
+                    let entry_title = entry
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())?;
+                    // Keys are not included in the tool output
+                    let keys_text = None;
+
+                    Some(GeneratedEntryPreview {
+                        id,
+                        entry_title,
+                        keys_text,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let message = result_json
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Entries generated successfully")
+        .to_string();
+
+    let response = GenerateLorebookEntriesResponse {
+        success: true,
+        entries_generated,
+        entries,
+        message,
+    };
+
+    // Security logging: Track successful completion
+    tracing::info!(
+        user_id = %user_id,
+        lorebook_id = %lorebook_id,
+        entries_generated = entries_generated,
+        "AI lorebook generation request completed successfully"
+    );
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session, dek))]
+async fn ai_analyze_lorebook_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek,
+    Path(lorebook_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Get user from auth session
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+    let user_id = user.id;
+
+    // Security logging: Track AI analysis requests
+    tracing::info!(
+        user_id = %user_id,
+        lorebook_id = %lorebook_id,
+        "AI lorebook analysis request initiated"
+    );
+
+    // Access tool via registry
+    let narrative_service = state
+        .narrative_intelligence_service
+        .as_ref()
+        .ok_or_else(|| {
+            AppError::InternalServerErrorGeneric("Narrative service not available".to_string())
+        })?;
+
+    let registry = narrative_service.get_tool_registry();
+    let analysis_tool = registry.get_tool("analyze_lorebook").map_err(|e| {
+        AppError::InternalServerErrorGeneric(format!("Failed to get tool from registry: {}", e))
+    })?;
+
+    // Build tool parameters
+    let session_dek_hex = hex::encode(dek.0.expose_secret());
+    let tool_params = serde_json::json!({
+        "user_id": user_id.to_string(),
+        "lorebook_id": lorebook_id.to_string(),
+        "session_dek": session_dek_hex,
+    });
+
+    // Execute tool - it returns Value directly, not String
+    let result_json = analysis_tool.execute(&tool_params).await.map_err(|e| {
+        AppError::InternalServerErrorGeneric(format!("Tool execution failed: {}", e))
+    })?;
+
+    // Extract and log token usage for cost tracking
+    if let Some(token_usage) = result_json.get("token_usage") {
+        let prompt_tokens = token_usage
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let completion_tokens = token_usage
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_tokens = token_usage
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        tracing::info!(
+            user_id = %user_id,
+            lorebook_id = %lorebook_id,
+            prompt_tokens = prompt_tokens,
+            completion_tokens = completion_tokens,
+            total_tokens = total_tokens,
+            "AI lorebook analysis token usage"
+        );
+    }
+
+    // Extract analysis from result - tool returns analysis nested under "analysis" key
+    let entries_analyzed = result_json
+        .get("entries_analyzed")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+
+    let analysis_obj = result_json
+        .get("analysis")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| {
+            AppError::InternalServerErrorGeneric(
+                "Missing analysis object in tool result".to_string(),
+            )
+        })?;
+
+    let gaps = analysis_obj
+        .get("gaps")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let consistency_issues = analysis_obj
+        .get("consistency_issues")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let improvement_suggestions = analysis_obj
+        .get("improvement_suggestions")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let recommended_themes = analysis_obj
+        .get("recommended_themes")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let analysis = LorebookAnalysis {
+        gaps,
+        consistency_issues,
+        improvement_suggestions,
+        recommended_themes,
+    };
+
+    let response = AnalyzeLorebookResponse {
+        success: true,
+        entries_analyzed,
+        analysis,
+    };
+
+    // Security logging: Track successful completion
+    tracing::info!(
+        user_id = %user_id,
+        lorebook_id = %lorebook_id,
+        entries_analyzed = entries_analyzed,
+        "AI lorebook analysis request completed successfully"
+    );
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+#[debug_handler]
+#[instrument(skip(state, auth_session, dek, payload))]
+async fn extract_from_chat_handler(
+    State(state): State<AppState>,
+    auth_session: AuthSession<AuthBackend>,
+    dek: SessionDek,
+    Path(lorebook_id): Path<Uuid>,
+    Json(payload): Json<ExtractLorebookEntriesFromChatPayload>,
+) -> Result<impl IntoResponse, AppError> {
+    payload.validate()?;
+
+    // Get user from auth session
+    let user = auth_session
+        .user
+        .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
+    let user_id = user.id;
+
+    // Security logging: Track extraction requests
+    tracing::info!(
+        user_id = %user_id,
+        lorebook_id = %lorebook_id,
+        chat_session_id = %payload.chat_session_id,
+        start_index = ?payload.start_message_index,
+        end_index = ?payload.end_message_index,
+        "Lorebook extraction from chat request initiated"
+    );
+
+    // Create lorebook service
+    let lorebook_service = LorebookService::new(
+        state.pool.clone(),
+        state.encryption_service.clone(),
+        state.qdrant_service.clone(),
+    );
+
+    // Call extraction service method
+    let result = lorebook_service
+        .extract_entries_from_chat(user_id, lorebook_id, payload, &dek.0)
+        .await?;
+
+    // Security logging: Track successful completion
+    tracing::info!(
+        user_id = %user_id,
+        lorebook_id = %lorebook_id,
+        entries_extracted = result.entries_extracted,
+        "Lorebook extraction from chat completed successfully"
+    );
+
+    Ok((StatusCode::OK, Json(result)))
 }

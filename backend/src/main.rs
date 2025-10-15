@@ -29,9 +29,10 @@ use scribe_backend::routes::{
     chats,
     chronicles,
     documents::document_routes,
-    llm_routes::llm_router,           // Added for LLM management routes
-    lorebook_routes::lorebook_routes, // Added for lorebook routes
-    templates,                        // Added for template routes
+    generation_routes,                         // Added for generation routes
+    llm_routes::llm_router,                    // Added for LLM management routes
+    lorebook_routes::lorebook_routes,          // Added for lorebook routes
+    templates,                                 // Added for template routes
     user_persona_routes::user_personas_router, // Added for user persona routes
     user_settings_routes::user_settings_routes,
 };
@@ -570,6 +571,7 @@ fn build_router(
             chronicles::create_chronicles_router(app_state.clone()),
         )
         .nest("/documents", document_routes())
+        .nest("/generation", generation_routes::router()) // AI generation routes
         .nest("/llm", llm_router()); // LLM management routes
 
     #[cfg(feature = "payment")]

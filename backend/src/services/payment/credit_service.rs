@@ -262,6 +262,12 @@ impl CreditService {
         reference_id: Option<String>,
         metadata: Option<serde_json::Value>,
     ) -> Result<CreditBalance, AppError> {
+        if !self.is_enabled() {
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
+        }
+
         use crate::schema::user_credits;
 
         conn.transaction(|conn| {
@@ -284,23 +290,17 @@ impl CreditService {
             let available_balance = self.get_available_balance(conn, user_id)?;
             let max_limit = self.config.payment.max_credit_balance as i32;
 
-            // Cap the amount to add if it would exceed max balance
-            let amount_to_add = if available_balance + amount > max_limit {
-                max_limit - available_balance
-            } else {
-                amount
-            };
-
-            // If no credits can be added, return error
-            if amount_to_add <= 0 {
+            // Reject if adding credits would exceed maximum limit
+            if available_balance + amount > max_limit {
                 return Err(AppError::BadRequest(format!(
-                    "Credit balance is at maximum limit of {}",
-                    self.config.payment.max_credit_balance
+                    "Adding {} credits would exceed maximum limit of {} (current balance: {})",
+                    amount, max_limit, available_balance
                 )));
             }
 
-            // Calculate new balance (use available balance + capped amount)
-            // This effectively excludes expired credits from the balance
+            let amount_to_add = amount;
+
+            // Calculate new balance
             let new_balance = available_balance + amount_to_add;
 
             // Encrypt transaction data with user DEK
@@ -318,7 +318,7 @@ impl CreditService {
             let transaction = NewCreditTransaction {
                 id: Uuid::new_v4(),
                 user_id,
-                amount: amount_to_add, // Use capped amount
+                amount: amount_to_add,
                 balance_after: new_balance,
                 transaction_type: transaction_type.to_string(),
                 description_encrypted: encrypted_data.description_encrypted,
@@ -339,20 +339,39 @@ impl CreditService {
                 })?;
 
             // Update balance (atomic with optimistic locking)
-            let rows_updated = diesel::update(user_credits::table)
-                .filter(user_credits::user_id.eq(user_id))
-                .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
-                .set((
-                    user_credits::balance.eq(new_balance),
-                    user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add), // Use capped amount
-                    user_credits::version.eq(balance.version + 1),
-                    user_credits::updated_at.eq(Utc::now()),
-                ))
-                .execute(conn)
-                .map_err(|e| {
-                    error!("Failed to update credit balance: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+            // Set last_monthly_grant if this is a monthly grant transaction
+            let rows_updated = if transaction_type == "monthly_grant" {
+                diesel::update(user_credits::table)
+                    .filter(user_credits::user_id.eq(user_id))
+                    .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
+                    .set((
+                        user_credits::balance.eq(new_balance),
+                        user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add),
+                        user_credits::last_monthly_grant.eq(Some(Utc::now())),
+                        user_credits::version.eq(balance.version + 1),
+                        user_credits::updated_at.eq(Utc::now()),
+                    ))
+                    .execute(conn)
+                    .map_err(|e| {
+                        error!("Failed to update credit balance: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            } else {
+                diesel::update(user_credits::table)
+                    .filter(user_credits::user_id.eq(user_id))
+                    .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
+                    .set((
+                        user_credits::balance.eq(new_balance),
+                        user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add),
+                        user_credits::version.eq(balance.version + 1),
+                        user_credits::updated_at.eq(Utc::now()),
+                    ))
+                    .execute(conn)
+                    .map_err(|e| {
+                        error!("Failed to update credit balance: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            };
 
             if rows_updated == 0 {
                 return Err(AppError::Conflict(
@@ -365,7 +384,7 @@ impl CreditService {
                 conn,
                 user_id,
                 AuditEventType::CreditAdded,
-                amount_to_add, // Use capped amount
+                amount_to_add,
             ) {
                 error!("Failed to audit log credit addition: {}", e);
             }
@@ -380,14 +399,15 @@ impl CreditService {
 
             // Update and return the balance
             balance.balance = new_balance;
-            balance.lifetime_earned += amount_to_add; // Use capped amount
+            balance.lifetime_earned += amount_to_add;
             balance.version += 1;
+            if transaction_type == "monthly_grant" {
+                balance.last_monthly_grant = Some(Utc::now());
+            }
 
             debug!(
                 "Added {} credits for user {} (new balance: {})",
-                amount_to_add, // Use capped amount
-                user_id,
-                new_balance
+                amount_to_add, user_id, new_balance
             );
 
             Ok(balance)

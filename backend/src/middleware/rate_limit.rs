@@ -8,69 +8,147 @@ use tracing::{info, warn};
 #[cfg(feature = "payment")]
 use crate::errors::AppError;
 
-/// Simple in-memory rate limiter for template endpoints
+/// Simple token bucket rate limiter
 ///
-/// This implements a basic rate limiter that's simpler than tower_governor
-/// but provides the security we need for template endpoints.
+/// This implements a token bucket algorithm that provides:
+/// - Predictable lockout times
+/// - Token refill at a steady rate
+/// - Clear retry-after information
+/// - Burst capacity for legitimate use
 #[derive(Debug, Clone)]
 pub struct SimpleRateLimiter {
-    requests: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
-    max_requests: usize,
-    window_duration: Duration,
+    buckets: Arc<Mutex<HashMap<String, TokenBucket>>>,
+    capacity: usize,
+    refill_rate: Duration, // Duration to refill one token
 }
 
-impl SimpleRateLimiter {
-    pub fn new(max_requests: usize, window_duration: Duration) -> Self {
+#[derive(Debug, Clone)]
+struct TokenBucket {
+    tokens: f64,
+    last_refill: Instant,
+}
+
+impl TokenBucket {
+    fn new(capacity: usize) -> Self {
         Self {
-            requests: Arc::new(Mutex::new(HashMap::new())),
-            max_requests,
-            window_duration,
+            tokens: capacity as f64,
+            last_refill: Instant::now(),
         }
     }
 
-    pub fn is_allowed(&self, client_id: &str) -> bool {
-        let mut requests = self.requests.lock().unwrap();
+    fn refill(&mut self, capacity: usize, refill_rate: Duration) {
         let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refill);
 
-        // Clean old entries
-        let cutoff = now - self.window_duration;
+        // Calculate how many tokens to add based on elapsed time
+        let tokens_to_add = elapsed.as_secs_f64() / refill_rate.as_secs_f64();
 
-        // Get or create entry for this client
-        let client_requests = requests
-            .entry(client_id.to_string())
-            .or_insert_with(Vec::new);
+        self.tokens = (self.tokens + tokens_to_add).min(capacity as f64);
+        self.last_refill = now;
+    }
 
-        // Remove old requests
-        client_requests.retain(|&time| time > cutoff);
-
-        // Check if we're under the limit
-        if client_requests.len() < self.max_requests {
-            client_requests.push(now);
+    fn try_consume(&mut self) -> bool {
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
             true
         } else {
             false
         }
     }
+
+    fn time_until_next_token(&self, refill_rate: Duration) -> Duration {
+        let tokens_needed = 1.0 - self.tokens;
+        if tokens_needed <= 0.0 {
+            Duration::from_secs(0)
+        } else {
+            Duration::from_secs_f64(tokens_needed * refill_rate.as_secs_f64())
+        }
+    }
+}
+
+impl SimpleRateLimiter {
+    /// Create a new token bucket rate limiter
+    ///
+    /// # Arguments
+    /// * `capacity` - Maximum number of tokens (burst capacity)
+    /// * `refill_rate` - Duration to refill one token
+    pub fn new(capacity: usize, refill_rate: Duration) -> Self {
+        Self {
+            buckets: Arc::new(Mutex::new(HashMap::new())),
+            capacity,
+            refill_rate,
+        }
+    }
+
+    /// Check if a request is allowed and return retry-after duration if not
+    ///
+    /// Returns: (is_allowed, retry_after_seconds)
+    pub fn check_request(&self, client_id: &str) -> (bool, Option<u64>) {
+        let mut buckets = self.buckets.lock().unwrap();
+
+        let bucket = buckets
+            .entry(client_id.to_string())
+            .or_insert_with(|| TokenBucket::new(self.capacity));
+
+        // Refill tokens based on elapsed time
+        bucket.refill(self.capacity, self.refill_rate);
+
+        // Try to consume a token
+        if bucket.try_consume() {
+            (true, None)
+        } else {
+            // Calculate when next token will be available
+            let wait_time = bucket.time_until_next_token(self.refill_rate);
+            (false, Some(wait_time.as_secs().max(1))) // At least 1 second
+        }
+    }
+
+    /// Legacy method for backward compatibility
+    pub fn is_allowed(&self, client_id: &str) -> bool {
+        self.check_request(client_id).0
+    }
 }
 
 /// Rate limiter for template endpoints (restrictive)
+/// 30 token capacity, refills 1 token every 2 seconds (30 per minute rate)
 pub fn create_template_rate_limiter() -> SimpleRateLimiter {
-    SimpleRateLimiter::new(30, Duration::from_secs(60)) // 30 requests per minute
+    SimpleRateLimiter::new(30, Duration::from_secs(2))
 }
 
 /// Rate limiter for credit purchase endpoints (very restrictive)
+/// 5 token capacity, refills 1 token every 5 minutes (allows 5 purchases per hour with bursts)
+/// Retry wait time: 5 minutes max (not 1 hour!)
 pub fn create_credit_purchase_rate_limiter() -> SimpleRateLimiter {
-    SimpleRateLimiter::new(5, Duration::from_secs(3600)) // 5 purchases per hour
+    SimpleRateLimiter::new(5, Duration::from_secs(300)) // 5 minutes per token
 }
 
 /// Rate limiter for subscription management endpoints (restrictive)
+/// 3 token capacity, refills 1 token every 10 minutes (allows 6 operations per hour with bursts)
+/// Retry wait time: 10 minutes max (not 1 hour!)
 pub fn create_subscription_rate_limiter() -> SimpleRateLimiter {
-    SimpleRateLimiter::new(3, Duration::from_secs(3600)) // 3 operations per hour
+    SimpleRateLimiter::new(3, Duration::from_secs(600)) // 10 minutes per token
 }
 
 /// Rate limiter for webhook endpoints (allow more for reliability)
+/// 100 token capacity, refills 1 token per 0.6 seconds (100 per minute rate)
 pub fn create_webhook_rate_limiter() -> SimpleRateLimiter {
-    SimpleRateLimiter::new(100, Duration::from_secs(60)) // 100 webhooks per minute
+    SimpleRateLimiter::new(100, Duration::from_millis(600))
+}
+
+/// Rate limiter for AI lorebook endpoints (restrictive due to high cost)
+/// Production: 5 token capacity, refills 1 token every 12 minutes (5 AI operations per hour with bursts)
+/// Test mode: 5 token capacity, refills 1 token every 1 second (for fast test execution)
+/// Retry wait time: 12 minutes max (production), 1 second (test)
+pub fn create_ai_lorebook_rate_limiter() -> SimpleRateLimiter {
+    // In test mode, use a much faster refill rate to avoid test interference
+    #[cfg(test)]
+    {
+        SimpleRateLimiter::new(5, Duration::from_secs(1)) // 1 second per token for tests
+    }
+    #[cfg(not(test))]
+    {
+        SimpleRateLimiter::new(5, Duration::from_secs(720)) // 12 minutes per token for production
+    }
 }
 
 /// Rate limiter middleware for template endpoints
@@ -127,12 +205,25 @@ pub async fn credit_purchase_rate_limit_middleware(request: Request, next: Next)
         "unknown".to_string()
     };
 
-    // Check rate limit
-    if !limiter.is_allowed(&client_ip) {
-        warn!(client_ip = %client_ip, "Credit purchase rate limit exceeded");
+    // Check rate limit with accurate retry-after
+    let (is_allowed, retry_after) = limiter.check_request(&client_ip);
 
-        let mut response =
-            Response::new("Too Many Requests - Please wait before purchasing more credits".into());
+    if !is_allowed {
+        let retry_seconds = retry_after.unwrap_or(300); // Default to 5 minutes
+        warn!(
+            client_ip = %client_ip,
+            retry_after_seconds = retry_seconds,
+            "Credit purchase rate limit exceeded"
+        );
+
+        let mut response = Response::new(
+            format!(
+                "Too Many Requests - Please wait {} seconds ({} minutes) before purchasing more credits",
+                retry_seconds,
+                retry_seconds / 60
+            )
+            .into(),
+        );
         *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
 
         response
@@ -140,10 +231,10 @@ pub async fn credit_purchase_rate_limit_middleware(request: Request, next: Next)
             .insert("X-RateLimit-Limit", "5".parse().unwrap());
         response
             .headers_mut()
-            .insert("X-RateLimit-Window", "3600".parse().unwrap());
+            .insert("X-RateLimit-Refill-Rate", "300".parse().unwrap()); // 5 minutes per token
         response
             .headers_mut()
-            .insert("Retry-After", "3600".parse().unwrap());
+            .insert("Retry-After", retry_seconds.to_string().parse().unwrap());
 
         return response;
     }
@@ -165,12 +256,25 @@ pub async fn subscription_rate_limit_middleware(request: Request, next: Next) ->
         "unknown".to_string()
     };
 
-    // Check rate limit
-    if !limiter.is_allowed(&client_ip) {
-        warn!(client_ip = %client_ip, "Subscription management rate limit exceeded");
+    // Check rate limit with accurate retry-after
+    let (is_allowed, retry_after) = limiter.check_request(&client_ip);
 
-        let mut response =
-            Response::new("Too Many Requests - Please wait before modifying subscription".into());
+    if !is_allowed {
+        let retry_seconds = retry_after.unwrap_or(600); // Default to 10 minutes
+        warn!(
+            client_ip = %client_ip,
+            retry_after_seconds = retry_seconds,
+            "Subscription management rate limit exceeded"
+        );
+
+        let mut response = Response::new(
+            format!(
+                "Too Many Requests - Please wait {} seconds ({} minutes) before modifying subscription",
+                retry_seconds,
+                retry_seconds / 60
+            )
+            .into(),
+        );
         *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
 
         response
@@ -178,10 +282,10 @@ pub async fn subscription_rate_limit_middleware(request: Request, next: Next) ->
             .insert("X-RateLimit-Limit", "3".parse().unwrap());
         response
             .headers_mut()
-            .insert("X-RateLimit-Window", "3600".parse().unwrap());
+            .insert("X-RateLimit-Refill-Rate", "600".parse().unwrap()); // 10 minutes per token
         response
             .headers_mut()
-            .insert("Retry-After", "3600".parse().unwrap());
+            .insert("Retry-After", retry_seconds.to_string().parse().unwrap());
 
         return response;
     }
@@ -230,6 +334,93 @@ pub async fn webhook_rate_limit_middleware(request: Request, next: Next) -> Resp
 
         return response;
     }
+
+    next.run(request).await
+}
+
+/// Rate limiter middleware for AI lorebook endpoints
+pub async fn ai_lorebook_rate_limit_middleware(request: Request, next: Next) -> Response {
+    static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
+    let limiter = RATE_LIMITER.get_or_init(|| create_ai_lorebook_rate_limiter());
+
+    // Extract client identifier - use both IP and user_id if available
+    let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
+        forwarded.to_str().unwrap_or("unknown").to_string()
+    } else if let Some(socket_addr) = request.extensions().get::<SocketAddr>() {
+        socket_addr.ip().to_string()
+    } else {
+        "unknown".to_string()
+    };
+
+    // For test environments where client_ip is "unknown", use user_id from session to ensure
+    // each user gets their own rate limit bucket (prevents test interference)
+    let rate_limit_key = if client_ip == "unknown" {
+        // Try to get user_id from auth session
+        use crate::auth::user_store::Backend as AuthBackend;
+        use axum_login::AuthSession;
+
+        if let Some(auth_session) = request.extensions().get::<AuthSession<AuthBackend>>() {
+            if let Some(user) = &auth_session.user {
+                format!("user:{}", user.id)
+            } else {
+                client_ip.clone()
+            }
+        } else {
+            client_ip.clone()
+        }
+    } else {
+        client_ip.clone()
+    };
+
+    // Security logging: Track all AI lorebook request attempts
+    let uri_path = request.uri().path();
+    info!(
+        client_ip = %client_ip,
+        path = %uri_path,
+        "AI lorebook request rate limit check"
+    );
+
+    // Check rate limit with accurate retry-after
+    let (is_allowed, retry_after) = limiter.check_request(&rate_limit_key);
+
+    if !is_allowed {
+        let retry_seconds = retry_after.unwrap_or(720); // Default to 12 minutes
+        warn!(
+            client_ip = %client_ip,
+            path = %uri_path,
+            retry_after_seconds = retry_seconds,
+            "AI lorebook rate limit exceeded - request blocked"
+        );
+
+        let mut response = Response::new(
+            format!(
+                "Too Many Requests - AI lorebook operations are limited. Please wait {} seconds ({} minutes) before trying again",
+                retry_seconds,
+                retry_seconds / 60
+            )
+            .into(),
+        );
+        *response.status_mut() = axum::http::StatusCode::TOO_MANY_REQUESTS;
+
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Limit", "5".parse().unwrap());
+        response
+            .headers_mut()
+            .insert("X-RateLimit-Refill-Rate", "720".parse().unwrap()); // 12 minutes per token
+        response
+            .headers_mut()
+            .insert("Retry-After", retry_seconds.to_string().parse().unwrap());
+
+        return response;
+    }
+
+    // Security logging: Track allowed AI lorebook requests
+    info!(
+        client_ip = %client_ip,
+        path = %uri_path,
+        "AI lorebook request allowed by rate limiter"
+    );
 
     next.run(request).await
 }
@@ -599,34 +790,83 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_rate_limiter() {
+    fn test_token_bucket_rate_limiter() {
+        // 2 token capacity, 1 second refill per token
         let limiter = SimpleRateLimiter::new(2, Duration::from_secs(1));
 
-        // First two requests should be allowed
+        // First two requests should be allowed (consume both tokens)
         assert!(limiter.is_allowed("client1"));
         assert!(limiter.is_allowed("client1"));
 
-        // Third request should be denied
-        assert!(!limiter.is_allowed("client1"));
+        // Third request should be denied (no tokens left)
+        let (allowed, retry_after) = limiter.check_request("client1");
+        assert!(!allowed);
+        assert!(retry_after.is_some());
+        assert!(retry_after.unwrap() > 0);
 
-        // Different client should be allowed
+        // Different client should be allowed (separate bucket)
         assert!(limiter.is_allowed("client2"));
     }
 
     #[test]
-    fn test_rate_limiter_window_reset() {
+    fn test_token_bucket_refill() {
+        // 1 token capacity, 50ms refill per token
         let limiter = SimpleRateLimiter::new(1, Duration::from_millis(50));
 
-        // First request allowed
+        // First request allowed (consume token)
         assert!(limiter.is_allowed("client1"));
 
-        // Second request denied (within window)
+        // Second request denied (no tokens)
         assert!(!limiter.is_allowed("client1"));
 
-        // Wait for window to expire
+        // Wait for token to refill
         std::thread::sleep(Duration::from_millis(100));
 
-        // Request should be allowed again
+        // Request should be allowed again (token refilled)
         assert!(limiter.is_allowed("client1"));
+    }
+
+    #[test]
+    fn test_token_bucket_accurate_retry_after() {
+        // 2 token capacity, 100ms refill per token
+        let limiter = SimpleRateLimiter::new(2, Duration::from_millis(100));
+
+        // Consume both tokens
+        assert!(limiter.is_allowed("client1"));
+        assert!(limiter.is_allowed("client1"));
+
+        // Check retry-after is reasonable (should be ~100ms = 0 seconds, rounds to 1)
+        let (allowed, retry_after) = limiter.check_request("client1");
+        assert!(!allowed);
+        let retry_seconds = retry_after.unwrap();
+        assert!(
+            retry_seconds >= 1,
+            "Retry-after should be at least 1 second (was {})",
+            retry_seconds
+        );
+    }
+
+    #[test]
+    fn test_token_bucket_burst_capacity() {
+        // 3 token capacity, 1 second refill per token
+        let limiter = SimpleRateLimiter::new(3, Duration::from_secs(1));
+
+        // Can burst 3 requests immediately
+        assert!(limiter.is_allowed("client1"));
+        assert!(limiter.is_allowed("client1"));
+        assert!(limiter.is_allowed("client1"));
+
+        // Fourth request denied
+        assert!(!limiter.is_allowed("client1"));
+
+        // Wait for 2 seconds (should refill 2 tokens)
+        std::thread::sleep(Duration::from_millis(2100));
+
+        // Can make 2 more requests
+        assert!(limiter.is_allowed("client1"));
+        assert!(limiter.is_allowed("client1"));
+
+        // Third request after refill should be denied
+        assert!(!limiter.is_allowed("client1"));
     }
 }

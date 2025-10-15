@@ -1196,6 +1196,10 @@ pub async fn create_message_handler(
         current_variant_index: saved_db_message.current_variant_index,
         credits_charged: saved_db_message.credits_charged,
         credits_cost: saved_db_message.credits_cost,
+        actual_cost: saved_db_message.actual_cost,
+        modified_cost: saved_db_message.modified_cost,
+        credit_cost: saved_db_message.credit_cost,
+        actual_charge: saved_db_message.actual_charge,
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;

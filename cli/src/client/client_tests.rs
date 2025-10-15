@@ -961,6 +961,10 @@ async fn test_create_chat_session_success() {
         prompt_template_id: "default".to_string(),
         player_chronicle_id: None,
         agent_mode: None,
+        total_actual_cost: BigDecimal::from(0),
+        total_modified_cost: BigDecimal::from(0),
+        total_credit_cost: 0,
+        total_actual_charge: BigDecimal::from(0),
     };
 
     let request_payload = json!({

@@ -4,6 +4,7 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
@@ -152,7 +153,7 @@ async fn create_test_character_and_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
@@ -433,7 +434,7 @@ async fn test_first_mes_included_in_history() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)

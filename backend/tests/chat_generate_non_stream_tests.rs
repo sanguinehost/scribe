@@ -376,7 +376,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -973,7 +973,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
     let session: DbChat = {
@@ -1434,7 +1434,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -1790,7 +1790,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -2130,7 +2130,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -2533,7 +2533,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -2838,7 +2838,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -3155,7 +3155,7 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -3443,7 +3443,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -3618,7 +3618,7 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 

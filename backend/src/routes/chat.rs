@@ -14,6 +14,7 @@ use crate::models::chats::{
     ExpandTextRequest,
     ExpandTextResponse,
     GenerateChatRequest,
+    GenerationCost,
     ImpersonateRequest,
     ImpersonateResponse,
     MessageRole,
@@ -51,7 +52,7 @@ use axum::{
     routing::{get, post},
 };
 use axum_login::AuthSession;
-use bigdecimal::ToPrimitive;
+use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive, Zero};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
 use futures_util::StreamExt;
 use genai::chat::{
@@ -68,6 +69,9 @@ use validator::Validate;
 
 // Define CurrentAuthSession type alias
 type CurrentAuthSession = AuthSession<AuthBackend>;
+
+// Credit value in dollars per credit (1 credit = $0.02)
+const CREDIT_VALUE_DOLLARS: f64 = 0.02;
 
 // const RAG_CHUNK_LIMIT: u64 = 7; // No longer needed here, handled by prompt_builder
 
@@ -729,7 +733,12 @@ pub async fn generate_chat_response(
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
+            // New cost tracking fields
+            actual_cost: bigdecimal::BigDecimal::from(0),
+            modified_cost: bigdecimal::BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: bigdecimal::BigDecimal::from(0),
         }
     } else {
         // Normal flow: save new user message
@@ -875,6 +884,7 @@ pub async fn generate_chat_response(
                         conn,
                         session_id,
                         AnalysisType::PreProcessing,
+                        user_message_id,
                     )
                 })
                 .await
@@ -1441,9 +1451,9 @@ pub async fn generate_chat_response(
                         }
                     }
 
-                    // Calculate actual credit cost based on token usage
+                    // Calculate actual generation cost (API cost + user-facing credits)
                     #[cfg(feature = "payment")]
-                    let actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
+                    let cost_info = if prompt_tokens > 0 || completion_tokens > 0 {
                         // Load token-based pricing from config
                         let config_path =
                             std::path::Path::new("backend/config/subscription_tiers.json");
@@ -1461,43 +1471,86 @@ pub async fn generate_chat_response(
                             })?;
 
                         let token_pricing = &tiers_config["credit_system"]["token_pricing"];
-                        let model_pricing = &token_pricing[&model_to_use];
+                        let base_costs = &token_pricing["base_api_costs"][&model_to_use];
 
-                        // Using f64 to support fractional credits (e.g., 0.018 credits/1k tokens)
-                        let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
+                        // Get base API rates as strings (for BigDecimal precision)
+                        let (input_rate_str, output_rate_str) = if !base_costs.is_null() {
                             (
-                                model_pricing["prompt_credits_per_1k"]
-                                    .as_f64()
-                                    .unwrap_or(0.1),
-                                model_pricing["completion_credits_per_1k"]
-                                    .as_f64()
-                                    .unwrap_or(0.4),
+                                base_costs["input_per_million"].as_str().unwrap_or("0.10"),
+                                base_costs["output_per_million"].as_str().unwrap_or("0.40"),
                             )
                         } else {
-                            // Default rates if model not in config
-                            (0.1, 0.4)
+                            // Fallback to Flash-Lite pricing if model not found
+                            warn!(
+                                "Model '{}' not found in pricing config, using Flash-Lite pricing",
+                                model_to_use
+                            );
+                            ("0.10", "0.40")
                         };
 
-                        let prompt_cost =
-                            ((prompt_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
-                        let completion_cost =
-                            ((completion_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
-                        let total_cost = prompt_cost + completion_cost;
+                        // Parse rates to BigDecimal for precise arithmetic
+                        let input_rate: BigDecimal = input_rate_str.parse().map_err(|e| {
+                            error!("Failed to parse input rate '{}': {}", input_rate_str, e);
+                            AppError::InternalServerErrorGeneric(
+                                "Invalid pricing configuration".to_string(),
+                            )
+                        })?;
+                        let output_rate: BigDecimal = output_rate_str.parse().map_err(|e| {
+                            error!("Failed to parse output rate '{}': {}", output_rate_str, e);
+                            AppError::InternalServerErrorGeneric(
+                                "Invalid pricing configuration".to_string(),
+                            )
+                        })?;
+
+                        // Convert token counts to BigDecimal
+                        let one_million = BigDecimal::from_i64(1_000_000).unwrap();
+                        let prompt_tokens_bd = BigDecimal::from_i32(prompt_tokens).unwrap();
+                        let completion_tokens_bd = BigDecimal::from_i32(completion_tokens).unwrap();
+
+                        // Calculate BASE API cost in dollars (NO markup) using BigDecimal
+                        let input_cost = (prompt_tokens_bd / &one_million) * &input_rate;
+                        let output_cost = (completion_tokens_bd / &one_million) * &output_rate;
+                        let total_cost = input_cost + output_cost;
+
+                        // Get markup percentage and convert to BigDecimal
+                        let markup_pct = token_pricing["markup_percentage"].as_i64().unwrap_or(20);
+                        let markup_pct_bd = BigDecimal::from_i64(markup_pct).unwrap();
+                        let hundred = BigDecimal::from_i64(100).unwrap();
+                        let one = BigDecimal::from_i64(1).unwrap();
+
+                        // Calculate credits for user balance (derived from marked-up cost)
+                        let markup_multiplier = &one + (&markup_pct_bd / &hundred);
+                        let marked_up_cost = &total_cost * &markup_multiplier;
+
+                        // Convert credit value to BigDecimal and calculate credits
+                        let credit_value_bd = BigDecimal::from_f64(CREDIT_VALUE_DOLLARS).unwrap();
+                        let credits_bd = &marked_up_cost / &credit_value_bd;
+                        // Convert to f64, apply ceiling, then to i32
+                        let credits_f64 = credits_bd.to_f64().unwrap_or(0.0);
+                        let actual_credits = credits_f64.ceil() as i32;
+
+                        // Convert total_cost to f64 for logging and struct
+                        let total_cost_f64 = total_cost.to_f64().unwrap_or(0.0);
 
                         info!(
                             %session_id,
                             %prompt_tokens,
                             %completion_tokens,
-                            %prompt_cost,
-                            %completion_cost,
-                            %total_cost,
+                            base_cost_dollars = total_cost_f64,
+                            credits_derived = actual_credits,
                             %model_to_use,
-                            "Calculated token-based credit cost from config"
+                            "Calculated base API cost and derived credits"
                         );
 
-                        total_cost
+                        GenerationCost {
+                            api_cost_dollars: total_cost_f64,
+                            credits_charged: actual_credits,
+                        }
                     } else {
-                        credits_required // Fall back to fixed cost if no token data
+                        GenerationCost {
+                            api_cost_dollars: 0.0,
+                            credits_charged: credits_required,
+                        }
                     };
 
                     // Confirm credit reservation on successful LLM response
@@ -1512,15 +1565,16 @@ pub async fn generate_chat_response(
                                 let reservation_id_clone = *reservation_id; // Copy the UUID
 
                                 // Adjust reservation if actual cost is less than reserved
-                                if actual_credit_cost < *reserved_credits {
+                                if cost_info.credits_charged < *reserved_credits {
                                     let adjust_clone = credit_service.clone();
+                                    let credits_to_charge = cost_info.credits_charged;
                                     let adjust_result = conn
                                         .interact(move |conn| {
                                             adjust_clone.adjust_reservation_to_actual_cost(
                                                 conn,
                                                 user_id_value,
                                                 reservation_id_clone,
-                                                actual_credit_cost,
+                                                credits_to_charge,
                                             )
                                         })
                                         .await;
@@ -1531,8 +1585,8 @@ pub async fn generate_chat_response(
                                                 %session_id,
                                                 %reservation_id,
                                                 reserved = *reserved_credits,
-                                                actual = actual_credit_cost,
-                                                refunded = *reserved_credits - actual_credit_cost,
+                                                actual = cost_info.credits_charged,
+                                                refunded = *reserved_credits - cost_info.credits_charged,
                                                 "Credit reservation adjusted to actual usage"
                                             );
                                         }
@@ -1646,7 +1700,13 @@ pub async fn generate_chat_response(
                                 #[cfg(not(feature = "payment"))]
                                 charge_credits: false,
                                 #[cfg(feature = "payment")]
-                                credits_cost_override: Some(actual_credit_cost), // Use pre-calculated cost
+                                credits_cost_override: Some({
+                                    use std::str::FromStr;
+                                    bigdecimal::BigDecimal::from_str(
+                                        &cost_info.api_cost_dollars.to_string(),
+                                    )
+                                    .unwrap_or_else(|_| bigdecimal::BigDecimal::from(0))
+                                }), // Use pre-calculated base API cost in dollars
                                 #[cfg(not(feature = "payment"))]
                                 credits_cost_override: None,
                             },
