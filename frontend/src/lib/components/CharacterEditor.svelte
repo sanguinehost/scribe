@@ -15,6 +15,7 @@
 	import AdvancedEditor from '$lib/components/character/AdvancedEditor.svelte';
 	import LorebookEditor from '$lib/components/character/LorebookEditor.svelte';
 	import CharacterPreview from '$lib/components/shared/CharacterPreview.svelte';
+	import UnsavedChangesDialog from '$lib/components/shared/UnsavedChangesDialog.svelte';
 	import type { Character } from '$lib/types';
 	import type { CharacterCardV3 } from '$lib/types/character';
 	import { createEventDispatcher } from 'svelte';
@@ -32,6 +33,7 @@
 
 	let isSaving = $state(false);
 	let currentTab = $state('basic');
+	let showConfirmClose = $state(false);
 
 	// Load character into store when dialog opens or character changes
 	$effect(() => {
@@ -67,6 +69,15 @@
 	});
 
 	function handleClose() {
+		// Check for unsaved changes before closing
+		if (characterStore.hasChanges) {
+			showConfirmClose = true;
+			return;
+		}
+		actuallyClose();
+	}
+
+	function actuallyClose() {
 		if (onOpenChange) {
 			onOpenChange(false);
 		} else {
@@ -74,6 +85,20 @@
 		}
 		// Clear store on close
 		characterStore.clear();
+		showConfirmClose = false;
+	}
+
+	function handleConfirmSave() {
+		// Trigger the save action
+		handleSave();
+	}
+
+	function handleConfirmDiscard() {
+		actuallyClose();
+	}
+
+	function handleConfirmCancel() {
+		showConfirmClose = false;
 	}
 
 	async function handleSave() {
@@ -123,7 +148,7 @@
 			if (result.isOk()) {
 				toast.success('Character updated successfully');
 				dispatch('updated', { character: result.value });
-				handleClose();
+				actuallyClose();
 			} else {
 				toast.error('Failed to update character: ' + result.error.message);
 			}
@@ -268,3 +293,12 @@
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
+
+<UnsavedChangesDialog
+	open={showConfirmClose}
+	characterName={characterStore.character?.data.name}
+	{isSaving}
+	onSave={handleConfirmSave}
+	onDiscard={handleConfirmDiscard}
+	onCancel={handleConfirmCancel}
+/>
