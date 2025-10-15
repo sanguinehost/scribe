@@ -709,8 +709,10 @@
 	// Main chat session costs come from server-side credit tracking (chat.total_credits_used)
 	const modelPricing = {
 		'gemini-2.5-flash': { input: 0.36, output: 3.0 }, // 20% markup on $0.30/$2.50
+		'gemini-2.5-flash-preview-09-2025': { input: 0.36, output: 3.0 }, // Same as flash
+		'gemini-2.5-flash-image': { input: 0.36, output: 3.0 }, // Same as flash
 		'gemini-2.5-pro': { input: 1.5, output: 12.0 }, // 20% markup on $1.25/$10.00
-		'gemini-2.5-flash-lite-preview': { input: 0.12, output: 0.48 } // 20% markup on $0.10/$0.40
+		'gemini-2.5-flash-lite-preview-09-2025': { input: 0.12, output: 0.48 } // 20% markup on $0.10/$0.40
 	};
 	let availablePersonas = $state<UserPersona[]>([]);
 

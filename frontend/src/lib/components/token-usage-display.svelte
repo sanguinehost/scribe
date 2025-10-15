@@ -34,13 +34,17 @@
 	const GEMINI_PRICING = ENABLE_PAYMENTS
 		? {
 				'gemini-2.5-flash': { input: 0.36, output: 3.0 }, // Customer: $0.30 + 20% = $0.36
+				'gemini-2.5-flash-preview-09-2025': { input: 0.36, output: 3.0 }, // Same as flash
+				'gemini-2.5-flash-image': { input: 0.36, output: 3.0 }, // Same as flash
 				'gemini-2.5-pro': { input: 1.5, output: 12.0 }, // Customer: $1.25 + 20% = $1.50
-				'gemini-2.5-flash-lite-preview': { input: 0.12, output: 0.48 } // Customer: $0.10 + 20% = $0.12
+				'gemini-2.5-flash-lite-preview-09-2025': { input: 0.12, output: 0.48 } // Customer: $0.10 + 20% = $0.12
 			}
 		: {
 				'gemini-2.5-flash': { input: 0.3, output: 2.5 }, // Google API: $0.30/1M, $2.50/1M
+				'gemini-2.5-flash-preview-09-2025': { input: 0.3, output: 2.5 }, // Same as flash
+				'gemini-2.5-flash-image': { input: 0.3, output: 2.5 }, // Same as flash
 				'gemini-2.5-pro': { input: 1.25, output: 10.0 }, // Google API: $1.25/1M, $10.00/1M
-				'gemini-2.5-flash-lite-preview': { input: 0.1, output: 0.4 } // Google API: $0.10/1M, $0.40/1M
+				'gemini-2.5-flash-lite-preview-09-2025': { input: 0.1, output: 0.4 } // Google API: $0.10/1M, $0.40/1M
 			};
 
 	const totalTokens = $derived((promptTokens || 0) + (completionTokens || 0));
@@ -50,8 +54,8 @@
 		const normalized = model.toLowerCase().trim();
 		// Handle common aliases and variations
 		const aliases: Record<string, string> = {
-			'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite-preview',
-			'flash-lite': 'gemini-2.5-flash-lite-preview',
+			'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite-preview-09-2025',
+			'flash-lite': 'gemini-2.5-flash-lite-preview-09-2025',
 			flash: 'gemini-2.5-flash',
 			pro: 'gemini-2.5-pro'
 		};

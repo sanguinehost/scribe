@@ -389,8 +389,10 @@
 					{@const pricing = {
 						// Customer-facing prices with 20% markup over Google API base rates
 						'gemini-2.5-flash': { input: 0.36, output: 3.0 }, // Base: $0.30/$2.50, +20% = $0.36/$3.00
+						'gemini-2.5-flash-preview-09-2025': { input: 0.36, output: 3.0 }, // Same as flash
+						'gemini-2.5-flash-image': { input: 0.36, output: 3.0 }, // Same as flash
 						'gemini-2.5-pro': { input: 1.5, output: 12.0 }, // Base: $1.25/$10.00, +20% = $1.50/$12.00
-						'gemini-2.5-flash-lite-preview': { input: 0.12, output: 0.48 } // Base: $0.10/$0.40, +20% = $0.12/$0.48
+						'gemini-2.5-flash-lite-preview-09-2025': { input: 0.12, output: 0.48 } // Base: $0.10/$0.40, +20% = $0.12/$0.48
 					}[model] || { input: 1.5, output: 12.0 }}
 					{@const inputCost = ((message.prompt_tokens || 0) / 1_000_000) * pricing.input}
 					{@const outputCost = ((message.completion_tokens || 0) / 1_000_000) * pricing.output}
