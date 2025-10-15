@@ -132,6 +132,7 @@
 			{/if}
 
 			<!-- Main image -->
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 			<img
 				bind:this={imageElement}
 				src={fullResolutionSrc}
@@ -142,6 +143,7 @@
 				onload={handleImageLoad}
 				onerror={handleImageError}
 				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
 			/>
 
 			{#if alt && isImageLoaded}

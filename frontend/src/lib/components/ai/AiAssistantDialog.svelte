@@ -13,15 +13,15 @@
 	import { Slider } from '$lib/components/ui/slider';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Loader2, Sparkles, Copy, Check } from 'lucide-svelte';
-	import { apiClient } from '$lib/api';
+	import { generate, generateStream } from '$lib/utils/ai/generation-engine';
 	import {
 		getRecommendedStyle,
-		getAvailableStyles,
-		isModeSupported,
 		getRecommendedMaxTokens,
-		sanitizeAIOutput
-	} from '$lib/utils/ai-generation-helpers';
-	import type { GenerationMode, DescriptionStyle, CharacterContext } from '$lib/types';
+		isModeSupported,
+		getAvailableStyles
+	} from '$lib/utils/ai/prompts';
+	import { sanitizeAIOutput } from '$lib/utils/ai/security';
+	import type { GenerationMode, DescriptionStyle, CharacterContext } from '$lib/types/ai';
 
 	interface Props {
 		/** Dialog open state */
@@ -172,65 +172,42 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 			}
 
 			if (useStreaming) {
-				// Streaming generation using Scribe's API
-				try {
-					const generator = apiClient.generateCharacterFieldStream({
-						fieldName,
-						fieldValue: mode === 'create' ? undefined : fieldValue,
-						characterContext,
-						mode,
-						style: style !== 'auto' ? style : undefined,
-						userPrompt: finalUserPrompt || undefined
-					});
-
-					for await (const chunk of generator) {
-						if ('content' in chunk && chunk.content) {
-							// Check if this is a GenerationChunk (has 'done' property) or final response
-							if ('done' in chunk) {
-								// This is a GenerationChunk
-								if (chunk.done) {
-									// Final chunk - use complete content
-									streamedContent = chunk.content;
-									generatedContent = sanitizeAIOutput(streamedContent);
-								} else {
-									// Incremental chunk - append content
-									streamedContent += chunk.content;
-								}
-							} else {
-								// This is GenerateCharacterFieldResponse (final response)
-								streamedContent = chunk.content;
-								generatedContent = sanitizeAIOutput(chunk.content);
-							}
-						}
-					}
-
-					// Ensure final content is sanitized
-					if (!generatedContent && streamedContent) {
-						generatedContent = sanitizeAIOutput(streamedContent);
-					}
-				} catch (streamError) {
-					const errorMessage =
-						streamError instanceof Error ? streamError.message : 'Streaming failed';
-					error = errorMessage;
-					console.error('Streaming error:', streamError);
-				}
-			} else {
-				// Non-streaming generation using Scribe's API
-				const result = await apiClient.generateCharacterField({
+				// Streaming generation
+				const stream = generateStream({
 					fieldName,
 					fieldValue: mode === 'create' ? undefined : fieldValue,
 					characterContext,
 					mode,
-					style: style !== 'auto' ? style : undefined,
-					userPrompt: finalUserPrompt || undefined
+					style,
+					userPrompt: finalUserPrompt || undefined,
+					maxTokens
 				});
 
-				if (result.isOk()) {
-					generatedContent = result.value.content;
-					console.log('Generation complete');
-				} else {
-					error = result.error?.message || 'Failed to generate content';
+				for await (const chunk of stream) {
+					if (chunk.done) {
+						// Final chunk with metadata
+						// Sanitize the complete accumulated content
+						generatedContent = sanitizeAIOutput(streamedContent);
+						console.log('Generation complete:', chunk.metadata);
+					} else {
+						// Accumulate content (raw, unsanitized)
+						streamedContent += chunk.content;
+					}
 				}
+			} else {
+				// Non-streaming generation
+				const result = await generate({
+					fieldName,
+					fieldValue: mode === 'create' ? undefined : fieldValue,
+					characterContext,
+					mode,
+					style,
+					userPrompt: finalUserPrompt || undefined,
+					maxTokens
+				});
+
+				generatedContent = result.content;
+				console.log('Generation complete:', result.metadata);
 			}
 		} catch (err) {
 			if (err instanceof Error) {
@@ -281,7 +258,7 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 </script>
 
 <Dialog bind:open {onOpenChange}>
-	<DialogContent class="max-h-[90vh] max-w-5xl overflow-y-auto">
+	<DialogContent class="max-h-[90vh] max-w-3xl overflow-y-auto">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
 				<Sparkles class="h-5 w-5" />
@@ -354,7 +331,8 @@ DO NOT generate an actual status block in your output - only generate the INSTRU
 					min={500}
 					max={5000}
 					step={100}
-					bind:value={maxTokens}
+					value={maxTokens}
+					onValueChange={(value: number) => (maxTokens = value)}
 					class="w-full"
 				/>
 				<div class="flex justify-between text-xs text-muted-foreground">

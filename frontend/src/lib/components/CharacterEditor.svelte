@@ -1,823 +1,270 @@
 <script lang="ts">
-	import {
-		Dialog,
-		DialogContent,
-		DialogDescription,
-		DialogHeader,
-		DialogTitle,
-		DialogFooter
-	} from '$lib/components/ui/dialog';
-	import { Button as ButtonComponent } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea as TextareaComponent } from '$lib/components/ui/textarea';
-	import { Checkbox as CheckboxComponent } from '$lib/components/ui/checkbox';
-	import { Badge as BadgeComponent } from '$lib/components/ui/badge';
-	import { apiClient as _apiClient } from '$lib/api';
+	import { characterStore } from '$lib/stores/character.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import * as Card from '$lib/components/ui/card';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { Expand, X as _X, Heart, Globe, Plus, HelpCircle } from 'lucide-svelte';
-	import GenerationWidget from './generation-widget.svelte';
-	import type { Character, CharacterDataForClient, Lorebook, CharacterContext } from '$lib/types';
-	import { writable } from 'svelte/store';
-	import { tick } from 'svelte';
+	import { X } from 'lucide-svelte';
 
-	export let characterId: string | null = null;
-	export let _open = false;
+	import BasicInfoEditor from '$lib/components/character/BasicInfoEditor.svelte';
+	import GreetingsEditor from '$lib/components/character/GreetingsEditor.svelte';
+	import DefinitionsEditor from '$lib/components/character/DefinitionsEditor.svelte';
+	import AssetsEditor from '$lib/components/character/AssetsEditor.svelte';
+	import AdvancedEditor from '$lib/components/character/AdvancedEditor.svelte';
+	import LorebookEditor from '$lib/components/character/LorebookEditor.svelte';
+	import CharacterPreview from '$lib/components/shared/CharacterPreview.svelte';
+	import type { Character } from '$lib/types';
+	import type { CharacterCardV3 } from '$lib/types/character';
+	import { createEventDispatcher } from 'svelte';
 
-	let loading = false;
-	let saving = false;
-	let character: Character | null = null;
-	let lorebooks = writable<Lorebook[]>([]);
-
-	async function loadLorebooks() {
-		try {
-			const result = await _apiClient.getLorebooks();
-			if (result.isOk()) {
-				lorebooks.set(result.value);
-			} else {
-				toast.error('Failed to load lorebooks: ' + result.error.message);
-			}
-		} catch (_error) {
-			toast.error('Failed to load lorebooks');
-		}
+	// Props
+	interface Props {
+		open?: boolean;
+		character?: Character;
+		onOpenChange?: (open: boolean) => void;
 	}
 
-	// Pop-out editor state
-	let popoutEditorOpen = false;
-	let _popoutFieldName = '';
-	let popoutFieldLabel = '';
-	let popoutContent = '';
-	let popoutFieldKey = ''; // Used to store the actual formData key
-	let popoutFieldType: 'text' | 'number' | 'select' = 'text'; // Added to handle different input types
+	let { open = $bindable(false), character, onOpenChange }: Props = $props();
 
-	// Helper to get current character context for generation
-	// Comprehensive context matching CharacterCreator to ensure AI has full context
-	$: characterContext = (() => {
-		const context: CharacterContext = {};
-		if (formData.name) context.name = formData.name;
-		if (formData.description) context.description = formData.description;
-		if (formData.personality) context.personality = formData.personality;
-		if (formData.scenario) context.scenario = formData.scenario;
-		if (formData.first_mes) context.first_mes = formData.first_mes;
-		if (formData.mes_example) context.mes_example = formData.mes_example;
-		if (formData.system_prompt) context.system_prompt = formData.system_prompt;
-		if (formData.depth_prompt) context.depth_prompt = formData.depth_prompt;
-		if (formData.tags && formData.tags.length > 0) context.tags = formData.tags;
-		if (formData.alternate_greetings && formData.alternate_greetings.length > 0) {
-			context.alternate_greetings = formData.alternate_greetings;
-		}
-		if (formData.selectedLorebooks && formData.selectedLorebooks.length > 0) {
-			context.selectedLorebooks = formData.selectedLorebooks;
-		}
-		return context;
-	})();
+	const dispatch = createEventDispatcher();
 
-	// Form data with all SillyTavern v3 fields - these SHOULD be used in backend
-	let formData = {
-		// Core character data (encrypted & actively used)
-		name: '',
-		description: '',
-		first_mes: '',
-		personality: '',
-		scenario: '',
-		mes_example: '',
-		system_prompt: '',
+	let isSaving = $state(false);
+	let currentTab = $state('basic');
 
-		// Core metadata
-		creator: '',
-		character_version: '',
-		tags: [] as string[],
-		alternate_greetings: [] as string[],
-		nickname: '',
-		category: '',
-
-		// SillyTavern v3 extensions
-		fav: false,
-		world: '', // Backward compatibility - single lorebook
-		selectedLorebooks: [] as string[], // Multiple lorebooks support
-		depth_prompt: '', // Character's Note content
-		depth_prompt_depth: null as number | null, // Character's Note depth
-		depth_prompt_role: '', // Character's Note placement role
-		talkativeness: 0.5
-	};
-
-	const insertionRoles = [
-		{
-			value: 'system',
-			label: 'System',
-			description: 'Inserts the note as a system message. Good for high-level instructions.'
-		},
-		{
-			value: 'user',
-			label: 'User',
-			description:
-				'Inserts the note as a user message. Good for simulating user replies or steering conversation.'
-		},
-		{
-			value: 'assistant',
-			label: 'Assistant',
-			description:
-				"Inserts the note as an assistant message. Good for correcting or guiding AI's previous responses."
-		}
-	];
-
-	// Load character data when dialog opens or characterId changes
-	$: if (_open && characterId) {
-		loadCharacter();
-	}
-
-	async function loadCharacter() {
-		if (!characterId) return;
-
-		loading = true;
-		try {
-			// Ensure lorebooks are loaded before character data to populate the dropdown correctly.
-			await loadLorebooks();
-
-			const result = await _apiClient.getCharacter(characterId);
-			if (result.isOk()) {
-				character = result.value;
-				// Wait for the DOM to update after lorebooks have been loaded.
-				await tick();
-
-				// Populate form with all character data including SillyTavern v3 fields
-				formData = {
-					// Core character data (encrypted & actively used)
+	// Load character into store when dialog opens or character changes
+	$effect(() => {
+		if (open && character) {
+			// Convert scribe's character format to V3 format for editing
+			const v3Character: CharacterCardV3 = {
+				spec: 'chara_card_v3',
+				spec_version: '3.0',
+				data: {
 					name: character.name || '',
-					description: character.description ?? '',
-					first_mes: character.first_mes ?? '',
-					personality: character.personality ?? '',
-					scenario: character.scenario ?? '',
-					mes_example: character.mes_example ?? '',
-					system_prompt: character.system_prompt ?? '',
-
-					// Core metadata
-					creator: character.creator ?? '',
-					character_version: character.character_version ?? '',
-					tags: character.tags?.filter((tag) => tag !== null) as string[] | [],
-					alternate_greetings: character.alternate_greetings || [],
-					nickname: character.nickname ?? '',
-					category: character.category ?? '',
-
-					// SillyTavern v3 extensions (need backend integration)
-					fav: character.fav ?? false,
-					world: character.lorebook_id ?? character.world ?? '',
-					selectedLorebooks:
-						character.lorebook_ids && character.lorebook_ids.length > 0
-							? character.lorebook_ids
-							: character.lorebook_id
-								? [character.lorebook_id]
-								: [],
-					depth_prompt: character.depth_prompt ?? '',
-					depth_prompt_depth: character.depth_prompt_depth ?? null,
-					depth_prompt_role: character.depth_prompt_role ?? '',
-					talkativeness: Number(character.talkativeness ?? 0.5)
-				};
-			} else {
-				toast.error('Failed to load character: ' + result.error.message);
-				_open = false;
-			}
-		} catch (_error) {
-			toast.error('Failed to load character');
-			_open = false;
-		} finally {
-			loading = false;
+					description: character.description || '',
+					personality: character.personality || '',
+					scenario: character.scenario || '',
+					first_mes: character.first_mes || '',
+					mes_example: character.mes_example || '',
+					creator_notes: '',
+					system_prompt: character.system_prompt || '',
+					post_history_instructions: character.post_history_instructions || '',
+					alternate_greetings: (character.alternate_greetings || []).filter(
+						(g): g is string => g !== null
+					),
+					tags: (character.tags || []).filter((t): t is string => t !== null),
+					creator: character.creator || '',
+					character_version: character.character_version || '',
+					nickname: character.nickname || undefined,
+					group_only_greetings: [],
+					extensions:
+						(character.extensions as Record<string, unknown>) || ({} as Record<string, unknown>)
+				}
+			};
+			characterStore.load(v3Character);
 		}
+	});
+
+	function handleClose() {
+		if (onOpenChange) {
+			onOpenChange(false);
+		} else {
+			open = false;
+		}
+		// Clear store on close
+		characterStore.clear();
 	}
 
 	async function handleSave() {
-		if (!characterId) return;
+		if (!characterStore.character || !character) return;
 
-		saving = true;
+		const editedCharacter = characterStore.character;
+
+		// Validate required fields
+		if (!editedCharacter.data.name?.trim()) {
+			toast.error('Name is required');
+			return;
+		}
+		if (!editedCharacter.data.description?.trim()) {
+			toast.error('Description is required');
+			return;
+		}
+		if (!editedCharacter.data.first_mes?.trim()) {
+			toast.error('First message is required');
+			return;
+		}
+
+		isSaving = true;
 		try {
-			// Following the pattern from CharacterCreator.svelte to build the payload explicitly.
-			const updateData: Partial<CharacterDataForClient> = {};
+			// Convert V3 format back to scribe's backend format
+			const updateData = {
+				spec: 'character_card_v2',
+				spec_version: '2.0',
+				name: editedCharacter.data.name.trim(),
+				description: editedCharacter.data.description.trim(),
+				first_mes: editedCharacter.data.first_mes.trim(),
+				personality: editedCharacter.data.personality?.trim() || undefined,
+				scenario: editedCharacter.data.scenario?.trim() || undefined,
+				mes_example: editedCharacter.data.mes_example?.trim() || undefined,
+				system_prompt: editedCharacter.data.system_prompt?.trim() || undefined,
+				creator: editedCharacter.data.creator?.trim() || undefined,
+				character_version: editedCharacter.data.character_version?.trim() || undefined,
+				tags: editedCharacter.data.tags || [],
+				alternate_greetings: editedCharacter.data.alternate_greetings || [],
+				nickname: editedCharacter.data.nickname?.trim() || undefined,
+				extensions: editedCharacter.data.extensions || {}
+			};
 
-			// Core data - only add to payload if it has a value
-			if (formData.name) updateData.name = formData.name;
-			if (formData.description) updateData.description = formData.description;
-			if (formData.first_mes) updateData.first_mes = formData.first_mes;
-			if (formData.personality) updateData.personality = formData.personality;
-			if (formData.scenario) updateData.scenario = formData.scenario;
-			if (formData.mes_example) updateData.mes_example = formData.mes_example;
-			if (formData.system_prompt) updateData.system_prompt = formData.system_prompt;
-
-			// Metadata
-			if (formData.creator) updateData.creator = formData.creator;
-			if (formData.character_version) updateData.character_version = formData.character_version;
-			if (formData.nickname) updateData.nickname = formData.nickname;
-			if (formData.category) updateData.category = formData.category;
-
-			// Arrays - filter out empty strings
-			const validTags = formData.tags.filter((t) => t.trim() !== '');
-			if (validTags.length > 0) {
-				updateData.tags = validTags;
-			}
-			const validGreetings = formData.alternate_greetings.filter((g) => g.trim() !== '');
-			if (validGreetings.length > 0) {
-				updateData.alternate_greetings = validGreetings;
-			}
-
-			// SillyTavern extensions
-			updateData.fav = formData.fav; // Always send boolean
-			// For backward compatibility, send the first selected lorebook as 'world'
-			updateData.world = formData.selectedLorebooks.length > 0 ? formData.selectedLorebooks[0] : '';
-			if (formData.depth_prompt) updateData.depth_prompt = formData.depth_prompt;
-			if (formData.depth_prompt_depth !== null)
-				updateData.depth_prompt_depth = formData.depth_prompt_depth;
-			if (formData.depth_prompt_role) updateData.depth_prompt_role = formData.depth_prompt_role;
-			updateData.talkativeness = formData.talkativeness.toString(); // Convert number to string
-
-			const result = await _apiClient.updateCharacter(characterId, updateData);
+			const result = await apiClient.updateCharacter(
+				character.id,
+				updateData as Partial<Character>
+			);
 			if (result.isOk()) {
 				toast.success('Character updated successfully');
-				_open = false;
+				dispatch('updated', { character: result.value });
+				handleClose();
 			} else {
 				toast.error('Failed to update character: ' + result.error.message);
 			}
-		} catch (_error) {
+		} catch (error) {
 			toast.error('Failed to update character');
+			console.error('Character update error:', error);
 		} finally {
-			saving = false;
-		}
-	}
-
-	function handleCancel() {
-		_open = false;
-		// Reset form
-		formData = {
-			// Core character data (encrypted & actively used)
-			name: '',
-			description: '',
-			first_mes: '',
-			personality: '',
-			scenario: '',
-			mes_example: '',
-			system_prompt: '',
-
-			// Core metadata
-			creator: '',
-			character_version: '',
-			tags: [],
-			alternate_greetings: [],
-			nickname: '',
-			category: '',
-
-			// SillyTavern v3 extensions (need backend integration)
-			fav: false,
-			world: '',
-			depth_prompt: '', // Character's Note
-			depth_prompt_depth: null,
-			depth_prompt_role: '',
-			talkativeness: 0.5,
-			selectedLorebooks: [] as string[]
-		};
-		character = null;
-	}
-
-	function openPopoutEditor(fieldKey: string, fieldLabel: string, greetingIndex?: number) {
-		popoutFieldKey = fieldKey;
-		_popoutFieldName = fieldKey;
-		popoutFieldLabel = fieldLabel;
-		popoutFieldType = 'text'; // Default to text
-
-		if (fieldKey === 'alternate_greeting' && greetingIndex !== undefined) {
-			// Handle alternate greeting specifically
-			popoutContent = formData.alternate_greetings[greetingIndex] || '';
-			popoutFieldKey = `alternate_greeting_${greetingIndex}`;
-		} else if (fieldKey === 'depth_prompt_depth') {
-			popoutContent = String(formData.depth_prompt_depth ?? '');
-			popoutFieldType = 'number';
-		} else if (fieldKey === 'depth_prompt_role') {
-			popoutContent = formData.depth_prompt_role ?? '';
-			popoutFieldType = 'text'; // Or 'select' if we define options
-		} else {
-			popoutContent = (formData[fieldKey as keyof typeof formData] as string) || '';
-		}
-		popoutEditorOpen = true;
-	}
-
-	function savePopoutEditor() {
-		if (popoutFieldKey) {
-			if (popoutFieldKey.startsWith('alternate_greeting_')) {
-				// Handle alternate greeting specifically
-				const index = parseInt(popoutFieldKey.split('_')[2]);
-				formData.alternate_greetings[index] = popoutContent;
-			} else if (popoutFieldKey === 'depth_prompt_depth') {
-				formData.depth_prompt_depth = popoutContent ? Number(popoutContent) : null;
-			} else if (popoutFieldKey === 'depth_prompt_role') {
-				formData.depth_prompt_role = popoutContent;
-			} else {
-				// Type-safe way to update known formData fields
-				type FormDataKey = keyof typeof formData;
-				if (popoutFieldKey in formData) {
-					(formData as Record<FormDataKey, string | string[] | number | boolean | null>)[
-						popoutFieldKey as FormDataKey
-					] = popoutContent;
-				}
-			}
-			popoutEditorOpen = false;
-			popoutFieldKey = '';
-			_popoutFieldName = '';
-			popoutFieldLabel = '';
-			popoutContent = '';
-			popoutFieldType = 'text';
-		}
-	}
-
-	function cancelPopoutEditor() {
-		popoutEditorOpen = false;
-		popoutFieldKey = '';
-		_popoutFieldName = '';
-		popoutFieldLabel = '';
-		popoutContent = '';
-		popoutFieldType = 'text';
-	}
-
-	// Tag management functions
-	let newTag = '';
-
-	function addTag() {
-		if (newTag.trim() && !formData.tags.includes(newTag.trim())) {
-			formData.tags = [...formData.tags, newTag.trim()];
-			newTag = '';
-		}
-	}
-
-	function removeTag(tagToRemove: string) {
-		formData.tags = formData.tags.filter((tag) => tag !== tagToRemove);
-	}
-
-	function handleTagKeydown(_event: KeyboardEvent) {
-		if (_event.key === 'Enter') {
-			_event.preventDefault();
-			addTag();
+			isSaving = false;
 		}
 	}
 </script>
 
-<Dialog bind:open={_open}>
-	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-		<DialogHeader>
-			<DialogTitle>Edit Character</DialogTitle>
-			<DialogDescription>
-				Edit the character's details. Leave fields empty to keep existing values.
-			</DialogDescription>
-		</DialogHeader>
-
-		{#if loading}
-			<div class="flex items-center justify-center py-8">
-				<div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
-			</div>
-		{:else if character}
-			<div class="grid gap-4 py-4">
-				<!-- Basic Information -->
-				<div class="space-y-4 border-b pb-4">
-					<div class="flex items-center gap-2">
-						<h3 class="text-lg font-semibold">Basic Information</h3>
-						<div class="ml-auto flex items-center gap-2">
-							<CheckboxComponent id="favorite" bind:checked={formData.fav} />
-							<Label for="favorite" class="flex items-center gap-1 text-sm">
-								<Heart class="h-4 w-4" />
-								Favorite
-							</Label>
-						</div>
+<Dialog.Root {open} onOpenChange={handleClose}>
+	<Dialog.Portal>
+		<Dialog.Overlay />
+		<Dialog.Content class="flex max-h-[95vh] max-w-[95vw] flex-col overflow-hidden p-0">
+			<Dialog.Header class="border-b px-6 pb-4 pt-6">
+				<div class="flex items-center justify-between">
+					<div>
+						<Dialog.Title>Edit Character</Dialog.Title>
+						<Dialog.Description>
+							Update your character with the full-featured editor
+						</Dialog.Description>
 					</div>
+					<Button variant="ghost" size="icon" class="h-8 w-8" onclick={handleClose}>
+						<X class="h-4 w-4" />
+					</Button>
+				</div>
+			</Dialog.Header>
 
-					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-						<div class="grid gap-2">
-							<Label for="name">Name</Label>
-							<Input id="name" bind:value={formData.name} placeholder={character.name} />
-						</div>
-						<div class="grid gap-2">
-							<Label for="creator">Creator</Label>
-							<Input
-								id="creator"
-								bind:value={formData.creator}
-								placeholder={character.creator ?? 'Anonymous'}
-							/>
-						</div>
-					</div>
+			<div class="flex-1 overflow-y-auto px-6 py-4">
+				<div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
+					<!-- Editor Panel -->
+					<div>
+						<Tabs.Root bind:value={currentTab} class="w-full">
+							<Tabs.List class="grid w-full grid-cols-6">
+								<Tabs.Trigger value="basic">Basic Info</Tabs.Trigger>
+								<Tabs.Trigger value="greetings">Greetings</Tabs.Trigger>
+								<Tabs.Trigger value="definitions">Definitions</Tabs.Trigger>
+								<Tabs.Trigger value="lorebook">Lorebook</Tabs.Trigger>
+								<Tabs.Trigger value="assets">Assets</Tabs.Trigger>
+								<Tabs.Trigger value="advanced">Advanced</Tabs.Trigger>
+							</Tabs.List>
 
-					<div class="grid gap-2">
-						<Label>Tags</Label>
-						<div class="mb-2 flex flex-wrap gap-2">
-							{#each formData.tags as tag}
-								<BadgeComponent variant="secondary" class="flex items-center gap-1">
-									{tag}
-									<button
-										type="button"
-										onclick={() => removeTag(tag)}
-										class="hover:text-destructive"
-									>
-										<svelte:component this={_X} class="h-3 w-3" />
-									</button>
-								</BadgeComponent>
-							{/each}
-						</div>
-						<div class="flex gap-2">
-							<Input
-								bind:value={newTag}
-								placeholder="Add a tag..."
-								onkeydown={handleTagKeydown}
-								class="flex-1"
-							/>
-							<ButtonComponent type="button" onclick={addTag} size="sm" variant="outline">
-								<Plus class="h-4 w-4" />
-							</ButtonComponent>
-						</div>
-					</div>
+							<div class="mt-4">
+								<Tabs.Content value="basic" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Basic Information</Card.Title>
+											<Card.Description>Core character details and metadata</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<BasicInfoEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
 
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Label for="description">Description</Label>
-							<GenerationWidget
-								fieldName="description"
-								fieldValue={formData.description}
-								{characterContext}
-								onGenerated={(generatedText) => {
-									formData.description = generatedText;
-								}}
-								disabled={saving}
-							/>
-						</div>
-						<TextareaComponent
-							id="description"
-							bind:value={formData.description}
-							placeholder={character.description ?? 'Character description...'}
-							rows={4}
-						/>
-					</div>
+								<Tabs.Content value="greetings" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Greetings</Card.Title>
+											<Card.Description>First message and alternate greetings</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<GreetingsEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
 
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Label for="first_mes">First Message</Label>
-							<GenerationWidget
-								fieldName="first_mes"
-								fieldValue={formData.first_mes}
-								{characterContext}
-								onGenerated={(generatedText) => {
-									formData.first_mes = generatedText;
-								}}
-								disabled={saving}
-							/>
-						</div>
-						<TextareaComponent
-							id="first_mes"
-							bind:value={formData.first_mes}
-							placeholder={character.first_mes ?? 'Initial greeting or first message...'}
-							rows={4}
-						/>
-					</div>
+								<Tabs.Content value="definitions" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Character Definitions</Card.Title>
+											<Card.Description>
+												Personality, scenario, and example messages
+											</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<DefinitionsEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
 
-					<div class="grid gap-2">
-						<Label class="flex items-center gap-1">
-							<Globe class="h-4 w-4" />
-							Lorebooks
-						</Label>
-						<div
-							class="max-h-48 space-y-2 overflow-y-auto rounded-md border border-input bg-transparent p-3"
-						>
-							{#if $lorebooks && $lorebooks.length > 0}
-								{#each $lorebooks as lorebook}
-									<div class="flex items-center space-x-2">
-										<CheckboxComponent
-											id={`lorebook-${lorebook.id}`}
-											checked={formData.selectedLorebooks.includes(lorebook.id)}
-											on:change={() => {
-												if (formData.selectedLorebooks.includes(lorebook.id)) {
-													formData.selectedLorebooks = formData.selectedLorebooks.filter(
-														(id) => id !== lorebook.id
-													);
-												} else {
-													formData.selectedLorebooks = [...formData.selectedLorebooks, lorebook.id];
-												}
-											}}
-										/>
-										<Label for={`lorebook-${lorebook.id}`} class="text-sm font-normal">
-											{lorebook.name ?? 'Unnamed Lorebook'}
-										</Label>
-									</div>
-								{/each}
-							{:else}
-								<p class="text-sm text-muted-foreground">No lorebooks available</p>
-							{/if}
-						</div>
-						<p class="text-sm text-muted-foreground">
-							Select multiple lorebooks to provide additional context for this character.
-						</p>
-					</div>
+								<Tabs.Content value="lorebook" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Lorebook</Card.Title>
+											<Card.Description>World information and character knowledge</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<LorebookEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
 
-					<div class="grid gap-2">
-						<div class="flex items-center justify-between">
-							<Label>Alternate Greetings</Label>
-							<ButtonComponent
-								type="button"
-								variant="outline"
-								size="sm"
-								onclick={() => {
-									formData.alternate_greetings = [...formData.alternate_greetings, ''];
-								}}
-							>
-								Add Greeting
-							</ButtonComponent>
-						</div>
-						{#if formData.alternate_greetings.length > 0}
-							<div class="space-y-2">
-								{#each formData.alternate_greetings as _greeting, index (index)}
-									<div class="flex gap-2">
-										<TextareaComponent
-											bind:value={formData.alternate_greetings[index]}
-											placeholder={`Alternate greeting ${index + 1}...`}
-											rows={4}
-											class="flex-1"
-										/>
-										<div class="flex flex-col gap-1">
-											<ButtonComponent
-												type="button"
-												variant="outline"
-												size="icon"
-												onclick={() => {
-													formData.alternate_greetings = formData.alternate_greetings.filter(
-														(_, i) => i !== index
-													);
-												}}
-												class="h-8 w-8"
-											>
-												<svelte:component this={_X} class="h-4 w-4" />
-											</ButtonComponent>
-											<ButtonComponent
-												type="button"
-												variant="outline"
-												size="icon"
-												onclick={() =>
-													openPopoutEditor(
-														'alternate_greeting',
-														`Alternate Greeting ${index + 1}`,
-														index
-													)}
-												class="h-8 w-8"
-											>
-												<Expand class="h-4 w-4" />
-											</ButtonComponent>
-										</div>
-									</div>
-								{/each}
+								<Tabs.Content value="assets" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Assets</Card.Title>
+											<Card.Description>
+												Character images and visual assets (V3 feature)
+											</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<AssetsEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
+
+								<Tabs.Content value="advanced" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Advanced Settings</Card.Title>
+											<Card.Description>Creator notes, metadata, and extensions</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<AdvancedEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
 							</div>
-						{:else}
-							<p class="text-sm text-muted-foreground">
-								No alternate greetings. Add some to give users variety!
-							</p>
-						{/if}
+						</Tabs.Root>
+					</div>
+
+					<!-- Preview Panel -->
+					<div class="lg:sticky lg:top-0 lg:h-fit">
+						<CharacterPreview />
 					</div>
 				</div>
-
-				<!-- Collapsible Sections -->
-				<div class="space-y-2">
-					<details class="space-y-2 border-b py-2">
-						<summary class="cursor-pointer text-lg font-semibold">Definitions</summary>
-						<div class="grid gap-4 pt-2">
-							<div class="grid gap-2">
-								<div class="flex items-center justify-between">
-									<Label for="personality">Personality</Label>
-									<div class="flex items-center gap-2">
-										<GenerationWidget
-											fieldName="personality"
-											fieldValue={formData.personality}
-											{characterContext}
-											onGenerated={(generatedText) => {
-												formData.personality = generatedText;
-											}}
-											disabled={saving}
-										/>
-										<ButtonComponent
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => openPopoutEditor('personality', 'Personality')}
-											class="h-6 px-2 text-xs"
-										>
-											Expand
-										</ButtonComponent>
-									</div>
-								</div>
-								<TextareaComponent
-									id="personality"
-									bind:value={formData.personality}
-									placeholder={character.personality ?? 'Character personality traits...'}
-									rows={6}
-								/>
-							</div>
-							<div class="grid gap-2">
-								<div class="flex items-center justify-between">
-									<Label for="scenario">Scenario</Label>
-									<div class="flex items-center gap-2">
-										<GenerationWidget
-											fieldName="scenario"
-											fieldValue={formData.scenario}
-											{characterContext}
-											onGenerated={(generatedText) => {
-												formData.scenario = generatedText;
-											}}
-											disabled={saving}
-										/>
-										<ButtonComponent
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => openPopoutEditor('scenario', 'Scenario')}
-											class="h-6 px-2 text-xs"
-										>
-											Expand
-										</ButtonComponent>
-									</div>
-								</div>
-								<TextareaComponent
-									id="scenario"
-									bind:value={formData.scenario}
-									placeholder={character.scenario ?? 'Roleplay scenario...'}
-									rows={6}
-								/>
-							</div>
-							<div class="grid gap-2">
-								<div class="flex items-center justify-between">
-									<Label for="mes_example">Message Examples</Label>
-									<ButtonComponent
-										type="button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openPopoutEditor('mes_example', 'Message Example')}
-										class="h-6 px-2 text-xs"
-									>
-										Expand
-									</ButtonComponent>
-								</div>
-								<TextareaComponent
-									id="mes_example"
-									bind:value={formData.mes_example}
-									placeholder={character.mes_example ?? 'Example messages...'}
-									rows={6}
-								/>
-							</div>
-						</div>
-					</details>
-
-					<details class="space-y-2 border-b py-2">
-						<summary class="cursor-pointer text-lg font-semibold">Character's Note</summary>
-						<div class="space-y-4 pt-2">
-							<div
-								class="rounded-md border border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:bg-yellow-950"
-							>
-								<p class="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
-									Feature Not Yet Active
-								</p>
-								<p class="text-sm text-yellow-800 dark:text-yellow-200">
-									The Character's Note is a permanent instruction for the character. The backend
-									logic to apply it during chats is not yet implemented, but your settings will be
-									saved for future use.
-								</p>
-							</div>
-							<p class="text-sm text-muted-foreground">
-								Define permanent, underlying instructions for the character that apply to all
-								conversations.
-							</p>
-							<div class="grid gap-2">
-								<div class="flex items-center justify-between">
-									<Label for="depth_prompt">Content</Label>
-									<ButtonComponent
-										type="button"
-										variant="ghost"
-										size="sm"
-										onclick={() => openPopoutEditor('depth_prompt', "Character's Note Content")}
-										class="h-6 px-2 text-xs"
-									>
-										Expand
-									</ButtonComponent>
-								</div>
-								<TextareaComponent
-									id="depth_prompt"
-									bind:value={formData.depth_prompt}
-									placeholder={character.depth_prompt ??
-										'e.g., "The character is secretly a dragon."'}
-									rows={3}
-								/>
-							</div>
-							<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-								<div class="grid gap-2">
-									<div class="flex items-center gap-1">
-										<Label for="depth_prompt_depth">Insertion Depth</Label>
-										<span
-											class="cursor-help"
-											title="Insertion depth determines where the Character's Note appears in the conversation history"
-										>
-											<HelpCircle class="h-4 w-4 text-muted-foreground" />
-										</span>
-									</div>
-									<Input
-										id="depth_prompt_depth"
-										type="number"
-										bind:value={formData.depth_prompt_depth}
-										placeholder={String(character.depth_prompt_depth ?? '0')}
-										min="0"
-									/>
-									<p class="text-sm text-muted-foreground">
-										How many messages from the end to insert the note before.
-									</p>
-								</div>
-								<div class="grid gap-2">
-									<div class="grid gap-2">
-										<div class="flex items-center gap-1">
-											<Label for="depth_prompt_role">Insertion Role</Label>
-											<span
-												class="cursor-help"
-												title="Determines the role or perspective for the Character's Note. System = instruction to AI, User = from user perspective, Assistant = from character perspective"
-											>
-												<HelpCircle class="h-4 w-4 text-muted-foreground" />
-											</span>
-										</div>
-										<select
-											id="depth_prompt_role"
-											bind:value={formData.depth_prompt_role}
-											class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-										>
-											<option value="" disabled>Select a role...</option>
-											{#each insertionRoles as role}
-												<option value={role.value}>{role.label}</option>
-											{/each}
-										</select>
-										<p class="text-sm text-muted-foreground">
-											Controls how the note is injected into the prompt.
-										</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					</details>
-
-					<details class="space-y-2 border-b py-2">
-						<summary class="cursor-pointer text-lg font-semibold">Advanced</summary>
-						<div class="space-y-4 pt-2">
-							<div class="grid gap-2">
-								<Label for="system_prompt">System Instructions</Label>
-								<TextareaComponent
-									id="system_prompt"
-									bind:value={formData.system_prompt}
-									placeholder={character.system_prompt ?? 'System instructions...'}
-									rows={5}
-								/>
-							</div>
-						</div>
-					</details>
-				</div>
 			</div>
-		{/if}
 
-		<DialogFooter>
-			<ButtonComponent variant="outline" onclick={handleCancel} disabled={saving}
-				>Cancel</ButtonComponent
-			>
-			<ButtonComponent onclick={handleSave} disabled={saving || loading}>
-				{#if saving}
-					Saving...
-				{:else}
-					Save Changes
-				{/if}
-			</ButtonComponent>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
-
-<!-- Pop-out Editor Dialog -->
-<Dialog bind:open={popoutEditorOpen}>
-	<DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-6xl">
-		<DialogHeader>
-			<DialogTitle>Edit {popoutFieldLabel}</DialogTitle>
-			<DialogDescription>
-				Edit the {popoutFieldLabel.toLowerCase()} content in a larger editor for better readability.
-			</DialogDescription>
-		</DialogHeader>
-
-		<div class="py-4">
-			{#if popoutFieldType === 'text'}
-				<TextareaComponent
-					bind:value={popoutContent}
-					placeholder={`Enter ${popoutFieldLabel.toLowerCase()} content...`}
-					rows={20}
-					class="min-h-[400px] resize-none font-mono text-sm"
-				/>
-			{:else if popoutFieldType === 'number'}
-				<Input
-					type="number"
-					bind:value={popoutContent}
-					placeholder={`Enter ${popoutFieldLabel.toLowerCase()}...`}
-					class="font-mono text-sm"
-				/>
-			{/if}
-		</div>
-
-		<DialogFooter>
-			<ButtonComponent variant="outline" onclick={cancelPopoutEditor}>Cancel</ButtonComponent>
-			<ButtonComponent onclick={savePopoutEditor}>Save Changes</ButtonComponent>
-		</DialogFooter>
-	</DialogContent>
-</Dialog>
+			<Dialog.Footer class="border-t px-6 py-4">
+				<Button variant="outline" onclick={handleClose} disabled={isSaving}>Cancel</Button>
+				<Button onclick={handleSave} disabled={isSaving}>
+					{#if isSaving}
+						Saving...
+					{:else}
+						Save Changes
+					{/if}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>

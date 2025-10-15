@@ -7,7 +7,8 @@
 	 */
 
 	import { Button } from '$lib/components/ui/button';
-	import { Sparkles } from 'lucide-svelte';
+	import { Sparkles, AlertCircle } from 'lucide-svelte';
+	import { isGenerationReady } from '$lib/utils/ai/generation-engine';
 
 	interface Props {
 		/** Optional click handler override */
@@ -18,28 +19,29 @@
 		size?: 'sm' | 'default' | 'lg';
 		/** Variant */
 		variant?: 'default' | 'outline' | 'ghost';
-		/** Disabled state */
-		disabled?: boolean;
 	}
 
-	let {
-		onclick,
-		iconOnly = true,
-		size = 'sm',
-		variant = 'ghost',
-		disabled = false
-	}: Props = $props();
+	let { onclick, iconOnly = true, size = 'sm', variant = 'ghost' }: Props = $props();
+
+	// Check if AI is ready
+	const readiness = $derived(isGenerationReady());
+	const isReady = $derived(readiness.ready);
+	const notReadyReason = $derived(readiness.reason);
 </script>
 
 <Button
 	{size}
 	{variant}
-	{disabled}
 	class="ai-assistant-widget"
 	onclick={() => onclick?.()}
-	title="Open AI Assistant"
+	disabled={!isReady}
+	title={isReady ? 'Open AI Assistant' : notReadyReason}
 >
-	<Sparkles class="h-4 w-4" />
+	{#if isReady}
+		<Sparkles class="h-4 w-4" />
+	{:else}
+		<AlertCircle class="h-4 w-4 text-muted-foreground" />
+	{/if}
 
 	{#if !iconOnly}
 		<span class="ml-2">AI Assistant</span>
