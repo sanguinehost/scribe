@@ -6,7 +6,6 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { X } from 'lucide-svelte';
 
 	import BasicInfoEditor from '$lib/components/character/BasicInfoEditor.svelte';
 	import GreetingsEditor from '$lib/components/character/GreetingsEditor.svelte';
@@ -110,17 +109,8 @@
 		<Dialog.Overlay />
 		<Dialog.Content class="flex max-h-[95vh] max-w-[95vw] flex-col overflow-hidden p-0">
 			<Dialog.Header class="border-b px-6 pb-4 pt-6">
-				<div class="flex items-center justify-between">
-					<div>
-						<Dialog.Title>Create New Character</Dialog.Title>
-						<Dialog.Description>
-							Design your character with the full-featured editor
-						</Dialog.Description>
-					</div>
-					<Button variant="ghost" size="icon" class="h-8 w-8" onclick={handleClose}>
-						<X class="h-4 w-4" />
-					</Button>
-				</div>
+				<Dialog.Title>Create New Character</Dialog.Title>
+				<Dialog.Description>Design your character with the full-featured editor</Dialog.Description>
 			</Dialog.Header>
 
 			<div class="flex-1 overflow-y-auto px-6 py-4">
