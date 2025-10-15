@@ -4,7 +4,13 @@
  * Uses Character Card V3 format internally, converts to scribe format for backend
  */
 
-import type { CharacterCardV3, LorebookEntry, Lorebook } from '$lib/types/character';
+import type {
+	CharacterCardV3,
+	LorebookEntry,
+	Lorebook,
+	ScribeCharacterExtensions
+} from '$lib/types/character';
+import { apiClient } from '$lib/api';
 
 interface ValidationError {
 	path: string;
@@ -184,6 +190,99 @@ class CharacterStore {
 
 		this.character.data.character_book.entries[index].enabled =
 			!this.character.data.character_book.entries[index].enabled;
+	}
+
+	// ============================================================================
+	// Lorebook Reference Methods (for standalone lorebooks)
+	// ============================================================================
+
+	/**
+	 * Link a standalone lorebook by reference (stores in extensions)
+	 */
+	linkLorebookReference(lorebookId: string) {
+		if (!this.character) return;
+
+		// Initialize extensions if needed
+		if (!this.character.data.extensions) {
+			this.character.data.extensions = {};
+		}
+
+		// Get or create the lorebook refs array
+		const extensions = this.character.data.extensions as ScribeCharacterExtensions;
+		if (!extensions.scribe_lorebook_refs) {
+			extensions.scribe_lorebook_refs = [];
+		}
+
+		// Check if already linked
+		if (extensions.scribe_lorebook_refs.some((ref) => ref.lorebook_id === lorebookId)) {
+			return; // Already linked
+		}
+
+		// Add the reference
+		extensions.scribe_lorebook_refs.push({
+			lorebook_id: lorebookId,
+			import_all: false
+		});
+	}
+
+	/**
+	 * Unlink a standalone lorebook reference
+	 */
+	unlinkLorebookReference(lorebookId: string) {
+		if (!this.character) return;
+
+		const extensions = this.character.data.extensions as ScribeCharacterExtensions;
+		if (!extensions?.scribe_lorebook_refs) return;
+
+		// Remove the reference
+		extensions.scribe_lorebook_refs = extensions.scribe_lorebook_refs.filter(
+			(ref) => ref.lorebook_id !== lorebookId
+		);
+	}
+
+	/**
+	 * Import lorebook entries into the character's embedded lorebook
+	 */
+	async importLorebookEntries(lorebookId: string) {
+		if (!this.character) return;
+
+		// Fetch the lorebook entries from the API
+		const entriesResult = await apiClient.getLorebookEntries(lorebookId);
+		if (entriesResult.isErr()) {
+			console.error('Failed to fetch lorebook entries:', entriesResult.error);
+			return;
+		}
+
+		const lorebookEntries = entriesResult.value;
+
+		// Initialize character_book if needed
+		if (!this.character.data.character_book) {
+			this.character.data.character_book = {
+				entries: [],
+				extensions: {}
+			};
+		}
+
+		// Convert LorebookEntry (backend format) to LorebookEntry (character card format)
+		// Note: The character.ts types for lorebook entries need to match V3 spec
+		if (lorebookEntries && lorebookEntries.length > 0) {
+			const convertedEntries = lorebookEntries.map((entry) => ({
+				keys: entry.keys_text ? entry.keys_text.split(',').map((k) => k.trim()) : [],
+				content: entry.content,
+				extensions: {},
+				enabled: entry.is_enabled,
+				insertion_order: entry.insertion_order,
+				use_regex: false,
+				constant: entry.is_constant,
+				name: entry.entry_title,
+				comment: entry.comment || undefined
+			}));
+
+			this.character.data.character_book.entries = [
+				...this.character.data.character_book.entries,
+				...convertedEntries
+			];
+		}
 	}
 }
 

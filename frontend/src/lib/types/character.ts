@@ -178,6 +178,33 @@ export interface StandaloneLorebook {
 }
 
 // ============================================================================
+// Lorebook References (Scribe Extension)
+// ============================================================================
+
+/**
+ * Reference to a standalone lorebook stored in the Scribe lorebook system.
+ * Stored in character's extensions field under 'scribe_lorebook_refs'.
+ */
+export interface LorebookReference {
+	/** UUID of the standalone lorebook */
+	lorebook_id: string;
+	/** Whether to import all entries (true) or just reference (false) */
+	import_all?: boolean;
+	/** Optional: specific entry IDs to import (if import_all is false) */
+	entry_ids?: string[];
+}
+
+/**
+ * Extensions field with Scribe-specific lorebook references
+ */
+export interface ScribeCharacterExtensions {
+	/** Array of lorebook references */
+	scribe_lorebook_refs?: LorebookReference[];
+	/** Allow other extensions */
+	[key: string]: unknown;
+}
+
+// ============================================================================
 // Decorators (V3 Lorebook Enhancement)
 // ============================================================================
 
