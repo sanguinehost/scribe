@@ -175,7 +175,7 @@ pub async fn generate_character_field_stream_handler(
         }
 
         // Get the AI client and stream
-        let model_name = "gemini-2.0-flash-exp"; // TODO: Make configurable
+        let model_name = "gemini-2.5-flash"; // TODO: Make configurable
 
         match state_arc.ai_client.stream_chat(model_name, chat_request, Some(chat_options)).await {
             Ok(mut chat_stream) => {

@@ -5,6 +5,131 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
 
+/// Narrative style variables for template customization
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Tense {
+    PastTense,
+    PresentTense,
+    FutureTense,
+}
+
+impl Default for Tense {
+    fn default() -> Self {
+        Self::PastTense
+    }
+}
+
+impl Tense {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PastTense => "past-tense",
+            Self::PresentTense => "present-tense",
+            Self::FutureTense => "future-tense",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Narration {
+    FirstPerson,
+    SecondPerson,
+    ThirdPerson,
+}
+
+impl Default for Narration {
+    fn default() -> Self {
+        Self::ThirdPerson
+    }
+}
+
+impl Narration {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::FirstPerson => "first-person",
+            Self::SecondPerson => "second-person",
+            Self::ThirdPerson => "third-person",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Perspective {
+    Omniscient,
+    LimitedCharacter,
+    LimitedUser,
+}
+
+impl Default for Perspective {
+    fn default() -> Self {
+        Self::Omniscient
+    }
+}
+
+impl Perspective {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Omniscient => "omniscient narration",
+            Self::LimitedCharacter => "limited narration from the character's perspective",
+            Self::LimitedUser => "limited narration from the user's perspective",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ResponseLength {
+    Flexible,
+    Concise,
+    Moderate,
+    Extended,
+}
+
+impl Default for ResponseLength {
+    fn default() -> Self {
+        Self::Flexible
+    }
+}
+
+impl ResponseLength {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Flexible => {
+                "flexible, varying based on the scene (concise during dialogue/action, detailed during transitions/descriptions)"
+            }
+            Self::Concise => "concise (under 150 words)",
+            Self::Moderate => "moderate (150-300 words)",
+            Self::Extended => "extended (300+ words)",
+        }
+    }
+}
+
+/// Narrative style variables that can be customized per user/character
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NarrativeStyle {
+    #[serde(default)]
+    pub tense: Tense,
+    #[serde(default)]
+    pub narration: Narration,
+    #[serde(default)]
+    pub perspective: Perspective,
+    #[serde(default)]
+    pub length: ResponseLength,
+}
+
+impl Default for NarrativeStyle {
+    fn default() -> Self {
+        Self {
+            tense: Tense::default(),
+            narration: Narration::default(),
+            perspective: Perspective::default(),
+            length: ResponseLength::default(),
+        }
+    }
+}
+
 /// Template compatibility requirements
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TemplateCompatibility {
@@ -231,10 +356,25 @@ impl TemplateManager {
     /// - Context size limits to prevent DoS
     /// - Template fallback to prevent errors
     /// - Logging for security monitoring
+    ///
+    /// # Arguments
+    /// * `template_id` - The ID of the template to render
+    /// * `context` - The context data for rendering
+    /// * `style` - Optional narrative style variables (tense, narration, perspective, length)
     pub fn render(
         &self,
         template_id: &str,
         context: serde_json::Value,
+    ) -> Result<String, AppError> {
+        self.render_with_style(template_id, context, None)
+    }
+
+    /// Render a template with narrative style variables
+    pub fn render_with_style(
+        &self,
+        template_id: &str,
+        context: serde_json::Value,
+        style: Option<NarrativeStyle>,
     ) -> Result<String, AppError> {
         // Validate template_id format for security
         if template_id.is_empty() || template_id.len() > 50 {
@@ -267,6 +407,25 @@ impl TemplateManager {
             serde_json::Value::Object(map) => map,
             _ => serde_json::Map::new(),
         };
+
+        // Add narrative style variables to context
+        let narrative_style = style.unwrap_or_default();
+        context_map.insert(
+            "tense".to_string(),
+            serde_json::Value::String(narrative_style.tense.as_str().to_string()),
+        );
+        context_map.insert(
+            "narration".to_string(),
+            serde_json::Value::String(narrative_style.narration.as_str().to_string()),
+        );
+        context_map.insert(
+            "perspective".to_string(),
+            serde_json::Value::String(narrative_style.perspective.as_str().to_string()),
+        );
+        context_map.insert(
+            "length".to_string(),
+            serde_json::Value::String(narrative_style.length.as_str().to_string()),
+        );
 
         // For templates with complex Jinja2 in sections, render each section with the full context
         let mut rendered_sections = std::collections::HashMap::new();

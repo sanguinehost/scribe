@@ -38,6 +38,7 @@ use crate::{
         health::health_check,
         lorebook_routes,           // Added lorebook_routes
         payment as payment_routes, // Added payment_routes
+        template_preferences_routes,
         user_persona_routes,
         user_settings_routes,
     },
@@ -1773,6 +1774,10 @@ pub async fn spawn_app_with_rate_limiting_options(
             "/user-settings",
             user_settings_routes::user_settings_routes(app_state_inner.clone()),
         ) // Add user settings routes
+        .nest(
+            "/template-preferences",
+            template_preferences_routes::template_preferences_routes(app_state_inner.clone()),
+        ) // Add template preferences routes
         .nest("/payment", payment_routes::payment_routes()) // Add payment routes
         .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(

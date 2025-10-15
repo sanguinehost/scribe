@@ -29,11 +29,12 @@ use scribe_backend::routes::{
     chats,
     chronicles,
     documents::document_routes,
-    generation_routes,                         // Added for generation routes
-    llm_routes::llm_router,                    // Added for LLM management routes
-    lorebook_routes::lorebook_routes,          // Added for lorebook routes
-    templates,                                 // Added for template routes
-    user_persona_routes::user_personas_router, // Added for user persona routes
+    generation_routes,                // Added for generation routes
+    llm_routes::llm_router,           // Added for LLM management routes
+    lorebook_routes::lorebook_routes, // Added for lorebook routes
+    template_preferences_routes::template_preferences_routes, // Added for template preferences routes
+    templates,                                                // Added for template routes
+    user_persona_routes::user_personas_router,                // Added for user persona routes
     user_settings_routes::user_settings_routes,
 };
 use scribe_backend::state::{AppState, AppStateServices};
@@ -580,6 +581,10 @@ fn build_router(
     let protected_api_routes = protected_api_routes
         .nest("/personas", user_personas_router(app_state.clone()))
         .nest("/user-settings", user_settings_routes(app_state.clone()))
+        .nest(
+            "/template-preferences",
+            template_preferences_routes(app_state.clone()),
+        )
         .nest("/", lorebook_routes())
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
