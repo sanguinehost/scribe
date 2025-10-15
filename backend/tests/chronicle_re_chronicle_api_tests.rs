@@ -296,7 +296,7 @@ async fn create_chat_session_with_messages(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
 
@@ -354,7 +354,11 @@ async fn create_chat_session_with_messages(
             variant_count: 1,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0,
+            credits_cost: BigDecimal::from(0),
+            actual_cost: BigDecimal::from(0),
+            modified_cost: BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: BigDecimal::from(0),
         };
 
         conn.interact(move |conn| {

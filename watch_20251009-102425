@@ -1,3 +1,0 @@
-Every 2.0s: aws ecs describe-tasks --cluster staging-scribe-cluster --tasks f6855aec16804b1d8dbd6944610ec514 --query "tasks[0].lastStatus" --output te… orion: 10:24:25
-                                                                                                                                                          in 0.404s (0)
-DEPROVISIONING

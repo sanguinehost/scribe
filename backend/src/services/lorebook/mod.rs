@@ -51,6 +51,7 @@ pub struct LorebookService {
 // Module declarations
 mod character_associations;
 mod chat_associations;
+mod chat_extraction;
 mod entry_crud;
 mod export_import;
 mod helpers;

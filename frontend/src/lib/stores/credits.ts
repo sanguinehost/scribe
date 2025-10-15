@@ -296,8 +296,10 @@ function createCreditStore() {
 		const defaultCosts: { [key: string]: number } = {
 			'gemini-2.5-pro': 50,
 			'gemini-2.5-flash': 10,
+			'gemini-2.5-flash-preview-09-2025': 10,
+			'gemini-2.5-flash-lite-preview-09-2025': 0,
+			'gemini-2.5-flash-image': 10,
 			'gemini-2.5-flash-8b': 5,
-			'gemini-2.5-flash-lite': 0,
 			'o1-preview': 100,
 			'o1-mini': 75,
 			'gpt-4o': 40,

@@ -850,7 +850,7 @@ async fn test_get_chat_session_details_unauthorized() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(chat_sessions::table)
@@ -1554,6 +1554,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
 }
 
 // Added for lorebook tests
+use bigdecimal::BigDecimal;
 use scribe_backend::models::lorebooks::{ChatSessionLorebook, Lorebook as DbLorebook, NewLorebook};
 use scribe_backend::schema::{chat_session_lorebooks, lorebooks};
 // EncryptionService is likely already imported or can be added if not.

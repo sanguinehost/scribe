@@ -6,6 +6,7 @@ pub mod chat;
 pub mod chats;
 pub mod chronicles;
 pub mod documents;
+pub mod generation_routes;
 pub mod health;
 pub mod llm_routes;
 pub mod lorebook_routes;

@@ -121,7 +121,7 @@ async fn setup_test_env(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
     };
 
     let session: DbChat = test_app

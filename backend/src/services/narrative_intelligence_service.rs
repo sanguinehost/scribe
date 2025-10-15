@@ -185,6 +185,14 @@ impl NarrativeIntelligenceService {
         }
     }
 
+    /// Get a reference to the tool registry for direct tool access
+    ///
+    /// This allows handlers and other components to access the registered agentic tools
+    /// without needing to go through the full narrative workflow.
+    pub fn get_tool_registry(&self) -> Arc<crate::services::agentic::ToolRegistry> {
+        self.narrative_runner.get_tool_registry()
+    }
+
     /// Main entry point for narrative processing during chat generation
     ///
     /// This is called from the chat processing loop for chats with chronicle_id set (opt-in):

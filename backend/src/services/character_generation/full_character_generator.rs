@@ -42,6 +42,7 @@ impl FullCharacterGenerator {
         // First, generate the core description based on the concept
         let description_request = FieldGenerationRequest {
             field: CharacterField::Description,
+            mode: GenerationMode::Create,
             style: request
                 .style_preferences
                 .as_ref()
@@ -81,6 +82,7 @@ impl FullCharacterGenerator {
         // Generate personality
         let personality_request = FieldGenerationRequest {
             field: CharacterField::Personality,
+            mode: GenerationMode::Create,
             style: None, // Use auto for personality
             user_prompt: format!(
                 "Generate a personality that fits this character: {}",
@@ -105,6 +107,7 @@ impl FullCharacterGenerator {
         // Generate first message
         let first_mes_request = FieldGenerationRequest {
             field: CharacterField::FirstMes,
+            mode: GenerationMode::Create,
             style: None,
             user_prompt: format!(
                 "Generate an engaging first message for this character: {}",
@@ -123,6 +126,7 @@ impl FullCharacterGenerator {
         // Generate basic scenario
         let scenario_request = FieldGenerationRequest {
             field: CharacterField::Scenario,
+            mode: GenerationMode::Create,
             style: None,
             user_prompt: format!(
                 "Generate a scenario/setting for this character: {}",
@@ -141,6 +145,7 @@ impl FullCharacterGenerator {
         // Generate tags
         let tags_request = FieldGenerationRequest {
             field: CharacterField::Tags,
+            mode: GenerationMode::Create,
             style: None,
             user_prompt: format!(
                 "Generate relevant tags for this character: {}",
@@ -224,6 +229,7 @@ impl FullCharacterGenerator {
         // If no name found in description, generate one based on concept
         let name_request = FieldGenerationRequest {
             field: CharacterField::Description, // Reuse description field for name generation
+            mode: GenerationMode::Create,
             style: None,
             user_prompt: format!(
                 "Generate just a name (first name only) for a character described as: {}",

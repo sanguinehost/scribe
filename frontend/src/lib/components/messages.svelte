@@ -281,9 +281,9 @@
 		) {
 			setTimeout(() => {
 				if (endRef) {
-					endRef.scrollIntoView({ behavior: 'smooth' });
+					endRef.scrollIntoView({ behavior: 'instant', block: 'end' });
 				}
-			}, 100);
+			}, 500);
 		}
 	});
 
@@ -529,7 +529,7 @@
 					{character}
 					_user={user}
 					{substituteTemplateVariables}
-					_userPersonaName={userPersonaName}
+					{userPersonaName}
 				/>
 			{:else}
 				{@const currentIndex = message.current_variant_index ?? 0}

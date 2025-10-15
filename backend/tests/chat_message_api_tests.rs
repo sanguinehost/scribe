@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 // Crate imports
 use anyhow::Context as _; // For .context() on Option/Result
+use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 // For mime::APPLICATION_JSON
 use scribe_backend::{
@@ -106,7 +107,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: 0,
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
     };
     let session_a: Chat = test_app

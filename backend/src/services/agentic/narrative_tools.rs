@@ -19,6 +19,33 @@ use crate::{
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
+/// Generate JSON schema for text significance triage response
+fn get_text_significance_triage_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "is_significant": {
+                "type": "boolean",
+                "description": "Whether the conversation contains narratively significant events"
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Confidence level in the significance assessment (0.0-1.0)"
+            },
+            "reason": {
+                "type": "string",
+                "description": "Explanation of why this was deemed significant or not significant"
+            },
+            "suggested_categories": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Array of suggested categories like 'chronicle_events' or 'lorebook_entries'"
+            }
+        },
+        "required": ["is_significant", "confidence", "reason", "suggested_categories"]
+    })
+}
+
 /// Tool for creating a single chronicle event (atomic operation)
 pub struct CreateChronicleEventTool {
     chronicle_service: Arc<ChronicleService>,
@@ -340,11 +367,11 @@ Respond with JSON:
 }
 
 impl AnalyzeTextSignificanceTool {
-    /// Helper method to call AI for triage analysis
+    /// Helper method to call AI for triage analysis using structured outputs
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
         use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRole,
-            MessageContent,
+            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
+            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
         };
 
         let user_message = GenAiChatMessage {
@@ -361,8 +388,17 @@ impl AnalyzeTextSignificanceTool {
         let safety_settings = create_unrestricted_safety_settings();
         genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
 
-        let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording. Respond only with valid JSON.";
-        let chat_req = genai::chat::ChatRequest::new(vec![user_message]).with_system(system_prompt);
+        // Create JSON schema spec for structured output
+        let schema = get_text_significance_triage_schema();
+        let json_schema_spec = JsonSchemaSpec::new(schema);
+
+        // Add structured output format to chat options
+        genai_chat_options = genai_chat_options
+            .with_response_format(ChatResponseFormat::JsonSchemaSpec(json_schema_spec));
+
+        // CLEAN: No "Respond only with valid JSON" needed - Gemini 2.5+ enforces schema natively
+        let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.";
+        let chat_req = ChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         let response = self
             .ai_client
@@ -372,20 +408,8 @@ impl AnalyzeTextSignificanceTool {
 
         let content = response.first_content_text_as_str().unwrap_or_default();
 
-        // Parse JSON response
-        let cleaned_content = if content.trim().starts_with("```json") {
-            let start = content.find("```json").unwrap() + 7;
-            let end = content.rfind("```").unwrap_or(content.len());
-            content[start..end].trim()
-        } else if content.trim().starts_with("```") {
-            let start = content.find("```").unwrap() + 3;
-            let end = content.rfind("```").unwrap_or(content.len());
-            content[start..end].trim()
-        } else {
-            content.trim()
-        };
-
-        serde_json::from_str(cleaned_content)
+        // CLEAN: Direct JSON parsing (no markdown fence stripping needed)
+        serde_json::from_str(content)
             .map_err(|e| ToolError::ExecutionFailed(format!("JSON parse failed: {}", e)))
     }
 }
@@ -1537,6 +1561,706 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 pub struct UpdateLorebookEntryTool {
     _lorebook_service: Arc<LorebookService>,
     _app_state: Arc<AppState>,
+}
+
+/// Tool for creating multiple lorebook entries in a single operation (batch generation)
+/// Uses AI to generate entries with structured outputs, then saves them to the database
+pub struct CreateBatchLorebookEntriesTool {
+    lorebook_service: Arc<LorebookService>,
+    ai_client: Arc<dyn AiClient>,
+}
+
+/// Tool for analyzing existing lorebook entries and identifying gaps, inconsistencies, or improvement opportunities
+/// Uses AI to provide strategic recommendations for lorebook enhancement
+pub struct AnalyzeLorebookTool {
+    lorebook_service: Arc<LorebookService>,
+    ai_client: Arc<dyn AiClient>,
+    app_state: Arc<AppState>,
+}
+
+impl AnalyzeLorebookTool {
+    pub fn new(
+        lorebook_service: Arc<LorebookService>,
+        ai_client: Arc<dyn AiClient>,
+        app_state: Arc<AppState>,
+    ) -> Self {
+        Self {
+            lorebook_service,
+            ai_client,
+            app_state,
+        }
+    }
+}
+
+#[async_trait]
+impl ScribeTool for AnalyzeLorebookTool {
+    fn name(&self) -> &'static str {
+        "analyze_lorebook"
+    }
+
+    fn description(&self) -> &'static str {
+        "Analyzes existing lorebook entries to identify gaps, inconsistencies, or areas for improvement. Use this before batch generation to understand what content is missing or needs enhancement. Returns strategic recommendations for lorebook improvement."
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "lorebook_id": {
+                    "type": "string",
+                    "description": "The UUID of the lorebook to analyze"
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user owning the lorebook"
+                },
+                "character_id": {
+                    "type": "string",
+                    "description": "Optional: Character ID for character-specific context analysis"
+                },
+                "session_dek": {
+                    "type": "string",
+                    "description": "Hex-encoded session DEK for decrypting lorebook content"
+                },
+                "focus_area": {
+                    "type": "string",
+                    "description": "Optional: Specific area to focus analysis on (e.g., 'characters', 'locations', 'consistency')"
+                }
+            },
+            "required": ["lorebook_id", "user_id", "session_dek"]
+        })
+    }
+
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        use crate::schema::lorebook_entries::dsl as lorebook_entries_dsl;
+        use diesel::prelude::*;
+
+        let lorebook_id = params
+            .get("lorebook_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| {
+                ToolError::InvalidParams("lorebook_id must be a valid UUID string".to_string())
+            })?;
+
+        let user_id = params
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or_else(|| {
+                ToolError::InvalidParams("user_id must be a valid UUID string".to_string())
+            })?;
+
+        let session_dek_hex = params
+            .get("session_dek")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("session_dek must be a string".to_string()))?;
+
+        // Decode the session DEK from hex
+        let session_dek_bytes = hex::decode(session_dek_hex).map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to decode session_dek: {}", e))
+        })?;
+
+        if session_dek_bytes.len() != 32 {
+            return Err(ToolError::InvalidParams(format!(
+                "session_dek must decode to 32 bytes, got {}",
+                session_dek_bytes.len()
+            )));
+        }
+
+        let session_dek_secret = secrecy::SecretBox::new(Box::new(session_dek_bytes));
+        let session_dek_wrapper = crate::auth::session_dek::SessionDek(session_dek_secret);
+
+        // SECURITY: Verify lorebook ownership before querying entries
+        // This prevents cross-user access by explicitly checking that the lorebook belongs to the user
+        let pool = self.app_state.pool.clone();
+        use crate::schema::lorebooks::dsl as lorebooks_dsl;
+
+        let lorebook_id_for_check = lorebook_id;
+        let user_id_for_check = user_id;
+        let lorebook_exists = pool
+            .get()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?
+            .interact(move |conn| {
+                lorebooks_dsl::lorebooks
+                    .filter(lorebooks_dsl::id.eq(lorebook_id_for_check))
+                    .filter(lorebooks_dsl::user_id.eq(user_id_for_check))
+                    .select(lorebooks_dsl::id)
+                    .first::<Uuid>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "DB interaction failed while checking lorebook ownership: {}",
+                    e
+                ))
+            })?
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!("Failed to verify lorebook ownership: {}", e))
+            })?;
+
+        if lorebook_exists.is_none() {
+            return Err(ToolError::ExecutionFailed(format!(
+                "Lorebook {} not found or access denied for user {}",
+                lorebook_id, user_id
+            )));
+        }
+
+        // Fetch all lorebook entries for this lorebook and user
+        let entries: Vec<(
+            Uuid,
+            Vec<u8>,
+            Vec<u8>,
+            Vec<u8>,
+            Vec<u8>,
+            Vec<u8>,
+            Vec<u8>,
+            bool,
+        )> = pool
+            .get()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?
+            .interact(move |conn| {
+                lorebook_entries_dsl::lorebook_entries
+                    .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id))
+                    .filter(lorebook_entries_dsl::user_id.eq(user_id))
+                    .select((
+                        lorebook_entries_dsl::id,
+                        lorebook_entries_dsl::entry_title_ciphertext,
+                        lorebook_entries_dsl::entry_title_nonce,
+                        lorebook_entries_dsl::content_ciphertext,
+                        lorebook_entries_dsl::content_nonce,
+                        lorebook_entries_dsl::keys_text_ciphertext,
+                        lorebook_entries_dsl::keys_text_nonce,
+                        lorebook_entries_dsl::is_enabled,
+                    ))
+                    .load::<(
+                        Uuid,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        bool,
+                    )>(conn)
+            })
+            .await
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "DB interaction for fetch entries failed: {}",
+                    e
+                ))
+            })?
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!("Failed to load lorebook entries: {}", e))
+            })?;
+
+        if entries.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "success",
+                "analysis": {
+                    "gaps": ["No entries found in this lorebook"],
+                    "consistency_issues": [],
+                    "improvement_suggestions": ["Create initial lorebook entries to establish the world/character context"],
+                    "recommended_themes": []
+                }
+            }));
+        }
+
+        // Decrypt and prepare entry summaries for AI analysis
+        let mut entry_summaries = Vec::new();
+        for (id, title_ct, title_nonce, content_ct, content_nonce, keys_ct, keys_nonce, enabled) in
+            entries
+        {
+            let title_secret =
+                crate::crypto::decrypt_gcm(&title_ct, &title_nonce, &session_dek_wrapper.0)
+                    .map_err(|e| {
+                        ToolError::ExecutionFailed(format!("Failed to decrypt entry title: {}", e))
+                    })?;
+
+            let title_bytes = secrecy::ExposeSecret::expose_secret(&title_secret);
+            let title_str = String::from_utf8_lossy(title_bytes);
+
+            let content_secret =
+                crate::crypto::decrypt_gcm(&content_ct, &content_nonce, &session_dek_wrapper.0)
+                    .map_err(|e| {
+                        ToolError::ExecutionFailed(format!(
+                            "Failed to decrypt entry content: {}",
+                            e
+                        ))
+                    })?;
+
+            let content_bytes = secrecy::ExposeSecret::expose_secret(&content_secret);
+            let content_str = String::from_utf8_lossy(content_bytes);
+            let content_preview = if content_str.len() > 300 {
+                format!("{}...", &content_str[..300])
+            } else {
+                content_str.to_string()
+            };
+
+            let keys_secret =
+                crate::crypto::decrypt_gcm(&keys_ct, &keys_nonce, &session_dek_wrapper.0).map_err(
+                    |e| ToolError::ExecutionFailed(format!("Failed to decrypt entry keys: {}", e)),
+                )?;
+
+            let keys_bytes = secrecy::ExposeSecret::expose_secret(&keys_secret);
+            let keys_str = String::from_utf8_lossy(keys_bytes);
+
+            entry_summaries.push(serde_json::json!({
+                "id": id.to_string(),
+                "title": title_str,
+                "content_preview": content_preview,
+                "keys": keys_str,
+                "enabled": enabled
+            }));
+        }
+
+        // Build AI prompt for analysis
+        let analysis_prompt = format!(
+            r#"You are analyzing a lorebook for a character AI roleplay system.
+A lorebook contains world-building information, character details, and contextual knowledge
+that helps the AI maintain consistency during conversations.
+
+Here are the current lorebook entries (total: {}):
+
+{}
+
+Please analyze this lorebook and provide:
+1. **gaps**: What important information or themes are missing?
+2. **consistency_issues**: Are there any contradictions or inconsistencies between entries?
+3. **improvement_suggestions**: How can existing entries be enhanced?
+4. **recommended_themes**: What new entry themes would strengthen this lorebook?
+
+Return your analysis as a JSON object with these four arrays."#,
+            entry_summaries.len(),
+            serde_json::to_string_pretty(&entry_summaries).unwrap()
+        );
+
+        // Define structured output schema for the analysis
+        let analysis_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "gaps": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Missing information or themes that would strengthen the lorebook"
+                },
+                "consistency_issues": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Contradictions or inconsistencies found between entries"
+                },
+                "improvement_suggestions": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Specific suggestions for enhancing existing entries"
+                },
+                "recommended_themes": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "New entry themes that would add value to the lorebook"
+                }
+            },
+            "required": ["gaps", "consistency_issues", "improvement_suggestions", "recommended_themes"]
+        });
+
+        // Call AI with structured output
+        use genai::chat::{
+            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
+            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+        };
+
+        let user_message = GenAiChatMessage {
+            role: ChatRole::User,
+            content: MessageContent::Text(analysis_prompt),
+            options: None,
+        };
+
+        let mut chat_options = GenAiChatOptions::default();
+        chat_options = chat_options.with_temperature(0.3); // Low temp for consistent analysis
+        chat_options = chat_options.with_max_tokens(2048);
+
+        // Add safety settings
+        let safety_settings = create_unrestricted_safety_settings();
+        chat_options = chat_options.with_safety_settings(safety_settings);
+
+        // Enable structured output using JSON schema
+        let json_schema_spec = JsonSchemaSpec::new(analysis_schema);
+        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        chat_options = chat_options.with_response_format(response_format);
+
+        let chat_request = ChatRequest::new(vec![user_message]);
+
+        let response = self
+            .ai_client
+            .exec_chat("gemini-2.5-flash", chat_request, Some(chat_options))
+            .await
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!("AI call for lorebook analysis failed: {}", e))
+            })?;
+
+        // Extract token usage for cost tracking
+        let prompt_tokens = response.usage.prompt_tokens.unwrap_or(0);
+        let completion_tokens = response.usage.completion_tokens.unwrap_or(0);
+        let total_tokens = response.usage.total_tokens.unwrap_or(0);
+
+        info!(
+            "AI token usage - prompt: {}, completion: {}, total: {}",
+            prompt_tokens, completion_tokens, total_tokens
+        );
+
+        let ai_content = response
+            .first_content_text_as_str()
+            .ok_or_else(|| ToolError::ExecutionFailed("AI response had no content".to_string()))?;
+
+        // Parse AI response as JSON
+        let analysis: serde_json::Value = serde_json::from_str(ai_content).map_err(|e| {
+            ToolError::ExecutionFailed(format!(
+                "Failed to parse AI analysis response as JSON: {}",
+                e
+            ))
+        })?;
+
+        Ok(serde_json::json!({
+            "status": "success",
+            "entries_analyzed": entry_summaries.len(),
+            "analysis": analysis,
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
+            }
+        }))
+    }
+}
+
+impl CreateBatchLorebookEntriesTool {
+    pub fn new(lorebook_service: Arc<LorebookService>, ai_client: Arc<dyn AiClient>) -> Self {
+        Self {
+            lorebook_service,
+            ai_client,
+        }
+    }
+}
+
+#[async_trait]
+impl ScribeTool for CreateBatchLorebookEntriesTool {
+    fn name(&self) -> &'static str {
+        "create_batch_lorebook_entries"
+    }
+
+    fn description(&self) -> &'static str {
+        "Creates multiple lorebook entries in one operation using AI generation. Use this for efficiently generating a collection of related entries (e.g., 5-10 entries about locations, characters, items, or lore concepts). More efficient than calling create_lorebook_entry multiple times."
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "lorebook_id": {
+                    "type": "string",
+                    "description": "The UUID of the lorebook to add entries to (optional - will use/create default if not provided)"
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user creating the entries"
+                },
+                "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Number of entries to generate (1-20)",
+                    "default": 5
+                },
+                "theme": {
+                    "type": "string",
+                    "description": "Theme or topic for the batch generation (e.g., 'magical items', 'key locations', 'important NPCs')"
+                },
+                "character_context": {
+                    "type": "object",
+                    "description": "Optional character context (name, description, scenario) to maintain consistency",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "scenario": {"type": "string"}
+                    }
+                },
+                "world_context": {
+                    "type": "string",
+                    "description": "Optional world/setting context to guide generation"
+                },
+                "session_dek": {
+                    "type": "string",
+                    "description": "Hex-encoded session DEK for encrypting entry content"
+                }
+            },
+            "required": ["user_id", "count", "theme", "session_dek"]
+        })
+    }
+
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        debug!(
+            "Executing create_batch_lorebook_entries tool with params: {}",
+            params
+        );
+
+        // Extract parameters
+        let user_id_str = params
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("user_id is required".to_string()))?;
+
+        let count = params.get("count").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+
+        if count < 1 || count > 20 {
+            return Err(ToolError::InvalidParams(
+                "count must be between 1 and 20".to_string(),
+            ));
+        }
+
+        let theme = params
+            .get("theme")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("theme is required".to_string()))?;
+
+        // Parse user UUID
+        let user_uuid = Uuid::parse_str(user_id_str)
+            .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
+
+        // Extract session DEK (for encryption)
+        let session_dek_bytes = params
+            .get("session_dek")
+            .and_then(|v| v.as_str())
+            .and_then(|s| hex::decode(s).ok())
+            .ok_or_else(|| {
+                ToolError::InvalidParams(
+                    "session_dek is required for lorebook entry creation".to_string(),
+                )
+            })?;
+
+        // Optional lorebook_id
+        let lorebook_id = params
+            .get("lorebook_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
+
+        info!(
+            "Batch generating {} lorebook entries for user {} with theme: {}",
+            count, user_uuid, theme
+        );
+
+        // Build AI generation prompt
+        let mut prompt = format!(
+            "Generate {} detailed lorebook entries based on the following theme: {}\n\n",
+            count, theme
+        );
+
+        // Add character context if provided
+        if let Some(char_context) = params.get("character_context").and_then(|v| v.as_object()) {
+            prompt.push_str("**Character Context:**\n");
+            if let Some(name) = char_context.get("name").and_then(|v| v.as_str()) {
+                prompt.push_str(&format!("- Name: {}\n", name));
+            }
+            if let Some(desc) = char_context.get("description").and_then(|v| v.as_str()) {
+                prompt.push_str(&format!("- Description: {}\n", desc));
+            }
+            if let Some(scenario) = char_context.get("scenario").and_then(|v| v.as_str()) {
+                prompt.push_str(&format!("- Scenario: {}\n", scenario));
+            }
+            prompt.push('\n');
+        }
+
+        // Add world context if provided
+        if let Some(world_ctx) = params.get("world_context").and_then(|v| v.as_str()) {
+            prompt.push_str(&format!("**World Context:**\n{}\n\n", world_ctx));
+        }
+
+        prompt.push_str(&format!(
+            "Generate {} entries that are:\n\
+            - Detailed and immersive\n\
+            - Consistent with provided context\n\
+            - Related and complementary\n\
+            - Useful during roleplay\n\
+            - Each with appropriate trigger keywords",
+            count
+        ));
+
+        // Use AI to generate entries with structured outputs
+        use crate::services::character_generation::structured_output::{
+            BatchLorebookEntriesOutput, get_batch_lorebook_entries_schema,
+        };
+        use genai::chat::{
+            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
+            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+        };
+
+        let system_prompt = format!(
+            r#"You are a world-building assistant creating {} lorebook entries.
+
+Each entry should include:
+1. **Name**: Clear, concise title
+2. **Content**: Rich, detailed information (150-500 words)
+3. **Keys**: 3-5 trigger keywords (names, places, concepts)
+4. **Category**: Optional category (character, location, lore, item, faction, event)
+
+Guidelines:
+- Write engaging, immersive content
+- Maintain consistency with provided context
+- Ensure entries are related and complement each other
+- Generate appropriate trigger keys with variations
+- Focus on information useful during roleplay
+- Avoid redundancy between entries
+
+You must respond with a JSON object containing an array of {} entries."#,
+            count, count
+        );
+
+        let user_message = GenAiChatMessage {
+            role: ChatRole::User,
+            content: MessageContent::Text(prompt),
+            options: None,
+        };
+
+        let mut chat_options = GenAiChatOptions::default();
+        chat_options = chat_options.with_temperature(0.8); // Creative generation
+        let max_tokens = (count * 800).min(8192) as u32; // ~800 tokens per entry
+        chat_options = chat_options.with_max_tokens(max_tokens);
+
+        // Add safety settings
+        let safety_settings = create_unrestricted_safety_settings();
+        chat_options = chat_options.with_safety_settings(safety_settings);
+
+        // Enable structured output using JSON schema
+        let json_schema_spec = JsonSchemaSpec::new(get_batch_lorebook_entries_schema());
+        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        chat_options = chat_options.with_response_format(response_format);
+
+        let chat_request = ChatRequest::new(vec![user_message]).with_system(&system_prompt);
+
+        // Execute AI generation
+        let start_time = std::time::Instant::now();
+        let response = self
+            .ai_client
+            .exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options))
+            .await
+            .map_err(|e| {
+                error!("AI batch generation failed: {}", e);
+                ToolError::ExecutionFailed(format!("AI generation failed: {}", e))
+            })?;
+
+        // Extract token usage for cost tracking
+        let prompt_tokens = response.usage.prompt_tokens.unwrap_or(0);
+        let completion_tokens = response.usage.completion_tokens.unwrap_or(0);
+        let total_tokens = response.usage.total_tokens.unwrap_or(0);
+
+        info!(
+            "AI token usage - prompt: {}, completion: {}, total: {}",
+            prompt_tokens, completion_tokens, total_tokens
+        );
+
+        // Parse structured output
+        let response_text = response
+            .first_content_text_as_str()
+            .ok_or_else(|| ToolError::ExecutionFailed("No content in AI response".to_string()))?;
+
+        let batch_output: BatchLorebookEntriesOutput = serde_json::from_str(response_text)
+            .map_err(|e| {
+                error!("Failed to parse batch lorebook output: {}", e);
+                ToolError::ExecutionFailed(format!("JSON parse failed: {}", e))
+            })?;
+
+        // Validate the generated entries
+        if let Err(e) = batch_output.validate() {
+            error!("Batch output validation failed: {}", e);
+            return Err(ToolError::ExecutionFailed(format!(
+                "Validation failed: {}",
+                e
+            )));
+        }
+
+        let generation_time_ms = start_time.elapsed().as_millis() as u64;
+        info!(
+            "AI generated {} entries in {}ms, now saving to database",
+            batch_output.entries.len(),
+            generation_time_ms
+        );
+
+        // Save all generated entries to the database
+        let mut created_entries = Vec::new();
+        let mut failed_entries = Vec::new();
+
+        for (idx, entry_output) in batch_output.entries.into_iter().enumerate() {
+            // Convert keys array to space-separated string
+            let keywords = if entry_output.keys.is_empty() {
+                None
+            } else {
+                Some(entry_output.keys.join(" "))
+            };
+
+            match self
+                .lorebook_service
+                .create_entry_for_narrative_intelligence(
+                    user_uuid,
+                    lorebook_id,
+                    entry_output.name.clone(),
+                    entry_output.content.clone(),
+                    keywords,
+                    &session_dek_bytes,
+                )
+                .await
+            {
+                Ok(entry_response) => {
+                    info!(
+                        "Successfully saved entry {}/{}: {}",
+                        idx + 1,
+                        count,
+                        entry_response.id
+                    );
+                    created_entries.push(json!({
+                        "entry_id": entry_response.id,
+                        "lorebook_id": entry_response.lorebook_id,
+                        "title": entry_response.entry_title,
+                        "content_length": entry_response.content.len(),
+                        "category": entry_output.category
+                    }));
+                }
+                Err(e) => {
+                    error!("Failed to save entry {}: {}", entry_output.name, e);
+                    failed_entries.push(json!({
+                        "title": entry_output.name,
+                        "error": e.to_string()
+                    }));
+                }
+            }
+        }
+
+        let total_time_ms = start_time.elapsed().as_millis() as u64;
+
+        if created_entries.is_empty() {
+            return Err(ToolError::ExecutionFailed(
+                "Failed to save any entries to database".to_string(),
+            ));
+        }
+
+        Ok(json!({
+            "success": true,
+            "entries_created": created_entries.len(),
+            "entries_failed": failed_entries.len(),
+            "created_entries": created_entries,
+            "failed_entries": failed_entries,
+            "total_time_ms": total_time_ms,
+            "generation_time_ms": generation_time_ms,
+            "token_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
+            },
+            "message": format!("Successfully created {}/{} lorebook entries", created_entries.len(), count)
+        }))
+    }
 }
 
 impl UpdateLorebookEntryTool {

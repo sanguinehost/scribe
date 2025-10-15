@@ -12,6 +12,7 @@ async fn test_lorebook_query_text_building() {
     // Description field should include appearance/personality keywords
     let _request = FieldGenerationRequest {
         field: CharacterField::Description,
+        mode: GenerationMode::Create,
         style: Some(DescriptionStyle::Narrative),
         user_prompt: "A mysterious wizard".to_string(),
         character_context: Some(CharacterContext {

@@ -3,6 +3,8 @@
 	import { Input as _InputComponent } from './ui/input';
 	import { Label } from './ui/label';
 	import { Textarea as TextareaComponent } from './ui/textarea';
+	import { Slider } from './ui/slider';
+	import { Checkbox } from './ui/checkbox';
 	import {
 		Dialog,
 		DialogContent,
@@ -13,14 +15,33 @@
 	} from './ui/dialog';
 	// import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 	import { toast } from 'svelte-sonner';
-	import { Bot, Sparkles, Wand, RefreshCw, Plus, FileText, Info, Bug } from 'lucide-svelte';
+	import {
+		Bot,
+		Sparkles,
+		Wand,
+		RefreshCw,
+		Plus,
+		FileText,
+		Info,
+		Bug,
+		Copy,
+		Check
+	} from 'lucide-svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import type {
 		GenerationMode,
 		CharacterContext,
-		GenerateCharacterFieldResponse
+		GenerateCharacterFieldResponse,
+		DescriptionStyle
 	} from '$lib/types';
 	import CharacterGenerationDebugModal from './character-generation-debug-modal.svelte';
+	import {
+		getRecommendedStyle,
+		getRecommendedMaxTokens,
+		isModeSupported,
+		getAvailableStyles,
+		sanitizeAIOutput
+	} from '$lib/utils/ai-generation-helpers';
 
 	type Props = {
 		open: boolean;
@@ -44,18 +65,49 @@
 	let isGenerating = $state(false);
 	let selectedMode = $state<GenerationMode>('create');
 	let selectedStyle = $state('auto');
+	let maxTokensArray = $state([2000]);
+	let includeStatusBlock = $state(false);
 	let isAnalyzingStyle = $state(false);
 	let lastGenerationResponse = $state<GenerateCharacterFieldResponse | null>(null);
 	let showDebugModal = $state(false);
 	let showResults = $state(false);
+	let copied = $state(false);
+	let streamedContent = $state('');
+	let isStreamingActive = $state(false);
+	let error = $state<string | null>(null);
+
+	// Derive maxTokens from array (sliders use arrays for multiple thumbs)
+	let maxTokens = $derived(maxTokensArray[0]);
+	// Approximate word count (tokens * 0.75)
+	let approximateWords = $derived(Math.round(maxTokens * 0.75));
+
+	// Status block makes sense for instruction fields AND example messages
+	let showStatusBlockOption = $derived(
+		fieldName === 'description' ||
+			fieldName === 'system_prompt' ||
+			fieldName === 'depth_prompt' ||
+			fieldName === 'mes_example'
+	);
+
+	// Different handling for mes_example vs instruction fields
+	let isExampleField = $derived(fieldName === 'mes_example');
+
+	// Smart defaults: Auto-select recommended style and token limits when field changes
+	$effect(() => {
+		if (fieldName) {
+			selectedStyle = getRecommendedStyle(fieldName);
+			const recommendedTokens = getRecommendedMaxTokens(fieldName);
+			maxTokensArray = [recommendedTokens];
+		}
+	});
 
 	// Reset input when dialog opens/closes
 	$effect(() => {
 		if (open) {
 			userInput = fieldValue || '';
-			selectedStyle = 'auto'; // Start with auto
+			// Don't override smart defaults - they were set by the effect above
 
-			// Async style detection if there's existing content
+			// Async style detection if there's existing content (can override smart default)
 			if (fieldValue && fieldValue.trim().length > 20) {
 				analyzeStyle(fieldValue);
 			}
@@ -63,6 +115,7 @@
 			// Reset debug modal when main dialog closes
 			showDebugModal = false;
 			showResults = false;
+			error = null;
 		}
 	});
 
@@ -200,46 +253,28 @@
 		if (!text || text.trim().length < 20) return 'auto';
 
 		try {
-			// Create a temporary ScribeAssistant session for style analysis
-			const createSessionResult = await _apiClient.createChat({
-				title: 'Style Analysis',
-				chat_mode: 'ScribeAssistant'
-			});
+			// Use the new structured output endpoint for reliable style detection
+			const result = await _apiClient.analyzeStyle(text);
 
-			if (!createSessionResult.isOk()) {
-				console.warn('Failed to create analysis session, falling back to auto');
+			if (result.isOk()) {
+				const analysis = result.value;
+
+				// Map backend style to frontend style string
+				// Backend returns: traits, narrative, profile, group, worldbuilding, system
+				// We need to handle 'system' as 'behavioral' for backward compatibility
+				const styleMap: Record<string, string> = {
+					traits: 'traits',
+					narrative: 'narrative',
+					profile: 'profile',
+					group: 'group',
+					worldbuilding: 'worldbuilding',
+					system: 'behavioral' // Backend "system" maps to frontend "behavioral"
+				};
+
+				return styleMap[analysis.detected_style] || analysis.detected_style;
+			} else {
+				console.warn('Style analysis failed:', result.error);
 				return 'auto';
-			}
-
-			const session = createSessionResult.value;
-
-			// Create a structured prompt for style analysis
-			const analysisPrompt = `Analyze this character description and classify it into exactly one of these four styles. Respond with ONLY the style name, nothing else.
-
-Available styles:
-- traits: Brief, punchy traits and physical characteristics (short sentences, fragments)
-- narrative: Story-like description with background and flowing prose
-- worldbuilding: Rich world context with {{char}} placeholders focusing on lore and universe
-- behavioral: AI behavior instructions using {{char}} and {{user}} placeholders focusing on what the AI will/won't do
-
-Text to analyze:
-"${text}"
-
-Style classification:`;
-
-			const expandResult = await _apiClient.expandText(session.id, analysisPrompt);
-
-			// Clean up the temporary session
-			await _apiClient.deleteChatById(session.id);
-
-			if (expandResult.isOk()) {
-				const response = expandResult.value.expanded_text.toLowerCase().trim();
-
-				// Extract the style from the AI response
-				if (response.includes('traits')) return 'traits';
-				if (response.includes('narrative')) return 'narrative';
-				if (response.includes('worldbuilding')) return 'worldbuilding';
-				if (response.includes('behavioral')) return 'behavioral';
 			}
 		} catch (_error) {
 			console.warn('Error in AI style detection:', _error);
@@ -275,117 +310,133 @@ Style classification:`;
 
 	async function generateFromScratch() {
 		try {
-			// Map frontend field names to backend field enum values
-			const fieldMapping: Record<string, string> = {
-				description: 'description',
-				personality: 'personality',
-				first_mes: 'first_mes',
-				scenario: 'scenario',
-				mes_example: 'mes_example',
-				system_prompt: 'system_prompt',
-				depth_prompt: 'depth_prompt',
-				tags: 'tags'
-			};
+			// Build user prompt
+			let userPrompt =
+				userInput.trim() ||
+				`Generate a ${fieldName} for a character: ${characterContext?.name || 'new character'}`;
 
-			// Handle alternate greeting field names (alternate_greeting_1, alternate_greeting_2, etc.)
-			let backendFieldName: string;
-			let greetingNumber: number | null = null;
+			// Add status block instructions if checkbox is enabled
+			if (includeStatusBlock && showStatusBlockOption) {
+				if (isExampleField) {
+					// For mes_example: generate examples that INCLUDE status blocks
+					const statusBlockExampleInstructions = `
 
-			if (fieldName.startsWith('alternate_greeting')) {
-				backendFieldName = 'alternate_greeting';
-				// Extract the number from alternate_greeting_1, alternate_greeting_2, etc.
-				const match = fieldName.match(/alternate_greeting_(\d+)/);
-				if (match) {
-					greetingNumber = parseInt(match[1], 10);
+IMPORTANT: Each conversation example should end with {{char}} displaying a status block wrapped in triple backticks (\`\`\`).
+
+The status block should:
+- Be wrapped in triple backticks (three backtick characters before and after)
+- Track relevant game state (health, location, inventory, stats, objectives, etc.)
+- Be contextually appropriate for this character/setting
+- Update between conversation examples to show state changes
+
+Example format for EACH conversation example:
+<START>
+{{char}}: "Dialogue..." *Action.*
+{{user}}: "Response..."
+{{char}}: "Reply..." *Action.*
+
+\`\`\`
+[Status fields here - health, location, inventory, stats, etc.]
+\`\`\`
+
+Make sure EVERY conversation example ends with a status block in triple backticks.`;
+					userPrompt += statusBlockExampleInstructions;
+				} else {
+					// For instruction fields: generate instructions ABOUT status blocks
+					const statusBlockInstructions = `
+
+IMPORTANT: Generate instructions that tell the AI to include a status block at the end of every response.
+
+The instructions you write MUST specify that the status block should be wrapped in triple backticks (three backtick characters: \`\`\`).
+
+Example of what you should generate:
+"{{char}} will always end each response with a status block wrapped in triple backticks. The format is:
+
+\`\`\`
+[Define specific status fields here - health, location, inventory, stats, objectives, etc.]
+\`\`\`
+
+The status block must use triple backticks for proper formatting."
+
+Key requirements:
+- Explicitly mention triple backticks in your instructions
+- Define specific status fields contextually appropriate to this setting
+- Specify that the block updates dynamically based on roleplay events
+- The status block should be formatted consistently for easy parsing
+
+NOTE: Since the AI cannot perform true dice rolls, if game mechanics require randomness, specify that outcomes will be narratively simulated based on stats and circumstances.
+
+DO NOT generate an actual status block in your output - only generate the INSTRUCTIONS about how the status block should work.`;
+					userPrompt += statusBlockInstructions;
 				}
-			} else {
-				backendFieldName = fieldMapping[fieldName] || fieldName;
 			}
 
-			// Map frontend style to backend style enum values
-			const styleMapping: Record<string, string> = {
-				traits: 'traits',
-				narrative: 'narrative',
-				profile: 'profile',
-				group: 'group',
-				worldbuilding: 'worldbuilding',
-				system: 'system',
-				auto: 'auto'
-			};
-
-			const backendStyle = styleMapping[selectedStyle] || 'auto';
-
-			// Build user request with context about which greeting number this is
-			let userRequest: string;
-			if (greetingNumber !== null) {
-				userRequest =
-					userInput.trim() ||
-					`Generate alternate greeting #${greetingNumber} for a character: ${characterContext?.name || 'new character'}. This should be different from their main greeting and any other alternate greetings.`;
-			} else {
-				userRequest =
-					userInput.trim() ||
-					`Generate a ${fieldName} for a character: ${characterContext?.name || 'new character'}`;
-			}
-
-			// Build character context in the format expected by the backend
-			const backendCharacterContext = characterContext
+			// Build character context - use the same format, no need to transform
+			const context = characterContext
 				? {
 						name: characterContext.name,
 						description: characterContext.description,
 						personality: characterContext.personality,
 						scenario: characterContext.scenario,
+						first_mes: characterContext.first_mes,
 						tags: characterContext.tags,
-						// Include first_mes and other message fields for better context
-						first_mes: characterContext.first_mes || null,
-						mes_example: characterContext.mes_example || null,
-						system_prompt: characterContext.system_prompt || null,
-						depth_prompt: characterContext.depth_prompt || null,
-						alternate_greetings: characterContext.alternate_greetings || null,
-						lorebook_entries: null, // TODO: Add lorebook support
-						associated_persona: null // TODO: Add persona support
+						mes_example: characterContext.mes_example,
+						system_prompt: characterContext.system_prompt,
+						depth_prompt: characterContext.depth_prompt,
+						alternate_greetings: characterContext.alternate_greetings,
+						lorebook_entries: characterContext.lorebook_entries,
+						associated_persona: characterContext.associated_persona,
+						selectedLorebooks: characterContext.selectedLorebooks
 					}
-				: null;
+				: undefined;
 
-			// Determine lorebook_id if any lorebooks are selected
-			const selectedLorebookId =
-				characterContext?.selectedLorebooks && characterContext.selectedLorebooks.length > 0
-					? characterContext.selectedLorebooks[0] // Use the first selected lorebook
-					: null;
+			// Use streaming API
+			streamedContent = '';
+			isStreamingActive = true;
+			showResults = true; // Show results view immediately to display streaming
 
-			// Use the dedicated character generation API endpoint
-			const generateResult = await fetch('/api/characters/generate/field', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					field: backendFieldName,
-					style: backendStyle !== 'auto' ? backendStyle : null,
-					user_prompt: userRequest,
-					character_context: backendCharacterContext,
-					generation_options: null,
-					lorebook_id: selectedLorebookId
-				})
-			});
+			try {
+				const stream = _apiClient.generateCharacterFieldStream({
+					fieldName: fieldName,
+					fieldValue: undefined, // No existing content for "create" mode
+					characterContext: context,
+					mode: selectedMode,
+					style: selectedStyle !== 'auto' ? (selectedStyle as DescriptionStyle) : undefined,
+					maxTokens: maxTokens,
+					userPrompt: userPrompt
+				});
 
-			if (!generateResult.ok) {
-				const errorText = await generateResult.text();
-				console.error('Generation failed:', errorText);
-				toast.error(`Failed to generate ${fieldName}: ${generateResult.statusText}`);
-				return;
+				// Iterate through the stream chunks
+				for await (const chunk of stream) {
+					// Type guard to check if this is a final response with metadata
+					if ('metadata' in chunk && chunk.metadata) {
+						// Final chunk with metadata - sanitize the content
+						const sanitizedContent = sanitizeAIOutput(streamedContent || chunk.content);
+						const generationResponse: GenerateCharacterFieldResponse = {
+							content: sanitizedContent,
+							style_used: selectedStyle !== 'auto' ? selectedStyle : 'auto',
+							metadata: chunk.metadata
+						};
+
+						lastGenerationResponse = generationResponse;
+						onGenerated(sanitizedContent);
+						toast.success(`${fieldName} generated successfully - Click Debug to see details`);
+					} else if ('done' in chunk && !chunk.done && chunk.content) {
+						// Streaming chunk - accumulate content (raw, unsanitized during streaming)
+						streamedContent += chunk.content;
+					} else if ('done' in chunk && chunk.done) {
+						// Final chunk without metadata (shouldn't normally happen, but handle gracefully)
+						streamedContent += chunk.content;
+					}
+				}
+			} catch (err) {
+				console.error('Streaming generation failed:', err);
+				error = err instanceof Error ? err.message : 'Failed to generate content';
+				toast.error(`Failed to generate ${fieldName}`);
+				showResults = false;
+			} finally {
+				isStreamingActive = false;
 			}
-
-			const generationResponse: GenerateCharacterFieldResponse = await generateResult.json();
-
-			// Store the full response for debug access
-			lastGenerationResponse = generationResponse;
-
-			onGenerated(generationResponse.content);
-			toast.success(`${fieldName} generated successfully - Click Debug to see details`);
-
-			// Show results state instead of closing
-			showResults = true;
 		} catch (_error) {
 			console.error('Error in character generation:', _error);
 			toast.error(`Failed to generate ${fieldName}`);
@@ -396,75 +447,138 @@ Style classification:`;
 		try {
 			const textToExpand = userInput.trim() || fieldValue;
 
-			// Map frontend field names to backend field enum values
-			const fieldMapping: Record<string, string> = {
-				description: 'description',
-				personality: 'personality',
-				first_mes: 'first_mes',
-				scenario: 'scenario',
-				mes_example: 'mes_example',
-				system_prompt: 'system_prompt',
-				depth_prompt: 'depth_prompt',
-				tags: 'tags'
-			};
-
-			const backendFieldName = fieldMapping[fieldName] || fieldName;
-
-			// Determine the enhancement instructions based on mode
-			let enhancementInstructions = '';
+			// Determine the user prompt based on mode
+			let userPrompt = '';
 			if (selectedMode === 'enhance') {
-				enhancementInstructions = `Enhance and improve this ${fieldName} while maintaining its core style and content. Add more detail, depth, and engaging elements.`;
+				userPrompt = `Enhance and improve this ${fieldName} while maintaining its core style and content. Add more detail, depth, and engaging elements.`;
 			} else if (selectedMode === 'expand') {
-				enhancementInstructions = `Expand this ${fieldName} with more detail and depth. Elaborate on existing elements and add new relevant information.`;
+				userPrompt = `Expand this ${fieldName} with more detail and depth. Elaborate on existing elements and add new relevant information.`;
 			} else if (selectedMode === 'rewrite') {
-				enhancementInstructions = `Rewrite this ${fieldName} in a fresh way while keeping the essential information. Use different wording and structure while maintaining the core meaning.`;
+				userPrompt = `Rewrite this ${fieldName} in a fresh way while keeping the essential information. Use different wording and structure while maintaining the core meaning.`;
 			}
 
-			// Build character context in the format expected by the backend
-			const backendCharacterContext = characterContext
+			// Add status block instructions if checkbox is enabled
+			if (includeStatusBlock && showStatusBlockOption) {
+				if (isExampleField) {
+					// For mes_example: generate examples that INCLUDE status blocks
+					const statusBlockExampleInstructions = `
+
+IMPORTANT: Each conversation example should end with {{char}} displaying a status block wrapped in triple backticks (\`\`\`).
+
+The status block should:
+- Be wrapped in triple backticks (three backtick characters before and after)
+- Track relevant game state (health, location, inventory, stats, objectives, etc.)
+- Be contextually appropriate for this character/setting
+- Update between conversation examples to show state changes
+
+Example format for EACH conversation example:
+<START>
+{{char}}: "Dialogue..." *Action.*
+{{user}}: "Response..."
+{{char}}: "Reply..." *Action.*
+
+\`\`\`
+[Status fields here - health, location, inventory, stats, etc.]
+\`\`\`
+
+Make sure EVERY conversation example ends with a status block in triple backticks.`;
+					userPrompt += statusBlockExampleInstructions;
+				} else {
+					// For instruction fields: generate instructions ABOUT status blocks
+					const statusBlockInstructions = `
+
+IMPORTANT: Generate instructions that tell the AI to include a status block at the end of every response.
+
+The instructions you write MUST specify that the status block should be wrapped in triple backticks (three backtick characters: \`\`\`).
+
+Example of what you should generate:
+"{{char}} will always end each response with a status block wrapped in triple backticks. The format is:
+
+\`\`\`
+[Define specific status fields here - health, location, inventory, stats, objectives, etc.]
+\`\`\`
+
+The status block must use triple backticks for proper formatting."
+
+Key requirements:
+- Explicitly mention triple backticks in your instructions
+- Define specific status fields contextually appropriate to this setting
+- Specify that the block updates dynamically based on roleplay events
+- The status block should be formatted consistently for easy parsing
+
+NOTE: Since the AI cannot perform true dice rolls, if game mechanics require randomness, specify that outcomes will be narratively simulated based on stats and circumstances.
+
+DO NOT generate an actual status block in your output - only generate the INSTRUCTIONS about how the status block should work.`;
+					userPrompt += statusBlockInstructions;
+				}
+			}
+
+			// Build character context
+			const context = characterContext
 				? {
 						name: characterContext.name,
 						description: characterContext.description,
 						personality: characterContext.personality,
 						scenario: characterContext.scenario,
+						first_mes: characterContext.first_mes,
 						tags: characterContext.tags,
-						mes_example: null,
-						system_prompt: null,
-						depth_prompt: null,
-						alternate_greetings: null,
-						lorebook_entries: null,
-						associated_persona: null
+						mes_example: characterContext.mes_example,
+						system_prompt: characterContext.system_prompt,
+						depth_prompt: characterContext.depth_prompt,
+						alternate_greetings: characterContext.alternate_greetings,
+						lorebook_entries: characterContext.lorebook_entries,
+						associated_persona: characterContext.associated_persona,
+						selectedLorebooks: characterContext.selectedLorebooks
 					}
-				: null;
+				: undefined;
 
-			// Use the dedicated character enhancement API endpoint
-			const enhanceResult = await fetch('/api/characters/enhance/field', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					field: backendFieldName,
-					current_content: textToExpand,
-					enhancement_instructions: enhancementInstructions,
-					character_context: backendCharacterContext,
-					generation_options: null
-				})
-			});
+			// Use streaming API
+			streamedContent = '';
+			isStreamingActive = true;
+			showResults = true; // Show results view immediately to display streaming
 
-			if (!enhanceResult.ok) {
-				const errorText = await enhanceResult.text();
-				console.error('Enhancement failed:', errorText);
-				toast.error(`Failed to ${selectedMode} ${fieldName}: ${enhanceResult.statusText}`);
-				return;
+			try {
+				const stream = _apiClient.generateCharacterFieldStream({
+					fieldName: fieldName,
+					fieldValue: textToExpand, // Existing content to enhance/expand/rewrite
+					characterContext: context,
+					mode: selectedMode,
+					style: selectedStyle !== 'auto' ? (selectedStyle as DescriptionStyle) : undefined,
+					maxTokens: maxTokens,
+					userPrompt: userPrompt
+				});
+
+				// Iterate through the stream chunks
+				for await (const chunk of stream) {
+					// Type guard to check if this is a final response with metadata
+					if ('metadata' in chunk && chunk.metadata) {
+						// Final chunk with metadata - sanitize the content
+						const sanitizedContent = sanitizeAIOutput(streamedContent || chunk.content);
+						const generationResponse: GenerateCharacterFieldResponse = {
+							content: sanitizedContent,
+							style_used: selectedStyle !== 'auto' ? selectedStyle : 'auto',
+							metadata: chunk.metadata
+						};
+
+						lastGenerationResponse = generationResponse;
+						onGenerated(sanitizedContent);
+						toast.success(`${fieldName} ${getModeDescription(selectedMode)} successfully`);
+					} else if ('done' in chunk && !chunk.done && chunk.content) {
+						// Streaming chunk - accumulate content (raw, unsanitized during streaming)
+						streamedContent += chunk.content;
+					} else if ('done' in chunk && chunk.done) {
+						// Final chunk without metadata (shouldn't normally happen, but handle gracefully)
+						streamedContent += chunk.content;
+					}
+				}
+			} catch (err) {
+				console.error('Streaming enhancement failed:', err);
+				error = err instanceof Error ? err.message : 'Failed to enhance content';
+				toast.error(`Failed to ${selectedMode} ${fieldName}`);
+				showResults = false;
+			} finally {
+				isStreamingActive = false;
 			}
-
-			const enhancementResponse = await enhanceResult.json();
-
-			onGenerated(enhancementResponse.enhanced_content);
-			toast.success(`${fieldName} ${getModeDescription(selectedMode)} successfully`);
-			onOpenChange(false);
 		} catch (_error) {
 			console.error('Error in character enhancement:', _error);
 			toast.error(`Failed to ${selectedMode} ${fieldName}`);
@@ -481,6 +595,21 @@ Style classification:`;
 		return descriptions[mode];
 	}
 
+	async function copyToClipboard() {
+		const content = lastGenerationResponse?.content;
+		if (!content) return;
+
+		try {
+			await navigator.clipboard.writeText(content);
+			copied = true;
+			setTimeout(() => (copied = false), 2000);
+			toast.success('Copied to clipboard!');
+		} catch (_error) {
+			console.error('Failed to copy:', _error);
+			toast.error('Failed to copy to clipboard');
+		}
+	}
+
 	function insertExample() {
 		if (fieldName === 'description' && selectedStyle !== 'auto') {
 			const styleInfo = descriptionStyles[selectedStyle as keyof typeof descriptionStyles];
@@ -494,18 +623,71 @@ Style classification:`;
 		}
 	}
 
-	// Determine available modes based on context
+	// Mode options with descriptions
+	const allModeOptions = [
+		{
+			value: 'create' as GenerationMode,
+			label: 'Generate New',
+			description: 'Generate new content from scratch',
+			icon: Plus
+		},
+		{
+			value: 'enhance' as GenerationMode,
+			label: 'Enhance Existing',
+			description: 'Improve existing content',
+			icon: Sparkles
+		},
+		{
+			value: 'expand' as GenerationMode,
+			label: 'Expand Detail',
+			description: 'Add more detail and depth',
+			icon: Wand
+		},
+		{
+			value: 'rewrite' as GenerationMode,
+			label: 'Rewrite Fresh',
+			description: 'Rewrite with fresh perspective',
+			icon: RefreshCw
+		}
+	];
+
+	// Filter modes based on field compatibility and content availability
 	let hasContent = $derived(fieldValue && fieldValue.trim().length > 0);
-	let canCreate = $derived(true); // Always allow creation
-	let canEnhance = $derived(hasContent);
 
 	const modeOptions = $derived.by(() => {
-		const options = [];
-		if (canCreate) options.push({ value: 'create', label: 'Generate New', icon: Plus });
-		if (canEnhance) options.push({ value: 'enhance', label: 'Enhance Existing', icon: Sparkles });
-		if (canEnhance) options.push({ value: 'expand', label: 'Expand Detail', icon: Wand });
-		if (canEnhance) options.push({ value: 'rewrite', label: 'Rewrite Fresh', icon: RefreshCw });
-		return options;
+		return allModeOptions.filter((mode) => {
+			// Check if mode is supported for this field
+			if (!isModeSupported(fieldName, mode.value)) {
+				return false;
+			}
+
+			// Create is always available
+			if (mode.value === 'create') {
+				return true;
+			}
+
+			// Other modes require existing content
+			return hasContent;
+		});
+	});
+
+	// Get available styles for this field
+	const availableStyleOptions = $derived.by(() => {
+		const allowedStyles = getAvailableStyles(fieldName);
+		const styleLabels: Record<string, string> = {
+			auto: 'Auto (recommended)',
+			traits: 'Traits (comma-separated)',
+			narrative: 'Narrative (flowing prose)',
+			profile: 'Profile (structured)',
+			group: 'Group (team dynamics)',
+			worldbuilding: 'Worldbuilding (setting context)',
+			system: 'System (technical)'
+		};
+
+		return allowedStyles.map((style) => ({
+			value: style,
+			label: styleLabels[style] || style
+		}));
 	});
 </script>
 
@@ -525,41 +707,54 @@ Style classification:`;
 		{#if showResults}
 			<!-- Results View -->
 			<div class="space-y-4">
-				<div class="rounded-lg border bg-green-50 p-4 dark:bg-green-900/20">
-					<div class="mb-2 flex items-center gap-2 text-green-700 dark:text-green-300">
-						<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-							<path
-								fill-rule="evenodd"
-								d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-								clip-rule="evenodd"
-							></path>
-						</svg>
-						<h3 class="font-medium">Generation Complete!</h3>
+				{#if isStreamingActive}
+					<div class="rounded-lg border bg-blue-50 p-4 dark:bg-blue-900/20">
+						<div class="mb-2 flex items-center gap-2 text-blue-700 dark:text-blue-300">
+							<div class="h-5 w-5 animate-pulse rounded-full bg-blue-500"></div>
+							<h3 class="font-medium">Generating...</h3>
+						</div>
+						<p class="text-sm text-blue-600 dark:text-blue-400">
+							AI is generating your {fieldName} in real-time. Watch the content appear below as it's
+							being created.
+						</p>
 					</div>
-					<p class="text-sm text-green-600 dark:text-green-400">
-						The {fieldName} has been generated and applied to your character. Click Debug to see detailed
-						information about the generation process, including whether lorebook context was used.
-					</p>
-				</div>
+				{:else}
+					<div class="rounded-lg border bg-green-50 p-4 dark:bg-green-900/20">
+						<div class="mb-2 flex items-center gap-2 text-green-700 dark:text-green-300">
+							<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+								<path
+									fill-rule="evenodd"
+									d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+									clip-rule="evenodd"
+								></path>
+							</svg>
+							<h3 class="font-medium">Generation Complete!</h3>
+						</div>
+						<p class="text-sm text-green-600 dark:text-green-400">
+							The {fieldName} has been generated and applied to your character. Click Debug to see detailed
+							information about the generation process, including whether lorebook context was used.
+						</p>
+					</div>
+				{/if}
 
-				{#if lastGenerationResponse?.metadata}
+				{#if !isStreamingActive && lastGenerationResponse?.metadata}
 					<div class="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
 						<div class="rounded-lg border p-3">
 							<div class="font-medium text-muted-foreground">Tokens Used</div>
 							<div class="mt-1 text-lg font-semibold">
-								{lastGenerationResponse.metadata.tokens_used.toLocaleString()}
+								{(lastGenerationResponse.metadata.tokens_used ?? 0).toLocaleString()}
 							</div>
 						</div>
 						<div class="rounded-lg border p-3">
 							<div class="font-medium text-muted-foreground">Generation Time</div>
 							<div class="mt-1 text-lg font-semibold">
-								{lastGenerationResponse.metadata.generation_time_ms}ms
+								{lastGenerationResponse.metadata.generation_time_ms ?? 0}ms
 							</div>
 						</div>
 						<div class="rounded-lg border p-3">
 							<div class="font-medium text-muted-foreground">Style Applied</div>
 							<div class="mt-1 text-lg font-semibold capitalize">
-								{lastGenerationResponse.style_used}
+								{lastGenerationResponse.style_used ?? 'auto'}
 							</div>
 						</div>
 						<div class="rounded-lg border p-3">
@@ -615,33 +810,74 @@ Style classification:`;
 						</div>
 					</div>
 				{/if}
+
+				<!-- Generated Content Display -->
+				{#if isStreamingActive || lastGenerationResponse?.content}
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-2">
+								<Label>Generated Content</Label>
+								{#if isStreamingActive}
+									<div class="flex items-center gap-1 text-xs text-muted-foreground">
+										<div class="h-2 w-2 animate-pulse rounded-full bg-blue-500"></div>
+										Streaming...
+									</div>
+								{/if}
+							</div>
+							<ButtonComponent
+								size="sm"
+								variant="ghost"
+								onclick={copyToClipboard}
+								disabled={isStreamingActive}
+							>
+								{#if copied}
+									<Check class="mr-1 h-4 w-4" />
+									Copied
+								{:else}
+									<Copy class="mr-1 h-4 w-4" />
+									Copy
+								{/if}
+							</ButtonComponent>
+						</div>
+						<div
+							class="max-h-96 overflow-y-auto whitespace-pre-wrap rounded-md border bg-background p-4 text-sm"
+						>
+							{isStreamingActive ? streamedContent : lastGenerationResponse?.content || ''}
+						</div>
+					</div>
+				{/if}
 			</div>
 		{:else}
 			<div class="space-y-4">
 				<!-- Generation Mode Selection -->
 				<div class="grid gap-2">
 					<Label>Generation Mode</Label>
-					<div class="flex flex-wrap gap-2">
+					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 						{#each modeOptions as mode}
-							<ButtonComponent
-								variant={selectedMode === mode.value ? 'default' : 'outline'}
-								size="sm"
-								onclick={() => (selectedMode = mode.value as GenerationMode)}
-								class="flex items-center gap-1"
+							<button
+								type="button"
+								class="rounded-md border-2 p-3 text-left transition-colors {selectedMode ===
+								mode.value
+									? 'border-primary bg-primary/10'
+									: 'border-border hover:border-primary/50'}"
+								onclick={() => (selectedMode = mode.value)}
 							>
-								<mode.icon size={14} />
-								{mode.label}
-							</ButtonComponent>
+								<div class="flex items-center gap-2 font-semibold">
+									<mode.icon size={16} />
+									{mode.label}
+								</div>
+								<div class="mt-1 text-sm text-muted-foreground">{mode.description}</div>
+							</button>
 						{/each}
 					</div>
 				</div>
 
-				<!-- Style Selection for Description Field -->
-				{#if fieldName === 'description'}
-					<div class="grid gap-2">
+				<!-- Style Selection -->
+				{#if availableStyleOptions.length > 1}
+					<div class="space-y-2">
 						<div class="flex items-center justify-between">
-							<Label>Description Style</Label>
-							{#if userInput.trim().length > 20}
+							<Label for="style">Content Style</Label>
+							{#if fieldName === 'description' && userInput.trim().length > 20}
 								<ButtonComponent
 									variant="ghost"
 									size="sm"
@@ -667,7 +903,7 @@ Style classification:`;
 											<path
 												class="opacity-75"
 												fill="currentColor"
-												d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+												d="M4 12a8 8 0 0 1 8 -8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 											></path>
 										</svg>
 										Analyzing...
@@ -678,29 +914,64 @@ Style classification:`;
 								</ButtonComponent>
 							{/if}
 						</div>
-						<div class="grid gap-3">
-							<div class="flex items-center space-x-2">
-								<input type="radio" bind:group={selectedStyle} value="auto" id="auto" />
-								<Label for="auto" class="cursor-pointer font-normal">
-									Auto-detect (Let AI choose based on your input)
-								</Label>
-							</div>
-							{#each Object.entries(descriptionStyles) as [key, style]}
-								<div class="flex items-start space-x-2">
-									<input
-										type="radio"
-										bind:group={selectedStyle}
-										value={key}
-										id={key}
-										class="mt-1"
-									/>
-									<Label for={key} class="cursor-pointer space-y-1 font-normal">
-										<div class="font-medium">{style.name}</div>
-										<div class="text-sm text-muted-foreground">{style.description}</div>
-									</Label>
-								</div>
+						<select
+							id="style"
+							class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+							bind:value={selectedStyle}
+						>
+							{#each availableStyleOptions as styleOption (styleOption.value)}
+								<option value={styleOption.value}>{styleOption.label}</option>
 							{/each}
-						</div>
+						</select>
+					</div>
+				{/if}
+
+				<!-- Status Block Checkbox -->
+				{#if showStatusBlockOption}
+					<div class="flex items-center space-x-2">
+						<Checkbox id="status-block" bind:checked={includeStatusBlock} />
+						<Label
+							for="status-block"
+							class="cursor-pointer text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+						>
+							{#if isExampleField}
+								Include status blocks in conversation examples (for RPG/system cards)
+							{:else}
+								Include status block instructions (for RPG/system cards)
+							{/if}
+						</Label>
+					</div>
+				{/if}
+
+				<!-- Token Slider Control -->
+				<div class="space-y-2">
+					<div class="flex items-center justify-between">
+						<Label for="token-limit">Generation Length</Label>
+						<span class="text-sm text-muted-foreground">
+							{maxTokens} tokens (~{approximateWords} words)
+						</span>
+					</div>
+					<Slider
+						type="multiple"
+						min={500}
+						max={5000}
+						step={100}
+						bind:value={maxTokensArray}
+						class="w-full"
+					/>
+					<div class="flex justify-between text-xs text-muted-foreground">
+						<span>Short (500)</span>
+						<span>Medium (2500)</span>
+						<span>Long (5000)</span>
+					</div>
+				</div>
+
+				<!-- Error Display -->
+				{#if error}
+					<div
+						class="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+					>
+						{error}
 					</div>
 				{/if}
 
@@ -771,6 +1042,16 @@ Style classification:`;
 						</div>
 					</div>
 				{/if}
+
+				<!-- Model Info Display -->
+				<div class="rounded-md border bg-muted/30 p-3">
+					<div class="flex items-center gap-2 text-xs text-muted-foreground">
+						<Bot size={14} />
+						<span>
+							Powered by {lastGenerationResponse?.metadata?.model || 'Google Gemini AI'}
+						</span>
+					</div>
+				</div>
 			</div>
 		{/if}
 
@@ -795,6 +1076,9 @@ Style classification:`;
 							onclick={() => {
 								showResults = false;
 								userInput = ''; // Reset input for new generation
+								streamedContent = '';
+								lastGenerationResponse = null;
+								error = null;
 							}}
 							class="gap-2"
 						>
@@ -847,7 +1131,7 @@ Style classification:`;
 								<path
 									class="opacity-75"
 									fill="currentColor"
-									d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+									d="M4 12a8 8 0 0 1 8 -8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 								></path>
 							</svg>
 							Generating...

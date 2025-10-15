@@ -69,7 +69,7 @@ password-auth = { version = "1.0.0", features = ["argon2"] }
 hex = "0.4.3"
 libc = "0.2.168"  # For system calls like statvfs
 
-genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "4685b80" }
+genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "d7460e2" }
 
 reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }

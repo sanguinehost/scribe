@@ -23,6 +23,7 @@ use diesel::prelude::*;
 
 // Crate imports
 use anyhow::Context as _;
+use bigdecimal::BigDecimal;
 use scribe_backend::{
     errors::AppError,
     models::{
@@ -237,7 +238,7 @@ async fn create_test_chat_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
 
@@ -767,7 +768,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(schema::chat_sessions::table)
@@ -1168,7 +1169,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(schema::chat_sessions::table)
@@ -1534,7 +1535,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: 0,
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
             };
             diesel::insert_into(schema::chat_sessions::table)

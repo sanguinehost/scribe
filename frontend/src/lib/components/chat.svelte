@@ -27,6 +27,9 @@
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { UpgradePrompt } from './membership';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
+	import LorebookExtractionDialog from './LorebookExtractionDialog.svelte';
+	import { lorebookStore } from '$lib/stores/lorebook.svelte';
+	import type { LorebookEntry } from '$lib/types';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -100,6 +103,10 @@
 
 	// Upgrade prompt modal state
 	let showUpgradePrompt = $state(false);
+
+	// Lorebook extraction state
+	let showExtractDialog = $state(false);
+	let availableLorebooks = $state<Array<{ id: string; name: string }>>([]);
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
@@ -688,16 +695,9 @@
 	const tokenCounter = useTokenCounter();
 	let showTokenUsage = $state(false);
 
-	// --- Cumulative Usage Tracking ---
-	let cumulativeTokens = $state({
-		input: 0,
-		output: 0,
-		total: 0,
-		cost: 0 // Added cumulative cost
-	});
-
-	// Track suggested actions token usage
-	let suggestedActionsTokens = $state({
+	// Track suggested actions token usage (separate from main session tracking)
+	// Prefixed with _ as it's set but not currently displayed (kept for potential future use)
+	let _suggestedActionsTokens = $state({
 		input: 0,
 		output: 0,
 		total: 0,
@@ -705,48 +705,15 @@
 	});
 
 	// Pricing per model (per 1M tokens)
-	// Model pricing with 20% markup (used for suggested actions cost estimation)
-	// Main chat session costs come from server-side credit tracking
+	// Model pricing with 20% markup (used for suggested actions cost estimation only)
+	// Main chat session costs come from server-side credit tracking (chat.total_credits_used)
 	const modelPricing = {
 		'gemini-2.5-flash': { input: 0.36, output: 3.0 }, // 20% markup on $0.30/$2.50
+		'gemini-2.5-flash-preview-09-2025': { input: 0.36, output: 3.0 }, // Same as flash
+		'gemini-2.5-flash-image': { input: 0.36, output: 3.0 }, // Same as flash
 		'gemini-2.5-pro': { input: 1.5, output: 12.0 }, // 20% markup on $1.25/$10.00
-		'gemini-2.5-flash-lite-preview': { input: 0.12, output: 0.48 } // 20% markup on $0.10/$0.40
+		'gemini-2.5-flash-lite-preview-09-2025': { input: 0.12, output: 0.48 } // 20% markup on $0.10/$0.40
 	};
-
-	// Use server-side token totals instead of client-side calculation
-	// The backend tracks cumulative totals in the chat_sessions table
-	$effect(() => {
-		// Get totals from server-side session data
-		const serverInputTokens = chat?.total_prompt_tokens || 0;
-		const serverOutputTokens = chat?.total_completion_tokens || 0;
-		const serverCreditsUsed = chat?.total_credits_used || 0;
-
-		let finalCost = 0;
-
-		// If credits are tracked and seem reasonable, use them
-		// Otherwise estimate from tokens (for sessions created before credit tracking)
-		if (serverCreditsUsed > 0) {
-			// Convert credits to dollars (1 credit = $0.001)
-			// This matches the 20% markup pricing configured on the backend
-			finalCost = serverCreditsUsed / 1000;
-		} else if (serverInputTokens > 0 || serverOutputTokens > 0) {
-			// Fallback: Estimate using Flash pricing (most common model)
-			// Flash rates with 20% markup: 0.018 credits/1k input, 0.15 credits/1k output
-			const estimatedInputCredits = (serverInputTokens / 1000) * 0.018;
-			const estimatedOutputCredits = (serverOutputTokens / 1000) * 0.15;
-			const estimatedTotalCredits = estimatedInputCredits + estimatedOutputCredits;
-			finalCost = estimatedTotalCredits / 1000;
-		}
-
-		cumulativeTokens = {
-			input: serverInputTokens + suggestedActionsTokens.input,
-			output: serverOutputTokens + suggestedActionsTokens.output,
-			total: serverInputTokens + serverOutputTokens + suggestedActionsTokens.total,
-			cost: finalCost + suggestedActionsTokens.cost
-		};
-
-		// Token data retrieved from server
-	});
 	let availablePersonas = $state<UserPersona[]>([]);
 
 	// User persona for template substitution
@@ -854,27 +821,49 @@
 	}
 
 	async function loadUserPersona() {
+		console.log('🔍 loadUserPersona: Starting persona load');
 		try {
 			const currentUser = getCurrentUser();
+			console.log('🔍 loadUserPersona: currentUser =', currentUser);
+
 			if (currentUser?.default_persona_id) {
+				console.log(
+					'🔍 loadUserPersona: Fetching persona with ID:',
+					currentUser.default_persona_id
+				);
 				const personaResult = await _apiClient.getUserPersona(currentUser.default_persona_id);
 				if (personaResult.isOk()) {
 					currentUserPersona = personaResult.value;
+					console.log('✅ loadUserPersona: Successfully loaded persona:', currentUserPersona);
 				} else {
-					console.warn('Failed to load user persona:', personaResult.error);
+					console.warn('⚠️ loadUserPersona: Failed to load user persona:', personaResult.error);
 					// Create a fallback persona with username
 					if (currentUser.username) {
 						currentUserPersona = { name: currentUser.username } as UserPersona;
+						console.log('🔄 loadUserPersona: Using username as fallback:', currentUserPersona);
 					}
 				}
 			} else if (currentUser?.username) {
 				// Create a fallback persona with username
 				currentUserPersona = { name: currentUser.username } as UserPersona;
+				console.log(
+					'🔄 loadUserPersona: No default_persona_id, using username:',
+					currentUserPersona
+				);
+			} else {
+				console.warn('⚠️ loadUserPersona: No default_persona_id and no username available');
 			}
 		} catch (_error) {
-			console.warn('Error loading user persona:', _error);
+			console.error('❌ loadUserPersona: Error loading user persona:', _error);
 			// currentUserPersona remains null, so userPersonaName will be 'User'
 		}
+
+		console.log(
+			'🔍 loadUserPersona: Completed. currentUserPersona =',
+			currentUserPersona,
+			', userPersonaName will be:',
+			currentUserPersona?.name || 'User'
+		);
 	}
 
 	// --- Get Current Chat Model ---
@@ -945,6 +934,32 @@
 		}
 	}
 
+	// --- Refresh Chat Metadata (Token Counts and Costs) ---
+	async function refreshChatMetadata() {
+		if (!chat?.id) return;
+
+		try {
+			const result = await _apiClient.getChatById(chat.id);
+			if (result.isOk()) {
+				// Mutate specific fields directly to avoid triggering full re-render
+				// In Svelte 5, direct mutation of props triggers fine-grained reactivity
+				chat.total_prompt_tokens = result.value.total_prompt_tokens;
+				chat.total_completion_tokens = result.value.total_completion_tokens;
+				chat.total_credits_used = result.value.total_credits_used;
+
+				console.log('✅ Refreshed chat metadata:', {
+					total_prompt_tokens: chat.total_prompt_tokens,
+					total_completion_tokens: chat.total_completion_tokens,
+					total_credits_used: chat.total_credits_used
+				});
+			} else {
+				console.error('Failed to refresh chat metadata:', result.error);
+			}
+		} catch (_error) {
+			console.error('Failed to refresh chat metadata:', _error);
+		}
+	}
+
 	// Function to handle token limit reached - show upgrade prompt instead of toast
 	function handleTokenLimitReached() {
 		if (ENABLE_PAYMENTS && subscriptionStore.isAtLimit) {
@@ -958,6 +973,20 @@
 	$effect(() => {
 		loadAvailablePersonas();
 		loadUserPersona();
+	});
+
+	// Load lorebooks when component mounts (for extraction dialog)
+	$effect(() => {
+		async function loadLorebooks() {
+			await lorebookStore.loadLorebooks();
+			// Map lorebooks to simple format needed by dialog
+			// Use the getter directly, not .state.lorebooks
+			availableLorebooks = (lorebookStore.lorebooks || []).map((lb) => ({
+				id: lb.id,
+				name: lb.name
+			}));
+		}
+		loadLorebooks();
 	});
 
 	// Load agent mode when chat changes
@@ -1047,7 +1076,7 @@
 						(tokenUsage.input_tokens / 1_000_000) * flashPricing.input +
 						(tokenUsage.output_tokens / 1_000_000) * flashPricing.output;
 
-					suggestedActionsTokens = {
+					_suggestedActionsTokens = {
 						input: tokenUsage.input_tokens,
 						output: tokenUsage.output_tokens,
 						total: tokenUsage.total_tokens,
@@ -1126,7 +1155,53 @@
 	// Template substitution for frontend preview - following character-overview.svelte pattern
 	function substituteTemplateVariables(text: string, characterName: string): string {
 		if (!text) return text;
-		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, userPersonaName);
+
+		console.log('🔤 substituteTemplateVariables: Called with userPersonaName =', userPersonaName);
+		console.log('🔤 Text length:', text.length, 'chars');
+
+		// Find all {{user}} instances and log their context
+		const userTemplateRegex = /\{\{user\}\}/g;
+		let match;
+		let matchCount = 0;
+		while ((match = userTemplateRegex.exec(text)) !== null) {
+			matchCount++;
+			const start = Math.max(0, match.index - 20);
+			const end = Math.min(text.length, match.index + match[0].length + 20);
+			const context = text.substring(start, end);
+			console.log(
+				`🔤 Found {{user}} #${matchCount} at position ${match.index}:`,
+				JSON.stringify(context)
+			);
+		}
+		console.log(`🔤 Total {{user}} templates found: ${matchCount}`);
+
+		// Find all {{char}} instances
+		const charTemplateRegex = /\{\{char\}\}/g;
+		let _charMatch;
+		let charMatchCount = 0;
+		while ((_charMatch = charTemplateRegex.exec(text)) !== null) {
+			charMatchCount++;
+		}
+		console.log(`🔤 Total {{char}} templates found: ${charMatchCount}`);
+
+		// Perform replacements
+		const result = text
+			.replace(/\{\{char\}\}/g, characterName)
+			.replace(/\{\{user\}\}/g, userPersonaName);
+
+		// Check if any replacements actually happened
+		if (result === text) {
+			console.log('⚠️ substituteTemplateVariables: No replacements made!');
+		} else {
+			console.log(
+				'✅ substituteTemplateVariables: Replacements made. Result length:',
+				result.length
+			);
+			// Show a preview of the result
+			console.log('🔤 Result preview (first 200 chars):', result.substring(0, 200));
+		}
+
+		return result;
 	}
 
 	// Handle chronicle opt-in choice
@@ -1296,6 +1371,9 @@
 				agentMode: agentMode
 			});
 			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
+
+			// Refresh chat metadata to update token counts and costs
+			await refreshChatMetadata();
 		} catch (_error) {
 			console.error('❌ Failed to send message:', _error);
 
@@ -1491,6 +1569,8 @@
 				variantOf: originalMessageId // Create response as variant of original message
 			});
 
+			// Refresh chat metadata to update token counts and costs
+			await refreshChatMetadata();
 			// Update chat preview after successful regeneration
 			// Note: StreamingService will handle message creation and updates
 			const preview = lastUserMessage.content.substring(0, 100);
@@ -1930,11 +2010,30 @@
 			}
 		}
 	}
+
+	// Handler to open extraction dialog
+	function handleOpenExtractDialog() {
+		if (!chat?.id) return;
+
+		showExtractDialog = true;
+	}
+
+	// Handler for successful extraction
+	function handleExtractionSuccess(entries: LorebookEntry[]) {
+		const count = entries.length;
+		if (count > 0) {
+			toast.success(
+				`Successfully extracted ${count} lorebook ${count === 1 ? 'entry' : 'entries'}`
+			);
+		} else {
+			toast.info('No entries were extracted from the selected messages');
+		}
+	}
 </script>
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
-	<ChatHeader {user} {chat} {readonly} />
+	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}
@@ -2128,10 +2227,19 @@
 						</div>
 					{/if}
 
-					<!-- Cumulative Session Usage Display -->
-					{#if cumulativeTokens.total > 0}
-						{@const formatSessionCost = (cost: number) =>
-							cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`}
+					<!-- Session Total Display (from backend) -->
+					{#if chat?.total_credits_used || chat?.total_prompt_tokens || chat?.total_completion_tokens}
+						{@const sessionCost =
+							typeof chat.total_credits_used === 'string'
+								? parseFloat(chat.total_credits_used)
+								: chat.total_credits_used}
+						{@const formatSessionCost = (cost: number | undefined) =>
+							typeof cost !== 'number' || isNaN(cost) || cost < 0.0001
+								? '<$0.0001'
+								: `$${cost.toFixed(4)}`}
+						{@const promptTokens = chat.total_prompt_tokens || 0}
+						{@const completionTokens = chat.total_completion_tokens || 0}
+						{@const totalTokens = promptTokens + completionTokens}
 
 						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
 							<!-- Main breakdown -->
@@ -2139,23 +2247,25 @@
 								<span class="font-medium">Session Usage:</span>
 								<div class="flex items-center gap-2">
 									<span class="text-blue-600 dark:text-blue-400">
-										↑{cumulativeTokens.input} input
+										↑{promptTokens.toLocaleString()} input
 									</span>
 									<span class="text-green-600 dark:text-green-400">
-										↓{cumulativeTokens.output} output
+										↓{completionTokens.toLocaleString()} output
 									</span>
 									<span class="font-medium">
-										{cumulativeTokens.total} total
+										{totalTokens.toLocaleString()} total
 									</span>
-									<span class="font-mono font-medium text-amber-600 dark:text-amber-400">
-										{formatSessionCost(cumulativeTokens.cost)}
-									</span>
+									{#if sessionCost !== undefined}
+										<span class="font-mono font-medium text-amber-600 dark:text-amber-400">
+											{formatSessionCost(sessionCost)}
+										</span>
+									{/if}
 								</div>
 							</div>
 
 							<!-- Note about system context -->
 							<div class="text-center text-xs opacity-75">
-								Hover messages for individual token counts & costs • Using per-message model pricing
+								Base API cost (authoritative from backend) • Hover messages for individual costs
 							</div>
 						</div>
 					{/if}
@@ -2196,5 +2306,21 @@
 		variant="modal"
 		on:close={() => (showUpgradePrompt = false)}
 		on:upgrade={() => (showUpgradePrompt = false)}
+	/>
+{/if}
+
+<!-- Lorebook Extraction Dialog -->
+{#if chat?.id}
+	<LorebookExtractionDialog
+		bind:open={showExtractDialog}
+		chatSessionId={chat.id}
+		messages={displayMessages.map((msg, index) => ({
+			role: msg.message_type.toLowerCase(),
+			content: msg.content,
+			index
+		}))}
+		lorebooks={availableLorebooks}
+		onOpenChange={(open) => (showExtractDialog = open)}
+		onSuccess={handleExtractionSuccess}
 	/>
 {/if}

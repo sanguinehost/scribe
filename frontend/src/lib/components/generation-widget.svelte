@@ -3,7 +3,8 @@
 	import { toast } from 'svelte-sonner';
 	import { Sparkles, Wand2, RefreshCw, Plus } from 'lucide-svelte';
 	import { apiClient as _apiClient } from '$lib/api';
-	import type { GenerationMode, CharacterContext } from '$lib/types';
+	import type { GenerationMode, CharacterContext, DescriptionStyle } from '$lib/types';
+	import { getRecommendedStyle, getAvailableStyles } from '$lib/utils/ai-generation-helpers';
 
 	type Props = {
 		fieldName: string;
@@ -24,6 +25,17 @@
 	}: Props = $props();
 
 	let isGenerating = $state(false);
+	let selectedStyle = $state<DescriptionStyle>('auto');
+
+	// Smart defaults: Auto-select recommended style when field changes
+	$effect(() => {
+		if (fieldName) {
+			selectedStyle = getRecommendedStyle(fieldName);
+		}
+	});
+
+	// Get available styles for this field
+	let availableStyles = $derived(getAvailableStyles(fieldName));
 
 	async function handleGenerate(generationMode: GenerationMode) {
 		if (mode === 'inline' && !fieldValue.trim()) {
@@ -36,10 +48,11 @@
 
 			// Use the character field generation API
 			const result = await _apiClient.generateCharacterField({
-				field_name: fieldName,
-				field_context: fieldValue || undefined,
-				character_context: characterContext,
-				generation_mode: generationMode
+				fieldName: fieldName,
+				fieldValue: fieldValue || undefined,
+				characterContext: characterContext,
+				mode: generationMode,
+				style: selectedStyle !== 'auto' ? selectedStyle : undefined
 			});
 
 			if (result.isOk()) {
@@ -108,6 +121,37 @@
 		{/if}
 	{:else}
 		<!-- Standalone mode: full generation options for character editor -->
+
+		<!-- Style selector (shown only when multiple styles are available) -->
+		{#if availableStyles.length > 2}
+			<select
+				bind:value={selectedStyle}
+				disabled={disabled || isGenerating}
+				class="h-7 rounded-md border border-input bg-transparent px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+				title="Select generation style"
+			>
+				{#each availableStyles as style}
+					<option value={style}>
+						{style === 'auto'
+							? 'Auto'
+							: style === 'traits'
+								? 'Traits'
+								: style === 'narrative'
+									? 'Narrative'
+									: style === 'profile'
+										? 'Profile'
+										: style === 'group'
+											? 'Group'
+											: style === 'worldbuilding'
+												? 'World'
+												: style === 'system'
+													? 'System'
+													: style}
+					</option>
+				{/each}
+			</select>
+		{/if}
+
 		{#if canCreate}
 			<ButtonComponent
 				variant="ghost"

@@ -114,15 +114,17 @@ impl AgentContextAnalysis {
         conn: &mut PgConnection,
         session_id: Uuid,
         analysis_type: AnalysisType,
+        message_id: Uuid,
     ) -> Result<Option<Self>, AppError> {
         use crate::schema::agent_context_analysis::dsl;
 
         let analysis_type_str = analysis_type.to_string();
 
-        // Only get non-superseded analyses
+        // Only get non-superseded analyses for this specific message
         dsl::agent_context_analysis
             .filter(dsl::chat_session_id.eq(session_id))
             .filter(dsl::analysis_type.eq(analysis_type_str))
+            .filter(dsl::message_id.eq(message_id))
             .filter(dsl::superseded_at.is_null())
             .first::<Self>(conn)
             .optional()
