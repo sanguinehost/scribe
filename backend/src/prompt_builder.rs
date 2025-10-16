@@ -260,6 +260,7 @@ pub struct PromptBuildParams<'a> {
     pub agent_context: Option<String>,                     // Pre-processing agent context to inject
     pub guidance: Option<String>, // Optional guidance for response generation
     pub prompt_template_id: Option<String>, // Template ID for conversation style
+    pub narrative_style: Option<crate::prompt_templates::NarrativeStyle>, // Narrative style variables for template rendering
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -1153,6 +1154,7 @@ async fn build_final_prompt_strings(
     guidance: Option<&str>,
     template_id: Option<&str>,
     user_persona_name: Option<&str>,
+    narrative_style: Option<&crate::prompt_templates::NarrativeStyle>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Use the template system to build the final system prompt
     let template_id = template_id.unwrap_or("neutral_roleplay");
@@ -1258,7 +1260,12 @@ async fn build_final_prompt_strings(
         template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
     }
 
-    let final_system_prompt = TEMPLATE_MANAGER.render(template_id, template_context)?;
+    // Use render_with_style to inject narrative style variables into the template
+    let final_system_prompt = TEMPLATE_MANAGER.render_with_style(
+        template_id,
+        template_context,
+        narrative_style.cloned(),
+    )?;
 
     // Assemble the final message list
     let mut final_message_list = Vec::new();
@@ -1318,6 +1325,7 @@ pub async fn build_final_llm_prompt(
         params.guidance.as_deref(),
         params.prompt_template_id.as_deref(),
         params.user_persona_name.as_deref(),
+        params.narrative_style.as_ref(),
     )
     .await?;
 

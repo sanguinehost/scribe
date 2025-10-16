@@ -76,8 +76,9 @@ class CharacterStore {
 	 * Load an existing character (for editing)
 	 */
 	load(character: CharacterCardV3) {
-		this.character = structuredClone(character);
-		this.initialCharacter = structuredClone(character);
+		// Use JSON clone to avoid DataCloneError with non-cloneable properties in extensions
+		this.character = JSON.parse(JSON.stringify(character));
+		this.initialCharacter = JSON.parse(JSON.stringify(character));
 	}
 
 	/**

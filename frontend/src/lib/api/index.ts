@@ -98,7 +98,10 @@ import type {
 	PlansResponse,
 	CreatePaymentRequest,
 	CreatePaymentResponse,
-	CancelSubscriptionRequest
+	CancelSubscriptionRequest,
+	// Template Preferences types
+	TemplatePreferenceResponse,
+	UpdateTemplatePreferenceRequest
 } from '$lib/types';
 import type {
 	// Credit system types
@@ -932,6 +935,32 @@ class ApiClient {
 
 	async deleteUserSettings(): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>('/api/user-settings', {
+			method: 'DELETE'
+		});
+	}
+
+	// Template Preferences methods - for narrative style customization
+	async getTemplatePreferences(
+		characterId?: string
+	): Promise<_Result<TemplatePreferenceResponse, ApiError>> {
+		const queryParams = characterId ? `?character_id=${characterId}` : '';
+		return this.fetch<TemplatePreferenceResponse>(`/api/template-preferences${queryParams}`);
+	}
+
+	async updateTemplatePreferences(
+		characterId: string | undefined,
+		updates: UpdateTemplatePreferenceRequest
+	): Promise<_Result<TemplatePreferenceResponse, ApiError>> {
+		const queryParams = characterId ? `?character_id=${characterId}` : '';
+		return this.fetch<TemplatePreferenceResponse>(`/api/template-preferences${queryParams}`, {
+			method: 'PUT',
+			body: JSON.stringify(updates)
+		});
+	}
+
+	async deleteTemplatePreferences(characterId?: string): Promise<_Result<void, ApiError>> {
+		const queryParams = characterId ? `?character_id=${characterId}` : '';
+		return this.fetch<void>(`/api/template-preferences${queryParams}`, {
 			method: 'DELETE'
 		});
 	}

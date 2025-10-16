@@ -6,7 +6,6 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import { X } from 'lucide-svelte';
 
 	import BasicInfoEditor from '$lib/components/character/BasicInfoEditor.svelte';
 	import GreetingsEditor from '$lib/components/character/GreetingsEditor.svelte';
@@ -38,6 +37,29 @@
 	// Load character into store when dialog opens or character changes
 	$effect(() => {
 		if (open && character) {
+			// Prepare avatar as an asset if it exists
+			const avatarUrl = character.avatar || character.avatar_url;
+			const assets = [];
+
+			if (avatarUrl) {
+				// Determine extension from URL or data URL
+				let ext = 'png'; // default
+				if (avatarUrl.startsWith('data:image/')) {
+					const match = avatarUrl.match(/data:image\/(\w+);/);
+					ext = match ? match[1] : 'png';
+				} else {
+					const urlMatch = avatarUrl.match(/\.(\w+)(?:\?|$)/);
+					ext = urlMatch ? urlMatch[1] : 'png';
+				}
+
+				assets.push({
+					type: 'icon',
+					uri: avatarUrl,
+					name: 'main',
+					ext: ext
+				});
+			}
+
 			// Convert scribe's character format to V3 format for editing
 			const v3Character: CharacterCardV3 = {
 				spec: 'chara_card_v3',
@@ -61,10 +83,16 @@
 					nickname: character.nickname || undefined,
 					group_only_greetings: [],
 					extensions:
-						(character.extensions as Record<string, unknown>) || ({} as Record<string, unknown>)
+						(character.extensions as Record<string, unknown>) || ({} as Record<string, unknown>),
+					assets: assets.length > 0 ? assets : undefined
 				}
 			};
 			characterStore.load(v3Character);
+
+			// Load avatar if it exists
+			if (avatarUrl) {
+				characterStore.setBaseImage(avatarUrl);
+			}
 		}
 	});
 
@@ -161,22 +189,13 @@
 	}
 </script>
 
-<Dialog.Root {open} onOpenChange={handleClose}>
+<Dialog.Root {open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
 	<Dialog.Portal>
 		<Dialog.Overlay />
 		<Dialog.Content class="flex max-h-[95vh] max-w-[95vw] flex-col overflow-hidden p-0">
 			<Dialog.Header class="border-b px-6 pb-4 pt-6">
-				<div class="flex items-center justify-between">
-					<div>
-						<Dialog.Title>Edit Character</Dialog.Title>
-						<Dialog.Description>
-							Update your character with the full-featured editor
-						</Dialog.Description>
-					</div>
-					<Button variant="ghost" size="icon" class="h-8 w-8" onclick={handleClose}>
-						<X class="h-4 w-4" />
-					</Button>
-				</div>
+				<Dialog.Title>Edit Character</Dialog.Title>
+				<Dialog.Description>Update your character with the full-featured editor</Dialog.Description>
 			</Dialog.Header>
 
 			<div class="flex-1 overflow-y-auto px-6 py-4">

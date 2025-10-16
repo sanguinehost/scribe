@@ -222,7 +222,7 @@
 				{#each character.data.assets as asset, index}
 					<Card.Root>
 						<Card.Content class="flex items-center gap-4 p-4">
-							{#if asset.uri.startsWith('data:')}
+							{#if asset.uri.startsWith('data:') || asset.uri.startsWith('http://') || asset.uri.startsWith('https://') || asset.uri.startsWith('/')}
 								<img src={asset.uri} alt={asset.name} class="h-16 w-16 rounded-lg object-cover" />
 							{:else}
 								<div class="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">

@@ -25,6 +25,7 @@ use crate::models::chats::{
 };
 use crate::privacy::logging::loggable_user_id;
 use crate::prompt_builder;
+use crate::prompt_templates::{Narration, NarrativeStyle, Perspective, ResponseLength, Tense};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
 use crate::services::ChronicleService;
@@ -35,6 +36,7 @@ use crate::services::agentic::{
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
+use crate::services::template_preference_service::TemplatePreferenceService;
 use secrecy::ExposeSecret; // Added for ExposeSecret
 // RetrievedMetadata is no longer directly used in this file for RAG string construction
 // use crate::services::embedding_pipeline::RetrievedMetadata;
@@ -994,6 +996,48 @@ pub async fn generate_chat_response(
     .await?;
     let prompt_template_id = session_settings.prompt_template_id;
 
+    // Fetch user's template preferences to get narrative style variables
+    let template_prefs = TemplatePreferenceService::get_template_preferences(
+        &state_arc.pool,
+        user_id_value,
+        None, // For now, use user-level preferences, not character-specific
+    )
+    .await?;
+
+    // Convert string preferences from database to NarrativeStyle enum types
+    let narrative_style = NarrativeStyle {
+        tense: match template_prefs.tense.as_str() {
+            "present-tense" => Tense::PresentTense,
+            "future-tense" => Tense::FutureTense,
+            _ => Tense::PastTense, // Default to past-tense
+        },
+        narration: match template_prefs.narration.as_str() {
+            "first-person" => Narration::FirstPerson,
+            "second-person" => Narration::SecondPerson,
+            _ => Narration::ThirdPerson, // Default to third-person
+        },
+        perspective: match template_prefs.perspective.as_str() {
+            "limited-character" => Perspective::LimitedCharacter,
+            "limited-user" => Perspective::LimitedUser,
+            _ => Perspective::Omniscient, // Default to omniscient
+        },
+        length: match template_prefs.length.as_str() {
+            "concise" => ResponseLength::Concise,
+            "moderate" => ResponseLength::Moderate,
+            "extended" => ResponseLength::Extended,
+            _ => ResponseLength::Flexible, // Default to flexible
+        },
+    };
+
+    debug!(
+        %session_id,
+        tense = %narrative_style.tense.as_str(),
+        narration = %narrative_style.narration.as_str(),
+        perspective = %narrative_style.perspective.as_str(),
+        length = %narrative_style.length.as_str(),
+        "Applied narrative style from user template preferences"
+    );
+
     // Call the new prompt builder
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -1011,6 +1055,7 @@ pub async fn generate_chat_response(
             agent_context,                     // Pass agent context if available
             guidance: payload.guidance.clone(), // Pass guidance for regeneration steering
             prompt_template_id,
+            narrative_style: Some(narrative_style), // Pass narrative style from user preferences
         })
         .await
         {
@@ -2704,6 +2749,7 @@ pub async fn generate_suggested_actions(
             agent_context: None,               // No agent context for suggestions
             guidance: None,                    // No guidance for suggestions
             prompt_template_id: None,          // Use default template for suggestions
+            narrative_style: None,             // Suggestions don't need narrative styling
         })
         .await
         {

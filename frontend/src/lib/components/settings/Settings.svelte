@@ -21,6 +21,7 @@
 		UpdateUserSettingsRequest
 	} from '$lib/types';
 	import { MembershipSettings } from '$lib/components/membership';
+	import NarrativeStyleConfigurator from '$lib/components/settings/NarrativeStyleConfigurator.svelte';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -226,6 +227,7 @@
 		...(ENABLE_PAYMENTS ? [{ id: 'membership', label: 'Membership', icon: '💳' }] : []),
 		{ id: 'generation', label: 'Generation', icon: '🎛️' },
 		{ id: 'context', label: 'Context', icon: '🧠' },
+		{ id: 'writingstyle', label: 'Writing Style', icon: '✍️' },
 		{ id: 'apikeys', label: 'API Keys', icon: '🔑' },
 		...(ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
 			? [{ id: 'models', label: 'Local Models', icon: '💾' }]
@@ -525,6 +527,11 @@
 						title="Default Context Window Management"
 						description="Set default token allocation for new chats."
 					/>
+				{/if}
+
+				<!-- Writing Style Tab -->
+				{#if activeTab === 'writingstyle'}
+					<NarrativeStyleConfigurator />
 				{/if}
 
 				<!-- API Keys Tab -->
