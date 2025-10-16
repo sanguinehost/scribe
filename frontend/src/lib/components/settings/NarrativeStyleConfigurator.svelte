@@ -17,6 +17,12 @@
 		ResponseLength
 	} from '$lib/types';
 
+	// Props - optional characterId for character-specific preferences
+	interface Props {
+		characterId?: string;
+	}
+	let { characterId }: Props = $props();
+
 	// State management
 	let isLoading = $state(false);
 	let preferences = $state<TemplatePreferenceResponse | null>(null);
@@ -29,11 +35,25 @@
 	// Debounced save timeout
 	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	// Load global template preferences on mount
+	// Derived values for UI text
+	const isCharacterSpecific = $derived(!!characterId);
+	const headerTitle = $derived(
+		isCharacterSpecific ? 'Character Writing Style' : 'Global Writing Style'
+	);
+	const headerDescription = $derived(
+		isCharacterSpecific
+			? 'Customize narrative preferences for this character'
+			: 'Set default narrative preferences for all characters'
+	);
+	const resetButtonText = $derived(
+		isCharacterSpecific ? 'Reset to Global Defaults' : 'Reset to System Defaults'
+	);
+
+	// Load template preferences on mount
 	async function loadPreferences() {
 		isLoading = true;
 		try {
-			const result = await apiClient.getTemplatePreferences(); // No characterId = global
+			const result = await apiClient.getTemplatePreferences(characterId);
 			if (result.isOk()) {
 				preferences = result.value;
 			} else {
@@ -54,7 +74,7 @@
 
 		saveTimeout = setTimeout(async () => {
 			try {
-				const result = await apiClient.updateTemplatePreferences(undefined, updates);
+				const result = await apiClient.updateTemplatePreferences(characterId, updates);
 				if (result.isOk()) {
 					preferences = result.value;
 					toast.success('Preferences updated');
@@ -72,10 +92,10 @@
 	// Reset to defaults
 	async function resetToDefaults() {
 		try {
-			const result = await apiClient.deleteTemplatePreferences();
+			const result = await apiClient.deleteTemplatePreferences(characterId);
 			if (result.isOk()) {
 				await loadPreferences(); // Reload to get new defaults
-				toast.info('Reset to system defaults');
+				toast.info(isCharacterSpecific ? 'Reset to global defaults' : 'Reset to system defaults');
 			} else {
 				console.error('Failed to reset preferences:', result.error);
 				toast.error(`Failed to reset: ${result.error.message}`);
@@ -86,18 +106,10 @@
 		}
 	}
 
-	// Load preferences on mount
+	// Load preferences on mount and when characterId changes
 	$effect(() => {
 		loadPreferences();
 	});
-
-	// Helper function to get display text for options
-	function formatOptionLabel(value: string): string {
-		return value
-			.split('-')
-			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-			.join(' ');
-	}
 </script>
 
 {#if isLoading}
@@ -110,12 +122,12 @@
 		<!-- Header with Reset Button -->
 		<div class="flex items-center justify-between">
 			<div>
-				<h2 class="text-xl font-semibold">Writing Style Preferences</h2>
+				<h2 class="text-xl font-semibold">{headerTitle}</h2>
 				<p class="text-sm text-muted-foreground">
-					Customize how the AI generates narrative responses
+					{headerDescription}
 				</p>
 			</div>
-			<Button variant="outline" onclick={resetToDefaults}>Reset to Defaults</Button>
+			<Button variant="outline" onclick={resetToDefaults}>{resetButtonText}</Button>
 		</div>
 
 		<!-- Narrative Voice Section -->

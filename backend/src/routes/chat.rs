@@ -997,10 +997,11 @@ pub async fn generate_chat_response(
     let prompt_template_id = session_settings.prompt_template_id;
 
     // Fetch user's template preferences to get narrative style variables
+    // Use character-specific preferences if available, falls back to user global
     let template_prefs = TemplatePreferenceService::get_template_preferences(
         &state_arc.pool,
         user_id_value,
-        None, // For now, use user-level preferences, not character-specific
+        session_character_id, // Use character-specific preferences if session has character
     )
     .await?;
 

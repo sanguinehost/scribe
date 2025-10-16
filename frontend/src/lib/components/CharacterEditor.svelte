@@ -15,6 +15,7 @@
 	import LorebookEditor from '$lib/components/character/LorebookEditor.svelte';
 	import CharacterPreview from '$lib/components/shared/CharacterPreview.svelte';
 	import UnsavedChangesDialog from '$lib/components/shared/UnsavedChangesDialog.svelte';
+	import NarrativeStyleConfigurator from '$lib/components/settings/NarrativeStyleConfigurator.svelte';
 	import type { Character } from '$lib/types';
 	import type { CharacterCardV3 } from '$lib/types/character';
 	import { createEventDispatcher } from 'svelte';
@@ -203,12 +204,13 @@
 					<!-- Editor Panel -->
 					<div>
 						<Tabs.Root bind:value={currentTab} class="w-full">
-							<Tabs.List class="grid w-full grid-cols-6">
+							<Tabs.List class="grid w-full grid-cols-7">
 								<Tabs.Trigger value="basic">Basic Info</Tabs.Trigger>
 								<Tabs.Trigger value="greetings">Greetings</Tabs.Trigger>
 								<Tabs.Trigger value="definitions">Definitions</Tabs.Trigger>
 								<Tabs.Trigger value="lorebook">Lorebook</Tabs.Trigger>
 								<Tabs.Trigger value="assets">Assets</Tabs.Trigger>
+								<Tabs.Trigger value="writingstyle">Writing Style</Tabs.Trigger>
 								<Tabs.Trigger value="advanced">Advanced</Tabs.Trigger>
 							</Tabs.List>
 
@@ -273,6 +275,20 @@
 										</Card.Header>
 										<Card.Content>
 											<AssetsEditor />
+										</Card.Content>
+									</Card.Root>
+								</Tabs.Content>
+
+								<Tabs.Content value="writingstyle" class="tab-content">
+									<Card.Root>
+										<Card.Header>
+											<Card.Title>Writing Style</Card.Title>
+											<Card.Description>
+												Customize narrative preferences for this character
+											</Card.Description>
+										</Card.Header>
+										<Card.Content>
+											<NarrativeStyleConfigurator characterId={character?.id} />
 										</Card.Content>
 									</Card.Root>
 								</Tabs.Content>
