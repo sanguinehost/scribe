@@ -965,6 +965,19 @@ class ApiClient {
 		});
 	}
 
+	async updateSessionNarrativeStyle(
+		sessionId: string,
+		updates: UpdateTemplatePreferenceRequest
+	): Promise<_Result<TemplatePreferenceResponse, ApiError>> {
+		return this.fetch<TemplatePreferenceResponse>(
+			`/api/chat/sessions/${sessionId}/narrative-style`,
+			{
+				method: 'PATCH',
+				body: JSON.stringify(updates)
+			}
+		);
+	}
+
 	// Lorebook methods
 	async getLorebooks(): Promise<_Result<Lorebook[], ApiError>> {
 		return this.fetch<Lorebook[]>('/api/lorebooks');

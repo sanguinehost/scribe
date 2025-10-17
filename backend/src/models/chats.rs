@@ -175,6 +175,8 @@ pub struct Chat {
     pub total_credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_charge: bigdecimal::BigDecimal,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -238,6 +240,20 @@ impl std::fmt::Debug for Chat {
             .field("total_completion_tokens", &self.total_completion_tokens)
             .field("estimated_cost_cents", &self.estimated_cost_cents)
             .field("tokens_counted_at", &self.tokens_counted_at)
+            .field(
+                "narrative_style_override_ciphertext",
+                &self
+                    .narrative_style_override_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "narrative_style_override_nonce",
+                &self
+                    .narrative_style_override_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
             .finish()
     }
 }
@@ -281,6 +297,8 @@ pub struct NewChat {
     pub tokens_counted_at: DateTime<Utc>,
     pub total_credits_used: BigDecimal,
     pub prompt_template_id: String,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -338,6 +356,20 @@ impl std::fmt::Debug for NewChat {
             .field("total_completion_tokens", &self.total_completion_tokens)
             .field("estimated_cost_cents", &self.estimated_cost_cents)
             .field("tokens_counted_at", &self.tokens_counted_at)
+            .field(
+                "narrative_style_override_ciphertext",
+                &self
+                    .narrative_style_override_ciphertext
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "narrative_style_override_nonce",
+                &self
+                    .narrative_style_override_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_BYTES]"),
+            )
             .finish()
     }
 }
@@ -1792,6 +1824,103 @@ impl Chat {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
         })
+    }
+
+    /// Decrypts and deserializes the session-level narrative style override.
+    ///
+    /// Returns `None` if no override is set, or `Some(override)` if one exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::DecryptionError` if decryption fails or JSON deserialization fails.
+    pub fn get_narrative_style_override(
+        &self,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>, crate::errors::AppError> {
+        use crate::models::template_preferences::UpdateTemplatePreferenceRequest;
+
+        match (&self.narrative_style_override_ciphertext, &self.narrative_style_override_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() && nonce.is_empty() {
+                    // Convention for empty encrypted field
+                    return Ok(None);
+                }
+
+                if ciphertext.is_empty() || nonce.is_empty() {
+                    return Err(crate::errors::AppError::DecryptionError(
+                        "Mismatched ciphertext/nonce for narrative style override".to_string(),
+                    ));
+                }
+
+                let encryption_service = crate::services::encryption_service::EncryptionService::new();
+                let decrypted_bytes = encryption_service.decrypt(
+                    ciphertext,
+                    nonce,
+                    dek.expose_secret().as_slice(),
+                )?;
+
+                let json_str = String::from_utf8(decrypted_bytes).map_err(|e| {
+                    crate::errors::AppError::DecryptionError(format!(
+                        "Invalid UTF-8 for decrypted narrative style override: {e}"
+                    ))
+                })?;
+
+                let override_data: UpdateTemplatePreferenceRequest = serde_json::from_str(&json_str)
+                    .map_err(|e| {
+                        crate::errors::AppError::DecryptionError(format!(
+                            "Failed to deserialize narrative style override: {e}"
+                        ))
+                    })?;
+
+                Ok(Some(override_data))
+            }
+            (None, None) => Ok(None), // No override set
+            (Some(_), None) => Err(crate::errors::AppError::DecryptionError(
+                "Narrative style override ciphertext present but nonce missing".to_string(),
+            )),
+            (None, Some(_)) => Err(crate::errors::AppError::DecryptionError(
+                "Narrative style override nonce present but ciphertext missing".to_string(),
+            )),
+        }
+    }
+
+    /// Encrypts and sets the session-level narrative style override.
+    ///
+    /// Pass `None` to clear the override.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::EncryptionError` if encryption or JSON serialization fails.
+    pub fn set_narrative_style_override(
+        &mut self,
+        override_data: Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<(), crate::errors::AppError> {
+        match override_data {
+            Some(data) => {
+                let json_str = serde_json::to_string(&data).map_err(|e| {
+                    crate::errors::AppError::EncryptionError(format!(
+                        "Failed to serialize narrative style override: {e}"
+                    ))
+                })?;
+
+                let encryption_service = crate::services::encryption_service::EncryptionService::new();
+                let (ciphertext, nonce) = encryption_service.encrypt(
+                    json_str.as_bytes(),
+                    dek.expose_secret().as_slice(),
+                )?;
+
+                self.narrative_style_override_ciphertext = Some(ciphertext);
+                self.narrative_style_override_nonce = Some(nonce);
+            }
+            None => {
+                // Clear the override
+                self.narrative_style_override_ciphertext = None;
+                self.narrative_style_override_nonce = None;
+            }
+        }
+
+        Ok(())
     }
 }
 

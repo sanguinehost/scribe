@@ -338,6 +338,8 @@ diesel::table! {
         total_modified_cost -> Numeric,
         total_credit_cost -> Int4,
         total_actual_charge -> Numeric,
+        narrative_style_override_ciphertext -> Nullable<Bytea>,
+        narrative_style_override_nonce -> Nullable<Bytea>,
     }
 }
 
