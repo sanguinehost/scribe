@@ -685,6 +685,9 @@ async fn test_list_chat_sessions_success() {
             active_impersonated_character_id: None,
             chat_mode: scribe_backend::models::chats::ChatMode::Character,
             chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_credits_used: BigDecimal::from(0),
         },
         ChatForClient {
             id: session2_id,
@@ -712,6 +715,9 @@ async fn test_list_chat_sessions_success() {
             active_impersonated_character_id: None,
             chat_mode: scribe_backend::models::chats::ChatMode::Character,
             chronicle_id: None,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_credits_used: BigDecimal::from(0),
         },
     ];
 
@@ -951,9 +957,16 @@ async fn test_create_chat_session_success() {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
         player_chronicle_id: None,
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
         agent_mode: None,
+        total_actual_cost: BigDecimal::from(0),
+        total_modified_cost: BigDecimal::from(0),
+        total_credit_cost: 0,
+        total_actual_charge: BigDecimal::from(0),
     };
 
     let request_payload = json!({

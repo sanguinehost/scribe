@@ -23,7 +23,7 @@ mod payment_audit_tests {
     use scribe_backend::{
         models::users::UserRole,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use uuid::Uuid;
@@ -126,7 +126,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_credit_operations_audit_logging() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "audit_test", "audit@test.com", None)
@@ -186,7 +186,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_audit_log_metadata_logging() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -261,7 +261,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_audit_trail_integrity() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -373,7 +373,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_authentication_failure_audit() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -398,7 +398,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_unauthorized_payment_access_audit() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -429,7 +429,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_suspicious_pattern_detection_audit() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -490,7 +490,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_payment_security_audit_requirements() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -584,7 +584,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_financial_audit_trail_completeness() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -693,7 +693,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_audit_log_tamper_resistance() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -765,7 +765,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_audit_log_retention_policy() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -822,7 +822,7 @@ mod payment_audit_tests {
     #[tokio::test]
     async fn test_cross_user_audit_isolation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user1_id = Uuid::new_v4();
         let user2_id = Uuid::new_v4();

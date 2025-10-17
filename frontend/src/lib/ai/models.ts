@@ -24,9 +24,19 @@ export const cloudModels: Array<ChatModel> = [
 		description: 'Fast and efficient model'
 	},
 	{
-		id: 'gemini-2.5-flash-lite-preview-06-17',
+		id: 'gemini-2.5-flash-preview-09-2025',
+		name: 'Gemini 2.5 Flash Preview',
+		description: 'Latest preview with enhanced capabilities'
+	},
+	{
+		id: 'gemini-2.5-flash-lite-preview-09-2025',
 		name: 'Gemini 2.5 Flash Lite',
-		description: 'Ultra-fast and cost-effective model for summarization'
+		description: 'Ultra-fast and cost-effective model (FREE)'
+	},
+	{
+		id: 'gemini-2.5-flash-image',
+		name: 'Gemini 2.5 Flash Image',
+		description: 'Chat model with image generation support'
 	}
 ];
 

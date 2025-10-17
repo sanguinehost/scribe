@@ -94,10 +94,10 @@ struct GeminiApiError {
 
 // --- Client Implementation (To be added below) ---
 const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Use this as the sole model
-// const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
+                                                                   // const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
 const MAX_RETRIES: u32 = 2; // Max retries for the single model
-// const MAX_PRIMARY_MODEL_RETRIES_BEFORE_FALLBACK: u32 = 1; // REMOVED
-// const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED
+                            // const MAX_PRIMARY_MODEL_RETRIES_BEFORE_FALLBACK: u32 = 1; // REMOVED
+                            // const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED
 const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
 const MAX_BACKOFF_MS: u64 = 5000; // 5 seconds
 
@@ -453,7 +453,7 @@ mod tests {
     // Removed unused: use std::env;
     use std::sync::Arc;
     use std::time::Instant; // Added for test timing
-    // Removed unused: use tokio::time::sleep;
+                            // Removed unused: use tokio::time::sleep;
 
     // Helper to create a mock config
     fn create_test_config(api_key: Option<String>, base_url: Option<String>) -> Arc<Config> {

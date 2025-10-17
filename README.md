@@ -157,19 +157,6 @@ Chronicle system tracks character interactions and story developments without ma
 - [**API Documentation**](docs/API.md) - REST API reference
 - [**Contributing Guide**](CONTRIBUTING.md) - How to contribute to the project
 
-## 🆚 Comparison
-
-| Feature | Sanguine Scribe | SillyTavern | Character.AI |
-|---------|-----------------|-------------|--------------|
-| **Data Protection** | 🔒 Server-side encryption (excl. AI APIs) | ❌ Local files only | ❌ Unknown/accessible |
-| **Self-Hostable** | ✅ Full control | ✅ Local only | ❌ SaaS only |
-| **Context Management** | 🚀 Automatic | 📝 Manual | 🤖 Black box |
-| **Game Integration** | 🎮 Designed for RPGs/dating sims | ❌ No | ❌ No |
-| **AI Models** | 🤖 Gemini + Local (experimental) | 🌐 All major APIs | 🏠 Proprietary only |
-| **Performance** | ⚡ Fast server, AI-limited | 🐌 Can be slow | ⚡ Fast |
-| **Open Source** | ✅ MIT License | ✅ AGPL | ❌ Proprietary |
-| **Federation** | 🎯 Long-term roadmap | ❌ No | ❌ No |
-
 ## 🏃‍♂️ Roadmap
 
 ### Phase 1: Alpha Release ✅ (Complete)

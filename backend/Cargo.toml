@@ -1,7 +1,7 @@
 [package]
 name = "scribe-backend"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [features]
 default = []
@@ -69,7 +69,7 @@ password-auth = { version = "1.0.0", features = ["argon2"] }
 hex = "0.4.3"
 libc = "0.2.168"  # For system calls like statvfs
 
-genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "4685b80" }
+genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "d7460e2" }
 
 reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
@@ -186,7 +186,6 @@ secrecy = { version = "0.10.3", features = ["serde"] } # Fix E0432: Add secrecy 
 [lib]
 name = "scribe_backend"
 path = "src/lib.rs"
-
 
 # Optional: If you have separate integration tests
 # [[test]]

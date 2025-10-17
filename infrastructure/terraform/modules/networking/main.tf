@@ -39,6 +39,10 @@ resource "aws_subnet" "public_subnets" {
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Name        = "${var.environment}-scribe-public-subnet-${count.index + 1}"
     Environment = var.environment
@@ -54,6 +58,10 @@ resource "aws_subnet" "private_subnets" {
   vpc_id            = aws_vpc.scribe_vpc.id
   cidr_block        = var.private_subnet_cidrs[count.index]
   availability_zone = data.aws_availability_zones.available.names[count.index]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   tags = {
     Name        = "${var.environment}-scribe-private-subnet-${count.index + 1}"
@@ -173,6 +181,13 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Revoke all rules before deletion to avoid dependency issues
+  revoke_rules_on_delete = true
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Name        = "${var.environment}-scribe-alb-sg"
     Environment = var.environment
@@ -199,6 +214,13 @@ resource "aws_security_group" "backend_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Revoke all rules before deletion to avoid dependency issues
+  revoke_rules_on_delete = true
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = {
@@ -235,6 +257,13 @@ resource "aws_security_group" "qdrant_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Revoke all rules before deletion to avoid dependency issues
+  revoke_rules_on_delete = true
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = {
@@ -275,6 +304,13 @@ resource "aws_security_group" "rds_sg" {
     cidr_blocks = ["10.0.0.0/16"]  # Allow from entire VPC for subnet router access
   }
 
+  # Revoke all rules before deletion to avoid dependency issues
+  revoke_rules_on_delete = true
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Name        = "${var.environment}-scribe-rds-sg"
     Environment = var.environment
@@ -294,6 +330,13 @@ resource "aws_security_group" "efs_sg" {
     to_port         = 2049
     protocol        = "tcp"
     security_groups = [aws_security_group.qdrant_sg.id]
+  }
+
+  # Revoke all rules before deletion to avoid dependency issues
+  revoke_rules_on_delete = true
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = {

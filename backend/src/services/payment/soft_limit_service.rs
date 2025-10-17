@@ -345,12 +345,12 @@ impl SoftLimitService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::{TestDataGuard, spawn_app};
+    use crate::test_helpers::{spawn_app, TestDataGuard};
 
     #[tokio::test]
     async fn test_soft_limit_tracking() {
         let app = spawn_app(false, false, false).await;
-        let _test_guard = TestDataGuard::new(app.db_pool.clone());
+        let _test_guard = TestDataGuard::new(app.db_pool.clone(), app.test_db_name.clone());
 
         // Create a test user to satisfy foreign key constraint
         let test_user = crate::test_helpers::db::create_test_user(

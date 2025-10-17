@@ -2,10 +2,10 @@
 
 use anyhow::Result;
 use axum::{
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
+    body::{to_bytes, Body},
+    http::{header, Method, Request, StatusCode},
 };
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -68,7 +68,7 @@ fn create_simple_test_png() -> Vec<u8> {
 async fn test_upload_user_avatar_unauthorized() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_id = Uuid::new_v4();
     let image_data = create_simple_test_png();
@@ -96,7 +96,7 @@ async fn test_upload_user_avatar_unauthorized() -> Result<()> {
 async fn test_get_user_avatar_unauthorized() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_id = Uuid::new_v4();
 
@@ -119,7 +119,7 @@ async fn test_get_user_avatar_unauthorized() -> Result<()> {
 async fn test_delete_user_avatar_unauthorized() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_id = Uuid::new_v4();
 
@@ -142,7 +142,7 @@ async fn test_delete_user_avatar_unauthorized() -> Result<()> {
 async fn test_upload_persona_avatar_unauthorized() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let persona_id = Uuid::new_v4();
     let image_data = create_simple_test_png();
@@ -167,7 +167,7 @@ async fn test_upload_persona_avatar_unauthorized() -> Result<()> {
 async fn test_get_persona_avatar_unauthorized() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let persona_id = Uuid::new_v4();
 
@@ -190,7 +190,7 @@ async fn test_get_persona_avatar_unauthorized() -> Result<()> {
 async fn test_delete_persona_avatar_unauthorized() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let persona_id = Uuid::new_v4();
 
@@ -213,7 +213,7 @@ async fn test_delete_persona_avatar_unauthorized() -> Result<()> {
 async fn test_invalid_user_id_format() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let request = Request::builder()
         .method("GET")
@@ -234,7 +234,7 @@ async fn test_invalid_user_id_format() -> Result<()> {
 async fn test_invalid_persona_id_format() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let request = Request::builder()
         .method("GET")
@@ -257,7 +257,7 @@ async fn test_avatar_routes_registration() -> Result<()> {
     ensure_tracing_initialized();
     let test_app =
         scribe_backend::test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Test multiple avatar endpoints to ensure they're registered
     let user_id = Uuid::new_v4();

@@ -12,7 +12,7 @@ mod credit_flow_tests {
     use diesel::{Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
     use reqwest::{Client, StatusCode};
     use scribe_backend::{
-        auth::{AuthError, user_store::Backend as AuthBackend},
+        auth::{user_store::Backend as AuthBackend, AuthError},
         models::{
             character_card::NewCharacter,
             characters::Character,
@@ -20,7 +20,7 @@ mod credit_flow_tests {
             users::{NewUser, User},
         },
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, payment_test_helpers, spawn_app},
+        test_helpers::{payment_test_helpers, spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -29,7 +29,7 @@ mod credit_flow_tests {
     /// Simple test helper to check that credit deduction endpoint works
     async fn test_credit_deduction_basic() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create a simple request to test endpoint existence
         let payload = json!({
@@ -59,7 +59,7 @@ mod credit_flow_tests {
     #[tokio::test]
     async fn test_credit_service_initialization() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test that the credit service can be created and initialized
         let credit_service = CreditService::new(app.config.clone());
@@ -77,7 +77,7 @@ mod credit_flow_tests {
     #[tokio::test]
     async fn test_chat_generation_with_mock_ai() {
         let app = spawn_app(true, false, false).await; // Use mock AI
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test that credit checking is integrated into chat generation
         // Without setting up a full user session, we expect authentication errors
@@ -114,7 +114,7 @@ mod credit_flow_tests {
     #[tokio::test]
     async fn test_subscription_tier_configuration_loads() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test that subscription tier configuration can be loaded
         let config_path = std::path::Path::new("config/subscription_tiers.json");
@@ -163,15 +163,15 @@ mod credit_flow_tests {
         );
         assert_eq!(
             model_costs["gemini-2.5-pro"].as_i64().unwrap(),
-            50,
-            "gemini-2.5-pro should cost 50 credits"
+            20,
+            "gemini-2.5-pro should cost 20 credits (upfront reservation)"
         );
     }
 
     #[tokio::test]
     async fn test_credit_service_basic_operations() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Initialize credit service
         let credit_service = CreditService::new(app.config.clone());
@@ -218,7 +218,7 @@ mod credit_flow_tests {
     #[tokio::test]
     async fn test_chat_generation_with_insufficient_credits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with minimal credits
         let (user, character) = app
@@ -284,7 +284,7 @@ mod credit_flow_tests {
     #[tokio::test]
     async fn test_credit_transaction_recording() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let (user, _character) = app
@@ -326,7 +326,7 @@ mod credit_flow_tests {
     #[tokio::test]
     async fn test_free_model_does_not_consume_credits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with some credits
         let (user, character) = app

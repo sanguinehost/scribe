@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use anyhow::{Context, Error as AnyhowError, anyhow}; // Consolidate anyhow imports
-// For Body
-// Removed duplicate axum::http imports
-// bcrypt is used directly in the code, no need for a separate import
+use anyhow::{anyhow, Context, Error as AnyhowError}; // Consolidate anyhow imports
+                                                     // For Body
+                                                     // Removed duplicate axum::http imports
+                                                     // bcrypt is used directly in the code, no need for a separate import
 use bigdecimal::BigDecimal; // Add this import
 use chrono::{DateTime, Utc}; // ADDED for timestamp types
 use deadpool_diesel::postgres::Manager as DeadpoolManager;
@@ -11,9 +11,9 @@ use deadpool_diesel::{Pool as DeadpoolPool, Runtime as DeadpoolRuntime};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::result::Error as DieselError;
-use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenvy::dotenv;
-use reqwest::{Client, StatusCode, header};
+use reqwest::{header, Client, StatusCode};
 use scribe_backend::crypto; // For generate_salt
 use scribe_backend::models::character_card::NewCharacter; // Keep NewCharacter import from card
 use scribe_backend::models::characters::Character; // Import canonical Character struct
@@ -34,7 +34,7 @@ use scribe_backend::state::DbPool; // ADDED DbPool
 use scribe_backend::test_helpers; // ADDED test_helpers import
 use secrecy::{ExposeSecret, SecretString}; // Use SecretString alias instead of non-existent Secret
 use serde::Deserialize; // Import Deserialize for derive macro
-use serde_json::{Value, json}; // Added missing import + Value
+use serde_json::{json, Value}; // Added missing import + Value
 use std::env;
 use uuid::Uuid; // For manual cleanup test assertion // Correct import // Add reqwest imports
 
@@ -309,7 +309,7 @@ impl TestDataGuard {
         // 3. Delete Characters (depend on users)
         if !self.character_ids.is_empty() {
             let ids = self.character_ids.clone(); // Clone IDs for the interact closure
-            // Get connection first
+                                                  // Get connection first
             let conn = self
                 .pool
                 .get()
@@ -340,7 +340,7 @@ impl TestDataGuard {
         // 4. Delete Users (base dependency)
         if !self.user_ids.is_empty() {
             let ids = self.user_ids.clone(); // Clone IDs for the interact closure
-            // Get connection first
+                                             // Get connection first
             let conn = self
                 .pool
                 .get()
@@ -879,7 +879,10 @@ fn test_chat_session_insert_and_query() {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            total_credits_used: BigDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -1012,7 +1015,10 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     total_completion_tokens: 0,
                     estimated_cost_cents: 0,
                     tokens_counted_at: chrono::Utc::now(),
+                    total_credits_used: BigDecimal::from(0),
                     prompt_template_id: "default".to_string(),
+                    narrative_style_override_ciphertext: None,
+                    narrative_style_override_nonce: None,
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -1038,7 +1044,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
         // Scope for interact
         let session_id_clone = session.id;
         let user_id_clone = user.id; // Clone user_id for the closure
-        // Get connection first
+                                     // Get connection first
         let conn_insert_msgs = pool.get().await?;
         let interact_result = conn_insert_msgs
             .interact(move |conn_interaction| {
@@ -1214,7 +1220,10 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     conn_setup

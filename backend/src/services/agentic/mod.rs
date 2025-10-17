@@ -33,8 +33,9 @@ pub use context_enrichment_agent::{
 };
 pub use factory::AgenticNarrativeFactory;
 pub use narrative_tools::{
-    AnalyzeTextSignificanceTool, CreateChronicleEventTool, CreateLorebookEntryTool,
-    SearchKnowledgeBaseTool, UpdateLorebookEntryTool,
+    AnalyzeLorebookTool, AnalyzeTextSignificanceTool, CreateBatchLorebookEntriesTool,
+    CreateChronicleEventTool, CreateLorebookEntryTool, SearchKnowledgeBaseTool,
+    UpdateLorebookEntryTool,
 };
 pub use persona_context::UserPersonaContext;
 pub use registry::ToolRegistry;

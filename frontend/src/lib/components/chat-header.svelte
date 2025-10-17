@@ -4,7 +4,7 @@
 	import ModelSelector from './model-selector.svelte';
 	import { Badge as BadgeComponent } from './ui/badge';
 	import { Button as _ButtonComponent } from './ui/button';
-	import { ScrollText } from 'lucide-svelte';
+	import { ScrollText, BookMarked } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
@@ -13,15 +13,18 @@
 	import CreditBalance from '$lib/components/credits/CreditBalance.svelte';
 	import PurchaseCreditsDialog from '$lib/components/credits/PurchaseCreditsDialog.svelte';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
+	import { Button } from '$lib/components/ui/button';
 
 	let {
 		user: _user,
 		chat,
-		readonly
+		readonly,
+		onOpenExtractDialog
 	}: {
 		user: User | undefined;
 		chat: ScribeChatSession | undefined; // Use Scribe type
 		readonly: boolean;
+		onOpenExtractDialog?: () => void;
 	} = $props();
 
 	const _sidebar = useSidebar();
@@ -165,6 +168,10 @@
 					onPurchaseClick={handlePurchaseClick}
 				/>
 			{/if}
+			<Button variant="outline" size="sm" onclick={() => onOpenExtractDialog?.()} class="gap-1.5">
+				<BookMarked class="h-4 w-4" />
+				Extract
+			</Button>
 			<ModelSelector {chat} class="" />
 		</div>
 	{/if}

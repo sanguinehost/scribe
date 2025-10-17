@@ -265,6 +265,7 @@ mod payment_integration_tests {
                         cancel_url: Some("https://localhost:5173/cancel".to_string()),
                     }),
                     billing_details: None, // Must be null for automatic collection per Paddle API
+                    custom_data: None,
                 };
 
                 let result = service.create_transaction(&transaction_request).await;
@@ -353,6 +354,7 @@ mod payment_integration_tests {
                         cancel_url: Some("https://localhost:5173/cancel".to_string()),
                     }),
                     billing_details: None, // Must be null for automatic collection per Paddle API
+                    custom_data: None,
                 };
 
                 let result = service.create_transaction(&transaction_request).await;
@@ -488,12 +490,12 @@ mod payment_integration_tests {
             models::payment::{NewWebhookEvent, WebhookEvent},
             schema::webhook_events,
             services::payment::scheduler::PaymentScheduler,
-            test_helpers::{TestDataGuard, spawn_app},
+            test_helpers::{spawn_app, TestDataGuard},
         };
         use std::sync::Arc;
 
         let app = spawn_app(false, false, false).await;
-        let _test_guard = TestDataGuard::new(app.db_pool.clone());
+        let _test_guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create webhook events with different ages
         let now = Utc::now();

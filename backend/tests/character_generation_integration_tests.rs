@@ -38,6 +38,7 @@ async fn test_alternate_greeting_generation() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -104,6 +105,7 @@ async fn test_alternate_greeting_generation() {
 
     let generate_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(generate_request)
         .await
@@ -226,6 +228,7 @@ async fn test_simple_wizard_description() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -269,6 +272,7 @@ async fn test_simple_wizard_description() {
 
         let generate_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(generate_request)
             .await

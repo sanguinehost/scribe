@@ -16,11 +16,11 @@ use crate::privacy::ip_anonymization::extract_and_anonymize_ip;
 use crate::privacy::logging::{loggable_user_id, sanitize_json_value, sanitize_personal_info};
 #[cfg(feature = "payment")]
 use axum::{
-    Router,
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Json},
     routing::{get, post},
+    Router,
 };
 #[cfg(feature = "payment")]
 use base64;
@@ -42,12 +42,12 @@ use crate::{
     models::credit::CreditPackage,
     models::payment::{PlanFeatures, Subscription},
     services::payment::{
-        CreditService, PaddleService, PaymentAuditService, SubscriptionService,
         audit_service::AuditEventType,
         paddle_service::{
             CreateTransactionRequest, PaddleEventType, PaddleWebhook, TransactionCheckout,
             TransactionItem,
         },
+        CreditService, PaddleService, PaymentAuditService, SubscriptionService,
     },
     state::AppState,
 };
@@ -707,6 +707,7 @@ pub async fn create_payment(
         }),
         // billing_details must be null for automatic collection mode per Paddle API
         billing_details: None,
+        custom_data: None,
     };
 
     tracing::debug!(
@@ -1449,6 +1450,7 @@ pub async fn create_subscription(
             cancel_url: Some(format!("{}/pricing", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
+        custom_data: None,
     };
 
     // Create transaction with Paddle
@@ -1944,6 +1946,22 @@ async fn process_transaction_completed(
         tracing::debug!("Step 1a complete: No customer email found");
     }
 
+    // Extract custom_data.user_id for additional fallback user lookup
+    tracing::debug!("Step 1b: Extracting custom_data.user_id");
+    let custom_data_user_id = transaction_data
+        .get("custom_data")
+        .and_then(|cd| cd.get("user_id"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+    if let Some(ref uid) = custom_data_user_id {
+        tracing::debug!(
+            custom_data_user_id = %uid,
+            "Step 1b complete: custom_data.user_id found"
+        );
+    } else {
+        tracing::debug!("Step 1b complete: No custom_data.user_id found");
+    }
+
     // Find user by paddle_customer_id or email
     tracing::debug!(
         "Step 2: Finding user by paddle_customer_id: {}",
@@ -1957,6 +1975,7 @@ async fn process_transaction_completed(
 
     let customer_id_for_closure = customer_id.clone();
     let customer_email_for_closure = customer_email.clone();
+    let custom_data_user_id_for_closure = custom_data_user_id;
 
     use crate::schema::{payment_transactions, subscriptions, users};
     use diesel::prelude::*;
@@ -1991,6 +2010,18 @@ async fn process_transaction_completed(
                     .first::<uuid::Uuid>(conn)
                 {
                     tracing::debug!("Found user by email fallback");
+                    return Ok(user);
+                }
+            }
+
+            // Fallback: Try to find user by custom_data.user_id
+            if let Some(user_id) = custom_data_user_id_for_closure {
+                if let Ok(user) = users::table
+                    .filter(users::id.eq(user_id))
+                    .select(users::id)
+                    .first::<uuid::Uuid>(conn)
+                {
+                    tracing::debug!("Found user by custom_data.user_id fallback");
                     return Ok(user);
                 }
             }
@@ -2287,7 +2318,113 @@ async fn process_transaction_completed(
             transaction_id
         );
 
-        // Check if this is a credit package purchase
+        // Primary: Check credit package mappings from config (resilient like subscription flow)
+        // This protects against database sync issues and provides guaranteed uptime for core products
+        let credit_package = if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_250_price_id
+                .as_deref()
+        {
+            Some(("250 Credits", 250))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_500_price_id
+                .as_deref()
+        {
+            Some(("550 Credits", 550))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_1500_price_id
+                .as_deref()
+        {
+            Some(("1500 Credits", 1500))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_3500_price_id
+                .as_deref()
+        {
+            Some(("3500 Credits", 3500))
+        } else if Some(price_data)
+            == app_state
+                .config
+                .payment
+                .paddle_credits_8000_price_id
+                .as_deref()
+        {
+            Some(("8000 Credits", 8000))
+        } else {
+            None
+        };
+
+        if let Some((package_name, credits)) = credit_package {
+            tracing::info!(
+                "Credit purchase detected (config mapping): {} ({} credits) for user {} in transaction {}",
+                package_name,
+                credits,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+
+            // Add credits to user account using config values
+            let credit_service =
+                crate::services::payment::CreditService::new(app_state.config.clone());
+
+            let conn = app_state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            let user_id_for_credits = user.id;
+            let credits_to_add = credits;
+            let package_name_clone = package_name.to_string();
+            let transaction_id_clone = transaction_id.clone();
+
+            let add_credits_result = conn
+                .interact(move |conn| {
+                    credit_service.add_credits(
+                        conn,
+                        user_id_for_credits,
+                        credits_to_add,
+                        "purchase",
+                        &format!("Credit package purchase: {}", package_name_clone),
+                        Some(transaction_id_clone),
+                        None,
+                    )
+                })
+                .await
+                .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+            // Log error if credit addition failed
+            if let Err(e) = add_credits_result {
+                tracing::error!(
+                    "Failed to add credits for transaction {}: {:?}",
+                    transaction_id,
+                    e
+                );
+                return Err(e);
+            }
+
+            tracing::info!(
+                "Successfully added {} credits to user {} from transaction {} (config mapping)",
+                credits,
+                loggable_user_id(user.id),
+                transaction_id
+            );
+
+            // Credit purchase handled, no subscription to create
+            return Ok(());
+        }
+
+        // Fallback: Check database for credit package purchase (maintains flexibility for dynamic pricing)
         let conn_credit_check = app_state
             .pool
             .get()
@@ -3920,7 +4057,15 @@ pub async fn purchase_credits(
         .create_customer(&user.email, Some(&user.username))
         .await?;
 
-    // Create transaction
+    // Create transaction with custom_data containing user_id and user_email for webhook lookup
+    let custom_data = serde_json::json!({
+        "user_id": user.id.to_string(),
+        "user_email": user.email.clone(),
+        "source": "purchase_credits",
+        "package_id": package.package_id.clone(),
+        "credits": package.credits,
+    });
+
     let transaction_request = CreateTransactionRequest {
         customer_id: customer.id.clone(),
         items: vec![TransactionItem {
@@ -3939,6 +4084,7 @@ pub async fn purchase_credits(
             cancel_url: Some(format!("{}/credits", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
+        custom_data: Some(custom_data),
     };
 
     let transaction = paddle_service

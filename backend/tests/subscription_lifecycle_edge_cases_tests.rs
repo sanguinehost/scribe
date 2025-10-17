@@ -6,7 +6,7 @@ mod subscription_lifecycle_edge_cases_tests {
     use diesel::prelude::*;
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::{subscriptions, users};
-    use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+    use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
     use uuid::Uuid;
 
     /// Helper function to create a test user with a specific UUID
@@ -61,7 +61,7 @@ mod subscription_lifecycle_edge_cases_tests {
         #[tokio::test]
         async fn test_subscription_reactivation_after_cancellation() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -182,7 +182,7 @@ mod subscription_lifecycle_edge_cases_tests {
         #[tokio::test]
         async fn test_cancel_at_period_end_toggle_behavior() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)

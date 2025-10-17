@@ -1,7 +1,7 @@
 // Test chronicle-scoped search functionality
 use scribe_backend::services::agentic::narrative_tools::SearchKnowledgeBaseTool;
 use scribe_backend::services::agentic::tools::ScribeTool;
-use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -9,7 +9,7 @@ use uuid::Uuid;
 async fn test_chronicle_scoped_search_compiles() {
     // This test verifies the chronicle-scoped search functionality compiles
     let app = spawn_app(false, false, false).await; // Use mock services
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     println!("Setting up test for chronicle-scoped search...");
 

@@ -63,3 +63,4 @@ uploads/
 # Downloaded LLM models (GGUF files)
 /models/
 .vercel
+terraform.tfstate

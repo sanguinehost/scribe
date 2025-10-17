@@ -1,10 +1,10 @@
 use anyhow::Result;
 use argon2::{Algorithm, Argon2, Params, Version};
-use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::TryRngCore;
+use base64::Engine as _;
 use rand::rngs::OsRng;
-use ring::aead::{self, AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
+use rand::TryRngCore;
+use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use ring::error::Unspecified as RingUnspecifiedError;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use std::string::FromUtf8Error;
@@ -101,9 +101,9 @@ pub fn derive_kek(
     let mem_cost = 65536; // 64MB previously; argon2 crate default is 19456 (19MiB)
     let time_cost = 3; // argon2 crate default is 2
     let lanes = 4; // argon2 crate default is 1
-    // Per password-hash crate (which argon2 uses), default output length is 32 bytes.
-    // If DEK_LEN is not 32, we might need to specify it.
-    // For now, assuming DEK_LEN is 32, so we can use argon2 defaults for output or specify explicitly.
+                   // Per password-hash crate (which argon2 uses), default output length is 32 bytes.
+                   // If DEK_LEN is not 32, we might need to specify it.
+                   // For now, assuming DEK_LEN is 32, so we can use argon2 defaults for output or specify explicitly.
     let hash_length = DEK_LEN;
 
     let params = Params::new(mem_cost, time_cost, lanes, Some(hash_length))?;

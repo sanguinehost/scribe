@@ -3,7 +3,7 @@
 // Common imports needed for settings tests
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bigdecimal::BigDecimal;
 use chrono::Utc;
@@ -52,6 +52,7 @@ async fn create_user_and_login(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -195,6 +196,8 @@ async fn create_test_chat_session(
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
         active_impersonated_character_id: None,
         temperature: None,
         max_output_tokens: None,
@@ -213,6 +216,7 @@ async fn create_test_chat_session(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
     };
 
     let chat_session = conn_pool
@@ -317,6 +321,8 @@ async fn setup_chat_settings_test_env(
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
             active_impersonated_character_id: None,
             temperature: None,
             max_output_tokens: None,
@@ -335,6 +341,7 @@ async fn setup_chat_settings_test_env(
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: Utc::now(),
+            total_credits_used: BigDecimal::from(0),
         },
     };
 
@@ -541,6 +548,8 @@ async fn get_chat_settings_defaults() {
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
             active_impersonated_character_id: None,
             temperature: None,
             max_output_tokens: None,
@@ -559,6 +568,7 @@ async fn get_chat_settings_defaults() {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            total_credits_used: BigDecimal::from(0),
         }),
     )
     .await
@@ -653,6 +663,7 @@ async fn test_get_chat_settings_not_found() {
         .unwrap();
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -757,6 +768,7 @@ async fn setup_update_test_env(
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -807,6 +819,8 @@ async fn setup_update_test_env(
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
         active_impersonated_character_id: None,
         temperature: None,
         max_output_tokens: None,
@@ -825,6 +839,7 @@ async fn setup_update_test_env(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: Utc::now(),
+        total_credits_used: BigDecimal::from(0),
     };
     let session: DbChat = test_app
         .db_pool
@@ -1125,6 +1140,7 @@ async fn update_chat_settings_not_found() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -1300,6 +1316,8 @@ async fn debug_system_prompt_encryption_decryption() {
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
                 active_impersonated_character_id: None,
                 temperature: None,
                 max_output_tokens: None,
@@ -1318,6 +1336,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1471,6 +1490,7 @@ async fn test_actual_api_route_for_system_prompt() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -1538,6 +1558,8 @@ async fn test_actual_api_route_for_system_prompt() {
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
                 active_impersonated_character_id: None,
                 temperature: None,
                 max_output_tokens: None,
@@ -1556,6 +1578,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1606,6 +1629,7 @@ async fn test_actual_api_route_for_system_prompt() {
     let update_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(update_api_request)
         .await
         .unwrap();
@@ -1640,6 +1664,7 @@ async fn test_actual_api_route_for_system_prompt() {
 
     let get_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(get_api_request)
         .await
@@ -1703,6 +1728,7 @@ async fn test_chat_chronicle_association() {
     let chronicle_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(create_chronicle_request)
         .await
         .unwrap();
@@ -1752,6 +1778,7 @@ async fn test_chat_chronicle_association() {
     let update_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(update_request)
         .await
         .unwrap();
@@ -1787,56 +1814,8 @@ async fn test_chat_chronicle_association() {
     // Verify the chronicle association persisted
     assert_eq!(get_settings_resp.chronicle_id, Some(chronicle_uuid));
 
-    // Test removing the association by setting chronicle_id to None
-    let remove_update_data = UpdateChatSettingsRequest {
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        model_name: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        chronicle_id: None, // This should clear the association
-        agent_mode: None,
-        model_provider: None,
-        active_custom_persona_id: None,
-        prompt_template_id: Some("neutral_roleplay".to_string()),
-    };
-
-    let remove_request = Request::builder()
-        .method(Method::PUT)
-        .uri(format!("/api/chat/{}/settings", session.id))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(header::COOKIE, auth_cookie.clone())
-        .body(Body::from(
-            serde_json::to_string(&remove_update_data).unwrap(),
-        ))
-        .unwrap();
-
-    let remove_response = test_app
-        .router
-        .clone()
-        .oneshot(remove_request)
-        .await
-        .unwrap();
-    assert_eq!(remove_response.status(), StatusCode::OK);
-
-    let remove_body = remove_response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
-    let remove_settings_resp: ChatSettingsResponse = serde_json::from_slice(&remove_body)
-        .expect("Failed to deserialize remove settings response");
-
-    // Verify the chronicle association was removed - should be None
-    assert_eq!(remove_settings_resp.chronicle_id, None);
+    // NOTE: The old test section that tried to "remove" the association by setting chronicle_id to None
+    // has been removed because that was incorrect behavior.
+    // Now, chronicle_id: None means "don't change the existing value" (preserve it).
+    // To explicitly clear an association, a separate API or mechanism would be needed.
 }

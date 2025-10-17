@@ -1231,7 +1231,7 @@
 
 <!-- Character Editor Dialog -->
 {#if character}
-	<CharacterEditor characterId={character.id} bind:_open={characterEditorOpen} />
+	<CharacterEditor {character} bind:open={characterEditorOpen} />
 {/if}
 
 <!-- Avatar Image Lightbox -->

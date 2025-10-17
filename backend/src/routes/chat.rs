@@ -14,6 +14,7 @@ use crate::models::chats::{
     ExpandTextRequest,
     ExpandTextResponse,
     GenerateChatRequest,
+    GenerationCost,
     ImpersonateRequest,
     ImpersonateResponse,
     MessageRole,
@@ -24,9 +25,9 @@ use crate::models::chats::{
 };
 use crate::privacy::logging::loggable_user_id;
 use crate::prompt_builder;
+use crate::prompt_templates::{Narration, NarrativeStyle, Perspective, ResponseLength, Tense};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-use crate::services::ChronicleService;
 use crate::services::agentic::{
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
@@ -34,25 +35,27 @@ use crate::services::agentic::{
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
+use crate::services::template_preference_service::TemplatePreferenceService;
+use crate::services::ChronicleService;
 use secrecy::ExposeSecret; // Added for ExposeSecret
-// RetrievedMetadata is no longer directly used in this file for RAG string construction
-// use crate::services::embedding_pipeline::RetrievedMetadata;
-// RetrievedChunk is used by prompt_builder, not directly here.
-// use crate::services::embedding_pipeline::RetrievedChunk;
+                           // RetrievedMetadata is no longer directly used in this file for RAG string construction
+                           // use crate::services::embedding_pipeline::RetrievedMetadata;
+                           // RetrievedChunk is used by prompt_builder, not directly here.
+                           // use crate::services::embedding_pipeline::RetrievedChunk;
 use crate::state::AppState;
 use axum::{
-    Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{
-        IntoResponse, Sse,
         sse::{Event, KeepAlive},
+        IntoResponse, Sse,
     },
-    routing::{get, post},
+    routing::{get, patch, post},
+    Json, Router,
 };
 use axum_login::AuthSession;
-use bigdecimal::ToPrimitive;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
+use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive, Zero};
+use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use futures_util::StreamExt;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
@@ -68,6 +71,9 @@ use validator::Validate;
 
 // Define CurrentAuthSession type alias
 type CurrentAuthSession = AuthSession<AuthBackend>;
+
+// Credit value in dollars per credit (1 credit = $0.02)
+const CREDIT_VALUE_DOLLARS: f64 = 0.02;
 
 // const RAG_CHUNK_LIMIT: u64 = 7; // No longer needed here, handled by prompt_builder
 
@@ -452,9 +458,30 @@ pub async fn generate_chat_response(
             )));
         }
 
-        // Check if this model requires credits based on tier and usage
-        let model_costs = &tiers_config["credit_system"]["model_costs"];
-        let base_model_cost = model_costs[&model_to_use].as_i64().unwrap_or(0) as i32;
+        // Get token-based pricing configuration for credit estimation
+        let token_pricing = &tiers_config["credit_system"]["token_pricing"];
+        let model_pricing = &token_pricing[&model_to_use];
+
+        // Extract token pricing rates (credits per 1k tokens)
+        // Using f64 to support fractional credits (e.g., 0.018 credits/1k tokens)
+        let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
+            (
+                model_pricing["prompt_credits_per_1k"]
+                    .as_f64()
+                    .unwrap_or(0.1),
+                model_pricing["completion_credits_per_1k"]
+                    .as_f64()
+                    .unwrap_or(0.4),
+            )
+        } else {
+            // Default rates if model not in config
+            (0.1, 0.4)
+        };
+
+        // Get context window size for token estimation
+        let context_window = tier_config["limits"]["context_tokens"]
+            .as_i64()
+            .unwrap_or(32768) as i32;
 
         // Check daily message limits BEFORE processing the message
         let soft_limit_service =
@@ -481,13 +508,33 @@ pub async fn generate_chat_response(
 
                 // Free tier: gemini-2.5-pro blocked/requires credits
                 if model_to_use == "gemini-2.5-pro" {
-                    if base_model_cost > 0 {
-                        credits_required = base_model_cost;
-                    } else {
-                        return Err(AppError::BadRequest(
-                            "Premium model requires subscription or credits".to_string(),
-                        ));
-                    }
+                    // Estimate token usage for credit reservation
+                    // Conservative estimate: Use smaller of (40% context window or 50k) for input
+                    // Most messages use far less than full context, but we need buffer for safety
+                    let conservative_input_estimate =
+                        std::cmp::min((context_window as f64 * 0.4) as i32, 50000);
+                    let estimated_input_tokens = conservative_input_estimate;
+                    let estimated_output_tokens = 2000i32;
+
+                    // Calculate estimated credits based on token pricing (using f64 for fractional credits)
+                    let estimated_input_cost =
+                        ((estimated_input_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
+                    let estimated_output_cost =
+                        ((estimated_output_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
+                    let estimated_total_cost = estimated_input_cost + estimated_output_cost;
+
+                    credits_required = estimated_total_cost;
+
+                    info!(
+                        %session_id,
+                        %user_tier,
+                        %model_to_use,
+                        %context_window,
+                        %estimated_input_tokens,
+                        %estimated_output_tokens,
+                        %estimated_total_cost,
+                        "Estimated token-based credits for Gemini Pro (free tier)"
+                    );
                 }
                 should_track_usage = true; // Track usage to enforce daily limits
             }
@@ -497,7 +544,33 @@ pub async fn generate_chat_response(
 
                 // For gemini-2.5-pro, always require credits regardless of tier
                 if model_to_use == "gemini-2.5-pro" {
-                    credits_required = base_model_cost;
+                    // Estimate token usage for credit reservation
+                    // Conservative estimate: Use smaller of (40% context window or 50k) for input
+                    // Most messages use far less than full context, but we need buffer for safety
+                    let conservative_input_estimate =
+                        std::cmp::min((context_window as f64 * 0.4) as i32, 50000);
+                    let estimated_input_tokens = conservative_input_estimate;
+                    let estimated_output_tokens = 2000i32;
+
+                    // Calculate estimated credits based on token pricing (using f64 for fractional credits)
+                    let estimated_input_cost =
+                        ((estimated_input_tokens as f64 / 1000.0) * prompt_rate).ceil() as i32;
+                    let estimated_output_cost =
+                        ((estimated_output_tokens as f64 / 1000.0) * completion_rate).ceil() as i32;
+                    let estimated_total_cost = estimated_input_cost + estimated_output_cost;
+
+                    credits_required = estimated_total_cost;
+
+                    info!(
+                        %session_id,
+                        %user_tier,
+                        %model_to_use,
+                        %context_window,
+                        %estimated_input_tokens,
+                        %estimated_output_tokens,
+                        %estimated_total_cost,
+                        "Estimated token-based credits for Gemini Pro (paid tier)"
+                    );
                 } else {
                     // For Flash/Flash-Lite, check if user has exceeded their soft limit
                     // Note: Basic/Premium users get soft limits (throttling) not hard blocks
@@ -661,6 +734,13 @@ pub async fn generate_chat_response(
             superseded_at: None,
             variant_count: 0,
             current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: bigdecimal::BigDecimal::from(0),
+            // New cost tracking fields
+            actual_cost: bigdecimal::BigDecimal::from(0),
+            modified_cost: bigdecimal::BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: bigdecimal::BigDecimal::from(0),
         }
     } else {
         // Normal flow: save new user message
@@ -678,7 +758,9 @@ pub async fn generate_chat_response(
             raw_prompt_debug: None, // User messages don't need raw prompt debug
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
-            variant_of: None, // User messages don't create variants
+            variant_of: None,            // User messages don't create variants
+            charge_credits: false,       // User messages are never charged
+            credits_cost_override: None, // Let save_message calculate from tokens
         })
         .await
         {
@@ -804,10 +886,12 @@ pub async fn generate_chat_response(
                         conn,
                         session_id,
                         AnalysisType::PreProcessing,
+                        user_message_id,
                     )
                 })
                 .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?? // Double ? to unwrap both Results
+                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??
+            // Double ? to unwrap both Results
             } else {
                 None
             };
@@ -913,6 +997,99 @@ pub async fn generate_chat_response(
     .await?;
     let prompt_template_id = session_settings.prompt_template_id;
 
+    // Fetch user's template preferences to get narrative style variables
+    // Use character-specific preferences if available, falls back to user global
+    let mut template_prefs = TemplatePreferenceService::get_template_preferences(
+        &state_arc.pool,
+        user_id_value,
+        session_character_id, // Use character-specific preferences if session has character
+    )
+    .await?;
+
+    // Load session to check for session-level narrative style overrides
+    // Session overrides have highest priority in the cascade
+    let session_override_opt = {
+        use diesel::prelude::*;
+        let pool_clone = state_arc.pool.clone();
+        let conn = pool_clone.get().await?;
+
+        conn.interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Query error: {e}")))?
+        .and_then(|chat| {
+            chat.get_narrative_style_override(&*session_dek_arc)
+                .ok()
+                .flatten()
+        })
+    };
+
+    // Apply session override to template preferences (if present)
+    // Session override fields take priority over template/character/global preferences
+    if let Some(override_data) = session_override_opt {
+        if let Some(tense) = override_data.tense {
+            template_prefs.tense = tense;
+        }
+        if let Some(narration) = override_data.narration {
+            template_prefs.narration = narration;
+        }
+        if let Some(perspective) = override_data.perspective {
+            template_prefs.perspective = perspective;
+        }
+        if let Some(length) = override_data.length {
+            template_prefs.length = length;
+        }
+        if let Some(enable_info_box) = override_data.enable_info_box {
+            template_prefs.enable_info_box = enable_info_box;
+        }
+        if let Some(enable_stats_tracker) = override_data.enable_stats_tracker {
+            template_prefs.enable_stats_tracker = enable_stats_tracker;
+        }
+        if let Some(enable_thinking) = override_data.enable_thinking {
+            template_prefs.enable_thinking = enable_thinking;
+        }
+    }
+
+    // Convert string preferences from database to NarrativeStyle enum types
+    let narrative_style = NarrativeStyle {
+        tense: match template_prefs.tense.as_str() {
+            "present-tense" => Tense::PresentTense,
+            "future-tense" => Tense::FutureTense,
+            _ => Tense::PastTense, // Default to past-tense
+        },
+        narration: match template_prefs.narration.as_str() {
+            "first-person" => Narration::FirstPerson,
+            "second-person" => Narration::SecondPerson,
+            _ => Narration::ThirdPerson, // Default to third-person
+        },
+        perspective: match template_prefs.perspective.as_str() {
+            "limited-character" => Perspective::LimitedCharacter,
+            "limited-user" => Perspective::LimitedUser,
+            _ => Perspective::Omniscient, // Default to omniscient
+        },
+        length: match template_prefs.length.as_str() {
+            "concise" => ResponseLength::Concise,
+            "moderate" => ResponseLength::Moderate,
+            "extended" => ResponseLength::Extended,
+            _ => ResponseLength::Flexible, // Default to flexible
+        },
+    };
+
+    debug!(
+        %session_id,
+        tense = %narrative_style.tense.as_str(),
+        narration = %narrative_style.narration.as_str(),
+        perspective = %narrative_style.perspective.as_str(),
+        length = %narrative_style.length.as_str(),
+        "Applied narrative style from user template preferences"
+    );
+
     // Call the new prompt builder
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -930,6 +1107,7 @@ pub async fn generate_chat_response(
             agent_context,                     // Pass agent context if available
             guidance: payload.guidance.clone(), // Pass guidance for regeneration steering
             prompt_template_id,
+            narrative_style: Some(narrative_style), // Pass narrative style from user preferences
         })
         .await
         {
@@ -986,6 +1164,10 @@ pub async fn generate_chat_response(
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                     variant_of: payload.variant_of,
+                    #[cfg(feature = "payment")]
+                    charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                    #[cfg(not(feature = "payment"))]
+                    charge_credits: false,
                 },
             )
             .await
@@ -1366,9 +1548,9 @@ pub async fn generate_chat_response(
                         }
                     }
 
-                    // Calculate actual credit cost based on token usage
+                    // Calculate actual generation cost (API cost + user-facing credits)
                     #[cfg(feature = "payment")]
-                    let _actual_credit_cost = if prompt_tokens > 0 || completion_tokens > 0 {
+                    let cost_info = if prompt_tokens > 0 || completion_tokens > 0 {
                         // Load token-based pricing from config
                         let config_path =
                             std::path::Path::new("backend/config/subscription_tiers.json");
@@ -1386,46 +1568,91 @@ pub async fn generate_chat_response(
                             })?;
 
                         let token_pricing = &tiers_config["credit_system"]["token_pricing"];
-                        let model_pricing = &token_pricing[&model_to_use];
+                        let base_costs = &token_pricing["base_api_costs"][&model_to_use];
 
-                        let (prompt_rate, completion_rate) = if !model_pricing.is_null() {
+                        // Get base API rates as strings (for BigDecimal precision)
+                        let (input_rate_str, output_rate_str) = if !base_costs.is_null() {
                             (
-                                model_pricing["prompt_credits_per_1k"]
-                                    .as_i64()
-                                    .unwrap_or(10) as i32,
-                                model_pricing["completion_credits_per_1k"]
-                                    .as_i64()
-                                    .unwrap_or(40) as i32,
+                                base_costs["input_per_million"].as_str().unwrap_or("0.10"),
+                                base_costs["output_per_million"].as_str().unwrap_or("0.40"),
                             )
                         } else {
-                            // Default rates if model not in config
-                            (10, 40)
+                            // Fallback to Flash-Lite pricing if model not found
+                            warn!(
+                                "Model '{}' not found in pricing config, using Flash-Lite pricing",
+                                model_to_use
+                            );
+                            ("0.10", "0.40")
                         };
 
-                        let prompt_cost = (prompt_tokens as i32 * prompt_rate + 999) / 1000; // Round up
-                        let completion_cost =
-                            (completion_tokens as i32 * completion_rate + 999) / 1000; // Round up
-                        let total_cost = prompt_cost + completion_cost;
+                        // Parse rates to BigDecimal for precise arithmetic
+                        let input_rate: BigDecimal = input_rate_str.parse().map_err(|e| {
+                            error!("Failed to parse input rate '{}': {}", input_rate_str, e);
+                            AppError::InternalServerErrorGeneric(
+                                "Invalid pricing configuration".to_string(),
+                            )
+                        })?;
+                        let output_rate: BigDecimal = output_rate_str.parse().map_err(|e| {
+                            error!("Failed to parse output rate '{}': {}", output_rate_str, e);
+                            AppError::InternalServerErrorGeneric(
+                                "Invalid pricing configuration".to_string(),
+                            )
+                        })?;
+
+                        // Convert token counts to BigDecimal
+                        let one_million = BigDecimal::from_i64(1_000_000).unwrap();
+                        let prompt_tokens_bd = BigDecimal::from_i32(prompt_tokens).unwrap();
+                        let completion_tokens_bd = BigDecimal::from_i32(completion_tokens).unwrap();
+
+                        // Calculate BASE API cost in dollars (NO markup) using BigDecimal
+                        let input_cost = (prompt_tokens_bd / &one_million) * &input_rate;
+                        let output_cost = (completion_tokens_bd / &one_million) * &output_rate;
+                        let total_cost = input_cost + output_cost;
+
+                        // Get markup percentage and convert to BigDecimal
+                        let markup_pct = token_pricing["markup_percentage"].as_i64().unwrap_or(20);
+                        let markup_pct_bd = BigDecimal::from_i64(markup_pct).unwrap();
+                        let hundred = BigDecimal::from_i64(100).unwrap();
+                        let one = BigDecimal::from_i64(1).unwrap();
+
+                        // Calculate credits for user balance (derived from marked-up cost)
+                        let markup_multiplier = &one + (&markup_pct_bd / &hundred);
+                        let marked_up_cost = &total_cost * &markup_multiplier;
+
+                        // Convert credit value to BigDecimal and calculate credits
+                        let credit_value_bd = BigDecimal::from_f64(CREDIT_VALUE_DOLLARS).unwrap();
+                        let credits_bd = &marked_up_cost / &credit_value_bd;
+                        // Convert to f64, apply ceiling, then to i32
+                        let credits_f64 = credits_bd.to_f64().unwrap_or(0.0);
+                        let actual_credits = credits_f64.ceil() as i32;
+
+                        // Convert total_cost to f64 for logging and struct
+                        let total_cost_f64 = total_cost.to_f64().unwrap_or(0.0);
 
                         info!(
                             %session_id,
                             %prompt_tokens,
                             %completion_tokens,
-                            %prompt_cost,
-                            %completion_cost,
-                            %total_cost,
+                            base_cost_dollars = total_cost_f64,
+                            credits_derived = actual_credits,
                             %model_to_use,
-                            "Calculated token-based credit cost from config"
+                            "Calculated base API cost and derived credits"
                         );
 
-                        total_cost
+                        GenerationCost {
+                            api_cost_dollars: total_cost_f64,
+                            credits_charged: actual_credits,
+                        }
                     } else {
-                        credits_required // Fall back to fixed cost if no token data
+                        GenerationCost {
+                            api_cost_dollars: 0.0,
+                            credits_charged: credits_required,
+                        }
                     };
 
                     // Confirm credit reservation on successful LLM response
                     #[cfg(feature = "payment")]
-                    if let Some((credit_service, reservation_id, _reserved_credits)) =
+                    if let Some((credit_service, reservation_id, reserved_credits)) =
                         &credit_reservation
                     {
                         let conn_result = state_arc.pool.get().await;
@@ -1434,9 +1661,53 @@ pub async fn generate_chat_response(
                                 let service_clone = credit_service.clone();
                                 let reservation_id_clone = *reservation_id; // Copy the UUID
 
-                                // If actual cost differs from reserved amount, adjust
-                                // For now, we'll just confirm the reservation
-                                // TODO: Implement partial refund if actual_credit_cost < reserved_credits
+                                // Adjust reservation if actual cost is less than reserved
+                                if cost_info.credits_charged < *reserved_credits {
+                                    let adjust_clone = credit_service.clone();
+                                    let credits_to_charge = cost_info.credits_charged;
+                                    let adjust_result = conn
+                                        .interact(move |conn| {
+                                            adjust_clone.adjust_reservation_to_actual_cost(
+                                                conn,
+                                                user_id_value,
+                                                reservation_id_clone,
+                                                credits_to_charge,
+                                            )
+                                        })
+                                        .await;
+
+                                    match adjust_result {
+                                        Ok(Ok(_balance)) => {
+                                            info!(
+                                                %session_id,
+                                                %reservation_id,
+                                                reserved = *reserved_credits,
+                                                actual = cost_info.credits_charged,
+                                                refunded = *reserved_credits - cost_info.credits_charged,
+                                                "Credit reservation adjusted to actual usage"
+                                            );
+                                        }
+                                        Ok(Err(e)) => {
+                                            error!(
+                                                %session_id,
+                                                %reservation_id,
+                                                error = %e,
+                                                "Failed to adjust credit reservation - will confirm full amount"
+                                            );
+                                            // Continue to confirmation even if adjustment fails
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                %session_id,
+                                                %reservation_id,
+                                                error = %e,
+                                                "Failed to interact with DB for adjustment - will confirm full amount"
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // Confirm the reservation (now adjusted to actual cost if applicable)
                                 let confirm_result = conn
                                     .interact(move |conn| {
                                         service_clone.confirm_reservation(
@@ -1521,12 +1792,29 @@ pub async fn generate_chat_response(
                                 status: crate::models::chats::MessageStatus::Completed,
                                 error_message: None,
                                 variant_of: payload.variant_of, // Use variant_of from request payload
+                                #[cfg(feature = "payment")]
+                                charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                                #[cfg(not(feature = "payment"))]
+                                charge_credits: false,
+                                #[cfg(feature = "payment")]
+                                credits_cost_override: Some({
+                                    use std::str::FromStr;
+                                    bigdecimal::BigDecimal::from_str(
+                                        &cost_info.api_cost_dollars.to_string(),
+                                    )
+                                    .unwrap_or_else(|_| bigdecimal::BigDecimal::from(0))
+                                }), // Use pre-calculated base API cost in dollars
+                                #[cfg(not(feature = "payment"))]
+                                credits_cost_override: None,
                             },
                         )
                         .await
                         {
                             Ok(saved_message) => {
                                 debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
+
+                                // Note: Session totals (tokens, credits) are updated by the save_message function
+                                // in message_handling.rs - no need to duplicate that logic here
 
                                 // Update pre-processing analysis with assistant message ID if we have one
                                 if let Some(analysis_id) = pre_processing_analysis_id {
@@ -1801,6 +2089,10 @@ pub async fn generate_chat_response(
                     character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                     variant_of: payload.variant_of,
+                    #[cfg(feature = "payment")]
+                    charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                    #[cfg(not(feature = "payment"))]
+                    charge_credits: false,
                 },
             )
             .await
@@ -1908,6 +2200,141 @@ pub async fn get_chat_session_handler(
     Ok(Json(chat_session))
 }
 
+/// Updates session-level narrative style override for a chat session.
+///
+/// This endpoint allows users to temporarily override narrative preferences
+/// for a specific chat session without affecting character or global preferences.
+/// Pass an empty/null object or call DELETE endpoint to clear overrides.
+///
+/// # Route
+/// PATCH /api/chat/sessions/:session_id/narrative-style
+///
+/// # Errors
+/// - `Unauthorized`: User not authenticated
+/// - `Forbidden`: User doesn't own the session
+/// - `NotFound`: Session doesn't exist
+/// - `EncryptionError`: Failed to encrypt override data
+#[instrument(skip(state, auth_session, session_dek))]
+pub async fn update_session_narrative_style_handler(
+    State(state): State<AppState>,
+    Path(session_id): Path<Uuid>,
+    auth_session: CurrentAuthSession,
+    session_dek: SessionDek,
+    Json(payload): Json<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+) -> Result<Json<crate::models::template_preferences::TemplatePreferenceResponse>, AppError> {
+    use diesel::prelude::*;
+
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session for session_id: {}", session_id);
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    // Clone the DEK data for use in the closure
+    let user_dek_bytes = session_dek.0.expose_secret().clone();
+    let user_dek_secret = secrecy::SecretBox::new(Box::new(user_dek_bytes));
+
+    // Load session, verify ownership, set override, and save in a transaction
+    let pool_clone = state.pool.clone();
+    let conn = pool_clone.get().await?;
+
+    conn.interact(move |conn| {
+        conn.transaction::<_, AppError, _>(|transaction_conn| {
+            // Load and verify ownership
+            let mut chat_session = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user.id))
+                .select(Chat::as_select())
+                .first::<Chat>(transaction_conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                .ok_or_else(|| AppError::NotFound("Chat session not found".to_string()))?;
+
+            // Set the narrative style override (encrypted)
+            chat_session.set_narrative_style_override(Some(payload), &user_dek_secret)?;
+
+            // Update in database
+            diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
+                .set((
+                    chat_sessions::narrative_style_override_ciphertext
+                        .eq(chat_session.narrative_style_override_ciphertext),
+                    chat_sessions::narrative_style_override_nonce
+                        .eq(chat_session.narrative_style_override_nonce),
+                ))
+                .execute(transaction_conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            Ok(())
+        })
+    })
+    .await
+    .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
+
+    // Fetch and return the effective preferences (with override applied)
+    // This requires fetching character ID and applying the cascade
+    let conn2 = state.pool.get().await?;
+    let (character_id_opt, override_ciphertext, override_nonce) = conn2
+        .interact(move |conn| {
+            let session_data = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select((
+                    chat_sessions::character_id,
+                    chat_sessions::narrative_style_override_ciphertext,
+                    chat_sessions::narrative_style_override_nonce,
+                ))
+                .first::<(Option<Uuid>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            Ok::<_, AppError>(session_data)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
+
+    // Get base template preferences (character or global)
+    let mut effective_prefs =
+        TemplatePreferenceService::get_template_preferences(&state.pool, user.id, character_id_opt)
+            .await?;
+
+    // Decrypt and apply session override
+    if let (Some(ciphertext), Some(nonce)) = (override_ciphertext, override_nonce) {
+        if !ciphertext.is_empty() && !nonce.is_empty() {
+            let encryption_service = crate::services::encryption_service::EncryptionService::new();
+            let decrypted_bytes =
+                encryption_service.decrypt(&ciphertext, &nonce, session_dek.0.expose_secret())?;
+            let json_str = String::from_utf8(decrypted_bytes)
+                .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))?;
+            let override_data: crate::models::template_preferences::UpdateTemplatePreferenceRequest =
+                serde_json::from_str(&json_str).map_err(|e| {
+                    AppError::DecryptionError(format!("Failed to deserialize: {e}"))
+                })?;
+
+            // Apply override fields
+            if let Some(tense) = override_data.tense {
+                effective_prefs.tense = tense;
+            }
+            if let Some(narration) = override_data.narration {
+                effective_prefs.narration = narration;
+            }
+            if let Some(perspective) = override_data.perspective {
+                effective_prefs.perspective = perspective;
+            }
+            if let Some(length) = override_data.length {
+                effective_prefs.length = length;
+            }
+            if let Some(enable_info_box) = override_data.enable_info_box {
+                effective_prefs.enable_info_box = enable_info_box;
+            }
+            if let Some(enable_stats_tracker) = override_data.enable_stats_tracker {
+                effective_prefs.enable_stats_tracker = enable_stats_tracker;
+            }
+            if let Some(enable_thinking) = override_data.enable_thinking {
+                effective_prefs.enable_thinking = enable_thinking;
+            }
+        }
+    }
+
+    Ok(Json(effective_prefs))
+}
+
 pub fn chat_routes(state: AppState) -> Router<AppState> {
     info!("Entering chat_routes");
     Router::new()
@@ -1928,6 +2355,10 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
         .route(
             "/:chat_id/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
+        )
+        .route(
+            "/sessions/:session_id/narrative-style",
+            patch(update_session_narrative_style_handler),
         )
         .route("/:session_id_str/generate", post(generate_chat_response))
         .route(
@@ -2418,16 +2849,15 @@ pub async fn generate_suggested_actions(
                     String::new()
                 },
                 |decrypted_secret_vec| {
-                    String::from_utf8(
-                    decrypted_secret_vec.expose_secret().clone(),
-                )
-                .unwrap_or_else(|e| {
-                    error!(
+                    String::from_utf8(decrypted_secret_vec.expose_secret().clone()).unwrap_or_else(
+                        |e| {
+                            error!(
                         "Failed to convert decrypted first_mes to UTF-8: {}. Using empty string.",
                         e
                     );
-                    String::new()
-                })
+                            String::new()
+                        },
+                    )
                 },
             )
         }
@@ -2509,6 +2939,7 @@ pub async fn generate_suggested_actions(
             agent_context: None,               // No agent context for suggestions
             guidance: None,                    // No guidance for suggestions
             prompt_template_id: None,          // Use default template for suggestions
+            narrative_style: None,             // Suggestions don't need narrative styling
         })
         .await
         {
@@ -2997,6 +3428,7 @@ pub async fn expand_text_handler(
         character_name: None,      // Text expansion doesn't have a character
         player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
         variant_of: None,          // Text expansion doesn't create variants
+        charge_credits: false,     // Text expansion is not charged (utility feature)
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3318,6 +3750,7 @@ pub async fn impersonate_handler(
         character_name: None,      // Impersonation doesn't have a character
         player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
         variant_of: None,          // Impersonation doesn't create variants
+        charge_credits: false,     // Impersonation is not charged (utility feature)
     };
 
     // Generate the response using the full pipeline

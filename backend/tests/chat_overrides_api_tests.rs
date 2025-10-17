@@ -57,7 +57,7 @@ mod chat_overrides_api_tests {
     async fn setup_test_environment(
         test_app: &TestApp,
     ) -> (TestDataGuard, User, Character, ChatSession, String) {
-        let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let username = "override_user";
         let password = "override_password123";
 
@@ -297,7 +297,7 @@ mod chat_overrides_api_tests {
     #[tokio::test]
     async fn test_create_override_for_unowned_chat_session() {
         let test_app = test_helpers::spawn_app(true, true, true).await;
-        let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // User A: Owner of the chat session
         let owner_username = "user_a_owner";
@@ -399,18 +399,14 @@ mod chat_overrides_api_tests {
         assert_eq!(response.status(), ReqwestStatusCode::UNPROCESSABLE_ENTITY);
 
         let error_response: serde_json::Value = response.json().await.unwrap();
-        assert!(
-            error_response["error"]
-                .as_str()
-                .unwrap()
-                .contains("Validation error")
-        );
-        assert!(
-            error_response["error_details"]["value"][0]["code"]
-                .as_str()
-                .unwrap()
-                .contains("length")
-        );
+        assert!(error_response["error"]
+            .as_str()
+            .unwrap()
+            .contains("Validation error"));
+        assert!(error_response["error_details"]["value"][0]["code"]
+            .as_str()
+            .unwrap()
+            .contains("length"));
     }
 
     #[tokio::test]
@@ -445,19 +441,15 @@ mod chat_overrides_api_tests {
         assert_eq!(response.status(), ReqwestStatusCode::UNPROCESSABLE_ENTITY);
 
         let error_response: serde_json::Value = response.json().await.unwrap();
-        assert!(
-            error_response["error"]
-                .as_str()
-                .unwrap()
-                .contains("Validation error")
-        );
+        assert!(error_response["error"]
+            .as_str()
+            .unwrap()
+            .contains("Validation error"));
         // Check that the error is for the 'field_name' field
-        assert!(
-            error_response["error_details"]["field_name"][0]["code"]
-                .as_str()
-                .unwrap()
-                .contains("length")
-        );
+        assert!(error_response["error_details"]["field_name"][0]["code"]
+            .as_str()
+            .unwrap()
+            .contains("length"));
     }
 
     #[tokio::test]

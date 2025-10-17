@@ -3,14 +3,14 @@
 use diesel::prelude::*;
 use scribe_backend::{
     models::{
-        AnalysisType, MessageRole, NewAgentContextAnalysis, NewChatMessage,
-        chronicle::CreateChronicleRequest,
+        chronicle::CreateChronicleRequest, AnalysisType, MessageRole, NewAgentContextAnalysis,
+        NewChatMessage,
     },
     services::{
-        ChronicleService,
         agentic::{narrative_tools::SearchKnowledgeBaseTool, tools::ScribeTool},
+        ChronicleService,
     },
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -106,7 +106,7 @@ async fn create_test_app_state(
 #[tokio::test]
 async fn test_search_knowledge_base_user_isolation() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two separate users
     let user1 = create_test_user(
@@ -191,7 +191,7 @@ async fn test_search_knowledge_base_user_isolation() {
 #[tokio::test]
 async fn test_context_enrichment_agent_security() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -316,7 +316,7 @@ async fn test_malicious_user_id_injection() {
 #[tokio::test]
 async fn test_agent_analysis_storage_security() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let user1 = create_test_user(
@@ -351,7 +351,7 @@ async fn test_agent_analysis_storage_security() {
         .await
         .expect("Failed to get connection");
     conn.interact(move |conn| {
-        use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
+        use diesel::{insert_into, ExpressionMethods, RunQueryDsl};
         use scribe_backend::schema::chat_sessions;
 
         // Insert user1's session
@@ -598,7 +598,7 @@ async fn test_agent_analysis_storage_security() {
 #[tokio::test]
 async fn test_search_tool_injection_protection() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user = create_test_user(
         &test_app.db_pool,
@@ -674,7 +674,7 @@ async fn test_search_tool_injection_protection() {
 #[tokio::test]
 async fn test_search_tool_ssrf_protection() {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user = create_test_user(
         &test_app.db_pool,

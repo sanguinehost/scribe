@@ -6,9 +6,9 @@ use std::collections::HashMap;
 #[cfg(feature = "payment")]
 use scribe_backend::{
     models::payment::PaymentUsageTracking,
-    services::EncryptionService,
     services::payment::usage_tracking_service::{UsageMetadata, UsageTrackingService},
-    test_helpers::{TestDataGuard, db, spawn_app_permissive_rate_limiting},
+    services::EncryptionService,
+    test_helpers::{db, spawn_app_permissive_rate_limiting, TestDataGuard},
 };
 
 #[cfg(feature = "payment")]
@@ -18,7 +18,7 @@ use diesel::prelude::*;
 #[cfg(feature = "payment")]
 async fn test_payment_usage_tracking_direct() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create a real test user (needed for DEK encryption)
     let user_db = db::create_test_user(

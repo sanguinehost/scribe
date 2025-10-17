@@ -36,7 +36,7 @@ struct TestContext {
 
 async fn setup_service_test() -> AnyhowResult<TestContext> {
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let username = "testpersonauser";
     let password = "password123";
@@ -301,7 +301,7 @@ async fn test_update_user_persona_not_found() -> AnyhowResult<()> {
 async fn test_update_user_persona_forbidden() -> AnyhowResult<()> {
     let ctx1 = setup_service_test().await?;
     let test_app_for_ctx2 = test_helpers::spawn_app(true, false, false).await;
-    let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone());
+    let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone(), None);
 
     let user2_username = "updateforbiddenuser";
     let user2_password = "password1011";
@@ -405,7 +405,7 @@ async fn test_delete_user_persona_not_found() -> AnyhowResult<()> {
 async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
     let ctx1 = setup_service_test().await?;
     let test_app_for_ctx2 = test_helpers::spawn_app(true, false, false).await;
-    let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone());
+    let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone(), None);
 
     let user2_username = "deleteforbiddenuser";
     let user2_password = "password1213";
@@ -461,7 +461,7 @@ async fn test_delete_user_persona_forbidden() -> AnyhowResult<()> {
 async fn test_get_user_persona_forbidden() -> AnyhowResult<()> {
     let ctx1 = setup_service_test().await?; // User 1 and their service/DEK
     let test_app_for_ctx2 = test_helpers::spawn_app(true, false, false).await;
-    let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone());
+    let mut guard2 = TestDataGuard::new(test_app_for_ctx2.db_pool.clone(), None);
 
     let user2_username = "forbiddenuser";
     let user2_password = "password456";

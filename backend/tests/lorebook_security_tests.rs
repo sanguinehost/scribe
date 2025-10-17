@@ -7,7 +7,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use diesel::prelude::*;
@@ -83,6 +83,7 @@ async fn create_authenticated_user(
     let register_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -123,6 +124,7 @@ async fn create_authenticated_user(
         let verify_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -143,6 +145,7 @@ async fn create_authenticated_user(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -177,6 +180,7 @@ async fn create_lorebook(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -210,6 +214,7 @@ async fn create_lorebook_entry(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -232,7 +237,7 @@ async fn create_lorebook_entry(
 #[tokio::test]
 async fn test_a01_cannot_access_other_users_lorebook() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -252,6 +257,7 @@ async fn test_a01_cannot_access_other_users_lorebook() {
     // User 2 tries to access User 1's lorebook
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -281,7 +287,7 @@ async fn test_a01_cannot_access_other_users_lorebook() {
 #[tokio::test]
 async fn test_a01_cannot_update_other_users_lorebook() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -302,6 +308,7 @@ async fn test_a01_cannot_update_other_users_lorebook() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
@@ -321,7 +328,7 @@ async fn test_a01_cannot_update_other_users_lorebook() {
 #[tokio::test]
 async fn test_a01_cannot_delete_other_users_lorebook() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -336,6 +343,7 @@ async fn test_a01_cannot_delete_other_users_lorebook() {
     // User 2 tries to delete User 1's lorebook
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -355,7 +363,7 @@ async fn test_a01_cannot_delete_other_users_lorebook() {
 #[tokio::test]
 async fn test_a01_cannot_access_other_users_lorebook_entries() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -381,6 +389,7 @@ async fn test_a01_cannot_access_other_users_lorebook_entries() {
     // User 2 tries to access User 1's lorebook entry
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -413,7 +422,7 @@ async fn test_a01_cannot_access_other_users_lorebook_entries() {
 #[tokio::test]
 async fn test_a02_lorebook_entries_are_encrypted_at_rest() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "encrypt")
         .await
@@ -471,7 +480,7 @@ async fn test_a02_lorebook_entries_are_encrypted_at_rest() {
 #[tokio::test]
 async fn test_a02_api_responses_dont_leak_encrypted_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "noleak")
         .await
@@ -491,6 +500,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
     // Get lorebook via API
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -529,7 +539,7 @@ async fn test_a02_api_responses_dont_leak_encrypted_data() {
 #[tokio::test]
 async fn test_a03_sql_injection_in_lorebook_name() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "sqli").await.unwrap();
 
@@ -542,6 +552,7 @@ async fn test_a03_sql_injection_in_lorebook_name() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -572,6 +583,7 @@ async fn test_a03_sql_injection_in_lorebook_name() {
     let list_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -593,7 +605,7 @@ async fn test_a03_sql_injection_in_lorebook_name() {
 #[tokio::test]
 async fn test_a03_xss_prevention_in_lorebook_content() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "xss").await.unwrap();
 
@@ -613,6 +625,7 @@ async fn test_a03_xss_prevention_in_lorebook_content() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -646,7 +659,7 @@ async fn test_a03_xss_prevention_in_lorebook_content() {
 #[tokio::test]
 async fn test_a03_json_injection_in_entry_data() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "jsoninj")
         .await
@@ -668,6 +681,7 @@ async fn test_a03_json_injection_in_entry_data() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -709,7 +723,7 @@ async fn test_a03_json_injection_in_entry_data() {
 #[tokio::test]
 async fn test_a04_rate_limiting_lorebook_creation() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ratelimit")
         .await
@@ -727,6 +741,7 @@ async fn test_a04_rate_limiting_lorebook_creation() {
 
         let response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -760,7 +775,7 @@ async fn test_a04_rate_limiting_lorebook_creation() {
 #[tokio::test]
 async fn test_a04_resource_exhaustion_prevention() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "exhaust")
         .await
@@ -782,6 +797,7 @@ async fn test_a04_resource_exhaustion_prevention() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -814,7 +830,7 @@ async fn test_a04_resource_exhaustion_prevention() {
 #[tokio::test]
 async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak")
         .await
@@ -824,6 +840,7 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
     let fake_uuid = Uuid::new_v4();
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -867,7 +884,7 @@ async fn test_a05_error_messages_dont_leak_sensitive_info() {
 #[tokio::test]
 async fn test_a07_unauthenticated_access_prevented() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try to create lorebook without authentication
     let request_body = json!({
@@ -877,6 +894,7 @@ async fn test_a07_unauthenticated_access_prevented() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -895,6 +913,7 @@ async fn test_a07_unauthenticated_access_prevented() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -911,7 +930,7 @@ async fn test_a07_unauthenticated_access_prevented() {
 #[tokio::test]
 async fn test_a07_invalid_session_token_rejected() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try to create lorebook with invalid session cookie
     let request_body = json!({
@@ -921,6 +940,7 @@ async fn test_a07_invalid_session_token_rejected() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -944,7 +964,7 @@ async fn test_a07_invalid_session_token_rejected() {
 #[tokio::test]
 async fn test_a08_lorebook_data_integrity() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, user_id) = create_authenticated_user(&test_app, "integrity")
         .await
@@ -981,6 +1001,7 @@ async fn test_a08_lorebook_data_integrity() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
@@ -1016,7 +1037,7 @@ async fn test_a08_lorebook_data_integrity() {
 #[tokio::test]
 async fn test_a09_failed_access_attempts_logged() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
     let (user2_cookie, _user2_id) = create_authenticated_user(&test_app, "user2").await.unwrap();
@@ -1030,6 +1051,7 @@ async fn test_a09_failed_access_attempts_logged() {
     // User 2 attempts unauthorized access (this should be logged)
     let _response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1049,6 +1071,7 @@ async fn test_a09_failed_access_attempts_logged() {
     // Attempt with invalid UUID format (should be logged as suspicious)
     let _response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1071,7 +1094,7 @@ async fn test_a09_failed_access_attempts_logged() {
 #[tokio::test]
 async fn test_a10_ssrf_prevention_in_lorebook_content() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ssrf").await.unwrap();
 
@@ -1100,6 +1123,7 @@ async fn test_a10_ssrf_prevention_in_lorebook_content() {
         let response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -1127,12 +1151,10 @@ async fn test_a10_ssrf_prevention_in_lorebook_content() {
             let entry_response: serde_json::Value = parse_json_response(response).await.unwrap();
 
             // URL should be stored as-is (the application doesn't automatically fetch URLs from content)
-            assert!(
-                entry_response["content"]
-                    .as_str()
-                    .unwrap()
-                    .contains(malicious_url)
-            );
+            assert!(entry_response["content"]
+                .as_str()
+                .unwrap()
+                .contains(malicious_url));
         }
     }
 
@@ -1147,7 +1169,7 @@ async fn test_a10_ssrf_prevention_in_lorebook_content() {
 #[tokio::test]
 async fn test_lorebook_name_validation() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "validation")
         .await
@@ -1161,6 +1183,7 @@ async fn test_lorebook_name_validation() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1189,6 +1212,7 @@ async fn test_lorebook_name_validation() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -1210,7 +1234,7 @@ async fn test_lorebook_name_validation() {
 #[tokio::test]
 async fn test_lorebook_id_tampering_prevention() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "tamper")
         .await
@@ -1219,6 +1243,7 @@ async fn test_lorebook_id_tampering_prevention() {
     // Test with malformed UUID
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -1237,6 +1262,7 @@ async fn test_lorebook_id_tampering_prevention() {
     let malicious_id = "00000000-0000-0000-0000-000000000000UNION";
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()

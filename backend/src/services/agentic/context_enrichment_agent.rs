@@ -11,19 +11,20 @@ use genai::chat::{
     JsonSchemaSpec, MessageContent,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    AppState, crypto,
+    crypto,
     errors::AppError,
     services::{
-        ChronicleService, agentic::narrative_tools::SearchKnowledgeBaseTool,
-        safety_utils::create_unrestricted_safety_settings,
+        agentic::narrative_tools::SearchKnowledgeBaseTool,
+        safety_utils::create_unrestricted_safety_settings, ChronicleService,
     },
+    AppState,
 };
 use secrecy::SecretBox;
 

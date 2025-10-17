@@ -162,7 +162,7 @@ pub struct UploadedLorebookEntry {
     pub constant: Option<bool>,   // Maps to is_constant
     pub order: Option<i32>,       // Maps to insertion_order
     pub insertion_order: Option<i32>, // Alternative field name used in some SillyTavern exports
-    #[serde(deserialize_with = "deserialize_position")]
+    #[serde(default, deserialize_with = "deserialize_position")]
     pub position: Option<i32>, // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
     #[serde(skip_deserializing)]
@@ -438,4 +438,93 @@ pub struct CharacterLorebookOverrideResponse {
     pub action: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+// --- AI-Powered Lorebook DTOs ---
+
+/// Payload for AI-powered lorebook entry generation
+#[derive(Debug, Serialize, Deserialize, Validate, Clone)]
+pub struct GenerateLorebookEntriesPayload {
+    /// Theme or context for generating entries (e.g., "medieval fantasy tavern", "sci-fi space station")
+    #[validate(length(min = 1, max = 500))]
+    pub theme: String,
+
+    /// Number of entries to generate (1-20)
+    #[validate(range(min = 1, max = 20))]
+    pub count: u32,
+
+    /// Optional additional context to guide generation
+    #[validate(length(max = 2000))]
+    pub context: Option<String>,
+}
+
+/// Response from AI-powered lorebook entry generation
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GenerateLorebookEntriesResponse {
+    pub success: bool,
+    pub entries_generated: usize,
+    /// Preview of generated entries (titles and IDs)
+    pub entries: Vec<GeneratedEntryPreview>,
+    pub message: String,
+}
+
+/// Preview information for a generated lorebook entry
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GeneratedEntryPreview {
+    pub id: Uuid,
+    pub entry_title: String,
+    pub keys_text: Option<String>,
+}
+
+/// Response from AI-powered lorebook analysis
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AnalyzeLorebookResponse {
+    pub success: bool,
+    pub entries_analyzed: usize,
+    pub analysis: LorebookAnalysis,
+}
+
+/// Structured analysis of a lorebook
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LorebookAnalysis {
+    /// Missing information or themes that would strengthen the lorebook
+    pub gaps: Vec<String>,
+
+    /// Contradictions or inconsistencies found between entries
+    pub consistency_issues: Vec<String>,
+
+    /// Specific suggestions for enhancing existing entries
+    pub improvement_suggestions: Vec<String>,
+
+    /// New entry themes that would add value to the lorebook
+    pub recommended_themes: Vec<String>,
+}
+
+// --- Chat Message Extraction DTOs ---
+
+/// Payload for extracting lorebook entries from chat messages
+#[derive(Debug, Serialize, Deserialize, Validate, Clone)]
+pub struct ExtractLorebookEntriesFromChatPayload {
+    /// Chat session ID to extract messages from
+    pub chat_session_id: Uuid,
+
+    /// Optional starting message index (inclusive)
+    pub start_message_index: Option<usize>,
+
+    /// Optional ending message index (inclusive)
+    pub end_message_index: Option<usize>,
+
+    /// Optional AI model to use for extraction
+    #[validate(length(max = 100))]
+    pub extraction_model: Option<String>,
+}
+
+/// Response from extracting lorebook entries from chat messages
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExtractLorebookEntriesFromChatResponse {
+    pub success: bool,
+    pub entries_extracted: usize,
+    /// List of extracted entries with their details
+    pub entries: Vec<LorebookEntryResponse>,
+    pub message: String,
 }

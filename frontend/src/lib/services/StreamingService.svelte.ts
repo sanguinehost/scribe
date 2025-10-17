@@ -24,6 +24,7 @@ export interface StreamingMessage {
 	created_at: string;
 	isAnimating?: boolean; // Currently playing typewriter animation
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
+	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages
 	error?: string;
 	retryable?: boolean;
 	prompt_tokens?: number;
@@ -99,21 +100,12 @@ class StreamingService {
 		}
 	>();
 
-	// Local animation state (ChatGPT-style)
+	// Animation state
 	private animationIntervals = new Map<string, ReturnType<typeof setTimeout>>();
-	private animationSpeed = 15; // ms between character reveals (2x faster than before)
-
-	// Timestamp-based animation tracking
 	private animationStartTimes = new Map<string, number>();
 	private animationRequestIds = new Map<string, number>();
 	private animationFallbackTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
-
-	// LEGACY: Keep old state for gradual migration
-	private typingQueues = new Map<string, string[]>();
-	private typingIntervals = new Map<string, ReturnType<typeof setTimeout>>();
-	private typingSpeed = 50; // ms between characters
-	private chunkBuffers = new Map<string, { [index: number]: string }>();
-	private expectedChunkIndex = new Map<string, number>();
+	private readonly DEFAULT_ANIMATION_SPEED = 15; // ms between character reveals
 
 	// Connection closure tracking - wait for critical events after DONE
 	private connectionCloseState = {
@@ -153,10 +145,7 @@ class StreamingService {
 				`👁️ Tab visibility changed: ${wasVisible ? 'visible' : 'hidden'} -> ${this.isTabVisible ? 'visible' : 'hidden'}`
 			);
 
-			if (!wasVisible && this.isTabVisible) {
-				// Tab became visible - process any queued connections
-				this.handleTabBecameVisible();
-			}
+			// Tab visibility changed - no special handling needed anymore
 		};
 
 		// Listen for focus/blur events as fallback
@@ -164,7 +153,6 @@ class StreamingService {
 			if (!this.isTabVisible) {
 				this.isTabVisible = true;
 				console.log('👁️ Tab gained focus (fallback visibility detection)');
-				this.handleTabBecameVisible();
 			}
 		};
 
@@ -179,144 +167,6 @@ class StreamingService {
 
 		this.visibilityListenersAdded = true;
 		console.log('👁️ Page visibility listeners setup complete');
-	}
-
-	/**
-	 * Handle when tab becomes visible - check for any recovery needs
-	 */
-	private async handleTabBecameVisible(): Promise<void> {
-		console.log('👁️ Tab became visible, performing visibility recovery checks');
-
-		// Check for messages with completed content that need to be shown
-		this.processCompletedMessages();
-
-		// Reconcile animation positions for any ongoing animations
-		this.reconcileAnimationPositions();
-
-		// Check for stalled connections that need recovery
-		if (this.connectionStatus === 'connecting' && this.abortController) {
-			console.log('👁️ Detected potentially stalled connection, checking if recovery needed');
-			// Give it a moment to see if it's actually working
-			setTimeout(async () => {
-				if (this.connectionStatus === 'connecting') {
-					console.log('🔄 Connection appears stalled, attempting recovery');
-
-					// Store current connection params before disconnect
-					const _currentChatId = this.currentChatId;
-
-					// Disconnect the stalled connection and reset state
-					console.log('🔄 Recovering from stalled connection');
-					this.disconnect();
-					this.connectionStatus = 'idle';
-				}
-			}, 2000);
-		}
-	}
-
-	/**
-	 * Process any messages that completed while tab was hidden
-	 */
-	private processCompletedMessages(): void {
-		for (const [messageId, buffer] of this.messageBuffers) {
-			if (buffer.isComplete) {
-				const message = this.messages.find((m) => m.id === messageId);
-				// If message exists but doesn't have full content shown yet
-				if (message && message.displayedContent !== buffer.content) {
-					console.log(
-						`👁️ Found completed message that needs content update: ${messageId.slice(-8)}`
-					);
-					this.showCompleteContent(messageId);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Reconcile animation positions when tab becomes visible
-	 * This ensures animations that were throttled in background show correct progress
-	 */
-	private reconcileAnimationPositions(): void {
-		const currentTime = performance.now();
-
-		for (const [messageId, startTime] of this.animationStartTimes) {
-			const buffer = this.messageBuffers.get(messageId);
-			const message = this.messages.find((m) => m.id === messageId);
-
-			if (!buffer || !message || !message.isAnimating) continue;
-
-			const elapsed = currentTime - startTime;
-			const totalDuration = buffer.content.length * this.animationSpeed;
-			const progress = Math.min(elapsed / totalDuration, 1);
-			const expectedCharIndex = Math.floor(progress * buffer.content.length);
-			const expectedContent = buffer.content.slice(0, expectedCharIndex + 1);
-
-			// Check if displayed content is behind where it should be
-			if (message.displayedContent.length < expectedContent.length) {
-				console.log(
-					`👁️ Reconciling animation position for ${messageId.slice(-8)}: ${message.displayedContent.length} -> ${expectedContent.length} chars`
-				);
-
-				// Update to correct position
-				this.messages = this.messages.map((msg) => {
-					if (msg.id === messageId) {
-						return { ...msg, displayedContent: expectedContent };
-					}
-					return msg;
-				});
-
-				// Restart requestAnimationFrame if available
-				if (typeof requestAnimationFrame !== 'undefined') {
-					const existingRequestId = this.animationRequestIds.get(messageId);
-					if (!existingRequestId) {
-						const updateAnimation = (currentTime: number) => {
-							const elapsed = currentTime - startTime;
-							const progress = Math.min(elapsed / totalDuration, 1);
-							const charIndex = Math.floor(progress * buffer.content.length);
-							const displayedContent = buffer.content.slice(0, charIndex + 1);
-
-							this.messages = this.messages.map((msg) => {
-								if (msg.id === messageId) {
-									return { ...msg, displayedContent };
-								}
-								return msg;
-							});
-
-							if (progress >= 1) {
-								// Animation complete
-								this.messages = this.messages.map((msg) => {
-									if (msg.id === messageId) {
-										return {
-											...msg,
-											displayedContent: buffer.content,
-											isAnimating: false
-										};
-									}
-									return msg;
-								});
-
-								// Clean up
-								this.animationStartTimes.delete(messageId);
-								const requestId = this.animationRequestIds.get(messageId);
-								if (requestId) {
-									cancelAnimationFrame(requestId);
-									this.animationRequestIds.delete(messageId);
-								}
-								return;
-							}
-
-							// Continue animation
-							if (typeof requestAnimationFrame !== 'undefined') {
-								const requestId = requestAnimationFrame((time) => updateAnimation(time));
-								this.animationRequestIds.set(messageId, requestId);
-							}
-						};
-
-						const requestId = requestAnimationFrame((time) => updateAnimation(time));
-						this.animationRequestIds.set(messageId, requestId);
-					}
-				}
-			}
-		}
 	}
 
 	/**
@@ -375,48 +225,33 @@ class StreamingService {
 		if (content) {
 			buffer.content += content;
 			buffer.expectedIndex = nextIndex;
-			// Buffer updated with contiguous content
+
+			// Update message progressively so TypewriterMessage can see content
+			this.updateMessageContentProgressive(messageId);
 		}
 	}
 
 	/**
-	 * NEW ARCHITECTURE: Try to start animation if all conditions are met
+	 * Update message with complete content (no animation in service)
 	 */
-	private tryStartAnimation(messageId: string): void {
-		const buffer = this.messageBuffers.get(messageId);
-		if (!buffer || !buffer.isComplete) return;
-
-		// Check if message is already animating
-		const message = this.messages.find((m) => m.id === messageId);
-		if (message?.isAnimating) return;
-
-		console.log(`🎯 Conditions met for ${messageId.slice(-8)}, starting animation`);
-
-		// Always start animation regardless of tab visibility
-		// Animation will use timestamp-based approach to handle background throttling
-		this.startLocalAnimation(messageId);
-	}
-
-	/**
-	 * Show complete content immediately without animation (for background tabs)
-	 */
-	private showCompleteContent(messageId: string): void {
+	private updateMessageContent(messageId: string): void {
 		const buffer = this.messageBuffers.get(messageId);
 		if (!buffer || !buffer.isComplete) return;
 
 		console.log(
-			`📺 Showing complete content for ${messageId.slice(-8)}: ${buffer.content.length} chars`
+			`✅ Updating message ${messageId.slice(-8)} with complete content: ${buffer.content.length} chars`
 		);
 
-		// Update message with complete content and metadata immediately
+		// Update message with complete content - TypewriterMessage will handle animation
 		this.messages = this.messages.map((msg) => {
 			if (msg.id === messageId) {
 				return {
 					...msg,
 					content: buffer.content,
-					displayedContent: buffer.content, // Show full content immediately
-					isAnimating: false, // No animation
-					isRegenerating: false, // Clear regeneration flag
+					displayedContent: buffer.content, // Set both to same value
+					isAnimating: false, // Service doesn't animate
+					isRegenerating: false,
+					shouldAnimate: false, // Stream is complete, no need to animate
 					prompt_tokens: buffer.prompt_tokens,
 					completion_tokens: buffer.completion_tokens,
 					model_name: buffer.model_name,
@@ -425,167 +260,27 @@ class StreamingService {
 			}
 			return msg;
 		});
-
-		// Clean up any ongoing animation tracking
-		this.animationStartTimes.delete(messageId);
-		const requestId = this.animationRequestIds.get(messageId);
-		if (requestId) {
-			cancelAnimationFrame(requestId);
-			this.animationRequestIds.delete(messageId);
-		}
-		const intervalId = this.animationIntervals.get(messageId);
-		if (intervalId) {
-			clearInterval(intervalId);
-			this.animationIntervals.delete(messageId);
-		}
-		const fallbackTimeout = this.animationFallbackTimeouts.get(messageId);
-		if (fallbackTimeout) {
-			clearTimeout(fallbackTimeout);
-			this.animationFallbackTimeouts.delete(messageId);
-		}
-
-		console.log(`✅ Complete content shown immediately for ${messageId.slice(-8)}`);
 	}
 
 	/**
-	 * NEW ARCHITECTURE: Start local animation after buffering complete
-	 * Uses timestamp-based approach to handle browser throttling in background tabs
+	 * Update message content progressively as chunks arrive (before streaming is complete)
 	 */
-	private startLocalAnimation(messageId: string): void {
+	private updateMessageContentProgressive(messageId: string): void {
 		const buffer = this.messageBuffers.get(messageId);
-		if (!buffer || !buffer.isComplete) return;
+		if (!buffer) return;
 
-		console.log(
-			`🎬 Starting timestamp-based animation for ${messageId.slice(-8)}: ${buffer.content.length} chars`
-		);
-
-		// Update message with complete content and metadata
+		// Update message with current buffered content (even if not complete)
 		this.messages = this.messages.map((msg) => {
 			if (msg.id === messageId) {
 				return {
 					...msg,
 					content: buffer.content,
-					displayedContent: '', // Start animation from empty
-					isAnimating: true,
-					isRegenerating: false, // Clear regeneration flag when animation starts
-					prompt_tokens: buffer.prompt_tokens,
-					completion_tokens: buffer.completion_tokens,
-					model_name: buffer.model_name,
-					backend_id: buffer.backend_id
+					displayedContent: buffer.content, // Update displayed content for UI
+					isAnimating: false // TypewriterMessage handles animation
 				};
 			}
 			return msg;
 		});
-
-		// Record animation start time
-		const startTime = performance.now();
-		this.animationStartTimes.set(messageId, startTime);
-
-		const fullContent = buffer.content;
-		const totalDuration = fullContent.length * this.animationSpeed; // Total animation duration
-
-		// Add fallback timeout for severely delayed animations (e.g., in background tabs)
-		const maxWaitTime = Math.min(totalDuration * 2, 3000); // Max 3 seconds or 2x expected duration
-		const fallbackTimeout = setTimeout(() => {
-			// If animation is still running after max wait time, show complete content immediately
-			if (this.animationStartTimes.has(messageId)) {
-				console.log(
-					`⏰ Animation fallback timeout triggered for ${messageId.slice(-8)}, showing complete content`
-				);
-				this.showCompleteContent(messageId);
-			}
-		}, maxWaitTime);
-		this.animationFallbackTimeouts.set(messageId, fallbackTimeout);
-
-		const updateAnimation = (currentTime: number) => {
-			const elapsed = currentTime - startTime;
-			const progress = Math.min(elapsed / totalDuration, 1); // 0 to 1
-			const charIndex = Math.floor(progress * fullContent.length);
-
-			// Update displayed content based on elapsed time
-			const displayedContent = fullContent.slice(0, charIndex + 1);
-
-			this.messages = this.messages.map((msg) => {
-				if (msg.id === messageId) {
-					return { ...msg, displayedContent };
-				}
-				return msg;
-			});
-
-			// Check if animation is complete
-			if (progress >= 1) {
-				// Animation complete
-				this.messages = this.messages.map((msg) => {
-					if (msg.id === messageId) {
-						return {
-							...msg,
-							displayedContent: fullContent, // Ensure full content is shown
-							isAnimating: false
-						};
-					}
-					return msg;
-				});
-
-				// Clean up tracking
-				this.animationStartTimes.delete(messageId);
-				const requestId = this.animationRequestIds.get(messageId);
-				if (requestId) {
-					cancelAnimationFrame(requestId);
-					this.animationRequestIds.delete(messageId);
-				}
-				const intervalId = this.animationIntervals.get(messageId);
-				if (intervalId) {
-					clearInterval(intervalId);
-					this.animationIntervals.delete(messageId);
-				}
-				const fallbackTimeout = this.animationFallbackTimeouts.get(messageId);
-				if (fallbackTimeout) {
-					clearTimeout(fallbackTimeout);
-					this.animationFallbackTimeouts.delete(messageId);
-				}
-
-				console.log(`✅ Timestamp-based animation complete for ${messageId.slice(-8)}`);
-				return;
-			}
-
-			// Continue animation with appropriate method
-			this.scheduleNextAnimationFrame(messageId, updateAnimation);
-		};
-
-		// Use requestAnimationFrame when available, setInterval as fallback
-		if (typeof requestAnimationFrame !== 'undefined') {
-			// Use requestAnimationFrame for smooth updates (works in background tabs too)
-			const requestId = requestAnimationFrame((time) => updateAnimation(time));
-			this.animationRequestIds.set(messageId, requestId);
-		} else {
-			// Use setInterval as fallback when requestAnimationFrame unavailable
-			const intervalId = setInterval(() => {
-				updateAnimation(performance.now());
-			}, this.animationSpeed);
-			this.animationIntervals.set(messageId, intervalId);
-		}
-	}
-
-	/**
-	 * Schedule the next animation frame using the appropriate method
-	 */
-	private scheduleNextAnimationFrame(
-		messageId: string,
-		updateFunction: (time: number) => void
-	): void {
-		if (typeof requestAnimationFrame !== 'undefined') {
-			// Use requestAnimationFrame for smooth updates
-			const requestId = requestAnimationFrame((time) => updateFunction(time));
-			this.animationRequestIds.set(messageId, requestId);
-		} else {
-			// Use setInterval as fallback (only if not already using setInterval for this message)
-			if (!this.animationIntervals.has(messageId)) {
-				const intervalId = setInterval(() => {
-					updateFunction(performance.now());
-				}, this.animationSpeed);
-				this.animationIntervals.set(messageId, intervalId);
-			}
-		}
 	}
 
 	/**
@@ -671,47 +366,6 @@ class StreamingService {
 		}
 
 		return (crc ^ 0xffffffff) >>> 0; // Convert to unsigned 32-bit
-	}
-
-	/**
-	 * Process chunk buffer to ensure ordered delivery
-	 */
-	private processChunkBuffer(messageId: string): void {
-		const buffer = this.chunkBuffers.get(messageId);
-		let nextIndex = this.expectedChunkIndex.get(messageId) ?? 0;
-		const initialNextIndex = nextIndex;
-
-		// Only log if there's an issue (out of order chunks)
-		if (buffer && buffer[nextIndex] === undefined && Object.keys(buffer).length > 0) {
-			console.log(
-				`⏳ Waiting for chunk ${nextIndex}, buffered: [${Object.keys(buffer)
-					.sort((a, b) => parseInt(a) - parseInt(b))
-					.join(', ')}]`
-			);
-		}
-
-		// Process all contiguous chunks from the buffer
-		while (buffer && buffer[nextIndex] !== undefined) {
-			const content = buffer[nextIndex];
-			this.addToTypingQueue(messageId, content);
-			delete buffer[nextIndex];
-			nextIndex++;
-		}
-
-		// Only log remaining buffered chunks if we have a gap
-		const remainingChunks = buffer
-			? Object.keys(buffer)
-					.map((k) => parseInt(k))
-					.sort((a, b) => a - b)
-			: [];
-		if (remainingChunks.length > 0 && nextIndex === initialNextIndex) {
-			console.log(
-				`⏳ Gap detected: waiting for chunk ${nextIndex}, have chunks [${remainingChunks.join(', ')}]`
-			);
-		}
-
-		// Update the index for the next expected chunk
-		this.expectedChunkIndex.set(messageId, nextIndex);
 	}
 
 	/**
@@ -843,7 +497,8 @@ class StreamingService {
 				displayedContent: '', // Will animate from empty to full content
 				sender: 'assistant',
 				created_at: new Date().toISOString(),
-				isAnimating: false // Will start animating after buffering
+				isAnimating: false, // Will start animating after buffering
+				shouldAnimate: true // New streaming message should animate
 			};
 			this.messages = [...this.messages, assistantMessage];
 			assistantMessageId = assistantMessage.id;
@@ -1053,6 +708,7 @@ class StreamingService {
 		try {
 			switch (_event.event) {
 				case 'content':
+					console.log('📝 Content event received, data length:', _event.data?.length);
 					if (_event.data) {
 						try {
 							// Parse multiple JSON chunks that may be concatenated in a single SSE event
@@ -1097,6 +753,8 @@ class StreamingService {
 							const messageBuffer = this.messageBuffers.get(messageId);
 							if (messageBuffer) {
 								messageBuffer.content += _event.data;
+								// Update message progressively so TypewriterMessage can see content
+								this.updateMessageContentProgressive(messageId);
 							}
 						}
 					}
@@ -1123,8 +781,8 @@ class StreamingService {
 								`✅ DONE received for ${messageId.slice(-8)}: ${messageBuffer.content.length} chars buffered`
 							);
 
-							// Check if we can start animation (need content + metadata)
-							this.tryStartAnimation(messageId);
+							// Update message with complete content
+							this.updateMessageContent(messageId);
 						}
 
 						// Mark DONE as received and set up fallback timeout
@@ -1173,12 +831,42 @@ class StreamingService {
 					break;
 
 				default:
-					// Handle default message event or unknown events
-					console.log('📤 Processing default/unknown event:', _event.event);
+					// Handle default SSE message events (event type is empty string)
+					// Some servers send content as default events instead of named events
 					if (_event.data && _event.data !== '[DONE]') {
-						// Use the tracked message ID for typing queue (may have been updated by message_saved)
-						const messageIdForTyping = this.currentAssistantMessageId || assistantMessageId;
-						this.addToTypingQueue(messageIdForTyping, _event.data);
+						const messageId = this.currentAssistantMessageId || assistantMessageId;
+						const messageBuffer = this.messageBuffers.get(messageId);
+
+						if (messageBuffer) {
+							try {
+								// Try to parse as structured chunks first
+								const chunks = this.parseMultipleJsonChunks(_event.data);
+								for (const chunk of chunks) {
+									const { index, content, checksum } = chunk;
+
+									// Verify checksum
+									const calculatedChecksum = this.calculateChecksum(content);
+									if (calculatedChecksum !== checksum) {
+										console.error(
+											`🔍 Checksum mismatch for chunk ${index}. Expected: ${checksum}, Got: ${calculatedChecksum}`
+										);
+									}
+
+									// Store chunk in buffer
+									messageBuffer.chunks[index] = content;
+								}
+
+								// Update buffer content if we have contiguous chunks
+								this.updateBufferContent(messageId);
+							} catch (_e) {
+								// If parsing as JSON fails, treat as raw text content
+								// Append directly to buffer (for backends that send plain text)
+								messageBuffer.content += _event.data;
+								this.updateMessageContentProgressive(messageId);
+							}
+						} else {
+							console.warn(`No buffer found for default event, messageId: ${messageId}`);
+						}
 					}
 					break;
 			}
@@ -1186,56 +874,6 @@ class StreamingService {
 			console.error('Error parsing stream message:', _error);
 			this.handleStreamError(_error as Error, assistantMessageId);
 		}
-	}
-
-	/**
-	 * Add content to typing queue for smooth animation
-	 */
-	private addToTypingQueue(messageId: string, content: string): void {
-		if (!this.typingQueues.has(messageId)) {
-			this.typingQueues.set(messageId, []);
-		}
-
-		// Reduced logging - only log if queue is getting large
-		const queueSize = this.typingQueues.get(messageId)!.length;
-		if (queueSize > 10) {
-			console.log(`⌨️ Large typing queue for ${messageId}: ${queueSize} items`);
-		}
-
-		this.typingQueues.get(messageId)!.push(content);
-		this.isTyping = true;
-
-		// Start typing animation if not already running
-		if (!this.typingIntervals.has(messageId)) {
-			this.startTypingAnimation(messageId);
-		}
-	}
-
-	/**
-	 * Start smooth typing animation
-	 */
-	private startTypingAnimation(messageId: string): void {
-		const interval = setInterval(() => {
-			const queue = this.typingQueues.get(messageId);
-			if (!queue || queue.length === 0) {
-				clearInterval(interval);
-				this.typingIntervals.delete(messageId);
-				this.isTyping = this.typingIntervals.size > 0;
-				return;
-			}
-
-			const nextChunk = queue.shift()!;
-
-			// Update message content
-			this.messages = this.messages.map((msg) => {
-				if (msg.id === messageId) {
-					return { ...msg, content: msg.content + nextChunk };
-				}
-				return msg;
-			});
-		}, this.typingSpeed);
-
-		this.typingIntervals.set(messageId, interval);
 	}
 
 	/**
@@ -1268,7 +906,7 @@ class StreamingService {
 				}
 
 				// Try to start animation if conditions are now met
-				this.tryStartAnimation(actualMessageId);
+				this.updateMessageContent(actualMessageId);
 			}
 
 			// Update tracked ID
@@ -1283,13 +921,14 @@ class StreamingService {
 			for (const msg of this.messages) {
 				// For variants, we need to match by either frontend ID or backend ID
 				if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
-					console.log(`💾 Updating message ID: ${assistantMessageId} → ${actualMessageId}`);
+					console.log(`💾 Updating message backend_id: ${assistantMessageId} → ${actualMessageId}`);
 					console.log(
 						`💾 Updating variant metadata: variant_count=${variantCount}, current_variant_index=${currentVariantIndex}`
 					);
 
 					// Update the existing object in place to maintain identity and reactivity
-					msg.id = actualMessageId;
+					// IMPORTANT: Keep msg.id stable (frontend ID) to prevent component remount
+					// Only update backend_id to track the actual backend ID
 					msg.backend_id = actualMessageId;
 					msg.variant_count = variantCount;
 					msg.current_variant_index = currentVariantIndex;
@@ -1310,7 +949,7 @@ class StreamingService {
 			}
 
 			// Verify the update took effect
-			const updatedMessage = this.messages.find((msg) => msg.id === actualMessageId);
+			const updatedMessage = this.messages.find((msg) => msg.backend_id === actualMessageId);
 			console.log(`💾 Verification - message in array:`, {
 				found: !!updatedMessage,
 				id: updatedMessage?.id,
@@ -1329,13 +968,6 @@ class StreamingService {
 					displayString:
 						msgVariantCount > 0 ? `${msgCurrentIndex + 1}/${msgVariantCount}` : 'no variants'
 				});
-			}
-
-			// LEGACY: Also handle old buffer systems for compatibility
-			const oldBuffer = this.chunkBuffers.get(assistantMessageId);
-			if (oldBuffer) {
-				this.chunkBuffers.set(actualMessageId, oldBuffer);
-				this.chunkBuffers.delete(assistantMessageId);
 			}
 		} catch (_error) {
 			console.error('Failed to parse message saved data:', _error);
@@ -1364,7 +996,7 @@ class StreamingService {
 				console.log(`📊 Stored tokens in buffer for ${assistantMessageId}`);
 
 				// Try to start animation if conditions are now met
-				this.tryStartAnimation(assistantMessageId);
+				this.updateMessageContent(assistantMessageId);
 			} else {
 				console.warn(
 					`📊 No buffer found for message ${assistantMessageId}, updating message directly`
@@ -1386,97 +1018,6 @@ class StreamingService {
 		} catch (_error) {
 			console.error('Failed to parse token usage data:', _error);
 		}
-	}
-
-	/**
-	 * Finalize message when streaming is complete
-	 */
-	private finalizeMessage(assistantMessageId: string): void {
-		// Check if message exists
-		const _messageExists = this.messages.find((m) => m.id === assistantMessageId);
-
-		// FIRST: Process any remaining chunks in the chunk buffer
-		// This handles the case where chunks are buffered but stream closed before processing
-		const chunkBuffer = this.chunkBuffers.get(assistantMessageId);
-		if (chunkBuffer && Object.keys(chunkBuffer).length > 0) {
-			console.log(
-				`⚠️ Found ${Object.keys(chunkBuffer).length} unprocessed chunks in buffer:`,
-				Object.keys(chunkBuffer).sort((a, b) => parseInt(a) - parseInt(b))
-			);
-
-			// Process all remaining chunks in order, regardless of gaps
-			const sortedChunkIndices = Object.keys(chunkBuffer)
-				.map((k) => parseInt(k))
-				.sort((a, b) => a - b);
-
-			for (const index of sortedChunkIndices) {
-				const content = chunkBuffer[index];
-				console.log(
-					`📦 Force-processing buffered chunk ${index}, content length: ${content.length}`
-				);
-				this.addToTypingQueue(assistantMessageId, content);
-			}
-		}
-
-		// SECOND: Check if there are remaining content chunks in typing queue
-		const remainingQueue = this.typingQueues.get(assistantMessageId);
-		if (remainingQueue && remainingQueue.length > 0) {
-			console.log(
-				`⚠️ Finalizing with ${remainingQueue.length} chunks still in typing queue:`,
-				remainingQueue
-			);
-
-			// Process remaining chunks immediately to avoid truncation
-			const remainingContent = remainingQueue.join('');
-			if (remainingContent) {
-				console.log(`📝 Adding remaining content immediately: "${remainingContent.slice(-50)}"`);
-				this.messages = this.messages.map((msg) => {
-					if (msg.id === assistantMessageId) {
-						return { ...msg, content: msg.content + remainingContent };
-					}
-					return msg;
-				});
-			}
-		}
-
-		// Clear any remaining typing queues and chunk buffers
-		this.clearTyping(assistantMessageId);
-		this.clearChunkBuffer(assistantMessageId);
-
-		// Mark message as no longer loading
-		let _messageUpdated = false;
-		this.messages = this.messages.map((msg) => {
-			if (msg.id === assistantMessageId) {
-				_messageUpdated = true;
-				const finalMsg = { ...msg, loading: false };
-				console.log(
-					`✅ Final message ${assistantMessageId}: ${finalMsg.content.length} chars, tokens: ${finalMsg.prompt_tokens || '?'}/${finalMsg.completion_tokens || '?'}`
-				);
-				return finalMsg;
-			}
-			return msg;
-		});
-	}
-
-	/**
-	 * Clear typing animation for a specific message
-	 */
-	private clearTyping(messageId: string): void {
-		const interval = this.typingIntervals.get(messageId);
-		if (interval) {
-			clearInterval(interval);
-			this.typingIntervals.delete(messageId);
-		}
-		this.typingQueues.delete(messageId);
-		this.isTyping = this.typingIntervals.size > 0;
-	}
-
-	/**
-	 * Clear chunk buffer for a specific message
-	 */
-	private clearChunkBuffer(messageId: string): void {
-		this.chunkBuffers.delete(messageId);
-		this.expectedChunkIndex.delete(messageId);
 	}
 
 	/**
@@ -1687,8 +1228,19 @@ class StreamingService {
 
 		// Clean up associated buffers and state
 		this.messageBuffers.delete(messageId);
-		this.clearTyping(messageId);
-		this.clearChunkBuffer(messageId);
+
+		// Clear animation state
+		const requestId = this.animationRequestIds.get(messageId);
+		if (requestId) {
+			cancelAnimationFrame(requestId);
+			this.animationRequestIds.delete(messageId);
+		}
+		const fallbackTimeout = this.animationFallbackTimeouts.get(messageId);
+		if (fallbackTimeout) {
+			clearTimeout(fallbackTimeout);
+			this.animationFallbackTimeouts.delete(messageId);
+		}
+		this.animationStartTimes.delete(messageId);
 
 		// Clear interval if it exists
 		const intervalId = this.animationIntervals.get(messageId);
@@ -1772,11 +1324,6 @@ class StreamingService {
 			return msg;
 		});
 
-		// Clear all typing animations (legacy)
-		for (const [messageId] of this.typingIntervals) {
-			this.clearTyping(messageId);
-		}
-
 		// Clean up connection close state
 		if (this.connectionCloseState.closeTimeoutId) {
 			clearTimeout(this.connectionCloseState.closeTimeoutId);
@@ -1806,12 +1353,7 @@ class StreamingService {
 			this.abortController = null;
 		}
 
-		// Clear all typing animations
-		for (const [messageId] of this.typingIntervals) {
-			this.clearTyping(messageId);
-		}
-
-		// Clear all local animations
+		// Clear all animations
 		for (const [_messageId, intervalId] of this.animationIntervals) {
 			clearInterval(intervalId);
 		}
@@ -1845,25 +1387,62 @@ class StreamingService {
 	}
 
 	/**
-	 * Clear all messages
+	 * Stop the current streaming message
+	 * Useful for user-initiated cancellation
 	 */
-	public clearMessages(): void {
-		// Clear typing animations and chunk buffers
-		for (const [messageId] of this.typingIntervals) {
-			this.clearTyping(messageId);
-		}
-		for (const [messageId] of this.chunkBuffers.keys()) {
-			this.clearChunkBuffer(messageId);
+	public stopCurrentStream(): void {
+		if (!this.currentAssistantMessageId) {
+			console.warn('No current stream to stop');
+			return;
 		}
 
-		this.messages = [];
+		console.log('🛑 Stopping current stream:', this.currentAssistantMessageId);
+
+		// Close the SSE connection
+		if (this.abortController) {
+			this.abortController.abort();
+			this.abortController = null;
+		}
+
+		// Mark the current message buffer as complete
+		const buffer = this.messageBuffers.get(this.currentAssistantMessageId);
+		if (buffer) {
+			buffer.isComplete = true;
+
+			// Update message with current buffered content and mark as not animating
+			this.messages = this.messages.map((msg) => {
+				if (msg.id === this.currentAssistantMessageId) {
+					return {
+						...msg,
+						content: buffer.content,
+						displayedContent: buffer.content,
+						isAnimating: false,
+						shouldAnimate: false, // No animation for stopped streams
+						status: 'completed'
+					};
+				}
+				return msg;
+			});
+		}
+
+		// Reset connection status
+		if (this.connectionStatus !== 'idle' && this.connectionStatus !== 'closed') {
+			this.connectionStatus = 'closed';
+		}
 	}
 
 	/**
-	 * Update typing speed
+	 * Clear all messages
 	 */
-	public setTypingSpeed(speed: number): void {
-		this.typingSpeed = Math.max(10, Math.min(200, speed)); // Clamp between 10-200ms
+	public clearMessages(): void {
+		// Clear all message buffers and animation state
+		this.messageBuffers.clear();
+		this.animationIntervals.clear();
+		this.animationRequestIds.clear();
+		this.animationStartTimes.clear();
+		this.animationFallbackTimeouts.clear();
+
+		this.messages = [];
 	}
 
 	/**

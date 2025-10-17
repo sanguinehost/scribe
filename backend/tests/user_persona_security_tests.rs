@@ -7,7 +7,7 @@
 
 use reqwest;
 use scribe_backend::models::user_personas::UserPersonaDataForClient;
-use scribe_backend::test_helpers::{self, TestDataGuard, db::create_test_user, login_user_via_api};
+use scribe_backend::test_helpers::{self, db::create_test_user, login_user_via_api, TestDataGuard};
 use serde_json::json;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -33,7 +33,7 @@ async fn create_authenticated_user(
 #[tokio::test]
 async fn test_a01_access_control_user_cannot_access_other_personas() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let user1_email = "user1@test.com";
@@ -100,7 +100,7 @@ async fn test_a01_access_control_user_cannot_access_other_personas() {
 #[tokio::test]
 async fn test_a01_access_control_unauthenticated_requests_blocked() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let client = reqwest::Client::new();
     let fake_persona_id = Uuid::new_v4();
@@ -148,7 +148,7 @@ async fn test_a01_access_control_unauthenticated_requests_blocked() {
 #[tokio::test]
 async fn test_a03_injection_sql_injection_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_email = "sqlinjection@test.com";
     let user_password = "Password123!";
@@ -216,7 +216,7 @@ async fn test_a03_injection_sql_injection_prevention() {
 #[tokio::test]
 async fn test_a04_insecure_design_persona_data_validation() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_email = "validation@test.com";
     let user_password = "Password123!";
@@ -281,7 +281,7 @@ async fn test_a04_insecure_design_persona_data_validation() {
 #[tokio::test]
 async fn test_a07_authentication_session_security() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_email = "session@test.com";
     let user_password = "Password123!";
@@ -322,7 +322,7 @@ async fn test_a07_authentication_session_security() {
 async fn test_rate_limiting_persona_creation() {
     // Use permissive rate limiting version for this test
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_email = "ratelimit@test.com";
     let user_password = "Password123!";

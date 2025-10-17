@@ -7,13 +7,13 @@ use crate::schema::user_assets::dsl::user_assets;
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::{
-    Router,
     body::Body,
     debug_handler,
-    extract::{Path, State, multipart::Multipart},
+    extract::{multipart::Multipart, Path, State},
     http::StatusCode,
     response::{Json, Response},
     routing::{delete, get, post},
+    Router,
 };
 use axum_login::AuthSession;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};

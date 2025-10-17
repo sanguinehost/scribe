@@ -15,7 +15,7 @@ mod payment_webhook_idempotency_tests {
     use scribe_backend::{
         models::payment::WebhookEvent,
         schema::webhook_events,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;
@@ -54,7 +54,7 @@ mod payment_webhook_idempotency_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create a subscription.created webhook payload
         let event_id = "evt_duplicate_test_001";
@@ -161,7 +161,7 @@ mod payment_webhook_idempotency_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = "evt_concurrent_test_001";
         let payload = json!({
@@ -263,7 +263,7 @@ mod payment_webhook_idempotency_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = "evt_replay_test_001";
         let payload = json!({
@@ -350,7 +350,7 @@ mod payment_webhook_idempotency_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = "evt_tamper_test_001";
 
@@ -443,7 +443,7 @@ mod payment_webhook_idempotency_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let shared_event_id = "evt_shared_id_001";
 

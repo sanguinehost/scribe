@@ -88,6 +88,7 @@ export async function load({ params: { chatId }, parent }) {
 						: rawMsg.created_at.toISOString(),
 				user_id: '', // ScribeChatMessage doesn't need user_id in the same way
 				loading: false, // Messages from API are never loading
+				shouldAnimate: false, // Historical messages should not animate
 				raw_prompt: rawMsg.raw_prompt,
 				prompt_tokens: rawMsg.prompt_tokens,
 				completion_tokens: rawMsg.completion_tokens,

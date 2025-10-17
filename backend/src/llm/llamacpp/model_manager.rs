@@ -2,8 +2,8 @@
 // Model downloading, caching, and lifecycle management
 
 use crate::llm::llamacpp::hardware::{
-    ContextSizeConfig, HardwareCapabilities, ModelSelection, calculate_optimal_context_size,
-    detect_hardware, select_model_variant,
+    calculate_optimal_context_size, detect_hardware, select_model_variant, ContextSizeConfig,
+    HardwareCapabilities, ModelSelection,
 };
 use crate::llm::llamacpp::{LlamaCppConfig, LocalLlmError};
 

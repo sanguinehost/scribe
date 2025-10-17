@@ -1,4 +1,3 @@
-use crate::PgPool; // Added PgPool import
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
@@ -22,17 +21,18 @@ use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
 use crate::schema::{chat_messages, chat_sessions};
+use crate::PgPool; // Added PgPool import
 use axum::{
-    Router,
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{delete, get, post, put},
+    Router,
 };
 use axum_login::AuthSession;
 use secrecy::ExposeSecret; // Added for expose_secret method
 use secrecy::SecretBox; // Ensure SecretBox is imported
-// Removed incorrect ValidatedJson import
+                        // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
 use diesel::{
@@ -40,7 +40,7 @@ use diesel::{
 };
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 // ExposeSecret already imported above
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
@@ -1087,6 +1087,8 @@ pub async fn create_message_handler(
             status: crate::models::chats::MessageStatus::Completed,
             error_message: None,
             variant_of: None,
+            charge_credits: false, // Manual message creation is not charged
+            credits_cost_override: None, // Let save_message calculate from tokens
         },
     )
     .await?;
@@ -1192,6 +1194,12 @@ pub async fn create_message_handler(
         superseded_at: saved_db_message.superseded_at,
         variant_count: saved_db_message.variant_count,
         current_variant_index: saved_db_message.current_variant_index,
+        credits_charged: saved_db_message.credits_charged,
+        credits_cost: saved_db_message.credits_cost,
+        actual_cost: saved_db_message.actual_cost,
+        modified_cost: saved_db_message.modified_cost,
+        credit_cost: saved_db_message.credit_cost,
+        actual_charge: saved_db_message.actual_charge,
     };
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;

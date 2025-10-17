@@ -2,11 +2,12 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
+use bigdecimal::BigDecimal;
 use chrono::Utc;
-use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
+use diesel::RunQueryDsl as _;
 use std::time::Duration;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -28,7 +29,7 @@ use scribe_backend::{
 
 // Helper struct for common test setup
 struct TestContext {
-    test_app: test_helpers::TestApp,
+    test_app: test_helpers::TestAppGuard,
     auth_cookie: String,
     #[allow(dead_code)]
     user: scribe_backend::models::users::User,
@@ -124,7 +125,10 @@ async fn setup_rag_test_context() -> TestContext {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -220,6 +224,7 @@ async fn assert_rag_response(
     let response = test_context
         .test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await

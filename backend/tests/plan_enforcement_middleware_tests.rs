@@ -6,8 +6,8 @@ mod plan_enforcement_middleware_tests {
     use scribe_backend::{
         middleware::plan_enforcement::EnforcementConfig,
         models::users::UserRole,
-        services::{EncryptionService, payment::SubscriptionService},
-        test_helpers::{TestDataGuard, spawn_app},
+        services::{payment::SubscriptionService, EncryptionService},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use uuid::Uuid;
 
@@ -82,7 +82,7 @@ mod plan_enforcement_middleware_tests {
     #[tokio::test]
     async fn test_plan_enforcement_middleware_setup() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "plan_test", "plan@test.com", None)
@@ -109,7 +109,7 @@ mod plan_enforcement_middleware_tests {
     #[tokio::test]
     async fn test_subscription_service_integration() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -137,7 +137,7 @@ mod plan_enforcement_middleware_tests {
     #[tokio::test]
     async fn test_admin_user_role() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let admin_user_id = Uuid::new_v4();
         create_test_user(

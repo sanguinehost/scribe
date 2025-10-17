@@ -15,7 +15,7 @@ mod payment_encryption_tests {
     use reqwest::{Client, StatusCode};
     use scribe_backend::{
         schema::payment_transactions,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;
@@ -93,7 +93,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user with known details
         let user_id = Uuid::new_v4();
@@ -282,7 +282,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();
@@ -435,7 +435,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create two users
         let user1_id = Uuid::new_v4();
@@ -604,7 +604,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Query for any transactions with placeholder nonces (all zeros)
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -654,7 +654,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let test_email = "test+payment@example.com"; // Email with + sign
@@ -825,7 +825,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let test_email = "rotation@example.com";
@@ -934,7 +934,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -1078,7 +1078,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let test_email = "wrongkey@example.com";
@@ -1198,7 +1198,7 @@ mod payment_encryption_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let test_email = "corrupted@example.com";

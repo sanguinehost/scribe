@@ -2,8 +2,9 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
+use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
@@ -27,7 +28,7 @@ use scribe_backend::{
         characters::dsl as characters_dsl, chat_messages::dsl as chat_messages_dsl,
         chat_sessions::dsl as chat_sessions_dsl,
     },
-    test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
+    test_helpers::{self, collect_full_sse_events, ParsedSseEvent},
 };
 
 async fn setup_test_user_and_auth(
@@ -56,6 +57,7 @@ async fn setup_test_user_and_auth(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -155,7 +157,10 @@ async fn create_test_chat_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -676,6 +681,7 @@ async fn setup_real_client_test_user_and_auth(
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -774,7 +780,10 @@ async fn create_real_client_test_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

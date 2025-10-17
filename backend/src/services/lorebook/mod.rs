@@ -1,32 +1,32 @@
 use crate::PgPool;
 use crate::{
-    AppState,
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::{
-        Chat, // Changed from chats::ChatSession
-        Lorebook,
-        LorebookEntry,
-        NewChatSessionLorebook, // Import directly
-        NewLorebookEntry,
         lorebook_dtos::{
             AssociateLorebookToChatPayload, ChatSessionBasicInfo,
             ChatSessionLorebookAssociationResponse, CreateLorebookEntryPayload,
             CreateLorebookPayload, LorebookEntryResponse, LorebookEntrySummaryResponse,
             LorebookResponse, UpdateLorebookEntryPayload, UpdateLorebookPayload,
         },
+        Chat, // Changed from chats::ChatSession
+        Lorebook,
+        LorebookEntry,
+        NewChatSessionLorebook, // Import directly
+        NewLorebookEntry,
     },
     schema::{lorebook_entries, lorebooks},
-    services::{EncryptionService, embeddings::LorebookEntryParams},
+    services::{embeddings::LorebookEntryParams, EncryptionService},
     vector_db::qdrant_client::{
         Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue,
         QdrantClientServiceTrait,
     },
+    AppState,
 };
 use axum_login::AuthSession;
 use chrono::Utc;
 use diesel::result::{DatabaseErrorKind, Error as DieselError}; // Added for specific error handling
-use diesel::{RunQueryDsl, SelectableHelper, prelude::*};
+use diesel::{prelude::*, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
@@ -51,6 +51,7 @@ pub struct LorebookService {
 // Module declarations
 mod character_associations;
 mod chat_associations;
+mod chat_extraction;
 mod entry_crud;
 mod export_import;
 mod helpers;

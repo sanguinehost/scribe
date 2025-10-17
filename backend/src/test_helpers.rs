@@ -16,12 +16,11 @@ use crate::services::embeddings::{
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
 use genai::chat::Usage; // Added ChunkConfig
-// Unused ChunkConfig, ChunkingMetric were previously noted as removed.
+                        // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
-    PgPool, // This is deadpool_diesel::postgres::Pool
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
     // Ensure build_gemini_client is removed if present
@@ -34,9 +33,11 @@ use crate::{
         chats,
         chronicles,
         documents::document_routes,
+        generation_routes, // Added generation_routes
         health::health_check,
         lorebook_routes,           // Added lorebook_routes
         payment as payment_routes, // Added payment_routes
+        template_preferences_routes,
         user_persona_routes,
         user_settings_routes,
     },
@@ -51,31 +52,32 @@ use crate::{
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
     vector_db::qdrant_client::QdrantClientService, // Import constants module alias
+    PgPool,                                        // This is deadpool_diesel::postgres::Pool
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
-use axum::{
-    Router,
-    middleware::{self, Next},
-    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
-    routing::get,                       // <<< ADD THIS IMPORT
-};
 use axum::{
     body::Body,
     extract::Request as AxumRequest,
     http::{Request, StatusCode}, // Removed unused Method, header
 };
-use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
-use diesel::RunQueryDsl;
+use axum::{
+    middleware::{self, Next},
+    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
+    routing::get,                       // <<< ADD THIS IMPORT
+    Router,
+};
+use axum_login::{login_required, AuthManagerLayerBuilder, AuthSession};
 use diesel::prelude::*;
-use diesel_migrations::{EmbeddedMigrations, embed_migrations};
+use diesel::RunQueryDsl;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
-use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd, ToolCall};
-// use http_body_util::BodyExt; // Removed unused import
+use genai::ModelIden; // Import ModelIden directly
+                      // use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -92,11 +94,11 @@ use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+    governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer,
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_sessions::{
-    Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite,
+    cookie::Key as TowerSessionKey, cookie::SameSite, Expiry, SessionManagerLayer,
 }; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
@@ -104,9 +106,9 @@ use uuid::Uuid; // Added for CryptoProvider
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
 #[cfg(feature = "local-llm")]
-use std::sync::Arc as StdArc;
-#[cfg(feature = "local-llm")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "local-llm")]
+use std::sync::Arc as StdArc;
 
 // Type aliases for complex test types
 type EmbeddingResponse = Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>;
@@ -1290,7 +1292,7 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 // --- Tracing Initialization for Tests ---
 use std::sync::Once;
-use tracing_subscriber::{EnvFilter, fmt as tracing_fmt}; // Alias fmt to avoid collision with std::fmt
+use tracing_subscriber::{fmt as tracing_fmt, EnvFilter}; // Alias fmt to avoid collision with std::fmt
 
 static TRACING_INIT: Once = Once::new();
 
@@ -1337,7 +1339,8 @@ pub struct TestApp {
     pub address: String,
     pub router: Router,
     pub db_pool: PgPool,
-    pub config: Arc<Config>, // Add config field
+    pub test_db_name: Option<String>, // Test database name for cleanup
+    pub config: Arc<Config>,          // Add config field
     // Store the actual AI client being used (could be real or mock)
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
     // Optionally store the mock client for tests that need mock-specific methods
@@ -1349,6 +1352,134 @@ pub struct TestApp {
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     // user_persona_service field removed as per plan
     // embedding_call_tracker field removed as per plan
+}
+
+/// TestAppGuard - Automatic cleanup wrapper for TestApp
+///
+/// This guard wraps TestApp and automatically cleans up the test database when it goes out of scope.
+/// It implements Deref<Target = TestApp> so all existing test code works transparently without changes.
+///
+/// # How It Works
+///
+/// - Uses Arc internally to track the last reference
+/// - When dropped, uses tokio::runtime::Handle to run async cleanup
+/// - Cleans up the test database automatically
+/// - No manual .cleanup().await calls needed
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// #[tokio::test]
+/// async fn test_example() {
+///     let test_app = test_helpers::spawn_app(true, false, false).await;
+///     // test_app is TestAppGuard, but works like TestApp due to Deref
+///     let pool = &test_app.db_pool;
+///     // ... test code ...
+/// } // Automatic cleanup happens here when test_app is dropped
+/// ```
+#[derive(Clone)]
+pub struct TestAppGuard {
+    inner: Arc<TestApp>,
+    test_db_name: Option<String>,
+    cleanup_done: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl TestAppGuard {
+    /// Create a new TestAppGuard from a TestApp
+    fn new(test_app: TestApp) -> Self {
+        let test_db_name = test_app.test_db_name.clone();
+        Self {
+            inner: Arc::new(test_app),
+            test_db_name,
+            cleanup_done: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Cleanup the test database
+    async fn cleanup_database(db_name: &str) -> Result<(), anyhow::Error> {
+        use deadpool_diesel::postgres::Manager as DeadpoolManager;
+        use deadpool_diesel::postgres::Pool as DeadpoolPool;
+        use deadpool_diesel::Runtime as DeadpoolRuntime;
+        use std::env;
+
+        tracing::debug!(db_name = %db_name, "Dropping test database from TestAppGuard");
+
+        let base_db_url = env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+        let (main_db_url, _) = base_db_url
+            .rsplit_once('/')
+            .context("Invalid DATABASE_URL")?;
+
+        let manager_default =
+            DeadpoolManager::new(format!("{main_db_url}/postgres"), DeadpoolRuntime::Tokio1);
+        let pool_default = DeadpoolPool::builder(manager_default)
+            .max_size(1)
+            .build()
+            .context("Failed to create default DB pool")?;
+
+        let conn_default = pool_default
+            .get()
+            .await
+            .context("Failed to get default DB connection")?;
+
+        let db_name_clone = db_name.to_string();
+        conn_default
+            .interact(move |conn| {
+                diesel::sql_query(format!(
+                    "DROP DATABASE IF EXISTS \"{db_name_clone}\" WITH (FORCE)"
+                ))
+                .execute(conn)?;
+                Ok::<(), diesel::result::Error>(())
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
+            .context("Failed to drop test database")?;
+
+        tracing::debug!(db_name = %db_name, "Test database dropped successfully from TestAppGuard");
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for TestAppGuard {
+    type Target = TestApp;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl Drop for TestAppGuard {
+    fn drop(&mut self) {
+        // Only cleanup if this is the last reference and cleanup hasn't been done
+        if Arc::strong_count(&self.inner) == 1 {
+            if let Some(ref db_name) = self.test_db_name {
+                // Check if cleanup was already done
+                if !self
+                    .cleanup_done
+                    .swap(true, std::sync::atomic::Ordering::SeqCst)
+                {
+                    // Get the current tokio runtime handle
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        let db_name_clone = db_name.clone();
+                        // Spawn a blocking task to run the async cleanup
+                        handle.spawn(async move {
+                            if let Err(e) = Self::cleanup_database(&db_name_clone).await {
+                                tracing::error!(
+                                    db_name = %db_name_clone,
+                                    error = %e,
+                                    "Failed to cleanup test database in TestAppGuard::drop"
+                                );
+                            }
+                        });
+                    } else {
+                        tracing::warn!(
+                            db_name = %db_name,
+                            "Cannot cleanup test database: no tokio runtime available"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[instrument(skip_all, fields(uri = %req.uri()))]
@@ -1382,7 +1513,11 @@ async fn test_request_logging_middleware(req: AxumRequest, next: Next) -> AxumRe
 }
 
 #[instrument(skip_all, fields(multi_thread, use_real_ai, use_real_qdrant))]
-pub async fn spawn_app(multi_thread: bool, use_real_ai: bool, use_real_qdrant: bool) -> TestApp {
+pub async fn spawn_app(
+    multi_thread: bool,
+    use_real_ai: bool,
+    use_real_qdrant: bool,
+) -> TestAppGuard {
     spawn_app_with_options(multi_thread, use_real_ai, use_real_qdrant, false).await
 }
 
@@ -1391,7 +1526,7 @@ pub async fn spawn_app_permissive_rate_limiting(
     multi_thread: bool,
     use_real_ai: bool,
     use_real_qdrant: bool,
-) -> TestApp {
+) -> TestAppGuard {
     spawn_app_with_rate_limiting_options(multi_thread, use_real_ai, use_real_qdrant, false, 100, 50)
         .await
 }
@@ -1410,7 +1545,7 @@ pub async fn spawn_app_with_options(
     use_real_ai: bool,
     use_real_qdrant: bool,
     use_real_embedding_pipeline: bool,
-) -> TestApp {
+) -> TestAppGuard {
     spawn_app_with_rate_limiting_options(
         multi_thread,
         use_real_ai,
@@ -1440,7 +1575,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     use_real_embedding_pipeline: bool,
     rate_limit_per_second: u64,
     rate_limit_burst_size: u32,
-) -> TestApp {
+) -> TestAppGuard {
     ensure_tracing_initialized();
     ensure_rustls_provider_installed(); // Ensure rustls crypto provider is set up
 
@@ -1456,7 +1591,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     } else {
         None
     };
-    let pool: PgPool = db::setup_test_database(test_db_name_suffix.as_deref()).await;
+    let (pool, test_db_name) = db::setup_test_database(test_db_name_suffix.as_deref()).await;
 
     let mut config_loader = Config::load().expect("Failed to load test configuration");
     if let Some(ref suffix) = test_db_name_suffix {
@@ -1630,6 +1765,7 @@ pub async fn spawn_app_with_rate_limiting_options(
             chronicles::create_chronicles_router(app_state_inner.clone()),
         ) // Add chronicles routes
         .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
+        .nest("/generation", generation_routes::router()) // AI generation routes
         .nest(
             "/personas",
             user_persona_routes::user_personas_router(app_state_inner.clone()),
@@ -1638,6 +1774,10 @@ pub async fn spawn_app_with_rate_limiting_options(
             "/user-settings",
             user_settings_routes::user_settings_routes(app_state_inner.clone()),
         ) // Add user settings routes
+        .nest(
+            "/template-preferences",
+            template_preferences_routes::template_preferences_routes(app_state_inner.clone()),
+        ) // Add template preferences routes
         .nest("/payment", payment_routes::payment_routes()) // Add payment routes
         .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
@@ -1695,12 +1835,13 @@ pub async fn spawn_app_with_rate_limiting_options(
         .expect("Test server failed");
     });
 
-    TestApp {
+    let test_app = TestApp {
         address: app_address,
         router: router_for_test_app, // Use the cloned router
         // Direct reqwest calls are made to `app_address`.
         // Keeping it to satisfy struct, but should ideally be removed or used consistently.
         db_pool: pool,
+        test_db_name: Some(test_db_name), // Store test database name for cleanup
         config: config_arc,
         ai_client: ai_client_for_state,
         mock_ai_client: mock_ai_client_for_test_app,
@@ -1709,7 +1850,10 @@ pub async fn spawn_app_with_rate_limiting_options(
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
         // user_persona_service and embedding_call_tracker removed from TestApp instantiation
-    }
+    };
+
+    // Wrap in TestAppGuard for automatic cleanup
+    TestAppGuard::new(test_app)
 }
 
 // --- Modules containing test helpers ---
@@ -1719,7 +1863,7 @@ pub mod db {
     use crate::models::users::UserDbQuery;
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
-    // Import AppError
+                                             // Import AppError
 
     use crate::PgPool; // This should refer to the top-level crate::PgPool
     use uuid::Uuid;
@@ -1732,21 +1876,21 @@ pub mod db {
     };
     // For .env file loading
     use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
-    // Ensure RegisterPayload is imported
+                  // Ensure RegisterPayload is imported
     use super::{
         AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString,
         SerializableSecretDek,
     };
     // Keep if CryptoError is used directly, else it comes via crate::crypto
     use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
-    // and UserDbQuery is imported above
+                                       // and UserDbQuery is imported above
 
     /// Sets up a clean test database with migrations run.
     ///
     /// # Panics
     ///
     /// Panics if the `DATABASE_URL` environment variable is not set
-    pub async fn setup_test_database(db_name_suffix: Option<&str>) -> PgPool {
+    pub async fn setup_test_database(db_name_suffix: Option<&str>) -> (PgPool, String) {
         // Load .env from project root (one directory up from backend/)
         let project_root = std::env::current_dir()
             .ok()
@@ -1807,7 +1951,7 @@ pub mod db {
             .expect("Migration task failed")
             .expect("Failed to run migrations");
 
-        pool
+        (pool, db_name)
     }
 
     /// Creates a test user directly in the database.
@@ -1986,7 +2130,7 @@ pub mod db {
     ) -> Result<crate::models::characters::Character, anyhow::Error> {
         use crate::models::character_card::NewCharacter;
         use crate::models::characters::Character; // Already imported at top of file usually
-        // use crate::schema::characters; // Already imported at top of file usually
+                                                  // use crate::schema::characters; // Already imported at top of file usually
         use chrono::Utc;
 
         let conn = pool.get().await?;
@@ -2103,14 +2247,57 @@ pub mod db {
 
 // --- Auth Helper Functions ---
 
-// --- TestDataGuard for cleaning up test data ---
+/// TestDataGuard - RAII-style cleanup for test data
+///
+/// This guard tracks test resources (users, characters, chats, personas, lorebooks) within tests.
+/// **Test databases are now cleaned up automatically** by TestAppGuard, so you don't need to
+/// worry about database cleanup when using TestDataGuard.
+///
+/// # Typical Usage Pattern
+///
+/// ```rust,ignore
+/// #[tokio::test]
+/// async fn test_example() {
+///     let test_app = test_helpers::spawn_app(true, false, false).await;
+///     let mut guard = test_helpers::TestDataGuard::new(
+///         test_app.db_pool.clone(),
+///         test_app.test_db_name.clone()
+///     );
+///
+///     // Track test resources
+///     guard.add_user_id(user.id);
+///     guard.add_character_id(character.id);
+///
+///     // ... test code ...
+///
+///     // Optional: Explicit cleanup for table data
+///     guard.cleanup().await.expect("Cleanup failed");
+/// }
+/// ```
+///
+/// # Automatic Database Cleanup
+///
+/// - Test databases are automatically cleaned up by TestAppGuard when it goes out of scope
+/// - TestDataGuard focuses on cleaning up rows in tables (users, characters, chats, etc.)
+/// - You can still call `.cleanup().await` explicitly if you need early cleanup
+///
+/// # What Gets Cleaned Up
+///
+/// - User records
+/// - Character records
+/// - Chat session records
+/// - User persona records
+/// - Lorebook records
+///
+/// Note: The test database itself is cleaned up automatically by TestAppGuard.
 pub struct TestDataGuard {
-    pool: PgPool, // Changed to PgPool type alias
+    pool: PgPool,
+    test_db_name: Option<String>,
     user_ids: Vec<Uuid>,
-    character_ids: Vec<Uuid>,    // Added for characters
-    chat_ids: Vec<Uuid>,         // Added for chats/sessions
-    user_persona_ids: Vec<Uuid>, // Added for user personas
-    lorebook_ids: Vec<Uuid>,     // Added for lorebooks
+    character_ids: Vec<Uuid>,
+    chat_ids: Vec<Uuid>,
+    user_persona_ids: Vec<Uuid>,
+    lorebook_ids: Vec<Uuid>,
 }
 
 // Manual implementation of Debug for TestDataGuard
@@ -2118,6 +2305,7 @@ impl fmt::Debug for TestDataGuard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TestDataGuard")
             .field("pool", &"PgPool // Omitted details for Debug") // PgPool itself is Debug, but we simplify here
+            .field("test_db_name", &self.test_db_name)
             .field("user_ids", &self.user_ids)
             .field("character_ids", &self.character_ids)
             .field("chat_ids", &self.chat_ids)
@@ -2129,10 +2317,11 @@ impl fmt::Debug for TestDataGuard {
 
 impl TestDataGuard {
     #[must_use]
-    pub const fn new(pool: PgPool) -> Self {
-        // Changed to PgPool
+    pub fn new(pool: PgPool, test_db_name: Option<String>) -> Self {
+        // Changed to PgPool and added test_db_name parameter
         Self {
             pool,
+            test_db_name,
             user_ids: Vec::new(),
             character_ids: Vec::new(),
             chat_ids: Vec::new(),
@@ -2267,7 +2456,60 @@ impl TestDataGuard {
             diesel_op_result_users.context("Interact error cleaning up users")?;
         }
 
+        // Clean up test database if present
+        if let Some(ref db_name) = self.test_db_name {
+            self.cleanup_database(db_name).await?;
+        }
+
         tracing::debug!("--- TestDataGuard cleanup complete ---");
+        Ok(())
+    }
+
+    /// Drops the test database
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database cannot be dropped
+    async fn cleanup_database(&self, db_name: &str) -> Result<(), anyhow::Error> {
+        use deadpool_diesel::postgres::Manager as DeadpoolManager;
+        use deadpool_diesel::postgres::Pool as DeadpoolPool;
+        use deadpool_diesel::Runtime as DeadpoolRuntime;
+        use std::env;
+
+        tracing::debug!(db_name = %db_name, "Dropping test database");
+
+        let base_db_url = env::var("DATABASE_URL").context("DATABASE_URL must be set")?;
+        let (main_db_url, _) = base_db_url
+            .rsplit_once('/')
+            .context("Invalid DATABASE_URL")?;
+
+        // Connect to the default postgres database to drop the test database
+        let manager_default =
+            DeadpoolManager::new(format!("{main_db_url}/postgres"), DeadpoolRuntime::Tokio1);
+        let pool_default = DeadpoolPool::builder(manager_default)
+            .max_size(1)
+            .build()
+            .context("Failed to create default DB pool")?;
+
+        let conn_default = pool_default
+            .get()
+            .await
+            .context("Failed to get default DB connection")?;
+
+        let db_name_clone = db_name.to_string();
+        conn_default
+            .interact(move |conn| {
+                diesel::sql_query(format!(
+                    "DROP DATABASE IF EXISTS \"{db_name_clone}\" WITH (FORCE)"
+                ))
+                .execute(conn)?;
+                Ok::<(), diesel::result::Error>(())
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
+            .context("Failed to drop test database")?;
+
+        tracing::debug!(db_name = %db_name, "Test database dropped successfully");
         Ok(())
     }
 }
@@ -2282,115 +2524,20 @@ impl Drop for TestDataGuard {
             || !self.chat_ids.is_empty()
             || !self.user_persona_ids.is_empty()
             || !self.lorebook_ids.is_empty()
+            || self.test_db_name.is_some()
         {
-            // Use a blocking spawn for the async cleanup task
-            // This is not ideal for drop, but better than panicking or doing nothing.
-            // Consider making cleanup explicit in all tests.
-            let _pool_clone = self.pool.clone(); // Renamed pool_clone
-            let has_cleanup_needed = !self.user_ids.is_empty()
-                || !self.character_ids.is_empty()
-                || !self.chat_ids.is_empty()
-                || !self.user_persona_ids.is_empty();
+            tracing::warn!(
+                "TestDataGuard dropped without explicit cleanup. Database cleanup should be called explicitly via cleanup().await."
+            );
 
-            let _user_ids_clone = self.user_ids.drain(..).collect::<Vec<_>>();
-            let _character_ids_clone = self.character_ids.drain(..).collect::<Vec<_>>();
-            let _chat_ids_clone = self.chat_ids.drain(..).collect::<Vec<_>>();
-            let _user_persona_ids_clone = self.user_persona_ids.drain(..).collect::<Vec<_>>();
-
-            if has_cleanup_needed {
+            // Note: We cannot call async cleanup_database from Drop as it's synchronous.
+            // Tests should explicitly call the async cleanup() method.
+            // This warning helps identify tests that aren't cleaning up properly.
+            if let Some(ref db_name) = self.test_db_name {
                 tracing::warn!(
-                    "TestDataGuard dropped without explicit cleanup. Attempting synchronous cleanup (best effort)."
+                    test_db = %db_name,
+                    "Test database will remain until manual cleanup. Please call .cleanup().await explicitly."
                 );
-                // Temporarily commented out for debugging test panics
-                /*
-                tokio::task::block_in_place(move || { // Use block_in_place if in async context
-                    tokio::runtime::Handle::current().block_on(async move {
-                        let conn_result = pool_clone.get().await;
-                        if let Ok(conn_obj) = conn_result { // conn_obj is Object
-                            if !chat_ids_clone.is_empty() {
-                                let chat_ids_c = chat_ids_clone.clone(); // clone for inner closure
-
-                                // Wrap the diesel operation in conn_obj.interact().await
-                                let interact_result_chats = conn_obj.interact(move |actual_conn| {
-                                    diesel::delete(schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(chat_ids_c)))
-                                        .execute(actual_conn) // Use &mut PgConnection from interact
-                                }).await;
-
-                                match interact_result_chats {
-                                    Ok(Ok(_num_deleted_chats)) => {
-                                        // Successfully deleted chats
-                                    }
-                                    Ok(Err(db_err_chats)) => {
-                                        tracing::error!("TestDataGuard Drop: chat_sessions diesel cleanup failed: {:?}", db_err_chats);
-                                    }
-                                    Err(pool_err_chats) => { // This is deadpool::managed::PoolError
-                                        tracing::error!("TestDataGuard Drop: chat_sessions interact pool error: {:?}", pool_err_chats);
-                                    }
-                                }
-                            }
-                            if !user_persona_ids_clone.is_empty() {
-                                let persona_ids_c = user_persona_ids_clone.clone();
-                                let interact_result_personas = conn_obj.interact(move |actual_conn| {
-                                    diesel::delete(schema::user_personas::table.filter(schema::user_personas::id.eq_any(persona_ids_c)))
-                                        .execute(actual_conn)
-                                }).await;
-                                match interact_result_personas {
-                                    Ok(Ok(_num_deleted_personas)) => {}
-                                    Ok(Err(db_err_personas)) => {
-                                        tracing::error!("TestDataGuard Drop: user_personas diesel cleanup failed: {:?}", db_err_personas);
-                                    }
-                                    Err(pool_err_personas) => {
-                                        tracing::error!("TestDataGuard Drop: user_personas interact pool error: {:?}", pool_err_personas);
-                                    }
-                                }
-                            }
-                            if !character_ids_clone.is_empty() {
-                                let interact_result_chars = conn_obj.interact({
-                                    // Clone for the inner closure, as conn is captured by interact already
-                                    let char_ids_inner_clone = character_ids_clone.clone();
-                                    move |c_conn| {
-                                        diesel::delete(schema::characters::table.filter(schema::characters::id.eq_any(char_ids_inner_clone)))
-                                            .execute(c_conn)
-                                    }
-                                }).await;
-
-                                match interact_result_chars {
-                                    Ok(diesel_result_chars) => {
-                                        if let Err(e) = diesel_result_chars.context("Drop: Diesel error cleaning up characters") {
-                                            tracing::error!("TestDataGuard Drop: Characters diesel cleanup failed: {:?}", e);
-                                        }
-                                    }
-                                    Err(interact_err_chars) => {
-                                        tracing::error!("TestDataGuard Drop: Characters interact cleanup failed. Raw: {:?}, Context: {}", interact_err_chars, "Drop: Interact error cleaning up characters");
-                                    }
-                                }
-                            }
-                            if !user_ids_clone.is_empty() {
-                                let interact_result_users = conn_obj.interact({
-                                    let user_ids_inner_clone = user_ids_clone.clone();
-                                    move |c_conn| {
-                                        diesel::delete(schema::users::table.filter(schema::users::id.eq_any(user_ids_inner_clone)))
-                                            .execute(c_conn)
-                                    }
-                                }).await;
-
-                                match interact_result_users {
-                                    Ok(diesel_result_users) => {
-                                        if let Err(e) = diesel_result_users.context("Drop: Diesel error cleaning up users") {
-                                            tracing::error!("TestDataGuard Drop: Users diesel cleanup failed: {:?}", e);
-                                        }
-                                    }
-                                    Err(interact_err_users) => {
-                                        tracing::error!("TestDataGuard Drop: Users interact cleanup failed. Raw: {:?}, Context: {}", interact_err_users, "Drop: Interact error cleaning up users");
-                                    }
-                                }
-                            }
-                        } else {
-                            tracing::error!("Failed to get DB connection in TestDataGuard drop for cleanup.");
-                        }
-                    });
-                });
-                */
             }
         }
     }
@@ -3148,8 +3295,8 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the server fails to start
-    pub async fn start_test_llm_server()
-    -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_test_llm_server(
+    ) -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
         LlmServerTestGuard::start().await
     }
 
@@ -3230,8 +3377,8 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the server cannot be started
-    pub async fn ensure_llm_server_running()
-    -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn ensure_llm_server_running(
+    ) -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         let config = LlmServerConfig::default();
 
         if is_llm_server_running(&config.host, config.port).await? {
@@ -3265,8 +3412,8 @@ pub mod llm_server {
         }
     }
 
-    pub async fn start_test_llm_server()
-    -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_test_llm_server(
+    ) -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
         LlmServerTestGuard::start().await
     }
 
@@ -3283,8 +3430,8 @@ pub mod llm_server {
         Ok(false)
     }
 
-    pub async fn ensure_llm_server_running()
-    -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn ensure_llm_server_running(
+    ) -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         Err("local-llm feature not enabled".into())
     }
 }

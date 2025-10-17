@@ -5,7 +5,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
 use serde_json::json;
@@ -13,8 +13,8 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Diesel imports
-use diesel::RunQueryDsl;
 use diesel::prelude::*;
+use diesel::RunQueryDsl;
 
 // Crate imports
 use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, CreateChatSessionPayload};
@@ -87,6 +87,7 @@ async fn test_create_character_mode_chat_session() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -118,6 +119,7 @@ async fn test_create_character_mode_chat_session() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -166,6 +168,7 @@ async fn test_create_scribe_assistant_mode_chat_session() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -220,6 +223,7 @@ async fn test_create_rpg_mode_chat_session() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -273,6 +277,7 @@ async fn test_chat_mode_validation_errors() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -304,6 +309,7 @@ async fn test_chat_mode_validation_errors() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -353,6 +359,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -380,6 +387,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(request)
         .await
         .expect("Failed to execute request");
@@ -405,6 +413,7 @@ async fn test_character_operations_fail_for_non_character_modes() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(request)
         .await
@@ -470,6 +479,7 @@ async fn test_chat_mode_persistence() {
         let response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(request)
             .await
             .expect("Failed to execute request");
@@ -496,6 +506,7 @@ async fn test_chat_mode_persistence() {
 
         let response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(request)
             .await

@@ -156,32 +156,35 @@
     "model_costs": {
       "gemini-2.5-flash-lite": 0,
       "gemini-2.5-flash": 0,
-      "gemini-2.5-pro": 100,
+      "gemini-2.5-pro": 0,
       "gemini-2.0-flash-experimental": 0,
       "claude-3.5-sonnet": 75,
       "gpt-4o": 60,
       "gpt-4o-mini": 10
     },
     "token_pricing": {
-      "gemini-2.5-flash-lite": {
-        "prompt_credits_per_1k": 5,
-        "completion_credits_per_1k": 20,
-        "description": "$0.005 per 1K prompt, $0.02 per 1K completion tokens"
-      },
-      "gemini-2.5-flash": {
-        "prompt_credits_per_1k": 15,
-        "completion_credits_per_1k": 60,
-        "description": "$0.015 per 1K prompt, $0.06 per 1K completion tokens"
-      },
-      "gemini-2.5-pro": {
-        "prompt_credits_per_1k": 75,
-        "completion_credits_per_1k": 300,
-        "description": "$0.075 per 1K prompt, $0.30 per 1K completion tokens"
-      },
-      "gemini-2.0-flash-experimental": {
-        "prompt_credits_per_1k": 10,
-        "completion_credits_per_1k": 40,
-        "description": "$0.01 per 1K prompt, $0.04 per 1K completion tokens"
+      "markup_percentage": 20,
+      "base_api_costs": {
+        "gemini-2.5-flash-lite": {
+          "input_per_million": "0.10",
+          "output_per_million": "0.40",
+          "description": "Google API pricing: $0.10/1M input, $0.40/1M output"
+        },
+        "gemini-2.5-flash": {
+          "input_per_million": "0.30",
+          "output_per_million": "2.50",
+          "description": "Google API pricing: $0.30/1M input, $2.50/1M output"
+        },
+        "gemini-2.5-pro": {
+          "input_per_million": "1.25",
+          "output_per_million": "10.00",
+          "description": "Google API pricing: $1.25/1M input, $10.00/1M output"
+        },
+        "gemini-2.0-flash-experimental": {
+          "input_per_million": "0.10",
+          "output_per_million": "0.40",
+          "description": "Google API pricing: $0.10/1M input, $0.40/1M output"
+        }
       }
     },
     "context_multipliers": {

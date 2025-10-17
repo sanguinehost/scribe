@@ -3,7 +3,6 @@ mod get_session_data_for_generation_tests {
     use bigdecimal::BigDecimal;
     use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper}; // Added for specific Diesel traits
     use mockall::predicate::*;
-    use scribe_backend::PgPool;
     use scribe_backend::config::Config as AppConfig;
     use scribe_backend::crypto;
     use scribe_backend::models::characters::Character;
@@ -35,6 +34,7 @@ mod get_session_data_for_generation_tests {
         MockAiClient, MockEmbeddingClient, MockEmbeddingPipelineService, MockQdrantClientService,
         TestAppStateBuilder,
     };
+    use scribe_backend::PgPool;
     use secrecy::SecretBox;
     use serde_json::json;
     use std::cmp::min; // Used in budget calculation assertions
@@ -268,7 +268,7 @@ mod get_session_data_for_generation_tests {
         let user_dek_secret_vec = vec![0u8; 32];
         let user_dek = Some(Arc::new(SecretBox::new(Box::new(user_dek_secret_vec))));
 
-        let pool = setup_test_database(None).await;
+        let (pool, _test_db_name) = setup_test_database(None).await;
 
         // Create default character for DB if needed
         let _default_character_for_db = params
@@ -441,7 +441,10 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            total_credits_used: BigDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         };
 
         conn.interact(move |conn_insert| {
@@ -1110,7 +1113,10 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            total_credits_used: BigDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1391,7 +1397,10 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            total_credits_used: BigDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1793,7 +1802,10 @@ mod get_session_data_for_generation_tests {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
+            total_credits_used: BigDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1858,8 +1870,8 @@ mod get_session_data_for_generation_tests {
 
             conn.interact({
                 let m = insertable_msg.clone(); // Clone for closure
-                // Note: current_msg_id would be used for debugging if needed
-                // let _current_msg_id = msg_id; // Capture current msg_id for this iteration
+                                                // Note: current_msg_id would be used for debugging if needed
+                                                // let _current_msg_id = msg_id; // Capture current msg_id for this iteration
                 move |conn_i| {
                     // Insert the message
                     diesel::insert_into(chat_messages_schema::table)

@@ -16,9 +16,9 @@ mod credit_integration_tests {
             payment::{NewSubscription, Subscription},
         },
         schema::{credit_packages, subscriptions, user_credits},
-        services::EncryptionService,
         services::payment::{CreditService, SoftLimitService, SubscriptionService},
-        test_helpers::{TestDataGuard, spawn_app},
+        services::EncryptionService,
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -74,7 +74,7 @@ mod credit_integration_tests {
     #[tokio::test]
     async fn test_subscription_credit_grant() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -179,7 +179,7 @@ mod credit_integration_tests {
     #[tokio::test]
     async fn test_credit_usage_with_soft_limits() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -278,7 +278,7 @@ mod credit_integration_tests {
     #[tokio::test]
     async fn test_credit_package_purchase() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)
@@ -351,7 +351,7 @@ mod credit_integration_tests {
     #[tokio::test]
     async fn test_monthly_grant_with_existing_balance() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id)

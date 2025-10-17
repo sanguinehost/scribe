@@ -1,7 +1,7 @@
 use crate::privacy::{PrivacyConfig, PrivacyContext};
 use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
 use std::sync::Arc;
-use tracing::{Instrument, info_span};
+use tracing::{info_span, Instrument};
 
 /// Request extension key for privacy context
 #[derive(Clone)]
@@ -85,7 +85,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Router, body::Body, http::Method, routing::get};
+    use axum::{body::Body, http::Method, routing::get, Router};
     use tower::ServiceExt;
 
     #[tokio::test]

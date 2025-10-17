@@ -19,7 +19,7 @@
 		character = null,
 		_user = undefined,
 		substituteTemplateVariables = undefined,
-		_userPersonaName = 'User'
+		userPersonaName = 'User'
 	}: {
 		message: ScribeChatMessage;
 		_readonly: boolean;
@@ -29,7 +29,7 @@
 		character?: CharacterDataForClient | null; // Use CharacterDataForClient
 		_user?: User | undefined; // Use User type
 		substituteTemplateVariables?: (text: string, characterName: string) => string;
-		_userPersonaName?: string;
+		userPersonaName?: string;
 	} = $props();
 
 	const dispatch = createEventDispatcher();
@@ -46,11 +46,28 @@
 	const canGoPrevious = $derived(currentGreetingIndex > 0);
 	const canGoNext = $derived(currentGreetingIndex < availableGreetings.length - 1);
 	// Apply template substitution to the current greeting, following character-overview.svelte pattern
+	// NOTE: We explicitly reference userPersonaName here to create a Svelte dependency,
+	// even though substituteTemplateVariables uses it via closure. This ensures the
+	// derivation re-computes when userPersonaName changes.
 	const currentGreeting = $derived.by(() => {
 		const rawGreeting = availableGreetings[currentGreetingIndex] || message.content;
+
+		console.log(
+			'🎭 first-message: Computing currentGreeting with userPersonaName =',
+			userPersonaName
+		);
+		console.log('🎭 Raw greeting length:', rawGreeting?.length || 0);
+
+		// Access userPersonaName to create dependency (even though the function uses it via closure)
+		const _personaName = userPersonaName;
+
 		if (substituteTemplateVariables && character?.name) {
-			return substituteTemplateVariables(rawGreeting, character.name);
+			const result = substituteTemplateVariables(rawGreeting, character.name);
+			console.log('🎭 After substitution, greeting length:', result?.length || 0);
+			console.log('🎭 Persona name dependency tracked:', _personaName);
+			return result;
 		}
+		console.log('🎭 No substitution (missing substituteTemplateVariables or character.name)');
 		return rawGreeting;
 	});
 
@@ -96,7 +113,7 @@
 					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2'
 				)}
 			>
-				{#key `${message.id}-greeting-${currentGreetingIndex}`}
+				{#key `${message.id}-greeting-${currentGreetingIndex}-${userPersonaName}`}
 					<Markdown md={currentGreeting} />
 				{/key}
 				{#if loading}

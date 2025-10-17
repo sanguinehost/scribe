@@ -333,7 +333,7 @@ pub fn create_user_sync(
     match insert_result {
         Ok(user_db_query) => {
             let mut user = User::from(user_db_query); // Convert to User
-            // Add the recovery phrase to the returned user
+                                                      // Add the recovery phrase to the returned user
             user.recovery_phrase
                 .clone_from(&credentials.recovery_phrase);
             info!(user_id = %user.id, "User created successfully in DB.");

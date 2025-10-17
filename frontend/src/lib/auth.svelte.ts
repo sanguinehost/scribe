@@ -410,14 +410,54 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 					result.error
 				);
 
+				// Handle DEK missing error - session is still valid but encryption key was lost
+				if (result.error.name === 'ApiDekMissingError') {
+					console.log(
+						`[${new Date().toISOString()}] auth.svelte.ts: DEK missing after server restart. Session valid but encryption key lost.`
+					);
+					// Dispatch custom event to trigger re-auth modal
+					if (_browser) {
+						window.dispatchEvent(
+							new CustomEvent('auth:dek-missing', {
+								detail: { reason: 'dek_missing' }
+							})
+						);
+					}
+					auth.isLoading = false; // Keep user data but clear loading state
+				}
+				// Handle server restart/unavailable - don't invalidate session
+				else if (result.error.name === 'ApiServerRestartError') {
+					console.log(
+						`[${new Date().toISOString()}] auth.svelte.ts: Server restarting or unavailable. Keeping current state.`
+					);
+					setConnectionError(); // Set connection error state, but keep user data
+				}
 				// For network errors, be less aggressive - just set loading to false but don't clear user completely
-				// Let the user see the error message and decide what to do
-				if (result.error.name === 'ApiNetworkError') {
+				else if (result.error.name === 'ApiNetworkError') {
 					console.log(
 						`[${new Date().toISOString()}] auth.svelte.ts: Network error during auth check - server may be down. Keeping current state.`
 					);
 					setConnectionError(); // Set connection error state, but keep user data
-				} else if (
+				}
+				// Handle authentication/authorization errors - session is invalid
+				else if (result.error.name === 'ApiAuthError') {
+					// Check if this is a session expiry (had a user) or first-time visitor (no user)
+					if (auth.user) {
+						// Session expired - clear user and show specific message
+						console.log(
+							`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401/403). Logging out user.`
+						);
+						setSessionExpired();
+					} else {
+						// First-time visitor or already logged out - just set unauthenticated without notification
+						console.log(
+							`[${new Date().toISOString()}] auth.svelte.ts: Not authenticated (401/403). No previous session.`
+						);
+						setUnauthenticated();
+					}
+				}
+				// Fallback for legacy ApiResponseError with 401 (in case ApiClient didn't convert properly)
+				else if (
 					result.error.name === 'ApiResponseError' &&
 					'statusCode' in result.error &&
 					result.error.statusCode === 401
