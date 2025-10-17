@@ -2,7 +2,7 @@
 
 use hex;
 use secrecy::ExposeSecret;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -16,9 +16,9 @@ use crate::{
         chronicle_event::CreateEventRequest,
     },
     services::{
-        ChronicleService,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
         safety_utils::create_unrestricted_safety_settings,
+        ChronicleService,
     },
 };
 

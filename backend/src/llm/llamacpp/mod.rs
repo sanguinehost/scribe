@@ -57,8 +57,8 @@ pub use security::{OutputValidator, PromptSanitizer, ResourceLimiter};
 
 #[cfg(feature = "local-llm")]
 pub use hardware::{
-    ContextSizeConfig, HardwareCapabilities, HardwareRequirements, calculate_optimal_context_size,
-    detect_hardware,
+    calculate_optimal_context_size, detect_hardware, ContextSizeConfig, HardwareCapabilities,
+    HardwareRequirements,
 };
 
 #[cfg(feature = "local-llm")]

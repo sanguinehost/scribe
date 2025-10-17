@@ -15,7 +15,7 @@ mod payment_webhook_idempotency_tests {
     use scribe_backend::{
         models::payment::WebhookEvent,
         schema::webhook_events,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;

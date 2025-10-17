@@ -15,7 +15,7 @@ mod payment_encryption_tests {
     use reqwest::{Client, StatusCode};
     use scribe_backend::{
         schema::payment_transactions,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;

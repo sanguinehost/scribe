@@ -3,13 +3,13 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header}, // Keep for other requests if any still use oneshot
+    http::{header, Method, Request, StatusCode}, // Keep for other requests if any still use oneshot
 };
 use chrono::Utc;
 use genai::{
-    ModelIden,
     adapter::AdapterKind,
     chat::{ChatResponse, MessageContent, Usage},
+    ModelIden,
 };
 use http_body_util::BodyExt;
 use serde_json::Value;
@@ -18,8 +18,8 @@ use tower::ServiceExt; // Keep for other requests if any still use oneshot
 use uuid::Uuid;
 
 // Diesel imports
-use diesel::RunQueryDsl;
 use diesel::prelude::*;
+use diesel::RunQueryDsl;
 
 // Crate imports
 use anyhow::Context as _;
@@ -240,6 +240,8 @@ async fn create_test_chat_session(
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
 
             diesel::insert_into(schema::chat_sessions::table)
@@ -465,8 +467,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
 #[tokio::test]
 // #[ignore] // Added ignore for CI
-async fn test_generate_chat_response_triggers_embeddings_with_existing_session()
--> anyhow::Result<()> {
+async fn test_generate_chat_response_triggers_embeddings_with_existing_session(
+) -> anyhow::Result<()> {
     let test_app = test_helpers::spawn_app(false, false, false).await;
     let user = test_helpers::db::create_test_user(
         &test_app.db_pool,
@@ -770,6 +772,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1171,6 +1175,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)
@@ -1537,6 +1543,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(schema::chat_sessions::table)
                 .values(&new_chat)

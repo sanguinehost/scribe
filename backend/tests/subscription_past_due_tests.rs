@@ -17,7 +17,7 @@ mod subscription_past_due_tests {
     use reqwest::{Client, StatusCode};
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::subscriptions;
-    use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+    use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
     use serde_json::json;
     use uuid::Uuid;
 

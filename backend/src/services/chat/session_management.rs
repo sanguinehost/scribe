@@ -6,7 +6,6 @@ use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    AppState,
     errors::AppError,
     models::{
         characters::Character,
@@ -20,9 +19,10 @@ use crate::{
     },
     schema::{characters, chat_session_lorebooks, chat_sessions, users::dsl as users_dsl},
     state::DbPool,
+    AppState,
 };
 
-use super::message_handling::{SaveMessageParams, save_message};
+use super::message_handling::{save_message, SaveMessageParams};
 
 /// Type alias for session creation result
 type SessionCreationResult = Result<(Chat, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;

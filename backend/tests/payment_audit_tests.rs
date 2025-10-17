@@ -23,7 +23,7 @@ mod payment_audit_tests {
     use scribe_backend::{
         models::users::UserRole,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use uuid::Uuid;

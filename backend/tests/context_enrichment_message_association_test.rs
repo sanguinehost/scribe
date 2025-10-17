@@ -4,19 +4,19 @@ use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use scribe_backend::{
     models::{
-        AgentContextAnalysis,
         chats::{Chat, MessageRole, NewChat, NewChatMessage},
+        AgentContextAnalysis,
     },
     schema::{chat_messages, chat_sessions},
     services::{
-        ChronicleService,
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
         },
+        ChronicleService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -106,6 +106,8 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let session: Chat = test_app
@@ -489,6 +491,8 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     test_app

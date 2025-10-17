@@ -38,7 +38,7 @@ pub use chronicle_deduplication_service::{
     ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult,
 };
 pub use chronicle_service::ChronicleService;
-pub use email_service::{EmailService, create_email_service};
+pub use email_service::{create_email_service, EmailService};
 pub use encryption_service::EncryptionService;
 pub use lorebook::LorebookService;
 pub use narrative_intelligence_service::{

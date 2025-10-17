@@ -7,21 +7,21 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tower::ServiceExt;
 use uuid::Uuid;
 
 // Diesel imports
-use diesel::RunQueryDsl;
 use diesel::prelude::*;
+use diesel::RunQueryDsl;
 
 // Crate imports
-use argon2::password_hash::{SaltString, rand_core::OsRng};
+use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHasher};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,

@@ -3,7 +3,7 @@
 // Common imports needed for message tests
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 // For deserializing the response
 use tower::ServiceExt;
@@ -109,6 +109,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
     let session_a: Chat = test_app
         .db_pool

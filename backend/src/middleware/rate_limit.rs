@@ -442,12 +442,12 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
 
     #[cfg(feature = "payment")]
     {
-        use crate::AppState;
         use crate::auth::user_store::Backend as AuthBackend;
         use crate::services::payment::SoftLimitService;
-        use axum::Json;
+        use crate::AppState;
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
+        use axum::Json;
         use axum_login::AuthSession;
         use serde_json::json;
         use std::sync::Arc;
@@ -553,12 +553,12 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
 /// Soft limit enforcement middleware for daily usage limits
 #[cfg(feature = "payment")]
 pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> Response {
-    use crate::AppState;
     use crate::auth::user_store::Backend as AuthBackend;
     use crate::services::payment::SoftLimitService;
-    use axum::Json;
+    use crate::AppState;
     use axum::http::{HeaderValue, StatusCode};
     use axum::response::IntoResponse;
+    use axum::Json;
     use axum_login::AuthSession;
     use serde_json::json;
     use std::sync::Arc;

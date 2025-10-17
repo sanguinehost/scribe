@@ -15,7 +15,7 @@ mod credit_service_tests {
         models::users::{AccountStatus, NewUser, UserRole},
         schema::users,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;

@@ -5,11 +5,11 @@
 use anyhow::Result as AnyhowResult;
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use diesel::prelude::*;
 use scribe_backend::test_helpers;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tower::util::ServiceExt;
 use tower_cookies::Cookie;
 use tracing::info;

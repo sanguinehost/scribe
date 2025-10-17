@@ -2,12 +2,12 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bigdecimal::BigDecimal;
 use chrono::Utc;
-use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
+use diesel::RunQueryDsl as _;
 use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
 use secrecy::SecretBox;
 use std::sync::Arc;
@@ -155,6 +155,8 @@ async fn create_test_character_and_session(
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -436,6 +438,8 @@ async fn test_first_mes_included_in_history() {
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

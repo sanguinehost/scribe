@@ -6,7 +6,7 @@ use crate::{
     services::{
         chat_override_service::ChatOverrideService,
         chronicle_service::ChronicleService,
-        email_service::{EmailService, create_email_service},
+        email_service::{create_email_service, EmailService},
         embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
         gemini_token_client::GeminiTokenClient,
@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{
-    ModelIntegrityVerifier, SecurityAuditLogger, integrity::TrustedSources,
+    integrity::TrustedSources, ModelIntegrityVerifier, SecurityAuditLogger,
 };
 
 /// Builder for creating AppStateServices with sensible defaults and optional overrides

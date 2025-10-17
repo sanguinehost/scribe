@@ -1,14 +1,14 @@
 use crate::{
     errors::AppError,
     models::{
-        Message,
         lorebook_dtos::{
             ExtractLorebookEntriesFromChatPayload, ExtractLorebookEntriesFromChatResponse,
         },
+        Message,
     },
     schema::chat_messages,
 };
-use diesel::{QueryDsl, SelectableHelper, prelude::*};
+use diesel::{prelude::*, QueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{debug, error, info, instrument};
 use uuid::Uuid;

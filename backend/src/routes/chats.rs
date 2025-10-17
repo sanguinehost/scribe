@@ -1,4 +1,3 @@
-use crate::PgPool; // Added PgPool import
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
@@ -22,17 +21,18 @@ use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
 use crate::schema::{chat_messages, chat_sessions};
+use crate::PgPool; // Added PgPool import
 use axum::{
-    Router,
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{delete, get, post, put},
+    Router,
 };
 use axum_login::AuthSession;
 use secrecy::ExposeSecret; // Added for expose_secret method
 use secrecy::SecretBox; // Ensure SecretBox is imported
-// Removed incorrect ValidatedJson import
+                        // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
 use diesel::{

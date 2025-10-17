@@ -19,10 +19,10 @@ mod plan_change_tests {
         models::payment::{NewSubscription, Subscription},
         schema::{payment_audit_logs, subscriptions, user_credits},
         services::payment::{
-            PaymentScheduler,
             audit_service::{AuditEventType, PaymentAuditService},
+            PaymentScheduler,
         },
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;

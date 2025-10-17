@@ -399,18 +399,14 @@ mod chat_overrides_api_tests {
         assert_eq!(response.status(), ReqwestStatusCode::UNPROCESSABLE_ENTITY);
 
         let error_response: serde_json::Value = response.json().await.unwrap();
-        assert!(
-            error_response["error"]
-                .as_str()
-                .unwrap()
-                .contains("Validation error")
-        );
-        assert!(
-            error_response["error_details"]["value"][0]["code"]
-                .as_str()
-                .unwrap()
-                .contains("length")
-        );
+        assert!(error_response["error"]
+            .as_str()
+            .unwrap()
+            .contains("Validation error"));
+        assert!(error_response["error_details"]["value"][0]["code"]
+            .as_str()
+            .unwrap()
+            .contains("length"));
     }
 
     #[tokio::test]
@@ -445,19 +441,15 @@ mod chat_overrides_api_tests {
         assert_eq!(response.status(), ReqwestStatusCode::UNPROCESSABLE_ENTITY);
 
         let error_response: serde_json::Value = response.json().await.unwrap();
-        assert!(
-            error_response["error"]
-                .as_str()
-                .unwrap()
-                .contains("Validation error")
-        );
+        assert!(error_response["error"]
+            .as_str()
+            .unwrap()
+            .contains("Validation error"));
         // Check that the error is for the 'field_name' field
-        assert!(
-            error_response["error_details"]["field_name"][0]["code"]
-                .as_str()
-                .unwrap()
-                .contains("length")
-        );
+        assert!(error_response["error_details"]["field_name"][0]["code"]
+            .as_str()
+            .unwrap()
+            .contains("length"));
     }
 
     #[tokio::test]

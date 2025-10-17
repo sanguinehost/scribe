@@ -11,7 +11,7 @@ use scribe_backend::models::lorebook_dtos::{
     UpdateLorebookEntryPayload as UpdateLorebookEntryDto,
     UpdateLorebookPayload as UpdateLorebookDto,
 };
-use scribe_backend::test_helpers::{TestApp, TestDataGuard, spawn_app};
+use scribe_backend::test_helpers::{spawn_app, TestApp, TestDataGuard};
 use uuid::Uuid; // Added for creating chat sessions
 
 // Helper function to create a dummy lorebook for tests that need one to exist
@@ -296,8 +296,8 @@ mod lorebook_tests {
         let lorebook: LorebookResponseDto =
             response.json().await.expect("Failed to parse response"); // Use DTO
         assert_eq!(lorebook.id, lorebook_id); // This might fail if dummy returns random
-        // If create_dummy_lorebook actually creates one, this assertion is fine.
-        // For now, with placeholder, this test is limited.
+                                              // If create_dummy_lorebook actually creates one, this assertion is fine.
+                                              // For now, with placeholder, this test is limited.
     }
 
     #[tokio::test]
@@ -1794,7 +1794,7 @@ mod lorebook_entry_tests {
 mod chat_session_lorebook_association_tests {
     use super::*;
     use scribe_backend::models::characters::Character; // For character creation helper
-    // use scribe_backend::test_helpers::create_dummy_chat_session; // Assuming this helper exists or will be created
+                                                       // use scribe_backend::test_helpers::create_dummy_chat_session; // Assuming this helper exists or will be created
     use diesel::insert_into;
     use diesel::prelude::*;
     use scribe_backend::models::lorebooks::{ChatCharacterLorebookOverride, ChatSessionLorebook};
@@ -2352,18 +2352,12 @@ async fn test_import_lorebook_scribe_minimal_success() {
         .expect("Failed to parse entries");
 
     assert_eq!(entries.len(), 2);
-    assert!(
-        entries
-            .iter()
-            .any(|e| e.entry_title == "Scribe Entry 1"
-                && e.content == "Content of scribe entry one.")
-    );
-    assert!(
-        entries
-            .iter()
-            .any(|e| e.entry_title == "Scribe Entry 2"
-                && e.content == "Content of scribe entry two.")
-    );
+    assert!(entries
+        .iter()
+        .any(|e| e.entry_title == "Scribe Entry 1" && e.content == "Content of scribe entry one."));
+    assert!(entries
+        .iter()
+        .any(|e| e.entry_title == "Scribe Entry 2" && e.content == "Content of scribe entry two."));
 }
 
 #[tokio::test]

@@ -17,10 +17,10 @@ use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     schema::chat_sessions,
     services::{
-        ChronicleService, EncryptionService, LorebookService, agentic::AgenticNarrativeFactory,
-        extraction_dispatcher::ExtractionDispatcher,
+        agentic::AgenticNarrativeFactory, extraction_dispatcher::ExtractionDispatcher,
+        ChronicleService, EncryptionService, LorebookService,
     },
-    test_helpers::{MockAiClient, TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, MockAiClient, TestDataGuard},
 };
 
 /// Helper to create a chat session in the database (required for foreign key constraint)

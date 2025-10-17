@@ -15,20 +15,20 @@ mod tests {
         services::lorebook::LorebookService, // Added for LorebookService
         state::AppStateServices,
         test_helpers::{
-            MockAiClient, MockEmbeddingClient, MockQdrantClientService, db::setup_test_database,
+            db::setup_test_database, MockAiClient, MockEmbeddingClient, MockQdrantClientService,
         },
         text_processing::chunking::ChunkingMetric,
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{
-        Filter, PointId, ScoredPoint, Value, condition::ConditionOneOf, r#match::MatchValue,
+        condition::ConditionOneOf, r#match::MatchValue, Filter, PointId, ScoredPoint, Value,
     };
     use secrecy::SecretBox;
     use std::collections::HashMap;
     use std::sync::Arc;
     use uuid::Uuid; // For encryption tests
-    // For creating test JSON values
-    // Ensure this is imported ONCE here
+                    // For creating test JSON values
+                    // Ensure this is imported ONCE here
 
     // Helper to convert string to Qdrant String Value
     fn string_value(s: &str) -> Value {

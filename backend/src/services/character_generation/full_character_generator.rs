@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{info, instrument};
 
-use crate::{AppState, errors::AppError};
+use crate::{errors::AppError, AppState};
 
 use super::{field_generator::FieldGenerator, types::*};
 

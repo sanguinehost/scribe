@@ -18,7 +18,7 @@ mod payment_owasp_comprehensive_tests {
     use reqwest::StatusCode;
     use scribe_backend::{
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::time::Duration;

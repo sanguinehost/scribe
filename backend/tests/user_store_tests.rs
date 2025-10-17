@@ -16,7 +16,7 @@ mod user_store_tests {
     // use deadpool_diesel::postgres::Manager; // No longer needed directly
     use diesel::prelude::*;
     use scribe_backend::models::users::User; // Needed for assertions
-    // use scribe_backend::state::DbPool; // Will get from TestApp
+                                             // use scribe_backend::state::DbPool; // Will get from TestApp
     use secrecy::{ExposeSecret, SecretString};
     // Use crate namespace for test helpers
     use scribe_backend::test_helpers::{self, TestDataGuard}; // Removed TestApp
@@ -548,7 +548,8 @@ mod user_store_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_user_from_session_token_success() {
-        let _test_app = self::test_helpers::spawn_app(false, false, false).await; // Use spawn_app
+        let _test_app = self::test_helpers::spawn_app(false, false, false).await;
+        // Use spawn_app
         // let _user_store = AuthBackend::new(pool.clone()); // AuthBackend can be used if needed
         // let _auth_backend = AuthBackend::new(pool.clone()); // Redundant with above
 

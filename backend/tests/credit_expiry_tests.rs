@@ -44,7 +44,7 @@ mod credit_expiry_tests {
         models::credit::{CreditBalance, NewCreditTransaction},
         schema::{credit_transactions, user_credits},
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use std::sync::Arc;
     use uuid::Uuid;

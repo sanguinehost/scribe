@@ -18,7 +18,7 @@ use crate::{
 #[cfg(feature = "payment")]
 use chrono::{DateTime, Duration, Utc};
 #[cfg(feature = "payment")]
-use diesel::{PgConnection, prelude::*};
+use diesel::{prelude::*, PgConnection};
 #[cfg(feature = "payment")]
 use uuid::Uuid;
 

@@ -1,3 +1,7 @@
 [workspace]
 members = ["backend", "cli"]
 resolver = "3"
+
+# Patch h2 to use v0.4.11 (0.4.12 has compilation bugs with stable and nightly Rust)
+[patch.crates-io]
+h2 = { git = "https://github.com/hyperium/h2", rev = "6b27688442aed1200f436190bc54fad805f0b770" }

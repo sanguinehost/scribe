@@ -3,11 +3,11 @@ use crate::models::users::{AccountStatus, UserDbQuery, UserRole};
 use crate::schema::users;
 use crate::state::AppState;
 use axum::{
-    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, put},
+    Json, Router,
 };
 use axum_login::AuthSession;
 use chrono::{DateTime, Utc};

@@ -14,7 +14,7 @@ mod payment_webhook_tests {
     use scribe_backend::{
         config::PaymentConfig,
         services::payment::paddle_service::PaddleService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;

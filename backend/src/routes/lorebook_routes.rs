@@ -1,6 +1,5 @@
 #![allow(clippy::items_after_statements)]
 use crate::{
-    AppState,
     auth::session_dek::SessionDek,            // Import SessionDek
     auth::user_store::Backend as AuthBackend, // Import AuthBackend
     errors::AppError,
@@ -13,14 +12,15 @@ use crate::{
         SetCharacterLorebookOverridePayload, UpdateLorebookEntryPayload, UpdateLorebookPayload,
     },
     services::LorebookService,
+    AppState,
 };
 use axum::{
-    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{delete, get, post, put},
+    Json, Router,
 };
 use axum_login::AuthSession;
 use axum_macros::debug_handler;

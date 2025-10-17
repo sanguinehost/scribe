@@ -490,7 +490,7 @@ mod payment_integration_tests {
             models::payment::{NewWebhookEvent, WebhookEvent},
             schema::webhook_events,
             services::payment::scheduler::PaymentScheduler,
-            test_helpers::{TestDataGuard, spawn_app},
+            test_helpers::{spawn_app, TestDataGuard},
         };
         use std::sync::Arc;
 

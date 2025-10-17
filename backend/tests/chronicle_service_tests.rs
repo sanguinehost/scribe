@@ -4,7 +4,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use bcrypt;
 use chrono::Utc;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use scribe_backend::{
     crypto,
     models::{

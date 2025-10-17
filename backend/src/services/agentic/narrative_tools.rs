@@ -1,7 +1,7 @@
 //! Narrative tool implementations for the agentic framework.
 
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -9,9 +9,9 @@ use uuid::Uuid;
 use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
-        ChronicleService, LorebookService,
         embeddings::{ChatMessageChunkMetadata, ChronicleEventMetadata, LorebookChunkMetadata},
         safety_utils::create_unrestricted_safety_settings,
+        ChronicleService, LorebookService,
     },
     state::AppState,
     vector_db::qdrant_client::QdrantClientServiceTrait,
@@ -2090,7 +2090,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
 
         // Use AI to generate entries with structured outputs
         use crate::services::character_generation::structured_output::{
-            BatchLorebookEntriesOutput, get_batch_lorebook_entries_schema,
+            get_batch_lorebook_entries_schema, BatchLorebookEntriesOutput,
         };
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,

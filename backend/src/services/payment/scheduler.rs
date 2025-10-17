@@ -11,7 +11,7 @@ use chrono::{Datelike, NaiveTime, Timelike, Utc};
 use deadpool_diesel::Pool;
 use diesel::prelude::*;
 use std::sync::Arc;
-use tokio::time::{Duration, interval};
+use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 use crate::{

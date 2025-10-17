@@ -15,7 +15,7 @@ mod soft_limit_tests {
         models::payment::NewSubscription,
         schema::{daily_usage_tracking, subscriptions},
         services::payment::SoftLimitService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;

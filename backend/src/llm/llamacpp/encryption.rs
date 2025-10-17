@@ -3,7 +3,7 @@
 
 use crate::{
     auth::SessionDek,
-    crypto::{CryptoError, decrypt_gcm, encrypt_gcm},
+    crypto::{decrypt_gcm, encrypt_gcm, CryptoError},
     errors::AppError,
 };
 use base64::prelude::*;

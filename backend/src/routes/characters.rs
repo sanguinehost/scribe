@@ -20,17 +20,17 @@ use crate::services::character_generation::{
 use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
-    Router,
     body::Body,
     debug_handler,
-    extract::{Path, Query, State, multipart::Multipart}, // Added Query
+    extract::{multipart::Multipart, Path, Query, State}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
+    Router,
 };
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper, result::Error as DieselError,
+    result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
+    QueryDsl, RunQueryDsl, SelectableHelper,
 }; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, trace, warn}; // Use needed tracing macros
@@ -44,7 +44,7 @@ use crate::services::encryption_service::EncryptionService; // Added import
 use crate::services::lorebook::LorebookService;
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
-// DieselError moved to main diesel imports
+                             // DieselError moved to main diesel imports
 use image::ImageFormat; // Added for image processing
 use image::ImageReader; // Use the new name for clarity
 use secrecy::ExposeSecret; // Added for DEK expose

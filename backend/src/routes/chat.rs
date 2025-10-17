@@ -28,7 +28,6 @@ use crate::prompt_builder;
 use crate::prompt_templates::{Narration, NarrativeStyle, Perspective, ResponseLength, Tense};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-use crate::services::ChronicleService;
 use crate::services::agentic::{
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
@@ -37,25 +36,26 @@ use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
 use crate::services::template_preference_service::TemplatePreferenceService;
+use crate::services::ChronicleService;
 use secrecy::ExposeSecret; // Added for ExposeSecret
-// RetrievedMetadata is no longer directly used in this file for RAG string construction
-// use crate::services::embedding_pipeline::RetrievedMetadata;
-// RetrievedChunk is used by prompt_builder, not directly here.
-// use crate::services::embedding_pipeline::RetrievedChunk;
+                           // RetrievedMetadata is no longer directly used in this file for RAG string construction
+                           // use crate::services::embedding_pipeline::RetrievedMetadata;
+                           // RetrievedChunk is used by prompt_builder, not directly here.
+                           // use crate::services::embedding_pipeline::RetrievedChunk;
 use crate::state::AppState;
 use axum::{
-    Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{
-        IntoResponse, Sse,
         sse::{Event, KeepAlive},
+        IntoResponse, Sse,
     },
     routing::{get, patch, post},
+    Json, Router,
 };
 use axum_login::AuthSession;
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive, Zero};
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
+use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use futures_util::StreamExt;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
@@ -890,7 +890,8 @@ pub async fn generate_chat_response(
                     )
                 })
                 .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?? // Double ? to unwrap both Results
+                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??
+            // Double ? to unwrap both Results
             } else {
                 None
             };
@@ -2228,8 +2229,9 @@ pub async fn update_session_narrative_style_handler(
         AppError::Unauthorized("User not found in session".to_string())
     })?;
 
-    // Get user DEK for encryption
-    let user_dek = session_dek.dek().await?;
+    // Clone the DEK data for use in the closure
+    let user_dek_bytes = session_dek.0.expose_secret().clone();
+    let user_dek_secret = secrecy::SecretBox::new(Box::new(user_dek_bytes));
 
     // Load session, verify ownership, set override, and save in a transaction
     let pool_clone = state.pool.clone();
@@ -2248,7 +2250,7 @@ pub async fn update_session_narrative_style_handler(
                 .ok_or_else(|| AppError::NotFound("Chat session not found".to_string()))?;
 
             // Set the narrative style override (encrypted)
-            chat_session.set_narrative_style_override(Some(payload), &user_dek)?;
+            chat_session.set_narrative_style_override(Some(payload), &user_dek_secret)?;
 
             // Update in database
             diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
@@ -2270,7 +2272,7 @@ pub async fn update_session_narrative_style_handler(
     // Fetch and return the effective preferences (with override applied)
     // This requires fetching character ID and applying the cascade
     let conn2 = state.pool.get().await?;
-    let (character_id_opt, override_data_opt) = conn2
+    let (character_id_opt, override_ciphertext, override_nonce) = conn2
         .interact(move |conn| {
             let session_data = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
@@ -2279,11 +2281,7 @@ pub async fn update_session_narrative_style_handler(
                     chat_sessions::narrative_style_override_ciphertext,
                     chat_sessions::narrative_style_override_nonce,
                 ))
-                .first::<(
-                    Option<Uuid>,
-                    Option<Vec<u8>>,
-                    Option<Vec<u8>>,
-                )>(conn)
+                .first::<(Option<Uuid>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             Ok::<_, AppError>(session_data)
@@ -2292,22 +2290,18 @@ pub async fn update_session_narrative_style_handler(
         .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
 
     // Get base template preferences (character or global)
-    let mut effective_prefs = TemplatePreferenceService::get_template_preferences(
-        &state.pool,
-        user.id,
-        character_id_opt,
-    )
-    .await?;
+    let mut effective_prefs =
+        TemplatePreferenceService::get_template_preferences(&state.pool, user.id, character_id_opt)
+            .await?;
 
     // Decrypt and apply session override
-    if let (Some(ciphertext), Some(nonce)) = (override_data_opt.0, override_data_opt.1) {
+    if let (Some(ciphertext), Some(nonce)) = (override_ciphertext, override_nonce) {
         if !ciphertext.is_empty() && !nonce.is_empty() {
             let encryption_service = crate::services::encryption_service::EncryptionService::new();
             let decrypted_bytes =
-                encryption_service.decrypt(&ciphertext, &nonce, user_dek.expose_secret())?;
-            let json_str = String::from_utf8(decrypted_bytes).map_err(|e| {
-                AppError::DecryptionError(format!("Invalid UTF-8: {e}"))
-            })?;
+                encryption_service.decrypt(&ciphertext, &nonce, session_dek.0.expose_secret())?;
+            let json_str = String::from_utf8(decrypted_bytes)
+                .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))?;
             let override_data: crate::models::template_preferences::UpdateTemplatePreferenceRequest =
                 serde_json::from_str(&json_str).map_err(|e| {
                     AppError::DecryptionError(format!("Failed to deserialize: {e}"))
@@ -2855,16 +2849,15 @@ pub async fn generate_suggested_actions(
                     String::new()
                 },
                 |decrypted_secret_vec| {
-                    String::from_utf8(
-                    decrypted_secret_vec.expose_secret().clone(),
-                )
-                .unwrap_or_else(|e| {
-                    error!(
+                    String::from_utf8(decrypted_secret_vec.expose_secret().clone()).unwrap_or_else(
+                        |e| {
+                            error!(
                         "Failed to convert decrypted first_mes to UTF-8: {}. Using empty string.",
                         e
                     );
-                    String::new()
-                })
+                            String::new()
+                        },
+                    )
                 },
             )
         }

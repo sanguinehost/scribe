@@ -1,10 +1,10 @@
-use axum::{Router, extract::DefaultBodyLimit, routing::get};
+use axum::{extract::DefaultBodyLimit, routing::get, Router};
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
 };
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
-use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
@@ -12,7 +12,6 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 // Use modules from the library crate
 use anyhow::Context;
 use anyhow::Result;
-use scribe_backend::PgPool;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::errors::AppError;
@@ -38,11 +37,12 @@ use scribe_backend::routes::{
     user_settings_routes::user_settings_routes,
 };
 use scribe_backend::state::{AppState, AppStateServices};
+use scribe_backend::PgPool;
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
-use axum_login::{AuthManagerLayerBuilder, login_required}; // Modified
-// Import SessionManagerLayer directly from tower_sessions
+use axum_login::{login_required, AuthManagerLayerBuilder}; // Modified
+                                                           // Import SessionManagerLayer directly from tower_sessions
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
@@ -73,10 +73,10 @@ use std::sync::Arc;
 use time::Duration;
 use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
+    governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
-use tower_sessions::{Expiry, SessionManagerLayer, cookie::SameSite}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
+use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
 
 // Define the embedded migrations macro
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");

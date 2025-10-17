@@ -9,18 +9,18 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    Router,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
     routing::{get, put},
+    Router,
 };
 use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 #[cfg(feature = "local-llm")]
-use crate::llm::llamacpp::{LlamaCppClient, ModelManager, hardware::detect_hardware};
+use crate::llm::llamacpp::{hardware::detect_hardware, LlamaCppClient, ModelManager};
 #[cfg(feature = "local-llm")]
 use futures::Stream;
 #[cfg(feature = "local-llm")]

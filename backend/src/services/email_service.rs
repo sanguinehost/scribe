@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_ses::{
-    Client as SesClient, types::Body, types::Content, types::Destination, types::Message,
+    types::Body, types::Content, types::Destination, types::Message, Client as SesClient,
 };
 use std::error::Error as StdError;
 use std::sync::Arc;

@@ -1090,7 +1090,11 @@ fn build_rag_context_string(
                                             .entry_title
                                             .clone()
                                             .and_then(|t| {
-                                                if t.trim().is_empty() { None } else { Some(t) }
+                                                if t.trim().is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(t)
+                                                }
                                             })
                                             .unwrap_or_else(|| "[decryption failed]".to_string())
                                     }
@@ -1515,8 +1519,8 @@ mod tests {
         use crate::config::Config;
         use crate::errors::AppError;
         use crate::prompt_builder::{
-            TokenCalculation, apply_token_limits, truncate_rag_context,
-            truncate_recent_history_strategically,
+            apply_token_limits, truncate_rag_context, truncate_recent_history_strategically,
+            TokenCalculation,
         };
         use crate::services::embeddings::{
             ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata,

@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use diesel::prelude::*; // Added
 use http_body_util::BodyExt;
@@ -16,7 +16,6 @@ use anyhow::Context as _;
 use bigdecimal::BigDecimal;
 use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::{
-    PgPool,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -24,6 +23,7 @@ use scribe_backend::{
     },
     schema::{characters, chat_sessions},
     test_helpers::{self, TestDataGuard},
+    PgPool,
 };
 use secrecy::SecretString;
 
@@ -126,6 +126,8 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let session = conn_pool_obj
@@ -361,6 +363,8 @@ async fn create_test_chat_session_for_suggested_actions(
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     pool.get()

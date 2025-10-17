@@ -3,14 +3,14 @@
 use diesel::prelude::*;
 use scribe_backend::{
     services::{
-        ChronicleService,
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
         },
+        ChronicleService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;

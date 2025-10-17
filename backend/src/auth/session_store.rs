@@ -13,9 +13,9 @@ use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
 use crate::state::DbPool; // Import DbPool type alias
 use axum_login::tower_sessions::{
-    SessionStore,
     session::{Id, Record}, // Use tower_sessions::session types
     session_store,
+    SessionStore,
 };
 use chrono::{DateTime, Utc}; // Use chrono DateTime
 use serde_json;
@@ -265,7 +265,7 @@ impl SessionStore for DieselSessionStore {
     #[instrument(skip(self), err)]
     async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
         let session_id_str = session_id.0.to_string(); // Convert i128 from Id to String for query
-        // --- Modified Log ---
+                                                       // --- Modified Log ---
         info!(session_id = %session_id_str, "DieselSessionStore::load ENTERED");
 
         let pool = self.pool.clone();
@@ -345,7 +345,7 @@ impl SessionStore for DieselSessionStore {
     #[instrument(skip(self), err)]
     async fn delete(&self, session_id: &Id) -> session_store::Result<()> {
         let session_id_str = session_id.0.to_string(); // Convert i128 from Id to String for query
-        // --- Modified Log ---
+                                                       // --- Modified Log ---
         info!(session_id = %session_id_str, "DieselSessionStore::delete ENTERED");
 
         let pool = self.pool.clone();

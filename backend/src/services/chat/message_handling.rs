@@ -10,8 +10,7 @@ use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
 use uuid::Uuid; // Added SecretBox, ExposeSecret
 
 use crate::{
-    AppState, // Added AppState
-    crypto,   // Added crypto
+    crypto, // Added crypto
     errors::AppError,
     models::chats::{
         ChatMessage,
@@ -21,6 +20,7 @@ use crate::{
     schema::{chat_messages, chat_sessions},
     services::{chat::message_variants, hybrid_token_counter::CountingMode},
     state::DbPool, // Changed db::Db to state::DbPool
+    AppState,      // Added AppState
 };
 
 // This function will be in a sibling module
@@ -543,10 +543,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             // Also track usage in payment_usage_tracking table for billing
             #[cfg(feature = "payment")]
             {
-                use crate::services::EncryptionService;
                 use crate::services::payment::usage_tracking_service::{
                     UsageMetadata, UsageTrackingService,
                 };
+                use crate::services::EncryptionService;
                 use std::collections::HashMap;
 
                 let total_tokens = prompt_tokens + completion_tokens;
@@ -616,7 +616,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         let embedding_service = state.embedding_pipeline_service.clone();
         let app_state_clone_for_rag = state.clone();
         let message_for_rag = saved_message_db.clone(); // Clone for the async task
-        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
+                                                        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
         let dek_for_rag_task = user_dek_secret_box.clone();
 
         tokio::spawn(async move {
@@ -638,7 +638,8 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             let session_dek_for_embedding: Option<crate::auth::session_dek::SessionDek> =
                 dek_for_rag_task.map(|arc_sb| {
                     let secret_bytes = arc_sb.expose_secret().clone(); // Clone the Vec<u8>
-                    crate::auth::session_dek::SessionDek(SecretBox::new(Box::new(secret_bytes))) // Create new SecretBox and SessionDek, changed back to Box::new
+                    crate::auth::session_dek::SessionDek(SecretBox::new(Box::new(secret_bytes)))
+                    // Create new SecretBox and SessionDek, changed back to Box::new
                 });
 
             if let Err(e) = embedding_service

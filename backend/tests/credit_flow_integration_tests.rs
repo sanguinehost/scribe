@@ -12,7 +12,7 @@ mod credit_flow_tests {
     use diesel::{Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
     use reqwest::{Client, StatusCode};
     use scribe_backend::{
-        auth::{AuthError, user_store::Backend as AuthBackend},
+        auth::{user_store::Backend as AuthBackend, AuthError},
         models::{
             character_card::NewCharacter,
             characters::Character,
@@ -20,7 +20,7 @@ mod credit_flow_tests {
             users::{NewUser, User},
         },
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, payment_test_helpers, spawn_app},
+        test_helpers::{payment_test_helpers, spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;

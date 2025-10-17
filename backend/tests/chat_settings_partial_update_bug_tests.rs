@@ -5,7 +5,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bigdecimal::BigDecimal;
 use chrono::Utc;
@@ -103,6 +103,8 @@ async fn setup_test_env(
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
         active_impersonated_character_id: None,
         temperature: None,
         max_output_tokens: None,

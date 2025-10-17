@@ -1,10 +1,10 @@
-use axum::http::{StatusCode, header::COOKIE};
+use axum::http::{header::COOKIE, StatusCode};
 use serde_json::json;
 use uuid::Uuid;
 
 use scribe_backend::{
     models::template_preferences::{TemplatePreferenceResponse, UpdateTemplatePreferenceRequest},
-    test_helpers::{TestDataGuard, db, login_user_via_api, spawn_app_permissive_rate_limiting},
+    test_helpers::{db, login_user_via_api, spawn_app_permissive_rate_limiting, TestDataGuard},
 };
 
 // ============================================================================

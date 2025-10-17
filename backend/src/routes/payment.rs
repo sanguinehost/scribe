@@ -16,11 +16,11 @@ use crate::privacy::ip_anonymization::extract_and_anonymize_ip;
 use crate::privacy::logging::{loggable_user_id, sanitize_json_value, sanitize_personal_info};
 #[cfg(feature = "payment")]
 use axum::{
-    Router,
     extract::{Path, Query, State},
     http::HeaderMap,
     response::{IntoResponse, Json},
     routing::{get, post},
+    Router,
 };
 #[cfg(feature = "payment")]
 use base64;
@@ -42,12 +42,12 @@ use crate::{
     models::credit::CreditPackage,
     models::payment::{PlanFeatures, Subscription},
     services::payment::{
-        CreditService, PaddleService, PaymentAuditService, SubscriptionService,
         audit_service::AuditEventType,
         paddle_service::{
             CreateTransactionRequest, PaddleEventType, PaddleWebhook, TransactionCheckout,
             TransactionItem,
         },
+        CreditService, PaddleService, PaymentAuditService, SubscriptionService,
     },
     state::AppState,
 };

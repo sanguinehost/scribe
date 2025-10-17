@@ -1,7 +1,7 @@
 //! Test that context enrichment searches are properly scoped by session/chronicle
 //! This is a basic compilation test to verify the new chronicle_id filtering is integrated
 
-use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 
 #[tokio::test]
 async fn test_context_enrichment_compiles_with_chronicle_id() {

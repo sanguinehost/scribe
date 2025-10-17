@@ -215,7 +215,8 @@ fn try_split_by_major_separators(
         ) {
             trace!(
                 separator,
-                split_index, "Found split point by major separator."
+                split_index,
+                "Found split point by major separator."
             );
 
             if execute_major_separator_split(
@@ -323,7 +324,8 @@ fn handle_base_case(
         } else {
             trace!(
                 "Base case: Segment fits (size {} <= max {}). Adding chunk.",
-                segment_size, context.config.max_size
+                segment_size,
+                context.config.max_size
             );
             chunks.push(TextChunk {
                 content: segment.to_string(),
@@ -352,7 +354,8 @@ fn handle_large_segment_splitting(
 ) -> Result<(), AppError> {
     trace!(
         "Segment too large ({} > {}), no major split. Trying sentence splitting.",
-        segment_size, context.config.max_size
+        segment_size,
+        context.config.max_size
     );
 
     let sentence_context = SentenceSplitContext {
@@ -400,7 +403,8 @@ fn apply_fallback_splitting(
     );
     trace!(
         "Fallback: Segment too large (size {} > max {}). Calling split_fallback.",
-        segment_size, context.config.max_size
+        segment_size,
+        context.config.max_size
     );
 
     split_fallback(
@@ -628,7 +632,8 @@ fn handle_invalid_chunk_boundaries(
 ) -> usize {
     trace!(
         "Skipping chunk creation: chunk_start_byte ({}) >= chunk_end_byte ({})",
-        current_start, current_end
+        current_start,
+        current_end
     );
 
     let effective_end = if current_start == current_end {
@@ -643,7 +648,8 @@ fn handle_invalid_chunk_boundaries(
 
     trace!(
         "Advancing start word index from {} to {}",
-        current_start, effective_end
+        current_start,
+        effective_end
     );
 
     effective_end
@@ -719,7 +725,8 @@ fn handle_valid_word_chunk_boundaries(
     // Move to the next chunk start
     trace!(
         "Advancing start word index from {} to {}",
-        current_start_word_index, current_chunk_end_word_index
+        current_start_word_index,
+        current_chunk_end_word_index
     );
     current_chunk_end_word_index
 }
@@ -1297,7 +1304,7 @@ mod tests {
             end_index: text.chars().count(),
         }];
         let result = chunk_text(text, &config, None, 0).unwrap(); // Pass config
-        // Use custom PartialEq which ignores metadata for now
+                                                                  // Use custom PartialEq which ignores metadata for now
         assert_eq!(result, expected);
     }
 
@@ -1320,7 +1327,7 @@ mod tests {
         );
         // Check if the content is reconstructed correctly (ignoring overlap effects for simplicity)
         let reconstructed: String = result.iter().map(|c| c.content.as_str()).collect(); // Simple concat
-        // This assertion is tricky due to overlap, let's just check it starts with 'A'
+                                                                                         // This assertion is tricky due to overlap, let's just check it starts with 'A'
         assert!(reconstructed.starts_with('A'));
         // assert!(reconstructed.contains(&text)); // This might fail due to overlap/trimming
     }
@@ -1553,13 +1560,11 @@ mod tests {
         assert!(result_long[0].content.starts_with("長い文。"));
 
         // Last chunk should contain the second paragraph text
-        assert!(
-            result_long
-                .last()
-                .unwrap()
-                .content
-                .contains("これは新しい段落です。")
-        );
+        assert!(result_long
+            .last()
+            .unwrap()
+            .content
+            .contains("これは新しい段落です。"));
     }
 
     #[test]
@@ -1669,7 +1674,9 @@ mod tests {
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Chunk {}: word count = {}, content = \"{}\"",
-                i, word_count, chunk.content
+                i,
+                word_count,
+                chunk.content
             );
             // Allow for 1 extra word beyond max_size + overlap due to whitespace handling in apply_overlap
             assert!(
@@ -1731,7 +1738,9 @@ mod tests {
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Chunk {}: '{}', Word Count: {}",
-                i, chunk.content, word_count
+                i,
+                chunk.content,
+                word_count
             );
             assert!(
                 word_count <= config.max_size + config.overlap + 1,
@@ -1823,7 +1832,8 @@ mod tests {
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Japanese Chunk: '{}', Word Count: {}",
-                chunk.content, word_count
+                chunk.content,
+                word_count
             ); // Debug print
             assert!(
                 word_count <= config.max_size + config.overlap + 1,
@@ -1853,7 +1863,8 @@ mod tests {
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Chinese Chunk: '{}', Word Count: {}",
-                chunk.content, word_count
+                chunk.content,
+                word_count
             ); // Debug print
             assert!(
                 word_count <= config.max_size + config.overlap + 1,

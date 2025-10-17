@@ -4,13 +4,13 @@
 // Remove helpers import - we'll define locally
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use chrono::Utc;
 use diesel_json::Json as DieselJson; // Added for explicit Json wrapping
 use scribe_backend::models::characters::CharacterDataForClient; // Updated import
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized}; // Removed TestUser as it's not a struct here
-use serde_json::{Value as JsonValue, json}; // Added JsonValue
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard}; // Removed TestUser as it's not a struct here
+use serde_json::{json, Value as JsonValue}; // Added JsonValue
 use tower::ServiceExt; // For oneshot
 use uuid::Uuid;
 
@@ -19,7 +19,7 @@ use anyhow::Context;
 use axum::http::Response as AxumResponse;
 use bcrypt;
 use deadpool_diesel::postgres::Pool;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use http_body_util::BodyExt;
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{

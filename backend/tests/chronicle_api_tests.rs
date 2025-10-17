@@ -4,7 +4,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use diesel::prelude::*;

@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bigdecimal::BigDecimal;
 use chrono::Utc;
@@ -28,7 +28,7 @@ use scribe_backend::{
         characters::dsl as characters_dsl, chat_messages::dsl as chat_messages_dsl,
         chat_sessions::dsl as chat_sessions_dsl,
     },
-    test_helpers::{self, ParsedSseEvent, collect_full_sse_events},
+    test_helpers::{self, collect_full_sse_events, ParsedSseEvent},
 };
 
 async fn setup_test_user_and_auth(
@@ -159,6 +159,8 @@ async fn create_test_chat_session(
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -780,6 +782,8 @@ async fn create_real_client_test_session(
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

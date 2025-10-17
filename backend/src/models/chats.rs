@@ -1836,10 +1836,16 @@ impl Chat {
     pub fn get_narrative_style_override(
         &self,
         dek: &secrecy::SecretBox<Vec<u8>>,
-    ) -> Result<Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>, crate::errors::AppError> {
+    ) -> Result<
+        Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+        crate::errors::AppError,
+    > {
         use crate::models::template_preferences::UpdateTemplatePreferenceRequest;
 
-        match (&self.narrative_style_override_ciphertext, &self.narrative_style_override_nonce) {
+        match (
+            &self.narrative_style_override_ciphertext,
+            &self.narrative_style_override_nonce,
+        ) {
             (Some(ciphertext), Some(nonce)) => {
                 if ciphertext.is_empty() && nonce.is_empty() {
                     // Convention for empty encrypted field
@@ -1852,7 +1858,8 @@ impl Chat {
                     ));
                 }
 
-                let encryption_service = crate::services::encryption_service::EncryptionService::new();
+                let encryption_service =
+                    crate::services::encryption_service::EncryptionService::new();
                 let decrypted_bytes = encryption_service.decrypt(
                     ciphertext,
                     nonce,
@@ -1865,8 +1872,8 @@ impl Chat {
                     ))
                 })?;
 
-                let override_data: UpdateTemplatePreferenceRequest = serde_json::from_str(&json_str)
-                    .map_err(|e| {
+                let override_data: UpdateTemplatePreferenceRequest =
+                    serde_json::from_str(&json_str).map_err(|e| {
                         crate::errors::AppError::DecryptionError(format!(
                             "Failed to deserialize narrative style override: {e}"
                         ))
@@ -1904,11 +1911,10 @@ impl Chat {
                     ))
                 })?;
 
-                let encryption_service = crate::services::encryption_service::EncryptionService::new();
-                let (ciphertext, nonce) = encryption_service.encrypt(
-                    json_str.as_bytes(),
-                    dek.expose_secret().as_slice(),
-                )?;
+                let encryption_service =
+                    crate::services::encryption_service::EncryptionService::new();
+                let (ciphertext, nonce) =
+                    encryption_service.encrypt(&json_str, dek.expose_secret().as_slice())?;
 
                 self.narrative_style_override_ciphertext = Some(ciphertext);
                 self.narrative_style_override_nonce = Some(nonce);
@@ -2564,6 +2570,8 @@ mod tests {
             total_modified_cost: bigdecimal::BigDecimal::from(0),
             total_credit_cost: 0,
             total_actual_charge: bigdecimal::BigDecimal::from(0),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         }
     }
 
@@ -3062,10 +3070,9 @@ mod tests {
             ..Default::default()
         };
         let err = invalid_strategy.validate().unwrap_err();
-        assert!(
-            err.field_errors()
-                .contains_key("history_management_strategy")
-        );
+        assert!(err
+            .field_errors()
+            .contains_key("history_management_strategy"));
         assert_eq!(
             err.field_errors()["history_management_strategy"][0].code,
             "unknown_strategy"

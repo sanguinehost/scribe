@@ -4,7 +4,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use bigdecimal::BigDecimal;
@@ -298,6 +298,8 @@ async fn create_chat_session_with_messages(
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     conn.interact(move |conn| {

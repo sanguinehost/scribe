@@ -1,4 +1,4 @@
-use crate::auth::{self, AuthError, recover_user_password_with_phrase}; // Added recover_user_password_with_phrase
+use crate::auth::{self, recover_user_password_with_phrase, AuthError}; // Added recover_user_password_with_phrase
 use crate::errors::AppError;
 use crate::logging::security_events::SecurityEvent;
 use crate::metrics::SECURITY_METRICS;
@@ -9,15 +9,15 @@ use crate::models::email_verification::VerifyEmailPayload;
 use crate::privacy::ip_anonymization::extract_and_anonymize_ip;
 use crate::privacy::logging::loggable_user_id;
 use crate::state::{AppState, DbPool}; // Added DbPool import
-use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use axum_login::{AuthSession, AuthUser};
 // use secrecy::{ExposeSecret, Secret}; // Commenting out as they are unused now
 // Added back for DEK length logging
-use axum::Router;
 use axum::routing::{delete, get, post};
+use axum::Router;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
