@@ -63,6 +63,10 @@ output "backend_secrets_list" {
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_sandbox_mode::"
     },
     {
+      name      = "PAYMENT_PAYMENT_DATA_ENCRYPTION_KEY"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:PAYMENT_DATA_ENCRYPTION_KEY::"
+    },
+    {
       name      = "PAYMENT_PAYMENT_BASE_URL"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:payment_base_url::"
     },
@@ -81,6 +85,44 @@ output "backend_secrets_list" {
     {
       name      = "CREDITS_ENABLED"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CREDITS_ENABLED::"
+    },
+    # Paddle subscription price IDs
+    {
+      name      = "PAYMENT_PADDLE_BASIC_MONTHLY_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_basic_monthly_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_BASIC_YEARLY_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_basic_yearly_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_PREMIUM_MONTHLY_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_premium_monthly_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_PREMIUM_YEARLY_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_premium_yearly_price_id::"
+    },
+    # Paddle credit package price IDs
+    {
+      name      = "PAYMENT_PADDLE_CREDITS_250_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_credits_250_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_CREDITS_500_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_credits_500_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_CREDITS_1500_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_credits_1500_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_CREDITS_3500_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_credits_3500_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_CREDITS_8000_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_credits_8000_price_id::"
     }
   ] : [])
 }

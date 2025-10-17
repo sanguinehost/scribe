@@ -4,11 +4,11 @@ use std::time::Instant;
 use tracing::{debug, info, instrument};
 
 use crate::{
-    AppState,
     errors::AppError,
     services::{
         hybrid_token_counter::CountingMode, safety_utils::create_unrestricted_safety_settings,
     },
+    AppState,
 };
 
 use super::{structured_output::*, types::*};
@@ -34,6 +34,161 @@ pub struct FieldGenerator {
     state: Arc<AppState>,
 }
 
+// ============================================================================
+// Prompt Engineering Constants
+// ============================================================================
+
+/// Base system prompt for all character generation tasks
+/// Establishes expertise and explains critical {{char}}/{{user}} placeholder usage
+const BASE_SYSTEM_PROMPT: &str = r#"You are an expert character designer for creative writing, role-playing games, and interactive fiction. Your expertise includes:
+- Deep understanding of character psychology and motivation
+- Crafting engaging, multi-dimensional personalities
+- Creating immersive scenarios and settings
+- Writing natural, character-appropriate dialogue
+- Balancing detail with brevity
+
+Focus on quality over quantity. Generate content that feels authentic and engaging.
+
+CRITICAL PLACEHOLDER USAGE:
+- {{char}} = The AI character being created by this card (the one you're writing)
+- {{user}} = The human player/user (the person using the chatbot)
+
+Examples:
+- For a character card about "Alice": {{char}} = Alice, {{user}} = the player talking to Alice
+- For a narrator/GM card: {{char}} = the narrator/GM, {{user}} = the player character in the story
+- For a world/scenario card: {{char}} = the world/narrator, {{user}} = the player
+
+NEVER mix them up or use them interchangeably. They refer to two different entities.
+{{user}} is ALWAYS the human player, not the character you're creating."#;
+
+/// Mode-specific instructions for generation
+const MODE_INSTRUCTIONS_CREATE: &str = r#"Task: Generate NEW content from scratch.
+- Start fresh, don't reference existing content
+- Create original, creative content
+- Ensure internal consistency
+- Make it engaging and specific"#;
+
+const MODE_INSTRUCTIONS_ENHANCE: &str = r#"Task: ENHANCE existing content while preserving its core.
+- Keep the fundamental concept and tone
+- Add depth, detail, and nuance
+- Improve clarity and engagement
+- Maintain consistency with existing content"#;
+
+const MODE_INSTRUCTIONS_EXPAND: &str = r#"Task: EXPAND existing content with additional detail.
+- Elaborate on what's already there
+- Add new dimensions without contradicting existing content
+- Increase richness and complexity
+- Maintain the original voice and style"#;
+
+const MODE_INSTRUCTIONS_REWRITE: &str = r#"Task: REWRITE existing content with a fresh perspective.
+- Preserve core ideas but change expression
+- Improve quality and engagement
+- Fix any issues or inconsistencies
+- May change style/tone if that improves quality"#;
+
+/// Style-specific guidance with creative direction
+const STYLE_PROMPT_TRAITS: &str = r#"Output Format: Write using clear, comma-separated trait lists.
+- Use adjectives and short phrases
+- Group related traits together
+- Include both positive and nuanced traits
+- Be specific rather than generic
+
+Example: "Curious and analytical, tends to overthink situations, loyal to close friends but slow to trust, sarcastic humor as a defense mechanism""#;
+
+const STYLE_PROMPT_NARRATIVE: &str = r#"Output Format: Write in flowing narrative prose.
+- Use descriptive, literary language
+- Create vivid imagery and atmosphere
+- Show personality through actions and reactions
+- Include sensory details when relevant
+- Use paragraph breaks to separate ideas and improve readability
+- Each paragraph should be 2-4 sentences
+
+Example: "She moved through the world with quiet observation, her sharp mind always cataloging details others missed. Behind her sardonic wit lay a deep well of loyalty.
+
+Years in the archives had taught her patience, but her restless curiosity still drove her to pursue every lead, no matter how obscure...""#;
+
+const STYLE_PROMPT_PROFILE: &str = r#"Output Format: Write in structured profile format.
+- Use clear headings, field labels, or bullet points to organize information
+- Present factual, organized details about the subject
+- Can include categories like physical traits, background, abilities, relationships, etc.
+- Keep each section focused and concise
+- Use "Field: Value" format where appropriate
+
+Example: "Name: Elena Vasquez
+
+Age: 28 | Height: 5'7\" | Build: Athletic
+
+Background: Former military intelligence analyst turned private investigator. Grew up in border towns, fluent in English and Spanish.
+
+Personality: Sharp-minded and perceptive, tends to trust her instincts. Patient when analyzing data but impulsive in the field. Dry sense of humor masks deep empathy for victims.
+
+Skills: Expert in digital forensics, proficient in hand-to-hand combat, skilled interrogator.
+
+Notable Traits: Always carries a worn leather notebook, drinks excessive coffee, has a photographic memory for faces.""#;
+const STYLE_PROMPT_GROUP: &str = r#"Output Format: Write for group/party dynamics.
+- Focus on interpersonal traits and relationships
+- Highlight how character fits into team dynamics
+- Note collaboration style and conflict patterns
+- Include role within the group
+
+Example: "Often takes on the mediator role, using humor to diffuse tension. Contributes strategic thinking but sometimes holds back due to self-doubt...""#;
+
+const STYLE_PROMPT_WORLDBUILDING: &str = r#"Output Format: Write with world/setting integration.
+- Connect character to broader world context
+- Reference cultural, historical, or political elements
+- Show how setting shapes the character
+- Include faction/organization affiliations if relevant
+- Use paragraph breaks to separate different aspects
+- Each paragraph should focus on one aspect of the world/character relationship
+
+Example: "Born in the aftermath of the Collapse, she carries the practical cynicism of the reconstruction era. Her technical skills were honed in the makeshift workshops that sprang up across the Reclaimed Zones.
+
+Despite the scarcity of the early years, she maintained a fierce loyalty to the ideals of the Archives Council, believing knowledge was the only path to preventing another catastrophe...""#;
+
+const STYLE_PROMPT_SYSTEM: &str = r#"Output Format: Write system instructions for AI behavior, game mechanics, or narrator guidelines.
+- Focus on HOW the AI should behave, not WHO the character is
+- Include game rules, world mechanics, or simulation guidelines
+- Specify narrator responsibilities and constraints
+- Define response formats, stat tracking, or procedural rules
+- Use clear, directive language
+
+Example: "{{char}} is the narrator. {{char}} will control all NPCs and world events. {{char}} will never control {{user}}'s actions. Random encounters occur every 3-5 messages. {{char}} will track stats at the end of each message.""#;
+
+/// Field-specific context descriptions
+const FIELD_CONTEXT_DESCRIPTION: &str = "The character's core definition - format and content vary widely based on creator intent. Can be: narrative description (appearance, personality, backstory), structured profile (stats, abilities), system instructions (narrator rules, AI behavior), world-building context, or any combination. May use XML-like tags, markdown sections, bullet points, or prose. Length ranges from brief (100 words) to extensive (3000+). This is the most versatile field - match the format to your vision.";
+
+const FIELD_CONTEXT_PERSONALITY: &str = "Core personality traits, behavioral patterns, motivations, and psychological characteristics. How the character thinks, feels, and reacts. Can be left empty if personality details are already covered in the description field. When used, should focus on the character's mental/emotional makeup rather than physical traits or abilities.";
+
+const FIELD_CONTEXT_SCENARIO: &str = "World state, character relationships, political situations, and context for the roleplay. Can include plot setup, faction dynamics, ongoing conflicts, and relationship histories. Often detailed and substantial (100-1000+ words) to establish rich context.";
+
+const FIELD_CONTEXT_FIRST_MES: &str = "The opening scene/greeting that starts the roleplay. Should be a rich, immersive narrative (often 200-1000+ words) that establishes atmosphere, setting, character state, and situation. Use vivid sensory details, multiple paragraphs for readability, and a hook that invites user interaction. May include narration (in asterisks), dialogue, internal thoughts, environmental description, and current events. This sets the tone and quality bar for the entire roleplay. IMPORTANT: Use {{user}} consistently to refer to the player character throughout the greeting, and {{char}} to refer to the AI character/narrator you're creating.";
+
+const FIELD_CONTEXT_ALTERNATE_GREETING: &str = "Alternative opening scenario with different mood, setting, or situation than the main greeting. Should be equally detailed and immersive (200-1000+ words) but offer variety - different time period, location, relationship dynamic, or crisis. Maintain character consistency while exploring different facets. Use multiple paragraphs and rich narrative detail.";
+
+const FIELD_CONTEXT_SYSTEM_PROMPT: &str =
+    "Technical instructions for AI behavior when playing this character. Clear and specific.";
+
+const FIELD_CONTEXT_DEPTH_PROMPT: &str = "Additional character depth and background notes. Often called 'Character Notes' or 'Character Book'. Can include hidden lore, authorial commentary, design philosophy, or behind-the-scenes information that enriches the character without being directly shown. May include triggers, special mechanics, or contextual details the AI should know but not explicitly state.";
+
+const FIELD_CONTEXT_MES_EXAMPLE: &str = "Example conversation exchanges demonstrating the character's dialogue style, actions, and personality. MUST follow this format: Multiple conversation examples separated by \"<START>\" tags. Each example shows back-and-forth dialogue between {{char}} (the character) and {{user}} (the player). Use {{char}}: and {{user}}: labels. Include actions in *asterisks*. Generate 2-3 distinct conversation examples showing different scenarios or moods.";
+
+const FIELD_CONTEXT_TAGS: &str = "Categorization tags for the character. Short, specific keywords that help users discover and filter characters. Include genre, character type, setting, themes, and notable traits. Examples: fantasy, warrior, medieval, loyal, magic-user, slow-burn, adventure.";
+
+// Lorebook entry field contexts (for generating lorebook content)
+const FIELD_CONTEXT_ENTRY_CONTENT: &str = "Lorebook entry content. Factual, concise information about the specific topic indicated by the entry name and keywords. Write in an encyclopedic style focusing on: what it is, its significance in the world, key characteristics, relationships to other elements, and relevant history. Avoid unnecessary narrative flourishes - prioritize clarity and information density. Typically 50-300 words.";
+
+const FIELD_CONTEXT_ENTRY_COMMENT: &str = "Commentary or metadata about the lorebook entry. Behind-the-scenes notes for the character creator: why this entry exists, how it should be used, what narrative purpose it serves, potential plot hooks, or authorial intent. This is internal documentation, not in-world information.";
+
+/// Final guidelines for all generation tasks
+const FINAL_GUIDELINES: &str = r#"Guidelines:
+- Be concise but complete
+- Avoid clichés and overused tropes
+- Make every word count
+- Use paragraph breaks (double newlines) to separate ideas and improve readability
+- For longer content, break into 2-4 sentence paragraphs
+- Output ONLY the generated content, no meta-commentary
+- Do not include field labels or markdown headers in output"#;
+
 #[allow(dead_code)]
 impl FieldGenerator {
     pub fn new(state: Arc<AppState>) -> Self {
@@ -56,7 +211,8 @@ impl FieldGenerator {
         let style = request.style.clone().unwrap_or(DescriptionStyle::Auto);
 
         // Build the system prompt specifically for character field generation
-        let system_prompt = self.build_field_generation_system_prompt(&request.field, &style);
+        let system_prompt =
+            self.build_field_generation_system_prompt(&request.field, &request.mode, &style);
 
         // Build the user message with context and instructions, capturing debug info
         let (user_message, debug_info) = self
@@ -132,134 +288,144 @@ impl FieldGenerator {
     }
 
     /// Build system prompt specifically for character field generation with style examples
-    fn build_field_generation_system_prompt(
+    pub fn build_field_generation_system_prompt(
         &self,
         field: &CharacterField,
+        mode: &GenerationMode,
         style: &DescriptionStyle,
     ) -> String {
+        let mut parts: Vec<String> = Vec::new();
+
+        // 1. Base system prompt (character design expertise + placeholder usage)
+        parts.push(BASE_SYSTEM_PROMPT.to_string());
+
+        // 2. Field context (what this field is for)
         let field_name = field.display_name();
+        parts.push(format!("\nField: {}", field_name));
 
-        // Base instruction with field-specific guidance
-        let base_instruction = match field {
-            CharacterField::AlternateGreeting => {
-                "You are a helpful assistant that creates character content for creative writing. Generate an alternate greeting that provides a different starting scenario or mood from the character's main first message. This should be a rich, immersive opening scene that establishes context and invites interaction.".to_string()
-            },
-            CharacterField::FirstMes => {
-                "You are a helpful assistant that creates character content for creative writing. Generate a first message that serves as the opening scene for roleplay. This should be a rich, immersive introduction that establishes the character, setting, and situation while inviting user interaction.".to_string()
-            },
-            _ => {
-                format!(
-                    "You are a helpful assistant that creates character content for creative writing. Generate a {} based on the user's request.",
-                    field_name.to_lowercase()
-                )
+        let field_context = match field {
+            CharacterField::Description => FIELD_CONTEXT_DESCRIPTION,
+            CharacterField::Personality => FIELD_CONTEXT_PERSONALITY,
+            CharacterField::Scenario => FIELD_CONTEXT_SCENARIO,
+            CharacterField::FirstMes => FIELD_CONTEXT_FIRST_MES,
+            CharacterField::AlternateGreeting => FIELD_CONTEXT_ALTERNATE_GREETING,
+            CharacterField::SystemPrompt => FIELD_CONTEXT_SYSTEM_PROMPT,
+            CharacterField::DepthPrompt => FIELD_CONTEXT_DEPTH_PROMPT,
+            CharacterField::MesExample => FIELD_CONTEXT_MES_EXAMPLE,
+            CharacterField::Tags => FIELD_CONTEXT_TAGS,
+            CharacterField::EntryContent => FIELD_CONTEXT_ENTRY_CONTENT,
+            CharacterField::EntryComment => FIELD_CONTEXT_ENTRY_COMMENT,
+        };
+        parts.push(format!("Purpose: {}", field_context));
+
+        // 3. Mode instructions (how to approach the generation task)
+        let mode_instructions = match mode {
+            GenerationMode::Create => MODE_INSTRUCTIONS_CREATE,
+            GenerationMode::Enhance => MODE_INSTRUCTIONS_ENHANCE,
+            GenerationMode::Expand => MODE_INSTRUCTIONS_EXPAND,
+            GenerationMode::Rewrite => MODE_INSTRUCTIONS_REWRITE,
+        };
+        parts.push(format!("\n{}", mode_instructions));
+
+        // 4. Style instructions (creative guidance)
+        let style_prompt = match style {
+            DescriptionStyle::Traits => STYLE_PROMPT_TRAITS,
+            DescriptionStyle::Narrative => STYLE_PROMPT_NARRATIVE,
+            DescriptionStyle::Profile => STYLE_PROMPT_PROFILE,
+            DescriptionStyle::Group => STYLE_PROMPT_GROUP,
+            DescriptionStyle::Worldbuilding => STYLE_PROMPT_WORLDBUILDING,
+            DescriptionStyle::System => STYLE_PROMPT_SYSTEM,
+            DescriptionStyle::Auto => {
+                // For auto, choose default based on field
+                match field {
+                    CharacterField::Personality => STYLE_PROMPT_TRAITS,
+                    CharacterField::FirstMes | CharacterField::AlternateGreeting => {
+                        STYLE_PROMPT_NARRATIVE
+                    }
+                    CharacterField::Scenario => STYLE_PROMPT_WORLDBUILDING,
+                    CharacterField::SystemPrompt | CharacterField::DepthPrompt => {
+                        STYLE_PROMPT_SYSTEM
+                    }
+                    CharacterField::Description => STYLE_PROMPT_PROFILE,
+                    _ => {
+                        "Choose the most appropriate style based on the context and field type. Focus on creating engaging, well-structured content."
+                    }
+                }
             }
         };
 
-        // Add style-specific guidance and examples
-        let style_guidance = match (field, style) {
-            // Special handling for first messages - focus on rich, immersive openings
-            (CharacterField::FirstMes, _) => {
-                r#"Create a rich, immersive opening scene that introduces the character and establishes the roleplay context. Choose the appropriate structure based on the character type:
+        parts.push(format!("\n{}", style_prompt));
 
-**For Narrative/Character-Driven Roleplay:**
-1. **Opening Hook**: Start with compelling dialogue, action, or scene setting
-2. **Character Introduction**: Show personality through actions, thoughts, and speech
-3. **Setting/Context**: Establish the environment and situation
-4. **Character Voice**: Include internal thoughts that reveal motivations and background
-5. **User Integration**: Set up the scenario to invite user interaction
-6. **Proper Length**: Multiple paragraphs that create immersion and establish the world
+        // 5. Field-specific formatting requirements
+        if matches!(
+            field,
+            CharacterField::FirstMes | CharacterField::AlternateGreeting
+        ) {
+            parts.push(r#"
 
-**For System/Game-Style Roleplay:**
-1. **Rich Narrative Opening**: Detailed world-building and character situation (2-3 paragraphs)
-2. **CURRENT STATE Section**: Character stats, health, location, status
-3. **INVENTORY Section**: Listed items with descriptions
+CRITICAL FORMAT REQUIREMENTS for first messages and alternate greetings:
 
-Example Game-Style Format:
-```
-[Rich narrative paragraph describing situation and world]
+**NARRATIVE STYLE** (for character-driven roleplay):
+- Start with compelling dialogue, action, or scene setting that immediately engages
+- Include character thoughts and internal monologue to reveal personality
+- Establish environment and situation through immersive sensory description
+- Use multiple paragraphs (2-4 sentences each) for readability
+- Mix dialogue, actions, descriptions, and internal thoughts
+- Create a hook that naturally invites user interaction
+- Use {{char}} to refer to this character and {{user}} to refer to the player
 
-CURRENT STATE:
-Location: [Current location]
-Health: [Health status and condition]
-Power Path: [Character's abilities/class]
-Attainment: [Power level/rank]
-Status: [Current situation/goals]
+**SYSTEM/GAME STYLE** (for RPG/stat-based roleplay):
+- Begin with rich narrative opening (2-3 paragraphs) establishing the scenario with vivid world-building
+- Follow with CURRENT STATE section listing location, health, power level, status, etc.
+- Include INVENTORY section with items, equipment, or resources
+- Maintain character personality and voice within the structured format
+- Each section should be clearly separated with double newlines
 
-INVENTORY (Carried):
-[List of items with descriptions]
-```
+Choose the format that best matches the character's intended roleplay style and the request."#.to_string());
+        }
 
-Choose the format that best matches the character's setting and intended roleplay style."#
-            }
-            // Special handling for alternate greetings - focus on rich, immersive openings
-            (CharacterField::AlternateGreeting, _) => {
-                r#"Create a rich, immersive opening scene that establishes context, character voice, and user interaction. Choose the appropriate structure based on the character type:
+        if matches!(field, CharacterField::MesExample) {
+            parts.push(
+                r#"
 
-**For Narrative/Character-Driven Roleplay:**
-1. **Opening Hook**: Start with dialogue, action, or compelling scene setting
-2. **Scene/Context**: Establish where this is happening and what's going on
-3. **Character Voice**: Show personality through thoughts, actions, and speech
-4. **User Integration**: Set up the scenario for user interaction
-5. **Proper Length**: Multiple paragraphs that create immersion
+CRITICAL FORMAT REQUIREMENT for mes_example:
 
-**For System/Game-Style Roleplay:**
-1. **Rich Narrative Opening**: Detailed alternate scenario with world-building (2-3 paragraphs)
-2. **CURRENT STATE Section**: Updated character stats reflecting the new situation
-3. **INVENTORY Section**: Items relevant to this specific scenario
+EVERY SINGLE conversation example MUST start with "<START>" on its own line.
+This includes THE VERY FIRST EXAMPLE. Your output must literally begin with <START>.
 
-Make this distinct from their main greeting by using a different scenario, mood, or situation while maintaining the character's core personality and the appropriate format style."#
-            }
-            // Regular field generation with existing style examples
-            (_, DescriptionStyle::Profile) => {
-                r#"Use structured profile format with clear field labels separated by newlines. IMPORTANT: Include \n newline characters between each field. Example:
-Name: Captain Elena Vasquez\nAge: 34\nHeight: 5'8"\nBuild: Athletic, weathered from years at sea\nHair: Dark brown, usually tied back\nEyes: Steel gray\nPersonality: Determined, fair but firm, distrusts authority\nBackground: Former naval officer turned independent trader\nNotable: Has a mysterious treasure map hidden in her cabin
+Generate 2-3 conversation examples using this EXACT structure:
 
-Each field should be on its own line with proper newline separation for readability."#
-            }
-            (_, DescriptionStyle::Traits) => {
-                r#"Use short, punchy sentences and fragments. Focus on observable traits. Example:
-Tall. Lean build. Silver hair, piercing green eyes. Former military sniper. Calm under pressure. Doesn't talk much. Prefers action over words. Methodical. Patient. Excellent marksman. Haunted by past missions. Drinks black coffee. Wears dark clothing."#
-            }
-            (_, DescriptionStyle::Narrative) => {
-                r#"Write in flowing, story-like prose with complete sentences. Example:
-Captain Elena Vasquez stands at the helm of her merchant vessel, weathered hands gripping the wheel as storm clouds gather on the horizon. Twenty years of sailing treacherous waters have carved lines of determination into her sun-bronzed face, while her steel-gray eyes reflect the wisdom earned through countless adventures."#
-            }
-            (_, DescriptionStyle::Group) => {
-                r#"Use the Characters() format for multiple characters. Example:
-Characters("Captain Zara, Chief Engineer Bolt, Navigator Iris")
-Captain Zara("A former pirate turned legitimate salvager. Fiery red hair, cybernetic left arm, sharp tongue. Excellent pilot and negotiator.")
-Chief Engineer Bolt("A gruff, bearded engineer who can fix anything. Missing his right leg from a reactor explosion. Drinks too much but never when on duty.")
-Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analytical, but has moments of surprising insight.")"#
-            }
-            (_, DescriptionStyle::Worldbuilding) => {
-                r#"Establish the character as part of a larger fictional universe. Include world lore and context. Example:
-{{char}} is a Guardian of the Stellar Nexus, one of the ancient beings who maintain the cosmic balance between the seven dimensional realms. In the current age known as the Twilight Convergence, the barriers between dimensions have grown thin, allowing creatures and energies to bleed through."#
-            }
-            (_, DescriptionStyle::System) => {
-                r#"Create behavioral instructions for AI roleplay. Define what the character will/won't do. Example:
-{{char}} is an adaptive survival simulation that responds to {{user}}'s choices in a post-apocalyptic wasteland. {{char}} will generate random encounters, manage resource scarcity, and track {{user}}'s health, hunger, and sanity levels. {{char}} will never guarantee {{user}}'s safety - death is a real possibility."#
-            }
-            (_, DescriptionStyle::Auto) => {
-                "Choose the most appropriate style based on the context and field type. Focus on creating engaging, well-structured content."
-            }
-        };
+<START>
+{{char}}: "Dialogue here." *Action in asterisks.*
+{{user}}: "Response here." *Action.*
+{{char}}: "Reply." *Action.*
+{{user}}: "Final response."
+{{char}}: *Reaction and closing.*
 
-        let json_instruction = if matches!(style, DescriptionStyle::Profile) {
-            format!(
-                "You must respond with a JSON object containing:\n- content: The generated {} in profile format with \\n newline characters between each field for proper formatting\n- reasoning: Brief explanation of your creative choices\n- style_applied: The style you used\n- quality_score: Your assessment of the content quality (1-10)",
-                field_name.to_lowercase()
-            )
-        } else {
-            format!(
-                "You must respond with a JSON object containing:\n- content: The generated {} in the specified style\n- reasoning: Brief explanation of your creative choices\n- style_applied: The style you used\n- quality_score: Your assessment of the content quality (1-10)",
-                field_name.to_lowercase()
-            )
-        };
+<START>
+{{char}}: "Different scenario dialogue..." *Different action.*
+{{user}}: "Response."
+{{char}}: "Reply..."
 
-        format!(
-            "{}\n\n{}\n\n{}",
-            base_instruction, style_guidance, json_instruction
-        )
+<START>
+{{char}}: "Third example..." *Action.*
+[continue...]
+
+CRITICAL: Your output MUST begin with the text "<START>" (not with dialogue or narration).
+The first line of your output should be: <START>
+Then the conversation begins on the next line.
+
+Use {{char}}: for the AI character and {{user}}: for the player.
+Actions go in *asterisks*.
+Show different scenarios, moods, or personality aspects."#
+                    .to_string(),
+            );
+        }
+
+        // 6. Final guidelines
+        parts.push(format!("\n{}", FINAL_GUIDELINES));
+
+        parts.join("\n")
     }
 
     /// Build user message with context and generation request, including lorebook context
@@ -932,7 +1098,8 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
 
         if let Some(reasoning) = reasoning_budget {
             genai_chat_options = genai_chat_options.with_reasoning_effort(reasoning);
-            genai_chat_options = genai_chat_options.with_include_thoughts(true); // Include reasoning in response for debugging
+            genai_chat_options = genai_chat_options.with_include_thoughts(true);
+            // Include reasoning in response for debugging
         }
 
         // Add safety settings to allow mature content (same as main generation)
@@ -1113,5 +1280,117 @@ Navigator Iris("A young prodigy with enhanced neural implants. Quiet and analyti
         }
 
         Ok(total_tokens)
+    }
+
+    /// Analyze the style of existing content using structured output
+    #[instrument(skip_all)]
+    pub async fn analyze_style(&self, content: &str) -> Result<StyleAnalysisOutput, AppError> {
+        let start_time = Instant::now();
+
+        info!(
+            "Starting style analysis for content with {} characters",
+            content.len()
+        );
+
+        // Build system prompt for style analysis
+        let system_prompt = r#"You are an expert in analyzing character description styles for creative writing and roleplay.
+Your task is to analyze the provided text and classify it into one of the following styles:
+
+**Style Types:**
+
+1. **traits**: Brief, punchy character traits and physical characteristics
+   - Uses short sentences or fragments
+   - Focuses on observable features
+   - Example: "Tall. Athletic build. Green eyes. Former soldier. Quiet. Strategic thinker."
+
+2. **narrative**: Story-like, flowing prose with complete sentences
+   - Uses descriptive, flowing language
+   - Tells a story or paints a picture
+   - Example: "Captain Elena stands at the helm, her weathered hands gripping the wheel as storm clouds gather..."
+
+3. **profile**: Structured biographical information with clear field labels
+   - Uses "Field: Value" format
+   - Organized like a character sheet
+   - Example: "Name: Elena\nAge: 34\nOccupation: Ship Captain\nPersonality: Determined, fair but firm"
+
+4. **group**: Multiple character descriptions using Characters() format
+   - Defines multiple characters in one text
+   - Uses Characters() notation
+   - Example: "Characters(\"Captain, Engineer, Navigator\")\nCaptain(\"A former pirate...\")"
+
+5. **worldbuilding**: Rich world context and lore with {{char}} placeholders
+   - Establishes character within a larger fictional universe
+   - Includes world lore and setting details
+   - May use {{char}} notation
+   - Example: "{{char}} is a Guardian of the Stellar Nexus, one of the ancient beings..."
+
+6. **system**: AI behavior instructions with {{char}} and {{user}} placeholders
+   - Defines what the AI will/won't do
+   - Uses technical roleplay notation
+   - Example: "{{char}} will generate random encounters. {{char}} will track {{user}}'s health and inventory."
+
+Analyze the text carefully and identify which style it most closely matches. Provide specific indicators and helpful recommendations."#;
+
+        // Build user message with the content to analyze
+        let user_message = format!(
+            r#"Analyze this character description and classify its style:
+
+**Content to Analyze:**
+{}
+
+Provide a detailed analysis including:
+- The detected style (one of: traits, narrative, profile, group, worldbuilding, system)
+- Your confidence level (0.0 to 1.0)
+- Specific features that indicate this style
+- Recommendations for improving or enhancing the content"#,
+            content
+        );
+
+        // Create messages for generation
+        let messages = vec![GenAiChatMessage {
+            role: ChatRole::User,
+            content: MessageContent::Text(user_message),
+            options: None,
+        }];
+
+        // Create a dummy request for compatibility with generate_with_structured_output
+        let dummy_request = FieldGenerationRequest {
+            field: CharacterField::Description, // Doesn't matter for analysis
+            mode: GenerationMode::Create,       // Doesn't matter for analysis
+            user_prompt: String::new(),
+            style: None,
+            character_context: None,
+            generation_options: None,
+            lorebook_id: None,
+        };
+
+        // Generate using the LLM with structured output
+        let generated_output = self
+            .generate_with_structured_output(
+                &system_prompt,
+                &messages,
+                &get_style_analysis_schema(),
+                &dummy_request,
+            )
+            .await?;
+
+        // Parse the structured output
+        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output)
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to parse style analysis output: {}",
+                    e
+                ))
+            })?;
+
+        let generation_time = start_time.elapsed();
+        info!(
+            "Style analysis completed in {}ms with style: {:?}, confidence: {}",
+            generation_time.as_millis(),
+            style_analysis.detected_style,
+            style_analysis.confidence
+        );
+
+        Ok(style_analysis)
     }
 }

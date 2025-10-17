@@ -1,6 +1,6 @@
 use crate::errors::AppError;
 use crate::state::AppState;
-use axum::{Json, extract::State};
+use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -169,9 +169,9 @@ async fn check_database_health(
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     conn.interact(move |conn| {
-        use diesel::RunQueryDsl;
         use diesel::sql_query;
         use diesel::sql_types::Integer;
+        use diesel::RunQueryDsl;
 
         #[derive(diesel::QueryableByName)]
         struct HealthCheck {

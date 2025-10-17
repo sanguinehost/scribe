@@ -6,7 +6,6 @@ use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    AppState,
     errors::AppError,
     models::{
         characters::Character,
@@ -20,9 +19,10 @@ use crate::{
     },
     schema::{characters, chat_session_lorebooks, chat_sessions, users::dsl as users_dsl},
     state::DbPool,
+    AppState,
 };
 
-use super::message_handling::{SaveMessageParams, save_message};
+use super::message_handling::{save_message, SaveMessageParams};
 
 /// Type alias for session creation result
 type SessionCreationResult = Result<(Chat, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
@@ -747,6 +747,8 @@ async fn process_first_message(
                                         status: crate::models::chats::MessageStatus::Completed,
                                         error_message: None,
                                         variant_of: None, // First message doesn't create variants
+                                        charge_credits: false, // Character's first message is not charged
+                                        credits_cost_override: None, // Let save_message calculate from tokens
                                     })
                                     .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");

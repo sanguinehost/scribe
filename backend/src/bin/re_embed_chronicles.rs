@@ -28,7 +28,7 @@ use scribe_backend::{
 use secrecy::{ExposeSecret, SecretString};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tokio::time::{Duration, Instant, sleep};
+use tokio::time::{sleep, Duration, Instant};
 use tracing::{error, info, warn};
 
 #[derive(Parser)]

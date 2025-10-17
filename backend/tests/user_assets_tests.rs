@@ -3,7 +3,7 @@
 use anyhow::Result;
 use scribe_backend::{
     models::user_assets::{NewUserAsset, UserAsset},
-    test_helpers::{TestDataGuard, ensure_tracing_initialized},
+    test_helpers::{ensure_tracing_initialized, TestDataGuard},
 };
 use uuid::Uuid;
 
@@ -33,7 +33,7 @@ fn create_test_image_data() -> Vec<u8> {
 async fn test_user_asset_model_creation() -> Result<()> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let user_id = Uuid::new_v4();
     let image_data = create_test_image_data();

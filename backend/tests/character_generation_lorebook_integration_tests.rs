@@ -38,6 +38,7 @@ async fn test_character_generation_with_lorebook_context() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -90,6 +91,7 @@ async fn test_character_generation_with_lorebook_context() {
     let lorebook_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(create_lorebook_request)
         .await
         .unwrap();
@@ -122,6 +124,7 @@ async fn test_character_generation_with_lorebook_context() {
     let entry_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(create_entry_request)
         .await
         .unwrap();
@@ -144,6 +147,7 @@ async fn test_character_generation_with_lorebook_context() {
 
     let entry2_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(create_entry2_request)
         .await
@@ -181,6 +185,7 @@ async fn test_character_generation_with_lorebook_context() {
 
     let generate_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(generate_request)
         .await
@@ -268,6 +273,7 @@ async fn test_alternate_greeting_generation_with_lorebook() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -300,6 +306,7 @@ async fn test_alternate_greeting_generation_with_lorebook() {
     let lorebook_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(create_lorebook_request)
         .await
         .unwrap();
@@ -329,6 +336,7 @@ async fn test_alternate_greeting_generation_with_lorebook() {
 
     let entry_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(create_entry_request)
         .await
@@ -393,6 +401,7 @@ async fn test_alternate_greeting_generation_with_lorebook() {
 
     let generate_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(generate_request)
         .await
@@ -467,6 +476,7 @@ async fn test_character_generation_without_lorebook() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -504,6 +514,7 @@ async fn test_character_generation_without_lorebook() {
 
     let generate_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(generate_request)
         .await
@@ -561,6 +572,7 @@ async fn test_character_generation_with_invalid_lorebook_id() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -608,6 +620,7 @@ async fn test_character_generation_with_invalid_lorebook_id() {
 
     let generate_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(generate_request)
         .await
@@ -666,6 +679,7 @@ async fn test_request_validation_with_lorebook_integration() {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(login_request)
         .await
         .unwrap();
@@ -701,6 +715,7 @@ async fn test_request_validation_with_lorebook_integration() {
 
     let generate_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(generate_request)
         .await

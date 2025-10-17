@@ -277,7 +277,9 @@ export class LLMStore {
 		const nameMap: Record<string, string> = {
 			'gemini-2.5-pro': 'Gemini 2.5 Pro',
 			'gemini-2.5-flash': 'Gemini 2.5 Flash',
-			'gemini-2.5-flash-lite-preview-06-17': 'Gemini 2.5 Flash Lite',
+			'gemini-2.5-flash-preview-09-2025': 'Gemini 2.5 Flash Preview',
+			'gemini-2.5-flash-lite-preview-09-2025': 'Gemini 2.5 Flash Lite',
+			'gemini-2.5-flash-image': 'Gemini 2.5 Flash Image',
 			'gpt-oss-20b-q4': 'GPT-OSS 20B (Q4)',
 			'qwen3-30b-a3b-thinking-q4': 'Qwen3 30B A3B Thinking (Q4)',
 			'qwen3-30b-a3b-instruct-q4': 'Qwen3 30B A3B Instruct (Q4)',
@@ -338,7 +340,9 @@ export class LLMStore {
 		const descriptionMap: Record<string, string> = {
 			'gemini-2.5-pro': 'Most capable model with advanced reasoning',
 			'gemini-2.5-flash': 'Fast and efficient model for most tasks',
-			'gemini-2.5-flash-lite-preview-06-17': 'Ultra-fast model for simple tasks',
+			'gemini-2.5-flash-preview-09-2025': 'Latest preview with enhanced capabilities',
+			'gemini-2.5-flash-lite-preview-09-2025': 'Ultra-fast and cost-effective model (FREE)',
+			'gemini-2.5-flash-image': 'Chat model with image generation support',
 			'gpt-oss-20b-q4': 'High-quality open-source model (20B parameters)',
 			'qwen3-30b-a3b-thinking-q4': 'MoE reasoning model with 30B total parameters',
 			'qwen3-30b-a3b-instruct-q4': 'MoE instruction-following model with 30B total parameters',

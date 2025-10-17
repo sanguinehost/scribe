@@ -1,5 +1,5 @@
 use tracing::Subscriber;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Builds the tracing subscriber configuration.
 /// This function is separate to allow testing the configuration logic

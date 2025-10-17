@@ -4,7 +4,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use bigdecimal::BigDecimal;
@@ -61,6 +61,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
 
     let register_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -131,6 +132,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -294,7 +296,10 @@ async fn create_chat_session_with_messages(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     conn.interact(move |conn| {
@@ -350,6 +355,12 @@ async fn create_chat_session_with_messages(
             error_message: None,
             variant_count: 1,
             current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: BigDecimal::from(0),
+            actual_cost: BigDecimal::from(0),
+            modified_cost: BigDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: BigDecimal::from(0),
         };
 
         conn.interact(move |conn| {
@@ -372,7 +383,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_successful_operation() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -383,6 +395,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -419,6 +432,7 @@ mod re_chronicle_api_tests {
         let re_chronicle_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -454,7 +468,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_with_existing_events() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -465,6 +480,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -507,6 +523,7 @@ mod re_chronicle_api_tests {
             let create_event_response = test_app
                 .router
                 .clone()
+                .clone()
                 .oneshot(
                     Request::builder()
                         .method(Method::POST)
@@ -532,6 +549,7 @@ mod re_chronicle_api_tests {
 
         let re_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -562,7 +580,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_without_purging() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -573,6 +592,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -609,6 +629,7 @@ mod re_chronicle_api_tests {
         let re_chronicle_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -638,7 +659,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_with_message_range() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -649,6 +671,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -687,6 +710,7 @@ mod re_chronicle_api_tests {
         let re_chronicle_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -712,7 +736,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_nonexistent_chronicle() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, _user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         let nonexistent_chronicle_id = Uuid::new_v4();
@@ -727,6 +752,7 @@ mod re_chronicle_api_tests {
 
         let re_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -749,7 +775,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_nonexistent_chat_session() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, _user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -760,6 +787,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -791,6 +819,7 @@ mod re_chronicle_api_tests {
         let re_chronicle_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -816,7 +845,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_unauthorized_access() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
         // Create two users
         let (session_cookie1, user_id1) = create_authenticated_user(&test_app).await.unwrap();
@@ -830,6 +860,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -865,6 +896,7 @@ mod re_chronicle_api_tests {
         let unauthorized_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -883,6 +915,7 @@ mod re_chronicle_api_tests {
         let unauth_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -900,7 +933,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_validation_errors() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, _user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -911,6 +945,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -940,6 +975,7 @@ mod re_chronicle_api_tests {
         let incomplete_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -966,6 +1002,7 @@ mod re_chronicle_api_tests {
 
         let invalid_uuid_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -995,6 +1032,7 @@ mod re_chronicle_api_tests {
         let invalid_batch_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -1014,7 +1052,8 @@ mod re_chronicle_api_tests {
     #[tokio::test]
     async fn test_re_chronicle_empty_chat_session() {
         let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-        let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+        let mut _guard =
+            TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
         let (session_cookie, user_id) = create_authenticated_user(&test_app).await.unwrap();
 
         // Create a chronicle
@@ -1025,6 +1064,7 @@ mod re_chronicle_api_tests {
 
         let create_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()
@@ -1059,6 +1099,7 @@ mod re_chronicle_api_tests {
 
         let re_chronicle_response = test_app
             .router
+            .clone()
             .clone()
             .oneshot(
                 Request::builder()

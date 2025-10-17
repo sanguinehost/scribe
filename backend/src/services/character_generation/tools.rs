@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{info, instrument};
 
-use crate::{AppState, errors::AppError};
+use crate::{errors::AppError, AppState};
 
 use super::{
     enhancement_service::EnhancementService, field_generator::FieldGenerator,

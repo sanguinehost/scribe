@@ -262,6 +262,12 @@ impl CreditService {
         reference_id: Option<String>,
         metadata: Option<serde_json::Value>,
     ) -> Result<CreditBalance, AppError> {
+        if !self.is_enabled() {
+            return Err(AppError::BadRequest(
+                "Credit system is not enabled".to_string(),
+            ));
+        }
+
         use crate::schema::user_credits;
 
         conn.transaction(|conn| {
@@ -284,23 +290,17 @@ impl CreditService {
             let available_balance = self.get_available_balance(conn, user_id)?;
             let max_limit = self.config.payment.max_credit_balance as i32;
 
-            // Cap the amount to add if it would exceed max balance
-            let amount_to_add = if available_balance + amount > max_limit {
-                max_limit - available_balance
-            } else {
-                amount
-            };
-
-            // If no credits can be added, return error
-            if amount_to_add <= 0 {
+            // Reject if adding credits would exceed maximum limit
+            if available_balance + amount > max_limit {
                 return Err(AppError::BadRequest(format!(
-                    "Credit balance is at maximum limit of {}",
-                    self.config.payment.max_credit_balance
+                    "Adding {} credits would exceed maximum limit of {} (current balance: {})",
+                    amount, max_limit, available_balance
                 )));
             }
 
-            // Calculate new balance (use available balance + capped amount)
-            // This effectively excludes expired credits from the balance
+            let amount_to_add = amount;
+
+            // Calculate new balance
             let new_balance = available_balance + amount_to_add;
 
             // Encrypt transaction data with user DEK
@@ -318,7 +318,7 @@ impl CreditService {
             let transaction = NewCreditTransaction {
                 id: Uuid::new_v4(),
                 user_id,
-                amount: amount_to_add, // Use capped amount
+                amount: amount_to_add,
                 balance_after: new_balance,
                 transaction_type: transaction_type.to_string(),
                 description_encrypted: encrypted_data.description_encrypted,
@@ -339,20 +339,39 @@ impl CreditService {
                 })?;
 
             // Update balance (atomic with optimistic locking)
-            let rows_updated = diesel::update(user_credits::table)
-                .filter(user_credits::user_id.eq(user_id))
-                .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
-                .set((
-                    user_credits::balance.eq(new_balance),
-                    user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add), // Use capped amount
-                    user_credits::version.eq(balance.version + 1),
-                    user_credits::updated_at.eq(Utc::now()),
-                ))
-                .execute(conn)
-                .map_err(|e| {
-                    error!("Failed to update credit balance: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+            // Set last_monthly_grant if this is a monthly grant transaction
+            let rows_updated = if transaction_type == "monthly_grant" {
+                diesel::update(user_credits::table)
+                    .filter(user_credits::user_id.eq(user_id))
+                    .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
+                    .set((
+                        user_credits::balance.eq(new_balance),
+                        user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add),
+                        user_credits::last_monthly_grant.eq(Some(Utc::now())),
+                        user_credits::version.eq(balance.version + 1),
+                        user_credits::updated_at.eq(Utc::now()),
+                    ))
+                    .execute(conn)
+                    .map_err(|e| {
+                        error!("Failed to update credit balance: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            } else {
+                diesel::update(user_credits::table)
+                    .filter(user_credits::user_id.eq(user_id))
+                    .filter(user_credits::version.eq(balance.version)) // Optimistic lock check
+                    .set((
+                        user_credits::balance.eq(new_balance),
+                        user_credits::lifetime_earned.eq(balance.lifetime_earned + amount_to_add),
+                        user_credits::version.eq(balance.version + 1),
+                        user_credits::updated_at.eq(Utc::now()),
+                    ))
+                    .execute(conn)
+                    .map_err(|e| {
+                        error!("Failed to update credit balance: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            };
 
             if rows_updated == 0 {
                 return Err(AppError::Conflict(
@@ -365,7 +384,7 @@ impl CreditService {
                 conn,
                 user_id,
                 AuditEventType::CreditAdded,
-                amount_to_add, // Use capped amount
+                amount_to_add,
             ) {
                 error!("Failed to audit log credit addition: {}", e);
             }
@@ -380,14 +399,15 @@ impl CreditService {
 
             // Update and return the balance
             balance.balance = new_balance;
-            balance.lifetime_earned += amount_to_add; // Use capped amount
+            balance.lifetime_earned += amount_to_add;
             balance.version += 1;
+            if transaction_type == "monthly_grant" {
+                balance.last_monthly_grant = Some(Utc::now());
+            }
 
             debug!(
                 "Added {} credits for user {} (new balance: {})",
-                amount_to_add, // Use capped amount
-                user_id,
-                new_balance
+                amount_to_add, user_id, new_balance
             );
 
             Ok(balance)
@@ -890,6 +910,93 @@ impl CreditService {
         Ok(updated_balance)
     }
 
+    /// Adjust a pending reservation to reflect actual usage (partial refund)
+    /// This is used when actual token usage is less than the upfront reservation
+    pub fn adjust_reservation_to_actual_cost(
+        &self,
+        conn: &mut PgConnection,
+        user_id: Uuid,
+        reservation_id: Uuid,
+        actual_cost: i32,
+    ) -> Result<CreditBalance, AppError> {
+        use crate::schema::credit_transactions::dsl;
+
+        // Find the pending transaction
+        let transaction: CreditTransaction = dsl::credit_transactions
+            .filter(dsl::id.eq(reservation_id))
+            .filter(dsl::user_id.eq(user_id))
+            .filter(dsl::transaction_type.eq("pending"))
+            .first(conn)
+            .map_err(|e| {
+                error!(
+                    "Failed to find pending transaction for adjustment {}: {}",
+                    reservation_id, e
+                );
+                AppError::NotFound(format!("Reservation {} not found", reservation_id))
+            })?;
+
+        let reserved_amount = transaction.amount.abs();
+
+        // If actual cost is greater than or equal to reserved, no adjustment needed
+        if actual_cost >= reserved_amount {
+            info!(
+                reservation_id = %reservation_id,
+                reserved = reserved_amount,
+                actual = actual_cost,
+                "Actual cost >= reserved amount, no adjustment needed"
+            );
+            return self.get_balance(conn, user_id);
+        }
+
+        let refund_amount = reserved_amount - actual_cost;
+
+        // Update the pending transaction to reflect actual cost
+        diesel::update(dsl::credit_transactions.find(reservation_id))
+            .set(dsl::amount.eq(-(actual_cost))) // Negative for deduction
+            .execute(conn)
+            .map_err(|e| {
+                error!(
+                    "Failed to adjust reservation amount {}: {}",
+                    reservation_id, e
+                );
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Return the difference to user balance
+        use crate::schema::user_credits;
+        let mut balance: CreditBalance = user_credits::dsl::user_credits
+            .find(user_id)
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to get balance for adjustment: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        balance.balance += refund_amount;
+        balance.updated_at = Some(Utc::now());
+
+        let updated_balance: CreditBalance =
+            diesel::update(user_credits::dsl::user_credits.find(user_id))
+                .set(&balance)
+                .get_result(conn)
+                .map_err(|e| {
+                    error!("Failed to adjust user balance: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
+
+        info!(
+            reservation_id = %reservation_id,
+            user_id = %user_id,
+            reserved = reserved_amount,
+            actual = actual_cost,
+            refunded = refund_amount,
+            new_balance = updated_balance.balance,
+            "Adjusted reservation to actual cost"
+        );
+
+        Ok(updated_balance)
+    }
+
     /// Grant monthly credits based on subscription tier
     pub fn grant_monthly_credits(
         &self,
@@ -1243,12 +1350,12 @@ impl CreditService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::{TestDataGuard, spawn_app};
+    use crate::test_helpers::{spawn_app, TestDataGuard};
 
     #[tokio::test]
     async fn test_credit_balance_lifecycle() {
         let app = spawn_app(false, false, false).await;
-        let _test_guard = TestDataGuard::new(app.db_pool.clone());
+        let _test_guard = TestDataGuard::new(app.db_pool.clone(), app.test_db_name.clone());
 
         // Create a test user to satisfy foreign key constraint
         let test_user = crate::test_helpers::db::create_test_user(

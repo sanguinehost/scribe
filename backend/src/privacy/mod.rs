@@ -324,10 +324,8 @@ mod tests {
         assert_eq!(sanitized.expose(), content);
         assert_eq!(sanitized.len(), content.len());
         assert!(sanitized.to_string().contains("<content-redacted:"));
-        assert!(
-            sanitized
-                .to_string()
-                .contains(&format!("{}-chars>", content.len()))
-        );
+        assert!(sanitized
+            .to_string()
+            .contains(&format!("{}-chars>", content.len())));
     }
 }

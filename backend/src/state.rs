@@ -4,11 +4,11 @@
 use deadpool_diesel::postgres::Pool as DeadpoolPool;
 // Removed AppError import as it's not directly used here
 use crate::config::Config; // Use Config instead
-// use genai::Client as GeminiApiClient; // Remove Gemini client for now
+                           // use genai::Client as GeminiApiClient; // Remove Gemini client for now
 use std::sync::Arc;
 // Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
 use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
-// Use the AiClient trait from our llm module
+                                      // Use the AiClient trait from our llm module
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
 use crate::services::embeddings::EmbeddingPipelineServiceTrait;
@@ -22,7 +22,6 @@ use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server m
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{ModelIntegrityVerifier, SecurityAuditLogger}; // Added for LLM security
 use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
-use crate::services::EmailService; // For email service
 use crate::services::ai_client_factory::AiClientFactory;
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
@@ -30,6 +29,7 @@ use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for toke
 use crate::services::lorebook::LorebookService; // Added for LorebookService
 use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
+use crate::services::EmailService; // For email service
 use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 

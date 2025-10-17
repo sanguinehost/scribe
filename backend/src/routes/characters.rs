@@ -20,17 +20,17 @@ use crate::services::character_generation::{
 use crate::services::character_parser::{self};
 use crate::state::AppState;
 use axum::{
-    Router,
     body::Body,
     debug_handler,
-    extract::{Path, Query, State, multipart::Multipart}, // Added Query
+    extract::{multipart::Multipart, Path, Query, State}, // Added Query
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
+    Router,
 };
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper, result::Error as DieselError,
+    result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
+    QueryDsl, RunQueryDsl, SelectableHelper,
 }; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, trace, warn}; // Use needed tracing macros
@@ -44,7 +44,7 @@ use crate::services::encryption_service::EncryptionService; // Added import
 use crate::services::lorebook::LorebookService;
 use axum::body::Bytes;
 use axum_login::AuthSession; // <-- Removed login_required import
-// DieselError moved to main diesel imports
+                             // DieselError moved to main diesel imports
 use image::ImageFormat; // Added for image processing
 use image::ImageReader; // Use the new name for clarity
 use secrecy::ExposeSecret; // Added for DEK expose
@@ -494,7 +494,12 @@ pub async fn upload_character_handler(
                             crate::models::lorebook_dtos::UploadedLorebookEntry,
                         >(entry_value.clone())
                         {
-                            Ok(entry) => {
+                            Ok(mut entry) => {
+                                // Fallback: use insertion_order if position is None
+                                if entry.position.is_none() && entry.insertion_order.is_some() {
+                                    entry.position = entry.insertion_order;
+                                }
+
                                 let uid = entry
                                     .uid
                                     .map(|u| u.to_string())
@@ -523,7 +528,12 @@ pub async fn upload_character_handler(
                             crate::models::lorebook_dtos::UploadedLorebookEntry,
                         >(entry_value.clone())
                         {
-                            Ok(entry) => {
+                            Ok(mut entry) => {
+                                // Fallback: use insertion_order if position is None
+                                if entry.position.is_none() && entry.insertion_order.is_some() {
+                                    entry.position = entry.insertion_order;
+                                }
+
                                 tracing::info!(
                                     "Successfully parsed object entry {}: content length={}",
                                     uid,
@@ -1383,7 +1393,7 @@ pub async fn enhance_field_handler(
 // POST /api/characters/analyze/style
 #[instrument(skip_all)]
 pub async fn analyze_style_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -1402,39 +1412,16 @@ pub async fn analyze_style_handler(
         content.len()
     );
 
-    // For now, implement basic style analysis
-    // This will be enhanced with more sophisticated analysis later
-    let detected_style = if content.contains("{{char}}") || content.contains("{{user}}") {
-        "system"
-    } else if content.contains("Characters(") {
-        "group"
-    } else if content.contains("Name:") || content.contains("Age:") {
-        "profile"
-    } else {
-        "narrative"
-    };
+    // Use FieldGenerator with proper structured outputs
+    let field_generator = FieldGenerator::new(Arc::new(state));
+    let analysis = field_generator.analyze_style(content).await?;
 
-    let confidence = match detected_style {
-        "system" | "group" => 0.9,
-        "profile" => 0.8,
-        _ => 0.6,
-    };
-
+    // Convert StyleAnalysisOutput to JSON response
     let result = serde_json::json!({
-        "detected_style": detected_style,
-        "confidence": confidence,
-        "style_indicators": match detected_style {
-            "system" => vec!["Contains {{char}} or {{user}} placeholders"],
-            "group" => vec!["Uses Characters() format"],
-            "profile" => vec!["Contains structured data fields"],
-            _ => vec!["Uses narrative prose style"],
-        },
-        "recommendations": match detected_style {
-            "system" => vec!["Consider adding more behavioral guidelines"],
-            "group" => vec!["Ensure each character has distinct traits"],
-            "profile" => vec!["Add personality section after biographical data"],
-            _ => vec!["Add more sensory details and background"],
-        }
+        "detected_style": analysis.detected_style.as_str(),
+        "confidence": analysis.confidence,
+        "style_indicators": analysis.style_indicators,
+        "recommendations": analysis.recommendations
     });
 
     Ok(Json(result))

@@ -123,12 +123,10 @@ async fn test_tool_error_handling() {
     let invalid_params = json!({});
     let result = tool.execute(&invalid_params).await;
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("messages array is required")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("messages array is required"));
 
     // Wrong type for messages should return error
     let wrong_type_params = json!({
@@ -136,12 +134,10 @@ async fn test_tool_error_handling() {
     });
     let result = tool.execute(&wrong_type_params).await;
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("messages array is required")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("messages array is required"));
 
     // Empty messages array should work (returns not significant)
     let empty_messages_params = json!({
@@ -151,12 +147,10 @@ async fn test_tool_error_handling() {
     assert!(result.is_ok());
     let output = result.unwrap();
     assert_eq!(output["is_significant"], false);
-    assert!(
-        output["reason"]
-            .as_str()
-            .unwrap()
-            .contains("No content to analyze")
-    );
+    assert!(output["reason"]
+        .as_str()
+        .unwrap()
+        .contains("No content to analyze"));
 }
 
 #[tokio::test]

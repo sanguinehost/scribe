@@ -21,6 +21,7 @@ pub mod payment;
 pub mod rag_budget_manager;
 pub mod safety_utils;
 pub mod secure_llm_service;
+pub mod template_preference_service;
 pub mod tokenizer_service;
 pub mod user_persona_service;
 pub mod user_settings_service;
@@ -37,12 +38,13 @@ pub use chronicle_deduplication_service::{
     ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult,
 };
 pub use chronicle_service::ChronicleService;
-pub use email_service::{EmailService, create_email_service};
+pub use email_service::{create_email_service, EmailService};
 pub use encryption_service::EncryptionService;
 pub use lorebook::LorebookService;
 pub use narrative_intelligence_service::{
     NarrativeIntelligenceService, NarrativeProcessingConfig, NarrativeProcessingResult,
 };
 pub use secure_llm_service::SecureLlmService;
+pub use template_preference_service::TemplatePreferenceService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;

@@ -8,10 +8,11 @@
 	} from '$lib/types';
 	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
-	import { ArrowLeft, Edit, Download, Trash } from 'lucide-svelte';
+	import { ArrowLeft, Edit, Download, Trash, Sparkles } from 'lucide-svelte';
 	import LorebookForm from './LorebookForm.svelte';
 	import LorebookEntryList from './LorebookEntryList.svelte';
 	import LorebookEntryForm from './LorebookEntryForm.svelte';
+	import LorebookAIAssistantDialog from './LorebookAIAssistantDialog.svelte';
 
 	interface Props {
 		lorebook: Lorebook;
@@ -53,6 +54,7 @@
 	let showEditEntry = $state(false);
 	let editingEntry = $state<LorebookEntry | null>(null);
 	let showDeleteLorebook = $state(false);
+	let showAIAssistant = $state(false);
 
 	async function handleUpdateLorebook(_data: UpdateLorebookPayload) {
 		if (onUpdateLorebook) {
@@ -125,6 +127,14 @@
 			onUpdateEntry(lorebook.id, entry.id, { is_enabled: !entry.is_enabled });
 		}
 	}
+
+	function handleAIEntriesGenerated(_count: number) {
+		// The entries are already created in the database by the backend
+		// We just need to trigger a refresh of the entries list
+		// This would ideally trigger a parent component refresh
+		// For now, the parent will need to handle refreshing
+		console.log('AI generated entries, parent should refresh');
+	}
 </script>
 
 <div class="space-y-6">
@@ -146,6 +156,12 @@
 		</div>
 
 		<div class="flex gap-2">
+			<!-- AI Assistant -->
+			<ButtonComponent variant="default" onclick={() => (showAIAssistant = true)}>
+				<Sparkles class="mr-2 h-4 w-4" />
+				AI Assistant
+			</ButtonComponent>
+
 			<!-- Edit Lorebook -->
 			<ButtonComponent variant="outline" onclick={() => (showEditLorebook = true)}>
 				<Edit class="mr-2 h-4 w-4" />
@@ -265,4 +281,11 @@
 			</div>
 		</DialogContent>
 	</Dialog>
+
+	<!-- AI Assistant Dialog -->
+	<LorebookAIAssistantDialog
+		bind:open={showAIAssistant}
+		{lorebook}
+		onEntriesGenerated={handleAIEntriesGenerated}
+	/>
 </div>

@@ -1,8 +1,8 @@
 // backend/src/errors.rs
 use axum::{
-    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -334,6 +334,100 @@ impl IntoResponse for AppError {
 }
 
 impl AppError {
+    /// Returns a stable error code string for each AppError variant.
+    /// This allows frontend to discriminate errors without fragile string matching.
+    pub const fn error_code(&self) -> &'static str {
+        match self {
+            // Authentication/Authorization Errors
+            Self::UserNotFound => "USER_NOT_FOUND",
+            Self::InvalidCredentials => "INVALID_CREDENTIALS",
+            Self::Unauthorized(_) => "UNAUTHORIZED",
+            Self::DekMissing => "DEK_MISSING",
+            Self::Forbidden(_) => "FORBIDDEN",
+            Self::AuthError(_) => "AUTH_ERROR",
+            Self::SessionStoreError(_) => "SESSION_STORE_ERROR",
+            Self::SessionNotFound => "SESSION_NOT_FOUND",
+            Self::SessionError(_) => "SESSION_ERROR",
+            Self::Session(_) => "SESSION",
+
+            // Database Errors
+            Self::DatabaseQueryError(_) => "DATABASE_QUERY_ERROR",
+            Self::DbPoolError(_) => "DB_POOL_ERROR",
+            Self::DbManagedPoolError(_) => "DB_MANAGED_POOL_ERROR",
+            Self::DbPoolBuildError(_) => "DB_POOL_BUILD_ERROR",
+            Self::DbInteractError(_) => "DB_INTERACT_ERROR",
+            Self::DbMigrationError(_) => "DB_MIGRATION_ERROR",
+
+            // Request/Input Errors
+            Self::BadRequest(_) => "BAD_REQUEST",
+            Self::NotFound(_) => "NOT_FOUND",
+            Self::Conflict(_) => "CONFLICT",
+            Self::UsernameTaken => "USERNAME_TAKEN",
+            Self::EmailTaken => "EMAIL_TAKEN",
+            Self::InvalidInput(_) => "INVALID_INPUT",
+            Self::ValidationError(_) => "VALIDATION_ERROR",
+
+            // File/Upload Errors
+            Self::FileUploadError(_) => "FILE_UPLOAD_ERROR",
+            Self::CharacterParseError(_) => "CHARACTER_PARSE_ERROR",
+            Self::CharacterParsingError(_) => "CHARACTER_PARSING_ERROR",
+            Self::ImageProcessingError(_) => "IMAGE_PROCESSING_ERROR",
+
+            // Cryptography Errors
+            Self::CryptoError(_) => "CRYPTO_ERROR",
+            Self::EncryptionError(_) => "ENCRYPTION_ERROR",
+            Self::DecryptionError(_) => "DECRYPTION_ERROR",
+            Self::PasswordHashingFailed(_) => "PASSWORD_HASHING_FAILED",
+
+            // AI/LLM Errors
+            Self::GeminiError(_) => "GEMINI_ERROR",
+            Self::LlmClientError(_) => "LLM_CLIENT_ERROR",
+            Self::GenerationError(_) => "GENERATION_ERROR",
+            Self::EmbeddingError(_) => "EMBEDDING_ERROR",
+            Self::AiServiceError(_) => "AI_SERVICE_ERROR",
+
+            // Gateway/External Service Errors
+            Self::BadGateway(_) => "BAD_GATEWAY",
+            Self::ServiceUnavailable(_) => "SERVICE_UNAVAILABLE",
+            Self::RateLimited(_) => "RATE_LIMITED",
+            Self::HttpRequestError(_) => "HTTP_REQUEST_ERROR",
+            Self::HttpMiddlewareError(_) => "HTTP_MIDDLEWARE_ERROR",
+
+            // Conversion/Parsing Errors
+            Self::ParseIntError(_) => "PARSE_INT_ERROR",
+            Self::UuidError(_) => "UUID_ERROR",
+            Self::SerializationError(_) => "SERIALIZATION_ERROR",
+            Self::IoError(_) => "IO_ERROR",
+            Self::VectorDbError(_) => "VECTOR_DB_ERROR",
+
+            // Text Processing Errors
+            Self::ChunkingError(_) => "CHUNKING_ERROR",
+            Self::TextProcessingError(_) => "TEXT_PROCESSING_ERROR",
+
+            // WebSocket Errors
+            Self::WebSocketSendError(_) => "WEBSOCKET_SEND_ERROR",
+            Self::WebSocketReceiveError(_) => "WEBSOCKET_RECEIVE_ERROR",
+
+            // Configuration/State Errors
+            Self::ConfigError(_) => "CONFIG_ERROR",
+            Self::NotImplemented(_) => "NOT_IMPLEMENTED",
+            Self::InternalServerErrorGeneric(_) => "INTERNAL_SERVER_ERROR",
+            Self::PasswordProcessingError => "PASSWORD_PROCESSING_ERROR",
+
+            // Payment-specific errors (conditional compilation)
+            #[cfg(feature = "payment")]
+            Self::ConfigurationError(_) => "CONFIGURATION_ERROR",
+            #[cfg(feature = "payment")]
+            Self::ExternalServiceError(_) => "EXTERNAL_SERVICE_ERROR",
+            #[cfg(feature = "payment")]
+            Self::JsonParseError(_) => "JSON_PARSE_ERROR",
+            #[cfg(feature = "payment")]
+            Self::InvalidWebhookSignature(_) => "INVALID_WEBHOOK_SIGNATURE",
+            #[cfg(feature = "payment")]
+            Self::InsufficientCredits { .. } => "INSUFFICIENT_CREDITS",
+        }
+    }
+
     fn validation_error_response(validation_errors: &validator::ValidationErrors) -> Response {
         let status = StatusCode::UNPROCESSABLE_ENTITY;
         let error_message = "Validation error".to_string();
@@ -372,9 +466,11 @@ impl AppError {
     }
 
     fn error_to_response(app_error: Self) -> Response {
+        let error_code = app_error.error_code();
         let (status, error_message) = Self::get_status_and_message(app_error);
         let body = Json(json!({
             "error": error_message,
+            "error_code": error_code,
         }));
         (status, body).into_response()
     }

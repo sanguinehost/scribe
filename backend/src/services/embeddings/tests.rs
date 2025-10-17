@@ -15,20 +15,20 @@ mod tests {
         services::lorebook::LorebookService, // Added for LorebookService
         state::AppStateServices,
         test_helpers::{
-            MockAiClient, MockEmbeddingClient, MockQdrantClientService, db::setup_test_database,
+            db::setup_test_database, MockAiClient, MockEmbeddingClient, MockQdrantClientService,
         },
         text_processing::chunking::ChunkingMetric,
     };
     use chrono::Utc;
     use qdrant_client::qdrant::{
-        Filter, PointId, ScoredPoint, Value, condition::ConditionOneOf, r#match::MatchValue,
+        condition::ConditionOneOf, r#match::MatchValue, Filter, PointId, ScoredPoint, Value,
     };
     use secrecy::SecretBox;
     use std::collections::HashMap;
     use std::sync::Arc;
     use uuid::Uuid; // For encryption tests
-    // For creating test JSON values
-    // Ensure this is imported ONCE here
+                    // For creating test JSON values
+                    // Ensure this is imported ONCE here
 
     // Helper to convert string to Qdrant String Value
     fn string_value(s: &str) -> Value {
@@ -222,7 +222,7 @@ mod tests {
     ) {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         let mock_embed_client = Arc::new(MockEmbeddingClient::new());
-        let pool = setup_test_database(None).await;
+        let (pool, _test_db_name) = setup_test_database(None).await;
         let config = Arc::new(Config::default());
         let ai_client = Arc::new(MockAiClient::new());
 
@@ -331,6 +331,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         // Mock Embedding Client to return a dummy vector
@@ -375,6 +376,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2])); // Needs to be called for each chunk
@@ -420,6 +422,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         let result = state
@@ -460,6 +463,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -508,6 +512,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.3, 0.4]));
@@ -750,6 +755,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_qdrant.set_search_response(Ok(vec![]));
@@ -789,6 +795,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -824,6 +831,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         let result = state
@@ -861,6 +869,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_embed_client.set_response(Err(AppError::AiServiceError(
@@ -902,6 +911,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
         mock_qdrant.set_search_response(Ok(vec![]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError(
@@ -951,6 +961,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1007,6 +1018,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1071,6 +1083,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1129,6 +1142,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
@@ -1183,6 +1197,7 @@ mod tests {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         };
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2]));

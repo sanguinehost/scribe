@@ -4,12 +4,12 @@ use chrono::Utc;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
-use crate::PgPool;
 use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
 use crate::models::chat_override::{ChatCharacterOverride, NewChatCharacterOverride};
 use crate::schema::chat_character_overrides;
 use crate::services::encryption_service::EncryptionService;
+use crate::PgPool;
 
 #[derive(Clone)]
 pub struct ChatOverrideService {

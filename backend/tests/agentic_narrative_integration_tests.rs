@@ -4,7 +4,7 @@
 use anyhow::Result as AnyhowResult;
 use bcrypt;
 use chrono::Utc;
-use diesel::{RunQueryDsl, prelude::*};
+use diesel::{prelude::*, RunQueryDsl};
 use hex;
 use scribe_backend::{
     auth::session_dek::SessionDek,
@@ -15,13 +15,13 @@ use scribe_backend::{
     },
     schema::users,
     services::{
-        ChronicleService, LorebookService,
         agentic::{
             AnalyzeTextSignificanceTool, CreateChronicleEventTool, ScribeTool,
             SearchKnowledgeBaseTool,
         },
+        ChronicleService, LorebookService,
     },
-    test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
+    test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -141,6 +141,7 @@ fn create_roleplay_messages(
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         });
     }
 
@@ -177,7 +178,7 @@ async fn get_test_lorebook(_user_id: Uuid, _test_app: &TestApp) -> AnyhowResult<
 async fn test_agentic_narrative_end_to_end_real_ai() {
     // This test validates the complete agentic workflow with real AI calls
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Setup test data
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
@@ -275,7 +276,7 @@ async fn test_agentic_narrative_end_to_end_real_ai() {
 async fn test_agentic_tools_with_mock_ai() {
     // Test individual tools with mock AI to ensure they work without external dependencies
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let _session_id = Uuid::new_v4();
@@ -454,7 +455,7 @@ async fn test_agentic_tools_with_mock_ai() {
 async fn test_workflow_orchestration() {
     // Test the complete workflow orchestration without requiring significant events
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let session_id = Uuid::new_v4();

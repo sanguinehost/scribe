@@ -3,22 +3,22 @@
 // Local helper functions
 use anyhow::Context;
 use axum::{
+    body::{to_bytes, Body},
+    http::{header, Method, Request, StatusCode},
     Router,
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bcrypt;
 use chrono::Utc;
 use crc32fast;
 use deadpool_diesel::postgres::Pool;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use http_body_util::BodyExt;
 use mime;
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
     models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
@@ -278,7 +278,7 @@ async fn test_upload_valid_v3_card() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -346,7 +346,7 @@ async fn test_upload_valid_v2_card_fallback() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -413,7 +413,7 @@ async fn test_upload_real_card_file() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // --- Setup Test User ---
     let test_password = "testpassword123";
@@ -483,7 +483,7 @@ async fn test_upload_not_png() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_not_png_user_{}", Uuid::new_v4());
@@ -543,7 +543,7 @@ async fn test_upload_png_no_data_chunk() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_no_chunk_user_{}", Uuid::new_v4());
@@ -624,7 +624,7 @@ async fn test_upload_with_extra_field() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_extra_field_user_{}", Uuid::new_v4());
@@ -684,7 +684,7 @@ async fn test_upload_invalid_json_in_png() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let test_password = "testpassword123";
     let test_username = format!("upload_invalid_json_user_{}", Uuid::new_v4());
@@ -786,9 +786,9 @@ async fn test_upload_unauthorized() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app_state = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app_state.db_pool.clone();
-    let _ = TestDataGuard::new(pool.clone()); // Guard is for cleanup, not directly used here
-    // Use the router from spawn_app directly, no need for build_test_app_for_characters
-    let app_router = test_app_state.router;
+    let _ = TestDataGuard::new(pool.clone(), None); // Guard is for cleanup, not directly used here
+                                                    // Use the router from spawn_app directly, no need for build_test_app_for_characters
+    let app_router = test_app_state.router.clone();
     let server_addr = spawn_app(app_router).await; // spawn_app now takes the router
     let client = Client::new();
 
@@ -825,7 +825,7 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let username = format!("upload_missing_field_user_{}", Uuid::new_v4());
     let password = "testpassword";
@@ -908,6 +908,162 @@ async fn test_upload_missing_file_field() -> Result<(), anyhow::Error> {
     assert!(
         body_text.contains("Missing 'character_card' field"),
         "Response body should indicate missing field"
+    );
+
+    guard.cleanup().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_upload_card_with_lorebook_insertion_order_fallback() -> Result<(), anyhow::Error> {
+    ensure_tracing_initialized();
+    let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
+    let pool = test_app.db_pool.clone();
+    let mut guard = TestDataGuard::new(pool.clone(), None);
+
+    // Setup test user
+    let test_password = "testpassword123";
+    let test_username = format!("lorebook_fallback_user_{}", Uuid::new_v4());
+    let username_for_insert = test_username.clone();
+    let user_result = run_db_op(&pool, move |conn| {
+        insert_test_user_with_password(conn, &username_for_insert, test_password)
+    })
+    .await?;
+    let (user, _) = user_result;
+    guard.add_user(user.id);
+
+    // Login
+    let login_body = json!({
+        "identifier": test_username.clone(),
+        "password": test_password
+    });
+    let login_request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&login_body)?))?;
+
+    let login_response = test_app.router.clone().oneshot(login_request).await?;
+    assert_eq!(login_response.status(), StatusCode::OK, "Login failed");
+
+    let session_cookie = login_response
+        .headers()
+        .get(header::SET_COOKIE)
+        .ok_or_else(|| anyhow::anyhow!("Login response missing Set-Cookie header"))?
+        .to_str()?
+        .split(';')
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Invalid Set-Cookie format"))?
+        .to_string();
+
+    // Create a character card with a lorebook that has insertion_order but no position
+    let card_json = r#"{
+        "spec": "chara_card_v3",
+        "spec_version": "3.0",
+        "data": {
+            "name": "Test Character with Lorebook",
+            "description": "A character with a lorebook using insertion_order",
+            "personality": "Friendly",
+            "first_mes": "Hello!",
+            "mes_example": "User: Hi\nChar: Hello!",
+            "scenario": "Test scenario",
+            "creator_notes": "Test notes",
+            "system_prompt": "Test prompt",
+            "post_history_instructions": "Test instructions",
+            "tags": ["test"],
+            "creator": "Test",
+            "character_version": "1.0",
+            "alternate_greetings": [],
+            "character_book": {
+                "name": "Test Lorebook",
+                "entries": [
+                    {
+                        "keys": ["test", "lorebook"],
+                        "content": "This is a test lorebook entry with insertion_order only",
+                        "enabled": true,
+                        "insertion_order": 100,
+                        "use_regex": false,
+                        "constant": false
+                    },
+                    {
+                        "keys": ["another", "entry"],
+                        "content": "Another entry also using insertion_order",
+                        "enabled": true,
+                        "insertion_order": 50,
+                        "use_regex": false,
+                        "constant": false,
+                        "name": "Test Entry 2"
+                    }
+                ]
+            }
+        }
+    }"#;
+
+    // Create PNG with embedded card
+    use image::{ImageFormat, RgbaImage};
+    use std::io::Cursor;
+
+    let img = RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+    let mut png_buffer = Vec::new();
+    {
+        let mut cursor = Cursor::new(&mut png_buffer);
+        img.write_to(&mut cursor, ImageFormat::Png)
+            .expect("Failed to write PNG");
+    }
+
+    let iend_pos = png_buffer.len() - 12;
+    let base64_payload = base64_standard.encode(card_json);
+    let text_chunk_data = [b"ccv3".as_ref(), &[0u8], base64_payload.as_bytes()].concat();
+    let text_chunk_len = u32::try_from(text_chunk_data.len())
+        .expect("Text chunk too large")
+        .to_be_bytes();
+
+    let mut text_chunk = Vec::new();
+    text_chunk.extend_from_slice(&text_chunk_len);
+    text_chunk.extend_from_slice(b"tEXt");
+    text_chunk.extend_from_slice(&text_chunk_data);
+
+    let mut crc_text_data = Vec::new();
+    crc_text_data.extend_from_slice(b"tEXt");
+    crc_text_data.extend_from_slice(&text_chunk_data);
+    let crc_text = crc32fast::hash(&crc_text_data);
+    text_chunk.extend_from_slice(&crc_text.to_be_bytes());
+
+    let mut final_png = Vec::new();
+    final_png.extend_from_slice(&png_buffer[..iend_pos]);
+    final_png.extend_from_slice(&text_chunk);
+    final_png.extend_from_slice(&png_buffer[iend_pos..]);
+
+    // Upload the card
+    let upload_request = create_multipart_request(
+        "/api/characters/upload",
+        "test_lorebook_card.png",
+        mime::IMAGE_PNG.as_ref(),
+        &final_png,
+        Some(vec![("name", "Lorebook Test Character")]),
+        Some(&session_cookie),
+    );
+
+    let upload_response = test_app.router.clone().oneshot(upload_request).await?;
+    let (status, body_text) = get_text_body(upload_response).await?;
+
+    tracing::info!(
+        "Lorebook upload response - status: {}, body: {}",
+        status,
+        body_text
+    );
+
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "Upload with lorebook insertion_order should succeed. Response: {}",
+        body_text
+    );
+
+    // Verify the character was created
+    assert!(
+        body_text.contains("Test Character with Lorebook"),
+        "Response should contain character name"
     );
 
     guard.cleanup().await?;

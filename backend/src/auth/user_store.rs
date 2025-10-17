@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::sync::Arc; // Keep Arc
 use tokio::sync::RwLock; // Change to tokio::sync::RwLock
-// Assuming User ID is Uuid
+                         // Assuming User ID is Uuid
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ use crate::privacy::logging::loggable_user_id;
 use crate::state::DbPool; // Assuming you use a DbPool
 use diesel::RunQueryDsl;
 use diesel::SelectableHelper; // Added for as_returning // Added for get_result
-// use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
+                              // use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
 use crate::schema;
 use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};

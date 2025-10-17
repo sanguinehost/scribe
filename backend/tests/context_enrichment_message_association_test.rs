@@ -1,21 +1,22 @@
 #![cfg(test)]
 
+use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use scribe_backend::{
     models::{
-        AgentContextAnalysis,
         chats::{Chat, MessageRole, NewChat, NewChatMessage},
+        AgentContextAnalysis,
     },
     schema::{chat_messages, chat_sessions},
     services::{
-        ChronicleService,
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
         },
+        ChronicleService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -26,7 +27,7 @@ use uuid::Uuid;
 #[tokio::test]
 async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -103,7 +104,10 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let session: Chat = test_app
@@ -412,7 +416,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     use scribe_backend::schema::characters;
 
     let test_app = spawn_app(false, false, false).await;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -485,7 +489,10 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     test_app

@@ -1,6 +1,7 @@
 //! Test cases to verify that orphaned messages are properly excluded from AI context and RAG
 //! when using frontend-provided history
 
+use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::{RunQueryDsl, SelectableHelper};
 use scribe_backend::models::characters::Character as DbCharacter;
@@ -95,7 +96,10 @@ async fn create_test_character_and_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -116,7 +120,8 @@ async fn test_frontend_history_vs_database_history() {
     // it should be used instead of querying the database
 
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let _guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test data
     let user = test_helpers::db::create_test_user(
@@ -296,7 +301,8 @@ async fn test_orphaned_message_exclusion_scenario() {
     // and we need to ensure that subsequent messages (orphans) are excluded
 
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let _guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let _guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test data
     let user = test_helpers::db::create_test_user(

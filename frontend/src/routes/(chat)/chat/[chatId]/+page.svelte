@@ -24,7 +24,7 @@
 	chat={data.chat}
 	initialMessages={data.messages}
 	initialCursor={data.initialCursor}
-	readonly={data.user?.user_id !== data.chat.user_id}
+	readonly={data.user?.user_id !== data.chat?.user_id}
 	user={data.user
 		? { ...data.user, id: data.user.user_id, username: data.user.username, email: data.user.email }
 		: undefined}

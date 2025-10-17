@@ -1,6 +1,6 @@
 use crate::schema::users;
 use axum_login::AuthUser;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use diesel::Insertable;
 use diesel::{Identifiable, Queryable, Selectable};

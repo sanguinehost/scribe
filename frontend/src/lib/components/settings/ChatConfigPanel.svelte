@@ -23,7 +23,9 @@
 		UpdateChatSessionSettingsRequest,
 		ChatSessionSettingsResponse,
 		UserSettingsResponse as _UserSettingsResponse, // Import UserSettingsResponse
-		CreateChronicleRequest
+		CreateChronicleRequest,
+		TemplatePreferenceResponse,
+		UpdateTemplatePreferenceRequest
 	} from '$lib/types';
 	import {
 		chatModels,
@@ -74,12 +76,24 @@
 		prompt_template_id: 'neutral_roleplay' // Will be set from global or chat settings
 	});
 
+	// Typing speed state (client-side preference)
+	let typingSpeed = $state(30); // milliseconds per character
+
+	// Get SettingsStore reference during component initialization
+	let settingsStore: _SettingsStore;
+	try {
+		settingsStore = _SettingsStore.fromContext();
+	} catch (e) {
+		console.warn('SettingsStore not available in ChatConfigPanel context:', e);
+	}
+
 	// Expandable sections
 	let expandedSections = $state({
 		persona: true,
 		lorebooks: true,
 		chronicles: true,
 		templates: true,
+		sessionStyle: false,
 		generation: false,
 		advanced: false
 	});
@@ -100,6 +114,11 @@
 	let newChronicleDescription = $state('');
 	let isCreatingChronicle = $state(false);
 
+	// Session narrative style override state
+	let sessionNarrativeStyle = $state<TemplatePreferenceResponse | null>(null);
+	let isLoadingSessionStyle = $state(false);
+	let hasSessionStyleOverride = $derived(sessionNarrativeStyle !== null);
+
 	// Override tracking
 	let hasOverrides = $derived(() => {
 		return (
@@ -119,9 +138,10 @@
 		);
 	});
 
-	// Load global settings on component mount
+	// Load global settings and typing speed on component mount
 	$effect(() => {
 		loadGlobalSettings();
+		loadTypingSpeed();
 	});
 
 	// Listen for chronicle creation events to refresh the chronicle list
@@ -283,6 +303,36 @@
 			toast.error('Failed to load global settings');
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	async function loadTypingSpeed() {
+		try {
+			if (!settingsStore) {
+				console.warn('SettingsStore not available, using default typing speed');
+				typingSpeed = 30;
+				return;
+			}
+			await settingsStore.loadTypingSpeed();
+			typingSpeed = settingsStore.typingSpeed;
+		} catch (_error) {
+			console.warn('Failed to load typing speed, using default:', _error);
+			typingSpeed = 30; // Fallback to default
+		}
+	}
+
+	async function saveTypingSpeed() {
+		try {
+			if (!settingsStore) {
+				toast.error('Settings not available');
+				return;
+			}
+			settingsStore.typingSpeed = typingSpeed;
+			await settingsStore.saveTypingSpeed();
+			toast.success('Typing speed updated');
+		} catch (_error) {
+			console.error('Failed to save typing speed:', _error);
+			toast.error('Failed to save typing speed');
 		}
 	}
 
@@ -653,6 +703,59 @@
 			loadLorebookAssociations();
 		}
 	}
+
+	// Session narrative style functions
+	async function loadSessionNarrativeStyle() {
+		if (!chat?.id) return;
+
+		isLoadingSessionStyle = true;
+		try {
+			// The session style endpoint doesn't exist yet - for now we'll just set it to null
+			// TODO: This will be implemented when we add the GET endpoint
+			sessionNarrativeStyle = null;
+		} catch (_error) {
+			console.error('Failed to load session narrative style:', _error);
+		} finally {
+			isLoadingSessionStyle = false;
+		}
+	}
+
+	async function updateSessionNarrativeStyle(updates: UpdateTemplatePreferenceRequest) {
+		if (!chat?.id) return;
+
+		try {
+			const result = await _apiClient.updateSessionNarrativeStyle(chat.id, updates);
+			if (result.isOk()) {
+				sessionNarrativeStyle = result.value;
+				toast.success('Session writing style updated');
+			} else {
+				console.error('Failed to update session narrative style:', result.error);
+				toast.error('Failed to update session writing style');
+			}
+		} catch (_error) {
+			console.error('Failed to update session narrative style:', _error);
+			toast.error('Failed to update session writing style');
+		}
+	}
+
+	async function clearSessionNarrativeStyle() {
+		if (!chat?.id) return;
+
+		try {
+			// Clear by sending an empty object (all fields null)
+			const result = await _apiClient.updateSessionNarrativeStyle(chat.id, {});
+			if (result.isOk()) {
+				sessionNarrativeStyle = null;
+				toast.success('Session writing style cleared');
+			} else {
+				console.error('Failed to clear session narrative style:', result.error);
+				toast.error('Failed to clear session writing style');
+			}
+		} catch (_error) {
+			console.error('Failed to clear session narrative style:', _error);
+			toast.error('Failed to clear session writing style');
+		}
+	}
 </script>
 
 <div class="flex h-full flex-col">
@@ -745,6 +848,126 @@
 								disabled={isLoading}
 								hideLabel={true}
 							/>
+						</CardContent>
+					{/if}
+				</Card>
+
+				<!-- Session Writing Style Override -->
+				<Card>
+					<CardHeader
+						onclick={() => (expandedSections.sessionStyle = !expandedSections.sessionStyle)}
+						class="cursor-pointer {expandedSections.sessionStyle ? '' : 'pb-6'}"
+					>
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-2">
+								<CardTitle class="text-base">Session Writing Style</CardTitle>
+								{#if hasSessionStyleOverride && !expandedSections.sessionStyle}
+									<BadgeComponent variant="secondary" class="text-xs">Temporary</BadgeComponent>
+								{/if}
+							</div>
+							{#if expandedSections.sessionStyle}
+								<ChevronUp />
+							{:else}
+								<ChevronDown />
+							{/if}
+						</div>
+					</CardHeader>
+					{#if expandedSections.sessionStyle}
+						<CardContent class="space-y-4">
+							{#if isLoadingSessionStyle}
+								<div class="space-y-2">
+									<Skeleton class="h-8 w-full" />
+									<Skeleton class="h-8 w-full" />
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">
+									Temporarily override narrative preferences for this conversation only. These changes
+									won't affect your character or global defaults.
+								</p>
+
+								<!-- Inline narrative style controls -->
+								<div class="space-y-3 rounded-md border p-3">
+									<div class="space-y-2">
+										<Label class="text-xs font-medium">Tense</Label>
+										<select
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											value={sessionNarrativeStyle?.tense || ''}
+											onchange={(e) => {
+												const value = (e.target as HTMLSelectElement).value;
+												updateSessionNarrativeStyle({ tense: value as any });
+											}}
+										>
+											<option value="">Use character/global default</option>
+											<option value="past-tense">Past Tense</option>
+											<option value="present-tense">Present Tense</option>
+											<option value="future-tense">Future Tense</option>
+										</select>
+									</div>
+
+									<div class="space-y-2">
+										<Label class="text-xs font-medium">Narration</Label>
+										<select
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											value={sessionNarrativeStyle?.narration || ''}
+											onchange={(e) => {
+												const value = (e.target as HTMLSelectElement).value;
+												updateSessionNarrativeStyle({ narration: value as any });
+											}}
+										>
+											<option value="">Use character/global default</option>
+											<option value="first-person">First Person</option>
+											<option value="second-person">Second Person</option>
+											<option value="third-person">Third Person</option>
+										</select>
+									</div>
+
+									<div class="space-y-2">
+										<Label class="text-xs font-medium">Point of View</Label>
+										<select
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											value={sessionNarrativeStyle?.perspective || ''}
+											onchange={(e) => {
+												const value = (e.target as HTMLSelectElement).value;
+												updateSessionNarrativeStyle({ perspective: value as any });
+											}}
+										>
+											<option value="">Use character/global default</option>
+											<option value="character-pov">Character POV</option>
+											<option value="omniscient">Omniscient</option>
+											<option value="limited">Limited</option>
+										</select>
+									</div>
+
+									<div class="space-y-2">
+										<Label class="text-xs font-medium">Response Length</Label>
+										<select
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											value={sessionNarrativeStyle?.length || ''}
+											onchange={(e) => {
+												const value = (e.target as HTMLSelectElement).value;
+												updateSessionNarrativeStyle({ length: value as any });
+											}}
+										>
+											<option value="">Use character/global default</option>
+											<option value="concise">Concise</option>
+											<option value="balanced">Balanced</option>
+											<option value="detailed">Detailed</option>
+											<option value="flexible">Flexible</option>
+										</select>
+									</div>
+								</div>
+
+								{#if hasSessionStyleOverride}
+									<ButtonComponent
+										variant="destructive"
+										size="sm"
+										onclick={clearSessionNarrativeStyle}
+										class="w-full"
+									>
+										Clear Session Overrides
+									</ButtonComponent>
+								{/if}
+							{/if}
 						</CardContent>
 					{/if}
 				</Card>
@@ -1283,6 +1506,27 @@
 										<option value={true}>Enabled</option>
 									</select>
 								</div>
+							</div>
+
+							<!-- Streaming Animation Speed -->
+							<div class="space-y-2">
+								<div class="flex items-center justify-between">
+									<Label for="typing-speed">Typing Animation Speed</Label>
+									<span class="text-xs text-muted-foreground">{typingSpeed}ms</span>
+								</div>
+								<input
+									id="typing-speed"
+									type="range"
+									min="1"
+									max="100"
+									step="1"
+									bind:value={typingSpeed}
+									onchange={() => saveTypingSpeed()}
+									class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+								/>
+								<p class="text-xs text-muted-foreground">
+									Lower = faster (1ms), Higher = slower (100ms). Default: 30ms
+								</p>
 							</div>
 						</CardContent>
 					{/if}

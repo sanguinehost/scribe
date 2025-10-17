@@ -17,10 +17,10 @@ use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     schema::chat_sessions,
     services::{
-        ChronicleService, EncryptionService, LorebookService, agentic::AgenticNarrativeFactory,
-        extraction_dispatcher::ExtractionDispatcher,
+        agentic::AgenticNarrativeFactory, extraction_dispatcher::ExtractionDispatcher,
+        ChronicleService, EncryptionService, LorebookService,
     },
-    test_helpers::{MockAiClient, TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, MockAiClient, TestDataGuard},
 };
 
 /// Helper to create a chat session in the database (required for foreign key constraint)
@@ -57,7 +57,7 @@ async fn create_test_chat_session(
 #[tokio::test]
 async fn test_complete_agentic_workflow_with_mock_responses() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -162,6 +162,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -184,6 +185,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
     ];
 
@@ -236,7 +238,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
 #[tokio::test]
 async fn test_extraction_dispatcher_with_agentic_mode() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -317,6 +319,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         superseded_at: None,
         variant_count: 1,
         current_variant_index: 0,
+        ..Default::default()
     }];
 
     // Create session DEK for testing
@@ -348,7 +351,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 #[tokio::test]
 async fn test_dual_mode_extraction_comparison() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -428,6 +431,7 @@ async fn test_dual_mode_extraction_comparison() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4(),
@@ -447,6 +451,7 @@ async fn test_dual_mode_extraction_comparison() {
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         },
     ];
 
@@ -475,7 +480,7 @@ async fn test_dual_mode_extraction_comparison() {
 #[tokio::test]
 async fn test_agentic_workflow_with_json_parsing_failure() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(
@@ -545,6 +550,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         superseded_at: None,
         variant_count: 1,
         current_variant_index: 0,
+        ..Default::default()
     }];
 
     // Create session DEK for testing

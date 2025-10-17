@@ -7,7 +7,7 @@ mod payment_race_condition_tests {
         errors::AppError,
         models::users::UserRole,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
     use std::sync::{Arc, Barrier};
@@ -75,7 +75,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_sequential_credit_operations_integrity() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "seq_test", "seq@test.com", None)
@@ -122,7 +122,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_basic_concurrent_credit_operations() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -216,7 +216,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_credit_reservation_basic_functionality() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -273,7 +273,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_insufficient_credits_handling() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -317,7 +317,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_transaction_isolation_basic() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -391,7 +391,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_high_concurrency_credit_operations() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(
@@ -553,7 +553,7 @@ mod payment_race_condition_tests {
     #[tokio::test]
     async fn test_optimistic_locking_retry_on_version_conflict() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "retry_test", "retry@test.com", None)

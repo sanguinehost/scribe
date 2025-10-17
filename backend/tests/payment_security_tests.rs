@@ -21,7 +21,7 @@ mod payment_security_tests {
         errors::AppError,
         models::users::UserRole,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -107,7 +107,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_unauthenticated_access_denied() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -135,7 +135,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_cross_user_credit_access() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create two users
         let user1_id = Uuid::new_v4();
@@ -182,7 +182,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_transaction_data_encryption() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "crypto_test", "crypto@test.com")
@@ -237,7 +237,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_sql_injection_prevention() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "sqli_test", "sqli@test.com")
@@ -286,7 +286,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_negative_credit_prevention() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "negative_test", "negative@test.com")
@@ -327,7 +327,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_atomic_credit_operations() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "atomic_test", "atomic@test.com")
@@ -377,7 +377,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_reservation_refund() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         create_test_user(&app.db_pool, user_id, "refund_test", "refund@test.com")
@@ -426,7 +426,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_webhook_signature_verification() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -461,7 +461,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_rate_limiting_enforcement() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = reqwest::Client::new();
 
@@ -493,7 +493,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_subscription_cancel_endpoint_security() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -542,7 +542,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_subscription_preview_endpoint_security() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -601,7 +601,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_transaction_verification_endpoint_security() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -652,7 +652,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_payment_page_redirect_security() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -696,7 +696,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_credit_packages_endpoint_authorization() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -746,7 +746,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_model_costs_endpoint_security() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -793,7 +793,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_usage_endpoint_data_isolation() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -838,7 +838,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_plans_endpoint_information_disclosure() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let client = Client::new();
 
@@ -877,7 +877,7 @@ mod payment_security_tests {
     #[tokio::test]
     async fn test_cross_user_transaction_access_prevention() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create two users
         let user1_id = Uuid::new_v4();

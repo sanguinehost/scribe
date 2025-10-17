@@ -4,7 +4,7 @@
 use anyhow::Result as AnyhowResult;
 use bcrypt;
 use chrono::Utc;
-use diesel::{RunQueryDsl, prelude::*};
+use diesel::{prelude::*, RunQueryDsl};
 use hex;
 use scribe_backend::{
     auth::session_dek::SessionDek,
@@ -17,10 +17,10 @@ use scribe_backend::{
     },
     schema::users,
     services::{
-        ChronicleService, ScribeTool, UserPersonaService,
         agentic::{AgenticNarrativeFactory, AnalyzeTextSignificanceTool, CreateChronicleEventTool},
+        ChronicleService, ScribeTool, UserPersonaService,
     },
-    test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
+    test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -204,6 +204,7 @@ fn create_lucas_roleplay_messages(
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
+            ..Default::default()
         });
     }
 
@@ -306,7 +307,7 @@ async fn create_test_app_state(
 async fn test_persona_context_missing_in_events() {
     // This test demonstrates the current bug where persona information is not included
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
     let session_id = Uuid::new_v4();
@@ -461,7 +462,7 @@ async fn test_persona_context_missing_in_events() {
 async fn test_create_chronicle_event_tool_without_persona() {
     // Test that demonstrates the CreateChronicleEventTool doesn't have persona context
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
@@ -549,7 +550,7 @@ async fn test_create_chronicle_event_tool_without_persona() {
 async fn test_triage_tool_persona_awareness() {
     // Test that demonstrates triage tool lacks persona context
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (_user_id, _session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
 
@@ -585,7 +586,7 @@ async fn test_triage_tool_persona_awareness() {
 // async fn test_persona_aware_chronicle_events() {
 //     // Future test: Verify that events correctly use persona name and context
 //     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
-//     let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+//     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 //
 //     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
 //     let session_id = Uuid::new_v4();

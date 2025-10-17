@@ -5,13 +5,33 @@ use tracing::{debug, error, warn};
 
 const SESSION_ROTATION_INTERVAL_HOURS: i64 = 1; // Rotate sessions every hour
 const LAST_ROTATION_KEY: &str = "last_rotation";
+const LAST_SAVE_KEY: &str = "last_save"; // Track last session save for extension
 
 /// Middleware that rotates session IDs periodically to enhance security
+/// AND extends session expiry on every authenticated request
 pub async fn session_rotation_middleware(
     session: Session,
     request: Request,
     next: Next,
 ) -> Response {
+    // Extend session expiry on EVERY request by saving the session
+    // This ensures OnInactivity expiry is reset on any activity
+    if !session.is_empty().await {
+        // Only save non-empty sessions (authenticated users)
+        match extend_session_expiry(&session).await {
+            Ok(true) => {
+                debug!(session_id = ?session.id(), "Session expiry extended on authenticated request");
+            }
+            Ok(false) => {
+                // Session wasn't saved (no action needed)
+            }
+            Err(e) => {
+                error!(session_id = ?session.id(), error = ?e, "Failed to extend session expiry");
+                // Continue with request even if save fails - don't break user experience
+            }
+        }
+    }
+
     // Check if session needs rotation based on time
     if should_rotate_session(&session).await {
         match rotate_session_if_needed(&session).await {
@@ -28,6 +48,18 @@ pub async fn session_rotation_middleware(
     }
 
     next.run(request).await
+}
+
+/// Extend session expiry by saving it (resets OnInactivity timer)
+async fn extend_session_expiry(session: &Session) -> Result<bool, tower_sessions::session::Error> {
+    // Update the last save timestamp
+    let now = Utc::now();
+    set_last_save_time(session, now).await?;
+
+    // Save the session to extend its expiry time
+    session.save().await?;
+
+    Ok(true)
 }
 
 /// Check if a session should be rotated based on time since last rotation
@@ -103,6 +135,15 @@ async fn set_last_rotation_time(
 ) -> Result<(), tower_sessions::session::Error> {
     let time_str = time.to_rfc3339();
     session.insert(LAST_ROTATION_KEY, time_str).await
+}
+
+/// Set the last save time in the session
+async fn set_last_save_time(
+    session: &Session,
+    time: DateTime<Utc>,
+) -> Result<(), tower_sessions::session::Error> {
+    let time_str = time.to_rfc3339();
+    session.insert(LAST_SAVE_KEY, time_str).await
 }
 
 #[cfg(test)]

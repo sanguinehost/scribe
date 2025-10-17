@@ -446,3 +446,102 @@ resource "aws_service_discovery_service" "qdrant" {
     Project     = "scribe"
   }
 }
+
+# Force cleanup of ECS resources before destroying cluster
+# This prevents orphaned ENIs, EBS volumes, and stuck tasks
+resource "null_resource" "ecs_cleanup" {
+  # This runs only during destroy
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      #!/bin/bash
+      set -e
+
+      CLUSTER="${self.triggers.cluster_name}"
+      REGION="${self.triggers.aws_region}"
+      ENV="${self.triggers.environment}"
+
+      echo "Cleaning up ECS cluster: $CLUSTER"
+
+      # List and delete all services
+      SERVICES=$(aws ecs list-services --cluster "$CLUSTER" --region "$REGION" --query 'serviceArns[]' --output text 2>/dev/null || true)
+
+      if [ ! -z "$SERVICES" ]; then
+        for SERVICE in $SERVICES; do
+          echo "Scaling down service: $SERVICE"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 --region "$REGION" --force-new-deployment 2>/dev/null || true
+
+          echo "Deleting service: $SERVICE"
+          aws ecs delete-service --cluster "$CLUSTER" --service "$SERVICE" --force --region "$REGION" 2>/dev/null || true
+        done
+      fi
+
+      # Wait for tasks to drain
+      echo "Waiting for tasks to stop..."
+      for i in {1..30}; do
+        TASK_COUNT=$(aws ecs list-tasks --cluster "$CLUSTER" --region "$REGION" --query 'length(taskArns)' --output text 2>/dev/null || echo "0")
+        if [ "$TASK_COUNT" == "0" ]; then
+          echo "All tasks stopped"
+          break
+        fi
+        echo "Waiting... ($TASK_COUNT tasks remaining)"
+        sleep 10
+      done
+
+      # Force stop any remaining tasks
+      TASKS=$(aws ecs list-tasks --cluster "$CLUSTER" --region "$REGION" --query 'taskArns[]' --output text 2>/dev/null || true)
+      if [ ! -z "$TASKS" ]; then
+        for TASK in $TASKS; do
+          echo "Force stopping task: $TASK"
+          aws ecs stop-task --cluster "$CLUSTER" --task "$TASK" --region "$REGION" 2>/dev/null || true
+        done
+
+        # Wait again for forced stops
+        sleep 30
+      fi
+
+      # Clean up orphaned ENIs (if any)
+      echo "Checking for orphaned ENIs..."
+      ENIS=$(aws ec2 describe-network-interfaces \
+        --filters "Name=description,Values=*$CLUSTER*" \
+        --region "$REGION" \
+        --query 'NetworkInterfaces[?Status==`available`].NetworkInterfaceId' \
+        --output text 2>/dev/null || true)
+
+      if [ ! -z "$ENIS" ]; then
+        for ENI in $ENIS; do
+          echo "Deleting orphaned ENI: $ENI"
+          aws ec2 delete-network-interface --network-interface-id "$ENI" --region "$REGION" 2>/dev/null || true
+        done
+      fi
+
+      # Clean up orphaned EBS volumes
+      echo "Checking for orphaned EBS volumes..."
+      VOLUMES=$(aws ec2 describe-volumes \
+        --filters "Name=tag:Environment,Values=$ENV" "Name=tag:Project,Values=scribe" "Name=status,Values=available" \
+        --region "$REGION" \
+        --query 'Volumes[].VolumeId' \
+        --output text 2>/dev/null || true)
+
+      if [ ! -z "$VOLUMES" ]; then
+        for VOL in $VOLUMES; do
+          echo "Deleting orphaned volume: $VOL"
+          aws ec2 delete-volume --volume-id "$VOL" --region "$REGION" 2>/dev/null || true
+        done
+      fi
+
+      echo "ECS cleanup complete"
+    EOT
+  }
+
+  triggers = {
+    cluster_name = aws_ecs_cluster.scribe_cluster.name
+    aws_region   = var.aws_region
+    environment  = var.environment
+  }
+
+  depends_on = [
+    aws_ecs_service.backend_service,
+    aws_ecs_service.qdrant_service
+  ]
+}

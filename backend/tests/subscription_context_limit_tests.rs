@@ -12,7 +12,7 @@ mod subscription_context_limit_tests {
     use diesel::prelude::*;
     use scribe_backend::{
         schema::{subscriptions, users},
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use std::env;
     use uuid::Uuid;
@@ -105,7 +105,7 @@ mod subscription_context_limit_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let email = format!("free_test_{}@example.com", user_id.simple());
@@ -145,7 +145,7 @@ mod subscription_context_limit_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let email = format!("basic_test_{}@example.com", user_id.simple());
@@ -189,7 +189,7 @@ mod subscription_context_limit_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let email = format!("premium_test_{}@example.com", user_id.simple());
@@ -233,7 +233,7 @@ mod subscription_context_limit_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let email = format!("within_limit_test_{}@example.com", user_id.simple());
@@ -278,7 +278,7 @@ mod subscription_context_limit_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let user_id = Uuid::new_v4();
         let email = format!("no_sub_test_{}@example.com", user_id.simple());
@@ -336,7 +336,7 @@ mod subscription_context_limit_tests {
         }
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Verify all three tiers have max_context_tokens set
         let conn = app.db_pool.get().await.expect("Failed to get connection");

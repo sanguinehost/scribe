@@ -3,15 +3,15 @@
 // Local helper functions
 use anyhow::Context;
 use axum::body::Body;
-use axum::http::{Method, Request, StatusCode as AxumStatusCode, header};
+use axum::http::{header, Method, Request, StatusCode as AxumStatusCode};
 use bcrypt;
 use chrono::Utc;
 use deadpool_diesel::postgres::Pool;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
     models::{
@@ -151,7 +151,7 @@ async fn test_delete_character_success() -> Result<(), anyhow::Error> {
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone()); // Guard for cleanup
+    let mut guard = TestDataGuard::new(pool.clone(), None); // Guard for cleanup
 
     let username = format!("delete_user_{}", Uuid::new_v4());
     let password = "password123".to_string();
@@ -256,7 +256,7 @@ async fn test_delete_character_not_found_when_authenticated() -> Result<(), anyh
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     let username = format!("del_notfound_user_{}", Uuid::new_v4());
     let password = "testpassword";
@@ -304,7 +304,7 @@ async fn test_delete_character_forbidden_for_another_user() -> Result<(), anyhow
     ensure_tracing_initialized();
     let test_app = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app.db_pool.clone();
-    let mut guard = TestDataGuard::new(pool.clone());
+    let mut guard = TestDataGuard::new(pool.clone(), None);
 
     // User A and their character
     let username_a = format!("del_forbidden_a_{}", Uuid::new_v4());

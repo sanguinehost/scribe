@@ -9,7 +9,7 @@ use scribe_backend::models::{
     usage::{ChatTokenUsage, TokenUsageSummary},
 };
 use scribe_backend::test_helpers::{
-    TestDataGuard, db, login_user_via_api, spawn_app_permissive_rate_limiting,
+    db, login_user_via_api, spawn_app_permissive_rate_limiting, TestDataGuard,
 };
 
 /// Helper function to poll for token counts with exponential backoff
@@ -54,7 +54,7 @@ where
 #[tokio::test]
 async fn test_user_token_usage_endpoint() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "token_test_user";
     let password = "password123";
@@ -87,7 +87,7 @@ async fn test_user_token_usage_endpoint() {
 #[tokio::test]
 async fn test_chat_token_usage_endpoint() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "chat_token_test_user";
     let password = "password123";
@@ -151,7 +151,7 @@ async fn test_chat_token_usage_endpoint() {
 #[tokio::test]
 async fn test_chat_token_usage_unauthorized() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create two users
     let user1 = db::create_test_user(&app.db_pool, "user1".to_string(), "password123".to_string())
@@ -238,7 +238,7 @@ async fn test_token_usage_without_authentication() {
 #[tokio::test]
 async fn test_chat_token_usage_not_found() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "test_user";
     let password = "password123";
@@ -270,7 +270,7 @@ async fn test_chat_token_usage_not_found() {
 #[tokio::test]
 async fn test_token_accumulation_integration() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "accumulation_test_user";
     let password = "password123";
@@ -432,7 +432,7 @@ async fn test_token_accumulation_integration() {
 #[tokio::test]
 async fn test_multi_chat_token_accumulation() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "multi_chat_user";
     let password = "password123";
@@ -572,7 +572,7 @@ async fn test_multi_chat_token_accumulation() {
 #[tokio::test]
 async fn test_concurrent_token_tracking() {
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     let username = "concurrent_test_user";
     let password = "password123";

@@ -15,8 +15,9 @@ use scribe_backend::models::{
 #[cfg(feature = "payment")]
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
+use bigdecimal::BigDecimal;
 #[cfg(feature = "payment")]
 use scribe_backend::services::payment::SoftLimitService;
 #[cfg(feature = "payment")]
@@ -64,6 +65,7 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
     // Login the user to get session cookies
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -119,6 +121,7 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
 
     let message_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -203,6 +206,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
     let login_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -236,6 +240,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
 
     let _assistant_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -282,6 +287,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
 
     let _user_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -366,7 +372,10 @@ async fn create_test_chat_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{info, instrument};
 
-use crate::{AppState, errors::AppError};
+use crate::{errors::AppError, AppState};
 
 use super::{field_generator::FieldGenerator, types::*};
 
@@ -43,6 +43,7 @@ impl EnhancementService {
         // Use the field generator with enhancement-specific prompt
         let field_request = FieldGenerationRequest {
             field: request.field.clone(),
+            mode: GenerationMode::Enhance,
             style: None, // Let it maintain the existing style
             user_prompt: enhancement_prompt,
             character_context: request.character_context.clone(),

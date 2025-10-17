@@ -1068,7 +1068,11 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     }
                 };
                 let map_string = |s: &'a String| -> Option<&'a str> {
-                    if s.is_empty() { None } else { Some(s.as_str()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.as_str())
+                    }
                 };
                 // Corrected map_vec helper
                 let map_vec = |v: &'a Vec<String>| -> Option<Vec<&'a str>> {
@@ -1111,7 +1115,11 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
                     }
                 };
                 let map_string = |s: &'a String| -> Option<&'a str> {
-                    if s.is_empty() { None } else { Some(s.as_str()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.as_str())
+                    }
                 };
                 let map_vec = |v: &'a Vec<String>| -> Option<Vec<&'a str>> {
                     let mapped: Vec<&'a str> = v
@@ -1483,7 +1491,8 @@ mod tests {
         let client_data_no_desc_no_dek = char_no_desc
             .into_decrypted_for_client(None, vec![])
             .unwrap();
-        assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
+        assert_eq!(client_data_no_desc_no_dek.description, Some(String::new()));
+        // Expect Some("") instead of None
     }
 
     #[tokio::test]
@@ -1541,7 +1550,8 @@ mod tests {
         let client_data_no_desc_no_dek = char_no_desc
             .into_decrypted_for_client(None, vec![])
             .unwrap();
-        assert_eq!(client_data_no_desc_no_dek.description, Some(String::new())); // Expect Some("") instead of None
+        assert_eq!(client_data_no_desc_no_dek.description, Some(String::new()));
+        // Expect Some("") instead of None
     }
 
     // Helper function to create a dummy V3 card

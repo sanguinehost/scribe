@@ -2,7 +2,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use diesel::prelude::*; // Added
 use http_body_util::BodyExt;
@@ -13,9 +13,9 @@ use uuid::Uuid;
 
 // Crate imports
 use anyhow::Context as _;
+use bigdecimal::BigDecimal;
 use scribe_backend::models::auth::LoginPayload;
 use scribe_backend::{
-    PgPool,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -23,6 +23,7 @@ use scribe_backend::{
     },
     schema::{characters, chat_sessions},
     test_helpers::{self, TestDataGuard},
+    PgPool,
 };
 use secrecy::SecretString;
 
@@ -42,7 +43,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     // API Login
@@ -123,7 +124,10 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let session = conn_pool_obj
@@ -240,7 +244,7 @@ async fn test_suggested_actions_unauthorized() -> anyhow::Result<()> {
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     // Attempt to get suggested actions without logging in
@@ -357,7 +361,10 @@ async fn create_test_chat_session_for_suggested_actions(
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
+        total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     pool.get()
@@ -392,7 +399,7 @@ async fn setup_suggested_actions_test_env(
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     let (_client, auth_cookie) =
@@ -598,7 +605,7 @@ async fn test_suggested_actions_session_not_found() -> anyhow::Result<()> {
         "password".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user.id);
 
     // API Login
@@ -807,7 +814,7 @@ async fn test_suggested_actions_success_login_user_a() -> anyhow::Result<()> {
         "password123".to_string(),
     )
     .await?;
-    let mut guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
     guard.add_user(user_a.id);
 
     // Login user A

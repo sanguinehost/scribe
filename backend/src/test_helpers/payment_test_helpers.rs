@@ -23,7 +23,7 @@ pub mod payment_test_helpers {
     use diesel::{PgConnection, RunQueryDsl, SelectableHelper};
     use reqwest::Client;
     use secrecy::{ExposeSecret, SecretBox, SecretString};
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
     use uuid::Uuid;
 
     /// Test constants for Paddle sandbox
@@ -40,7 +40,7 @@ pub mod payment_test_helpers {
         conn: &mut PgConnection,
     ) -> Result<(DbUser, Character), AppError> {
         use crate::schema::{characters, users};
-        use argon2::password_hash::{SaltString, rand_core::OsRng};
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
         let username = format!("testuser_{}", Uuid::new_v4());
@@ -508,7 +508,7 @@ pub mod payment_test_helpers {
     /// Mock Paddle API responses for offline testing
     pub mod mock_responses {
         use chrono::Utc;
-        use serde_json::{Value, json};
+        use serde_json::{json, Value};
 
         /// Mock successful customer creation response
         pub fn customer_created_response(customer_id: &str, email: &str) -> Value {

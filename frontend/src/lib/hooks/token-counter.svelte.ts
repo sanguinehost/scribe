@@ -96,8 +96,10 @@ export function estimateCost(
 	// Gemini pricing (per 1M tokens) - Updated with correct official pricing
 	const GEMINI_PRICING = {
 		'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+		'gemini-2.5-flash-preview-09-2025': { input: 0.3, output: 2.5 },
+		'gemini-2.5-flash-image': { input: 0.3, output: 2.5 },
 		'gemini-2.5-pro': { input: 1.25, output: 10.0 }, // For prompts <= 200k tokens
-		'gemini-2.5-flash-lite-preview': { input: 0.1, output: 0.4 }
+		'gemini-2.5-flash-lite-preview-09-2025': { input: 0.1, output: 0.4 }
 	};
 
 	const pricing = GEMINI_PRICING[tokenData.model_used as keyof typeof GEMINI_PRICING];

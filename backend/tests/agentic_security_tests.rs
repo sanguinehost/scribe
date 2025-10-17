@@ -7,7 +7,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use diesel::prelude::*;
@@ -83,6 +83,7 @@ async fn create_authenticated_user(
     let register_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -123,6 +124,7 @@ async fn create_authenticated_user(
         let verify_response = test_app
             .router
             .clone()
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -143,6 +145,7 @@ async fn create_authenticated_user(
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -179,6 +182,7 @@ async fn create_test_character(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -211,6 +215,7 @@ async fn create_agentic_chat_session(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -241,6 +246,7 @@ async fn send_agentic_chat_message(
     let response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
@@ -262,7 +268,7 @@ async fn send_agentic_chat_message(
 #[tokio::test]
 async fn test_a01_cannot_execute_tools_without_permission() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -276,6 +282,7 @@ async fn test_a01_cannot_execute_tools_without_permission() {
 
     let chronicle_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -317,7 +324,7 @@ async fn test_a01_cannot_execute_tools_without_permission() {
 #[tokio::test]
 async fn test_a01_agentic_system_respects_user_isolation() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users with separate data
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -358,7 +365,7 @@ async fn test_a01_agentic_system_respects_user_isolation() {
 #[tokio::test]
 async fn test_a02_agentic_context_analysis_is_encrypted() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "encrypt")
         .await
@@ -428,7 +435,7 @@ async fn test_a02_agentic_context_analysis_is_encrypted() {
 #[tokio::test]
 async fn test_a03_prompt_injection_prevention_in_agentic_tools() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "promptinj")
         .await
@@ -496,7 +503,7 @@ async fn test_a03_prompt_injection_prevention_in_agentic_tools() {
 #[tokio::test]
 async fn test_a03_tool_parameter_injection_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "toolinj")
         .await
@@ -543,7 +550,7 @@ async fn test_a03_tool_parameter_injection_prevention() {
 #[tokio::test]
 async fn test_a03_ai_response_content_filtering() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "content")
         .await
@@ -590,7 +597,7 @@ async fn test_a03_ai_response_content_filtering() {
 #[tokio::test]
 async fn test_a04_agentic_processing_rate_limits() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ratelimit")
         .await
@@ -640,7 +647,7 @@ async fn test_a04_agentic_processing_rate_limits() {
 #[tokio::test]
 async fn test_a04_tool_execution_limits() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "toollimit")
         .await
@@ -679,7 +686,7 @@ async fn test_a04_tool_execution_limits() {
 #[tokio::test]
 async fn test_a05_agentic_error_messages_dont_leak_info() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "errorleak")
         .await
@@ -746,7 +753,7 @@ async fn test_a05_agentic_error_messages_dont_leak_info() {
 #[tokio::test]
 async fn test_a07_agentic_tools_require_authentication() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Try to use agentic chat without authentication
     let fake_session_id = Uuid::new_v4();
@@ -757,6 +764,7 @@ async fn test_a07_agentic_tools_require_authentication() {
 
     let response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(
             Request::builder()
@@ -775,7 +783,7 @@ async fn test_a07_agentic_tools_require_authentication() {
 #[tokio::test]
 async fn test_a07_agentic_context_analysis_access_control() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create two users
     let (user1_cookie, _user1_id) = create_authenticated_user(&test_app, "user1").await.unwrap();
@@ -805,6 +813,7 @@ async fn test_a07_agentic_context_analysis_access_control() {
     let analysis_response = test_app
         .router
         .clone()
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::GET)
@@ -831,7 +840,7 @@ async fn test_a07_agentic_context_analysis_access_control() {
 #[tokio::test]
 async fn test_a08_agentic_tool_result_integrity() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "integrity")
         .await
@@ -875,7 +884,7 @@ async fn test_a08_agentic_tool_result_integrity() {
 #[tokio::test]
 async fn test_a09_agentic_operations_are_logged() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "logging")
         .await
@@ -920,7 +929,7 @@ async fn test_a09_agentic_operations_are_logged() {
 #[tokio::test]
 async fn test_a10_agentic_tools_prevent_ssrf() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "ssrf").await.unwrap();
 
@@ -978,7 +987,7 @@ async fn test_a10_agentic_tools_prevent_ssrf() {
 #[tokio::test]
 async fn test_ai_model_jailbreak_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "jailbreak")
         .await
@@ -1043,7 +1052,7 @@ async fn test_ai_model_jailbreak_prevention() {
 #[tokio::test]
 async fn test_agentic_context_poisoning_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "poison")
         .await
@@ -1113,7 +1122,7 @@ async fn test_agentic_context_poisoning_prevention() {
 #[tokio::test]
 async fn test_tool_hallucination_prevention() {
     let test_app = test_helpers::spawn_app_permissive_rate_limiting(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (session_cookie, _user_id) = create_authenticated_user(&test_app, "hallucinate")
         .await

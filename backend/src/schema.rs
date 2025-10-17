@@ -263,6 +263,12 @@ diesel::table! {
         superseded_at -> Nullable<Timestamptz>,
         variant_count -> Int4,
         current_variant_index -> Int4,
+        credits_charged -> Int4,
+        credits_cost -> Numeric,
+        actual_cost -> Numeric,
+        modified_cost -> Numeric,
+        credit_cost -> Int4,
+        actual_charge -> Numeric,
     }
 }
 
@@ -327,6 +333,13 @@ diesel::table! {
         tokens_counted_at -> Timestamptz,
         #[max_length = 50]
         prompt_template_id -> Varchar,
+        total_credits_used -> Numeric,
+        total_actual_cost -> Numeric,
+        total_modified_cost -> Numeric,
+        total_credit_cost -> Int4,
+        total_actual_charge -> Numeric,
+        narrative_style_override_ciphertext -> Nullable<Bytea>,
+        narrative_style_override_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -741,6 +754,32 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    template_preferences (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        character_id -> Nullable<Uuid>,
+        #[max_length = 255]
+        template_id -> Nullable<Varchar>,
+        #[max_length = 20]
+        tense -> Varchar,
+        #[max_length = 20]
+        narration -> Varchar,
+        #[max_length = 50]
+        perspective -> Varchar,
+        #[max_length = 50]
+        length -> Varchar,
+        enable_info_box -> Bool,
+        enable_stats_tracker -> Bool,
+        enable_thinking -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     usage_tracking (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -960,6 +999,8 @@ diesel::joinable!(payments -> users (user_id));
 diesel::joinable!(player_chronicles -> users (user_id));
 diesel::joinable!(subscriptions -> plan_features (plan_type));
 diesel::joinable!(subscriptions -> users (user_id));
+diesel::joinable!(template_preferences -> characters (character_id));
+diesel::joinable!(template_preferences -> users (user_id));
 diesel::joinable!(usage_tracking -> users (user_id));
 diesel::joinable!(user_assets -> user_personas (persona_id));
 diesel::joinable!(user_assets -> users (user_id));
@@ -995,6 +1036,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     player_chronicles,
     sessions,
     subscriptions,
+    template_preferences,
     usage_tracking,
     user_assets,
     user_credits,

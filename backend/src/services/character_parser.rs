@@ -1,15 +1,15 @@
 // backend/src/services/character_parser.rs
 
 use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
-use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use png::Decoder;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::io::{Cursor, Read, Seek}; // Added Read and Seek for zip
 use thiserror::Error; // Import the derive macro
 use tracing::{info, warn}; // Import logging macros
-use zip::ZipArchive;
-use zip::result::ZipError; // Added for CHARX parsing // Added for CHARX parsing
+use zip::result::ZipError;
+use zip::ZipArchive; // Added for CHARX parsing // Added for CHARX parsing
 
 // Define proper V2 struct to handle the structured V2 format
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -407,7 +407,7 @@ mod tests {
     use base64::engine::general_purpose::STANDARD as base64_standard;
     use crc32fast; // Needed for test helpers
     use std::io::{Cursor, Write}; // Added Write for zip helper
-    use zip::{ZipWriter, write::FileOptions}; // Added for CHARX test helper
+    use zip::{write::FileOptions, ZipWriter}; // Added for CHARX test helper
 
     fn safe_len_to_u32(len: usize) -> u32 {
         u32::try_from(len).unwrap_or_else(|_| panic!("Length {len} is too large to fit in u32"))
@@ -473,7 +473,7 @@ mod tests {
 
         let mut png_bytes = Vec::new();
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
-        // Dummy IHDR
+                                                                         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
         let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
@@ -512,7 +512,7 @@ mod tests {
     fn create_test_png_with_multiple_chunks(chunks: Vec<(&[u8], &str)>) -> Vec<u8> {
         let mut png_bytes = Vec::new();
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
-        // Dummy IHDR
+                                                                         // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
         let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
@@ -658,7 +658,7 @@ mod tests {
         // Create PNG data without the 'chara' tEXt chunk (e.g., only IHDR, IDAT, and IEND)
         let mut png_data = Vec::new();
         png_data.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
-        // Dummy IHDR
+                                                                        // Dummy IHDR
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
         let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_data.extend_from_slice(&ihdr_len);
@@ -826,11 +826,9 @@ mod tests {
         if let ParsedCharacterCard::V2Fallback(data_v2) = parsed_card {
             assert_eq!(data_v2.name, Some("Fallback V2".to_string()));
             // Check for the fallback note
-            assert!(
-                data_v2
-                    .creator_notes
-                    .contains("loaded as a Character Card V2")
-            );
+            assert!(data_v2
+                .creator_notes
+                .contains("loaded as a Character Card V2"));
         } else {
             panic!("Expected V2Fallback variant after invalid ccv3, got {parsed_card:?}");
         }
@@ -884,7 +882,7 @@ mod tests {
         // Create raw text chunk for ccv3
         let mut png_bytes = Vec::new();
         png_bytes.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]); // Signature
-        // Dummy IHDR (as before)
+                                                                         // Dummy IHDR (as before)
         let ihdr_data = &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0];
         let ihdr_len = safe_len_to_u32(ihdr_data.len()).to_be_bytes();
         png_bytes.extend_from_slice(&ihdr_len);
@@ -944,11 +942,9 @@ mod tests {
                 Some("Fallback V2 From Bad Base64".to_string())
             );
             // Check for the fallback note
-            assert!(
-                data_v2
-                    .creator_notes
-                    .contains("loaded as a Character Card V2")
-            );
+            assert!(data_v2
+                .creator_notes
+                .contains("loaded as a Character Card V2"));
         } else {
             panic!("Expected V2Fallback variant after invalid ccv3 base64, got {parsed_card:?}");
         }

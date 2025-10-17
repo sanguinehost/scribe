@@ -13,6 +13,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { goto as _goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import SidebarUserNav from './sidebar-user-nav.svelte';
 	import CharacterList from './CharacterList.svelte'; // Import the new CharacterList component
 	import CharacterUploader from './CharacterUploader.svelte'; // Import the uploader component
@@ -28,6 +29,7 @@
 	import { SidebarStore } from '$lib/stores/sidebar.svelte';
 	import { getCurrentUser, getIsAuthenticated } from '$lib/auth.svelte';
 	import { getTheme } from '@sejohnson/svelte-themes';
+	import { onMount, onDestroy } from 'svelte';
 
 	const context = useSidebar();
 	const theme = getTheme();
@@ -271,6 +273,39 @@
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
+
+	// Handler for re-authentication completion - refresh all sidebar data
+	async function handleReAuthComplete() {
+		console.log('[AppSidebar] Re-authentication complete, refreshing sidebar lists');
+		try {
+			// Refresh all sidebar list components in parallel
+			await Promise.all([
+				characterListComp?.refresh(),
+				personaListComp?.refresh(),
+				lorebookListComp?.refresh(),
+				chronicleListComp?.refresh()
+			]);
+			console.log('[AppSidebar] All sidebar lists refreshed successfully');
+		} catch (error) {
+			console.error('[AppSidebar] Error refreshing sidebar lists after re-auth:', error);
+		}
+	}
+
+	// Set up event listener for re-authentication completion
+	onMount(() => {
+		console.log('[AppSidebar] Setting up auth:reauth-complete event listener');
+		if (browser) {
+			window.addEventListener('auth:reauth-complete', handleReAuthComplete);
+		}
+	});
+
+	// Clean up event listener
+	onDestroy(() => {
+		console.log('[AppSidebar] Cleaning up auth:reauth-complete event listener');
+		if (browser) {
+			window.removeEventListener('auth:reauth-complete', handleReAuthComplete);
+		}
+	});
 </script>
 
 <Sidebar class="group-data-[side=left]:border-r-0">

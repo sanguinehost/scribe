@@ -3,15 +3,15 @@
 use crate::config::Config;
 use crate::errors::AppError;
 use async_trait::async_trait;
-use qdrant_client::Qdrant;
 use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Alias to avoid naming conflict
 pub use qdrant_client::qdrant::{
+    condition::ConditionOneOf, point_id::PointIdOptions, r#match::MatchValue, value::Kind,
     Condition, CreateCollection, CreateFieldIndexCollection, Distance, FieldCondition, FieldType,
     Filter, HnswConfigDiff, Match, OptimizersConfigDiff, PayloadIncludeSelector, PointId,
     PointStruct, ReadConsistency, ReadConsistencyType, ScoredPoint, UpdateCollection, Value,
-    VectorParams, VectorsConfig, WalConfigDiff, WithPayloadSelector, condition::ConditionOneOf,
-    r#match::MatchValue, point_id::PointIdOptions, value::Kind,
+    VectorParams, VectorsConfig, WalConfigDiff, WithPayloadSelector,
 };
+use qdrant_client::Qdrant;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
@@ -945,15 +945,15 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use dotenvy::dotenv;
-    use qdrant_client::qdrant::r#match::MatchValue; // Corrected import
     use qdrant_client::qdrant::point_id::PointIdOptions;
-    use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match, value::Kind};
+    use qdrant_client::qdrant::r#match::MatchValue; // Corrected import
+    use qdrant_client::qdrant::{value::Kind, Condition, FieldCondition, Filter, Match};
     use qdrant_client::qdrant::{PointId, Value, Vectors}; // Correct the import path for PointId and Vectors if they are part of the public API
     use serde_json::json; // Moved import here
     use std::sync::Arc; // Removed Once
     use tokio; // Add tokio for async tests
     use uuid::Uuid; // Import for PointId variants
-    // Use Rng trait for gen method, StdRng for concrete type, SeedableRng for seeding
+                    // Use Rng trait for gen method, StdRng for concrete type, SeedableRng for seeding
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     // Removed: use rustls;
@@ -1144,7 +1144,7 @@ mod tests {
         // Basic assertion to ensure it runs without panic and fields are initialized
         assert_eq!(dummy_service.collection_name, DEFAULT_COLLECTION_NAME);
         assert_eq!(dummy_service.embedding_dimension, 768); // Check against the dummy default
-        // We don't assert on the client itself as it's expected to be non-functional.
+                                                            // We don't assert on the client itself as it's expected to be non-functional.
         drop(dummy_service);
     }
     // --- Integration Tests (Require running Qdrant instance) ---
@@ -1191,7 +1191,7 @@ mod tests {
         let point_id_1 = Uuid::new_v4();
         // Use slightly more distinct vectors for testing
         let mut rng1 = StdRng::seed_from_u64(42); // Seeded RNG for reproducibility
-        // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
+                                                  // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
         let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.random::<f32>()).collect();
 
         let payload_1 = json!({"test_key": "value1"});

@@ -14,7 +14,7 @@ mod payment_webhook_tests {
     use scribe_backend::{
         config::PaymentConfig,
         services::payment::paddle_service::PaddleService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;
@@ -77,7 +77,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_endpoint_rejects_missing_signature() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let payload = create_webhook_payload("subscription_created", "evt_test_001");
 
@@ -96,7 +96,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_endpoint_rejects_invalid_signature() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let payload = create_webhook_payload("subscription_created", "evt_test_002");
         let payload_str = payload.to_string();
@@ -117,7 +117,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_signature_with_different_timestamp_formats() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let payload = create_webhook_payload("subscription_created", "evt_test_timestamp_001");
         let payload_str = payload.to_string();
@@ -162,7 +162,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_signature_malformed_formats() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let payload = create_webhook_payload("subscription_created", "evt_test_malformed_001");
         let payload_str = payload.to_string();
@@ -202,7 +202,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_signature_payload_tampering() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let original_payload =
             create_webhook_payload("subscription_created", "evt_test_tamper_001");
@@ -251,7 +251,7 @@ mod payment_webhook_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Simplified but realistic Paddle webhook payload
         // Note: Paddle sends transaction data directly in 'data', not nested under 'data.transaction'
@@ -309,7 +309,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_endpoint_accepts_valid_signature() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let payload = create_webhook_payload("subscription_created", "evt_test_003");
         let payload_str = payload.to_string();
@@ -358,7 +358,7 @@ mod payment_webhook_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create a credit purchase webhook using our real price ID
         let payload = json!({
@@ -430,7 +430,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_handles_subscription_created_event() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = format!("evt_test_sub_created_{}", uuid::Uuid::new_v4());
         let payload = json!({
@@ -489,7 +489,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_handles_subscription_updated_event() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = format!("evt_test_sub_updated_{}", uuid::Uuid::new_v4());
         let payload = json!({
@@ -544,7 +544,7 @@ mod payment_webhook_tests {
         use uuid::Uuid;
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();
@@ -676,7 +676,7 @@ mod payment_webhook_tests {
         use uuid::Uuid;
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();
@@ -834,7 +834,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_handles_subscription_cancelled_event() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = format!("evt_test_sub_cancelled_{}", uuid::Uuid::new_v4());
         let payload = json!({
@@ -892,7 +892,7 @@ mod payment_webhook_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = format!("evt_test_transaction_{}", uuid::Uuid::new_v4());
         let payload = json!({
@@ -942,7 +942,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_rejects_malformed_json() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let malformed_payload = "{ invalid json :::";
         let webhook_secret = env::var("PAYMENT_PADDLE_WEBHOOK_SECRET")
@@ -965,7 +965,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_webhook_handles_unknown_event_type() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         let event_id = format!("evt_test_unknown_{}", uuid::Uuid::new_v4());
         let payload = json!({
@@ -1088,7 +1088,7 @@ mod payment_webhook_tests {
         use uuid::Uuid;
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();
@@ -1228,7 +1228,7 @@ mod payment_webhook_tests {
         use uuid::Uuid;
 
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();
@@ -1418,7 +1418,7 @@ mod payment_webhook_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();
@@ -1564,7 +1564,7 @@ mod payment_webhook_tests {
             );
         }
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Create test user
         let user_id = Uuid::new_v4();

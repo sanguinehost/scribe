@@ -2,7 +2,7 @@
 
 use scribe_backend::{
     models::lorebook_dtos::SillyTavernImportPayload,
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use serde_json::json;
 
@@ -78,7 +78,7 @@ async fn test_actual_star_wars_lorebook_deserialization() {
 #[tokio::test]
 async fn test_full_lorebook_import_with_sillytavern_format() {
     let test_app = spawn_app(false, false, false).await;
-    let mut _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user
     let user = create_test_user(

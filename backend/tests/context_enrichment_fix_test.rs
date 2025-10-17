@@ -29,7 +29,7 @@ fn create_test_dek_key() -> Vec<u8> {
 #[serial]
 async fn test_context_enrichment_with_encryption() -> Result<()> {
     let test_app = test_helpers::spawn_app(false, false, true).await; // Use real Qdrant
-    let _guard = TestDataGuard::new(test_app.db_pool.clone());
+    let _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create test user with DEK
     let user = test_helpers::db::create_test_user(

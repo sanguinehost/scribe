@@ -146,8 +146,19 @@ pub struct PaddleBillingCycle {
 /// Paddle subscription item
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PaddleSubscriptionItem {
-    pub price_id: String,
+    pub status: String,
     pub quantity: i32,
+    pub recurring: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previously_billed_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_billed_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trial_dates: Option<PaddleTrialDates>,
+    pub price: PaddlePrice,     // Full price object (was: price_id: String)
+    pub product: PaddleProduct, // Full product object
 }
 
 /// Legacy Paddle transaction data (for webhook processing)
@@ -182,6 +193,8 @@ pub struct CreateTransactionRequest {
     pub checkout: Option<TransactionCheckout>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_details: Option<TransactionBillingDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
 }
 
 /// Transaction item
@@ -278,6 +291,25 @@ pub struct PaddlePrice {
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub import_meta: Option<serde_json::Value>,
+}
+
+/// Paddle product information within subscription items
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PaddleProduct {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub product_type: String,
+    pub tax_category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_data: Option<serde_json::Value>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// Legacy - keep for backward compatibility
@@ -1026,15 +1058,14 @@ impl PaddleService {
             "https://api.paddle.com"
         };
 
-        // Create customer auth token request
-        let mut payload = HashMap::new();
-        payload.insert("customer_id", customer_id);
-
+        // Create customer auth token request (customer_id in URL path, not body)
         let response = self
             .client
-            .post(&format!("{}/customer-auth-tokens", base_url))
+            .post(&format!(
+                "{}/customers/{}/auth-tokens",
+                base_url, customer_id
+            ))
             .bearer_auth(api_key)
-            .json(&payload)
             .send()
             .await
             .map_err(|e| {

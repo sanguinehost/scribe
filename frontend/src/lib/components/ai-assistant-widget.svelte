@@ -1,51 +1,47 @@
 <script lang="ts">
-	import { Button as ButtonComponent } from './ui/button';
-	import { Bot } from 'lucide-svelte';
-	import AiAssistantDialog from './ai-assistant-dialog.svelte';
-	import type { CharacterContext } from '$lib/types';
+	/**
+	 * AI Assistant Widget
+	 *
+	 * Compact button that opens the AI assistant dialog.
+	 * Shows readiness state and provides quick access to AI features.
+	 */
 
-	type Props = {
-		fieldName: string;
-		fieldValue: string;
-		characterContext?: CharacterContext;
-		onGenerated: (generatedText: string) => void;
+	import { Button } from '$lib/components/ui/button';
+	import { Sparkles } from 'lucide-svelte';
+
+	interface Props {
+		/** Optional click handler override */
+		onclick?: () => void;
+		/** Show as icon-only button (default: true) */
+		iconOnly?: boolean;
+		/** Size variant */
+		size?: 'sm' | 'default' | 'lg';
+		/** Variant */
+		variant?: 'default' | 'outline' | 'ghost';
+		/** Disabled state */
 		disabled?: boolean;
-		variant?: 'compact' | 'full'; // UI density
-	};
+	}
 
 	let {
-		fieldName,
-		fieldValue,
-		characterContext,
-		onGenerated,
-		disabled = false,
-		variant = 'full'
+		onclick,
+		iconOnly = true,
+		size = 'sm',
+		variant = 'ghost',
+		disabled = false
 	}: Props = $props();
-
-	let dialogOpen = $state(false);
 </script>
 
-<!-- AI Assistant Button -->
-<ButtonComponent
-	variant="ghost"
-	size="sm"
-	class={variant === 'compact' ? 'h-7 px-2 text-xs' : 'h-7 w-7 p-1.5'}
-	onclick={() => (dialogOpen = true)}
+<Button
+	{size}
+	{variant}
 	{disabled}
-	title="AI Assistant - Generate or enhance {fieldName}"
+	class="ai-assistant-widget"
+	onclick={() => onclick?.()}
+	title="Open AI Assistant"
 >
-	<Bot size={14} class={variant === 'compact' ? 'mr-1' : ''} />
-	{#if variant === 'compact'}
-		AI
-	{/if}
-</ButtonComponent>
+	<Sparkles class="h-4 w-4" />
 
-<!-- AI Assistant Dialog -->
-<AiAssistantDialog
-	bind:open={dialogOpen}
-	{fieldName}
-	{fieldValue}
-	{characterContext}
-	{onGenerated}
-	onOpenChange={(open) => (dialogOpen = open)}
-/>
+	{#if !iconOnly}
+		<span class="ml-2">AI Assistant</span>
+	{/if}
+</Button>

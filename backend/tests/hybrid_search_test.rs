@@ -132,7 +132,7 @@ fn create_test_point(
     keywords: Vec<&str>,
     vector: Vec<f32>,
 ) -> qdrant_client::qdrant::PointStruct {
-    use qdrant_client::qdrant::{PointStruct, Vector, Vectors, vectors::VectorsOptions};
+    use qdrant_client::qdrant::{vectors::VectorsOptions, PointStruct, Vector, Vectors};
 
     let mut payload = HashMap::new();
     payload.insert(

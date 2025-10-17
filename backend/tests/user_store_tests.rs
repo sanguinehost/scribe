@@ -16,7 +16,7 @@ mod user_store_tests {
     // use deadpool_diesel::postgres::Manager; // No longer needed directly
     use diesel::prelude::*;
     use scribe_backend::models::users::User; // Needed for assertions
-    // use scribe_backend::state::DbPool; // Will get from TestApp
+                                             // use scribe_backend::state::DbPool; // Will get from TestApp
     use secrecy::{ExposeSecret, SecretString};
     // Use crate namespace for test helpers
     use scribe_backend::test_helpers::{self, TestDataGuard}; // Removed TestApp
@@ -219,7 +219,7 @@ mod user_store_tests {
     async fn test_create_user() -> Result<(), Box<dyn std::error::Error>> {
         let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
-        let mut guard = TestDataGuard::new(pool.clone());
+        let mut guard = TestDataGuard::new(pool.clone(), None);
 
         // 1. Define username and email
         let username = format!(
@@ -340,7 +340,7 @@ mod user_store_tests {
     async fn test_get_user_by_username() -> Result<(), Box<dyn std::error::Error>> {
         let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
-        let mut guard = TestDataGuard::new(pool.clone());
+        let mut guard = TestDataGuard::new(pool.clone(), None);
 
         // Create a user using the auth::create_user function
         let username = format!(
@@ -436,7 +436,7 @@ mod user_store_tests {
     async fn test_get_user() -> Result<(), Box<dyn std::error::Error>> {
         let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
-        let mut guard = TestDataGuard::new(pool.clone());
+        let mut guard = TestDataGuard::new(pool.clone(), None);
 
         // Create a user using the auth::create_user function
         let username_for_get = format!(
@@ -514,7 +514,7 @@ mod user_store_tests {
     async fn test_verify_credentials_basic() -> Result<(), Box<dyn std::error::Error>> {
         let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
-        let mut guard = TestDataGuard::new(pool.clone());
+        let mut guard = TestDataGuard::new(pool.clone(), None);
 
         test_basic_credential_verification(pool, &mut guard).await?;
 
@@ -527,7 +527,7 @@ mod user_store_tests {
     async fn test_verify_credentials_crypto_failure() -> Result<(), Box<dyn std::error::Error>> {
         let test_app = self::test_helpers::spawn_app(false, false, false).await;
         let pool = &test_app.db_pool;
-        let mut guard = TestDataGuard::new(pool.clone());
+        let mut guard = TestDataGuard::new(pool.clone(), None);
 
         let (username, email, password_secret) = generate_test_user_data();
         let created_user = create_test_user_for_verification(
@@ -548,7 +548,8 @@ mod user_store_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[ignore] // Added ignore for CI (interacts with DB)
     async fn test_user_from_session_token_success() {
-        let _test_app = self::test_helpers::spawn_app(false, false, false).await; // Use spawn_app
+        let _test_app = self::test_helpers::spawn_app(false, false, false).await;
+        // Use spawn_app
         // let _user_store = AuthBackend::new(pool.clone()); // AuthBackend can be used if needed
         // let _auth_backend = AuthBackend::new(pool.clone()); // Redundant with above
 

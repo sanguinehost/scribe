@@ -17,8 +17,14 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types';
+	import ReAuthModal from '$lib/components/ReAuthModal.svelte';
 
 	let { data, children } = $props<{ data: { user?: User | null }; children: unknown }>();
+
+	// Re-authentication modal state
+	let showReAuthModal = $state(false);
+	let reAuthReason = $state<'dek_missing' | 'session_expired'>('dek_missing');
+	let reAuthModalShownOnce = $state(false); // Prevent duplicate modals
 
 	// Initialize settings store
 	const settingsStore = new SettingsStore();
@@ -160,12 +166,39 @@
 			}
 		};
 
+		// Set up listener for DEK missing to show re-authentication modal
+		const handleDekMissing = (event: Event) => {
+			const customEvent = event as CustomEvent<{
+				reason: 'dek_missing' | 'session_expired';
+				immediate?: boolean;
+				endpoint?: string;
+			}>;
+
+			// Prevent showing modal multiple times (can happen if multiple API calls fail simultaneously)
+			if (reAuthModalShownOnce && showReAuthModal) {
+				console.log(
+					'[Layout] DEK missing detected but modal already shown, ignoring duplicate event'
+				);
+				return;
+			}
+
+			console.log('[Layout] DEK missing detected, showing re-authentication modal', {
+				immediate: customEvent.detail?.immediate,
+				endpoint: customEvent.detail?.endpoint
+			});
+			reAuthReason = customEvent.detail?.reason || 'dek_missing';
+			showReAuthModal = true;
+			reAuthModalShownOnce = true;
+		};
+
 		window.addEventListener('auth:connection-error', handleConnectionError);
 		window.addEventListener('auth:session-expired', handleSessionExpired);
 		window.addEventListener('auth:connection-restored', handleConnectionRestored);
 		window.addEventListener('auth:success', handleAuthSuccess);
+		window.addEventListener('auth:dek-missing', handleDekMissing);
 
 		// Set up periodic auth check to detect session expiry during active use
+		// Reduced from 5 minutes to 2 minutes for faster detection of invalidated sessions
 		const periodicAuthCheck = setInterval(
 			() => {
 				// Only check if user thinks they're authenticated
@@ -173,8 +206,19 @@
 					initializeAuth(true); // Force recheck to bypass cached promise
 				}
 			},
-			5 * 60 * 1000
-		); // Check every 5 minutes
+			2 * 60 * 1000
+		); // Check every 2 minutes
+
+		// Set up visibility change listener to check session when user returns to tab
+		// This handles cases where backend is redeployed while user is away
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === 'visible' && getIsAuthenticated()) {
+				console.log('[Layout] Tab became visible, validating session...');
+				initializeAuth(true); // Force recheck when user returns to tab
+			}
+		};
+
+		document.addEventListener('visibilitychange', handleVisibilityChange);
 
 		// Cleanup
 		return () => {
@@ -183,9 +227,28 @@
 			window.removeEventListener('auth:session-expired', handleSessionExpired);
 			window.removeEventListener('auth:connection-restored', handleConnectionRestored);
 			window.removeEventListener('auth:success', handleAuthSuccess);
+			window.removeEventListener('auth:dek-missing', handleDekMissing);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			clearInterval(periodicAuthCheck);
 		};
 	});
+
+	// Handler for successful re-authentication
+	function handleReAuthSuccess() {
+		console.log('[Layout] Re-authentication successful, reinitializing auth');
+		// Force auth reinitialization to populate DEK from fresh login
+		initializeAuth(true);
+
+		// Show success notification
+		toast.success('Authentication successful', {
+			description: 'Your encryption key has been restored. You can continue using the app.',
+			duration: 3000
+		});
+
+		// Dispatch event to trigger data refresh in sidebar components
+		console.log('[Layout] Dispatching auth:reauth-complete event for sidebar refresh');
+		window.dispatchEvent(new CustomEvent('auth:reauth-complete'));
+	}
 </script>
 
 <ThemeProvider attribute="class" disableTransitionOnChange>
@@ -194,6 +257,11 @@
 		{#if ENABLE_PAYMENTS}
 			<PaddleLoader />
 		{/if}
+		<ReAuthModal
+			bind:open={showReAuthModal}
+			reason={reAuthReason}
+			onSuccess={handleReAuthSuccess}
+		/>
 		{@render children()}
 	</TooltipProvider>
 </ThemeProvider>

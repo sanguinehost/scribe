@@ -4,8 +4,9 @@
 
 # S3 Bucket for SIEM Log Archival
 resource "aws_s3_bucket" "siem_logs" {
-  count  = var.enable_kinesis_firehose ? 1 : 0
-  bucket = "${var.environment}-scribe-siem-logs"
+  count         = var.enable_kinesis_firehose ? 1 : 0
+  bucket        = "${var.environment}-scribe-siem-logs"
+  force_destroy = true  # Allow destroy even with contents (staging environment)
 
   tags = {
     Name        = "${var.environment}-scribe-siem-logs"

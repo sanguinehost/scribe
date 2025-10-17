@@ -12,7 +12,6 @@ use scribe_backend::{
     },
     schema::user_settings,
     services::{
-        UserSettingsService,
         chat_override_service::ChatOverrideService, // Added
         embeddings::EmbeddingPipelineServiceTrait,  // Added
         encryption_service::EncryptionService,      // Added
@@ -21,16 +20,17 @@ use scribe_backend::{
         lorebook::LorebookService,                  // Added
         tokenizer_service::TokenizerService,        // Added
         user_persona_service::UserPersonaService,   // Added
+        UserSettingsService,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
-    test_helpers::{TestDataGuard, db, spawn_app}, // Removed QdrantClientServiceTrait from here
+    test_helpers::{db, spawn_app, TestDataGuard}, // Removed QdrantClientServiceTrait from here
 };
 
 /// Test that user settings service auto-creates defaults when none exist
 #[tokio::test]
 async fn test_user_settings_auto_creation() {
     let app = spawn_app(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create a test user WITHOUT user settings
     let username = "testuser_auto_create";
@@ -91,7 +91,7 @@ async fn test_user_settings_auto_creation() {
 #[tokio::test]
 async fn test_chat_session_uses_user_default_model() {
     let app = spawn_app(false, false, false).await;
-    let mut tdg = TestDataGuard::new(app.db_pool.clone());
+    let mut tdg = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create a test user
     let username = "testuser_model";

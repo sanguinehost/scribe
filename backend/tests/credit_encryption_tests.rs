@@ -11,7 +11,7 @@ use diesel::prelude::*;
 /// - PII protection verification
 use scribe_backend::models::credit::CreditTransaction;
 use scribe_backend::services::payment::CreditService;
-use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use serde_json::json;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -60,7 +60,7 @@ async fn create_test_user(
 #[tokio::test]
 async fn test_credit_description_encrypted_at_rest() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "encrypt_test", "encrypt@test.com")
@@ -143,7 +143,7 @@ async fn test_credit_description_encrypted_at_rest() {
 #[tokio::test]
 async fn test_credit_metadata_encrypted_at_rest() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "metadata_test", "metadata@test.com")
@@ -241,7 +241,7 @@ async fn test_credit_metadata_encrypted_at_rest() {
 #[tokio::test]
 async fn test_credit_transaction_decryption_roundtrip() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "decrypt_test", "decrypt@test.com")
@@ -327,7 +327,7 @@ async fn test_credit_transaction_decryption_roundtrip() {
 #[tokio::test]
 async fn test_credit_encryption_key_mismatch() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     // Create two users
     let user1_id = Uuid::new_v4();
@@ -409,7 +409,7 @@ async fn test_credit_encryption_key_mismatch() {
 #[tokio::test]
 async fn test_credit_encryption_with_special_characters() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "special_test", "special@test.com")
@@ -508,7 +508,7 @@ async fn test_credit_encryption_with_special_characters() {
 #[tokio::test]
 async fn test_credit_encryption_nonce_uniqueness() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "nonce_test", "nonce@test.com")
@@ -619,7 +619,7 @@ async fn test_credit_encryption_nonce_uniqueness() {
 #[tokio::test]
 async fn test_credit_decryption_with_corrupted_data() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "corrupt_test", "corrupt@test.com")
@@ -727,7 +727,7 @@ async fn test_credit_decryption_with_corrupted_data() {
 #[tokio::test]
 async fn test_credit_encryption_without_metadata() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "no_meta_test", "no_meta@test.com")
@@ -820,7 +820,7 @@ async fn test_credit_encryption_without_metadata() {
 #[tokio::test]
 async fn test_no_plaintext_pii_in_credit_transactions() {
     let app = spawn_app(true, false, false).await;
-    let _guard = TestDataGuard::new(app.db_pool.clone());
+    let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
     let user_id = Uuid::new_v4();
     create_test_user(&app.db_pool, user_id, "pii_test", "pii@test.com")

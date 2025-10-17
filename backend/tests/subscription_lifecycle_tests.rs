@@ -14,7 +14,7 @@ mod subscription_lifecycle_tests {
     use scribe_backend::{
         config::Config,
         middleware::plan_enforcement::EnforcementConfig,
-        test_helpers::{TestApp, TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestApp, TestDataGuard},
     };
     use serde_json::json;
     use std::env;
@@ -69,7 +69,7 @@ mod subscription_lifecycle_tests {
     #[tokio::test]
     async fn test_database_table_accessibility() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Simple test to verify payment tables exist by accessing them
         println!("✓ Database connection established for payment system tests");
@@ -122,7 +122,7 @@ mod subscription_lifecycle_tests {
     #[tokio::test]
     async fn test_api_endpoints_exist_with_feature_gating() {
         let app = spawn_app(true, false, false).await;
-        let _guard = TestDataGuard::new(app.db_pool.clone());
+        let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
         // Test that payment API endpoints exist and are properly gated
         let client = Client::new();

@@ -14,7 +14,7 @@
 	let isLoading = true;
 	let error: string | null = null;
 	let selectedCharacterId: string | null = null; // To track selection state for cards
-	let editingCharacterId: string | null = null; // To track which character is being edited
+	let editingCharacter: Character | undefined = undefined; // The character being edited
 	let showEditor = false;
 	let showCreator = false;
 
@@ -70,7 +70,8 @@
 	}
 
 	function handleEdit(_event: CustomEvent<{ characterId: string }>) {
-		editingCharacterId = _event.detail.characterId;
+		const characterId = _event.detail.characterId;
+		editingCharacter = characters.find((c) => c.id === characterId);
 		showEditor = true;
 	}
 
@@ -80,10 +81,10 @@
 	}
 
 	// Handle when editor closes to refresh the character list
-	$: if (!showEditor && editingCharacterId) {
+	$: if (!showEditor && editingCharacter) {
 		// Refresh character list after editing
 		fetchCharacters();
-		editingCharacterId = null;
+		editingCharacter = undefined;
 	}
 
 	function handleCreateClick() {
@@ -167,6 +168,6 @@
 	</div>
 </div>
 
-<CharacterEditor characterId={editingCharacterId} bind:_open={showEditor} />
+<CharacterEditor character={editingCharacter} bind:open={showEditor} />
 
-<CharacterCreator bind:_open={showCreator} on:created={handleCharacterCreated} />
+<CharacterCreator bind:open={showCreator} on:created={handleCharacterCreated} />

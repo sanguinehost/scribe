@@ -5,11 +5,11 @@
 use anyhow::Result as AnyhowResult;
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use diesel::prelude::*;
 use scribe_backend::test_helpers;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tower::util::ServiceExt;
 use tower_cookies::Cookie;
 use tracing::info;
@@ -103,7 +103,8 @@ async fn login_and_extract_session_id(
 async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
     // Test that DEK is NOT stored in the session after login
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create a test user
     let user = create_test_user_for_dek_test(&test_app, &mut guard).await?;
@@ -223,7 +224,8 @@ async fn test_dek_not_stored_in_session() -> AnyhowResult<()> {
 async fn test_dek_removed_from_cache_on_logout() -> AnyhowResult<()> {
     // Test that DEK is removed from AuthBackend cache on logout
     let test_app = test_helpers::spawn_app(true, false, false).await;
-    let mut guard = test_helpers::TestDataGuard::new(test_app.db_pool.clone());
+    let mut guard =
+        test_helpers::TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     // Create a test user
     let username = format!("test_dek_cache_logout_{}", Uuid::new_v4());

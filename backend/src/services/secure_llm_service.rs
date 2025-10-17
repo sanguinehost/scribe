@@ -16,9 +16,9 @@ use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{
-    EncryptedLlmData, LlmEncryptionError, LlmEncryptionService, OutputValidator, PromptSanitizer,
-    ResourceLimiter, SecurityAuditLogger, SecurityEvent, SecurityEventSeverity, SecurityEventType,
-    security::SecurityError,
+    security::SecurityError, EncryptedLlmData, LlmEncryptionError, LlmEncryptionService,
+    OutputValidator, PromptSanitizer, ResourceLimiter, SecurityAuditLogger, SecurityEvent,
+    SecurityEventSeverity, SecurityEventType,
 };
 
 /// Secure LLM service that wraps AI client with security controls

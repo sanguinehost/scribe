@@ -6,9 +6,9 @@ mod subscription_cancellation_tests {
     use diesel::prelude::*;
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::{subscriptions, users};
-    use scribe_backend::services::EncryptionService;
     use scribe_backend::services::payment::{CreditService, SubscriptionService};
-    use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+    use scribe_backend::services::EncryptionService;
+    use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
     use std::sync::Arc;
     use uuid::Uuid;
 
@@ -64,7 +64,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_is_cancelled_trial_expired_method_with_expired_trial() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
             let encryption_service = EncryptionService::new();
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
 
@@ -106,7 +106,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_is_cancelled_trial_expired_method_with_active_trial() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
             let encryption_service = EncryptionService::new();
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
 
@@ -148,7 +148,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_is_cancelled_trial_expired_method_with_active_subscription() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
             let encryption_service = EncryptionService::new();
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
 
@@ -190,7 +190,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_is_cancelled_trial_expired_method_with_no_trial_end() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
             let encryption_service = EncryptionService::new();
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
 
@@ -232,7 +232,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_get_user_subscription_with_expired_cancelled_trial() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -294,7 +294,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_get_user_subscription_with_non_expired_cancelled_trial() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -363,7 +363,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_active_trial_behavior() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -424,7 +424,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_trial_expiration_to_free_tier() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -485,7 +485,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_trial_conversion_to_paid_subscription() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -557,7 +557,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_immediate_cancellation() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -620,7 +620,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_cancel_at_period_end_behavior() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -685,7 +685,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_subscription_expiration_after_cancellation() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -750,7 +750,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_credit_grants_during_trial_to_paid_conversion() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -836,7 +836,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_credit_preservation_on_subscription_cancellation() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -938,7 +938,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_no_monthly_credits_for_expired_cancelled_trial() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -1035,7 +1035,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_full_user_journey_trial_to_cancellation_to_expiration() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -1164,7 +1164,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_trial_to_paid_conversion_journey() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)
@@ -1250,7 +1250,7 @@ mod subscription_cancellation_tests {
         #[tokio::test]
         async fn test_edge_case_billing_period_boundaries() {
             let app = spawn_app(true, false, false).await;
-            let _guard = TestDataGuard::new(app.db_pool.clone());
+            let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
             let user_id = Uuid::new_v4();
             create_test_user(&app.db_pool, user_id)

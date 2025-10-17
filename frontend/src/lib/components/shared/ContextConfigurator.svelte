@@ -292,7 +292,7 @@
 			<!-- Presets -->
 			<div class="space-y-2">
 				<Label>Quick Presets</Label>
-				{#snippet presetButtons()}
+				{#snippet presetButtonsUI()}
 					{@const tierLimit = subscriptionLimit()}
 					{@const effectiveMax = tierLimit ?? maxContextSize()}
 
@@ -345,7 +345,7 @@
 					{/if}
 				{/snippet}
 				<div class="grid grid-cols-3 gap-2">
-					{@render presetButtons()}
+					{@render presetButtonsUI()}
 				</div>
 			</div>
 

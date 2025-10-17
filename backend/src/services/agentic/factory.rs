@@ -12,8 +12,9 @@ use crate::{
 use super::{
     agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig},
     narrative_tools::{
-        AnalyzeTextSignificanceTool, CreateChronicleEventTool, CreateLorebookEntryTool,
-        SearchKnowledgeBaseTool, UpdateLorebookEntryTool,
+        AnalyzeLorebookTool, AnalyzeTextSignificanceTool, CreateBatchLorebookEntriesTool,
+        CreateChronicleEventTool, CreateLorebookEntryTool, SearchKnowledgeBaseTool,
+        UpdateLorebookEntryTool,
     },
     registry::ToolRegistry,
 };
@@ -150,6 +151,21 @@ impl AgenticNarrativeFactory {
         ));
         registry.add_tool(update_lorebook_tool);
 
+        // Batch lorebook generation tool
+        let batch_lorebook_tool = Arc::new(CreateBatchLorebookEntriesTool::new(
+            lorebook_service.clone(),
+            ai_client.clone(),
+        ));
+        registry.add_tool(batch_lorebook_tool);
+
+        // Lorebook analysis tool
+        let analyze_lorebook_tool = Arc::new(AnalyzeLorebookTool::new(
+            lorebook_service.clone(),
+            ai_client.clone(),
+            app_state.clone(),
+        ));
+        registry.add_tool(analyze_lorebook_tool);
+
         info!("Registered {} core tools", registry.list_tools().len());
     }
 
@@ -195,6 +211,21 @@ impl AgenticNarrativeFactory {
             app_state.clone(),
         ));
         registry.add_tool(update_lorebook_tool);
+
+        // Batch lorebook generation tool
+        let batch_lorebook_tool = Arc::new(CreateBatchLorebookEntriesTool::new(
+            lorebook_service.clone(),
+            ai_client.clone(),
+        ));
+        registry.add_tool(batch_lorebook_tool);
+
+        // Lorebook analysis tool
+        let analyze_lorebook_tool = Arc::new(AnalyzeLorebookTool::new(
+            lorebook_service.clone(),
+            ai_client.clone(),
+            app_state.clone(),
+        ));
+        registry.add_tool(analyze_lorebook_tool);
 
         info!("Registered {} core tools", registry.list_tools().len());
     }

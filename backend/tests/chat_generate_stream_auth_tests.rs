@@ -2,11 +2,12 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
+use bigdecimal::BigDecimal;
 use chrono::Utc;
-use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
+use diesel::RunQueryDsl as _;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -46,7 +47,7 @@ async fn generate_chat_response_streaming_unauthorized() {
         .unwrap();
     // No auth cookie
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_ne!(
         response
@@ -87,6 +88,7 @@ async fn generate_chat_response_streaming_not_found() {
 
     let login_response = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request)
         .await
@@ -130,7 +132,7 @@ async fn generate_chat_response_streaming_not_found() {
         .body(Body::from(serde_json::to_vec(&payload).unwrap()))
         .unwrap();
 
-    let response = test_app.router.oneshot(request).await.unwrap();
+    let response = test_app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_ne!(
         response
@@ -228,7 +230,10 @@ async fn generate_chat_response_streaming_forbidden() {
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now(),
+                total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -263,6 +268,7 @@ async fn generate_chat_response_streaming_forbidden() {
 
     let login_response2 = test_app
         .router
+        .clone()
         .clone()
         .oneshot(login_request2)
         .await
