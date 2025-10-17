@@ -16,9 +16,9 @@ mod credit_integration_tests {
             payment::{NewSubscription, Subscription},
         },
         schema::{credit_packages, subscriptions, user_credits},
-        services::EncryptionService,
         services::payment::{CreditService, SoftLimitService, SubscriptionService},
-        test_helpers::{TestDataGuard, spawn_app},
+        services::EncryptionService,
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;

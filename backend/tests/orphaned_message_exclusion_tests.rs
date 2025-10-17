@@ -98,6 +98,8 @@ async fn create_test_character_and_session(
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

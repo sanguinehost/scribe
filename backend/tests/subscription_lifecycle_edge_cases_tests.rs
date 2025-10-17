@@ -6,7 +6,7 @@ mod subscription_lifecycle_edge_cases_tests {
     use diesel::prelude::*;
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::{subscriptions, users};
-    use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+    use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
     use uuid::Uuid;
 
     /// Helper function to create a test user with a specific UUID

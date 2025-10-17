@@ -25,9 +25,9 @@ use crate::models::chats::{
 };
 use crate::privacy::logging::loggable_user_id;
 use crate::prompt_builder;
+use crate::prompt_templates::{Narration, NarrativeStyle, Perspective, ResponseLength, Tense};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-use crate::services::ChronicleService;
 use crate::services::agentic::{
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
@@ -35,25 +35,27 @@ use crate::services::agentic::{
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
 use crate::services::hybrid_token_counter::CountingMode;
+use crate::services::template_preference_service::TemplatePreferenceService;
+use crate::services::ChronicleService;
 use secrecy::ExposeSecret; // Added for ExposeSecret
-// RetrievedMetadata is no longer directly used in this file for RAG string construction
-// use crate::services::embedding_pipeline::RetrievedMetadata;
-// RetrievedChunk is used by prompt_builder, not directly here.
-// use crate::services::embedding_pipeline::RetrievedChunk;
+                           // RetrievedMetadata is no longer directly used in this file for RAG string construction
+                           // use crate::services::embedding_pipeline::RetrievedMetadata;
+                           // RetrievedChunk is used by prompt_builder, not directly here.
+                           // use crate::services::embedding_pipeline::RetrievedChunk;
 use crate::state::AppState;
 use axum::{
-    Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{
-        IntoResponse, Sse,
         sse::{Event, KeepAlive},
+        IntoResponse, Sse,
     },
-    routing::{get, post},
+    routing::{get, patch, post},
+    Json, Router,
 };
 use axum_login::AuthSession;
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive, Zero};
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, prelude::*};
+use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use futures_util::StreamExt;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
@@ -888,7 +890,8 @@ pub async fn generate_chat_response(
                     )
                 })
                 .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?? // Double ? to unwrap both Results
+                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??
+            // Double ? to unwrap both Results
             } else {
                 None
             };
@@ -994,6 +997,99 @@ pub async fn generate_chat_response(
     .await?;
     let prompt_template_id = session_settings.prompt_template_id;
 
+    // Fetch user's template preferences to get narrative style variables
+    // Use character-specific preferences if available, falls back to user global
+    let mut template_prefs = TemplatePreferenceService::get_template_preferences(
+        &state_arc.pool,
+        user_id_value,
+        session_character_id, // Use character-specific preferences if session has character
+    )
+    .await?;
+
+    // Load session to check for session-level narrative style overrides
+    // Session overrides have highest priority in the cascade
+    let session_override_opt = {
+        use diesel::prelude::*;
+        let pool_clone = state_arc.pool.clone();
+        let conn = pool_clone.get().await?;
+
+        conn.interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Query error: {e}")))?
+        .and_then(|chat| {
+            chat.get_narrative_style_override(&*session_dek_arc)
+                .ok()
+                .flatten()
+        })
+    };
+
+    // Apply session override to template preferences (if present)
+    // Session override fields take priority over template/character/global preferences
+    if let Some(override_data) = session_override_opt {
+        if let Some(tense) = override_data.tense {
+            template_prefs.tense = tense;
+        }
+        if let Some(narration) = override_data.narration {
+            template_prefs.narration = narration;
+        }
+        if let Some(perspective) = override_data.perspective {
+            template_prefs.perspective = perspective;
+        }
+        if let Some(length) = override_data.length {
+            template_prefs.length = length;
+        }
+        if let Some(enable_info_box) = override_data.enable_info_box {
+            template_prefs.enable_info_box = enable_info_box;
+        }
+        if let Some(enable_stats_tracker) = override_data.enable_stats_tracker {
+            template_prefs.enable_stats_tracker = enable_stats_tracker;
+        }
+        if let Some(enable_thinking) = override_data.enable_thinking {
+            template_prefs.enable_thinking = enable_thinking;
+        }
+    }
+
+    // Convert string preferences from database to NarrativeStyle enum types
+    let narrative_style = NarrativeStyle {
+        tense: match template_prefs.tense.as_str() {
+            "present-tense" => Tense::PresentTense,
+            "future-tense" => Tense::FutureTense,
+            _ => Tense::PastTense, // Default to past-tense
+        },
+        narration: match template_prefs.narration.as_str() {
+            "first-person" => Narration::FirstPerson,
+            "second-person" => Narration::SecondPerson,
+            _ => Narration::ThirdPerson, // Default to third-person
+        },
+        perspective: match template_prefs.perspective.as_str() {
+            "limited-character" => Perspective::LimitedCharacter,
+            "limited-user" => Perspective::LimitedUser,
+            _ => Perspective::Omniscient, // Default to omniscient
+        },
+        length: match template_prefs.length.as_str() {
+            "concise" => ResponseLength::Concise,
+            "moderate" => ResponseLength::Moderate,
+            "extended" => ResponseLength::Extended,
+            _ => ResponseLength::Flexible, // Default to flexible
+        },
+    };
+
+    debug!(
+        %session_id,
+        tense = %narrative_style.tense.as_str(),
+        narration = %narrative_style.narration.as_str(),
+        perspective = %narrative_style.perspective.as_str(),
+        length = %narrative_style.length.as_str(),
+        "Applied narrative style from user template preferences"
+    );
+
     // Call the new prompt builder
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
@@ -1011,6 +1107,7 @@ pub async fn generate_chat_response(
             agent_context,                     // Pass agent context if available
             guidance: payload.guidance.clone(), // Pass guidance for regeneration steering
             prompt_template_id,
+            narrative_style: Some(narrative_style), // Pass narrative style from user preferences
         })
         .await
         {
@@ -2103,6 +2200,141 @@ pub async fn get_chat_session_handler(
     Ok(Json(chat_session))
 }
 
+/// Updates session-level narrative style override for a chat session.
+///
+/// This endpoint allows users to temporarily override narrative preferences
+/// for a specific chat session without affecting character or global preferences.
+/// Pass an empty/null object or call DELETE endpoint to clear overrides.
+///
+/// # Route
+/// PATCH /api/chat/sessions/:session_id/narrative-style
+///
+/// # Errors
+/// - `Unauthorized`: User not authenticated
+/// - `Forbidden`: User doesn't own the session
+/// - `NotFound`: Session doesn't exist
+/// - `EncryptionError`: Failed to encrypt override data
+#[instrument(skip(state, auth_session, session_dek))]
+pub async fn update_session_narrative_style_handler(
+    State(state): State<AppState>,
+    Path(session_id): Path<Uuid>,
+    auth_session: CurrentAuthSession,
+    session_dek: SessionDek,
+    Json(payload): Json<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+) -> Result<Json<crate::models::template_preferences::TemplatePreferenceResponse>, AppError> {
+    use diesel::prelude::*;
+
+    let user = auth_session.user.ok_or_else(|| {
+        error!("User not found in session for session_id: {}", session_id);
+        AppError::Unauthorized("User not found in session".to_string())
+    })?;
+
+    // Clone the DEK data for use in the closure
+    let user_dek_bytes = session_dek.0.expose_secret().clone();
+    let user_dek_secret = secrecy::SecretBox::new(Box::new(user_dek_bytes));
+
+    // Load session, verify ownership, set override, and save in a transaction
+    let pool_clone = state.pool.clone();
+    let conn = pool_clone.get().await?;
+
+    conn.interact(move |conn| {
+        conn.transaction::<_, AppError, _>(|transaction_conn| {
+            // Load and verify ownership
+            let mut chat_session = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user.id))
+                .select(Chat::as_select())
+                .first::<Chat>(transaction_conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                .ok_or_else(|| AppError::NotFound("Chat session not found".to_string()))?;
+
+            // Set the narrative style override (encrypted)
+            chat_session.set_narrative_style_override(Some(payload), &user_dek_secret)?;
+
+            // Update in database
+            diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
+                .set((
+                    chat_sessions::narrative_style_override_ciphertext
+                        .eq(chat_session.narrative_style_override_ciphertext),
+                    chat_sessions::narrative_style_override_nonce
+                        .eq(chat_session.narrative_style_override_nonce),
+                ))
+                .execute(transaction_conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            Ok(())
+        })
+    })
+    .await
+    .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
+
+    // Fetch and return the effective preferences (with override applied)
+    // This requires fetching character ID and applying the cascade
+    let conn2 = state.pool.get().await?;
+    let (character_id_opt, override_ciphertext, override_nonce) = conn2
+        .interact(move |conn| {
+            let session_data = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select((
+                    chat_sessions::character_id,
+                    chat_sessions::narrative_style_override_ciphertext,
+                    chat_sessions::narrative_style_override_nonce,
+                ))
+                .first::<(Option<Uuid>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            Ok::<_, AppError>(session_data)
+        })
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
+
+    // Get base template preferences (character or global)
+    let mut effective_prefs =
+        TemplatePreferenceService::get_template_preferences(&state.pool, user.id, character_id_opt)
+            .await?;
+
+    // Decrypt and apply session override
+    if let (Some(ciphertext), Some(nonce)) = (override_ciphertext, override_nonce) {
+        if !ciphertext.is_empty() && !nonce.is_empty() {
+            let encryption_service = crate::services::encryption_service::EncryptionService::new();
+            let decrypted_bytes =
+                encryption_service.decrypt(&ciphertext, &nonce, session_dek.0.expose_secret())?;
+            let json_str = String::from_utf8(decrypted_bytes)
+                .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))?;
+            let override_data: crate::models::template_preferences::UpdateTemplatePreferenceRequest =
+                serde_json::from_str(&json_str).map_err(|e| {
+                    AppError::DecryptionError(format!("Failed to deserialize: {e}"))
+                })?;
+
+            // Apply override fields
+            if let Some(tense) = override_data.tense {
+                effective_prefs.tense = tense;
+            }
+            if let Some(narration) = override_data.narration {
+                effective_prefs.narration = narration;
+            }
+            if let Some(perspective) = override_data.perspective {
+                effective_prefs.perspective = perspective;
+            }
+            if let Some(length) = override_data.length {
+                effective_prefs.length = length;
+            }
+            if let Some(enable_info_box) = override_data.enable_info_box {
+                effective_prefs.enable_info_box = enable_info_box;
+            }
+            if let Some(enable_stats_tracker) = override_data.enable_stats_tracker {
+                effective_prefs.enable_stats_tracker = enable_stats_tracker;
+            }
+            if let Some(enable_thinking) = override_data.enable_thinking {
+                effective_prefs.enable_thinking = enable_thinking;
+            }
+        }
+    }
+
+    Ok(Json(effective_prefs))
+}
+
 pub fn chat_routes(state: AppState) -> Router<AppState> {
     info!("Entering chat_routes");
     Router::new()
@@ -2123,6 +2355,10 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
         .route(
             "/:chat_id/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
+        )
+        .route(
+            "/sessions/:session_id/narrative-style",
+            patch(update_session_narrative_style_handler),
         )
         .route("/:session_id_str/generate", post(generate_chat_response))
         .route(
@@ -2613,16 +2849,15 @@ pub async fn generate_suggested_actions(
                     String::new()
                 },
                 |decrypted_secret_vec| {
-                    String::from_utf8(
-                    decrypted_secret_vec.expose_secret().clone(),
-                )
-                .unwrap_or_else(|e| {
-                    error!(
+                    String::from_utf8(decrypted_secret_vec.expose_secret().clone()).unwrap_or_else(
+                        |e| {
+                            error!(
                         "Failed to convert decrypted first_mes to UTF-8: {}. Using empty string.",
                         e
                     );
-                    String::new()
-                })
+                            String::new()
+                        },
+                    )
                 },
             )
         }
@@ -2704,6 +2939,7 @@ pub async fn generate_suggested_actions(
             agent_context: None,               // No agent context for suggestions
             guidance: None,                    // No guidance for suggestions
             prompt_template_id: None,          // Use default template for suggestions
+            narrative_style: None,             // Suggestions don't need narrative styling
         })
         .await
         {

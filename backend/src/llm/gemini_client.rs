@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use futures::StreamExt;
 use genai::{
-    Client, ClientBuilder, ModelIden,
     chat::{ChatOptions, ChatRequest, ChatResponse},
     resolver::{AuthData, AuthResolver},
+    Client, ClientBuilder, ModelIden,
 };
 use std::sync::Arc;
 
@@ -215,7 +215,7 @@ mod tests {
     use ctor::ctor;
     use futures::stream;
     use genai::chat::ChatStreamEvent;
-    use genai::{ModelIden, adapter};
+    use genai::{adapter, ModelIden};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::time::sleep;

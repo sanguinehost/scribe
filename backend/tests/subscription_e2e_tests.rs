@@ -13,7 +13,7 @@ mod subscription_e2e_tests {
     use diesel::prelude::*;
     use reqwest::{Client, StatusCode};
     use scribe_backend::schema::{subscriptions, users};
-    use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+    use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
     use serde_json::json;
     use std::env;
     use uuid::Uuid;

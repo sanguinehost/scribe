@@ -1122,6 +1122,9 @@ pub fn mock_chat_session(id: Uuid, character_id: Uuid) -> Chat {
         total_modified_cost: BigDecimal::from(0),
         total_credit_cost: 0,
         total_actual_charge: BigDecimal::from(0),
+        // Session narrative style override fields
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     }
 }
 

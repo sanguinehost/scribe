@@ -2,7 +2,7 @@
 // LlamaCpp server lifecycle management and process control
 
 use crate::llm::llamacpp::hardware::{
-    ContextSizeConfig, ModelSelection, calculate_optimal_context_size, detect_hardware,
+    calculate_optimal_context_size, detect_hardware, ContextSizeConfig, ModelSelection,
 };
 use crate::llm::llamacpp::{HealthChecker, LlamaCppConfig, LocalLlmError, ModelManager};
 

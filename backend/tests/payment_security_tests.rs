@@ -21,7 +21,7 @@ mod payment_security_tests {
         errors::AppError,
         models::users::UserRole,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::sync::Arc;

@@ -16,12 +16,11 @@ use crate::services::embeddings::{
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
 use genai::chat::Usage; // Added ChunkConfig
-// Unused ChunkConfig, ChunkingMetric were previously noted as removed.
+                        // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
-    PgPool, // This is deadpool_diesel::postgres::Pool
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
     // Ensure build_gemini_client is removed if present
@@ -38,6 +37,7 @@ use crate::{
         health::health_check,
         lorebook_routes,           // Added lorebook_routes
         payment as payment_routes, // Added payment_routes
+        template_preferences_routes,
         user_persona_routes,
         user_settings_routes,
     },
@@ -52,31 +52,32 @@ use crate::{
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
     vector_db::qdrant_client::QdrantClientService, // Import constants module alias
+    PgPool,                                        // This is deadpool_diesel::postgres::Pool
 };
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
-use axum::{
-    Router,
-    middleware::{self, Next},
-    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
-    routing::get,                       // <<< ADD THIS IMPORT
-};
 use axum::{
     body::Body,
     extract::Request as AxumRequest,
     http::{Request, StatusCode}, // Removed unused Method, header
 };
-use axum_login::{AuthManagerLayerBuilder, AuthSession, login_required};
-use diesel::RunQueryDsl;
+use axum::{
+    middleware::{self, Next},
+    response::Response as AxumResponse, // Alias to avoid conflict if Response is used elsewhere
+    routing::get,                       // <<< ADD THIS IMPORT
+    Router,
+};
+use axum_login::{login_required, AuthManagerLayerBuilder, AuthSession};
 use diesel::prelude::*;
-use diesel_migrations::{EmbeddedMigrations, embed_migrations};
+use diesel::RunQueryDsl;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
-use genai::ModelIden; // Import ModelIden directly
 use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
 use genai::chat::ChatStreamEvent; // Add import for chatstream types
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd, ToolCall};
-// use http_body_util::BodyExt; // Removed unused import
+use genai::ModelIden; // Import ModelIden directly
+                      // use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -93,11 +94,11 @@ use time; // For time::Duration for session expiry
 use tower::ServiceExt; // For .oneshot
 use tower_cookies::CookieManagerLayer; // Removed unused: Key as TowerCookieKey
 use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor,
+    governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer,
 };
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tower_sessions::{
-    Expiry, SessionManagerLayer, cookie::Key as TowerSessionKey, cookie::SameSite,
+    cookie::Key as TowerSessionKey, cookie::SameSite, Expiry, SessionManagerLayer,
 }; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
@@ -105,9 +106,9 @@ use uuid::Uuid; // Added for CryptoProvider
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
 #[cfg(feature = "local-llm")]
-use std::sync::Arc as StdArc;
-#[cfg(feature = "local-llm")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "local-llm")]
+use std::sync::Arc as StdArc;
 
 // Type aliases for complex test types
 type EmbeddingResponse = Arc<Mutex<Option<Result<Vec<f32>, AppError>>>>;
@@ -1291,7 +1292,7 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 // --- Tracing Initialization for Tests ---
 use std::sync::Once;
-use tracing_subscriber::{EnvFilter, fmt as tracing_fmt}; // Alias fmt to avoid collision with std::fmt
+use tracing_subscriber::{fmt as tracing_fmt, EnvFilter}; // Alias fmt to avoid collision with std::fmt
 
 static TRACING_INIT: Once = Once::new();
 
@@ -1396,9 +1397,9 @@ impl TestAppGuard {
 
     /// Cleanup the test database
     async fn cleanup_database(db_name: &str) -> Result<(), anyhow::Error> {
-        use deadpool_diesel::Runtime as DeadpoolRuntime;
         use deadpool_diesel::postgres::Manager as DeadpoolManager;
         use deadpool_diesel::postgres::Pool as DeadpoolPool;
+        use deadpool_diesel::Runtime as DeadpoolRuntime;
         use std::env;
 
         tracing::debug!(db_name = %db_name, "Dropping test database from TestAppGuard");
@@ -1773,6 +1774,10 @@ pub async fn spawn_app_with_rate_limiting_options(
             "/user-settings",
             user_settings_routes::user_settings_routes(app_state_inner.clone()),
         ) // Add user settings routes
+        .nest(
+            "/template-preferences",
+            template_preferences_routes::template_preferences_routes(app_state_inner.clone()),
+        ) // Add template preferences routes
         .nest("/payment", payment_routes::payment_routes()) // Add payment routes
         .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
@@ -1858,7 +1863,7 @@ pub mod db {
     use crate::models::users::UserDbQuery;
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
-    // Import AppError
+                                             // Import AppError
 
     use crate::PgPool; // This should refer to the top-level crate::PgPool
     use uuid::Uuid;
@@ -1871,14 +1876,14 @@ pub mod db {
     };
     // For .env file loading
     use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
-    // Ensure RegisterPayload is imported
+                  // Ensure RegisterPayload is imported
     use super::{
         AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString,
         SerializableSecretDek,
     };
     // Keep if CryptoError is used directly, else it comes via crate::crypto
     use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
-    // and UserDbQuery is imported above
+                                       // and UserDbQuery is imported above
 
     /// Sets up a clean test database with migrations run.
     ///
@@ -2125,7 +2130,7 @@ pub mod db {
     ) -> Result<crate::models::characters::Character, anyhow::Error> {
         use crate::models::character_card::NewCharacter;
         use crate::models::characters::Character; // Already imported at top of file usually
-        // use crate::schema::characters; // Already imported at top of file usually
+                                                  // use crate::schema::characters; // Already imported at top of file usually
         use chrono::Utc;
 
         let conn = pool.get().await?;
@@ -2466,9 +2471,9 @@ impl TestDataGuard {
     ///
     /// Returns an error if database cannot be dropped
     async fn cleanup_database(&self, db_name: &str) -> Result<(), anyhow::Error> {
-        use deadpool_diesel::Runtime as DeadpoolRuntime;
         use deadpool_diesel::postgres::Manager as DeadpoolManager;
         use deadpool_diesel::postgres::Pool as DeadpoolPool;
+        use deadpool_diesel::Runtime as DeadpoolRuntime;
         use std::env;
 
         tracing::debug!(db_name = %db_name, "Dropping test database");
@@ -3290,8 +3295,8 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the server fails to start
-    pub async fn start_test_llm_server()
-    -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_test_llm_server(
+    ) -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
         LlmServerTestGuard::start().await
     }
 
@@ -3372,8 +3377,8 @@ pub mod llm_server {
     /// # Errors
     ///
     /// Returns an error if the server cannot be started
-    pub async fn ensure_llm_server_running()
-    -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn ensure_llm_server_running(
+    ) -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         let config = LlmServerConfig::default();
 
         if is_llm_server_running(&config.host, config.port).await? {
@@ -3407,8 +3412,8 @@ pub mod llm_server {
         }
     }
 
-    pub async fn start_test_llm_server()
-    -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_test_llm_server(
+    ) -> Result<LlmServerTestGuard, Box<dyn std::error::Error + Send + Sync>> {
         LlmServerTestGuard::start().await
     }
 
@@ -3425,8 +3430,8 @@ pub mod llm_server {
         Ok(false)
     }
 
-    pub async fn ensure_llm_server_running()
-    -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn ensure_llm_server_running(
+    ) -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         Err("local-llm feature not enabled".into())
     }
 }

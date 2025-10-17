@@ -4,11 +4,11 @@ use std::time::Instant;
 use tracing::{debug, info, instrument};
 
 use crate::{
-    AppState,
     errors::AppError,
     services::{
         hybrid_token_counter::CountingMode, safety_utils::create_unrestricted_safety_settings,
     },
+    AppState,
 };
 
 use super::{structured_output::*, types::*};
@@ -1098,7 +1098,8 @@ Show different scenarios, moods, or personality aspects."#
 
         if let Some(reasoning) = reasoning_budget {
             genai_chat_options = genai_chat_options.with_reasoning_effort(reasoning);
-            genai_chat_options = genai_chat_options.with_include_thoughts(true); // Include reasoning in response for debugging
+            genai_chat_options = genai_chat_options.with_include_thoughts(true);
+            // Include reasoning in response for debugging
         }
 
         // Add safety settings to allow mature content (same as main generation)

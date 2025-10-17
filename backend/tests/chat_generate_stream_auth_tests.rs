@@ -2,12 +2,12 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bigdecimal::BigDecimal;
 use chrono::Utc;
-use diesel::RunQueryDsl as _;
 use diesel::prelude::*;
+use diesel::RunQueryDsl as _;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -232,6 +232,8 @@ async fn generate_chat_response_streaming_forbidden() {
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

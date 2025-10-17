@@ -3,7 +3,7 @@
 use anyhow::Result;
 use scribe_backend::{
     models::user_assets::{NewUserAsset, UserAsset},
-    test_helpers::{TestDataGuard, ensure_tracing_initialized},
+    test_helpers::{ensure_tracing_initialized, TestDataGuard},
 };
 use uuid::Uuid;
 

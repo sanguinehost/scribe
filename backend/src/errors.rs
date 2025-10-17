@@ -1,8 +1,8 @@
 // backend/src/errors.rs
 use axum::{
-    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde_json::json;
 use thiserror::Error;

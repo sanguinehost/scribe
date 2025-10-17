@@ -11,17 +11,17 @@ use crate::auth::session_dek::SessionDek;
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::services::character_generation::{
-    ApiGenerationChunk, ApiGenerationMetadata, ApiGenerationRequest, ApiGenerationResponse,
-    AssistantMessage, BatchLorebookGenerationRequest, BatchLorebookGenerationResponse,
-    EnhancementRequest, EnhancementResult, FieldGenerationRequest, FieldGenerationResult,
-    FieldGenerator, FullCharacterGenerator, FullCharacterRequest, FullCharacterResult,
-    LorebookGenerationRequest, LorebookGenerationResponse, ScribeAssistantRequest,
-    ScribeAssistantResponse, structured_output::*,
+    structured_output::*, ApiGenerationChunk, ApiGenerationMetadata, ApiGenerationRequest,
+    ApiGenerationResponse, AssistantMessage, BatchLorebookGenerationRequest,
+    BatchLorebookGenerationResponse, EnhancementRequest, EnhancementResult, FieldGenerationRequest,
+    FieldGenerationResult, FieldGenerator, FullCharacterGenerator, FullCharacterRequest,
+    FullCharacterResult, LorebookGenerationRequest, LorebookGenerationResponse,
+    ScribeAssistantRequest, ScribeAssistantResponse,
 };
 use crate::state::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
-    Router, extract::State, http::StatusCode, response::IntoResponse, response::Json, routing::post,
+    extract::State, http::StatusCode, response::IntoResponse, response::Json, routing::post, Router,
 };
 use axum_login::AuthSession;
 use futures::StreamExt;
@@ -175,7 +175,7 @@ pub async fn generate_character_field_stream_handler(
         }
 
         // Get the AI client and stream
-        let model_name = "gemini-2.0-flash-exp"; // TODO: Make configurable
+        let model_name = "gemini-2.5-flash"; // TODO: Make configurable
 
         match state_arc.ai_client.stream_chat(model_name, chat_request, Some(chat_options)).await {
             Ok(mut chat_stream) => {

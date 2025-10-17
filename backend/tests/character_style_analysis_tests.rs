@@ -99,7 +99,8 @@ async fn test_traits_style_detection() {
         login_and_get_cookie(&test_app.router, "traits_user@example.com", "password123").await;
 
     // Traits-style content: short, punchy characteristics
-    let traits_content = "Tall. Athletic build. Green eyes. Former soldier. Quiet. Strategic thinker. \
+    let traits_content =
+        "Tall. Athletic build. Green eyes. Former soldier. Quiet. Strategic thinker. \
                           Loyal to friends. Distrusts authority. Skilled in hand-to-hand combat. \
                           Has a scar above left eyebrow.";
 

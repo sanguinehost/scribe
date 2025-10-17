@@ -12,6 +12,7 @@
 	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { chatModels, DEFAULT_CHAT_MODEL as _DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
+	import ApiKeysManager from '$lib/components/settings/ApiKeysManager.svelte';
 	import ChevronDown from '../icons/chevron-down.svelte';
 	import ChevronUp from '../icons/chevron-up.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
@@ -20,6 +21,7 @@
 		UpdateUserSettingsRequest
 	} from '$lib/types';
 	import { MembershipSettings } from '$lib/components/membership';
+	import NarrativeStyleConfigurator from '$lib/components/settings/NarrativeStyleConfigurator.svelte';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -225,6 +227,8 @@
 		...(ENABLE_PAYMENTS ? [{ id: 'membership', label: 'Membership', icon: '💳' }] : []),
 		{ id: 'generation', label: 'Generation', icon: '🎛️' },
 		{ id: 'context', label: 'Context', icon: '🧠' },
+		{ id: 'writingstyle', label: 'Writing Style', icon: '✍️' },
+		{ id: 'apikeys', label: 'API Keys', icon: '🔑' },
 		...(ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
 			? [{ id: 'models', label: 'Local Models', icon: '💾' }]
 			: [])
@@ -523,6 +527,16 @@
 						title="Default Context Window Management"
 						description="Set default token allocation for new chats."
 					/>
+				{/if}
+
+				<!-- Writing Style Tab -->
+				{#if activeTab === 'writingstyle'}
+					<NarrativeStyleConfigurator />
+				{/if}
+
+				<!-- API Keys Tab -->
+				{#if activeTab === 'apikeys'}
+					<ApiKeysManager />
 				{/if}
 
 				<!-- Models Tab (Local LLM) -->

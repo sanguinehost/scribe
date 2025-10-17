@@ -3,7 +3,7 @@
 // Common imports needed for session tests
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use chrono::Utc;
 use http_body_util::BodyExt;
@@ -13,8 +13,8 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Diesel imports
-use diesel::RunQueryDsl;
 use diesel::prelude::*;
+use diesel::RunQueryDsl;
 
 // Crate imports
 use anyhow::Error as AnyhowError;
@@ -852,6 +852,8 @@ async fn test_get_chat_session_details_unauthorized() {
                 tokens_counted_at: chrono::Utc::now(),
                 total_credits_used: BigDecimal::from(0),
                 prompt_template_id: "default".to_string(),
+                narrative_style_override_ciphertext: None,
+                narrative_style_override_nonce: None,
             };
             diesel::insert_into(chat_sessions::table)
                 .values(&new_chat_values)
@@ -2172,11 +2174,9 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
         "Linked lorebook IDs do not match expected IDs"
     );
 
-    assert!(
-        linked_lorebooks
-            .iter()
-            .all(|l| l.chat_session_id == session.id)
-    );
+    assert!(linked_lorebooks
+        .iter()
+        .all(|l| l.chat_session_id == session.id));
 
     test_data_guard.cleanup().await?;
     Ok(())

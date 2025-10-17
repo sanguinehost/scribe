@@ -248,12 +248,10 @@ mod tests {
         assert_eq!(sanitized["user_id"], "<uuid-redacted>");
         assert_eq!(sanitized["email"], "<email-redacted>");
         assert_eq!(sanitized["password"], "<credentials-redacted>");
-        assert!(
-            sanitized["content"]
-                .as_str()
-                .unwrap()
-                .starts_with("<content-redacted:")
-        );
+        assert!(sanitized["content"]
+            .as_str()
+            .unwrap()
+            .starts_with("<content-redacted:"));
         assert_eq!(sanitized["safe_field"], "normal data");
     }
 

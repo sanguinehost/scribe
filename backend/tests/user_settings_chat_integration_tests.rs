@@ -12,7 +12,6 @@ use scribe_backend::{
     },
     schema::user_settings,
     services::{
-        UserSettingsService,
         chat_override_service::ChatOverrideService, // Added
         embeddings::EmbeddingPipelineServiceTrait,  // Added
         encryption_service::EncryptionService,      // Added
@@ -21,9 +20,10 @@ use scribe_backend::{
         lorebook::LorebookService,                  // Added
         tokenizer_service::TokenizerService,        // Added
         user_persona_service::UserPersonaService,   // Added
+        UserSettingsService,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
-    test_helpers::{TestDataGuard, db, spawn_app}, // Removed QdrantClientServiceTrait from here
+    test_helpers::{db, spawn_app, TestDataGuard}, // Removed QdrantClientServiceTrait from here
 };
 
 /// Test that user settings service auto-creates defaults when none exist

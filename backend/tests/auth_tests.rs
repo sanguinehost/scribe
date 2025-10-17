@@ -4,11 +4,11 @@
 // --- Imports (similar to characters_tests, but focused on auth) ---
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
-    Router,
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
+    Router,
 };
 use chrono::Utc;
 use scribe_backend::auth::session_store::DieselSessionStore;
@@ -20,15 +20,15 @@ use time::OffsetDateTime;
 use tower::util::ServiceExt;
 use tower_cookies::Cookie;
 use tower_cookies::Cookies;
-use tower_sessions::SessionStore;
 use tower_sessions::session::Id;
 use tower_sessions::session::Record;
 use tower_sessions::session_store::Error as SessionStoreError;
+use tower_sessions::SessionStore;
 // Removed: AuthManagerLayerBuilder, Expiry, SessionManagerLayer, SameSite
 use axum_login::AuthnBackend;
 // Removed: bcrypt (handled by auth::create_user)
-use deadpool_diesel::{Pool as DeadpoolPool, postgres::Manager as DeadpoolManager};
-use diesel::{PgConnection, prelude::*};
+use deadpool_diesel::{postgres::Manager as DeadpoolManager, Pool as DeadpoolPool};
+use diesel::{prelude::*, PgConnection};
 // Removed: dotenvy (handled by test_helpers::spawn_app)
 use http_body_util::BodyExt;
 use scribe_backend::{
@@ -41,7 +41,7 @@ use scribe_backend::{
     schema, // Import the schema module directly
     test_helpers,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 // Removed env
 use tracing::{info, instrument};
 use uuid::Uuid;
@@ -1160,7 +1160,7 @@ async fn test_session_store_load_expired_session() -> AnyhowResult<()> {
     let session_id_val = rand::random::<i128>(); // Use rand::random per compiler suggestion
     let session_id = Id(session_id_val); // Construct Id with i128
     let session_id_str = session_id_val.to_string(); // String version for DB interaction
-    // Set expiry firmly in the past
+                                                     // Set expiry firmly in the past
     let expiry_date = OffsetDateTime::now_utc() - time::Duration::days(1);
     // Manually construct Record
     let mut data = HashMap::new();

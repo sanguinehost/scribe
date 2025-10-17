@@ -1,7 +1,7 @@
 // Test chronicle-scoped search functionality
 use scribe_backend::services::agentic::narrative_tools::SearchKnowledgeBaseTool;
 use scribe_backend::services::agentic::tools::ScribeTool;
-use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use serde_json::json;
 use uuid::Uuid;
 

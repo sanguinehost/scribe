@@ -2,7 +2,7 @@ use crate::{
     auth::user_store::Backend as AuthBackend,
     config::Config,
     llm::{AiClient, EmbeddingClient},
-    services::email_service::{EmailService, create_email_service},
+    services::email_service::{create_email_service, EmailService},
     state::{AppState, DbPool},
     state_builder::AppStateServicesBuilder,
     test_helpers::{MockAiClient, MockEmbeddingClient, MockQdrantClientService},
@@ -75,8 +75,8 @@ impl TestFixtures {
     }
 
     /// Create a logging email service for tests
-    pub async fn test_email_service()
-    -> Result<Arc<dyn EmailService + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn test_email_service(
+    ) -> Result<Arc<dyn EmailService + Send + Sync>, Box<dyn std::error::Error + Send + Sync>> {
         create_email_service("development", "http://localhost:3000".to_string(), None)
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)

@@ -222,12 +222,10 @@ mod batch_lorebook_generation_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid user_id format")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid user_id format"));
 
         // Test missing theme (required parameter)
         let result = batch_tool
@@ -238,12 +236,10 @@ mod batch_lorebook_generation_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("theme is required")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("theme is required"));
 
         // Test invalid count (out of range 1-20)
         let result = batch_tool
@@ -255,12 +251,10 @@ mod batch_lorebook_generation_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("count must be between 1 and 20")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("count must be between 1 and 20"));
 
         // Test missing session_dek (required parameter)
         let result = batch_tool
@@ -271,12 +265,10 @@ mod batch_lorebook_generation_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("session_dek is required for lorebook entry creation")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("session_dek is required for lorebook entry creation"));
     }
 
     #[tokio::test]
@@ -755,12 +747,10 @@ mod lorebook_analysis_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("lorebook_id must be a valid UUID")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("lorebook_id must be a valid UUID"));
 
         // Test invalid lorebook_id format
         let result = analysis_tool
@@ -771,12 +761,10 @@ mod lorebook_analysis_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("lorebook_id must be a valid UUID")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("lorebook_id must be a valid UUID"));
 
         // Test missing user_id
         let result = analysis_tool
@@ -786,12 +774,10 @@ mod lorebook_analysis_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("user_id must be a valid UUID")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("user_id must be a valid UUID"));
 
         // Test missing session_dek
         let result = analysis_tool
@@ -801,12 +787,10 @@ mod lorebook_analysis_tests {
             }))
             .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("session_dek must be a string")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("session_dek must be a string"));
     }
 
     #[tokio::test]
@@ -912,11 +896,9 @@ mod lorebook_analysis_tests {
 
         let result = analysis_tool.execute(&params).await;
         assert!(result.is_err(), "Should fail with wrong decryption key");
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to decrypt")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to decrypt"));
     }
 }

@@ -10,16 +10,16 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bcrypt;
 use chrono::Utc;
 use deadpool_diesel::postgres::Pool;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use genai::{
-    ModelIden,
     adapter::AdapterKind,
     chat::{ChatResponse, Usage},
+    ModelIden,
 };
 use http_body_util::BodyExt;
 use scribe_backend::{
@@ -33,7 +33,7 @@ use scribe_backend::{
         users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::users,
-    test_helpers::{TestDataGuard, ensure_tracing_initialized},
+    test_helpers::{ensure_tracing_initialized, TestDataGuard},
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
@@ -790,7 +790,7 @@ mod token_tracking_tests {
 
 mod extract_from_chat_api_tests {
     use super::*;
-    use scribe_backend::models::{Chat, NewChat, NewChatMessage, chats::MessageRole};
+    use scribe_backend::models::{chats::MessageRole, Chat, NewChat, NewChatMessage};
     use scribe_backend::schema::{chat_messages, chat_sessions};
 
     /// Helper to create test chat session
@@ -834,6 +834,8 @@ mod extract_from_chat_api_tests {
             tokens_counted_at: now,
             total_credits_used: bigdecimal::BigDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
         };
 
         run_db_op(pool, move |conn| {

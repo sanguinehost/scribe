@@ -16,7 +16,7 @@ use scribe_backend::{
     schema::{characters, user_personas, users}, // Added schema::characters
     services::chat::session_management::create_session_and_maybe_first_message,
     test_helpers::{
-        TestAppGuard, TestAppStateBuilder, TestDataGuard, db, login_user_via_router, spawn_app,
+        db, login_user_via_router, spawn_app, TestAppGuard, TestAppStateBuilder, TestDataGuard,
     }, // Changed TestUser
 };
 

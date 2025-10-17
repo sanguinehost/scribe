@@ -11,10 +11,10 @@ use crate::services::user_persona_service::UserPersonaService;
 use crate::state::AppState;
 
 use axum::{
-    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
+    Json, Router,
 };
 use axum_login::AuthSession;
 use std::sync::Arc;

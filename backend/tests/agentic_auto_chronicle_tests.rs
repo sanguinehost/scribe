@@ -11,7 +11,7 @@ use scribe_backend::{
         chats::{ChatMessage, MessageRole},
         chronicle_event::EventSource,
     },
-    services::{ChronicleService, agentic::factory::AgenticNarrativeFactory},
+    services::{agentic::factory::AgenticNarrativeFactory, ChronicleService},
     test_helpers::{MockAiClient, TestDataGuard},
 };
 use secrecy::SecretBox;
@@ -209,7 +209,7 @@ mod agentic_chronicle_tests {
                 .await
                 .expect("Failed to get db connection");
             conn.interact(move |conn| {
-                use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
+                use diesel::{insert_into, ExpressionMethods, RunQueryDsl};
                 use scribe_backend::schema::chat_sessions;
 
                 insert_into(chat_sessions::table)
@@ -398,7 +398,7 @@ mod agentic_chronicle_tests {
                 .await
                 .expect("Failed to get db connection");
             conn.interact(move |conn| {
-                use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
+                use diesel::{insert_into, ExpressionMethods, RunQueryDsl};
                 use scribe_backend::schema::chat_sessions;
 
                 insert_into(chat_sessions::table)
@@ -578,7 +578,7 @@ mod agentic_chronicle_tests {
                 .await
                 .expect("Failed to get db connection");
             conn.interact(move |conn| {
-                use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
+                use diesel::{insert_into, ExpressionMethods, RunQueryDsl};
                 use scribe_backend::schema::chat_sessions;
 
                 insert_into(chat_sessions::table)

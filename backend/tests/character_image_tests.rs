@@ -3,18 +3,18 @@
 // Local helper functions
 use anyhow::Context;
 use axum::{
-    Router,
-    body::{Body, to_bytes},
+    body::{to_bytes, Body},
     http::{Request, StatusCode},
+    Router,
 };
 use bcrypt;
 use chrono::Utc;
 use deadpool_diesel::postgres::Pool;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
     models::{

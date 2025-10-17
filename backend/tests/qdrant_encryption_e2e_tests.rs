@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::Utc;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
-    Condition, FieldCondition, Filter, Match, condition::ConditionOneOf, r#match::MatchValue,
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
 };
 use scribe_backend::{
     auth::session_dek::SessionDek,

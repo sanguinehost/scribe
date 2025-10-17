@@ -5,12 +5,12 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use http_body_util::BodyExt;
 use scribe_backend::test_helpers::{self, TestDataGuard};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::time::Duration;
 use tower::util::ServiceExt;
 

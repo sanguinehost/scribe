@@ -2,7 +2,7 @@ use std::{cmp::min, pin::Pin, sync::Arc};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
 use diesel::{
-    ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, result::Error as DieselError,
+    result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
@@ -17,8 +17,6 @@ use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
 use uuid::Uuid;
 
 use crate::{
-    // vector_db::qdrant_client::QdrantClient, // Moved to direct crate import below
-    AppState,
     errors::AppError,
     models::{
         characters::Character,
@@ -37,6 +35,8 @@ use crate::{
         tokenizer_service::TokenEstimate,
         user_settings_service::UserSettingsService, // For retrieving user context settings
     },
+    // vector_db::qdrant_client::QdrantClient, // Moved to direct crate import below
+    AppState,
 };
 // Corrected QdrantClient import
 
@@ -58,7 +58,7 @@ type ScribeEventStream =
 
 // These functions/types will be in sibling modules
 use super::{
-    message_handling::{SaveMessageParams, save_message},
+    message_handling::{save_message, SaveMessageParams},
     types::{
         ChatMessage as DbChatMessage, // To avoid conflict if generation.rs also imports it directly
         GenerationDataWithUnsavedUserMessage,

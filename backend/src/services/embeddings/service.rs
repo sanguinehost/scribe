@@ -1,21 +1,21 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
 use super::retrieval::{
-    RetrievedChunk, RetrievedMetadata, decrypt_chat_content, decrypt_lorebook_content,
+    decrypt_chat_content, decrypt_lorebook_content, RetrievedChunk, RetrievedMetadata,
 };
 use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
 use crate::models::chats::ChatMessage;
 use crate::state::AppState;
-use crate::text_processing::chunking::{ChunkConfig, chunk_text};
+use crate::text_processing::chunking::{chunk_text, ChunkConfig};
 use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use qdrant_client::qdrant::{
-    Condition, FieldCondition, Filter, Match, condition::ConditionOneOf, r#match::MatchValue,
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 

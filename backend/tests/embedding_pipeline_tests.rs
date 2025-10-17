@@ -2,7 +2,7 @@
 #![allow(clippy::ignored_unit_patterns)]
 use chrono::Utc;
 use mockall::predicate::*;
-use qdrant_client::qdrant::{PointId, Value, point_id::PointIdOptions};
+use qdrant_client::qdrant::{point_id::PointIdOptions, PointId, Value};
 use scribe_backend::{
     models::chats::{ChatMessage, MessageRole},
     services::{
@@ -21,7 +21,7 @@ use scribe_backend::{
     state_builder::AppStateServicesBuilder, // Use the new builder
     test_helpers::{self, MockQdrantClientService}, // Removed AppStateBuilder, config. Added self for spawn_app
     text_processing::chunking::ChunkConfig,
-    vector_db::qdrant_client::{QdrantClientServiceTrait, ScoredPoint, create_message_id_filter},
+    vector_db::qdrant_client::{create_message_id_filter, QdrantClientServiceTrait, ScoredPoint},
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
@@ -1532,7 +1532,7 @@ async fn test_rag_context_injection_with_qdrant() {
 
     // Set up test data
     let user_id = Uuid::new_v4(); // Consistent user_id for all data
-    // Create a mock session_dek for the test
+                                  // Create a mock session_dek for the test
     let session_dek = scribe_backend::auth::session_dek::SessionDek(secrecy::SecretBox::new(
         Box::new(b"test_session_key_32_bytes_long!!".to_vec()),
     ));
@@ -2640,12 +2640,12 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
 
     // Query 6: User C for both Lorebook C1 and C2 (expects both entries)
     let query6_text = "elves and dwarves"; // A query that should hit both C1 and C2
-    // Need to adjust mock embeddings for this query to be more generic or ensure it hits both
-    // For simplicity, we'll assume the existing query embeddings are sufficient if Qdrant search is broad enough
-    // Or, we can add a new mock embedding for this specific query.
-    // Let's assume the individual queries for "elves" and "dwarves" are sufficient to test this.
-    // A more robust test would involve a query embedding that is somewhat similar to both C1 and C2.
-    // For now, we will test by querying with both lorebook IDs active.
+                                           // Need to adjust mock embeddings for this query to be more generic or ensure it hits both
+                                           // For simplicity, we'll assume the existing query embeddings are sufficient if Qdrant search is broad enough
+                                           // Or, we can add a new mock embedding for this specific query.
+                                           // Let's assume the individual queries for "elves" and "dwarves" are sufficient to test this.
+                                           // A more robust test would involve a query embedding that is somewhat similar to both C1 and C2.
+                                           // For now, we will test by querying with both lorebook IDs active.
     let chunks6 = app_state
         .embedding_pipeline_service
         .retrieve_relevant_chunks(

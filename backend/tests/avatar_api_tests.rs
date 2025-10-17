@@ -2,10 +2,10 @@
 
 use anyhow::Result;
 use axum::{
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
+    body::{to_bytes, Body},
+    http::{header, Method, Request, StatusCode},
 };
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use tower::ServiceExt;
 use uuid::Uuid;
 

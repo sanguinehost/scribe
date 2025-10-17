@@ -7,7 +7,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use diesel::prelude::*;
@@ -1151,12 +1151,10 @@ async fn test_a10_ssrf_prevention_in_lorebook_content() {
             let entry_response: serde_json::Value = parse_json_response(response).await.unwrap();
 
             // URL should be stored as-is (the application doesn't automatically fetch URLs from content)
-            assert!(
-                entry_response["content"]
-                    .as_str()
-                    .unwrap()
-                    .contains(malicious_url)
-            );
+            assert!(entry_response["content"]
+                .as_str()
+                .unwrap()
+                .contains(malicious_url));
         }
     }
 

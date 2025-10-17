@@ -3,7 +3,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
@@ -18,7 +18,7 @@ use uuid::Uuid;
 use scribe_backend::crypto::decrypt_gcm;
 use scribe_backend::errors::AppError;
 use secrecy::ExposeSecret;
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 // Crate imports
 use scribe_backend::models::{
@@ -378,6 +378,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     info!(
@@ -492,7 +494,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     test_app
         .mock_embedding_pipeline_service
         .set_retrieve_responses_sequence(vec![Ok(mock_chunks.clone()), Ok(mock_chunks)]); // Provide two responses
-    // --- End Mock RAG Response ---
+                                                                                          // --- End Mock RAG Response ---
 
     // Configure Mock AI client for a successful response
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
@@ -975,6 +977,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1436,6 +1440,8 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let result = conn
@@ -1792,6 +1798,8 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let result = conn
@@ -2132,6 +2140,8 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let result = conn
@@ -2535,6 +2545,8 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let result = conn
@@ -2840,6 +2852,8 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let result = conn
@@ -3157,6 +3171,8 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let create_session_result = conn
@@ -3445,6 +3461,8 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
@@ -3620,6 +3638,8 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         tokens_counted_at: chrono::Utc::now(),
         total_credits_used: BigDecimal::from(0),
         prompt_template_id: "default".to_string(),
+        narrative_style_override_ciphertext: None,
+        narrative_style_override_nonce: None,
     };
 
     let session: DbChat = {
@@ -3706,10 +3726,8 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
     assert!(system_prompt.contains("Description:** A detailed description."));
     assert!(system_prompt.contains("Personality:** A unique personality."));
     assert!(system_prompt.contains("Scenario:** A specific scenario."));
-    assert!(
-        system_prompt
-            .contains("Example Dialogue:** <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>")
-    );
+    assert!(system_prompt
+        .contains("Example Dialogue:** <START>\nUSER: Hello\nASSISTANT: Hi there!\n<END>"));
 
     Ok(())
 }

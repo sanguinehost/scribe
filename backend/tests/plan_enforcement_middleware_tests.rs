@@ -6,8 +6,8 @@ mod plan_enforcement_middleware_tests {
     use scribe_backend::{
         middleware::plan_enforcement::EnforcementConfig,
         models::users::UserRole,
-        services::{EncryptionService, payment::SubscriptionService},
-        test_helpers::{TestDataGuard, spawn_app},
+        services::{payment::SubscriptionService, EncryptionService},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use uuid::Uuid;
 

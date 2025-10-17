@@ -10,7 +10,7 @@ mod feature_flag_tests {
     use scribe_backend::{
         config::Config,
         services::payment::{CreditService, SoftLimitService},
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use std::sync::Arc;
     use uuid::Uuid;

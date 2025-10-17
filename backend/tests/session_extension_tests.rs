@@ -1,10 +1,10 @@
 use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
+use axum::http::{header, Request, StatusCode};
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::models::users::AccountStatus;
 use scribe_backend::schema::users;
-use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 use serde_json::json;
 use tower::ServiceExt;
 

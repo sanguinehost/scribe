@@ -6,9 +6,9 @@ mod subscription_cancellation_tests {
     use diesel::prelude::*;
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::{subscriptions, users};
-    use scribe_backend::services::EncryptionService;
     use scribe_backend::services::payment::{CreditService, SubscriptionService};
-    use scribe_backend::test_helpers::{TestDataGuard, spawn_app};
+    use scribe_backend::services::EncryptionService;
+    use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
     use std::sync::Arc;
     use uuid::Uuid;
 

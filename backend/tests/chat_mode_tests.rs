@@ -5,7 +5,7 @@
 
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
 use serde_json::json;
@@ -13,8 +13,8 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 // Diesel imports
-use diesel::RunQueryDsl;
 use diesel::prelude::*;
+use diesel::RunQueryDsl;
 
 // Crate imports
 use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, CreateChatSessionPayload};

@@ -3,14 +3,14 @@
 use diesel::prelude::*;
 use scribe_backend::{
     models::{
-        AnalysisType, MessageRole, NewAgentContextAnalysis, NewChatMessage,
-        chronicle::CreateChronicleRequest,
+        chronicle::CreateChronicleRequest, AnalysisType, MessageRole, NewAgentContextAnalysis,
+        NewChatMessage,
     },
     services::{
-        ChronicleService,
         agentic::{narrative_tools::SearchKnowledgeBaseTool, tools::ScribeTool},
+        ChronicleService,
     },
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -351,7 +351,7 @@ async fn test_agent_analysis_storage_security() {
         .await
         .expect("Failed to get connection");
     conn.interact(move |conn| {
-        use diesel::{ExpressionMethods, RunQueryDsl, insert_into};
+        use diesel::{insert_into, ExpressionMethods, RunQueryDsl};
         use scribe_backend::schema::chat_sessions;
 
         // Insert user1's session

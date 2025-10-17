@@ -17,6 +17,7 @@ pub mod lorebooks;
 #[cfg(feature = "payment")]
 pub mod payment;
 pub mod sql_types;
+pub mod template_preferences;
 pub mod usage;
 pub mod user_assets;
 pub mod user_personas;
@@ -41,6 +42,7 @@ pub use lorebook_dtos::*;
 pub use lorebooks::*;
 #[cfg(feature = "payment")]
 pub use payment::*;
+pub use template_preferences::*;
 pub use usage::*;
 pub use user_assets::{NewUserAsset, UserAsset};
 pub use user_personas::*;

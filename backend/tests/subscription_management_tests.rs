@@ -6,10 +6,10 @@ mod subscription_management_tests {
     use scribe_backend::{
         models::users::UserRole,
         services::{
-            EncryptionService,
             payment::{SubscriptionService, UsageTrackingService},
+            EncryptionService,
         },
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use uuid::Uuid;
 

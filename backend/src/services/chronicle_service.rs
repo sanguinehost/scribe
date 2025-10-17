@@ -1,7 +1,7 @@
 use deadpool_diesel::postgres::Pool as DeadpoolPgPool;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper, result::Error as DieselError,
+    result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
+    QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use tracing::{error, info, instrument};
 use uuid::Uuid;

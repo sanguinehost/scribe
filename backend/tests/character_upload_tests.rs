@@ -3,22 +3,22 @@
 // Local helper functions
 use anyhow::Context;
 use axum::{
+    body::{to_bytes, Body},
+    http::{header, Method, Request, StatusCode},
     Router,
-    body::{Body, to_bytes},
-    http::{Method, Request, StatusCode, header},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD as base64_standard};
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine as _};
 use bcrypt;
 use chrono::Utc;
 use crc32fast;
 use deadpool_diesel::postgres::Pool;
-use diesel::{PgConnection, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use http_body_util::BodyExt;
 use mime;
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::test_helpers::{TestDataGuard, ensure_tracing_initialized};
+use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
     models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
@@ -787,7 +787,7 @@ async fn test_upload_unauthorized() -> Result<(), anyhow::Error> {
     let test_app_state = scribe_backend::test_helpers::spawn_app(false, false, false).await;
     let pool = test_app_state.db_pool.clone();
     let _ = TestDataGuard::new(pool.clone(), None); // Guard is for cleanup, not directly used here
-    // Use the router from spawn_app directly, no need for build_test_app_for_characters
+                                                    // Use the router from spawn_app directly, no need for build_test_app_for_characters
     let app_router = test_app_state.router.clone();
     let server_addr = spawn_app(app_router).await; // spawn_app now takes the router
     let client = Client::new();

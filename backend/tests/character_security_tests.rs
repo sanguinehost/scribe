@@ -7,7 +7,7 @@
 use anyhow::{Context, Result as AnyhowResult};
 use axum::{
     body::Body,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
     response::Response,
 };
 use diesel::prelude::*;
@@ -598,12 +598,10 @@ async fn test_a03_xss_prevention_in_character_fields() {
 
     // Verify that malicious scripts are stored as-is (since backend is API-only)
     // but that they're properly escaped when returned
-    assert!(
-        character_response["name"]
-            .as_str()
-            .unwrap()
-            .contains("<script>")
-    );
+    assert!(character_response["name"]
+        .as_str()
+        .unwrap()
+        .contains("<script>"));
     assert_eq!(
         character_response["description"].as_str().unwrap(),
         malicious_script
@@ -1201,12 +1199,10 @@ async fn test_a10_ssrf_prevention_in_character_content() {
                 parse_json_response(response).await.unwrap();
 
             // URL should be stored as-is (the application doesn't automatically fetch URLs from content)
-            assert!(
-                character_response["description"]
-                    .as_str()
-                    .unwrap()
-                    .contains(malicious_url)
-            );
+            assert!(character_response["description"]
+                .as_str()
+                .unwrap()
+                .contains(malicious_url));
         }
     }
 

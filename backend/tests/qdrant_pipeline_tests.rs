@@ -5,16 +5,16 @@ use dotenvy::dotenv;
 use scribe_backend::config::Config;
 use scribe_backend::errors::AppError;
 use scribe_backend::test_helpers::ensure_rustls_provider_installed;
-use scribe_backend::vector_db::qdrant_client::{QdrantClientService, create_qdrant_point}; // Added
-// Import necessary types for direct client use in setup
-use qdrant_client::Qdrant;
-use qdrant_client::qdrant::Match;
+use scribe_backend::vector_db::qdrant_client::{create_qdrant_point, QdrantClientService}; // Added
+                                                                                          // Import necessary types for direct client use in setup
 use qdrant_client::qdrant::condition::ConditionOneOf;
 use qdrant_client::qdrant::r#match::MatchValue;
+use qdrant_client::qdrant::Match;
 use qdrant_client::qdrant::{
-    Condition, CreateCollection, Distance, FieldCondition, Filter, VectorParams, VectorsConfig,
-    vectors_config::Config as QdrantVectorsConfig,
+    vectors_config::Config as QdrantVectorsConfig, Condition, CreateCollection, Distance,
+    FieldCondition, Filter, VectorParams, VectorsConfig,
 };
+use qdrant_client::Qdrant;
 use scribe_backend::vector_db::qdrant_client::Kind as ValueKind;
 use serde_json::json;
 use serial_test::serial;
@@ -122,7 +122,7 @@ fn generate_test_vectors(dimension: usize, count: usize) -> Vec<Vec<f32>> {
 #[ignore] // Added ignore for CI
 async fn test_qdrant_service_creation() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Create a new instance of the Qdrant service with the shared collection name
+                                             // Create a new instance of the Qdrant service with the shared collection name
     let _service = create_test_qdrant_service().await?;
     Ok(())
 }
@@ -167,7 +167,7 @@ async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
 #[ignore] // Added ignore for CI
 async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Create a new instance of the Qdrant service
+                                             // Create a new instance of the Qdrant service
     let service = create_test_qdrant_service().await?;
 
     // Generate test data with a consistent user_id for filtering
@@ -331,7 +331,7 @@ async fn test_qdrant_empty_results() -> Result<(), AnyhowError> {
 #[ignore] // Added ignore for CI
 async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Create a new instance of the Qdrant service
+                                             // Create a new instance of the Qdrant service
     let service = create_test_qdrant_service().await?;
 
     // Create a test point with a fixed UUID
@@ -476,7 +476,7 @@ use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait; // Impor
 #[ignore]
 async fn test_qdrant_ensure_collection_already_exists() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // First call creates the collection
+                                             // First call creates the collection
     let _service1 = create_test_qdrant_service().await?;
     // Second call should find the existing collection (covers line 165 in qdrant_client.rs)
     let _service2 = create_test_qdrant_service().await?;
@@ -570,7 +570,7 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
 #[ignore]
 async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
     cleanup_and_prepare_collection().await?; // Ensure clean state
-    // Get a trait object
+                                             // Get a trait object
     let trait_service: Arc<dyn QdrantClientServiceTrait> =
         Arc::new(create_test_qdrant_service().await?);
 

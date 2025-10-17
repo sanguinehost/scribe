@@ -305,12 +305,10 @@ async fn test_a01_invalid_user_id_rejected() {
     let result = batch_tool.execute(&params).await;
 
     assert!(result.is_err(), "Should reject invalid user_id format");
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid user_id format")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("Invalid user_id format"));
 }
 
 #[tokio::test]
@@ -695,12 +693,10 @@ async fn test_llm10_count_parameter_minimum_enforced() {
     let result = batch_tool.execute(&params).await;
 
     assert!(result.is_err(), "Should reject count=0");
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("count must be between 1 and 20")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("count must be between 1 and 20"));
 }
 
 #[tokio::test]

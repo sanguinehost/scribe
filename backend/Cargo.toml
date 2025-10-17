@@ -1,7 +1,7 @@
 [package]
 name = "scribe-backend"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [features]
 default = []
@@ -186,7 +186,6 @@ secrecy = { version = "0.10.3", features = ["serde"] } # Fix E0432: Add secrecy 
 [lib]
 name = "scribe_backend"
 path = "src/lib.rs"
-
 
 # Optional: If you have separate integration tests
 # [[test]]

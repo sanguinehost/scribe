@@ -1350,7 +1350,7 @@ impl CreditService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_helpers::{TestDataGuard, spawn_app};
+    use crate::test_helpers::{spawn_app, TestDataGuard};
 
     #[tokio::test]
     async fn test_credit_balance_lifecycle() {

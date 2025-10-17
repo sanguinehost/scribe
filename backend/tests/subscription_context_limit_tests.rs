@@ -12,7 +12,7 @@ mod subscription_context_limit_tests {
     use diesel::prelude::*;
     use scribe_backend::{
         schema::{subscriptions, users},
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use std::env;
     use uuid::Uuid;

@@ -1384,3 +1384,62 @@ export interface UserWithSubscription extends User {
 	plan_features?: PlanFeatures;
 	usage_limits?: UsageLimitsResponse;
 }
+
+// ============================================================================
+// Template Preferences Types
+// ============================================================================
+
+/**
+ * Narrative tense options for template generation
+ */
+export type NarrativeTense = 'past-tense' | 'present-tense' | 'future-tense';
+
+/**
+ * Narrative perspective options
+ */
+export type NarrativeNarration = 'first-person' | 'second-person' | 'third-person';
+
+/**
+ * Narrative point of view options
+ */
+export type NarrativePerspective = 'character-pov' | 'omniscient' | 'limited';
+
+/**
+ * Response length preferences
+ */
+export type ResponseLength = 'concise' | 'balanced' | 'detailed' | 'flexible';
+
+/**
+ * Template preferences response from backend
+ * Matches backend TemplatePreferenceResponse
+ */
+export interface TemplatePreferenceResponse {
+	id: string;
+	user_id: string;
+	character_id: string | null; // Nullable - applies to global settings when null
+	template_id: string | null;
+	tense: NarrativeTense;
+	narration: NarrativeNarration;
+	perspective: NarrativePerspective;
+	length: ResponseLength;
+	enable_info_box: boolean;
+	enable_stats_tracker: boolean;
+	enable_thinking: boolean;
+	created_at: string; // ISO 8601 timestamp
+	updated_at: string; // ISO 8601 timestamp
+}
+
+/**
+ * Update request for template preferences
+ * All fields are optional - only updates provided fields
+ */
+export interface UpdateTemplatePreferenceRequest {
+	template_id?: string | null;
+	tense?: NarrativeTense;
+	narration?: NarrativeNarration;
+	perspective?: NarrativePerspective;
+	length?: ResponseLength;
+	enable_info_box?: boolean;
+	enable_stats_tracker?: boolean;
+	enable_thinking?: boolean;
+}

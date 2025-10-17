@@ -1,4 +1,4 @@
-use diesel::{OptionalExtension, prelude::*};
+use diesel::{prelude::*, OptionalExtension};
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 

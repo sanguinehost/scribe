@@ -7,7 +7,7 @@
 use anyhow::Result as AnyhowResult;
 use bcrypt;
 use chrono::Utc;
-use diesel::{ExpressionMethods, RunQueryDsl, prelude::*};
+use diesel::{prelude::*, ExpressionMethods, RunQueryDsl};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     models::{

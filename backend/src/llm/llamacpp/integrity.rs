@@ -563,21 +563,17 @@ mod tests {
         };
 
         // Should pass with correct hash
-        assert!(
-            verifier
-                .verify_checksum(temp_file.path(), &metadata)
-                .await
-                .is_ok()
-        );
+        assert!(verifier
+            .verify_checksum(temp_file.path(), &metadata)
+            .await
+            .is_ok());
 
         // Should fail with incorrect hash
         metadata.sha256_hash = "incorrect_hash".to_string();
-        assert!(
-            verifier
-                .verify_checksum(temp_file.path(), &metadata)
-                .await
-                .is_err()
-        );
+        assert!(verifier
+            .verify_checksum(temp_file.path(), &metadata)
+            .await
+            .is_err());
     }
 
     #[test]

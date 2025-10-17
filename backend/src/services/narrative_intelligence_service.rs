@@ -24,9 +24,9 @@ use crate::{
     },
     schema::users::dsl as users_dsl,
     services::{
-        ChronicleService, LorebookService,
         agentic::{AgenticNarrativeFactory, NarrativeAgentRunner, UserPersonaContext},
         embeddings::RetrievedChunk,
+        ChronicleService, LorebookService,
     },
     state::AppState,
     vector_db::qdrant_client::QdrantClientServiceTrait,

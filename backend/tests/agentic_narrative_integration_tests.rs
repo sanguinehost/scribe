@@ -4,7 +4,7 @@
 use anyhow::Result as AnyhowResult;
 use bcrypt;
 use chrono::Utc;
-use diesel::{RunQueryDsl, prelude::*};
+use diesel::{prelude::*, RunQueryDsl};
 use hex;
 use scribe_backend::{
     auth::session_dek::SessionDek,
@@ -15,13 +15,13 @@ use scribe_backend::{
     },
     schema::users,
     services::{
-        ChronicleService, LorebookService,
         agentic::{
             AnalyzeTextSignificanceTool, CreateChronicleEventTool, ScribeTool,
             SearchKnowledgeBaseTool,
         },
+        ChronicleService, LorebookService,
     },
-    test_helpers::{TestApp, TestDataGuard, spawn_app_permissive_rate_limiting},
+    test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestDataGuard},
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;

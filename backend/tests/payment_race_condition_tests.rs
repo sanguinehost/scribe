@@ -7,7 +7,7 @@ mod payment_race_condition_tests {
         errors::AppError,
         models::users::UserRole,
         services::payment::CreditService,
-        test_helpers::{TestDataGuard, spawn_app},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
     use std::sync::{Arc, Barrier};

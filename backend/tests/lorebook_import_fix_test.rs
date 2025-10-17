@@ -2,7 +2,7 @@
 
 use scribe_backend::{
     models::lorebook_dtos::SillyTavernImportPayload,
-    test_helpers::{TestDataGuard, db::create_test_user, spawn_app},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use serde_json::json;
 
