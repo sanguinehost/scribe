@@ -46,6 +46,9 @@ pub mod postgres_backend;
 #[cfg(feature = "sqlite-backend")]
 pub mod sqlite_backend;
 
+#[cfg(feature = "sqlite-backend")]
+pub mod sqlite_types;
+
 pub use backend_trait::DbBackend;
 pub use pool_helpers::{get_conn, with_conn};
 
