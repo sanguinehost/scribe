@@ -1,0 +1,15 @@
+PostgreSQL → SQLite Migration Conversion Log
+================================================================================
+
+Converted: 1/1 migrations
+
+
+CHANGES:
+--------------------------------------------------------------------------------
+  • Removed PostgreSQL function: trigger_set_timestamp
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+
+
+WARNINGS (Manual Review Recommended):
+--------------------------------------------------------------------------------

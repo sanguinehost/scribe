@@ -151,23 +151,24 @@ The following detailed breakdown maintains the original structure for completene
   - [x] **DoD**: All custom types have FromSql/ToSql implementations with embedded tests ✓
   - [x] **Note**: PostgreSQL backend still compiles successfully (verified)
 
-- [ ] **Task 1.2.3**: Automated Migration Conversion Script
-  - [ ] Subtask: Create `scripts/convert_migrations.py`
-  - [ ] Subtask: Implement `MigrationConverter` class with type mappings:
-    ```python
-    TYPE_MAPPINGS = {
-        r'UUID': 'TEXT',
-        r'BYTEA': 'BLOB',
-        r'JSONB': 'TEXT',
-        # ... etc
-    }
-    ```
-  - [ ] Subtask: Implement `convert_create_table()` method
-  - [ ] Subtask: Implement `convert_create_index()` method (with GIN warnings)
-  - [ ] Subtask: Implement `convert_alter_table()` method
-  - [ ] Subtask: Add logging for warnings and manual review items
-  - [ ] **Test**: Run script on sample migration, verify output manually
-  - [ ] **DoD**: Script successfully converts migrations without crashing
+- [x] **Task 1.2.3**: Automated Migration Conversion Script
+  - [x] Subtask: Created `scripts/convert_migrations.py` (425 lines)
+  - [x] Subtask: Implemented `MigrationConverter` class with comprehensive type mappings
+    - UUID → TEXT, BYTEA → BLOB, JSONB → TEXT
+    - TEXT[] → TEXT, VARCHAR(n) → TEXT
+    - TIMESTAMPTZ → DATETIME, SERIAL → INTEGER
+    - Custom enums (user_role, account_status, message_type) → TEXT
+  - [x] Subtask: Implemented `_convert_create_tables()` with SERIAL/DEFAULT handling
+  - [x] Subtask: Implemented `_convert_indexes()` with GIN index warnings
+  - [x] Subtask: Implemented `_convert_alter_tables()` method
+  - [x] Subtask: Added comprehensive logging with color-coded terminal output
+  - [x] Subtask: Implemented extension/function/enum type removal
+  - [x] Subtask: Implemented trigger conversion (diesel_manage_updated_at → SQLite triggers)
+  - [x] **Test**: Successfully converted sample migration `2025-04-18-103148_create_sessions_table` ✓
+  - [x] **Test**: Output verified - TIMESTAMPTZ→DATETIME, function removed, indexes preserved ✓
+  - [x] **DoD**: Script runs without errors, generates valid SQLite SQL, produces detailed log ✓
+  - [x] **Features**: CLI with `--all`, `--core`, `--migration` options
+  - [x] **Features**: Identifies 30 core MVP migrations automatically
 
 - [ ] **Task 1.2.4**: Convert Core PostgreSQL Migrations to SQLite (MVP Scope)
   - [ ] Subtask: Identify core 30 migrations needed for MVP:
