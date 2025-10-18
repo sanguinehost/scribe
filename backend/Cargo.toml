@@ -4,7 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = []
+default = ["cloud"]  # Cloud mode is default for backward compatibility
+desktop = ["sqlite-backend", "embedded-vector"]
+cloud = ["postgres-backend", "remote-vector"]
+sqlite-backend = ["diesel/sqlite"]
+postgres-backend = ["diesel/postgres"]
+embedded-vector = []  # Will add lancedb dependency later
+remote-vector = []  # qdrant-client is already a direct dependency
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
 payment = ["dep:hmac", "dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
 production = ["payment"]  # Include payment in production builds
@@ -26,8 +32,8 @@ serde_json = "1.0.140"
 png = "0.17.16"
 base64 = "0.22.1"
 thiserror = "2.0.12"
-diesel = { version = "2.2.9", features = ["postgres", "chrono", "r2d2", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
-diesel_migrations = { version = "2.2.0", features = ["postgres"] }
+diesel = { version = "2.2.9", features = ["postgres", "sqlite", "chrono", "r2d2", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
+diesel_migrations = { version = "2.2.0", features = ["postgres", "sqlite"] }
 dotenvy = "0.15.7"
 chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }

@@ -3,6 +3,7 @@ pub mod auth;
 pub mod config;
 pub mod crypto;
 pub mod errors;
+pub mod features;
 pub mod llm;
 pub mod logging;
 pub mod metrics;

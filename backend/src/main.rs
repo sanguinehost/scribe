@@ -183,6 +183,10 @@ fn initialize_runtime() {
     dotenvy::dotenv().ok();
     init_subscriber();
     tracing::info!("Starting Scribe backend server...");
+    tracing::info!(
+        "Build configuration: {}",
+        scribe_backend::features::feature_summary()
+    );
 }
 
 // Setup database pool
