@@ -56,33 +56,33 @@ The following detailed breakdown maintains the original structure for completene
 
 #### Tasks:
 
-- [ ] **Task 1.1.1**: Initialize Tauri 2.0 Project
-  - [ ] Subtask: Run `cargo install tauri-cli` (version 2.0+)
-  - [ ] Subtask: Run `cargo tauri init` in project root
-  - [ ] Subtask: Configure `tauri.conf.json` for multi-platform builds
-  - [ ] Subtask: Set app identifier: `com.sanguine.scribe`
-  - [ ] Subtask: Configure window settings (min size: 1024x768, resizable: true)
-  - [ ] **Test**: `cargo tauri dev` successfully launches empty app
-  - [ ] **DoD**: Tauri dev server runs without errors
+- [x] **Task 1.1.1**: Initialize Tauri 2.0 Project
+  - [x] Subtask: Run `cargo install tauri-cli` (version 2.0+)
+  - [x] Subtask: Run `cargo tauri init` in project root
+  - [x] Subtask: Configure `tauri.conf.json` for multi-platform builds
+  - [x] Subtask: Set app identifier: `com.sanguine.scribe`
+  - [x] Subtask: Configure window settings (min size: 1024x768, resizable: true)
+  - [x] **Test**: `cargo tauri dev` successfully launches empty app
+  - [x] **DoD**: Tauri dev server runs without errors
 
-- [ ] **Task 1.1.2**: Configure Cargo Feature Flags
-  - [ ] Subtask: Update `backend/Cargo.toml` with feature definitions:
+- [x] **Task 1.1.2**: Configure Cargo Feature Flags
+  - [x] Subtask: Update `backend/Cargo.toml` with feature definitions:
     ```toml
     [features]
-    default = ["desktop", "sqlite-backend", "embedded-vector"]
-    desktop = ["tauri", "sqlite-backend", "embedded-vector"]
+    default = ["cloud"]  # Changed to cloud for backward compatibility
+    desktop = ["sqlite-backend", "embedded-vector"]
     cloud = ["postgres-backend", "remote-vector"]
     sqlite-backend = ["diesel/sqlite"]
     postgres-backend = ["diesel/postgres"]
-    embedded-vector = ["lancedb"]
-    remote-vector = ["qdrant-client"]
+    embedded-vector = []  # lancedb to be added in 1.1.3
+    remote-vector = []  # qdrant-client already direct dependency
     ```
-  - [ ] Subtask: Add conditional compilation attributes to `main.rs`
-  - [ ] Subtask: Create `backend/src/features.rs` with feature detection functions
-  - [ ] **Test**: `cargo check --features desktop` passes
-  - [ ] **Test**: `cargo check --features cloud` passes
-  - [ ] **Test**: `cargo check --no-default-features --features sqlite-backend` passes
-  - [ ] **DoD**: All feature combinations compile without errors
+  - [x] Subtask: Add conditional compilation attributes to `main.rs`
+  - [x] Subtask: Create `backend/src/features.rs` with feature detection functions
+  - [x] **Test**: `cargo check --features desktop` passes
+  - [x] **Test**: `cargo check --features cloud` passes
+  - [x] **Test**: `cargo check --no-default-features --features sqlite-backend` passes
+  - [x] **DoD**: All feature combinations compile without errors
 
 - [ ] **Task 1.1.3**: Add Dependencies
   - [ ] Subtask: Add to `backend/Cargo.toml`:
