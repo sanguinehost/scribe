@@ -84,16 +84,15 @@ The following detailed breakdown maintains the original structure for completene
   - [x] **Test**: `cargo check --no-default-features --features sqlite-backend` passes
   - [x] **DoD**: All feature combinations compile without errors
 
-- [ ] **Task 1.1.3**: Add Dependencies
-  - [ ] Subtask: Add to `backend/Cargo.toml`:
+- [x] **Task 1.1.3**: Add Dependencies
+  - [x] Subtask: Add to `backend/Cargo.toml`:
     ```toml
     [dependencies]
-    diesel = { version = "2.2.9", features = ["chrono", "r2d2", "uuid", "serde_json", "numeric"], optional = true }
-    diesel_migrations = "2.2.0"
-    lancedb = { version = "0.10", optional = true }
-    tauri = { version = "2.0", features = ["process-relaunch"], optional = true }
+    # diesel already included with both postgres and sqlite features
+    lancedb = { version = "0.22.2", optional = true }
+    # tauri handled in desktop workspace member
     ```
-  - [ ] Subtask: Add platform-specific dependencies:
+  - [x] Subtask: Add platform-specific dependencies:
     ```toml
     [target.'cfg(windows)'.dependencies]
     winapi = "0.3"
@@ -101,8 +100,8 @@ The following detailed breakdown maintains the original structure for completene
     [target.'cfg(target_os = "macos")'.dependencies]
     cocoa = "0.25"
     ```
-  - [ ] **Test**: `cargo build --features desktop` succeeds
-  - [ ] **DoD**: All dependencies resolve without conflicts
+  - [x] **Test**: `cargo build --features desktop` succeeds
+  - [x] **DoD**: All dependencies resolve without conflicts
 
 ### Epic 1.2: Database Abstraction Layer
 
