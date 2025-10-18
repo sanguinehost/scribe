@@ -25,7 +25,11 @@
 		UserSettingsResponse as _UserSettingsResponse, // Import UserSettingsResponse
 		CreateChronicleRequest,
 		TemplatePreferenceResponse,
-		UpdateTemplatePreferenceRequest
+		UpdateTemplatePreferenceRequest,
+		NarrativeTense,
+		NarrativeNarration,
+		NarrativePerspective,
+		ResponseLength
 	} from '$lib/types';
 	import {
 		chatModels,
@@ -705,7 +709,9 @@
 	}
 
 	// Session narrative style functions
-	async function loadSessionNarrativeStyle() {
+	// TODO: Implement GET endpoint for session narrative style
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	async function _loadSessionNarrativeStyle() {
 		if (!chat?.id) return;
 
 		isLoadingSessionStyle = true;
@@ -881,8 +887,8 @@
 								</div>
 							{:else}
 								<p class="text-sm text-muted-foreground">
-									Temporarily override narrative preferences for this conversation only. These changes
-									won't affect your character or global defaults.
+									Temporarily override narrative preferences for this conversation only. These
+									changes won't affect your character or global defaults.
 								</p>
 
 								<!-- Inline narrative style controls -->
@@ -894,7 +900,9 @@
 											value={sessionNarrativeStyle?.tense || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
-												updateSessionNarrativeStyle({ tense: value as any });
+												updateSessionNarrativeStyle({
+													tense: value as NarrativeTense | undefined
+												});
 											}}
 										>
 											<option value="">Use character/global default</option>
@@ -911,7 +919,9 @@
 											value={sessionNarrativeStyle?.narration || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
-												updateSessionNarrativeStyle({ narration: value as any });
+												updateSessionNarrativeStyle({
+													narration: value as NarrativeNarration | undefined
+												});
 											}}
 										>
 											<option value="">Use character/global default</option>
@@ -928,7 +938,9 @@
 											value={sessionNarrativeStyle?.perspective || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
-												updateSessionNarrativeStyle({ perspective: value as any });
+												updateSessionNarrativeStyle({
+													perspective: value as NarrativePerspective | undefined
+												});
 											}}
 										>
 											<option value="">Use character/global default</option>
@@ -945,7 +957,9 @@
 											value={sessionNarrativeStyle?.length || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
-												updateSessionNarrativeStyle({ length: value as any });
+												updateSessionNarrativeStyle({
+													length: value as ResponseLength | undefined
+												});
 											}}
 										>
 											<option value="">Use character/global default</option>

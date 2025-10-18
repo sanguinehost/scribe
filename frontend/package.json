@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 vite dev",
 		"build": "vite build --mode production",
+		"build:desktop": "./build-desktop.sh",
 		"build:typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -24,6 +25,7 @@
 		"@oslojs/crypto": "^1.0.1",
 		"@oslojs/encoding": "^1.1.0",
 		"@sejohnson/svelte-themes": "^0.0.6",
+		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/adapter-vercel": "^5.10.2",
 		"@sveltejs/kit": "^2.36.1",
 		"@sveltejs/vite-plugin-svelte": "^5.1.1",

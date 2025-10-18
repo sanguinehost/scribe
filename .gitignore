@@ -64,3 +64,9 @@ uploads/
 /models/
 .vercel
 terraform.tfstate
+
+# Tauri / Desktop
+/desktop/target/
+/desktop/dist/
+/desktop/WixTools/
+/frontend/build/

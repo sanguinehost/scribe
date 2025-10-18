@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Scribe Desktop",
+  "version": "0.1.0",
+  "identifier": "com.sanguine.scribe",
+  "build": {
+    "frontendDist": "../frontend/build",
+    "beforeBuildCommand": "(cd ../frontend && pnpm run build:desktop)"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Scribe",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 768,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
