@@ -70,14 +70,23 @@ impl DieselSessionStore {
     }
 
     // Helper to convert Deadpool pool error to session_store::Error
+    #[cfg(feature = "postgres-backend")]
     fn map_pool_error(e: &deadpool_diesel::PoolError) -> session_store::Error {
         error!(error = ?e, "Failed to get connection from pool");
         session_store::Error::Backend(e.to_string())
     }
 
     // Helper to convert Interact error to session_store::Error
+    #[cfg(feature = "postgres-backend")]
     fn map_interact_error(e: &deadpool_diesel::InteractError) -> session_store::Error {
         error!(error = ?e, "Interact error during DB operation");
+        session_store::Error::Backend(e.to_string())
+    }
+
+    // Helper to convert r2d2 pool error to session_store::Error (SQLite backend)
+    #[cfg(feature = "sqlite-backend")]
+    fn map_pool_error_sqlite(e: &diesel::r2d2::PoolError) -> session_store::Error {
+        error!(error = ?e, "Failed to get connection from r2d2 pool");
         session_store::Error::Backend(e.to_string())
     }
 
@@ -99,36 +108,30 @@ impl DieselSessionStore {
         let pool = self.pool.clone();
         debug!("Retrieving session metadata (IDs and expiration times only)...");
 
-        let metadata_result = pool
-            .get()
-            .await
-            .map_err(|e| Self::map_pool_error(&e))?
-            .interact(move |conn| {
-                sessions::table
-                    .select((sessions::id, sessions::expires))
-                    .load::<(String, Option<DateTime<Utc>>)>(conn) // Load ID as String from DB
-                    .map(|rows| {
-                        rows.into_iter()
-                            .map(|(id, expires)| SessionMetadata { id, expires })
-                            .collect::<Vec<_>>()
-                    })
-                    .map_err(|e| Self::map_diesel_error(&e))
-            })
-            .await
-            .map_err(|e| Self::map_interact_error(&e));
+        let metadata_result = crate::db::with_conn(&pool, move |conn| {
+            let result = sessions::table
+                .select((sessions::id, sessions::expires))
+                .load::<(String, Option<DateTime<Utc>>)>(conn) // Load ID as String from DB
+                .map(|rows| {
+                    rows.into_iter()
+                        .map(|(id, expires)| SessionMetadata { id, expires })
+                        .collect::<Vec<_>>()
+                })
+                .map_err(|e| Self::map_diesel_error(&e))?;
+            Ok(result)
+        })
+        .await;
 
         // Log the result
         match &metadata_result {
-            Ok(Ok(metadata)) => info!(
+            Ok(metadata) => info!(
                 count = metadata.len(),
                 "Successfully retrieved session metadata"
             ),
-            Ok(Err(e)) => error!(error = ?e, "Failed to retrieve session metadata (Diesel error)"),
-            Err(e) => error!(error = ?e, "Failed to retrieve session metadata (Interact error)"),
+            Err(e) => error!(error = ?e, "Failed to retrieve session metadata"),
         }
 
-        // Flatten Result<Result<...>>
-        metadata_result?
+        metadata_result.map_err(|e| session_store::Error::Backend(e.to_string()))
     }
 
     /// Deletes sessions that have expired based on their expiration timestamp
@@ -144,33 +147,26 @@ impl DieselSessionStore {
 
         debug!(now = %now, "Attempting to delete expired sessions...");
 
-        let delete_result = pool
-            .get()
-            .await
-            .map_err(|e| Self::map_pool_error(&e))?
-            .interact(move |conn| {
-                diesel::delete(
-                    sessions::table
-                        .filter(sessions::expires.lt(now).or(sessions::expires.is_null())),
-                )
-                .execute(conn)
-                .map_err(|e| Self::map_diesel_error(&e))
-            })
-            .await
-            .map_err(|e| Self::map_interact_error(&e));
+        let delete_result = crate::db::with_conn(&pool, move |conn| {
+            let count = diesel::delete(
+                sessions::table.filter(sessions::expires.lt(now).or(sessions::expires.is_null())),
+            )
+            .execute(conn)
+            .map_err(|e| Self::map_diesel_error(&e))?;
+            Ok(count)
+        })
+        .await;
 
         // Log the result
         match &delete_result {
-            Ok(Ok(count)) => info!(
+            Ok(count) => info!(
                 deleted_count = count,
                 "Successfully deleted expired sessions"
             ),
-            Ok(Err(e)) => error!(error = ?e, "Failed to delete expired sessions (Diesel error)"),
-            Err(e) => error!(error = ?e, "Failed to delete expired sessions (Interact error)"),
+            Err(e) => error!(error = ?e, "Failed to delete expired sessions"),
         }
 
-        // Flatten Result<Result<...>>
-        delete_result?
+        delete_result.map_err(|e| session_store::Error::Backend(e.to_string()))
     }
 }
 
@@ -221,40 +217,35 @@ impl SessionStore for DieselSessionStore {
         debug!(session_id = %record.id, expires = ?record.expires, "Attempting to save session record to DB"); // Removed session_db_string
 
         let pool = self.pool.clone();
-        let save_result = pool
-            .get()
-            .await
-            .map_err(|e| Self::map_pool_error(&e))?
-            .interact(move |conn| {
-                // Use insert + on_conflict_do_update (upsert)
-                diesel::insert_into(sessions::table)
-                    .values(&record)
-                    .on_conflict(sessions::id)
-                    .do_update()
-                    .set((
-                        sessions::expires.eq(&record.expires),
-                        sessions::session.eq(&record.session),
-                    ))
-                    .execute(conn)
-                    .map_err(|e| Self::map_diesel_error(&e))
-            })
-            .await
-            .map_err(|e| Self::map_interact_error(&e));
+        let save_result = crate::db::with_conn(&pool, move |conn| {
+            // Use insert + on_conflict_do_update (upsert)
+            let rows_affected = diesel::insert_into(sessions::table)
+                .values(&record)
+                .on_conflict(sessions::id)
+                .do_update()
+                .set((
+                    sessions::expires.eq(&record.expires),
+                    sessions::session.eq(&record.session),
+                ))
+                .execute(conn)
+                .map_err(|e| Self::map_diesel_error(&e))?;
+            Ok(rows_affected)
+        })
+        .await;
 
         // --- Added Log ---
         match &save_result {
-            Ok(Ok(rows_affected)) => {
+            Ok(rows_affected) => {
                 debug!(session_id = %session.id, %rows_affected, "DB interact for session save successful.");
             }
-            Ok(Err(e)) => {
-                error!(session_id = %session.id, error = ?e, "DB interact for session save failed (Diesel error).");
-            }
             Err(e) => {
-                error!(session_id = %session.id, error = ?e, "DB interact for session save failed (Interact error).");
+                error!(session_id = %session.id, error = ?e, "DB interact for session save failed.");
             }
         }
 
-        let final_result = save_result?.map(|_| ()); // Flatten Result<Result<...>> and discard row count
+        let final_result = save_result
+            .map(|_| ())
+            .map_err(|e| session_store::Error::Backend(e.to_string())); // Discard row count
 
         // --- Add log before returning ---
         debug!(session_id = %session.id, result = ?final_result, ">>> save method attempting to return.");
@@ -275,20 +266,17 @@ impl SessionStore for DieselSessionStore {
         // Clone session_id_str *before* the closure
         let session_id_clone_for_closure = session_id_str.clone();
 
-        let maybe_db_record = pool // Renamed to maybe_db_record to avoid confusion with session::Record
-            .get()
-            .await
-            .map_err(|e| Self::map_pool_error(&e))?
-            .interact(move |conn| {
-                // Move the clone into the closure
-                sessions::table
-                    .find(&session_id_clone_for_closure) // Use the String clone here
-                    .first::<SessionRecord>(conn) // Load as SessionRecord (DB representation)
-                    .optional() // Handle not found gracefully within Diesel
-                    .map_err(|e| Self::map_diesel_error(&e))
-            })
-            .await
-            .map_err(|e| Self::map_interact_error(&e))??; // Flatten Result<Result<...>>
+        let maybe_db_record = crate::db::with_conn(&pool, move |conn| {
+            // Move the clone into the closure
+            let result = sessions::table
+                .find(&session_id_clone_for_closure) // Use the String clone here
+                .first::<SessionRecord>(conn) // Load as SessionRecord (DB representation)
+                .optional() // Handle not found gracefully within Diesel
+                .map_err(|e| Self::map_diesel_error(&e))?;
+            Ok(result)
+        })
+        .await
+        .map_err(|e| session_store::Error::Backend(e.to_string()))?;
 
         if let Some(db_record) = maybe_db_record {
             // --- Log found ---
@@ -351,31 +339,26 @@ impl SessionStore for DieselSessionStore {
         let pool = self.pool.clone();
         // --- Log before interact ---
         debug!(session_id = %session_id_str, "Attempting to delete session record from DB...");
-        let delete_result = pool
-            .get()
-            .await
-            .map_err(|e| Self::map_pool_error(&e))?
-            .interact(move |conn| {
-                diesel::delete(sessions::table.find(session_id_str)) // Use String value
-                    .execute(conn)
-                    .map_err(|e| Self::map_diesel_error(&e))
-            })
-            .await
-            .map_err(|e| Self::map_interact_error(&e));
+        let delete_result = crate::db::with_conn(&pool, move |conn| {
+            let rows_affected = diesel::delete(sessions::table.find(session_id_str)) // Use String value
+                .execute(conn)
+                .map_err(|e| Self::map_diesel_error(&e))?;
+            Ok(rows_affected)
+        })
+        .await;
 
         // --- Added Log ---
         match &delete_result {
-            Ok(Ok(rows_affected)) => {
+            Ok(rows_affected) => {
                 info!(session_id = %session_id, %rows_affected, "DB interact for session delete successful.");
             }
-            Ok(Err(e)) => {
-                error!(session_id = %session_id, error = ?e, "DB interact for session delete failed (Diesel error).");
-            }
             Err(e) => {
-                error!(session_id = %session_id, error = ?e, "DB interact for session delete failed (Interact error).");
+                error!(session_id = %session_id, error = ?e, "DB interact for session delete failed.");
             }
         }
 
-        delete_result?.map(|_| ()) // Flatten Result<Result<...>> and discard row count
+        delete_result
+            .map(|_| ())
+            .map_err(|e| session_store::Error::Backend(e.to_string())) // Discard row count
     }
 }

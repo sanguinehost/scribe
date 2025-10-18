@@ -1,4 +1,4 @@
-use crate::PgPool;
+use crate::db::DbPool;
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
@@ -42,7 +42,7 @@ impl From<crate::models::lorebook_dtos::ScribeMinimalLorebook> for CreateLoreboo
 
 #[derive(Clone)]
 pub struct LorebookService {
-    pool: PgPool,
+    pool: DbPool,
     // TODO: Remove once encryption is implemented for lorebooks
     encryption_service: Arc<EncryptionService>, // Store as Arc
     qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Added for vector cleanup
@@ -63,7 +63,7 @@ pub use helpers::get_user_from_session;
 impl LorebookService {
     #[must_use]
     pub fn new(
-        pool: PgPool,
+        pool: DbPool,
         encryption_service: Arc<EncryptionService>,
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     ) -> Self {
@@ -87,7 +87,7 @@ impl LorebookService {
             user_id, lorebook_id
         );
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -192,7 +192,7 @@ impl LorebookService {
             updated_at: Some(current_time),
         };
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -245,7 +245,7 @@ impl LorebookService {
             user_id, lorebook_id
         );
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 

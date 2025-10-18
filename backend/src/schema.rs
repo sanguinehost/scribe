@@ -1,17 +1,31 @@
 // @generated automatically by Diesel CLI.
 
 pub mod sql_types {
+    // PostgreSQL uses native enum types
+    #[cfg(feature = "postgres-backend")]
     #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "account_status"))]
     pub struct AccountStatus;
 
+    #[cfg(feature = "postgres-backend")]
     #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
 
+    #[cfg(feature = "postgres-backend")]
     #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "user_role"))]
     pub struct UserRole;
+
+    // SQLite uses TEXT for enum types
+    #[cfg(feature = "sqlite-backend")]
+    pub type AccountStatus = diesel::sql_types::Text;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub type MessageType = diesel::sql_types::Text;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub type UserRole = diesel::sql_types::Text;
 }
 
 diesel::table! {

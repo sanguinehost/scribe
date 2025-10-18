@@ -14,6 +14,7 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
+use scribe_backend::db::DbPool;
 use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
@@ -37,7 +38,6 @@ use scribe_backend::routes::{
     user_settings_routes::user_settings_routes,
 };
 use scribe_backend::state::{AppState, AppStateServices};
-use scribe_backend::PgPool;
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
@@ -190,7 +190,7 @@ fn initialize_runtime() {
 }
 
 // Setup database pool
-fn setup_database_pool(config: &Config) -> PgPool {
+fn setup_database_pool(config: &Config) -> DbPool {
     let db_url = config
         .database_url
         .as_ref()
@@ -208,7 +208,7 @@ fn setup_database_pool(config: &Config) -> PgPool {
     pool_config.max_size = max_size;
     pool_config.timeouts.wait = Some(std::time::Duration::from_secs(30)); // 30 second timeout
 
-    let pool: PgPool = DeadpoolPool::builder(manager)
+    let pool: DbPool = DeadpoolPool::builder(manager)
         .config(pool_config)
         .runtime(DeadpoolRuntime::Tokio1)
         .build()
@@ -221,7 +221,7 @@ fn setup_database_pool(config: &Config) -> PgPool {
 }
 
 // Initialize all services
-async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
+async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppStateServices> {
     #[cfg(feature = "local-llm")]
     let mut llamacpp_server_manager: Option<
         Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>,
@@ -485,7 +485,7 @@ fn create_chunk_config(config: &Config) -> ChunkConfig {
 // Setup app state and authentication
 fn setup_app_state_and_auth(
     config: &Arc<Config>,
-    pool: &PgPool,
+    pool: &DbPool,
     services: AppStateServices,
 ) -> Result<(
     AppState,
@@ -779,7 +779,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
 }
 
 // Extracted migration logic
-async fn run_migrations(pool: &PgPool) -> Result<()> {
+async fn run_migrations(pool: &DbPool) -> Result<()> {
     tracing::info!("Attempting to run database migrations...");
     let conn = pool
         .get()

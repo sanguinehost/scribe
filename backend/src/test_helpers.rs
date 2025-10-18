@@ -1396,6 +1396,7 @@ impl TestAppGuard {
     }
 
     /// Cleanup the test database
+    #[cfg(feature = "postgres-backend")]
     async fn cleanup_database(db_name: &str) -> Result<(), anyhow::Error> {
         use deadpool_diesel::postgres::Manager as DeadpoolManager;
         use deadpool_diesel::postgres::Pool as DeadpoolPool;
@@ -1871,6 +1872,7 @@ pub mod db {
     // For logging macros
     use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
     use crate::auth::{self};
+    #[cfg(feature = "postgres-backend")]
     use deadpool_diesel::postgres::{
         Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
     };
@@ -2133,7 +2135,7 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use chrono::Utc;
 
-        let conn = pool.get().await?;
+        let conn = crate::db::get_conn(&pool).await?;
         let now = Utc::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
         let name_clone_for_error = name.clone();
@@ -2470,6 +2472,7 @@ impl TestDataGuard {
     /// # Errors
     ///
     /// Returns an error if database cannot be dropped
+    #[cfg(feature = "postgres-backend")]
     async fn cleanup_database(&self, db_name: &str) -> Result<(), anyhow::Error> {
         use deadpool_diesel::postgres::Manager as DeadpoolManager;
         use deadpool_diesel::postgres::Pool as DeadpoolPool;

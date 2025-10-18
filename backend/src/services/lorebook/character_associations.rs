@@ -11,7 +11,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
 
         // Verify both character and lorebook belong to the user
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -98,7 +98,7 @@ impl LorebookService {
     ) -> Result<Vec<LorebookResponse>, AppError> {
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -153,7 +153,7 @@ impl LorebookService {
             ));
         }
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -205,7 +205,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -247,7 +247,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;

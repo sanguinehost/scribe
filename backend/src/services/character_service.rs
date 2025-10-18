@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::db::DbPool; // Changed from sqlx::PgPool
 use chrono::{DateTime, Utc}; // For timestamps
-use deadpool_diesel::postgres::Pool as DeadpoolPgPool; // Changed from sqlx::PgPool
 use secrecy::ExposeSecret; // For DEK
 use tracing::{info, instrument, warn};
 use uuid::Uuid; // For logging
@@ -26,13 +26,13 @@ type EncryptedFieldResult = (Option<Vec<u8>>, Option<Vec<u8>>);
 
 #[derive(Clone)]
 pub struct CharacterService {
-    db_pool: DeadpoolPgPool, // Changed from sqlx::PgPool
+    db_pool: DbPool, // Changed from sqlx::PgPool
     encryption_service: Arc<EncryptionService>,
 }
 
 impl CharacterService {
     #[must_use]
-    pub fn new(db_pool: DeadpoolPgPool, encryption_service: Arc<EncryptionService>) -> Self {
+    pub fn new(db_pool: DbPool, encryption_service: Arc<EncryptionService>) -> Self {
         // Changed db_pool type
         Self {
             db_pool,

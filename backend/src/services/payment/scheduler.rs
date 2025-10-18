@@ -7,8 +7,8 @@
 //! - Expired subscription cleanup
 //! - Credit expiry cleanup (daily)
 
+use crate::db::DbPool;
 use chrono::{Datelike, NaiveTime, Timelike, Utc};
-use deadpool_diesel::Pool;
 use diesel::prelude::*;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
@@ -28,17 +28,14 @@ use crate::{
 /// Payment scheduler service that manages all periodic payment tasks
 pub struct PaymentScheduler {
     config: Arc<Config>,
-    pool: Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    pool: DbPool,
     credit_service: Arc<CreditService>,
     subscription_service: Arc<SubscriptionService>,
     usage_service: Arc<UsageTrackingService>,
 }
 
 impl PaymentScheduler {
-    pub fn new(
-        config: Arc<Config>,
-        pool: Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    ) -> Self {
+    pub fn new(config: Arc<Config>, pool: DbPool) -> Self {
         let credit_service = Arc::new(CreditService::new(config.clone()));
         let subscription_service = Arc::new(SubscriptionService::new(
             config.as_ref().clone(),

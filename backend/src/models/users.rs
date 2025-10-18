@@ -12,17 +12,24 @@ use tracing;
 use uuid::Uuid;
 
 // User role enum
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel_derive_enum::DbEnum))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    ExistingTypePath = "crate::schema::sql_types::UserRole"
 )]
-#[ExistingTypePath = "crate::schema::sql_types::UserRole"]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum UserRole {
     #[default]
-    #[db_rename = "User"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "User")]
     User,
-    #[db_rename = "Moderator"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "Moderator")]
     Moderator,
-    #[db_rename = "Administrator"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "Administrator")]
     Administrator,
 }
 
@@ -36,18 +43,88 @@ impl std::fmt::Display for UserRole {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel_derive_enum::DbEnum))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    ExistingTypePath = "crate::schema::sql_types::AccountStatus"
 )]
-#[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum AccountStatus {
     #[default]
-    #[db_rename = "active"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "active")]
     Active,
-    #[db_rename = "locked"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "locked")]
     Locked,
-    #[db_rename = "pending"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "pending")]
     Pending,
+}
+
+// SQLite implementations for UserRole - store as TEXT
+#[cfg(feature = "sqlite-backend")]
+impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
+    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> diesel::deserialize::Result<Self> {
+        let text = <String as diesel::deserialize::FromSql<
+            diesel::sql_types::Text,
+            diesel::sqlite::Sqlite,
+        >>::from_sql(bytes)?;
+        match text.as_str() {
+            "User" => Ok(UserRole::User),
+            "Moderator" => Ok(UserRole::Moderator),
+            "Administrator" => Ok(UserRole::Administrator),
+            _ => Err("Invalid UserRole variant".into()),
+        }
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, diesel::sqlite::Sqlite>,
+    ) -> diesel::serialize::Result {
+        out.set_value(self.to_string());
+        Ok(diesel::serialize::IsNull::No)
+    }
+}
+
+// SQLite implementations for AccountStatus - store as TEXT
+#[cfg(feature = "sqlite-backend")]
+impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>
+    for AccountStatus
+{
+    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> diesel::deserialize::Result<Self> {
+        let text = <String as diesel::deserialize::FromSql<
+            diesel::sql_types::Text,
+            diesel::sqlite::Sqlite,
+        >>::from_sql(bytes)?;
+        match text.as_str() {
+            "active" => Ok(AccountStatus::Active),
+            "locked" => Ok(AccountStatus::Locked),
+            "pending" => Ok(AccountStatus::Pending),
+            _ => Err("Invalid AccountStatus variant".into()),
+        }
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for AccountStatus {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, diesel::sqlite::Sqlite>,
+    ) -> diesel::serialize::Result {
+        let value = match self {
+            AccountStatus::Active => "active",
+            AccountStatus::Locked => "locked",
+            AccountStatus::Pending => "pending",
+        };
+        out.set_value(value);
+        Ok(diesel::serialize::IsNull::No)
+    }
 }
 
 // --- Newtype wrapper for DEK serialization ---

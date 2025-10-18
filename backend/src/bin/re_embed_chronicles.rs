@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
         .database_url
         .as_ref()
         .context("DATABASE_URL is required")?;
-    let pool = scribe_backend::PgPool::builder(deadpool_diesel::postgres::Manager::new(
+    let pool = scribe_backend::db::DbPool::builder(deadpool_diesel::postgres::Manager::new(
         database_url.clone(),
         deadpool_diesel::postgres::Runtime::Tokio1,
     ))

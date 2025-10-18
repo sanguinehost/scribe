@@ -1,6 +1,7 @@
-// Use deadpool-diesel types for async pooling
+// Use deadpool-diesel types for async pooling (PostgreSQL only)
 // Import auth module
 // Import AuthError enum
+#[cfg(feature = "postgres-backend")]
 use deadpool_diesel::postgres::Pool as DeadpoolPool;
 // Removed AppError import as it's not directly used here
 use crate::config::Config; // Use Config instead
@@ -34,8 +35,9 @@ use std::fmt;
 use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
 
 // --- DB Connection Pool Type ---
-pub type DbPool = DeadpoolPool;
-// Note: deadpool::Pool is already Cloneable.
+// Use the backend-agnostic pool type from the db module
+pub use crate::db::DbPool;
+// Note: Both deadpool::Pool (PostgreSQL) and r2d2::Pool (SQLite) are Cloneable.
 
 /// Configuration for `AppState` services to reduce constructor arguments
 pub struct AppStateServices {
@@ -63,7 +65,7 @@ pub struct AppStateServices {
 // --- Shared application state ---
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: DeadpoolPool,
+    pub pool: DbPool,
     // Change to Arc<Config> and make public
     pub config: Arc<Config>,
     // Remove gemini_client field for now
@@ -101,7 +103,7 @@ impl fmt::Debug for AppState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug_struct = f.debug_struct("AppState");
         debug_struct
-            .field("pool", &"<DeadpoolPool>") // Placeholder for pool
+            .field("pool", &"<DbPool>") // Placeholder for pool
             .field("config", &self.config) // Config should be Debug
             .field("ai_client", &"<Arc<dyn AiClient>>")
             .field("embedding_client", &"<Arc<dyn EmbeddingClient>>")
@@ -149,7 +151,7 @@ impl fmt::Debug for AppState {
 impl AppState {
     /// Create new `AppState` with reduced constructor arguments
     #[must_use]
-    pub fn new(pool: DeadpoolPool, config: Arc<Config>, services: AppStateServices) -> Self {
+    pub fn new(pool: DbPool, config: Arc<Config>, services: AppStateServices) -> Self {
         Self {
             pool,
             config,

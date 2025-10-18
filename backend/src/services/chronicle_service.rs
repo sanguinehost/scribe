@@ -1,4 +1,4 @@
-use deadpool_diesel::postgres::Pool as DeadpoolPgPool;
+use crate::db::DbPool;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
     QueryDsl, RunQueryDsl, SelectableHelper,
@@ -20,12 +20,12 @@ use crate::services::ChronicleDeduplicationService;
 /// ChronicleService handles all Chronicle-related database operations
 #[derive(Clone)]
 pub struct ChronicleService {
-    db_pool: DeadpoolPgPool,
+    db_pool: DbPool,
 }
 
 impl ChronicleService {
     #[must_use]
-    pub fn new(db_pool: DeadpoolPgPool) -> Self {
+    pub fn new(db_pool: DbPool) -> Self {
         Self { db_pool }
     }
 

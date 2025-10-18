@@ -2271,7 +2271,7 @@ pub async fn update_session_narrative_style_handler(
 
     // Fetch and return the effective preferences (with override applied)
     // This requires fetching character ID and applying the cascade
-    let conn2 = state.pool.get().await?;
+    let conn2 = crate::db::get_conn(&state.pool).await?;
     let (character_id_opt, override_ciphertext, override_nonce) = conn2
         .interact(move |conn| {
             let session_data = chat_sessions::table
@@ -2470,7 +2470,7 @@ pub async fn get_agent_analysis_handler(
     let user_id = user.id;
 
     // Verify the chat session belongs to the user
-    let conn = state.pool.get().await?;
+    let conn = crate::db::get_conn(&state.pool).await?;
     let session_exists = conn
         .interact(move |conn| {
             use crate::schema::chat_sessions;
@@ -2503,7 +2503,7 @@ pub async fn get_agent_analysis_handler(
         .and_then(|s| s.parse::<Uuid>().ok());
 
     // Get all analysis records for the session
-    let conn = state.pool.get().await?;
+    let conn = crate::db::get_conn(&state.pool).await?;
     let analysis_records = conn
         .interact(move |conn| {
             use crate::schema::agent_context_analysis::dsl::*;

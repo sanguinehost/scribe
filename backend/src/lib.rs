@@ -2,6 +2,7 @@
 pub mod auth;
 pub mod config;
 pub mod crypto;
+pub mod db;
 pub mod errors;
 pub mod features;
 pub mod llm;
@@ -20,10 +21,15 @@ pub mod state_builder;
 pub mod text_processing;
 pub mod vector_db;
 
-use deadpool_diesel::postgres::Pool as DeadpoolPool;
+// Re-export database pool type from db module
+// This provides a backend-agnostic pool type that resolves to:
+// - PostgreSQL pool in cloud mode (postgres-backend feature)
+// - SQLite pool in desktop mode (sqlite-backend feature)
+pub use db::DbPool;
 
-// Define PgPool type alias here for library-wide use
-pub type PgPool = DeadpoolPool;
+// Maintain backward compatibility with existing code that uses PgPool
+// TODO: Gradually migrate all code to use DbPool directly
+pub type PgPool = DbPool;
 
 // You might add common error types or other shared utilities here later.
 

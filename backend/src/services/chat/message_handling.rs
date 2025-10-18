@@ -697,7 +697,7 @@ fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_
 }
 
 async fn update_cumulative_token_counts(
-    pool: &crate::PgPool,
+    pool: &crate::db::DbPool,
     session_id: uuid::Uuid,
     user_id: uuid::Uuid,
     prompt_tokens: i32,

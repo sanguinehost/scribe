@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Workspace dependency
-scribe-backend = { path = "../backend" }
+scribe-backend = { path = "../backend", default-features = false, features = ["cloud"] }
 
 # CLI dependencies
 clap = { version = "4.5.37", features = ["derive", "env"] }

@@ -180,7 +180,7 @@ impl LorebookService {
             updated_at: Some(current_time),
         };
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -367,7 +367,7 @@ impl LorebookService {
             );
 
             info!("Getting database connection for batch insert...");
-            let conn = self.pool.get().await.map_err(|e| {
+            let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
                 error!("Failed to get DB connection for batch insert: {e}");
                 AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
             })?;

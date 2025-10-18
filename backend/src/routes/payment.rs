@@ -273,7 +273,7 @@ pub async fn get_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -523,7 +523,7 @@ pub async fn get_usage(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -652,7 +652,7 @@ pub async fn create_payment(
     );
 
     tracing::debug!("Getting database connection");
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to get database connection");
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -1310,7 +1310,7 @@ pub async fn preview_order(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -1394,7 +1394,7 @@ pub async fn create_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -2929,7 +2929,7 @@ async fn process_subscription_created(
 
     // Find user by paddle_customer_id or email
     tracing::debug!("Step 7: Getting database connection from pool");
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
         AppError::DbPoolError(e.to_string())
     })?;
@@ -3035,7 +3035,7 @@ async fn process_subscription_created(
 
     // Check for existing active subscription to prevent duplicates
     tracing::debug!("Step 10: Checking for existing active subscription");
-    let conn_duplicate_check = app_state.pool.get().await.map_err(|e| {
+    let conn_duplicate_check = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!(
             "Step 10 FAILED: Failed to get DB connection for duplicate check: {}",
             e
@@ -3095,7 +3095,7 @@ async fn process_subscription_created(
             plan_type,
             subscription_id
         );
-        let conn = app_state.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for update: {}",
                 e
@@ -3200,7 +3200,7 @@ async fn process_subscription_created(
             (*app_state.encryption_service).clone(),
         );
 
-        let conn = app_state.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for create: {}",
                 e
@@ -3470,10 +3470,9 @@ async fn process_subscription_updated(
                                 // Determine upgrade or downgrade
                                 match is_higher_tier(&new_plan, old_plan) {
                                     Ok(is_upgrade) => {
-                                        let conn =
-                                            app_state.pool.get().await.map_err(|e| {
-                                                AppError::DbPoolError(e.to_string())
-                                            })?;
+                                        let conn = crate::db::get_conn(&app_state.pool)
+                                            .await
+                                            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
                                         let credit_service =
                                             Arc::new(CreditService::new(app_state.config.clone()));
@@ -3995,7 +3994,7 @@ pub async fn get_credit_balance(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4030,7 +4029,7 @@ pub async fn purchase_credits(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get credit package details
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4102,7 +4101,7 @@ pub async fn purchase_credits(
 pub async fn get_credit_packages(
     State(app_state): State<AppState>,
 ) -> Result<Json<CreditPackagesResponse>, AppError> {
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4136,7 +4135,7 @@ pub async fn get_credit_transactions(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4220,7 +4219,7 @@ pub async fn get_payment_transactions(
             AppError::ConfigurationError("Payment data encryption key not configured".to_string())
         })?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4288,7 +4287,7 @@ pub async fn get_payment_transaction(
             AppError::ConfigurationError("Payment data encryption key not configured".to_string())
         })?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 

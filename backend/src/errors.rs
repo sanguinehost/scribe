@@ -13,6 +13,7 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::services::character_parser::ParserError as CharacterParserError;
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
+#[cfg(feature = "postgres-backend")]
 use deadpool_diesel::PoolError as DeadpoolDieselPoolError;
 use diesel::result::Error as DieselError;
 use std::time::Duration; // Add this import
@@ -1123,24 +1124,28 @@ impl From<diesel::result::Error> for AppError {
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool_diesel::PoolError> for AppError {
     fn from(err: deadpool_diesel::PoolError) -> Self {
         Self::DbPoolError(err.to_string())
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool::managed::PoolError<deadpool_diesel::PoolError>> for AppError {
     fn from(err: deadpool::managed::PoolError<deadpool_diesel::PoolError>) -> Self {
         Self::DbManagedPoolError(err.to_string())
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool::managed::BuildError> for AppError {
     fn from(err: deadpool::managed::BuildError) -> Self {
         Self::DbPoolBuildError(err.to_string())
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool_diesel::InteractError> for AppError {
     fn from(err: deadpool_diesel::InteractError) -> Self {
         Self::DbInteractError(err.to_string())
@@ -1365,18 +1370,23 @@ mod tests {
         let app_error_dbe: AppError = auth_error_dbe.into();
         assert!(matches!(app_error_dbe, AppError::DatabaseQueryError(s) if s == db_err_str));
 
-        let pool_err = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
-        let pool_err_str = pool_err.to_string();
-        let auth_error_pool = crate::auth::AuthError::PoolError(pool_err);
-        let app_error_pool: AppError = auth_error_pool.into();
-        assert!(matches!(app_error_pool, AppError::DbPoolError(s) if s == pool_err_str));
+        #[cfg(feature = "postgres-backend")]
+        {
+            let pool_err =
+                deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
+            let pool_err_str = pool_err.to_string();
+            let auth_error_pool = crate::auth::AuthError::PoolError(pool_err);
+            let app_error_pool: AppError = auth_error_pool.into();
+            assert!(matches!(app_error_pool, AppError::DbPoolError(s) if s == pool_err_str));
 
-        let interact_err_str = "interact error".to_string();
-        let auth_error_interact = crate::auth::AuthError::InteractError(interact_err_str.clone());
-        let app_error_interact: AppError = auth_error_interact.into();
-        assert!(
-            matches!(app_error_interact, AppError::DbInteractError(s) if s == interact_err_str)
-        );
+            let interact_err_str = "interact error".to_string();
+            let auth_error_interact =
+                crate::auth::AuthError::InteractError(interact_err_str.clone());
+            let app_error_interact: AppError = auth_error_interact.into();
+            assert!(
+                matches!(app_error_interact, AppError::DbInteractError(s) if s == interact_err_str)
+            );
+        }
     }
 
     // --- Tests for AppError IntoResponse arms ---
@@ -1469,6 +1479,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_pool_error_response() {
         let pool_error =
             deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
@@ -1480,6 +1491,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_managed_pool_error_response() {
         let inner_pool_error =
             deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
@@ -1493,6 +1505,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_pool_build_error_response() {
         // Use the corrected way to create BuildError
         let build_error = deadpool::managed::BuildError::NoRuntimeSpecified;
@@ -1504,6 +1517,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_interact_error_response() {
         let interact_error = deadpool_diesel::InteractError::Aborted;
         let error: AppError = interact_error.into();

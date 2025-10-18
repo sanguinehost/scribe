@@ -5,21 +5,21 @@ use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
 use crate::auth::session_dek::SessionDek;
+use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::chat_override::{ChatCharacterOverride, NewChatCharacterOverride};
 use crate::schema::chat_character_overrides;
 use crate::services::encryption_service::EncryptionService;
-use crate::PgPool;
 
 #[derive(Clone)]
 pub struct ChatOverrideService {
-    db_pool: PgPool,
+    db_pool: DbPool,
     encryption_service: Arc<EncryptionService>, // Keep Arc in case future versions of EncryptionService have state or are expensive to create
 }
 
 impl ChatOverrideService {
     #[must_use]
-    pub const fn new(db_pool: PgPool, encryption_service: Arc<EncryptionService>) -> Self {
+    pub const fn new(db_pool: DbPool, encryption_service: Arc<EncryptionService>) -> Self {
         Self {
             db_pool,
             encryption_service,

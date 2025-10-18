@@ -7,8 +7,8 @@ edition = "2021"
 default = ["cloud"]  # Cloud mode is default for backward compatibility
 desktop = ["sqlite-backend", "embedded-vector"]
 cloud = ["postgres-backend", "remote-vector"]
-sqlite-backend = ["diesel/sqlite"]
-postgres-backend = ["diesel/postgres"]
+sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "diesel_migrations/sqlite", "diesel-derive-enum/sqlite"]
+postgres-backend = ["diesel/postgres", "dep:deadpool-diesel", "diesel_migrations/postgres", "diesel-derive-enum/postgres"]
 embedded-vector = ["dep:lancedb"]
 remote-vector = []  # qdrant-client is already a direct dependency
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
@@ -32,11 +32,11 @@ serde_json = "1.0.140"
 png = "0.17.16"
 base64 = "0.22.1"
 thiserror = "2.0.12"
-diesel = { version = "2.2.9", features = ["postgres", "sqlite", "chrono", "r2d2", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
-diesel_migrations = { version = "2.2.0", features = ["postgres", "sqlite"] }
+diesel = { version = "2.2.9", features = ["chrono", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
+diesel_migrations = { version = "2.2.0" }
 dotenvy = "0.15.7"
 chrono = { version = "0.4.40", features = ["serde"] }
-diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
+diesel-derive-enum = { version = "2.1.0" }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
 tower-http = { version = "0.5.2", features = ["trace", "cors"] }
@@ -60,7 +60,7 @@ bigdecimal = { version = "0.4.8", features = ["serde"] }
 crc32fast = "1.4.2"
 
 deadpool = "0.12.2"
-deadpool-diesel = { version = "0.6.1", features = ["postgres", "rt_tokio_1", "serde"] }
+deadpool-diesel = { version = "0.6.1", features = ["postgres", "rt_tokio_1", "serde"], optional = true }
 
 async-trait = "0.1.88"
 time = { version = "0.3.41", features = ["serde", "serde-well-known"] }

@@ -4,6 +4,7 @@ pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
 use bcrypt::BcryptError;
+#[cfg(feature = "postgres-backend")]
 use deadpool_diesel::InteractError;
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
@@ -51,7 +52,11 @@ pub enum AuthError {
     #[error("Database error during authentication: {0}")]
     DatabaseError(String),
     #[error("Database pool error: {0}")]
+    #[cfg(feature = "postgres-backend")]
     PoolError(#[from] deadpool_diesel::PoolError),
+    #[error("Database pool error: {0}")]
+    #[cfg(feature = "sqlite-backend")]
+    PoolErrorSqlite(String),
     #[error("Database interaction error: {0}")]
     InteractError(String), // Changed from InteractError to String
     #[error("Cryptography error: {0}")]

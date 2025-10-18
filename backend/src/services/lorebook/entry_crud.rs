@@ -16,7 +16,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let user_id_for_embedding = user.id; // Clone for embedding task
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -343,7 +343,7 @@ AppError::InternalServerErrorGeneric(format!(
         debug!("Attempting to list lorebook entries");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -462,7 +462,7 @@ AppError::InternalServerErrorGeneric(format!(
         debug!("Attempting to list lorebook entries with content");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -662,7 +662,7 @@ AppError::InternalServerErrorGeneric(format!(
         debug!("Attempting to get lorebook entry");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -812,7 +812,7 @@ AppError::InternalServerErrorGeneric(format!(
         let user = get_user_from_session(auth_session)?;
         let user_id_for_embedding = user.id; // Clone for embedding task
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -1142,7 +1142,7 @@ AppError::InternalServerErrorGeneric(format!(
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!("Creating lorebook entry for narrative intelligence");
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -1332,7 +1332,7 @@ AppError::InternalServerErrorGeneric(format!(
 
     /// Find or create a default "AI Extracted" lorebook for the user
     async fn find_or_create_ai_extracted_lorebook(&self, user_id: Uuid) -> Result<Uuid, AppError> {
-        let conn = self.pool.get().await.map_err(|e| {
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 

@@ -2144,7 +2144,7 @@ fn build_raw_prompt_debug(
 /// Returns the selected variant content if current_variant_index > 0, otherwise original content
 async fn get_message_content_with_variant(
     message: &DbChatMessage,
-    pool: &deadpool_diesel::postgres::Pool,
+    pool: &crate::db::DbPool,
     user_id: Uuid,
     dek: &secrecy::SecretBox<Vec<u8>>,
 ) -> Result<String, AppError> {

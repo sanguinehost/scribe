@@ -1,6 +1,7 @@
 use crate::auth::session_dek::SessionDek; // Added SessionDek
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
+use crate::db::DbPool; // Added PgPool import
 use crate::errors::AppError;
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
@@ -21,7 +22,6 @@ use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
 use crate::schema::{chat_messages, chat_sessions};
-use crate::PgPool; // Added PgPool import
 use axum::{
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
@@ -648,7 +648,7 @@ fn get_authenticated_user(auth_session: CurrentAuthSession) -> Result<User, AppE
 
 /// Helper function to fetch chat session and verify ownership
 async fn fetch_and_verify_chat_ownership(
-    pool: PgPool,
+    pool: DbPool,
     chat_id: Uuid,
     user_id: Uuid,
 ) -> Result<Chat, AppError> {
@@ -707,7 +707,7 @@ fn fetch_chat_with_ownership_check(
 
 /// Helper function to fetch messages for a chat session with pagination
 async fn fetch_paginated_chat_messages(
-    pool: PgPool,
+    pool: DbPool,
     chat_id: Uuid,
     limit: i64,
     cursor: Option<DateTime<Utc>>,
@@ -776,7 +776,7 @@ async fn fetch_paginated_chat_messages(
 /// Helper function to get the default variant content for a message (variant index 0)
 #[allow(dead_code)]
 async fn get_default_variant_content(
-    pool: PgPool,
+    pool: DbPool,
     message_id: Uuid,
     user_id: Uuid,
     dek: &crate::auth::session_dek::SessionDek,
@@ -814,7 +814,7 @@ async fn get_default_variant_content(
 async fn process_messages_for_response(
     messages_db: Vec<Message>,
     dek: &crate::auth::session_dek::SessionDek,
-    pool: PgPool,
+    pool: DbPool,
     user_id: Uuid,
 ) -> Result<Vec<MessageResponse>, AppError> {
     tracing::info!("🔄 Processing {} messages for response", messages_db.len());
@@ -1107,7 +1107,7 @@ pub async fn create_message_handler(
         let model_name_for_tracking = chat.model_name.clone();
 
         // Get a database connection for the usage tracking
-        match state.pool.get().await {
+        match crate::db::get_conn(&state.pool).await {
             Ok(conn) => {
                 let subscription_id = None; // TODO: Get from user's subscription if needed
                 let mut model_usage = std::collections::HashMap::new();
@@ -1962,7 +1962,7 @@ async fn get_chat_token_usage_handler(
 
     // Fetch the chat session to verify ownership and get token statistics
     let user_id = user.id;
-    let conn = state.pool.get().await.map_err(|e| {
+    let conn = crate::db::get_conn(&state.pool).await.map_err(|e| {
         tracing::error!("Failed to get database connection: {}", e);
         AppError::DbPoolError(e.to_string())
     })?;
@@ -1991,7 +1991,7 @@ async fn get_chat_token_usage_handler(
     let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
 
     // Get the last used model from the most recent message in this chat
-    let conn_clone = state.pool.get().await.map_err(|e| {
+    let conn_clone = crate::db::get_conn(&state.pool).await.map_err(|e| {
         tracing::error!("Failed to get second database connection: {}", e);
         AppError::DbPoolError(e.to_string())
     })?;
@@ -2139,7 +2139,7 @@ pub async fn select_message_variant_handler(
 
 /// Helper function to get variant content by index
 async fn get_variant_content_by_index(
-    pool: PgPool,
+    pool: DbPool,
     message_id: Uuid,
     variant_index: i32,
     user_id: Uuid,
