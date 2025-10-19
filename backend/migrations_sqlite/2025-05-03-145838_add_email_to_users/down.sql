@@ -1,9 +1,10 @@
 -- SQLite Migration (Converted from PostgreSQL)
 -- Original: down.sql
--- Conversion date: 2025-10-19T11:00:19.542134
+-- Conversion date: 2025-10-19T11:00:19.543589
 --
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
 -- This file should undo anything in `up.sql`
-DROP TABLE sessions;
+ALTER TABLE users
+DROP COLUMN email;

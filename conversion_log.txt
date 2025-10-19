@@ -1,15 +1,101 @@
 PostgreSQL → SQLite Migration Conversion Log
 ================================================================================
 
-Converted: 1/1 migrations
+Converted: 30/30 migrations
 
 
 CHANGES:
 --------------------------------------------------------------------------------
+  • Removed PostgreSQL extension: CREATE EXTENSION IF NOT EXISTS "uuid-ossp";...
+  • Removed ENUM type 'message_type': values 'User', 'Assistant', 'System'
+  • Removed PostgreSQL function: diesel_manage_updated_at
+  • Removed PostgreSQL function: diesel_set_updated_at
+  • Converted diesel_manage_updated_at for table 'users' to SQLite trigger
+  • Converted diesel_manage_updated_at for table 'characters' to SQLite trigger
+  • Converted diesel_manage_updated_at for table 'character_assets' to SQLite trigger
+  • Converted diesel_manage_updated_at for table 'lorebooks' to SQLite trigger
+  • Converted diesel_manage_updated_at for table 'lorebook_entries' to SQLite trigger
+  • Converted diesel_manage_updated_at for table 'chat_sessions' to SQLite trigger
+  • Converted diesel_manage_updated_at for table 'chat_messages' to SQLite trigger
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
   • Removed PostgreSQL function: trigger_set_timestamp
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed ENUM type 'user_role': values 'User', 'Moderator', 'Administrator'
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed ENUM type 'account_status': values 'active', 'locked'
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL extension: CREATE EXTENSION IF NOT EXISTS "uuid-ossp";...
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL extension: CREATE EXTENSION IF NOT EXISTS "uuid-ossp";...
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL extension: CREATE EXTENSION IF NOT EXISTS "uuid-ossp";...
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL function: trigger_set_timestamp
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
   • ✓ Converted: up.sql → up.sql
   • ✓ Converted: down.sql → down.sql
 
 
 WARNINGS (Manual Review Recommended):
 --------------------------------------------------------------------------------
+  ⚠ ENUM type 'message_type' removed - fields using this type will be TEXT. Consider adding CHECK constraints if validation needed.
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ ENUM type 'user_role' removed - fields using this type will be TEXT. Consider adding CHECK constraints if validation needed.
+  ⚠ ENUM type 'account_status' removed - fields using this type will be TEXT. Consider adding CHECK constraints if validation needed.
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ GIN index 'idx_chronicle_events_event_data_gin' on chronicle_events(event_data) converted to regular index. Full-text search functionality will be lost. Consider using FTS5 extension.
