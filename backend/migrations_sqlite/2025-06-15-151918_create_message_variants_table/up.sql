@@ -1,6 +1,6 @@
 -- SQLite Migration (Converted from PostgreSQL)
 -- Original: up.sql
--- Conversion date: 2025-10-19T11:00:19.550248
+-- Conversion date: 2025-10-19T11:15:25.496994
 --
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
@@ -35,7 +35,12 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_message_variants_updated_at
-    BEFORE UPDATE ON message_variants
-    FOR EACH ROW
-    EXECUTE FUNCTION update_message_variants_updated_at();
+
+-- SQLite trigger for updating timestamps on message_variants
+CREATE TRIGGER IF NOT EXISTS update_message_variants_timestamp
+AFTER UPDATE ON message_variants
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at OR NEW.updated_at IS NULL
+BEGIN
+    UPDATE message_variants SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;

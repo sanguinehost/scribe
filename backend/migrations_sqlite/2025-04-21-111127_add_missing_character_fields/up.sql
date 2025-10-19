@@ -1,6 +1,6 @@
 -- SQLite Migration (Converted from PostgreSQL)
 -- Original: up.sql
--- Conversion date: 2025-10-19T11:00:19.542201
+-- Conversion date: 2025-10-19T11:15:25.488932
 --
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================

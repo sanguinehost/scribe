@@ -1,6 +1,6 @@
 -- SQLite Migration (Converted from PostgreSQL)
 -- Original: up.sql
--- Conversion date: 2025-10-19T11:00:19.549334
+-- Conversion date: 2025-10-19T11:15:25.496064
 --
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
@@ -28,7 +28,12 @@ RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = NO... -- Removed: SQLite does not support PL/pgSQL
 
-CREATE TRIGGER set_timestamp
-    BEFORE UPDATE ON character_lorebooks
-    FOR EACH ROW
-    EXECUTE FUNCTION trigger_set_timestamp();
+
+-- SQLite trigger for updating timestamps on character_lorebooks
+CREATE TRIGGER IF NOT EXISTS update_character_lorebooks_timestamp
+AFTER UPDATE ON character_lorebooks
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at OR NEW.updated_at IS NULL
+BEGIN
+    UPDATE character_lorebooks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;

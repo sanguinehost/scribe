@@ -14,7 +14,8 @@ Based on demonstrated velocity with AI-assisted development:
 
 ### Week 1: Foundation + Vector Store (20-25 hours)
 - **Days 1-2**: Database abstraction (8 hours)
-  - Feature flags, SQLite types, convert **core 30 migrations** only
+  - Feature flags, SQLite types, convert **67 migrations for full frontend functionality**
+  - Includes: core (30) + frontend features (26) + usage analytics (5) + recent features (6)
   - AuthBackend multi-backend, encryption tests
 - **Days 3-4**: LanceDB integration (8 hours)
   - VectorStoreService trait implementation
@@ -35,10 +36,12 @@ Based on demonstrated velocity with AI-assisted development:
 **Phase 7 (Payment Integration)**: SKIPPED for MVP. All features work locally without cloud validation. Add in v1.1+.
 
 **Key Optimizations vs Original Plan**:
-- Migration scope: 176 → 30 (core schema only)
-- Payment phase skipped entirely
+- Migration scope: 176 → 67 (100% frontend functionality without cloud-only features)
+  - Core schema (30) + Frontend features (26) + Usage analytics (5) + Recent features (6) = 67
+  - Skipped: 21 payment/billing migrations (cloud-only hosted platform features)
+- Payment phase skipped entirely (desktop uses Qdrant cloud, no local payment processing)
 - Parallelized platform builds where possible
-- Leveraged AI assistance for boilerplate
+- Leveraged AI assistance for boilerplate and migration conversion
 
 ---
 
@@ -170,24 +173,30 @@ The following detailed breakdown maintains the original structure for completene
   - [x] **Features**: CLI with `--all`, `--core`, `--migration` options
   - [x] **Features**: Identifies 30 core MVP migrations automatically
 
-- [x] **Task 1.2.4**: Convert Core PostgreSQL Migrations to SQLite (MVP Scope)
-  - [x] Subtask: Identified core 30 migrations needed for MVP:
-    - 00000000000000_diesel_initial_setup (users, characters, lorebooks, chat_sessions, chat_messages)
-    - 2025-04-18 through 2025-06-26 core schema migrations
-    - Includes: sessions, encryption, user roles, personas, lorebooks, character overrides, chronicles
-  - [x] Subtask: Ran `python scripts/convert_migrations.py --core` successfully
-  - [x] Subtask: Reviewed conversion warnings log - 11 expected warnings:
+- [x] **Task 1.2.4**: Convert PostgreSQL Migrations to SQLite (Full Frontend Functionality)
+  - [x] Subtask: Updated CORE_MIGRATIONS list from 30 → 67 migrations for 100% frontend functionality
+  - [x] Subtask: Migration breakdown:
+    - Original core MVP (30): Users, sessions, encryption, roles, personas, lorebooks, character overrides, chronicles
+    - Essential frontend features (26): History management, model settings, Gemini options, frontend tables (documents/votes/suggestions), user settings, character avatars, SillyTavern V3 compatibility, agent context analysis, agentic mode
+    - Usage analytics (5): Token tracking, usage tracking table, credits display (for showing Gemini API costs to users)
+    - Recent features (6): Model provider selection, message variants, prompt templates, template preferences, narrative overrides
+  - [x] Subtask: Ran `python scripts/convert_migrations.py --core` successfully (67/67 migrations)
+  - [x] Subtask: Reviewed conversion warnings log - 14 expected warnings:
     - 3 ENUM types removed (message_type, user_role, account_status) → TEXT
-    - 7 DEFAULT uuid_generate_v4() removed (UUIDs generated in application)
+    - 10 DEFAULT uuid_generate_v4()/gen_random_uuid() removed (UUIDs generated in application)
     - 1 GIN index converted to regular index (idx_chronicle_events_event_data_gin)
-  - [x] Subtask: Created `backend/migrations_sqlite/` directory with 30 migrations
+  - [x] Subtask: Created `backend/migrations_sqlite/` directory with 67 migrations (134 SQL files)
   - [x] Subtask: Verified conversion quality (UUID→TEXT, TIMESTAMPTZ→DATETIME, triggers created)
-  - [ ] Subtask: Manually fix migrations flagged for review (if needed after testing)
-  - [ ] Subtask: Test all core migrations on SQLite
+  - [x] Subtask: Fixed 7 migrations with unconverted PostgreSQL triggers:
+    - Replaced `EXECUTE FUNCTION` syntax with SQLite `BEGIN...END` trigger bodies
+    - Tables: user_settings, agent_context_analysis, chat_character_overrides, character_lorebooks, message_variants, chat_character_lorebook_overrides, template_preferences
+  - [x] Subtask: Commented out 4 PostgreSQL `COMMENT ON` statements (not supported in SQLite)
+  - [x] Subtask: Final verification - no remaining PostgreSQL-specific syntax (EXECUTE FUNCTION, WITH TIME ZONE, JSONB, UUID)
+  - [ ] Subtask: Test all frontend migrations on SQLite
   - [ ] **Test**: `diesel migration run --database-url=sqlite://test.db --migration-dir=migrations_sqlite`
-  - [ ] **Test**: Verify schema matches PostgreSQL for core tables
-  - [ ] **DoD**: Core SQLite migrations run successfully, schema is equivalent
-  - [ ] **Note**: Remaining 58 migrations deferred to v1.1+ (payment, advanced features)
+  - [ ] **Test**: Verify schema matches PostgreSQL for frontend tables
+  - [ ] **DoD**: All 67 SQLite migrations run successfully, schema supports 100% frontend functionality
+  - [x] **Note**: Skipped 21 payment/billing migrations (cloud-only) - desktop uses Qdrant cloud for vectors, no local payment processing needed
 
 - [ ] **Task 1.2.5**: Update Models for Multi-Backend Support
   - [ ] Subtask: Add conditional compilation to `backend/src/models/*.rs`

@@ -1,6 +1,6 @@
 -- SQLite Migration (Converted from PostgreSQL)
 -- Original: up.sql
--- Conversion date: 2025-10-19T11:00:19.545243
+-- Conversion date: 2025-10-19T11:15:25.491934
 --
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
@@ -22,7 +22,12 @@ CREATE TABLE IF NOT EXISTS chat_character_overrides (
 -- Create a trigger to automatically update updated_at
 -- Attempt to drop trigger first to make it idempotent, then create.
 DROP TRIGGER IF EXISTS set_timestamp_chat_character_overrides ON chat_character_overrides;
-CREATE TRIGGER set_timestamp_chat_character_overrides
-BEFORE UPDATE ON chat_character_overrides
+
+-- SQLite trigger for updating timestamps on chat_character_overrides
+CREATE TRIGGER IF NOT EXISTS update_chat_character_overrides_timestamp
+AFTER UPDATE ON chat_character_overrides
 FOR EACH ROW
-EXECUTE FUNCTION trigger_set_timestamp();
+WHEN NEW.updated_at = OLD.updated_at OR NEW.updated_at IS NULL
+BEGIN
+    UPDATE chat_character_overrides SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;

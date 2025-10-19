@@ -67,8 +67,10 @@ class MigrationConverter:
         r'\bmessage_type\b': 'TEXT',
     }
 
-    # Core migrations needed for MVP (identified from Task 1.2.4)
+    # Core migrations needed for full desktop frontend functionality
+    # Includes: MVP core (30) + frontend features (26) + usage analytics (5) + recent features (6) = 62 total
     CORE_MIGRATIONS = [
+        # Original core MVP migrations (30)
         '00000000000000_diesel_initial_setup',
         '2025-04-18-103148_create_sessions_table',
         '2025-04-21-111127_add_missing_character_fields',
@@ -99,6 +101,46 @@ class MigrationConverter:
         '2025-06-22-111407_add_model_name_to_chat_messages',
         '2025-06-25-113023_encrypt_chronicle_events',
         '2025-06-26-004000_enhance_chronicle_events_ars_fabula',
+        # Essential frontend features (26)
+        '2025-04-30-024952_add_history_management_to_chat_sessions',
+        '2025-05-04-095859_add_model_name_to_chat_sessions',
+        '2025-05-07-023752_add_gemini_options',
+        '2025-05-10-100000_add_frontend_tables',
+        '2025-05-10-100001_rename_tables',
+        '2025-05-10-100002_add_columns_to_chat_tables',
+        '2025-05-15-094128_add_token_counts_to_chat_messages',
+        '2025-05-20-132227_add_unique_constraint_to_chat_character_overrides',
+        '2025-05-30-142900_update_chat_settings_columns',
+        '2025-06-04-030028_add_raw_prompt_fields_to_chat_messages',
+        '2025-06-06-053628_create_user_settings_table',
+        '2025-06-06-142918_add_avatar_data_to_character_assets',
+        '2025-06-08-121354_add_sillytavern_v3_fields',
+        '2025-06-10-093153_create_email_verification_tokens',
+        '2025-06-25-082539_add_typing_speed_to_user_settings',
+        '2025-08-09-083724_simplify_chronicle_events',
+        '2025-08-10-091221_add_agent_context_analysis',
+        '2025-08-10-104056_add_agent_mode_to_chat_sessions',
+        '2025-08-11-082250_add_message_id_to_agent_context_analysis',
+        '2025-08-11-093707_make_message_id_required_in_agent_context_analysis',
+        '2025-08-11-120125_add_assistant_message_id_to_agent_context_analysis',
+        '2025-08-11-131951_add_status_to_agent_context_analysis',
+        '2025-08-11-135458_add_status_to_chat_messages',
+        '2025-08-14-091942_fix_chronicle_events_cascade',
+        '2025-08-22-072410_fix_agent_context_analysis_cascade',
+        '2025-08-24-115200_add_local_llm_preferences_to_user_settings',
+        # Usage analytics (5) - token tracking without billing
+        '2025-09-04-073423_add_token_tracking_to_users',
+        '2025-09-04-073438_add_token_tracking_to_chat_sessions',
+        '2025-09-04-073452_create_usage_tracking_table',
+        '2025-10-07-234639_add_total_credits_used_to_chat_sessions',
+        '2025-10-08-012616_add_credits_used_to_chat_messages',
+        # Recent frontend features (6)
+        '2025-08-25-102506_add_model_provider_to_chat_sessions',
+        '2025-09-05-062626_add_variant_metadata_to_messages',
+        '2025-09-06-203551_add_prompt_template_to_chat_sessions',
+        '2025-10-13-195748_fix_agent_analysis_unique_constraint',
+        '2025-10-15-054608_add_template_preferences',
+        '2025-10-16-173133_add_session_narrative_overrides',
     ]
 
     def __init__(self):

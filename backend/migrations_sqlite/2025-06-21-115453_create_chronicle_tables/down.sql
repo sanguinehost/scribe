@@ -1,6 +1,6 @@
 -- SQLite Migration (Converted from PostgreSQL)
 -- Original: down.sql
--- Conversion date: 2025-10-19T11:00:19.551253
+-- Conversion date: 2025-10-19T11:15:25.497991
 --
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================

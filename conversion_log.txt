@@ -1,7 +1,7 @@
 PostgreSQL → SQLite Migration Conversion Log
 ================================================================================
 
-Converted: 30/30 migrations
+Converted: 67/67 migrations
 
 
 CHANGES:
@@ -84,6 +84,86 @@ CHANGES:
   • ✓ Converted: down.sql → down.sql
   • ✓ Converted: up.sql → up.sql
   • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL function: update_user_settings_updated_at
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Converted diesel_manage_updated_at for table 'user_assets' to SQLite trigger
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • Removed ENUM type 'account_status': values 'active', 'locked'
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL function: update_agent_context_analysis_updated_at
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Converted diesel_manage_updated_at for table 'usage_tracking' to SQLite trigger
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • Removed PostgreSQL function: update_template_preferences_updated_at
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
+  • ✓ Converted: up.sql → up.sql
+  • ✓ Converted: down.sql → down.sql
 
 
 WARNINGS (Manual Review Recommended):
@@ -99,3 +179,6 @@ WARNINGS (Manual Review Recommended):
   ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
   ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
   ⚠ GIN index 'idx_chronicle_events_event_data_gin' on chronicle_events(event_data) converted to regular index. Full-text search functionality will be lost. Consider using FTS5 extension.
+  ⚠ ENUM type 'account_status' removed - fields using this type will be TEXT. Consider adding CHECK constraints if validation needed.
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code
+  ⚠ Removed 'DEFAULT uuid_generate_v4()' - UUIDs must be generated in application code

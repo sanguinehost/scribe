@@ -1,0 +1,64 @@
+-- SQLite Migration (Converted from PostgreSQL)
+-- Original: up.sql
+-- Conversion date: 2025-10-19T11:15:25.503442
+--
+-- IMPORTANT: Review warnings below and verify functionality
+-- ================================================================
+
+-- Create agent_context_analysis table for storing agent's context enrichment work
+CREATE TABLE agent_context_analysis (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    analysis_type TEXT NOT NULL CHECK (analysis_type IN ('pre_processing', 'post_processing')),
+
+    -- Agent thought process (encrypted)
+    agent_reasoning TEXT,
+    agent_reasoning_nonce BLOB,
+
+    -- Planning phase - stores JSON array of planned searches
+    planned_searches TEXT,
+
+    -- Execution audit trail (encrypted) - full log of all tool calls and responses
+    execution_log TEXT,
+    execution_log_nonce BLOB,
+
+    -- Final results (encrypted)
+    retrieved_context TEXT,
+    retrieved_context_nonce BLOB,
+    analysis_summary TEXT,
+    analysis_summary_nonce BLOB,
+
+    -- Performance metrics
+    total_tokens_used INTEGER,
+    execution_time_ms INTEGER,
+    model_used TEXT,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    -- Ensure only one analysis per session per type
+    UNIQUE(chat_session_id, analysis_type)
+);
+
+-- Index for quick retrieval by session
+CREATE INDEX idx_agent_context_session ON agent_context_analysis(chat_session_id);
+
+-- Index for user's analyses
+CREATE INDEX idx_agent_context_user ON agent_context_analysis(user_id);
+
+-- Add trigger to update updated_at DATETIME
+-- CREATE OR REPLACE FUNCTION update_agent_context_analysis_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  ... -- Removed: SQLite does not support PL/pgSQL
+
+
+-- SQLite trigger for updating timestamps on agent_context_analysis
+CREATE TRIGGER IF NOT EXISTS update_agent_context_analysis_timestamp
+AFTER UPDATE ON agent_context_analysis
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at OR NEW.updated_at IS NULL
+BEGIN
+    UPDATE agent_context_analysis SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
