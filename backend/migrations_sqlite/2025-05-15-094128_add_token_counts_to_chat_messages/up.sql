@@ -5,6 +5,5 @@
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
-ALTER TABLE chat_messages
-ADD COLUMN prompt_tokens INTEGER,
-ADD COLUMN completion_tokens INTEGER;
+ALTER TABLE chat_messages ADD COLUMN prompt_tokens INTEGER;
+ALTER TABLE chat_messages ADD COLUMN completion_tokens INTEGER;

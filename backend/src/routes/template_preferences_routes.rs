@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Deserialize)]
 struct CharacterIdQuery {
-    character_id: Option<Uuid>,
+    character_id: Option<crate::DbUuid>,
 }
 
 /// Logging middleware for template preferences routes

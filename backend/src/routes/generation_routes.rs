@@ -442,7 +442,7 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
         generation_time_ms,
         style_detected: None,
         model_used: state.config.token_counter_default_model.clone(),
-        timestamp: chrono::Utc::now(),
+        timestamp: chrono::Utc::now().into(),
         debug_info: None,
     };
 

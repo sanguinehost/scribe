@@ -126,7 +126,7 @@ impl LorebookService {
     pub async fn get_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<LorebookResponse, AppError> {
         debug!(%lorebook_id, "Attempting to get lorebook");
         let user = get_user_from_session(auth_session)?;
@@ -191,7 +191,7 @@ impl LorebookService {
     pub async fn update_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::DbUuid,
         payload: UpdateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!(?payload, "Attempting to update lorebook");
@@ -255,7 +255,7 @@ impl LorebookService {
                     let exists = lorebooks
                         .filter(id.eq(lorebook_id))
                         .select(id)
-                        .first::<Uuid>(conn)
+                        .first::<crate::DbUuid>(conn)
                         .optional()
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -286,7 +286,7 @@ impl LorebookService {
     pub async fn delete_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook");
 
@@ -310,7 +310,7 @@ impl LorebookService {
                 let lorebook_owner = lorebooks
                     .filter(id.eq(lorebook_id))
                     .select(user_id)
-                    .first::<Uuid>(conn)
+                    .first::<crate::DbUuid>(conn)
                     .optional()
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

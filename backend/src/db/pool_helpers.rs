@@ -14,6 +14,58 @@
 use crate::db::DbPool;
 use crate::errors::AppError;
 
+#[cfg(feature = "sqlite-backend")]
+use diesel::r2d2;
+
+// Extension trait to provide async .get() for SQLite pools (compatibility with PostgreSQL async pools)
+#[cfg(feature = "sqlite-backend")]
+pub trait SqlitePoolExt {
+    type Connection;
+    async fn get(
+        &self,
+    ) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>, r2d2::Error>;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl SqlitePoolExt for DbPool {
+    type Connection = diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
+
+    async fn get(&self) -> Result<Self::Connection, r2d2::Error> {
+        let pool = self.clone();
+        tokio::task::spawn_blocking(move || pool.get())
+            .await
+            .map_err(|e| r2d2::Error::from(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+    }
+}
+
+// Extension trait to provide .interact() compatibility for SQLite connections
+// Note: For SQLite, we don't actually need spawn_blocking here since the connection
+// was already acquired via spawn_blocking in get(). The query itself runs synchronously.
+#[cfg(feature = "sqlite-backend")]
+pub trait SqliteInteractExt {
+    async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
+    where
+        F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
+        T: Send + 'static;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl SqliteInteractExt
+    for diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>
+{
+    async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
+    where
+        F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
+        T: Send + 'static,
+    {
+        // For SQLite, queries are synchronous and fast (local file I/O)
+        // Since we already paid the cost of spawn_blocking in get(), and queries
+        // are typically very fast, we can just execute directly here
+        // Wrap in a ready future to satisfy async fn requirement
+        std::future::ready(f(self)).await
+    }
+}
+
 /// Get a connection from the pool (async for all backends)
 ///
 /// For PostgreSQL, this directly awaits the async pool operation.

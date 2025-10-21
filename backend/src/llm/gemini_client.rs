@@ -12,7 +12,7 @@ use crate::errors::AppError;
 
 fn log_stream_event_error(
     model_iden: &ModelIden,
-    body: &serde_json::Value,
+    body: &crate::DbJson,
     gen_err: &genai::Error,
 ) {
     tracing::error!(

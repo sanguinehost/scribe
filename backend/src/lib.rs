@@ -27,6 +27,10 @@ pub mod vector_db;
 // - SQLite pool in desktop mode (sqlite-backend feature)
 pub use db::DbPool;
 
+// Re-export database type aliases for use in models
+// These resolve to native types for PostgreSQL or newtype wrappers for SQLite
+pub use db::{DbBigDecimal, DbDateTime, DbJson, DbUuid};
+
 // Maintain backward compatibility with existing code that uses PgPool
 // TODO: Gradually migrate all code to use DbPool directly
 pub type PgPool = DbPool;

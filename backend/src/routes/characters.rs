@@ -361,18 +361,39 @@ pub async fn upload_character_handler(
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-    let returned_id: Uuid = conn_insert_op
-        .interact(move |conn_insert_block| {
+    #[cfg(feature = "postgres-backend")]
+    let returned_id: crate::DbUuid = {
+        conn_insert_op
+            .interact(move |conn_insert_block| {
+                diesel::insert_into(characters)
+                    .values(new_character_for_db)
+                    .returning(id)
+                    .get_result::<crate::DbUuid>(conn_insert_block)
+            })
+            .await
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
+            })?
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {e}")))?
+    };
+
+    #[cfg(feature = "sqlite-backend")]
+    let returned_id: crate::DbUuid = {
+        use diesel::prelude::*;
+        // SQLite doesn't support RETURNING, so we generate UUID before insert
+        let generated_id = crate::DbUuid::new_v4();
+        let mut character_with_id = new_character_for_db;
+        character_with_id.id = Some(generated_id.into());
+
+        crate::db::with_conn(&state.pool, move |conn_insert_block| {
             diesel::insert_into(characters)
-                .values(new_character_for_db)
-                .returning(id)
-                .get_result::<Uuid>(conn_insert_block)
+                .values(&character_with_id)
+                .execute(conn_insert_block)
+                .map(|_| generated_id)
+                .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
         })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
-        })?
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {e}")))?;
+        .await?
+    };
 
     info!(character_id = %returned_id, "Character basic info returned after insert");
 
@@ -680,7 +701,7 @@ pub async fn get_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek,
-    Path(character_id): Path<Uuid>,
+    Path(character_id): Path<crate::DbUuid>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id);
 
@@ -752,7 +773,7 @@ pub async fn get_character_handler(
             let lorebooks = lorebook_service
                 .list_character_lorebooks(&auth_session, character_id)
                 .await?;
-            let lorebook_ids: Vec<Uuid> = lorebooks.iter().map(|lb| lb.id).collect();
+            let lorebook_ids: Vec<crate::DbUuid> = lorebooks.iter().map(|lb| lb.id).collect();
 
             return match character.into_decrypted_for_client(Some(&dek.0), lorebook_ids) {
                 Ok(character_for_client) => {
@@ -905,7 +926,7 @@ pub async fn get_character_handler(
         let lorebooks = lorebook_service
             .list_character_lorebooks(&auth_session, character_id)
             .await?;
-        let lorebook_ids: Vec<Uuid> = lorebooks.iter().map(|lb| lb.id).collect();
+        let lorebook_ids: Vec<crate::DbUuid> = lorebooks.iter().map(|lb| lb.id).collect();
 
         match character.into_decrypted_for_client(Some(&dek.0), lorebook_ids) {
             Ok(character_for_client) => {
@@ -966,7 +987,7 @@ pub async fn generate_character_handler(
     // Placeholder: Create a dummy Character, encrypt its description, then convert for client.
     let mut dummy_char_for_db = Character {
         // This is a Character struct, not NewCharacter
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user_id_val,
         spec: "dummy_spec_placeholder".to_string(),
         spec_version: "dummy_spec_version_placeholder".to_string(),
@@ -997,8 +1018,8 @@ pub async fn generate_character_handler(
         group_only_greetings: None,
         creation_date: None,
         modification_date: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         persona: None,
         persona_nonce: None,
         world_scenario: None,
@@ -1086,7 +1107,7 @@ pub async fn generate_character_handler(
 pub async fn delete_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(character_id): Path<Uuid>,
+    Path(character_id): Path<crate::DbUuid>,
 ) -> Result<impl IntoResponse, AppError> {
     info!(target: "handler_log", ">>> ENTERING delete_character_handler for character_id: {}", character_id);
 
@@ -1108,7 +1129,7 @@ pub async fn delete_character_handler(
             let exists = characters
                 .filter(id.eq(character_id))
                 .select(id)  // Just select the ID for efficiency
-                .first::<Uuid>(conn_block)
+                .first::<crate::DbUuid>(conn_block)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()));
             exists.map(|opt| opt.is_some())
@@ -1177,7 +1198,7 @@ pub async fn update_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek,
-    Path(character_id_to_update): Path<Uuid>, // Renamed to avoid conflict
+    Path(character_id_to_update): Path<crate::DbUuid>, // Renamed to avoid conflict
     Json(update_dto): Json<CharacterUpdateDto>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     let user = auth_session
@@ -1205,7 +1226,7 @@ pub async fn update_character_handler(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_character_asset_handler(
-    Path((character_id, asset_id)): Path<(Uuid, i32)>,
+    Path((character_id, asset_id)): Path<(crate::DbUuid, i32)>,
     Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
@@ -1395,8 +1416,8 @@ pub async fn enhance_field_handler(
 pub async fn analyze_style_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Json(payload): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, AppError> {
+    Json(payload): Json<crate::DbJson>,
+) -> Result<Json<crate::DbJson>, AppError> {
     let _user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;

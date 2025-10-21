@@ -7,7 +7,8 @@
 
 -- Add binary data field to character_assets table for storing image data directly
 ALTER TABLE character_assets ADD COLUMN data BLOB;
-ALTER TABLE character_assets ALTER COLUMN uri DROP NOT NULL;
+-- SQLite Note: Making uri nullable requires table recreation - defer to fix_nullable_columns.py
+-- ALTER TABLE character_assets ALTER COLUMN uri DROP NOT NULL;
 
 -- Add content_type field to properly identify the image format
 ALTER TABLE character_assets ADD COLUMN content_type TEXT;
@@ -30,9 +31,10 @@ CREATE TABLE user_assets (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- Ensure user can't have multiple avatars (but can have multiple persona avatars)
-    CONSTRAINT unique_user_avatar UNIQUE (user_id, asset_type) DEFERRABLE INITIALLY DEFERRED,
+    -- SQLite Note: DEFERRABLE only supported on FOREIGN KEY, not UNIQUE constraints
+    CONSTRAINT unique_user_avatar UNIQUE (user_id, asset_type),
     -- Ensure persona can't have multiple avatars
-    CONSTRAINT unique_persona_avatar UNIQUE (persona_id, asset_type) DEFERRABLE INITIALLY DEFERRED,
+    CONSTRAINT unique_persona_avatar UNIQUE (persona_id, asset_type),
     -- Check constraint: either user avatar (persona_id is NULL) or persona avatar (persona_id is NOT NULL)
     CONSTRAINT check_user_or_persona CHECK (
         (persona_id IS NULL AND asset_type = 'avatar') OR

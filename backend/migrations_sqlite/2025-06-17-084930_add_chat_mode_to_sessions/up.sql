@@ -11,5 +11,5 @@ ALTER TABLE chat_sessions
 ADD COLUMN chat_mode VARCHAR NOT NULL DEFAULT 'Character';
 
 -- Make character_id nullable to support non-character modes
-ALTER TABLE chat_sessions
-ALTER COLUMN character_id DROP NOT NULL;
+-- SQLite Note: Making character_id nullable requires table recreation - defer to fix_nullable_columns.py
+-- ALTER TABLE chat_sessions ALTER COLUMN character_id DROP NOT NULL;

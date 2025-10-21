@@ -52,7 +52,7 @@ impl Default for NarrativeWorkflowConfig {
 }
 
 /// JSON schema for triage results (conversation summary)
-fn get_triage_schema() -> serde_json::Value {
+fn get_triage_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -66,7 +66,7 @@ fn get_triage_schema() -> serde_json::Value {
 }
 
 /// JSON schema for action plans (chronicle event creation)
-fn get_action_plan_schema() -> serde_json::Value {
+fn get_action_plan_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -119,7 +119,7 @@ fn get_action_plan_schema() -> serde_json::Value {
 }
 
 /// JSON schema for chronicle naming
-fn get_chronicle_naming_schema() -> serde_json::Value {
+fn get_chronicle_naming_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -191,9 +191,9 @@ impl NarrativeAgentRunner {
     /// Deterministically create a chronicle event for every message exchange
     pub async fn process_narrative_event(
         &self,
-        user_id: Uuid,
-        chat_session_id: Uuid,
-        mut chronicle_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        chat_session_id: crate::DbUuid,
+        mut chronicle_id: Option<crate::DbUuid>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<super::UserPersonaContext>,
@@ -322,7 +322,7 @@ RULES:
                         if tool_name == "create_lorebook_entry"
                             || tool_name == "create_chronicle_event"
                         {
-                            if let serde_json::Value::Object(ref mut obj) = enriched_params {
+                            if let crate::DbJson::Object(ref mut obj) = enriched_params {
                                 // Add user_id if not present
                                 if !obj.contains_key("user_id") {
                                     obj.insert("user_id".to_string(), json!(user_id.to_string()));
@@ -396,7 +396,7 @@ RULES:
             summary: summary.clone(),
             source: crate::models::chronicle_event::EventSource::AiExtracted,
             keywords,
-            timestamp_iso8601: Some(chrono::Utc::now()),
+            timestamp_iso8601: Some(chrono::Utc::now().into()),
             chat_session_id: Some(chat_session_id),
         };
 
@@ -435,8 +435,8 @@ RULES:
     /// Step 1: Always mark conversations as significant for chronicle generation
     async fn perform_triage(
         &self,
-        _user_id: Uuid,
-        _chronicle_id: Option<Uuid>,
+        _user_id: crate::DbUuid,
+        _chronicle_id: Option<crate::DbUuid>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<&super::UserPersonaContext>,
@@ -520,7 +520,7 @@ CONVERSATION:
 
         // Parse structured response - no cleanup needed with structured outputs!
         let content = response.first_content_text_as_str().unwrap_or("{}");
-        let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
+        let parsed: Result<crate::DbJson, _> = serde_json::from_str(content);
 
         let summary = match parsed {
             Ok(json) => json
@@ -582,7 +582,7 @@ CONVERSATION:
         &self,
         triage_result: &TriageResult,
         _knowledge_context: &Value,
-        chronicle_id: Option<Uuid>,
+        chronicle_id: Option<crate::DbUuid>,
         _chronicle_was_just_created: bool,
         persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<ActionPlan, AppError> {
@@ -672,7 +672,7 @@ IMPORTANT RULES:
 
         // Parse structured response - no cleanup needed with structured outputs!
         let content = response.first_content_text_as_str().unwrap_or("{}");
-        let parsed: serde_json::Value = serde_json::from_str(content).map_err(|e| {
+        let parsed: crate::DbJson = serde_json::from_str(content).map_err(|e| {
             error!("Failed to parse action plan response: {}", e);
             AppError::InternalServerErrorGeneric(format!("Invalid action plan response: {e}"))
         })?;
@@ -714,8 +714,8 @@ IMPORTANT RULES:
     async fn execute_action_plan(
         &self,
         plan: &ActionPlan,
-        user_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        chronicle_id: Option<crate::DbUuid>,
         session_dek: &SessionDek,
         _persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<Vec<ToolResult>, AppError> {
@@ -750,12 +750,12 @@ IMPORTANT RULES:
                     if action.tool_name == "create_chronicle_event"
                         || action.tool_name == "create_lorebook_entry"
                     {
-                        if let serde_json::Value::Object(ref mut obj) = enriched_parameters {
+                        if let crate::DbJson::Object(ref mut obj) = enriched_parameters {
                             // Add user_id if not present
                             if !obj.contains_key("user_id") {
                                 obj.insert(
                                     "user_id".to_string(),
-                                    serde_json::Value::String(user_id.to_string()),
+                                    crate::DbJson::String(user_id.to_string()),
                                 );
                             }
 
@@ -766,7 +766,7 @@ IMPORTANT RULES:
                                 if let Some(chron_id) = chronicle_id {
                                     obj.insert(
                                         "chronicle_id".to_string(),
-                                        serde_json::Value::String(chron_id.to_string()),
+                                        crate::DbJson::String(chron_id.to_string()),
                                     );
                                 }
                             }
@@ -780,7 +780,7 @@ IMPORTANT RULES:
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert(
                                     "session_dek".to_string(),
-                                    serde_json::Value::String(session_dek_hex),
+                                    crate::DbJson::String(session_dek_hex),
                                 );
                             }
                         } else {
@@ -788,14 +788,14 @@ IMPORTANT RULES:
                             let mut obj = serde_json::Map::new();
                             obj.insert(
                                 "user_id".to_string(),
-                                serde_json::Value::String(user_id.to_string()),
+                                crate::DbJson::String(user_id.to_string()),
                             );
 
                             if action.tool_name == "create_chronicle_event" {
                                 if let Some(chron_id) = chronicle_id {
                                     obj.insert(
                                         "chronicle_id".to_string(),
-                                        serde_json::Value::String(chron_id.to_string()),
+                                        crate::DbJson::String(chron_id.to_string()),
                                     );
                                 }
                             }
@@ -807,19 +807,19 @@ IMPORTANT RULES:
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert(
                                     "session_dek".to_string(),
-                                    serde_json::Value::String(session_dek_hex),
+                                    crate::DbJson::String(session_dek_hex),
                                 );
                             }
 
                             // Merge with existing parameters if they were in a different format
                             if let Ok(existing_obj) = serde_json::from_value::<
-                                serde_json::Map<String, serde_json::Value>,
+                                serde_json::Map<String, crate::DbJson>,
                             >(
                                 action.parameters.clone()
                             ) {
                                 obj.extend(existing_obj);
                             }
-                            enriched_parameters = serde_json::Value::Object(obj);
+                            enriched_parameters = crate::DbJson::Object(obj);
                         }
                     }
 
@@ -1092,7 +1092,7 @@ RULES:
             Ok(response) => {
                 // Parse structured response - no cleanup needed with structured outputs!
                 let content = response.first_content_text_as_str().unwrap_or("{}");
-                let parsed: Result<serde_json::Value, _> = serde_json::from_str(content);
+                let parsed: Result<crate::DbJson, _> = serde_json::from_str(content);
 
                 let generated_name = match parsed {
                     Ok(json) => json
@@ -1138,7 +1138,7 @@ RULES:
     /// Get the character name for a chat session
     async fn get_character_name_for_session(
         &self,
-        chat_session_id: Uuid,
+        chat_session_id: crate::DbUuid,
     ) -> Result<Option<String>, AppError> {
         self.chronicle_service
             .get_chat_session_character_name(chat_session_id)
@@ -1148,7 +1148,7 @@ RULES:
     /// Get the last 3-5 chronicle events in a simple format for deduplication
     async fn get_recent_chronicle_events_simple(
         &self,
-        chronicle_id: Uuid,
+        chronicle_id: crate::DbUuid,
     ) -> Result<String, AppError> {
         use crate::models::chronicle_event::{EventFilter, EventOrderBy};
 
@@ -1584,7 +1584,7 @@ mod tests {
         let messages: Vec<ChatMessage> = vec![];
 
         // Simulate the logic from calculate_conversation_timespan
-        let now = Utc::now();
+        let now = Utc::now().into();
         let (_start_time, duration) = if messages.is_empty() {
             (now, Duration::hours(1))
         } else {
@@ -1600,12 +1600,12 @@ mod tests {
 
     #[test]
     fn test_calculate_conversation_timespan_single_message() {
-        let now = Utc::now();
+        let now = Utc::now().into();
         let message = create_test_message(now, "Test message");
         let messages = vec![message];
 
         // Simulate the logic
-        let mut earliest = Utc::now();
+        let mut earliest = Utc::now().into();
         let mut latest = chrono::DateTime::<chrono::Utc>::MIN_UTC;
 
         for message in &messages {
@@ -1630,7 +1630,7 @@ mod tests {
 
     #[test]
     fn test_calculate_conversation_timespan_multiple_messages() {
-        let now = Utc::now();
+        let now = Utc::now().into();
         let messages = vec![
             create_test_message(now - Duration::hours(2), "First message"),
             create_test_message(now - Duration::hours(1), "Second message"),
@@ -1638,7 +1638,7 @@ mod tests {
         ];
 
         // Simulate the logic
-        let mut earliest = Utc::now();
+        let mut earliest = Utc::now().into();
         let mut latest = chrono::DateTime::<chrono::Utc>::MIN_UTC;
 
         for message in &messages {
@@ -1663,7 +1663,7 @@ mod tests {
 
     #[test]
     fn test_temporal_exclusion_logic() {
-        let now = Utc::now();
+        let now = Utc::now().into();
         let conversation_start = now - Duration::hours(1);
         let _conversation_duration = Duration::hours(1);
 
@@ -1693,7 +1693,7 @@ mod tests {
 
     // Helper function to create test messages with proper encryption
     fn create_test_message(
-        created_at: chrono::DateTime<chrono::Utc>,
+        created_at: crate::DbDateTime,
         content: &str,
     ) -> ChatMessage {
         // Generate a test DEK for encryption
@@ -1750,7 +1750,7 @@ mod tests {
 
     #[test]
     fn test_exclusion_cutoff_calculation() {
-        let conversation_start = Utc::now() - Duration::hours(2);
+        let conversation_start = Utc::now().into() - Duration::hours(2);
         let _conversation_duration = Duration::hours(1);
 
         // This matches the logic in get_recent_chronicle_context

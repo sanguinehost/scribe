@@ -5,8 +5,8 @@
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
--- Create TEXT enum type
--- CREATE TYPE TEXT -- Removed: SQLite uses TEXT for enums
+-- Create account_status enum type
+-- CREATE TYPE account_status AS ENUM ('active', 'locked'); -- Removed: SQLite uses TEXT for enums
 
--- Add TEXT column to users table with default 'active'
-ALTER TABLE users ADD COLUMN TEXT TEXT NOT NULL DEFAULT 'active';
+-- Add account_status column to users table with default 'active'
+ALTER TABLE users ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active';

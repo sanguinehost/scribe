@@ -70,12 +70,12 @@ impl<T> From<NullableEncryptedField<T>> for Option<Option<T>> {
 struct ChatSessionUpdateBuilder {
     system_prompt_ciphertext: NullableEncryptedField<Vec<u8>>,
     system_prompt_nonce: NullableEncryptedField<Vec<u8>>,
-    temperature: DatabaseUpdate<BigDecimal>,
+    temperature: DatabaseUpdate<crate::DbBigDecimal>,
     max_output_tokens: DatabaseUpdate<i32>,
-    frequency_penalty: DatabaseUpdate<BigDecimal>,
-    presence_penalty: DatabaseUpdate<BigDecimal>,
+    frequency_penalty: DatabaseUpdate<crate::DbBigDecimal>,
+    presence_penalty: DatabaseUpdate<crate::DbBigDecimal>,
     top_k: DatabaseUpdate<i32>,
-    top_p: DatabaseUpdate<BigDecimal>,
+    top_p: DatabaseUpdate<crate::DbBigDecimal>,
     seed: DatabaseUpdate<i32>,
     stop_sequences: DatabaseUpdate<Vec<String>>,
     history_management_strategy: DatabaseUpdate<String>,
@@ -84,11 +84,11 @@ struct ChatSessionUpdateBuilder {
     model_provider: DatabaseUpdate<String>,
     gemini_thinking_budget: DatabaseUpdate<i32>,
     gemini_enable_code_execution: DatabaseUpdate<bool>,
-    player_chronicle_id: DatabaseUpdate<Option<Uuid>>,
+    player_chronicle_id: DatabaseUpdate<Option<crate::DbUuid>>,
     agent_mode: DatabaseUpdate<String>,
-    active_custom_persona_id: DatabaseUpdate<Option<Uuid>>,
+    active_custom_persona_id: DatabaseUpdate<Option<crate::DbUuid>>,
     prompt_template_id: DatabaseUpdate<String>,
-    updated_at: DatabaseUpdate<chrono::DateTime<chrono::Utc>>,
+    updated_at: DatabaseUpdate<crate::DbDateTime>,
 }
 
 impl ChatSessionUpdateBuilder {
@@ -214,12 +214,12 @@ struct ChatSessionUpdateChangeset {
     system_prompt_ciphertext: Option<Option<Vec<u8>>>,
     /// Encrypted system prompt nonce - uses Option<Option<T>> pattern for nullable fields
     system_prompt_nonce: Option<Option<Vec<u8>>>,
-    temperature: Option<BigDecimal>,
+    temperature: Option<crate::DbBigDecimal>,
     max_output_tokens: Option<i32>,
-    frequency_penalty: Option<BigDecimal>,
-    presence_penalty: Option<BigDecimal>,
+    frequency_penalty: Option<crate::DbBigDecimal>,
+    presence_penalty: Option<crate::DbBigDecimal>,
     top_k: Option<i32>,
-    top_p: Option<BigDecimal>,
+    top_p: Option<crate::DbBigDecimal>,
     seed: Option<i32>,
     stop_sequences: Option<Vec<String>>,
     history_management_strategy: Option<String>,
@@ -228,22 +228,22 @@ struct ChatSessionUpdateChangeset {
     model_provider: Option<String>,
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
-    player_chronicle_id: Option<Option<Uuid>>,
+    player_chronicle_id: Option<Option<crate::DbUuid>>,
     agent_mode: Option<String>,
-    active_custom_persona_id: Option<Option<Uuid>>,
+    active_custom_persona_id: Option<Option<crate::DbUuid>>,
     prompt_template_id: Option<String>,
-    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_at: Option<crate::DbDateTime>,
 }
 /// Verifies session ownership and returns the owner ID
 fn verify_session_ownership(
     conn: &mut diesel::PgConnection,
-    session_id: Uuid,
-    user_id: Uuid,
+    session_id: crate::DbUuid,
+    user_id: crate::DbUuid,
 ) -> Result<(), AppError> {
     let owner_id_result = chat_sessions::table
         .filter(chat_sessions::id.eq(session_id))
         .select(chat_sessions::user_id)
-        .first::<Uuid>(conn)
+        .first::<crate::DbUuid>(conn)
         .optional()
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -267,8 +267,8 @@ fn decrypt_system_prompt(
     ciphertext: Option<&Vec<u8>>,
     nonce: Option<&Vec<u8>>,
     user_dek: Option<&SecretBox<Vec<u8>>>,
-    session_id: Uuid,
-    user_id: Uuid,
+    session_id: crate::DbUuid,
+    user_id: crate::DbUuid,
 ) -> Result<Option<String>, AppError> {
     info!(%session_id, %user_id,
           has_ciphertext = ciphertext.is_some(),
@@ -322,14 +322,13 @@ fn decrypt_system_prompt(
 #[instrument(skip(pool, user_dek), err)]
 pub async fn get_session_settings(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::DbUuid,
+    session_id: crate::DbUuid,
     user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<ChatSettingsResponse, AppError> {
-    let conn = pool.get().await?;
     let user_dek_cloned = user_dek.map(|dek| SecretBox::new(Box::new(dek.expose_secret().clone())));
 
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         verify_session_ownership(conn, session_id, user_id)?;
         info!(%session_id, %user_id, "Fetching settings for owned session");
         let settings_tuple = chat_sessions::table
@@ -423,8 +422,7 @@ pub async fn get_session_settings(
               "get_session_settings: Response created successfully");
 
         Ok(response)
-    })
-    .await?
+    }).await
 }
 /// Handles system prompt encryption for update
 fn handle_system_prompt_update(
@@ -534,7 +532,7 @@ fn apply_payload_to_builder(
 /// Executes the database update if there are changes
 fn execute_update(
     update_builder: ChatSessionUpdateBuilder,
-    session_id: Uuid,
+    session_id: crate::DbUuid,
     transaction_conn: &mut diesel::PgConnection,
 ) -> Result<(), AppError> {
     if update_builder.has_changes() {
@@ -559,16 +557,15 @@ fn execute_update(
 #[instrument(skip(pool, payload), err)]
 pub async fn update_session_settings(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::DbUuid,
+    session_id: crate::DbUuid,
     payload: UpdateChatSettingsRequest,
     user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<ChatSettingsResponse, AppError> {
-    let conn = pool.get().await?;
     let user_dek_owned_opt: Option<SecretBox<Vec<u8>>> =
         user_dek.map(|dek_ref| SecretBox::new(Box::new(dek_ref.expose_secret().clone())));
 
-    conn.interact(move |conn_interaction| {
+    crate::db::with_conn(pool, move |conn_interaction| {
         conn_interaction.transaction::<_, AppError, _>(|transaction_conn| {
             verify_session_ownership(transaction_conn, session_id, user_id)?;
 
@@ -578,7 +575,7 @@ pub async fn update_session_settings(
             Ok(())
         })
     })
-    .await??;
+    .await?;
 
     get_session_settings(pool, user_id, session_id, user_dek).await
 }

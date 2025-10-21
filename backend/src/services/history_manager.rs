@@ -214,7 +214,7 @@ mod tests {
     use chrono::Utc;
     use uuid::Uuid;
 
-    fn create_test_message(id: Uuid, role: MessageRole, content: &str) -> ChatMessage {
+    fn create_test_message(id: crate::DbUuid, role: MessageRole, content: &str) -> ChatMessage {
         ChatMessage {
             id,
             session_id: Uuid::new_v4(),

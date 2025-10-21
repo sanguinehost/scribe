@@ -6,6 +6,5 @@
 -- ================================================================
 
 -- Your SQL goes here
-ALTER TABLE users
-ADD COLUMN dek_nonce BLOB NOT NULL DEFAULT '\x',
-ADD COLUMN recovery_dek_nonce BLOB;
+ALTER TABLE users ADD COLUMN dek_nonce BLOB NOT NULL DEFAULT '\x';
+ALTER TABLE users ADD COLUMN recovery_dek_nonce BLOB;

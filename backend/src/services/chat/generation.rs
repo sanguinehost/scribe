@@ -81,8 +81,8 @@ use super::{
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
     state: Arc<AppState>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::DbUuid,
+    session_id: crate::DbUuid,
     user_message_content: String,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
     frontend_history: Option<Vec<crate::models::chats::ApiChatMessage>>,
@@ -91,18 +91,15 @@ pub async fn get_session_data_for_generation(
     info!(target: "chat_service_persona_debug", %session_id, %user_id, "Entering get_session_data_for_generation.");
 
     // --- Determine Effective System Prompt & Lorebook IDs (Pre-Main-Interact) ---
-    let maybe_active_persona_id_from_session: Option<Uuid> = {
-        let conn_clone_for_persona_check = state.pool.get().await?;
-        conn_clone_for_persona_check
-            .interact(move |c| {
-                chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id))
-                    .filter(chat_sessions::user_id.eq(user_id))
-                    .select(chat_sessions::active_custom_persona_id)
-                    .first::<Option<Uuid>>(c)
-            })
-            .await??
-    };
+    let maybe_active_persona_id_from_session: Option<crate::DbUuid> = crate::db::with_conn(&state.pool, move |c| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .filter(chat_sessions::user_id.eq(user_id))
+            .select(chat_sessions::active_custom_persona_id)
+            .first::<Option<crate::DbUuid>>(c)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await?;
     info!(target: "chat_service_persona_debug", %session_id, ?maybe_active_persona_id_from_session, "Fetched active_custom_persona_id from session.");
 
     let mut effective_system_prompt: Option<String> = None;
@@ -111,31 +108,17 @@ pub async fn get_session_data_for_generation(
     if let Some(persona_id) = maybe_active_persona_id_from_session {
         if let Some(ref dek_arc_outer) = user_dek_secret_box {
             let user_for_service_call: crate::models::users::User = {
-                let conn_for_user_fetch = state
-                    .pool
-                    .get()
-                    .await
-                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                let user_db_query_result = conn_for_user_fetch
-                    .interact(move |c| {
-                        crate::schema::users::table
-                            .filter(crate::schema::users::id.eq(user_id))
-                            .select(crate::models::users::UserDbQuery::as_select())
-                            .first::<crate::models::users::UserDbQuery>(c)
-                    })
-                    .await
-                    .map_err(|e| {
-                        AppError::InternalServerErrorGeneric(format!(
-                            "DB interact error fetching user_db_query: {e}"
-                        ))
-                    })?;
-
-                let user_db_query = user_db_query_result.map_err(|e| {
-                    AppError::NotFound(format!(
-                        "UserDbQuery for user {} not found: {e}",
-                        loggable_user_id(user_id)
-                    ))
-                })?;
+                let user_db_query = crate::db::with_conn(&state.pool, move |c| {
+                    crate::schema::users::table
+                        .filter(crate::schema::users::id.eq(user_id))
+                        .select(crate::models::users::UserDbQuery::as_select())
+                        .first::<crate::models::users::UserDbQuery>(c)
+                        .map_err(|e| AppError::NotFound(format!(
+                            "UserDbQuery for user {} not found: {e}",
+                            loggable_user_id(user_id)
+                        )))
+                })
+                .await?;
                 user_db_query.into()
             };
             let dek_ref_for_service: Option<&SecretBox<Vec<u8>>> = Some(dek_arc_outer.as_ref());
@@ -222,16 +205,11 @@ pub async fn get_session_data_for_generation(
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
         agent_mode_from_session,       // The agent mode for context enrichment
     ) = {
-        let conn = state
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
         let frontend_history_for_interact = frontend_history.clone(); // Clone for closure
 
-        conn.interact(move |conn_interaction| {
+        crate::db::with_conn(&state.pool, move |conn_interaction| {
             // Split into two queries to respect Diesel's tuple size limitation
             // Query 1: Basic session settings (15 fields)
             let (
@@ -273,15 +251,15 @@ pub async fn get_session_data_for_generation(
                 .first::<(
                     String,
                     i32,
-                    Option<Uuid>,
+                    Option<crate::DbUuid>,
                     Option<Vec<u8>>,
                     Option<Vec<u8>>,
-                    Option<BigDecimal>,
+                    Option<crate::DbBigDecimal>,
                     Option<i32>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
+                    Option<crate::DbBigDecimal>,
+                    Option<crate::DbBigDecimal>,
                     Option<i32>,
-                    Option<BigDecimal>,
+                    Option<crate::DbBigDecimal>,
                     Option<i32>,
                     Option<Vec<Option<String>>>,
                     String,
@@ -307,7 +285,7 @@ pub async fn get_session_data_for_generation(
                         chat_sessions::player_chronicle_id,
                         chat_sessions::agent_mode,
                     ))
-                    .first::<(Option<i32>, Option<bool>, Option<Uuid>, Option<String>)>(
+                    .first::<(Option<i32>, Option<bool>, Option<crate::DbUuid>, Option<String>)>(
                         conn_interaction,
                     )
                     .map_err(|e| match e {
@@ -463,12 +441,11 @@ pub async fn get_session_data_for_generation(
                 agent_mode,
             ))
         })
-        .await
-        .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {e}")))??
+        .await?
     };
 
     // --- Retrieve Comprehensive Active Lorebook IDs (now that character_id is available) ---
-    let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
+    let active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>> = {
         let pool_clone_lore = state.pool.clone();
         let user_id_clone = user_id;
         let session_id_clone = session_id;
@@ -477,20 +454,16 @@ pub async fn get_session_data_for_generation(
             AppError::BadRequest("Character ID required for lorebook lookup".to_string())
         })?;
 
-        match pool_clone_lore
-            .get()
-            .await
-            .map_err(AppError::from)?
-            .interact(move |conn_lore| {
-                ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
-                    conn_lore,
-                    session_id_clone,
-                    character_id_clone,
-                    user_id_clone,
-                )
-                .map_err(AppError::from)
-            })
-            .await
+        match crate::db::with_conn(&pool_clone_lore, move |conn_lore| {
+            ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
+                conn_lore,
+                session_id_clone,
+                character_id_clone,
+                user_id_clone,
+            )
+            .map_err(AppError::from)
+        })
+        .await
         {
             Ok(Ok(ids)) => ids,
             Ok(Err(e)) => {
@@ -566,12 +539,12 @@ pub async fn get_session_data_for_generation(
                     variant_count: 0,
                     current_variant_index: 0,
                     credits_charged: 0,
-                    credits_cost: bigdecimal::BigDecimal::from(0),
+                    credits_cost: crate::DbBigDecimal::from(0),
                     // New cost tracking fields
-                    actual_cost: bigdecimal::BigDecimal::from(0),
-                    modified_cost: bigdecimal::BigDecimal::from(0),
+                    actual_cost: crate::DbBigDecimal::from(0),
+                    modified_cost: crate::DbBigDecimal::from(0),
                     credit_cost: 0,
-                    actual_charge: bigdecimal::BigDecimal::from(0),
+                    actual_charge: crate::DbBigDecimal::from(0),
                 }
             })
             .collect()
@@ -638,18 +611,15 @@ pub async fn get_session_data_for_generation(
     // Enforce subscription tier's max_context_tokens limit
     #[cfg(feature = "payment")]
     {
-        let conn_for_plan_check = state.pool.get().await?;
         let subscription_service =
             SubscriptionService::new(state.config.as_ref().clone(), EncryptionService::new());
 
         // Get user's subscription
         let subscription_service_clone_1 = subscription_service.clone();
-        let user_subscription = conn_for_plan_check
-            .interact(move |conn| {
-                subscription_service_clone_1.get_user_subscription_sync(conn, user_id)
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        let user_subscription = crate::db::with_conn(&state.pool, move |conn| {
+            subscription_service_clone_1.get_user_subscription_sync(conn, user_id)
+        })
+        .await?;
 
         // Get plan features
         let plan_type = user_subscription
@@ -657,15 +627,12 @@ pub async fn get_session_data_for_generation(
             .map(|s| s.plan_type.clone())
             .unwrap_or_else(|| "free".to_string());
 
-        let conn_for_features = state.pool.get().await?;
         let subscription_service_clone_2 = subscription_service.clone();
         let plan_type_for_query = plan_type.clone();
-        let plan_features = conn_for_features
-            .interact(move |conn| {
-                subscription_service_clone_2.get_plan_features_sync(conn, &plan_type_for_query)
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        let plan_features = crate::db::with_conn(&state.pool, move |conn| {
+            subscription_service_clone_2.get_plan_features_sync(conn, &plan_type_for_query)
+        })
+        .await?;
 
         // Enforce max_context_tokens if set
         if let Some(max_tokens) = plan_features.and_then(|pf| pf.max_context_tokens) {
@@ -879,7 +846,7 @@ pub async fn get_session_data_for_generation(
             {
                 Ok(mut older_chat_chunks) => {
                     info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                    let recent_message_ids: std::collections::HashSet<Uuid> =
+                    let recent_message_ids: std::collections::HashSet<crate::DbUuid> =
                         managed_recent_history.iter().map(|msg| msg.id).collect();
                     debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
@@ -1090,12 +1057,12 @@ pub async fn get_session_data_for_generation(
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: bigdecimal::BigDecimal::from(0),
+                credits_cost: crate::DbBigDecimal::from(0),
                 // New cost tracking fields
-                actual_cost: bigdecimal::BigDecimal::from(0),
-                modified_cost: bigdecimal::BigDecimal::from(0),
+                actual_cost: crate::DbBigDecimal::from(0),
+                modified_cost: crate::DbBigDecimal::from(0),
                 credit_cost: 0,
-                actual_charge: bigdecimal::BigDecimal::from(0),
+                actual_charge: crate::DbBigDecimal::from(0),
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -1121,15 +1088,15 @@ pub async fn get_session_data_for_generation(
     Ok((
         managed_recent_history, // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
         final_effective_system_prompt, // 1: system_prompt (Option<String>)
-        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<Uuid>>)
-        session_character_id_db, // 3: session_character_id (Option<Uuid>)
+        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<crate::DbUuid>>)
+        session_character_id_db, // 3: session_character_id (Option<crate::DbUuid>)
         raw_character_system_prompt, // 4: raw_character_system_prompt (Option<String>)
-        session_temperature_db, // 5: temperature (Option<BigDecimal>)
+        session_temperature_db, // 5: temperature (Option<crate::DbBigDecimal>)
         session_max_output_tokens_db, // 6: max_output_tokens (Option<i32>)
-        session_frequency_penalty_db, // 7: frequency_penalty (Option<BigDecimal>)
-        session_presence_penalty_db, // 8: presence_penalty (Option<BigDecimal>)
+        session_frequency_penalty_db, // 7: frequency_penalty (Option<crate::DbBigDecimal>)
+        session_presence_penalty_db, // 8: presence_penalty (Option<crate::DbBigDecimal>)
         session_top_k_db,       // 9: top_k (Option<i32>)
-        session_top_p_db,       // 10: top_p (Option<BigDecimal>)
+        session_top_p_db,       // 10: top_p (Option<crate::DbBigDecimal>)
         session_seed_db,        // 11: seed (Option<i32>) - MOVED
         session_model_name_db,  // 12: model_name (String) - MOVED
         session_model_provider_db, // 13: model_provider (Option<String>) - NEW
@@ -1144,23 +1111,23 @@ pub async fn get_session_data_for_generation(
         history_management_strategy_db_val, // 19: history_management_strategy (String) - MOVED
         history_management_limit_db_val,    // 20: history_management_limit (i32) - MOVED
         user_persona_name,                  // 21: user_persona_name (Option<String>) - NEW
-        player_chronicle_id_from_session,   // 22: player_chronicle_id (Option<Uuid>) - NEW
+        player_chronicle_id_from_session,   // 22: player_chronicle_id (Option<crate::DbUuid>) - NEW
         agent_mode_from_session,            // 23: agent_mode (Option<String>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
 pub struct StreamAiParams {
     pub state: Arc<AppState>,
-    pub session_id: Uuid,
-    pub user_id: Uuid,
+    pub session_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub incoming_genai_messages: Vec<GenAiChatMessage>, // MODIFIED: Changed type and name
     pub system_prompt: Option<String>,
-    pub temperature: Option<BigDecimal>,
+    pub temperature: Option<crate::DbBigDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub frequency_penalty: Option<BigDecimal>, // Mark as unused for now
-    pub presence_penalty: Option<BigDecimal>,  // Mark as unused for now
+    pub frequency_penalty: Option<crate::DbBigDecimal>, // Mark as unused for now
+    pub presence_penalty: Option<crate::DbBigDecimal>,  // Mark as unused for now
     pub top_k: Option<i32>,                    // Mark as unused for now
-    pub top_p: Option<BigDecimal>,
+    pub top_p: Option<crate::DbBigDecimal>,
     pub stop_sequences: Option<Vec<String>>, // New parameter
     pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
@@ -1170,8 +1137,8 @@ pub struct StreamAiParams {
     pub request_thinking: bool,            // New parameter
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub character_name: Option<String>,    // For prefill generation
-    pub player_chronicle_id: Option<Uuid>, // For narrative processing
-    pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
+    pub player_chronicle_id: Option<crate::DbUuid>, // For narrative processing
+    pub variant_of: Option<crate::DbUuid>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool,     // Whether credits should be charged for this message
 }
 
@@ -1224,8 +1191,8 @@ pub struct ExecChatWithRetryParams {
     pub model_provider: Option<String>,
     pub chat_request: genai::chat::ChatRequest,
     pub chat_options: Option<genai::chat::ChatOptions>,
-    pub session_id: Uuid,
-    pub user_id: Uuid,                     // Added for per-user AI client selection
+    pub session_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,                     // Added for per-user AI client selection
     pub character_name: Option<String>,    // For prefill generation
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
 }
@@ -1844,47 +1811,29 @@ pub async fn stream_ai_response_and_save_message(
                             let model_for_tracking = service_model_name_clone_full.clone();
                             let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0) as i64;
 
-                            // Get a connection from the pool for usage tracking
-                            match state_for_full_save.pool.get().await {
-                                Ok(conn) => {
-                                    let tracking_result = conn.interact(move |c| {
-                                        soft_limit_service.record_usage(
-                                            c,
-                                            user_id_for_tracking,
-                                            &model_for_tracking,
-                                            tokens_for_tracking,
-                                        )
-                                    }).await;
+                            // Track usage with unified database helper
+                            let tracking_result = crate::db::with_conn(&state_for_full_save.pool, move |c| {
+                                soft_limit_service.record_usage(
+                                    c,
+                                    user_id_for_tracking,
+                                    &model_for_tracking,
+                                    tokens_for_tracking,
+                                )
+                            }).await;
 
-                                    match tracking_result {
-                                        Ok(Ok(daily_usage)) => {
-                                            debug!(
-                                                session_id = %full_session_id_clone,
-                                                message_count = daily_usage.message_count,
-                                                "Successfully updated daily message count"
-                                            );
-                                        }
-                                        Ok(Err(e)) => {
-                                            warn!(
-                                                session_id = %full_session_id_clone,
-                                                error = ?e,
-                                                "Failed to update daily message count, but continuing"
-                                            );
-                                        }
-                                        Err(e) => {
-                                            warn!(
-                                                session_id = %full_session_id_clone,
-                                                error = ?e,
-                                                "Database interaction error during usage tracking, but continuing"
-                                            );
-                                        }
-                                    }
+                            match tracking_result {
+                                Ok(daily_usage) => {
+                                    debug!(
+                                        session_id = %full_session_id_clone,
+                                        message_count = daily_usage.message_count,
+                                        "Successfully updated daily message count"
+                                    );
                                 }
                                 Err(e) => {
                                     warn!(
                                         session_id = %full_session_id_clone,
                                         error = ?e,
-                                        "Failed to get database connection for usage tracking, but continuing"
+                                        "Failed to update daily message count, but continuing"
                                     );
                                 }
                             }
@@ -2145,7 +2094,7 @@ fn build_raw_prompt_debug(
 async fn get_message_content_with_variant(
     message: &DbChatMessage,
     pool: &crate::db::DbPool,
-    user_id: Uuid,
+    user_id: crate::DbUuid,
     dek: &secrecy::SecretBox<Vec<u8>>,
 ) -> Result<String, AppError> {
     if message.current_variant_index == 0 {
@@ -2180,21 +2129,16 @@ async fn get_message_content_with_variant(
         let message_id = message.id;
         let current_variant_index = message.current_variant_index;
 
-        let variant_opt = pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| {
-                message_variants::table
-                    .filter(message_variants::parent_message_id.eq(message_id))
-                    .filter(message_variants::user_id.eq(user_id))
-                    .filter(message_variants::variant_index.eq(current_variant_index))
-                    .first::<MessageVariant>(conn)
-                    .optional()
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(e.to_string()))?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let variant_opt = crate::db::with_conn(pool, move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::user_id.eq(user_id))
+                .filter(message_variants::variant_index.eq(current_variant_index))
+                .first::<MessageVariant>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
 
         if let Some(variant) = variant_opt {
             // Decrypt variant content

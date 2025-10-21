@@ -6,10 +6,10 @@
 -- ================================================================
 
 -- Drop old plaintext columns and add encrypted ones for chat sessions user data
-ALTER TABLE chat_sessions
-DROP COLUMN system_prompt,
-DROP COLUMN title,
-ADD COLUMN system_prompt_ciphertext BLOB,
-ADD COLUMN system_prompt_nonce BLOB,
-ADD COLUMN title_ciphertext BLOB,
-ADD COLUMN title_nonce BLOB;
+-- SQLite requires separate ALTER TABLE statements for DROP and ADD operations
+ALTER TABLE chat_sessions DROP COLUMN system_prompt;
+ALTER TABLE chat_sessions DROP COLUMN title;
+ALTER TABLE chat_sessions ADD COLUMN system_prompt_ciphertext BLOB;
+ALTER TABLE chat_sessions ADD COLUMN system_prompt_nonce BLOB;
+ALTER TABLE chat_sessions ADD COLUMN title_ciphertext BLOB;
+ALTER TABLE chat_sessions ADD COLUMN title_nonce BLOB;

@@ -5,5 +5,7 @@
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
-ALTER TABLE chat_character_overrides
-ADD CONSTRAINT chat_character_overrides_session_id_field_name_key UNIQUE (chat_session_id, field_name);
+-- SQLite doesn't support ALTER TABLE ADD CONSTRAINT for UNIQUE constraints
+-- Use CREATE UNIQUE INDEX instead
+CREATE UNIQUE INDEX idx_chat_character_overrides_session_field
+ON chat_character_overrides(chat_session_id, field_name);

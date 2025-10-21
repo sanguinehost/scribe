@@ -39,8 +39,8 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct SessionRequest {
     pub id: String,
-    pub user_id: Uuid,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub user_id: crate::DbUuid,
+    pub expires_at: crate::DbDateTime,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,8 +52,8 @@ pub struct SessionWithUserResponse {
 #[derive(Debug, Serialize)]
 pub struct SessionResponse {
     pub id: String, // This is the session_id from tower_sessions
-    pub user_id: Uuid,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub user_id: crate::DbUuid,
+    pub expires_at: crate::DbDateTime,
 }
 
 // New response structure for successful login
@@ -61,7 +61,7 @@ pub struct SessionResponse {
 pub struct LoginSuccessResponse {
     pub user: AuthResponse,
     pub session_id: String,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: crate::DbDateTime,
 }
 
 pub fn auth_routes() -> Router<AppState> {
@@ -91,13 +91,10 @@ pub async fn verify_email_handler(
     let pool = state.pool.clone();
     let token = payload.token;
 
-    let verification_result = pool
-        .get()
-        .await
-        .map_err(AppError::from)?
-        .interact(move |conn| auth::verify_email(conn, &token))
-        .await
-        .map_err(AppError::from)?;
+    let verification_result = crate::db::with_conn(&pool, move |conn| {
+        auth::verify_email(conn, &token).map_err(AppError::from)
+    })
+    .await?;
 
     match verification_result {
         Ok(_) => {
@@ -352,7 +349,7 @@ pub async fn login_handler(
 
             // Log security event for potential credential stuffing detection
             let security_event = SecurityEvent::AuthFailure {
-                timestamp: chrono::Utc::now(),
+                timestamp: chrono::Utc::now().into(),
                 user_hash: "unknown".to_string(),
                 ip_address: client_ip.clone(),
                 failure_reason: "wrong_credentials".to_string(),
@@ -580,23 +577,41 @@ pub async fn create_session_handler(
     let pool = state.pool.clone();
 
     // Insert the session into the database
-    let session = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
+    let session = crate::db::with_conn(&pool, move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        {
             diesel::insert_into(sessions::table)
                 .values((
-                    sessions::id.eq(payload.id),
+                    sessions::id.eq(&payload.id),
                     sessions::expires.eq(payload.expires_at),
                     sessions::session.eq(format!("{{\"userId\":\"{}\"}}", payload.user_id)),
                 ))
                 .returning((sessions::id, sessions::expires))
-                .get_result::<(String, Option<chrono::DateTime<chrono::Utc>>)>(conn)
+                .get_result::<(String, Option<crate::DbDateTime>)>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING, so we insert and query back
+            diesel::insert_into(sessions::table)
+                .values((
+                    sessions::id.eq(&payload.id),
+                    sessions::expires.eq(payload.expires_at),
+                    sessions::session.eq(format!("{{\"userId\":\"{}\"}}", payload.user_id)),
+                ))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            sessions::table
+                .filter(sessions::id.eq(payload.id))
+                .select((sessions::id, sessions::expires))
+                .first::<(String, Option<crate::DbDateTime>)>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        }
+    })
+    .await?;
 
     let session_response = SessionResponse {
         id: session.0,
@@ -684,18 +699,16 @@ pub async fn extend_session_handler(
     let pool = state.pool.clone();
 
     // Update the session expiration
-    let new_expiry = chrono::Utc::now() + chrono::Duration::days(30);
+    let new_expiry = chrono::Utc::now().into() + chrono::Duration::days(30);
 
-    let session = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
+    let session = crate::db::with_conn(&pool, move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        {
             diesel::update(sessions::table)
-                .filter(sessions::id.eq(session_id))
+                .filter(sessions::id.eq(&session_id))
                 .set(sessions::expires.eq(new_expiry))
                 .returning((sessions::id, sessions::expires, sessions::session))
-                .get_result::<(String, Option<chrono::DateTime<chrono::Utc>>, String)>(conn)
+                .get_result::<(String, Option<crate::DbDateTime>, String)>(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
                         AppError::NotFound("Session not found".to_string())
@@ -703,12 +716,35 @@ pub async fn extend_session_handler(
                         AppError::DatabaseQueryError(e.to_string())
                     }
                 })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING on UPDATE, so we update and query back
+            diesel::update(sessions::table)
+                .filter(sessions::id.eq(&session_id))
+                .set(sessions::expires.eq(new_expiry))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            sessions::table
+                .filter(sessions::id.eq(session_id))
+                .select((sessions::id, sessions::expires, sessions::session))
+                .first::<(String, Option<crate::DbDateTime>, String)>(conn)
+                .map_err(|e| {
+                    if e == diesel::result::Error::NotFound {
+                        AppError::NotFound("Session not found".to_string())
+                    } else {
+                        AppError::DatabaseQueryError(e.to_string())
+                    }
+                })
+        }
+    })
+    .await?;
 
     // Extract user ID from session JSON
-    let session_json: serde_json::Value = serde_json::from_str(&session.2)
+    let session_json: crate::DbJson = serde_json::from_str(&session.2)
         .map_err(|e| AppError::BadRequest(format!("Invalid session data: {e}")))?;
 
     let user_id = session_json["userId"]
@@ -716,7 +752,8 @@ pub async fn extend_session_handler(
         .ok_or_else(|| AppError::BadRequest("Invalid session data: missing userId".to_string()))?;
 
     let user_id = Uuid::parse_str(user_id)
-        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?;
+        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?
+        .into();
 
     let session_response = SessionResponse {
         id: session.0,
@@ -737,17 +774,13 @@ pub async fn delete_session_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let pool = state.pool.clone();
 
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::delete(sessions::table)
-                .filter(sessions::id.eq(session_id))
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    crate::db::with_conn(&pool, move |conn| {
+        diesel::delete(sessions::table)
+            .filter(sessions::id.eq(session_id))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -758,55 +791,52 @@ pub async fn delete_session_handler(
 /// Returns `AppError` if database operations fail or session deletion fails
 pub async fn delete_user_sessions_handler(
     State(state): State<AppState>,
-    Path(user_id): Path<Uuid>,
+    Path(user_id): Path<crate::DbUuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = state.pool.clone();
 
     // Find all sessions for this user and delete them
     // This is a bit tricky since the userId is stored in the JSON session data
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            // Get all sessions
-            let all_sessions = sessions::table
-                .select((sessions::id, sessions::session))
-                .load::<(String, String)>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    crate::db::with_conn(&pool, move |conn| {
+        // Get all sessions
+        let all_sessions = sessions::table
+            .select((sessions::id, sessions::session))
+            .load::<(String, String)>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            // Filter sessions belonging to the user
-            let user_session_ids: Vec<String> = all_sessions
-                .into_iter()
-                .filter_map(|(session_db_id, session_data): (String, String)| {
-                    // Renamed id to session_db_id
-                    // Try to parse the session JSON
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&session_data) {
-                        // Extract the userId if it exists
-                        if let Some(session_user_id) = json["userId"].as_str() {
-                            // Check if it matches our target userId
-                            if let Ok(parsed_id) = Uuid::parse_str(session_user_id) {
-                                if parsed_id == user_id {
-                                    return Some(session_db_id); // Return renamed variable
-                                }
+        // Filter sessions belonging to the user
+        let user_session_ids: Vec<String> = all_sessions
+            .into_iter()
+            .filter_map(|(session_db_id, session_data): (String, String)| {
+                // Renamed id to session_db_id
+                // Try to parse the session JSON
+                if let Ok(json) = serde_json::from_str::<crate::DbJson>(&session_data) {
+                    // Extract the userId if it exists
+                    if let Some(session_user_id) = json["userId"].as_str() {
+                        // Check if it matches our target userId
+                        if let Ok(parsed_id) = Uuid::parse_str(session_user_id) {
+                            let parsed_id: crate::DbUuid = parsed_id.into();
+                            if parsed_id == user_id {
+                                return Some(session_db_id); // Return renamed variable
                             }
                         }
                     }
-                    None
-                })
-                .collect();
+                }
+                None
+            })
+            .collect();
 
-            // Delete the matching sessions
-            if !user_session_ids.is_empty() {
-                diesel::delete(sessions::table)
-                    .filter(sessions::id.eq_any(user_session_ids))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-            }
+        // Delete the matching sessions
+        if !user_session_ids.is_empty() {
+            diesel::delete(sessions::table)
+                .filter(sessions::id.eq_any(user_session_ids))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
 
-            Ok::<(), AppError>(())
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        Ok::<(), AppError>(())
+    })
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -827,16 +857,11 @@ async fn get_current_user_handler(
 
     info!(%user_id, "Fetching current user details from database using auth::get_user");
 
-    let user = pool
-        .get()
-        .await
-        .map_err(AppError::from)?
-        .interact(move |conn| {
-            // Call the refactored function from auth module
-            crate::auth::get_user(conn, user_id)
-        })
-        .await
-        .map_err(AppError::from)??; // Double ?? handles InteractError from pool and then AuthError from get_user via AppError::from
+    let user = crate::db::with_conn(&pool, move |conn| {
+        // Call the refactored function from auth module
+        crate::auth::get_user(conn, user_id).map_err(AppError::from)
+    })
+    .await?;
 
     Ok(Json(user))
 }
@@ -865,14 +890,10 @@ pub async fn change_password_handler(
     // 3. Fetch full current user details from DB (needed for salts, encrypted DEK)
     // We need a fresh copy to ensure we have the latest kek_salt and encrypted_dek.
     debug!(user_id = %authenticated_user.id, "Fetching full user details from DB for password change.");
-    let current_db_user = state
-        .pool
-        .get()
-        .await
-        .map_err(AppError::from)?
-        .interact(move |conn| crate::auth::get_user(conn, authenticated_user.id))
-        .await
-        .map_err(AppError::from)??; // Double ?? for InteractError then AuthError
+    let current_db_user = crate::db::with_conn(&state.pool, move |conn| {
+        crate::auth::get_user(conn, authenticated_user.id).map_err(AppError::from)
+    })
+    .await?;
 
     // 4. Call the core password change logic
     debug!(user_id = %current_db_user.id, "Calling auth::change_user_password function.");

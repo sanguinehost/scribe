@@ -644,7 +644,7 @@ impl Config {
         let config_content = std::fs::read_to_string(&self.payment.subscription_config_path)
             .map_err(|e| anyhow::anyhow!("Failed to read subscription config: {}", e))?;
 
-        let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
+        let tiers_config: crate::DbJson = serde_json::from_str(&config_content)
             .map_err(|e| anyhow::anyhow!("Invalid subscription config JSON: {}", e))?;
 
         // Validate required sections exist
@@ -691,7 +691,7 @@ impl Config {
     fn validate_tier_config(
         &self,
         tier_name: &str,
-        tier_config: &serde_json::Value,
+        tier_config: &crate::DbJson,
     ) -> Result<(), anyhow::Error> {
         // Required fields for all tiers
         let required_fields = ["display_name", "limits", "credits", "models"];
@@ -772,7 +772,7 @@ impl Config {
     #[cfg(feature = "payment")]
     fn validate_credit_system_config(
         &self,
-        credit_system: &serde_json::Value,
+        credit_system: &crate::DbJson,
     ) -> Result<(), anyhow::Error> {
         // Check required fields
         if credit_system.get("enabled").is_none() {
@@ -826,7 +826,7 @@ impl Config {
     #[cfg(feature = "payment")]
     fn validate_feature_flags(
         &self,
-        feature_flags: &serde_json::Value,
+        feature_flags: &crate::DbJson,
     ) -> Result<(), anyhow::Error> {
         // Check required feature flags exist
         let required_flags = ["credits_enabled", "soft_limits_enabled"];

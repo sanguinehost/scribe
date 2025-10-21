@@ -1,7 +1,8 @@
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 use crate::errors::AppError;
 use crate::models::users::User;
@@ -37,8 +38,8 @@ struct DecryptedPersonaFields {
 #[diesel(table_name = crate::schema::user_personas)]
 #[diesel(treat_none_as_null = true)]
 pub struct UserPersona {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub name: String,                               // In schema.rs: Varchar
     pub description: Vec<u8>,                       // In schema.rs: Bytea (NOT NULL)
     pub spec: Option<String>,                       // In schema.rs: Nullable<Varchar>
@@ -61,8 +62,8 @@ pub struct UserPersona {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
 
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 impl std::fmt::Debug for UserPersona {
@@ -148,8 +149,8 @@ impl std::fmt::Debug for UserPersona {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct UserPersonaDataForClient {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub name: String,
     pub description: String, // Decrypted
     pub spec: Option<String>,
@@ -162,8 +163,8 @@ pub struct UserPersonaDataForClient {
     pub post_history_instructions: Option<String>, // Decrypted
     pub tags: Option<Vec<Option<String>>>,
     pub avatar: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 impl UserPersona {
@@ -435,7 +436,7 @@ mod tests {
     use chrono::Utc;
     use secrecy::SecretBox;
     use serde_json;
-    use uuid::Uuid;
+    use crate::DbUuid as Uuid;
 
     fn generate_dummy_dek_for_persona_tests() -> SecretBox<Vec<u8>> {
         // Use a fixed, known key for reproducible tests if needed, or random for general tests.

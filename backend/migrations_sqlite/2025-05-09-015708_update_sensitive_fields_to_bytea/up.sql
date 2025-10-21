@@ -5,14 +5,12 @@
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
--- Alter chat_messages table
-ALTER TABLE chat_messages
-ALTER COLUMN content TYPE BLOB USING content::BLOB;
+-- SQLite doesn't support ALTER COLUMN TYPE
+-- However, SQLite is type-agnostic: TEXT columns can store BLOB data and vice versa
+-- The existing TEXT columns will work fine for storing encrypted binary data
+-- No schema changes needed for SQLite
 
--- Alter characters table
-ALTER TABLE characters
-ALTER COLUMN description TYPE BLOB USING description::BLOB,
-ALTER COLUMN personality TYPE BLOB USING personality::BLOB,
-ALTER COLUMN scenario TYPE BLOB USING scenario::BLOB,
-ALTER COLUMN first_mes TYPE BLOB USING first_mes::BLOB,
-ALTER COLUMN mes_example TYPE BLOB USING mes_example::BLOB;
+-- Original PostgreSQL migration changed these columns from TEXT to BYTEA (BLOB):
+-- - chat_messages.content
+-- - characters.description, personality, scenario, first_mes, mes_example
+-- In SQLite, these remain declared as TEXT but can store binary data without issues

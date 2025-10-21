@@ -1,28 +1,30 @@
 use crate::schema::player_chronicles;
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 use validator::Validate;
 
 /// PlayerChronicle represents a story container that groups related chat sessions and events
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = player_chronicles)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct PlayerChronicle {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 /// NewPlayerChronicle for creating new chronicles
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = player_chronicles)]
 pub struct NewPlayerChronicle {
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
     #[validate(length(
         min = 1,
         max = 255,

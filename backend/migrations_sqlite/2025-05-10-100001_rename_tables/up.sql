@@ -6,8 +6,13 @@
 -- ================================================================
 
 -- Rename frontend tables to match backend tables
-ALTER TABLE IF EXISTS chats RENAME TO old_chats;
-ALTER TABLE IF EXISTS messages RENAME TO old_messages;
-ALTER TABLE IF EXISTS votes RENAME TO old_votes;
-ALTER TABLE IF EXISTS documents RENAME TO old_documents;
-ALTER TABLE IF EXISTS suggestions RENAME TO old_suggestions;
+-- NOTE: This migration is frontend-specific and not applicable to backend SQLite schema
+-- The backend schema never had tables named 'chats' or 'messages'
+-- They were always called 'chat_sessions' and 'chat_messages'
+-- Making this a no-op for backend SQLite migrations
+
+-- ALTER TABLE chats RENAME TO old_chats;  -- Table doesn't exist in backend schema
+-- ALTER TABLE messages RENAME TO old_messages;  -- Table doesn't exist in backend schema
+-- ALTER TABLE votes RENAME TO old_votes;  -- Table doesn't exist in backend schema
+-- ALTER TABLE documents RENAME TO old_documents;  -- Table doesn't exist in backend schema
+-- ALTER TABLE suggestions RENAME TO old_suggestions;  -- Table doesn't exist in backend schema

@@ -6,6 +6,5 @@
 -- ================================================================
 
 -- Your SQL goes here
-ALTER TABLE chat_session_lorebooks
-ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE chat_session_lorebooks ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE chat_session_lorebooks ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;

@@ -34,7 +34,7 @@ pub struct UserCryptoFields {
 // Manually implement Debug because DbPool doesn't implement it.
 pub struct Backend {
     pool: DbPool,
-    pub dek_cache: Arc<RwLock<HashMap<Uuid, SerializableSecretDek>>>,
+    pub dek_cache: Arc<RwLock<HashMap<crate::DbUuid, SerializableSecretDek>>>,
 }
 
 // Manual Clone implementation to ensure dek_cache is properly shared
@@ -132,7 +132,7 @@ impl AuthnBackend for Backend {
     #[instrument(skip(self), err)]
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
         let pool = self.pool.clone();
-        let id: uuid::Uuid = *user_id;
+        let id: crate::DbUuid = *user_id;
 
         // Added detailed logging for test_get_unauthorized debugging
         tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {}", loggable_user_id(*user_id));
@@ -181,7 +181,7 @@ impl Backend {
     #[instrument(skip(self, crypto_fields), err)]
     pub async fn update_user_crypto_fields(
         &self,
-        user_id: uuid::Uuid,
+        user_id: crate::DbUuid,
         crypto_fields: UserCryptoFields,
     ) -> Result<(), AuthError> {
         use crate::schema::users::dsl::{
@@ -217,7 +217,7 @@ impl Backend {
                     encrypted_dek_by_recovery.eq(crypto_fields.recovery_dek_ciphertext), // This is nullable
                     crate::schema::users::dsl::recovery_dek_nonce
                         .eq(crypto_fields.recovery_dek_nonce), // This is nullable
-                    updated_at.eq(chrono::Utc::now()), // Use Rust timestamp instead of diesel::dsl::now for cross-DB compatibility
+                    updated_at.eq(chrono::Utc::now().into()), // Use Rust timestamp instead of diesel::dsl::now for cross-DB compatibility
                 ))
                 .execute(conn)
                 .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
@@ -241,7 +241,7 @@ impl Backend {
     /// This should be called when a user logs out to ensure their DEK
     /// is not kept in memory after their session ends.
     #[instrument(skip(self))]
-    pub async fn remove_dek_from_cache(&self, user_id: &uuid::Uuid) {
+    pub async fn remove_dek_from_cache(&self, user_id: &crate::DbUuid) {
         let mut cache = self.dek_cache.write().await;
         if cache.remove(user_id).is_some() {
             warn!(target: "dek_cache_debug", user_id = %user_id, "AuthBackend::remove_dek_from_cache - DEK REMOVED from cache (key: {})", user_id);
@@ -316,20 +316,50 @@ pub async fn create_user_in_db(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: chrono::Utc::now(),
+        token_usage_updated_at: chrono::Utc::now().into(),
     };
 
     let user_from_db: UserDbQuery = crate::db::with_conn(pool, move |conn| {
-        diesel::insert_into(schema::users::table)
-            .values(new_user_payload)
-            .returning(UserDbQuery::as_returning())
-            .get_result::<UserDbQuery>(conn)
-            .map_err(|e| {
-                crate::errors::AppError::DatabaseQueryError(format!(
-                    "Diesel query failed for create_user_in_db: {}",
-                    e
-                ))
-            })
+        #[cfg(feature = "postgres-backend")]
+        {
+            diesel::insert_into(schema::users::table)
+                .values(new_user_payload)
+                .returning(UserDbQuery::as_returning())
+                .get_result::<UserDbQuery>(conn)
+                .map_err(|e| {
+                    crate::errors::AppError::DatabaseQueryError(format!(
+                        "Diesel query failed for create_user_in_db: {}",
+                        e
+                    ))
+                })
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING, so we insert and query back by username
+            let username_clone = new_user_payload.username.clone();
+            diesel::insert_into(schema::users::table)
+                .values(new_user_payload)
+                .execute(conn)
+                .map_err(|e| {
+                    crate::errors::AppError::DatabaseQueryError(format!(
+                        "Diesel insert failed for create_user_in_db: {}",
+                        e
+                    ))
+                })?;
+
+            schema::users::table
+                .filter(schema::users::username.eq(username_clone))
+                .select(UserDbQuery::as_select())
+                .first::<UserDbQuery>(conn)
+                .map_err(|e| {
+                    crate::errors::AppError::DatabaseQueryError(format!(
+                        "Diesel query failed for create_user_in_db (fetch after insert): {}",
+                        e
+                    ))
+                })
+        }
     })
     .await
     .map_err(|e| anyhow::anyhow!("DB operation failed for create_user_in_db: {}", e))?;

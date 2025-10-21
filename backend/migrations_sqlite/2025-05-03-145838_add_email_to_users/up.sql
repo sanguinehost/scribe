@@ -6,5 +6,9 @@
 -- ================================================================
 
 -- Your SQL goes here
-ALTER TABLE users
-ADD COLUMN email VARCHAR NOT NULL UNIQUE;
+-- SQLite limitation: ALTER TABLE ADD COLUMN cannot add UNIQUE or NOT NULL (without DEFAULT)
+-- Add column as nullable, then create unique index separately
+ALTER TABLE users ADD COLUMN email TEXT NULL;
+
+-- Create unique index to enforce uniqueness (equivalent to UNIQUE constraint)
+CREATE UNIQUE INDEX idx_users_email_unique ON users(email);

@@ -309,7 +309,7 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
 /// - Required fields are missing
 pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard, ParserError> {
     // First, try to detect if this is a V2 card by checking the structure
-    let json_value: serde_json::Value =
+    let json_value: crate::DbJson =
         serde_json::from_slice(json_data).map_err(|e| ParserError::JsonError(e.to_string()))?;
 
     let is_v2_format = detect_v2_format(&json_value);
@@ -336,7 +336,7 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
 
 /// Detects if a JSON value represents a V2 character card format
 /// V2 cards have a flat structure without 'spec', 'spec_version', and 'data' fields
-fn detect_v2_format(json_value: &serde_json::Value) -> bool {
+fn detect_v2_format(json_value: &crate::DbJson) -> bool {
     if let Some(obj) = json_value.as_object() {
         // Check for V3 indicators first
         let has_spec = obj.contains_key("spec");

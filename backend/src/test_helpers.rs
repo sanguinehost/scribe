@@ -32,7 +32,6 @@ use crate::{
         chat::chat_routes,
         chats,
         chronicles,
-        documents::document_routes,
         generation_routes, // Added generation_routes
         health::health_check,
         lorebook_routes,           // Added lorebook_routes
@@ -52,8 +51,15 @@ use crate::{
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
     vector_db::qdrant_client::QdrantClientService, // Import constants module alias
-    PgPool,                                        // This is deadpool_diesel::postgres::Pool
 };
+
+// Conditionally import documents module (PostgreSQL only)
+#[cfg(feature = "postgres-backend")]
+use crate::routes::documents::document_routes;
+
+// Conditionally import pool type (PostgreSQL only - test_helpers currently PostgreSQL-only)
+#[cfg(feature = "postgres-backend")]
+use crate::PgPool;
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
@@ -501,21 +507,21 @@ impl EmbeddingClient for MockEmbeddingClient {
 #[derive(Clone, Debug)] // Added Clone, Debug
 pub enum PipelineCall {
     RetrieveRelevantChunks {
-        user_id: Uuid,                                     // Renamed from chat_id
-        session_id_for_chat_history: Option<Uuid>,         // New field - Updated to Option<Uuid>
-        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New field
-        chronicle_id_for_search: Option<Uuid>,             // New field for chronicle search
+        user_id: crate::DbUuid,                                     // Renamed from chat_id
+        session_id_for_chat_history: Option<crate::DbUuid>,         // New field - Updated to Option<crate::DbUuid>
+        active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>>, // New field
+        chronicle_id_for_search: Option<crate::DbUuid>,             // New field for chronicle search
         query_text: String,
         limit: u64,
     },
     ProcessAndEmbedMessage {
-        message_id: Uuid,
-        session_id: Uuid,
+        message_id: crate::DbUuid,
+        session_id: crate::DbUuid,
     },
     ProcessAndEmbedLorebookEntry {
-        original_lorebook_entry_id: Uuid,
-        lorebook_id: Uuid,
-        user_id: Uuid,
+        original_lorebook_entry_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
+        user_id: crate::DbUuid,
         decrypted_content: String,
         decrypted_title: Option<String>,
         decrypted_keywords: Option<Vec<String>>,
@@ -523,15 +529,15 @@ pub enum PipelineCall {
         is_constant: bool,
     },
     ProcessAndEmbedChronicleEvent {
-        event_id: Uuid,
+        event_id: crate::DbUuid,
     },
     DeleteChronicleEventChunks {
-        event_id: Uuid,
-        user_id: Uuid,
+        event_id: crate::DbUuid,
+        user_id: crate::DbUuid,
     },
     DeleteChronicleEventsByChronicleId {
-        chronicle_id: Uuid,
-        user_id: Uuid,
+        chronicle_id: crate::DbUuid,
+        user_id: crate::DbUuid,
     },
 }
 
@@ -661,10 +667,10 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
         _state: Arc<AppState>,
-        user_id: Uuid,                                     // New parameter
-        session_id_for_chat_history: Option<Uuid>, // New parameter - Updated to Option<Uuid>
-        active_lorebook_ids_for_search: Option<Vec<Uuid>>, // New parameter
-        chronicle_id_for_search: Option<Uuid>,     // New parameter for chronicle search
+        user_id: crate::DbUuid,                                     // New parameter
+        session_id_for_chat_history: Option<crate::DbUuid>, // New parameter - Updated to Option<crate::DbUuid>
+        active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>>, // New parameter
+        chronicle_id_for_search: Option<crate::DbUuid>,     // New parameter for chronicle search
         query_text: &str,
         limit: u64,
         _session_dek: Option<&crate::auth::SessionDek>, // DEK for decryption
@@ -675,7 +681,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             .unwrap()
             .push(PipelineCall::RetrieveRelevantChunks {
                 user_id,
-                session_id_for_chat_history,    // This is Option<Uuid>
+                session_id_for_chat_history,    // This is Option<crate::DbUuid>
                 active_lorebook_ids_for_search, // Corrected order
                 chronicle_id_for_search,
                 query_text: query_text.to_string(), // Corrected order
@@ -696,8 +702,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_message_chunks(
         &self,
         _state: Arc<AppState>,
-        message_ids: Vec<Uuid>,
-        user_id: Uuid,
+        message_ids: Vec<crate::DbUuid>,
+        user_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -713,8 +719,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_lorebook_entry_chunks(
         &self,
         _state: Arc<AppState>,
-        original_lorebook_entry_id: Uuid,
-        user_id: Uuid,
+        original_lorebook_entry_id: crate::DbUuid,
+        user_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -749,8 +755,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_chronicle_event_chunks(
         &self,
         _state: Arc<AppState>,
-        event_id: Uuid,
-        user_id: Uuid,
+        event_id: crate::DbUuid,
+        user_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -768,8 +774,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_chronicle_events_by_chronicle_id(
         &self,
         _state: Arc<AppState>,
-        chronicle_id: Uuid,
-        user_id: Uuid,
+        chronicle_id: crate::DbUuid,
+        user_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -1754,7 +1760,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         .route("/api/health", get(health_check))
         .with_state(app_state_inner.clone());
 
-    let protected_api_routes_for_test = Router::new()
+    let mut protected_api_routes_for_test = Router::new()
         .nest(
             "/characters",
             characters::characters_router(app_state_inner.clone()),
@@ -1764,8 +1770,16 @@ pub async fn spawn_app_with_rate_limiting_options(
         .nest(
             "/chronicles",
             chronicles::create_chronicles_router(app_state_inner.clone()),
-        ) // Add chronicles routes
-        .nest("/documents", document_routes()) // Assuming this returns Router<AppState> or is already stateful
+        ); // Add chronicles routes
+
+    // Conditionally add documents routes (PostgreSQL only)
+    #[cfg(feature = "postgres-backend")]
+    {
+        protected_api_routes_for_test = protected_api_routes_for_test
+            .nest("/documents", document_routes()); // Assuming this returns Router<AppState> or is already stateful
+    }
+
+    let protected_api_routes_for_test = protected_api_routes_for_test
         .nest("/generation", generation_routes::router()) // AI generation routes
         .nest(
             "/personas",
@@ -1892,6 +1906,7 @@ pub mod db {
     /// # Panics
     ///
     /// Panics if the `DATABASE_URL` environment variable is not set
+    #[cfg(feature = "postgres-backend")]
     pub async fn setup_test_database(db_name_suffix: Option<&str>) -> (PgPool, String) {
         // Load .env from project root (one directory up from backend/)
         let project_root = std::env::current_dir()
@@ -2011,17 +2026,43 @@ pub mod db {
             token_usage_updated_at: chrono::Utc::now(),
         };
 
-        let user_from_db: UserDbQuery = conn
-            .interact(move |conn_actual| {
+        // Clone username for SQLite query-back
+        let username_for_query = new_user_payload.username.clone();
+
+        #[cfg(feature = "postgres-backend")]
+        let user_from_db: UserDbQuery = {
+            conn
+                .interact(move |conn_actual| {
+                    diesel::insert_into(crate::schema::users::table)
+                        .values(new_user_payload)
+                        .returning(UserDbQuery::as_returning())
+                        .get_result::<UserDbQuery>(conn_actual)
+                })
+                .await
+                .map_err(|interact_err| {
+                    anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err)
+                })??
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let user_from_db: UserDbQuery = {
+            use diesel::prelude::*;
+
+            crate::db::with_conn(&pool, move |conn_actual| {
                 diesel::insert_into(crate::schema::users::table)
-                    .values(new_user_payload) // new_user_payload is moved here
-                    .returning(UserDbQuery::as_returning())
-                    .get_result::<UserDbQuery>(conn_actual)
+                    .values(&new_user_payload)
+                    .execute(conn_actual)
+                    .map_err(|e| anyhow::anyhow!("Failed to insert user: {}", e))?;
+
+                // Query back using username (unique key)
+                crate::schema::users::table
+                    .filter(crate::schema::users::username.eq(username_for_query))
+                    .select(UserDbQuery::as_select())
+                    .first::<UserDbQuery>(conn_actual)
+                    .map_err(|e| anyhow::anyhow!("Failed to query user after insert: {}", e))
             })
-            .await
-            .map_err(|interact_err| {
-                anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err)
-            })??;
+            .await?
+        };
 
         // Convert to DbUser
         let mut user: DbUser = user_from_db.into();
@@ -2090,20 +2131,46 @@ pub mod db {
             token_usage_updated_at: chrono::Utc::now(),
         };
 
-        let user_from_db: UserDbQuery = conn
-            .interact(move |conn_actual| {
+        // Clone username for SQLite query-back
+        let username_for_query = new_user_payload.username.clone();
+
+        #[cfg(feature = "postgres-backend")]
+        let user_from_db: UserDbQuery = {
+            conn
+                .interact(move |conn_actual| {
+                    diesel::insert_into(crate::schema::users::table)
+                        .values(new_user_payload)
+                        .returning(UserDbQuery::as_returning())
+                        .get_result::<UserDbQuery>(conn_actual)
+                })
+                .await
+                .map_err(|interact_err| {
+                    anyhow::anyhow!(
+                        "DB interact error for create_pending_test_user: {}",
+                        interact_err
+                    )
+                })??
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let user_from_db: UserDbQuery = {
+            use diesel::prelude::*;
+
+            crate::db::with_conn(&pool, move |conn_actual| {
                 diesel::insert_into(crate::schema::users::table)
-                    .values(new_user_payload) // new_user_payload is moved here
-                    .returning(UserDbQuery::as_returning())
-                    .get_result::<UserDbQuery>(conn_actual)
+                    .values(&new_user_payload)
+                    .execute(conn_actual)
+                    .map_err(|e| anyhow::anyhow!("Failed to insert pending user: {}", e))?;
+
+                // Query back using username (unique key)
+                crate::schema::users::table
+                    .filter(crate::schema::users::username.eq(username_for_query))
+                    .select(UserDbQuery::as_select())
+                    .first::<UserDbQuery>(conn_actual)
+                    .map_err(|e| anyhow::anyhow!("Failed to query pending user after insert: {}", e))
             })
-            .await
-            .map_err(|interact_err| {
-                anyhow::anyhow!(
-                    "DB interact error for create_pending_test_user: {}",
-                    interact_err
-                )
-            })??;
+            .await?
+        };
 
         // Convert to DbUser
         let mut user: DbUser = user_from_db.into();
@@ -2127,7 +2194,7 @@ pub mod db {
     /// Returns an error if the database operation fails
     pub async fn create_test_character(
         pool: &PgPool,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         name: String,
     ) -> Result<crate::models::characters::Character, anyhow::Error> {
         use crate::models::character_card::NewCharacter;
@@ -2295,11 +2362,11 @@ pub mod db {
 pub struct TestDataGuard {
     pool: PgPool,
     test_db_name: Option<String>,
-    user_ids: Vec<Uuid>,
-    character_ids: Vec<Uuid>,
-    chat_ids: Vec<Uuid>,
-    user_persona_ids: Vec<Uuid>,
-    lorebook_ids: Vec<Uuid>,
+    user_ids: Vec<crate::DbUuid>,
+    character_ids: Vec<crate::DbUuid>,
+    chat_ids: Vec<crate::DbUuid>,
+    user_persona_ids: Vec<crate::DbUuid>,
+    lorebook_ids: Vec<crate::DbUuid>,
 }
 
 // Manual implementation of Debug for TestDataGuard
@@ -2332,23 +2399,23 @@ impl TestDataGuard {
         }
     }
 
-    pub fn add_user(&mut self, user_id: Uuid) {
+    pub fn add_user(&mut self, user_id: crate::DbUuid) {
         self.user_ids.push(user_id);
     }
 
-    pub fn add_character(&mut self, character_id: Uuid) {
+    pub fn add_character(&mut self, character_id: crate::DbUuid) {
         self.character_ids.push(character_id);
     }
 
-    pub fn add_chat(&mut self, chat_id: Uuid) {
+    pub fn add_chat(&mut self, chat_id: crate::DbUuid) {
         self.chat_ids.push(chat_id);
     }
 
-    pub fn add_user_persona(&mut self, user_persona_id: Uuid) {
+    pub fn add_user_persona(&mut self, user_persona_id: crate::DbUuid) {
         self.user_persona_ids.push(user_persona_id);
     }
 
-    pub fn add_lorebook(&mut self, lorebook_id: Uuid) {
+    pub fn add_lorebook(&mut self, lorebook_id: crate::DbUuid) {
         self.lorebook_ids.push(lorebook_id);
     }
 
@@ -2951,7 +3018,7 @@ pub fn assert_ai_history(
 /// Panics if the API response status is not OK
 pub async fn set_history_settings(
     test_app: &TestApp,
-    session_id: Uuid,
+    session_id: crate::DbUuid,
     auth_cookie: &str,
     strategy: Option<String>,
     limit: Option<i32>,

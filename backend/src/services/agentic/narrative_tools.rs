@@ -20,7 +20,7 @@ use crate::{
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
 /// Generate JSON schema for text significance triage response
-fn get_text_significance_triage_schema() -> serde_json::Value {
+fn get_text_significance_triage_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -598,74 +598,68 @@ impl SearchKnowledgeBaseTool {
     /// This includes direct chat-lorebook associations, character-inherited lorebooks, and overrides
     async fn get_session_lorebook_ids(
         &self,
-        session_id: Uuid,
-        user_id: Uuid,
-    ) -> Result<Vec<Uuid>, ToolError> {
+        session_id: crate::DbUuid,
+        user_id: crate::DbUuid,
+    ) -> Result<Vec<crate::DbUuid>, ToolError> {
         use crate::schema::{
             character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks,
             chat_sessions,
         };
         use diesel::prelude::*;
 
-        let conn = self.app_state.pool.get().await.map_err(|e| {
-            ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e))
-        })?;
+        let associations_data = crate::db::with_conn(&self.app_state.pool, move |conn| {
+            // 1. Get chat session and character ID
+            let (_session_found, character_id): (crate::DbUuid, Option<crate::DbUuid>) = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select((chat_sessions::id, chat_sessions::character_id))
+                .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn)
+                .optional()?
+                .ok_or_else(|| diesel::result::Error::NotFound)?;
 
-        let associations_data = conn
-            .interact(move |conn| {
-                // 1. Get chat session and character ID
-                let (_session_found, character_id): (Uuid, Option<Uuid>) = chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id))
-                    .filter(chat_sessions::user_id.eq(user_id))
-                    .select((chat_sessions::id, chat_sessions::character_id))
-                    .first::<(Uuid, Option<Uuid>)>(conn)
-                    .optional()?
-                    .ok_or_else(|| diesel::result::Error::NotFound)?;
+            // 2. Get direct chat-lorebook associations
+            let chat_associations: Vec<crate::DbUuid> = chat_session_lorebooks::table
+                .filter(chat_session_lorebooks::chat_session_id.eq(session_id))
+                .filter(chat_session_lorebooks::user_id.eq(user_id))
+                .select(chat_session_lorebooks::lorebook_id)
+                .get_results::<crate::DbUuid>(conn)?;
 
-                // 2. Get direct chat-lorebook associations
-                let chat_associations: Vec<Uuid> = chat_session_lorebooks::table
-                    .filter(chat_session_lorebooks::chat_session_id.eq(session_id))
-                    .filter(chat_session_lorebooks::user_id.eq(user_id))
-                    .select(chat_session_lorebooks::lorebook_id)
-                    .get_results::<Uuid>(conn)?;
+            // 3. Get character-lorebook associations (if character exists)
+            let character_associations: Vec<crate::DbUuid> = if let Some(char_id) = character_id {
+                character_lorebooks::table
+                    .filter(character_lorebooks::character_id.eq(char_id))
+                    .filter(character_lorebooks::user_id.eq(user_id))
+                    .select(character_lorebooks::lorebook_id)
+                    .get_results::<crate::DbUuid>(conn)?
+            } else {
+                Vec::new()
+            };
 
-                // 3. Get character-lorebook associations (if character exists)
-                let character_associations: Vec<Uuid> = if let Some(char_id) = character_id {
-                    character_lorebooks::table
-                        .filter(character_lorebooks::character_id.eq(char_id))
-                        .filter(character_lorebooks::user_id.eq(user_id))
-                        .select(character_lorebooks::lorebook_id)
-                        .get_results::<Uuid>(conn)?
-                } else {
-                    Vec::new()
-                };
-
-                // 4. Get overrides for this chat session
-                let overrides: Vec<(Uuid, String)> = chat_character_lorebook_overrides::table
-                    .filter(chat_character_lorebook_overrides::chat_session_id.eq(session_id))
-                    .filter(chat_character_lorebook_overrides::user_id.eq(user_id))
-                    .select((
-                        chat_character_lorebook_overrides::lorebook_id,
-                        chat_character_lorebook_overrides::action,
-                    ))
-                    .get_results::<(Uuid, String)>(conn)?;
-
-                Ok::<_, diesel::result::Error>((
-                    chat_associations,
-                    character_associations,
-                    overrides,
+            // 4. Get overrides for this chat session
+            let overrides: Vec<(crate::DbUuid, String)> = chat_character_lorebook_overrides::table
+                .filter(chat_character_lorebook_overrides::chat_session_id.eq(session_id))
+                .filter(chat_character_lorebook_overrides::user_id.eq(user_id))
+                .select((
+                    chat_character_lorebook_overrides::lorebook_id,
+                    chat_character_lorebook_overrides::action,
                 ))
-            })
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to interact with DB: {}", e)))?
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!("Failed to query lorebook associations: {}", e))
-            })?;
+                .get_results::<(crate::DbUuid, String)>(conn)?;
+
+            Ok::<_, diesel::result::Error>((
+                chat_associations,
+                character_associations,
+                overrides,
+            ))
+        })
+        .await
+        .map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to query lorebook associations: {}", e))
+        })?;
 
         let (chat_associations, character_associations, overrides) = associations_data;
 
         // 5. Build final effective lorebook list
-        let override_map: std::collections::HashMap<Uuid, String> = overrides.into_iter().collect();
+        let override_map: std::collections::HashMap<crate::DbUuid, String> = overrides.into_iter().collect();
         let mut effective_lorebooks = std::collections::HashSet::new();
 
         // Add direct chat associations (these always take precedence)
@@ -690,7 +684,7 @@ impl SearchKnowledgeBaseTool {
             }
         }
 
-        let final_lorebook_ids: Vec<Uuid> = effective_lorebooks.into_iter().collect();
+        let final_lorebook_ids: Vec<crate::DbUuid> = effective_lorebooks.into_iter().collect();
 
         debug!(
             "Lorebook associations for session {}: {} direct, {} character, {} effective (after overrides)",
@@ -704,26 +698,20 @@ impl SearchKnowledgeBaseTool {
     }
 
     /// Fetch all chat session IDs in a chronicle
-    async fn get_chronicle_session_ids(&self, chronicle_id: Uuid) -> Result<Vec<Uuid>, ToolError> {
+    async fn get_chronicle_session_ids(&self, chronicle_id: crate::DbUuid) -> Result<Vec<crate::DbUuid>, ToolError> {
         use crate::schema::chat_sessions;
         use diesel::prelude::*;
 
-        let conn = self.app_state.pool.get().await.map_err(|e| {
-            ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e))
+        let session_ids = crate::db::with_conn(&self.app_state.pool, move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
+                .select(chat_sessions::id)
+                .get_results::<crate::DbUuid>(conn)
+        })
+        .await
+        .map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to query chronicle sessions: {}", e))
         })?;
-
-        let session_ids = conn
-            .interact(move |conn| {
-                chat_sessions::table
-                    .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
-                    .select(chat_sessions::id)
-                    .get_results::<Uuid>(conn)
-            })
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to interact with DB: {}", e)))?
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!("Failed to query chronicle sessions: {}", e))
-            })?;
 
         debug!(
             "Found {} sessions in chronicle {}",
@@ -737,9 +725,9 @@ impl SearchKnowledgeBaseTool {
     /// This fetches all sessions in the chronicle, then all lorebooks for those sessions including character-inherited ones
     async fn get_chronicle_lorebook_ids(
         &self,
-        chronicle_id: Uuid,
-        user_id: Uuid,
-    ) -> Result<Vec<Uuid>, ToolError> {
+        chronicle_id: crate::DbUuid,
+        user_id: crate::DbUuid,
+    ) -> Result<Vec<crate::DbUuid>, ToolError> {
         // First get all sessions in this chronicle
         let session_ids = self.get_chronicle_session_ids(chronicle_id).await?;
 
@@ -762,7 +750,7 @@ impl SearchKnowledgeBaseTool {
             }
         }
 
-        let final_lorebook_ids: Vec<Uuid> = all_lorebook_ids.into_iter().collect();
+        let final_lorebook_ids: Vec<crate::DbUuid> = all_lorebook_ids.into_iter().collect();
 
         info!(
             "Chronicle {} has {} sessions with {} unique lorebooks (comprehensive associations)",
@@ -1678,28 +1666,18 @@ impl ScribeTool for AnalyzeLorebookTool {
 
         let lorebook_id_for_check = lorebook_id;
         let user_id_for_check = user_id;
-        let lorebook_exists = pool
-            .get()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?
-            .interact(move |conn| {
-                lorebooks_dsl::lorebooks
-                    .filter(lorebooks_dsl::id.eq(lorebook_id_for_check))
-                    .filter(lorebooks_dsl::user_id.eq(user_id_for_check))
-                    .select(lorebooks_dsl::id)
-                    .first::<Uuid>(conn)
-                    .optional()
-            })
-            .await
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!(
-                    "DB interaction failed while checking lorebook ownership: {}",
-                    e
-                ))
-            })?
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!("Failed to verify lorebook ownership: {}", e))
-            })?;
+        let lorebook_exists = crate::db::with_conn(&pool, move |conn| {
+            lorebooks_dsl::lorebooks
+                .filter(lorebooks_dsl::id.eq(lorebook_id_for_check))
+                .filter(lorebooks_dsl::user_id.eq(user_id_for_check))
+                .select(lorebooks_dsl::id)
+                .first::<crate::DbUuid>(conn)
+                .optional()
+        })
+        .await
+        .map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to verify lorebook ownership: {}", e))
+        })?;
 
         if lorebook_exists.is_none() {
             return Err(ToolError::ExecutionFailed(format!(
@@ -1710,7 +1688,7 @@ impl ScribeTool for AnalyzeLorebookTool {
 
         // Fetch all lorebook entries for this lorebook and user
         let entries: Vec<(
-            Uuid,
+            crate::DbUuid,
             Vec<u8>,
             Vec<u8>,
             Vec<u8>,
@@ -1718,45 +1696,35 @@ impl ScribeTool for AnalyzeLorebookTool {
             Vec<u8>,
             Vec<u8>,
             bool,
-        )> = pool
-            .get()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("Failed to get DB connection: {}", e)))?
-            .interact(move |conn| {
-                lorebook_entries_dsl::lorebook_entries
-                    .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id))
-                    .filter(lorebook_entries_dsl::user_id.eq(user_id))
-                    .select((
-                        lorebook_entries_dsl::id,
-                        lorebook_entries_dsl::entry_title_ciphertext,
-                        lorebook_entries_dsl::entry_title_nonce,
-                        lorebook_entries_dsl::content_ciphertext,
-                        lorebook_entries_dsl::content_nonce,
-                        lorebook_entries_dsl::keys_text_ciphertext,
-                        lorebook_entries_dsl::keys_text_nonce,
-                        lorebook_entries_dsl::is_enabled,
-                    ))
-                    .load::<(
-                        Uuid,
-                        Vec<u8>,
-                        Vec<u8>,
-                        Vec<u8>,
-                        Vec<u8>,
-                        Vec<u8>,
-                        Vec<u8>,
-                        bool,
-                    )>(conn)
-            })
-            .await
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!(
-                    "DB interaction for fetch entries failed: {}",
-                    e
+        )> = crate::db::with_conn(&pool, move |conn| {
+            lorebook_entries_dsl::lorebook_entries
+                .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id))
+                .filter(lorebook_entries_dsl::user_id.eq(user_id))
+                .select((
+                    lorebook_entries_dsl::id,
+                    lorebook_entries_dsl::entry_title_ciphertext,
+                    lorebook_entries_dsl::entry_title_nonce,
+                    lorebook_entries_dsl::content_ciphertext,
+                    lorebook_entries_dsl::content_nonce,
+                    lorebook_entries_dsl::keys_text_ciphertext,
+                    lorebook_entries_dsl::keys_text_nonce,
+                    lorebook_entries_dsl::is_enabled,
                 ))
-            })?
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!("Failed to load lorebook entries: {}", e))
-            })?;
+                .load::<(
+                    crate::DbUuid,
+                    Vec<u8>,
+                    Vec<u8>,
+                    Vec<u8>,
+                    Vec<u8>,
+                    Vec<u8>,
+                    Vec<u8>,
+                    bool,
+                )>(conn)
+        })
+        .await
+        .map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to load lorebook entries: {}", e))
+        })?;
 
         if entries.is_empty() {
             return Ok(serde_json::json!({
@@ -1917,7 +1885,7 @@ Return your analysis as a JSON object with these four arrays."#,
             .ok_or_else(|| ToolError::ExecutionFailed("AI response had no content".to_string()))?;
 
         // Parse AI response as JSON
-        let analysis: serde_json::Value = serde_json::from_str(ai_content).map_err(|e| {
+        let analysis: crate::DbJson = serde_json::from_str(ai_content).map_err(|e| {
             ToolError::ExecutionFailed(format!(
                 "Failed to parse AI analysis response as JSON: {}",
                 e

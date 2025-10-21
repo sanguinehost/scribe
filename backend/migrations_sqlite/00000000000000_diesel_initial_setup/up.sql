@@ -9,26 +9,38 @@
 -- and other internal bookkeeping. This file is safe to edit, any future
 -- changes will be added to existing projects as new migrations.
 
--- Enable TEXT generation
--- CREATE EXTENSION IF NOT EXISTS "TEXT-ossp"; -- Removed: SQLite does not support extensions
+-- Enable UUID generation (PostgreSQL only)
+-- CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; -- Removed: SQLite does not support extensions
 
 -- Drop dependent objects first if they exist (idempotent)
 -- Note: Order matters. Drop table before type.
 DROP TABLE IF EXISTS chat_messages;
-DROP TYPE IF EXISTS TEXT;
+-- PostgreSQL enum type 'message_type' is handled as TEXT in SQLite
 
 -- Define message type enum using standard roles
--- CREATE TYPE TEXT -- Removed: SQLite uses TEXT for enums -- Changed 'Ai' to 'Assistant', added 'System'
+-- Original PostgreSQL: CREATE TYPE message_type AS ENUM ('User', 'Assistant', 'System')
+-- SQLite: Store as TEXT with check constraint or application-level validation
 
 -- Function to automatically update 'updated_at' timestamps
+-- PostgreSQL only - SQLite uses triggers instead
 -- CREATE OR REPLACE FUNCTION diesel_manage_updated_at(_tbl regclass) RETURNS VOID AS $$
-BEGIN
-    EXEC... -- Removed: SQLite does not support PL/pgSQL
+-- BEGIN
+--     EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
+--                     FOR EACH ROW EXECUTE PROCEDURE diesel_set_updated_at()', _tbl);
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 -- CREATE OR REPLACE FUNCTION diesel_set_updated_at() RETURNS trigger AS $$
-BEGIN
-    IF (
-        NEW ... -- Removed: SQLite does not support PL/pgSQL
+-- BEGIN
+--     IF (
+--         NEW IS DISTINCT FROM OLD AND
+--         NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
+--     ) THEN
+--         NEW.updated_at := CURRENT_TIMESTAMP;
+--     END IF;
+--     RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 -- Users table (matches models/users.rs)
 CREATE TABLE users (
@@ -192,13 +204,13 @@ END;
 CREATE INDEX idx_chat_sessions_user_id ON chat_sessions (user_id);
 CREATE INDEX idx_chat_sessions_character_id ON chat_sessions (character_id);
 
--- Recreate Chat Messages table (using the corrected TEXT)
+-- Recreate Chat Messages table (using TEXT for message_type enum)
 CREATE TABLE chat_messages (
     id TEXT PRIMARY KEY ,
     session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    TEXT TEXT NOT NULL, -- Uses corrected type
+    message_type TEXT NOT NULL, -- Role: 'User', 'Assistant', or 'System'
     content TEXT NOT NULL,
-    rag_embedding_id TEXT NULL, -- Added to match model Option<TEXT>, nullable
+    rag_embedding_id TEXT NULL, -- Added to match model Option<Uuid>, nullable
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP -- Added to match model
 );

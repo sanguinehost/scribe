@@ -87,11 +87,11 @@ pub(super) fn decrypt_chat_content(
 
 #[derive(Debug, Clone)]
 pub struct ChronicleEventMetadata {
-    pub event_id: Uuid,
+    pub event_id: crate::DbUuid,
     pub event_type: String,
-    pub chronicle_id: Uuid,
-    pub user_id: Uuid, // SECURITY: Added user_id for access control
-    pub created_at: DateTime<Utc>,
+    pub chronicle_id: crate::DbUuid,
+    pub user_id: crate::DbUuid, // SECURITY: Added user_id for access control
+    pub created_at: crate::DbDateTime,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
@@ -148,7 +148,7 @@ pub struct RetrievedChunk {
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
-    session_id: Uuid,
+    session_id: crate::DbUuid,
     query_text: &str,
     limit: u64,
 ) -> Result<Vec<RetrievedChunk>, AppError> {

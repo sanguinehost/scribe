@@ -6,7 +6,7 @@ impl LorebookService {
         &self,
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<crate::models::lorebook_dtos::ExportedLorebook, AppError> {
         let _user = get_user_from_session(auth_session)?;
 
@@ -109,7 +109,7 @@ impl LorebookService {
         &self,
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<crate::models::lorebook_dtos::ScribeMinimalLorebook, AppError> {
         let _user = get_user_from_session(auth_session)?;
 
@@ -374,27 +374,61 @@ impl LorebookService {
             info!("Successfully obtained database connection for batch insert");
 
             info!("Starting database interaction for batch insert...");
-            let inserted_entries: Vec<LorebookEntry> = conn
-                .interact(move |conn_sync| {
+
+            #[cfg(feature = "postgres-backend")]
+            let inserted_entries: Vec<LorebookEntry> = {
+                conn
+                    .interact(move |conn_sync| {
+                        info!("Inside database interaction, executing batch insert SQL...");
+                        let result = diesel::insert_into(lorebook_entries::table)
+                            .values(&new_entries_batch)
+                            .returning(LorebookEntry::as_returning())
+                            .get_results::<LorebookEntry>(conn_sync);
+                        info!("Batch insert SQL execution completed");
+                        result
+                    })
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to batch insert lorebook entries: {}", e);
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to batch insert entries: {e}"
+                        ))
+                    })?
+                    .map_err(|e| {
+                        error!("Database error during batch insert: {}", e);
+                        AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
+                    })?
+            };
+
+            #[cfg(feature = "sqlite-backend")]
+            let inserted_entries: Vec<LorebookEntry> = {
+                use diesel::prelude::*;
+                // Collect IDs before insert for querying back
+                let entry_ids: Vec<crate::DbUuid> = new_entries_batch.iter().map(|e| e.id).collect();
+
+                crate::db::with_conn(&self.pool, move |conn_sync| {
                     info!("Inside database interaction, executing batch insert SQL...");
-                    let result = diesel::insert_into(lorebook_entries::table)
+                    diesel::insert_into(lorebook_entries::table)
                         .values(&new_entries_batch)
-                        .returning(LorebookEntry::as_returning())
-                        .get_results::<LorebookEntry>(conn_sync);
+                        .execute(conn_sync)
+                        .map_err(|e| {
+                            error!("Database error during batch insert: {}", e);
+                            AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
+                        })?;
                     info!("Batch insert SQL execution completed");
-                    result
+
+                    // Query back all inserted entries
+                    lorebook_entries::table
+                        .filter(lorebook_entries::id.eq_any(&entry_ids))
+                        .select(LorebookEntry::as_select())
+                        .load::<LorebookEntry>(conn_sync)
+                        .map_err(|e| {
+                            error!("Failed to query inserted entries: {}", e);
+                            AppError::DatabaseQueryError(format!("Failed to query inserted entries: {e}"))
+                        })
                 })
-                .await
-                .map_err(|e| {
-                    error!("Failed to batch insert lorebook entries: {}", e);
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Failed to batch insert entries: {e}"
-                    ))
-                })?
-                .map_err(|e| {
-                    error!("Database error during batch insert: {}", e);
-                    AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
-                })?;
+                .await?
+            };
 
             info!(
                 "Successfully batch inserted {} lorebook entries",

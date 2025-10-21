@@ -52,6 +52,10 @@ pub mod sqlite_types;
 pub use backend_trait::DbBackend;
 pub use pool_helpers::{get_conn, with_conn};
 
+// Export SQLite extension traits for compatibility
+#[cfg(feature = "sqlite-backend")]
+pub use pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+
 // Conditional exports based on feature flags
 #[cfg(feature = "postgres-backend")]
 pub use postgres_backend::PostgresBackend as DefaultBackend;
@@ -65,6 +69,9 @@ pub type DbConnection = diesel::pg::PgConnection;
 
 #[cfg(feature = "sqlite-backend")]
 pub type DbConnection = diesel::sqlite::SqliteConnection;
+
+// Backwards-compatible alias
+pub type DbConn = DbConnection;
 
 // Pool type aliases
 // PostgreSQL uses deadpool-diesel for async pooling
@@ -83,6 +90,31 @@ pub type DbManager = deadpool_diesel::postgres::Manager;
 // Runtime type alias (only used by deadpool-diesel for PostgreSQL)
 #[cfg(feature = "postgres-backend")]
 pub type DbRuntime = deadpool_diesel::Runtime;
+
+// Database type aliases - PostgreSQL uses native types, SQLite uses newtype wrappers
+#[cfg(feature = "postgres-backend")]
+pub type DbUuid = uuid::Uuid;
+
+#[cfg(feature = "sqlite-backend")]
+pub type DbUuid = sqlite_types::SqliteUuid;
+
+#[cfg(feature = "postgres-backend")]
+pub type DbDateTime = chrono::DateTime<chrono::Utc>;
+
+#[cfg(feature = "sqlite-backend")]
+pub type DbDateTime = sqlite_types::SqliteDateTime;
+
+#[cfg(feature = "postgres-backend")]
+pub type DbJson = serde_json::Value;
+
+#[cfg(feature = "sqlite-backend")]
+pub type DbJson = sqlite_types::SqliteJson;
+
+#[cfg(feature = "postgres-backend")]
+pub type DbBigDecimal = bigdecimal::BigDecimal;
+
+#[cfg(feature = "sqlite-backend")]
+pub type DbBigDecimal = sqlite_types::SqliteBigDecimal;
 
 // Compile-time checks to ensure exactly one backend is enabled
 #[cfg(all(feature = "postgres-backend", feature = "sqlite-backend"))]

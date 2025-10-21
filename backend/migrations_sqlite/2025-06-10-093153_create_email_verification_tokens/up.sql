@@ -5,14 +5,12 @@
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
--- Add 'pending' to the TEXT enum
--- This is run in a separate transaction from the table creation below,
--- which is why this is safe.
-ALTER TYPE TEXT ADD VALUE 'pending';
+-- SQLite Note: SQLite doesn't have enum types, uses TEXT CHECK constraints instead
+-- ALTER TYPE account_status ADD VALUE 'pending';
 
 -- Create the email_verification_tokens table
 CREATE TABLE email_verification_tokens (
-    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token TEXT NOT NULL UNIQUE,
     expires_at DATETIME NOT NULL,
@@ -20,4 +18,4 @@ CREATE TABLE email_verification_tokens (
 );
 
 -- Add an index on the user_id for quick lookups
-CREATE INDEX ON email_verification_tokens (user_id);
+CREATE INDEX idx_email_verification_tokens_user_id ON email_verification_tokens (user_id);

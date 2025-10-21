@@ -296,9 +296,9 @@ impl TemplateManager {
 
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
-    fn sanitize_context(&self, value: serde_json::Value, skip_keys: &[&str]) -> serde_json::Value {
+    fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
         match value {
-            serde_json::Value::String(s) => {
+            crate::DbJson::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s
                     .replace("{%", "{ %") // Escape Jinja control structures
@@ -316,21 +316,21 @@ impl TemplateManager {
 
                 // Limit length to prevent memory exhaustion
                 if sanitized.len() > 10000 {
-                    serde_json::Value::String(format!("{}...[truncated]", &sanitized[..10000]))
+                    crate::DbJson::String(format!("{}...[truncated]", &sanitized[..10000]))
                 } else {
-                    serde_json::Value::String(sanitized)
+                    crate::DbJson::String(sanitized)
                 }
             }
-            serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(
+            crate::DbJson::Array(arr) => {
+                crate::DbJson::Array(
                     arr.into_iter()
                         .take(100) // Limit array size
                         .map(|v| self.sanitize_context(v, skip_keys))
                         .collect(),
                 )
             }
-            serde_json::Value::Object(obj) => {
-                serde_json::Value::Object(
+            crate::DbJson::Object(obj) => {
+                crate::DbJson::Object(
                     obj.into_iter()
                         .take(100) // Limit object size
                         .map(|(k, v)| {
@@ -364,7 +364,7 @@ impl TemplateManager {
     pub fn render(
         &self,
         template_id: &str,
-        context: serde_json::Value,
+        context: crate::DbJson,
     ) -> Result<String, AppError> {
         self.render_with_style(template_id, context, None)
     }
@@ -373,7 +373,7 @@ impl TemplateManager {
     pub fn render_with_style(
         &self,
         template_id: &str,
-        context: serde_json::Value,
+        context: crate::DbJson,
         style: Option<NarrativeStyle>,
     ) -> Result<String, AppError> {
         // Validate template_id format for security
@@ -403,8 +403,8 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let mut context_map: serde_json::Map<String, serde_json::Value> = match context {
-            serde_json::Value::Object(map) => map,
+        let mut context_map: serde_json::Map<String, crate::DbJson> = match context {
+            crate::DbJson::Object(map) => map,
             _ => serde_json::Map::new(),
         };
 
@@ -412,19 +412,19 @@ impl TemplateManager {
         let narrative_style = style.unwrap_or_default();
         context_map.insert(
             "tense".to_string(),
-            serde_json::Value::String(narrative_style.tense.as_str().to_string()),
+            crate::DbJson::String(narrative_style.tense.as_str().to_string()),
         );
         context_map.insert(
             "narration".to_string(),
-            serde_json::Value::String(narrative_style.narration.as_str().to_string()),
+            crate::DbJson::String(narrative_style.narration.as_str().to_string()),
         );
         context_map.insert(
             "perspective".to_string(),
-            serde_json::Value::String(narrative_style.perspective.as_str().to_string()),
+            crate::DbJson::String(narrative_style.perspective.as_str().to_string()),
         );
         context_map.insert(
             "length".to_string(),
-            serde_json::Value::String(narrative_style.length.as_str().to_string()),
+            crate::DbJson::String(narrative_style.length.as_str().to_string()),
         );
 
         // For templates with complex Jinja2 in sections, render each section with the full context
@@ -447,7 +447,7 @@ impl TemplateManager {
             match temp_env.add_template("temp", section_content) {
                 Ok(()) => {
                     if let Ok(temp_template) = temp_env.get_template("temp") {
-                        match temp_template.render(serde_json::Value::Object(context_map.clone())) {
+                        match temp_template.render(crate::DbJson::Object(context_map.clone())) {
                             Ok(rendered_content) => {
                                 debug!(
                                     section = section_name,
@@ -484,10 +484,10 @@ impl TemplateManager {
         // Add rendered sections to context
         context_map.insert(
             "self".to_string(),
-            serde_json::to_value(&rendered_sections).unwrap_or(serde_json::Value::Null),
+            serde_json::to_value(&rendered_sections).unwrap_or(crate::DbJson::Null),
         );
 
-        let enhanced_context = serde_json::Value::Object(context_map);
+        let enhanced_context = crate::DbJson::Object(context_map);
 
         // Sanitize context to prevent template injection, but skip the 'self' key containing template sections
         let sanitized_context = self.sanitize_context(enhanced_context, &["self"]);

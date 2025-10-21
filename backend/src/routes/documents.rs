@@ -1,3 +1,10 @@
+//! Legacy document routes (PostgreSQL only)
+//!
+//! These routes handle old_documents and old_suggestions tables which only exist
+//! in the PostgreSQL schema. They are not available in the SQLite/desktop build.
+
+#![cfg(feature = "postgres-backend")]
+
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::models::documents::{
@@ -86,7 +93,7 @@ async fn create_document_handler(
 async fn get_documents_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::DbUuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -137,7 +144,7 @@ async fn get_documents_by_id_handler(
 async fn get_document_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::DbUuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -181,7 +188,7 @@ async fn get_document_by_id_handler(
 async fn delete_documents_by_id_after_timestamp_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path((id, timestamp)): Path<(Uuid, String)>,
+    Path((id, timestamp)): Path<(crate::DbUuid, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -322,7 +329,7 @@ async fn create_suggestion_handler(
 async fn get_suggestions_by_document_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(document_id): Path<Uuid>,
+    Path(document_id): Path<crate::DbUuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user

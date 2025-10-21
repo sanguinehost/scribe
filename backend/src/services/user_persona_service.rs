@@ -151,7 +151,7 @@ impl UserPersonaService {
         &self,
         current_user: &User,
         dek_opt: Option<&SecretBox<Vec<u8>>>,
-        persona_id: Uuid,
+        persona_id: crate::DbUuid,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
         let conn = pool
@@ -247,7 +247,7 @@ impl UserPersonaService {
         &self,
         current_user: &User,
         dek: &SecretBox<Vec<u8>>,
-        persona_id: Uuid,
+        persona_id: crate::DbUuid,
         update_dto: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
@@ -409,7 +409,7 @@ impl UserPersonaService {
     pub async fn delete_user_persona(
         &self,
         current_user: &User,
-        persona_id: Uuid,
+        persona_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         let pool = self.db_pool.clone();
 
@@ -493,8 +493,8 @@ impl UserPersonaService {
     #[tracing::instrument(skip(pool), err)]
     pub async fn set_default_persona(
         pool: &DbPool, // Changed to pass pool directly as it's a static-like method now
-        user_id_val: Uuid,
-        persona_id_val: Option<Uuid>,
+        user_id_val: crate::DbUuid,
+        persona_id_val: Option<crate::DbUuid>,
     ) -> Result<User, AppError> {
         // Return the updated User
         let conn = pool
@@ -502,19 +502,41 @@ impl UserPersonaService {
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-        let updated_user_db_query = conn
-            .interact(move |db_conn| {
+        #[cfg(feature = "postgres-backend")]
+        let updated_user_db_query = {
+            conn
+                .interact(move |db_conn| {
+                    diesel::update(users_dsl::users.find(user_id_val))
+                        .set(users_dsl::default_persona_id.eq(persona_id_val))
+                        .get_result::<UserDbQuery>(db_conn) // Fetch UserDbQuery
+                        .map_err(AppError::from)
+                })
+                .await
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!(
+                        "DB interact join error for set_default_persona: {e}"
+                    ))
+                })??
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let updated_user_db_query = {
+            use diesel::prelude::*;
+            crate::db::with_conn(pool, move |db_conn| {
+                // SQLite doesn't support RETURNING on UPDATE, so we update and query back
                 diesel::update(users_dsl::users.find(user_id_val))
                     .set(users_dsl::default_persona_id.eq(persona_id_val))
-                    .get_result::<UserDbQuery>(db_conn) // Fetch UserDbQuery
+                    .execute(db_conn)
+                    .map_err(AppError::from)?;
+
+                users_dsl::users
+                    .find(user_id_val)
+                    .select(UserDbQuery::as_select())
+                    .first::<UserDbQuery>(db_conn)
                     .map_err(AppError::from)
             })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for set_default_persona: {e}"
-                ))
-            })??;
+            .await?
+        };
 
         tracing::info!(user_id = %loggable_user_id(user_id_val), default_persona_id = ?persona_id_val, "Successfully set default persona for user");
 
@@ -529,8 +551,8 @@ impl UserPersonaService {
     #[tracing::instrument(skip(pool), err)]
     pub async fn get_user_persona_by_id_and_user_id(
         pool: &DbPool,
-        persona_id_val: Uuid,
-        user_id_val: Uuid,
+        persona_id_val: crate::DbUuid,
+        user_id_val: crate::DbUuid,
     ) -> Result<Option<UserPersona>, AppError> {
         debug!(%persona_id_val, %user_id_val, "Attempting to get user persona by ID and user ID");
         let conn = pool

@@ -35,7 +35,7 @@ use tracing::{debug, error};
 pub struct LlmInfoResponse {
     pub local_llm_enabled: bool,     // Feature is available
     pub server_running: bool,        // Server is actually running
-    pub hardware: serde_json::Value, // Hardware capabilities as JSON
+    pub hardware: crate::DbJson, // Hardware capabilities as JSON
     pub models: Vec<ModelInfo>,
     pub download_progress: Option<DownloadProgressInfo>,
 }
@@ -663,7 +663,7 @@ async fn download_model(
 async fn delete_model(
     State(app_state): State<AppState>,
     Path(model_id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     info!("Deleting model: {}", model_id);
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
@@ -699,7 +699,7 @@ async fn delete_model(
 async fn activate_model(
     State(app_state): State<AppState>,
     Path(model_id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     info!("Activating model: {}", model_id);
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
@@ -737,7 +737,7 @@ async fn activate_model(
 #[cfg(feature = "local-llm")]
 async fn deactivate_model(
     State(_app_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     info!("Deactivating current local model");
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
@@ -768,7 +768,7 @@ async fn deactivate_model(
 #[cfg(feature = "local-llm")]
 async fn get_download_status(
     Path(model_id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     info!("Checking download status for model: {}", model_id);
 
     // Get model manager
@@ -1029,7 +1029,7 @@ async fn get_grouped_models(
 #[cfg(feature = "local-llm")]
 async fn download_best_model(
     State(app_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     info!("Downloading and activating best model");
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
@@ -1377,7 +1377,7 @@ async fn get_current_model(
 /// GET /api/llm/models/all - Get all available models with capabilities
 async fn get_all_models(
     auth_session: AuthSession<AuthBackend>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
@@ -1486,14 +1486,14 @@ async fn get_all_models(
         models_response.insert(model_id.clone(), model_info);
     }
 
-    Ok(Json(serde_json::Value::Object(models_response)))
+    Ok(Json(crate::DbJson::Object(models_response)))
 }
 
 /// GET /api/llm/models/:model_id/capabilities - Get specific model capabilities
 async fn get_model_capabilities(
     auth_session: AuthSession<AuthBackend>,
     Path(model_id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<crate::DbJson>, StatusCode> {
     // Verify user is authenticated
     let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
     use crate::llm::ModelRegistry;

@@ -70,8 +70,8 @@ pub struct SubscriptionResponse {
 #[derive(Serialize, Clone)]
 pub struct UsageLimitsResponse {
     pub tokens_used_total: i32,
-    pub period_start: chrono::DateTime<chrono::Utc>,
-    pub period_end: chrono::DateTime<chrono::Utc>,
+    pub period_start: crate::DbDateTime,
+    pub period_end: crate::DbDateTime,
     pub is_unlimited: bool,
     // Daily usage fields
     pub daily_message_count: Option<i32>,
@@ -173,20 +173,20 @@ pub struct CreditBalanceResponse {
     pub balance: i32,
     pub lifetime_earned: i32,
     pub lifetime_spent: i32,
-    pub last_monthly_grant: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_monthly_grant: Option<crate::DbDateTime>,
 }
 
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct CreditTransactionResponse {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
     pub description: String,                 // Decrypted
-    pub metadata: Option<serde_json::Value>, // Decrypted
+    pub metadata: Option<crate::DbJson>, // Decrypted
     pub reference_id: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: crate::DbDateTime,
 }
 
 #[cfg(feature = "payment")]
@@ -218,16 +218,16 @@ pub struct TransactionListQuery {
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct PaymentTransactionResponse {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub paddle_transaction_id: String,
     pub status: String,
     pub total_cents: i32,
     pub currency_code: Option<String>,
     pub customer_data: crate::models::payment::CustomerData, // DECRYPTED
-    pub items: serde_json::Value,
-    pub billed_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub items: crate::DbJson,
+    pub billed_at: Option<crate::DbDateTime>,
+    pub completed_at: Option<crate::DbDateTime>,
+    pub created_at: Option<crate::DbDateTime>,
 }
 
 /// Helper function to decrypt and convert PaymentTransaction to response DTO
@@ -754,7 +754,7 @@ pub async fn verify_transaction(
     Path(transaction_id): Path<String>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<crate::DbJson>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -1575,7 +1575,7 @@ pub async fn paddle_webhook(
     let audit_service = PaymentAuditService::new();
 
     // 4. Try to parse as generic JSON first to see the structure
-    match serde_json::from_slice::<serde_json::Value>(&body) {
+    match serde_json::from_slice::<crate::DbJson>(&body) {
         Ok(raw_json) => {
             // Log sanitized structure (removes PII)
             let sanitized_json = sanitize_json_value(&raw_json);
@@ -1952,7 +1952,7 @@ async fn process_transaction_completed(
         .get("custom_data")
         .and_then(|cd| cd.get("user_id"))
         .and_then(|v| v.as_str())
-        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+        .and_then(|s| crate::DbUuid::parse_str(s).ok());
     if let Some(ref uid) = custom_data_user_id {
         tracing::debug!(
             custom_data_user_id = %uid,
@@ -1981,12 +1981,12 @@ async fn process_transaction_completed(
     use diesel::prelude::*;
 
     let user_id = conn
-        .interact(move |conn| -> Result<uuid::Uuid, diesel::result::Error> {
+        .interact(move |conn| -> Result<crate::DbUuid, diesel::result::Error> {
             // Try to find user from existing subscriptions
             if let Ok(subscription) = subscriptions::table
                 .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
                 .select(subscriptions::user_id)
-                .first::<uuid::Uuid>(conn)
+                .first::<crate::DbUuid>(conn)
             {
                 tracing::debug!("Found user from existing subscription");
                 return Ok(subscription);
@@ -1996,7 +1996,7 @@ async fn process_transaction_completed(
             if let Ok(transaction) = payment_transactions::table
                 .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
                 .select(payment_transactions::user_id)
-                .first::<uuid::Uuid>(conn)
+                .first::<crate::DbUuid>(conn)
             {
                 tracing::debug!("Found user from payment transaction");
                 return Ok(transaction);
@@ -2007,7 +2007,7 @@ async fn process_transaction_completed(
                 if let Ok(user) = users::table
                     .filter(users::email.eq(email))
                     .select(users::id)
-                    .first::<uuid::Uuid>(conn)
+                    .first::<crate::DbUuid>(conn)
                 {
                     tracing::debug!("Found user by email fallback");
                     return Ok(user);
@@ -2019,7 +2019,7 @@ async fn process_transaction_completed(
                 if let Ok(user) = users::table
                     .filter(users::id.eq(user_id))
                     .select(users::id)
-                    .first::<uuid::Uuid>(conn)
+                    .first::<crate::DbUuid>(conn)
                 {
                     tracing::debug!("Found user by custom_data.user_id fallback");
                     return Ok(user);
@@ -2947,12 +2947,12 @@ async fn process_subscription_created(
     use diesel::prelude::*;
 
     let user_id = conn
-        .interact(move |conn| -> Result<uuid::Uuid, diesel::result::Error> {
+        .interact(move |conn| -> Result<crate::DbUuid, diesel::result::Error> {
             // Try to find user from existing subscriptions
             if let Ok(subscription) = subscriptions::table
                 .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
                 .select(subscriptions::user_id)
-                .first::<uuid::Uuid>(conn)
+                .first::<crate::DbUuid>(conn)
             {
                 tracing::debug!("Found user from existing subscription");
                 return Ok(subscription);
@@ -2962,7 +2962,7 @@ async fn process_subscription_created(
             if let Ok(transaction) = payment_transactions::table
                 .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
                 .select(payment_transactions::user_id)
-                .first::<uuid::Uuid>(conn)
+                .first::<crate::DbUuid>(conn)
             {
                 tracing::debug!("Found user from payment transaction");
                 return Ok(transaction);
@@ -2973,7 +2973,7 @@ async fn process_subscription_created(
                 if let Ok(user) = users::table
                     .filter(users::email.eq(email))
                     .select(users::id)
-                    .first::<uuid::Uuid>(conn)
+                    .first::<crate::DbUuid>(conn)
                 {
                     tracing::debug!("Found user by email fallback");
                     return Ok(user);
@@ -3401,7 +3401,7 @@ async fn process_subscription_updated(
         let status_for_update = status.clone();
 
         // Calculate grace_period_end if status is past_due
-        let grace_period_end_for_update: Option<chrono::DateTime<chrono::Utc>> =
+        let grace_period_end_for_update: Option<crate::DbDateTime> =
             if status == "past_due" {
                 let grace_period_days = app_state.config.payment.grace_period_days as i64;
                 Some(chrono::Utc::now() + chrono::Duration::days(grace_period_days))
@@ -3659,7 +3659,7 @@ fn map_price_id_to_plan(
         AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
     })?;
 
-    let tiers: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+    let tiers: crate::DbJson = serde_json::from_str(&config_str).map_err(|e| {
         AppError::ConfigurationError(format!("Invalid subscription config JSON: {}", e))
     })?;
 
@@ -3723,7 +3723,7 @@ fn calculate_credit_difference(
         AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
     })?;
 
-    let tiers: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+    let tiers: crate::DbJson = serde_json::from_str(&config_str).map_err(|e| {
         AppError::ConfigurationError(format!("Invalid subscription config JSON: {}", e))
     })?;
 
@@ -3783,7 +3783,7 @@ fn handle_plan_upgrade(
         .set((
             plan_type.eq(new_plan),
             scheduled_plan_change.eq::<Option<String>>(None),
-            scheduled_change_date.eq::<Option<chrono::DateTime<chrono::Utc>>>(None),
+            scheduled_change_date.eq::<Option<crate::DbDateTime>>(None),
             updated_at.eq(chrono::Utc::now()),
         ))
         .execute(conn)
@@ -4269,7 +4269,7 @@ pub async fn get_payment_transactions(
 /// Get a single payment transaction by ID
 #[cfg(feature = "payment")]
 pub async fn get_payment_transaction(
-    Path(transaction_id): Path<Uuid>,
+    Path(transaction_id): Path<crate::DbUuid>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
 ) -> Result<Json<PaymentTransactionResponse>, AppError> {
@@ -4332,7 +4332,7 @@ pub async fn get_payment_transaction(
 #[cfg(feature = "payment")]
 pub async fn get_model_costs(
     State(_app_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<crate::DbJson>, AppError> {
     use std::fs;
 
     // Load the subscription tiers configuration
@@ -4341,7 +4341,7 @@ pub async fn get_model_costs(
         AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e))
     })?;
 
-    let config: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+    let config: crate::DbJson = serde_json::from_str(&config_str).map_err(|e| {
         AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e))
     })?;
 

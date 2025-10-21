@@ -212,7 +212,7 @@ pub mod payment_test_helpers {
     /// Adds credits to a user using the credit service with proper connection handling
     pub async fn add_credits_to_user(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         amount: i32,
         description: &str,
     ) -> Result<CreditBalance, AppError> {
@@ -241,7 +241,7 @@ pub mod payment_test_helpers {
     /// Gets the credit balance for a user
     pub async fn get_user_credit_balance(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<CreditBalance, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -257,7 +257,7 @@ pub mod payment_test_helpers {
     /// Gets transaction history for a user
     pub async fn get_user_transaction_history(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<Vec<CreditTransaction>, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -273,7 +273,7 @@ pub mod payment_test_helpers {
     /// Initializes user credits account
     pub async fn initialize_user_credits(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<CreditBalance, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -292,7 +292,7 @@ pub mod payment_test_helpers {
         session_key: &str,
         method: &str,
         path: &str,
-        payload: Option<serde_json::Value>,
+        payload: Option<crate::DbJson>,
     ) -> Result<reqwest::Response, reqwest::Error> {
         let client = Client::new();
         let url = format!("{}{}", app.address, path);
@@ -481,10 +481,10 @@ pub mod payment_test_helpers {
     /// Generate unique test IDs for various entities
     pub fn generate_test_ids() -> TestIds {
         TestIds {
-            event_id: format!("evt_test_{}", uuid::Uuid::new_v4()),
-            customer_id: format!("cus_test_{}", uuid::Uuid::new_v4()),
-            subscription_id: format!("sub_test_{}", uuid::Uuid::new_v4()),
-            transaction_id: format!("txn_test_{}", uuid::Uuid::new_v4()),
+            event_id: format!("evt_test_{}", crate::DbUuid::new_v4()),
+            customer_id: format!("cus_test_{}", crate::DbUuid::new_v4()),
+            subscription_id: format!("sub_test_{}", crate::DbUuid::new_v4()),
+            transaction_id: format!("txn_test_{}", crate::DbUuid::new_v4()),
         }
     }
 

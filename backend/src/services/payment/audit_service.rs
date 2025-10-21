@@ -80,7 +80,7 @@ impl AuditEventType {
 #[derive(Queryable, Insertable)]
 #[diesel(table_name = crate::schema::payment_audit_logs)]
 pub struct PaymentAuditLog {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub user_id_hash: String,
     pub event_type: String,
     pub amount: Option<i32>,
@@ -88,7 +88,7 @@ pub struct PaymentAuditLog {
     pub success: bool,
     pub error_code: Option<String>,
     pub external_reference_hash: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: crate::DbDateTime,
 }
 
 impl PaymentAuditService {
@@ -105,7 +105,7 @@ impl PaymentAuditService {
     }
 
     /// Hash a user ID for privacy (one-way, non-reversible)
-    fn hash_user_id(user_id: &Uuid) -> String {
+    fn hash_user_id(user_id: &crate::DbUuid) -> String {
         let mut hasher = Sha256::new();
         hasher.update(user_id.as_bytes());
         format!("{:x}", hasher.finalize())
@@ -122,7 +122,7 @@ impl PaymentAuditService {
     pub fn log_credit_operation(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         event_type: AuditEventType,
         amount: i32,
     ) -> Result<(), AppError> {
@@ -160,7 +160,7 @@ impl PaymentAuditService {
     pub fn log_subscription_event(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         event_type: AuditEventType,
         external_ref: Option<&str>,
     ) -> Result<(), AppError> {
@@ -194,7 +194,7 @@ impl PaymentAuditService {
     pub fn log_plan_change(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         event_type: AuditEventType,
         old_plan: &str,
         new_plan: &str,
@@ -235,10 +235,10 @@ impl PaymentAuditService {
     pub fn log_plan_change_scheduled(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         current_plan: &str,
         scheduled_plan: &str,
-        scheduled_date: DateTime<Utc>,
+        scheduled_date: crate::DbDateTime,
         external_ref: Option<&str>,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
@@ -274,7 +274,7 @@ impl PaymentAuditService {
     pub fn log_payment_event(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         amount_cents: i32,
         success: bool,
         error_code: Option<&str>,

@@ -39,7 +39,9 @@ CREATE TABLE IF NOT EXISTS suggestions (
 );
 
 -- Add some new columns to existing tables
-ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'private';
-ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS role TEXT;
-ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS parts TEXT;
-ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT;
+-- Note: SQLite doesn't support IF NOT EXISTS in ALTER TABLE ADD COLUMN (before 3.35.0)
+-- Since migrations run in sequence, these columns shouldn't exist yet
+ALTER TABLE chat_sessions ADD COLUMN visibility TEXT DEFAULT 'private';
+ALTER TABLE chat_messages ADD COLUMN role TEXT;
+ALTER TABLE chat_messages ADD COLUMN parts TEXT;
+ALTER TABLE chat_messages ADD COLUMN attachments TEXT;

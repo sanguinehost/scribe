@@ -15,5 +15,6 @@ CREATE INDEX idx_agent_context_analysis_assistant_message_id
 ON agent_context_analysis(assistant_message_id);
 
 -- Add comment explaining the dual association
+-- SQLite Note: SQLite doesn't support COMMENT ON syntax, comments are stored as schema documentation
 -- COMMENT ON COLUMN agent_context_analysis.assistant_message_id IS
-'ID of the assistant message this analysis is associated with. For pre-processing, this is set after the assistant message is created. For post-processing, this is the message that triggered the analysis.';
+-- 'ID of the assistant message this analysis is associated with. For pre-processing, this is set after the assistant message is created. For post-processing, this is the message that triggered the analysis.';

@@ -708,9 +708,9 @@ impl QdrantClientService {
 ///
 /// Returns an error if the payload is not a valid JSON object or if serialization fails
 pub fn create_qdrant_point(
-    id: Uuid,
+    id: crate::DbUuid,
     vector: Vec<f32>,
-    payload: Option<serde_json::Value>,
+    payload: Option<crate::DbJson>,
 ) -> Result<PointStruct, AppError> {
     // Convert Option<serde_json::Value> to HashMap<String, qdrant_client::qdrant::Value>
     let qdrant_payload: std::collections::HashMap<String, Value> = match payload {
@@ -745,7 +745,7 @@ pub fn create_qdrant_point(
 
 // Add a helper function to create a filter for message_id
 #[must_use]
-pub fn create_message_id_filter(message_id: Uuid) -> Filter {
+pub fn create_message_id_filter(message_id: crate::DbUuid) -> Filter {
     Filter {
         must: vec![Condition {
             condition_one_of: Some(ConditionOneOf::Field(FieldCondition {

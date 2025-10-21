@@ -6,9 +6,12 @@
 -- ================================================================
 
 -- CREATE OR REPLACE FUNCTION trigger_set_timestamp()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NO... -- Removed: SQLite does not support PL/pgSQL
+-- RETURNS TRIGGER AS $$
+-- BEGIN
+--   NEW.updated_at = CURRENT_TIMESTAMP;
+--   RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql;
 
 -- Your SQL goes here
 CREATE TABLE sessions (

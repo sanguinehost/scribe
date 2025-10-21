@@ -303,7 +303,8 @@ impl From<DieselError> for AuthBackendError {
     }
 }
 
-// If UserStore directly interacts with the pool and can return PoolError
+// If UserStore directly interacts with the pool and can return PoolError (PostgreSQL only)
+#[cfg(feature = "postgres-backend")]
 impl From<DeadpoolDieselPoolError> for AuthBackendError {
     fn from(err: DeadpoolDieselPoolError) -> Self {
         Self::DbPoolError(err.to_string())
@@ -436,7 +437,7 @@ impl AppError {
         // Convert validation errors to JSON
         let mut error_details = serde_json::Map::new();
         for (field, errors) in validation_errors.field_errors() {
-            let field_errors: Vec<serde_json::Value> = errors
+            let field_errors: Vec<crate::DbJson> = errors
                 .iter()
                 .map(|error| {
                     let mut err_map = serde_json::Map::new();
@@ -445,7 +446,7 @@ impl AppError {
                         err_map.insert("message".to_string(), json!(message));
                     }
                     // Add params if they exist and are useful
-                    let params: serde_json::Map<String, serde_json::Value> = error
+                    let params: serde_json::Map<String, crate::DbJson> = error
                         .params
                         .iter()
                         .map(|(k, v)| (k.to_string(), json!(v)))
@@ -1207,7 +1208,7 @@ impl From<genai::Error> for AppError {
                 if let Some(end_idx) = json_part.rfind('}') {
                     let json_str = &json_part[..=end_idx];
 
-                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Ok(json_value) = serde_json::from_str::<crate::DbJson>(json_str) {
                         if let Some(retry_info) = json_value["error"]["details"]
                             .as_array()
                             .and_then(|details| {

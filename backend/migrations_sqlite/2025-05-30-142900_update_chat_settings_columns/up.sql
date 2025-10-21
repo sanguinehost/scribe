@@ -5,16 +5,12 @@
 -- IMPORTANT: Review warnings below and verify functionality
 -- ================================================================
 
-ALTER TABLE chat_sessions
-ADD COLUMN IF NOT EXISTS repetition_penalty NUMERIC NULL,
-ADD COLUMN IF NOT EXISTS min_p NUMERIC NULL,
-ADD COLUMN IF NOT EXISTS top_a NUMERIC NULL,
-ADD COLUMN IF NOT EXISTS logit_bias TEXT NULL;
+-- Note: These columns already exist from previous migrations (2025-04-23-233746)
+-- No need to add them again
+-- ALTER TABLE chat_sessions ADD COLUMN repetition_penalty NUMERIC NULL;
+-- ALTER TABLE chat_sessions ADD COLUMN min_p NUMERIC NULL;
+-- ALTER TABLE chat_sessions ADD COLUMN top_a NUMERIC NULL;
+-- ALTER TABLE chat_sessions ADD COLUMN logit_bias TEXT NULL;
 
--- Ensure stop_sequences is TEXT NULL if it wasn't already,
--- or if it was a different type.
-ALTER TABLE chat_sessions
-DROP COLUMN IF EXISTS stop_sequences; -- Drop first to avoid type conflicts if it exists with a different type
-
-ALTER TABLE chat_sessions
-ADD COLUMN stop_sequences TEXT NULL;
+-- Add stop_sequences column (TEXT array stored as TEXT in SQLite)
+ALTER TABLE chat_sessions ADD COLUMN stop_sequences TEXT NULL;

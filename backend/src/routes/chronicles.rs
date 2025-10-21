@@ -45,7 +45,7 @@ pub struct EventQuery {
 #[derive(Debug, Deserialize, Validate)]
 pub struct ReChronicleRequest {
     /// The chat session ID to re-chronicle
-    pub chat_session_id: Uuid,
+    pub chat_session_id: crate::DbUuid,
     /// Whether to purge existing chronicle events before re-chronicling
     #[serde(default)]
     pub purge_existing: bool,
@@ -81,7 +81,7 @@ pub struct ReChronicleResponse {
 #[derive(Debug, Deserialize, Validate)]
 pub struct GenerateChronicleNameRequest {
     /// The chat session ID to analyze for name generation
-    pub chat_session_id: Uuid,
+    pub chat_session_id: crate::DbUuid,
 }
 
 /// Response with the generated chronicle name
@@ -186,7 +186,7 @@ async fn list_chronicles(
 async fn get_chronicle(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
+    Path(chronicle_id): Path<crate::DbUuid>,
 ) -> Result<Json<PlayerChronicle>, AppError> {
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
@@ -209,7 +209,7 @@ async fn get_chronicle(
 async fn update_chronicle(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
+    Path(chronicle_id): Path<crate::DbUuid>,
     Json(request): Json<UpdateChronicleRequest>,
 ) -> Result<Json<PlayerChronicle>, AppError> {
     // Validate the request
@@ -236,7 +236,7 @@ async fn update_chronicle(
 async fn delete_chronicle(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
+    Path(chronicle_id): Path<crate::DbUuid>,
 ) -> Result<StatusCode, AppError> {
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
@@ -285,7 +285,7 @@ async fn create_event(
     auth_session: AuthSession<AuthBackend>,
     session_dek: crate::auth::session_dek::SessionDek,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
+    Path(chronicle_id): Path<crate::DbUuid>,
     Json(request): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<ChronicleEvent>), AppError> {
     // Validate the request
@@ -342,7 +342,7 @@ async fn list_events(
     auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
+    Path(chronicle_id): Path<crate::DbUuid>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Vec<ChronicleEvent>>, AppError> {
     let user = auth_session.user.ok_or_else(|| {
@@ -386,7 +386,7 @@ async fn list_events(
 async fn delete_event(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path((chronicle_id, event_id)): Path<(Uuid, Uuid)>,
+    Path((chronicle_id, event_id)): Path<(crate::DbUuid, crate::DbUuid)>,
 ) -> Result<StatusCode, AppError> {
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
@@ -426,7 +426,7 @@ async fn re_chronicle_from_chat(
     auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<Uuid>,
+    Path(chronicle_id): Path<crate::DbUuid>,
     Json(request): Json<ReChronicleRequest>,
 ) -> Result<Json<ReChronicleResponse>, AppError> {
     // Validate the request
@@ -579,8 +579,8 @@ async fn re_chronicle_from_chat(
 /// Helper function to get the character name for a chat session
 async fn get_character_name_for_session(
     state: &AppState,
-    chat_session_id: Uuid,
-    user_id: Uuid,
+    chat_session_id: crate::DbUuid,
+    user_id: crate::DbUuid,
 ) -> Result<Option<String>, AppError> {
     use crate::schema::{characters, chat_sessions};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
@@ -610,8 +610,8 @@ async fn get_character_name_for_session(
 /// Helper function to get the character data for a chat session
 async fn get_character_for_session(
     state: &AppState,
-    chat_session_id: Uuid,
-    user_id: Uuid,
+    chat_session_id: crate::DbUuid,
+    user_id: crate::DbUuid,
 ) -> Result<Option<crate::models::characters::Character>, AppError> {
     use crate::schema::{characters, chat_sessions};
     use diesel::{
@@ -643,8 +643,8 @@ async fn get_character_for_session(
 /// Helper function to get chat messages for a session
 async fn get_chat_messages(
     state: &AppState,
-    chat_session_id: Uuid,
-    user_id: Uuid,
+    chat_session_id: crate::DbUuid,
+    user_id: crate::DbUuid,
 ) -> Result<Vec<ChatMessage>, AppError> {
     use crate::schema::{chat_messages, chat_sessions};
     use diesel::{

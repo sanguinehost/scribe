@@ -42,7 +42,7 @@ impl SubscriptionService {
     pub async fn create_subscription(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         plan_type: &str,
         paddle_customer_id: Option<String>,
         paddle_subscription_id: Option<String>,
@@ -62,7 +62,7 @@ impl SubscriptionService {
     pub fn create_subscription_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         plan_type: &str,
         paddle_customer_id: Option<String>,
         paddle_subscription_id: Option<String>,
@@ -123,7 +123,7 @@ impl SubscriptionService {
     pub async fn get_user_subscription(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<Option<Subscription>, AppError> {
         self.get_user_subscription_sync(conn, user_id)
     }
@@ -132,7 +132,7 @@ impl SubscriptionService {
     pub fn get_user_subscription_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<Option<Subscription>, AppError> {
         // Get the most recent subscription for this user
         // Include cancelled trials so we can check if they've expired
@@ -211,7 +211,7 @@ impl SubscriptionService {
     pub async fn get_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::DbUuid,
     ) -> Result<Option<Subscription>, AppError> {
         let subscription = subscriptions::table
             .find(subscription_id)
@@ -243,7 +243,7 @@ impl SubscriptionService {
     pub async fn update_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::DbUuid,
         updates: UpdateSubscription,
     ) -> Result<Subscription, AppError> {
         let update_data = updates;
@@ -262,7 +262,7 @@ impl SubscriptionService {
     pub async fn cancel_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::DbUuid,
         immediate: bool,
     ) -> Result<Subscription, AppError> {
         let updates = if immediate {
@@ -286,7 +286,7 @@ impl SubscriptionService {
     pub async fn reactivate_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::DbUuid,
     ) -> Result<Subscription, AppError> {
         let updates = UpdateSubscription {
             status: Some(SubscriptionStatus::Active.to_string()),
@@ -302,9 +302,9 @@ impl SubscriptionService {
     pub async fn update_subscription_period(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
-        period_start: DateTime<Utc>,
-        period_end: DateTime<Utc>,
+        subscription_id: crate::DbUuid,
+        period_start: crate::DbDateTime,
+        period_end: crate::DbDateTime,
     ) -> Result<Subscription, AppError> {
         let updates = UpdateSubscription {
             current_period_start: Some(period_start),
@@ -393,8 +393,8 @@ impl SubscriptionService {
         conn: &mut PgConnection,
         paddle_subscription_id: &str,
         status: &str,
-        period_start: Option<DateTime<Utc>>,
-        period_end: Option<DateTime<Utc>>,
+        period_start: Option<crate::DbDateTime>,
+        period_end: Option<crate::DbDateTime>,
         plan_id: Option<&str>,
     ) -> Result<Option<Subscription>, AppError> {
         if let Some(subscription) = self

@@ -6,8 +6,7 @@
 -- ================================================================
 
 -- Your SQL goes here
-ALTER TABLE users
-ADD COLUMN kek_salt TEXT NOT NULL,
-ADD COLUMN encrypted_dek BLOB NOT NULL,
-ADD COLUMN encrypted_dek_by_recovery BLOB NULL,
-ADD COLUMN recovery_kek_salt TEXT NULL;
+ALTER TABLE users ADD COLUMN kek_salt TEXT NOT NULL;
+ALTER TABLE users ADD COLUMN encrypted_dek BLOB NOT NULL;
+ALTER TABLE users ADD COLUMN encrypted_dek_by_recovery BLOB NULL;
+ALTER TABLE users ADD COLUMN recovery_kek_salt TEXT NULL;

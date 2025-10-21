@@ -1,188 +1,498 @@
-//! SQLite type mappings for custom types
+//! SQLite custom type mappings using newtype wrappers
 //!
-//! This module provides type conversions for SQLite backend, mapping PostgreSQL types
-//! to SQLite equivalents:
-//! - UUID → TEXT
-//! - JSONB → TEXT
-//! - ARRAY<TEXT> → TEXT (JSON array serialization)
+//! This module provides newtype wrappers for types that don't have built-in
+//! SQLite support in Diesel. The newtype pattern allows us to implement
+//! Diesel's FromSql and ToSql traits without violating the orphan rule.
 
+#![cfg(feature = "sqlite-backend")]
+
+use chrono::{DateTime, Utc};
 use diesel::deserialize::{self, FromSql};
-use diesel::serialize::{self, Output, ToSql};
-use diesel::sql_types::Text;
+use diesel::serialize::{self, IsNull, Output, ToSql};
+use diesel::sql_types::{Text, Timestamp};
 use diesel::sqlite::Sqlite;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use uuid::Uuid;
 
-/// Implement FromSql for Uuid to read from SQLite TEXT column
-impl FromSql<Text, Sqlite> for Uuid {
-    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> deserialize::Result<Self> {
+/// Newtype wrapper for UUID to enable SQLite TEXT mapping
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SqliteUuid(pub Uuid);
+
+impl SqliteUuid {
+    pub fn new(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    pub fn new_v4() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn nil() -> Self {
+        Self(Uuid::nil())
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl From<Uuid> for SqliteUuid {
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl From<SqliteUuid> for Uuid {
+    fn from(wrapper: SqliteUuid) -> Self {
+        wrapper.0
+    }
+}
+
+impl std::ops::Deref for SqliteUuid {
+    type Target = Uuid;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SqliteUuid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromSql<Text, Sqlite> for SqliteUuid {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        Uuid::parse_str(&text).map_err(|e| e.into())
+        let uuid = Uuid::parse_str(&text)
+            .map_err(|e| format!("Failed to parse UUID from TEXT: {}", e))?;
+        Ok(SqliteUuid(uuid))
     }
 }
 
-/// Implement ToSql for Uuid to write to SQLite TEXT column
-impl ToSql<Text, Sqlite> for Uuid {
+impl ToSql<Text, Sqlite> for SqliteUuid {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        out.set_value(self.to_string());
-        Ok(serialize::IsNull::No)
+        let uuid_str = self.0.to_string();
+        <String as ToSql<Text, Sqlite>>::to_sql(&uuid_str, &mut out.reborrow())
     }
 }
 
-/// Wrapper type for JSON values (maps JSONB → TEXT in SQLite)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct JsonValue(pub serde_json::Value);
-
-impl FromSql<Text, Sqlite> for JsonValue {
-    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> deserialize::Result<Self> {
+impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteUuid {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        let value: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| format!("Failed to parse JSON: {}", e))?;
-        Ok(JsonValue(value))
+        let uuid = Uuid::parse_str(&text)
+            .map_err(|e| format!("Failed to parse UUID from TEXT: {}", e))?;
+        Ok(SqliteUuid(uuid))
     }
 }
 
-impl ToSql<Text, Sqlite> for JsonValue {
+impl Default for SqliteUuid {
+    fn default() -> Self {
+        Self(Uuid::nil())
+    }
+}
+
+/// Newtype wrapper for DateTime<Utc> to enable SQLite Timestamp mapping
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Timestamp)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SqliteDateTime(pub DateTime<Utc>);
+
+impl SqliteDateTime {
+    pub fn new(dt: DateTime<Utc>) -> Self {
+        Self(dt)
+    }
+
+    pub fn into_inner(self) -> DateTime<Utc> {
+        self.0
+    }
+
+    pub fn as_datetime(&self) -> &DateTime<Utc> {
+        &self.0
+    }
+}
+
+impl From<DateTime<Utc>> for SqliteDateTime {
+    fn from(dt: DateTime<Utc>) -> Self {
+        Self(dt)
+    }
+}
+
+impl From<SqliteDateTime> for DateTime<Utc> {
+    fn from(wrapper: SqliteDateTime) -> Self {
+        wrapper.0
+    }
+}
+
+impl std::ops::Deref for SqliteDateTime {
+    type Target = DateTime<Utc>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SqliteDateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromSql<Timestamp, Sqlite> for SqliteDateTime {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let timestamp = <i64 as FromSql<diesel::sql_types::BigInt, Sqlite>>::from_sql(bytes)?;
+        let dt = DateTime::from_timestamp(timestamp, 0)
+            .ok_or_else(|| format!("Invalid timestamp: {}", timestamp))?;
+        Ok(SqliteDateTime(dt))
+    }
+}
+
+impl ToSql<Timestamp, Sqlite> for SqliteDateTime {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        let json_string = serde_json::to_string(&self.0)
-            .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
-        out.set_value(json_string);
-        Ok(serialize::IsNull::No)
+        let timestamp = self.0.timestamp();
+        <i64 as ToSql<diesel::sql_types::BigInt, Sqlite>>::to_sql(&timestamp, &mut out.reborrow())
     }
 }
 
-/// Wrapper type for string arrays (maps ARRAY<TEXT> → TEXT in SQLite)
-/// Stores arrays as JSON arrays in TEXT columns
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TextArray(pub Vec<String>);
+impl FromSql<diesel::sql_types::Nullable<Timestamp>, Sqlite> for SqliteDateTime {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let timestamp = <i64 as FromSql<diesel::sql_types::BigInt, Sqlite>>::from_sql(bytes)?;
+        let dt = DateTime::from_timestamp(timestamp, 0)
+            .ok_or_else(|| format!("Invalid timestamp: {}", timestamp))?;
+        Ok(SqliteDateTime(dt))
+    }
+}
 
-impl FromSql<Text, Sqlite> for TextArray {
-    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> deserialize::Result<Self> {
+impl PartialOrd for SqliteDateTime {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SqliteDateTime {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+// Arithmetic operations for DateTime
+impl std::ops::Sub for SqliteDateTime {
+    type Output = chrono::Duration;
+
+    fn sub(self, other: Self) -> Self::Output {
+        self.0 - other.0
+    }
+}
+
+impl std::ops::Sub<SqliteDateTime> for DateTime<Utc> {
+    type Output = chrono::Duration;
+
+    fn sub(self, other: SqliteDateTime) -> Self::Output {
+        self - other.0
+    }
+}
+
+impl std::ops::Add<chrono::Duration> for SqliteDateTime {
+    type Output = SqliteDateTime;
+
+    fn add(self, duration: chrono::Duration) -> Self::Output {
+        SqliteDateTime(self.0 + duration)
+    }
+}
+
+impl std::ops::Sub<chrono::Duration> for SqliteDateTime {
+    type Output = SqliteDateTime;
+
+    fn sub(self, duration: chrono::Duration) -> Self::Output {
+        SqliteDateTime(self.0 - duration)
+    }
+}
+
+impl Default for SqliteDateTime {
+    fn default() -> Self {
+        Self(Utc::now())
+    }
+}
+
+/// Newtype wrapper for serde_json::Value to enable SQLite TEXT mapping
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Text)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SqliteJson(pub serde_json::Value);
+
+impl SqliteJson {
+    pub fn new(value: serde_json::Value) -> Self {
+        Self(value)
+    }
+
+    pub fn into_inner(self) -> serde_json::Value {
+        self.0
+    }
+
+    pub fn as_value(&self) -> &serde_json::Value {
+        &self.0
+    }
+
+    // Convenience accessors delegating to serde_json::Value methods
+    pub fn as_str(&self) -> Option<&str> {
+        self.0.as_str()
+    }
+
+    pub fn as_object(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.0.as_object()
+    }
+
+    pub fn as_object_mut(&mut self) -> Option<&mut serde_json::Map<String, serde_json::Value>> {
+        self.0.as_object_mut()
+    }
+
+    pub fn as_array(&self) -> Option<&Vec<serde_json::Value>> {
+        self.0.as_array()
+    }
+
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<serde_json::Value>> {
+        self.0.as_array_mut()
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        self.0.as_bool()
+    }
+
+    pub fn as_i64(&self) -> Option<i64> {
+        self.0.as_i64()
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        self.0.as_u64()
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        self.0.as_f64()
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+
+    pub fn is_object(&self) -> bool {
+        self.0.is_object()
+    }
+
+    pub fn is_array(&self) -> bool {
+        self.0.is_array()
+    }
+
+    pub fn is_string(&self) -> bool {
+        self.0.is_string()
+    }
+
+    pub fn is_number(&self) -> bool {
+        self.0.is_number()
+    }
+
+    pub fn is_boolean(&self) -> bool {
+        self.0.is_boolean()
+    }
+
+    pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
+        self.0.get(key)
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut serde_json::Value> {
+        self.0.get_mut(key)
+    }
+}
+
+impl From<serde_json::Value> for SqliteJson {
+    fn from(value: serde_json::Value) -> Self {
+        Self(value)
+    }
+}
+
+impl From<SqliteJson> for serde_json::Value {
+    fn from(wrapper: SqliteJson) -> Self {
+        wrapper.0
+    }
+}
+
+impl std::ops::Deref for SqliteJson {
+    type Target = serde_json::Value;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SqliteJson {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromSql<Text, Sqlite> for SqliteJson {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        let vec: Vec<String> = serde_json::from_str(&text)
-            .map_err(|e| format!("Failed to parse string array: {}", e))?;
-        Ok(TextArray(vec))
+        let value = serde_json::from_str(&text)
+            .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
+        Ok(SqliteJson(value))
     }
 }
 
-impl ToSql<Text, Sqlite> for TextArray {
+impl ToSql<Text, Sqlite> for SqliteJson {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        let json_string = serde_json::to_string(&self.0)
-            .map_err(|e| format!("Failed to serialize string array: {}", e))?;
-        out.set_value(json_string);
-        Ok(serialize::IsNull::No)
+        let json_str = serde_json::to_string(&self.0)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        <String as ToSql<Text, Sqlite>>::to_sql(&json_str, &mut out.reborrow())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use diesel::prelude::*;
-    use diesel::sql_types::Text;
+impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let value = serde_json::from_str(&text)
+            .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
+        Ok(SqliteJson(value))
+    }
+}
 
-    // Helper function to create a test SQLite database connection
-    fn establish_test_connection() -> SqliteConnection {
-        SqliteConnection::establish(":memory:").expect("Failed to create in-memory database")
+/// Newtype wrapper for BigDecimal to enable SQLite Double mapping
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[diesel(sql_type = diesel::sql_types::Double)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct SqliteBigDecimal(pub bigdecimal::BigDecimal);
+
+impl SqliteBigDecimal {
+    pub fn new(value: bigdecimal::BigDecimal) -> Self {
+        Self(value)
     }
 
-    #[test]
-    fn test_uuid_roundtrip_sqlite() {
-        let conn = &mut establish_test_connection();
-
-        // Create test table
-        diesel::sql_query("CREATE TABLE test_uuids (id TEXT PRIMARY KEY)")
-            .execute(conn)
-            .expect("Failed to create table");
-
-        // Test UUID
-        let test_uuid = Uuid::new_v4();
-
-        // Insert UUID
-        diesel::sql_query("INSERT INTO test_uuids (id) VALUES (?)")
-            .bind::<Text, _>(test_uuid.to_string())
-            .execute(conn)
-            .expect("Failed to insert UUID");
-
-        // Retrieve UUID
-        let retrieved: String = diesel::sql_query("SELECT id FROM test_uuids")
-            .get_result::<(String,)>(conn)
-            .expect("Failed to retrieve UUID")
-            .0;
-
-        let retrieved_uuid = Uuid::parse_str(&retrieved).expect("Failed to parse retrieved UUID");
-
-        assert_eq!(test_uuid, retrieved_uuid, "UUID roundtrip failed");
+    pub fn into_inner(self) -> bigdecimal::BigDecimal {
+        self.0
     }
 
-    #[test]
-    fn test_jsonb_roundtrip_sqlite() {
-        let conn = &mut establish_test_connection();
-
-        // Create test table
-        diesel::sql_query("CREATE TABLE test_json (data TEXT)")
-            .execute(conn)
-            .expect("Failed to create table");
-
-        // Test JSON value
-        let test_json = JsonValue(serde_json::json!({
-            "name": "Test User",
-            "age": 30,
-            "active": true,
-            "tags": ["rust", "diesel", "sqlite"]
-        }));
-
-        // Insert JSON
-        let json_string = serde_json::to_string(&test_json.0).expect("Failed to serialize JSON");
-        diesel::sql_query("INSERT INTO test_json (data) VALUES (?)")
-            .bind::<Text, _>(json_string)
-            .execute(conn)
-            .expect("Failed to insert JSON");
-
-        // Retrieve JSON
-        let retrieved: String = diesel::sql_query("SELECT data FROM test_json")
-            .get_result::<(String,)>(conn)
-            .expect("Failed to retrieve JSON")
-            .0;
-
-        let retrieved_json: serde_json::Value =
-            serde_json::from_str(&retrieved).expect("Failed to parse retrieved JSON");
-
-        assert_eq!(test_json.0, retrieved_json, "JSON roundtrip failed");
+    pub fn as_bigdecimal(&self) -> &bigdecimal::BigDecimal {
+        &self.0
     }
+}
 
-    #[test]
-    fn test_array_roundtrip_sqlite() {
-        let conn = &mut establish_test_connection();
+impl From<bigdecimal::BigDecimal> for SqliteBigDecimal {
+    fn from(value: bigdecimal::BigDecimal) -> Self {
+        Self(value)
+    }
+}
 
-        // Create test table
-        diesel::sql_query("CREATE TABLE test_arrays (tags TEXT)")
-            .execute(conn)
-            .expect("Failed to create table");
+impl From<SqliteBigDecimal> for bigdecimal::BigDecimal {
+    fn from(wrapper: SqliteBigDecimal) -> Self {
+        wrapper.0
+    }
+}
 
-        // Test string array
-        let test_array = TextArray(vec![
-            "rust".to_string(),
-            "diesel".to_string(),
-            "sqlite".to_string(),
-        ]);
+impl std::ops::Deref for SqliteBigDecimal {
+    type Target = bigdecimal::BigDecimal;
 
-        // Insert array
-        let array_string = serde_json::to_string(&test_array.0).expect("Failed to serialize array");
-        diesel::sql_query("INSERT INTO test_arrays (tags) VALUES (?)")
-            .bind::<Text, _>(array_string)
-            .execute(conn)
-            .expect("Failed to insert array");
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
-        // Retrieve array
-        let retrieved: String = diesel::sql_query("SELECT tags FROM test_arrays")
-            .get_result::<(String,)>(conn)
-            .expect("Failed to retrieve array")
-            .0;
+impl std::fmt::Display for SqliteBigDecimal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
-        let retrieved_array: Vec<String> =
-            serde_json::from_str(&retrieved).expect("Failed to parse retrieved array");
+impl FromSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <f64 as FromSql<diesel::sql_types::Double, Sqlite>>::from_sql(bytes)?;
+        let decimal = bigdecimal::BigDecimal::try_from(value)
+            .map_err(|e| format!("Failed to convert f64 to BigDecimal: {}", e))?;
+        Ok(SqliteBigDecimal(decimal))
+    }
+}
 
-        assert_eq!(test_array.0, retrieved_array, "Array roundtrip failed");
+impl ToSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        use std::str::FromStr;
+        let value = f64::from_str(&self.0.to_string())
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        <f64 as ToSql<diesel::sql_types::Double, Sqlite>>::to_sql(&value, &mut out.reborrow())
+    }
+}
+
+impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Double>, Sqlite> for SqliteBigDecimal {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <f64 as FromSql<diesel::sql_types::Double, Sqlite>>::from_sql(bytes)?;
+        let decimal = bigdecimal::BigDecimal::try_from(value)
+            .map_err(|e| format!("Failed to convert f64 to BigDecimal: {}", e))?;
+        Ok(SqliteBigDecimal(decimal))
+    }
+}
+
+// Additional FromSql implementation for Integer (used for credit/payment fields in SQLite)
+impl FromSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <i32 as FromSql<diesel::sql_types::Integer, Sqlite>>::from_sql(bytes)?;
+        let decimal = bigdecimal::BigDecimal::from(value);
+        Ok(SqliteBigDecimal(decimal))
+    }
+}
+
+impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Integer>, Sqlite> for SqliteBigDecimal {
+    fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = <i32 as FromSql<diesel::sql_types::Integer, Sqlite>>::from_sql(bytes)?;
+        let decimal = bigdecimal::BigDecimal::from(value);
+        Ok(SqliteBigDecimal(decimal))
+    }
+}
+
+impl ToSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        use std::str::FromStr;
+        let value = i32::from_str(&self.0.to_string())
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        <i32 as ToSql<diesel::sql_types::Integer, Sqlite>>::to_sql(&value, &mut out.reborrow())
+    }
+}
+
+impl Default for SqliteBigDecimal {
+    fn default() -> Self {
+        Self(bigdecimal::BigDecimal::from(0))
+    }
+}
+
+// From<{integer}> implementations for common literal types
+impl From<i32> for SqliteBigDecimal {
+    fn from(value: i32) -> Self {
+        Self(bigdecimal::BigDecimal::from(value))
+    }
+}
+
+impl From<i64> for SqliteBigDecimal {
+    fn from(value: i64) -> Self {
+        Self(bigdecimal::BigDecimal::from(value))
+    }
+}
+
+impl From<u32> for SqliteBigDecimal {
+    fn from(value: u32) -> Self {
+        Self(bigdecimal::BigDecimal::from(value))
+    }
+}
+
+impl From<u64> for SqliteBigDecimal {
+    fn from(value: u64) -> Self {
+        Self(bigdecimal::BigDecimal::from(value))
     }
 }

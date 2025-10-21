@@ -22,23 +22,23 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 // DTO for user list display
 #[derive(Debug, Serialize)]
 pub struct AdminUserListResponse {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub username: String,
     pub role: UserRole,
     pub account_status: String,            // "active" or "locked"
-    pub last_login: Option<DateTime<Utc>>, // We'll use updated_at for now as proxy for last login
+    pub last_login: Option<crate::DbDateTime>, // We'll use updated_at for now as proxy for last login
 }
 
 // DTO for user details
 #[derive(Debug, Serialize)]
 pub struct AdminUserDetailResponse {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub username: String,
     pub email: String,
     pub role: UserRole,
     pub account_status: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>, // Using as last login for now
+    pub created_at: crate::DbDateTime,
+    pub updated_at: crate::DbDateTime, // Using as last login for now
 }
 
 // Update user role request payload
@@ -84,19 +84,13 @@ async fn list_users_handler(
     info!("Admin: listing all users");
 
     // Fetch all users from the database
-    let users = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(|conn| {
-            users::table
-                .select(UserDbQuery::as_select())
-                .load::<UserDbQuery>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let users = crate::db::with_conn(&state.pool, |conn| {
+        users::table
+            .select(UserDbQuery::as_select())
+            .load::<UserDbQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await?;
 
     // Transform to DTOs for response
     let user_list: Vec<AdminUserListResponse> = users
@@ -118,7 +112,7 @@ async fn list_users_handler(
 async fn get_user_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<Uuid>,
+    Path(user_id): Path<crate::DbUuid>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session)?;
@@ -126,26 +120,20 @@ async fn get_user_handler(
     info!(user_id = %user_id, "Admin: getting specific user details");
 
     // Fetch the user from the database
-    let user = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            users::table
-                .filter(users::id.eq(user_id))
-                .select(UserDbQuery::as_select())
-                .first::<UserDbQuery>(conn)
-                .map_err(|e| {
-                    if e == diesel::result::Error::NotFound {
-                        AppError::UserNotFound
-                    } else {
-                        AppError::DatabaseQueryError(e.to_string())
-                    }
-                })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let user = crate::db::with_conn(&state.pool, move |conn| {
+        users::table
+            .filter(users::id.eq(user_id))
+            .select(UserDbQuery::as_select())
+            .first::<UserDbQuery>(conn)
+            .map_err(|e| {
+                if e == diesel::result::Error::NotFound {
+                    AppError::UserNotFound
+                } else {
+                    AppError::DatabaseQueryError(e.to_string())
+                }
+            })
+    })
+    .await?;
 
     // Transform to DTO for response
     let user_detail = AdminUserDetailResponse {
@@ -166,7 +154,7 @@ async fn get_user_handler(
 async fn lock_user_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<Uuid>,
+    Path(user_id): Path<crate::DbUuid>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session)?;
@@ -184,12 +172,9 @@ async fn lock_user_handler(
     }
 
     // Update the user's account status in the database
-    let updated_user = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
+    let updated_user = crate::db::with_conn(&state.pool, move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        {
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::account_status.eq(AccountStatus::Locked))
@@ -202,9 +187,32 @@ async fn lock_user_handler(
                         AppError::DatabaseQueryError(e.to_string())
                     }
                 })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING on UPDATE, so we update and query back
+            diesel::update(users::table)
+                .filter(users::id.eq(user_id))
+                .set(users::account_status.eq(AccountStatus::Locked))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            users::table
+                .find(user_id)
+                .select(UserDbQuery::as_select())
+                .first::<UserDbQuery>(conn)
+                .map_err(|e| {
+                    if e == diesel::result::Error::NotFound {
+                        AppError::UserNotFound
+                    } else {
+                        AppError::DatabaseQueryError(e.to_string())
+                    }
+                })
+        }
+    })
+    .await?;
 
     // Return success message
     Ok((
@@ -221,7 +229,7 @@ async fn lock_user_handler(
 async fn unlock_user_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<Uuid>,
+    Path(user_id): Path<crate::DbUuid>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session)?;
@@ -229,12 +237,9 @@ async fn unlock_user_handler(
     info!(user_id = %user_id, "Admin: unlocking user account");
 
     // Update the user's account status in the database
-    let updated_user = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
+    let updated_user = crate::db::with_conn(&state.pool, move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        {
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::account_status.eq(AccountStatus::Active))
@@ -247,9 +252,32 @@ async fn unlock_user_handler(
                         AppError::DatabaseQueryError(e.to_string())
                     }
                 })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING on UPDATE, so we update and query back
+            diesel::update(users::table)
+                .filter(users::id.eq(user_id))
+                .set(users::account_status.eq(AccountStatus::Active))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            users::table
+                .find(user_id)
+                .select(UserDbQuery::as_select())
+                .first::<UserDbQuery>(conn)
+                .map_err(|e| {
+                    if e == diesel::result::Error::NotFound {
+                        AppError::UserNotFound
+                    } else {
+                        AppError::DatabaseQueryError(e.to_string())
+                    }
+                })
+        }
+    })
+    .await?;
 
     // Return success message
     Ok((
@@ -266,7 +294,7 @@ async fn unlock_user_handler(
 async fn update_user_role_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<Uuid>,
+    Path(user_id): Path<crate::DbUuid>,
     Json(payload): Json<UpdateUserRoleRequest>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
@@ -285,12 +313,9 @@ async fn update_user_role_handler(
     }
 
     // Update the user's role in the database
-    let updated_user = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
+    let updated_user = crate::db::with_conn(&state.pool, move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        {
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::role.eq(payload.role))
@@ -303,9 +328,32 @@ async fn update_user_role_handler(
                         AppError::DatabaseQueryError(e.to_string())
                     }
                 })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING on UPDATE, so we update and query back
+            diesel::update(users::table)
+                .filter(users::id.eq(user_id))
+                .set(users::role.eq(payload.role))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            users::table
+                .find(user_id)
+                .select(UserDbQuery::as_select())
+                .first::<UserDbQuery>(conn)
+                .map_err(|e| {
+                    if e == diesel::result::Error::NotFound {
+                        AppError::UserNotFound
+                    } else {
+                        AppError::DatabaseQueryError(e.to_string())
+                    }
+                })
+        }
+    })
+    .await?;
 
     // Transform to DTO for response
     let user_detail = AdminUserDetailResponse {

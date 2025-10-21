@@ -1,9 +1,10 @@
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use crate::DbJson as JsonValue;
 use std::fmt;
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 use crate::schema::{payment_transactions, payment_usage_tracking, plan_features, subscriptions};
 
@@ -78,58 +79,58 @@ impl From<&str> for PlanType {
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = subscriptions)]
 pub struct Subscription {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub paddle_customer_id: Option<String>,
     pub paddle_subscription_id: Option<String>,
     pub plan_type: String,
     pub status: String,
-    pub current_period_start: DateTime<Utc>,
-    pub current_period_end: DateTime<Utc>,
+    pub current_period_start: DbDateTime,
+    pub current_period_end: DbDateTime,
     pub cancel_at_period_end: Option<bool>,
-    pub trial_end: Option<DateTime<Utc>>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub trial_end: Option<DbDateTime>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
     pub credits_allocated_this_period: Option<bool>,
     pub soft_limit_override: Option<i32>,
-    pub last_credit_grant: Option<DateTime<Utc>>,
+    pub last_credit_grant: Option<DbDateTime>,
     pub paddle_sync_attempted: bool,
-    pub first_payment_date: Option<DateTime<Utc>>,
+    pub first_payment_date: Option<DbDateTime>,
     pub has_ever_paid: Option<bool>,
-    pub cancellation_date: Option<DateTime<Utc>>,
-    pub trial_start_date: Option<DateTime<Utc>>,
-    pub last_payment_date: Option<DateTime<Utc>>,
-    pub grace_period_end: Option<DateTime<Utc>>,
+    pub cancellation_date: Option<DbDateTime>,
+    pub trial_start_date: Option<DbDateTime>,
+    pub last_payment_date: Option<DbDateTime>,
+    pub grace_period_end: Option<DbDateTime>,
     pub scheduled_plan_change: Option<String>,
-    pub scheduled_change_date: Option<DateTime<Utc>>,
+    pub scheduled_change_date: Option<DbDateTime>,
 }
 
 /// New subscription for database insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = subscriptions)]
 pub struct NewSubscription {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub paddle_customer_id: Option<String>,
     pub paddle_subscription_id: Option<String>,
     pub plan_type: String,
     pub status: String,
-    pub current_period_start: DateTime<Utc>,
-    pub current_period_end: DateTime<Utc>,
+    pub current_period_start: DbDateTime,
+    pub current_period_end: DbDateTime,
     pub cancel_at_period_end: Option<bool>,
-    pub trial_end: Option<DateTime<Utc>>,
+    pub trial_end: Option<DbDateTime>,
     pub credits_allocated_this_period: Option<bool>,
     pub soft_limit_override: Option<i32>,
-    pub last_credit_grant: Option<DateTime<Utc>>,
+    pub last_credit_grant: Option<DbDateTime>,
     pub paddle_sync_attempted: bool,
-    pub first_payment_date: Option<DateTime<Utc>>,
+    pub first_payment_date: Option<DbDateTime>,
     pub has_ever_paid: Option<bool>,
-    pub cancellation_date: Option<DateTime<Utc>>,
-    pub trial_start_date: Option<DateTime<Utc>>,
-    pub last_payment_date: Option<DateTime<Utc>>,
-    pub grace_period_end: Option<DateTime<Utc>>,
+    pub cancellation_date: Option<DbDateTime>,
+    pub trial_start_date: Option<DbDateTime>,
+    pub last_payment_date: Option<DbDateTime>,
+    pub grace_period_end: Option<DbDateTime>,
     pub scheduled_plan_change: Option<String>,
-    pub scheduled_change_date: Option<DateTime<Utc>>,
+    pub scheduled_change_date: Option<DbDateTime>,
 }
 
 /// Update subscription for database updates
@@ -140,16 +141,16 @@ pub struct UpdateSubscription {
     pub paddle_subscription_id: Option<String>,
     pub plan_type: Option<String>,
     pub status: Option<String>,
-    pub current_period_start: Option<DateTime<Utc>>,
-    pub current_period_end: Option<DateTime<Utc>>,
+    pub current_period_start: Option<DbDateTime>,
+    pub current_period_end: Option<DbDateTime>,
     pub cancel_at_period_end: Option<bool>,
-    pub trial_end: Option<DateTime<Utc>>,
+    pub trial_end: Option<DbDateTime>,
     pub credits_allocated_this_period: Option<bool>,
     pub soft_limit_override: Option<i32>,
-    pub last_credit_grant: Option<DateTime<Utc>>,
-    pub grace_period_end: Option<DateTime<Utc>>,
+    pub last_credit_grant: Option<DbDateTime>,
+    pub grace_period_end: Option<DbDateTime>,
     pub scheduled_plan_change: Option<String>,
-    pub scheduled_change_date: Option<DateTime<Utc>>,
+    pub scheduled_change_date: Option<DbDateTime>,
 }
 
 /// Plan features model for database queries
@@ -165,8 +166,8 @@ pub struct PlanFeatures {
     pub features: Option<JsonValue>,
     pub display_name: String,
     pub description: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
     pub paddle_price_id_yearly: Option<String>,
     pub max_context_tokens: Option<i32>,
 }
@@ -175,29 +176,29 @@ pub struct PlanFeatures {
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = payment_usage_tracking)]
 pub struct PaymentUsageTracking {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub subscription_id: Option<Uuid>,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
+    pub subscription_id: Option<crate::DbUuid>,
     pub tokens_used: i32,
     pub tokens_limit: Option<i32>,
-    pub period_start: DateTime<Utc>,
-    pub period_end: DateTime<Utc>,
+    pub period_start: DbDateTime,
+    pub period_end: DbDateTime,
     pub metadata_encrypted: Option<Vec<u8>>,
     pub metadata_nonce: Option<Vec<u8>>,
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
 }
 
 /// New payment usage tracking for database insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = payment_usage_tracking)]
 pub struct NewPaymentUsageTracking {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub subscription_id: Option<Uuid>,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
+    pub subscription_id: Option<crate::DbUuid>,
     pub tokens_used: i32,
     pub tokens_limit: Option<i32>,
-    pub period_start: DateTime<Utc>,
-    pub period_end: DateTime<Utc>,
+    pub period_start: DbDateTime,
+    pub period_end: DbDateTime,
     pub metadata_encrypted: Option<Vec<u8>>,
     pub metadata_nonce: Option<Vec<u8>>,
 }
@@ -208,8 +209,8 @@ pub struct NewPaymentUsageTracking {
 pub struct UpdatePaymentUsageTracking {
     pub tokens_used: Option<i32>,
     pub tokens_limit: Option<i32>,
-    pub period_start: Option<DateTime<Utc>>,
-    pub period_end: Option<DateTime<Utc>>,
+    pub period_start: Option<DbDateTime>,
+    pub period_end: Option<DbDateTime>,
     pub metadata_encrypted: Option<Vec<u8>>,
     pub metadata_nonce: Option<Vec<u8>>,
 }
@@ -218,9 +219,9 @@ pub struct UpdatePaymentUsageTracking {
 #[derive(Debug, Clone, Queryable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = payment_transactions)]
 pub struct PaymentTransaction {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub paddle_transaction_id: String,
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
     pub status: String,
     pub collection_mode: Option<String>,
     pub total_cents: i32,
@@ -232,12 +233,12 @@ pub struct PaymentTransaction {
     pub customer_data_nonce: Option<Vec<u8>>,
     pub items: JsonValue,
     pub checkout_id: Option<String>,
-    pub billed_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub billed_at: Option<DbDateTime>,
+    pub completed_at: Option<DbDateTime>,
     pub paddle_data_encrypted: Option<Vec<u8>>,
     pub paddle_data_nonce: Option<Vec<u8>>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
 }
 
 /// New payment transaction for database insertion
@@ -245,7 +246,7 @@ pub struct PaymentTransaction {
 #[diesel(table_name = payment_transactions)]
 pub struct NewPaymentTransaction {
     pub paddle_transaction_id: String,
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
     pub status: String,
     pub collection_mode: Option<String>,
     pub total_cents: i32,
@@ -257,8 +258,8 @@ pub struct NewPaymentTransaction {
     pub customer_data_nonce: Option<Vec<u8>>,
     pub items: JsonValue,
     pub checkout_id: Option<String>,
-    pub billed_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub billed_at: Option<DbDateTime>,
+    pub completed_at: Option<DbDateTime>,
     pub paddle_data_encrypted: Option<Vec<u8>>,
     pub paddle_data_nonce: Option<Vec<u8>>,
 }
@@ -268,11 +269,11 @@ pub struct NewPaymentTransaction {
 #[diesel(table_name = payment_transactions)]
 pub struct UpdatePaymentTransaction {
     pub status: Option<String>,
-    pub billed_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub billed_at: Option<DbDateTime>,
+    pub completed_at: Option<DbDateTime>,
     pub paddle_data_encrypted: Option<Vec<u8>>,
     pub paddle_data_nonce: Option<Vec<u8>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DbDateTime>,
 }
 
 /// Decrypted customer data from payment transactions
@@ -337,14 +338,14 @@ impl PaymentTransaction {
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
 #[diesel(table_name = crate::schema::webhook_events)]
 pub struct WebhookEvent {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub event_id: String,
     pub event_type: String,
     pub paddle_signature: String,
     pub payload_hash: String,
-    pub processed_at: DateTime<Utc>,
+    pub processed_at: DbDateTime,
     pub processing_status: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
 }
 
 /// New webhook event for insertion

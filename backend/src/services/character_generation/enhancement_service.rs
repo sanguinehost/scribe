@@ -26,7 +26,7 @@ impl EnhancementService {
     pub async fn enhance_field(
         &self,
         request: EnhancementRequest,
-        user_id: uuid::Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<EnhancementResult, AppError> {
         let start_time = Instant::now();
 
@@ -67,7 +67,7 @@ impl EnhancementService {
             generation_time_ms: generation_time.as_millis() as u64,
             style_detected: Some(generation_result.style_used),
             model_used: self.state.config.token_counter_default_model.clone(),
-            timestamp: chrono::Utc::now(),
+            timestamp: chrono::Utc::now().into(),
             debug_info: None, // No debug info for enhancement yet
         };
 

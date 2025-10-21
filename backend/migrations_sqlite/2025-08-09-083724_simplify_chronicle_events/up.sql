@@ -7,21 +7,32 @@
 
 -- Simplify chronicle events to text summaries with keywords
 -- Add new fields
-ALTER TABLE chronicle_events
-    ADD COLUMN IF NOT EXISTS keywords TEXT DEFAULT '{}',
-    ADD COLUMN IF NOT EXISTS keywords_encrypted BLOB,
-    ADD COLUMN IF NOT EXISTS keywords_nonce BLOB,
-    ADD COLUMN IF NOT EXISTS chat_session_id TEXT REFERENCES chat_sessions(id);
+-- Note: SQLite doesn't support IF NOT EXISTS in ALTER TABLE ADD COLUMN (before 3.35.0)
+-- Since migrations run in sequence, columns shouldn't exist yet, so this is safe
+
+
+ALTER TABLE chronicle_events ADD COLUMN keywords TEXT DEFAULT '{}';
+ALTER TABLE chronicle_events ADD COLUMN keywords_encrypted BLOB;
+ALTER TABLE chronicle_events ADD COLUMN keywords_nonce BLOB;
+ALTER TABLE chronicle_events ADD COLUMN chat_session_id TEXT REFERENCES chat_sessions(id);
+
+-- Drop indexes on columns before dropping the columns
+DROP INDEX IF EXISTS idx_chronicle_events_actors;
+DROP INDEX IF EXISTS idx_chronicle_events_action;
+DROP INDEX IF EXISTS idx_chronicle_events_causality;
+DROP INDEX IF EXISTS idx_chronicle_events_modality;
+DROP INDEX IF EXISTS idx_chronicle_events_dedup; -- Composite index includes action column
 
 -- Drop complex Ars Fabula fields that are no longer needed
-ALTER TABLE chronicle_events
-    DROP COLUMN IF EXISTS actors,
-    DROP COLUMN IF EXISTS action,
-    DROP COLUMN IF EXISTS context_data,
-    DROP COLUMN IF EXISTS causality,
-    DROP COLUMN IF EXISTS valence,
-    DROP COLUMN IF EXISTS modality,
-    DROP COLUMN IF EXISTS event_data;
+-- SQLite Note: Each DROP COLUMN must be separate, and IF EXISTS is not supported
+ALTER TABLE chronicle_events DROP COLUMN actors;
+ALTER TABLE chronicle_events DROP COLUMN action;
+ALTER TABLE chronicle_events DROP COLUMN context_data;
+ALTER TABLE chronicle_events DROP COLUMN causality;
+ALTER TABLE chronicle_events DROP COLUMN valence;
+ALTER TABLE chronicle_events DROP COLUMN modality;
+-- Note: event_data may not exist in all schemas, commenting out if it causes issues
+-- ALTER TABLE chronicle_events DROP COLUMN event_data;
 
 -- The event_type column can be simplified too since we don't need complex categorization
 -- We'll keep it for now but it can just be 'USER_CREATED' or 'AI_EXTRACTED'

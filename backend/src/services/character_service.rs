@@ -101,7 +101,7 @@ impl CharacterService {
     #[instrument(skip(self, create_dto, dek), err)]
     pub async fn create_character_manually(
         &self,
-        user_id_val: Uuid,
+        user_id_val: crate::DbUuid,
         create_dto: CharacterCreateDto,
         dek: &SessionDek,
     ) -> Result<CharacterDataForClient, AppError> {
@@ -268,8 +268,8 @@ impl CharacterService {
             depth_prompt_nonce: None,
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
-            created_at: Some(Utc::now()),
-            updated_at: Some(Utc::now()),
+            created_at: Some(Utc::now().into()),
+            updated_at: Some(Utc::now().into()),
         };
 
         // Encrypt SillyTavern v3 fields
@@ -305,44 +305,47 @@ impl CharacterService {
 
         info!(character_name = %new_character_for_db.name, user_id = %user_id_val, "Attempting to insert manually created character into DB for user");
 
-        let conn = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
-        })?;
-
-        let returned_id: Uuid = conn
-            .interact(move |conn_insert_block| {
+        #[cfg(feature = "postgres-backend")]
+        let returned_id: crate::DbUuid = {
+            crate::db::with_conn(&self.db_pool, move |conn_insert_block| {
                 diesel::insert_into(characters::table)
                     .values(new_character_for_db)
                     .returning(characters::id)
-                    .get_result::<Uuid>(conn_insert_block)
+                    .get_result::<crate::DbUuid>(conn_insert_block)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
             })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))?;
+            .await?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let returned_id: crate::DbUuid = {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING, so we generate UUID before insert
+            let generated_id = crate::DbUuid::new_v4();
+            let mut character_with_id = new_character_for_db;
+            character_with_id.id = Some(generated_id.into());
+
+            crate::db::with_conn(&self.db_pool, move |conn_insert_block| {
+                diesel::insert_into(characters::table)
+                    .values(&character_with_id)
+                    .execute(conn_insert_block)
+                    .map(|_| generated_id)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
+            })
+            .await?
+        };
 
         info!(character_id = %returned_id, "Character basic info returned after manual insertion");
 
         // Fetch the inserted character to return its full data
-        let conn_fetch = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for fetch: {e}"
-            ))
-        })?;
-
-        let inserted_character: Character = conn_fetch
-            .interact(move |conn_select_block| {
-                characters::table
-                    .find(returned_id)
-                    .select(Character::as_select())
-                    .get_result::<Character>(conn_select_block)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))?;
+        let inserted_character: Character = crate::db::with_conn(&self.db_pool, move |conn_select_block| {
+            characters::table
+                .find(returned_id)
+                .select(Character::as_select())
+                .get_result::<Character>(conn_select_block)
+                .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))
+        })
+        .await?;
 
         info!(character_id = %inserted_character.id, "Character manually created and saved (full data fetched)");
 
@@ -354,24 +357,17 @@ impl CharacterService {
                 if let Ok(lorebook_uuid) = Uuid::parse_str(world_id) {
                     // Verify lorebook exists and belongs to user
                     use crate::schema::lorebooks;
-                    let conn_check = self.db_pool.get().await.map_err(|e| {
-                        AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                    })?;
 
-                    let lorebook_exists = conn_check
-                        .interact(move |conn_sync| {
-                            lorebooks::table
-                                .filter(lorebooks::id.eq(lorebook_uuid))
-                                .filter(lorebooks::user_id.eq(user_id_val))
-                                .count()
-                                .get_result::<i64>(conn_sync)
-                                .map(|count| count > 0)
-                        })
-                        .await
-                        .map_err(|e| {
-                            AppError::DbInteractError(format!("DB interaction failed: {e}"))
-                        })?
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                        lorebooks::table
+                            .filter(lorebooks::id.eq(lorebook_uuid))
+                            .filter(lorebooks::user_id.eq(user_id_val))
+                            .count()
+                            .get_result::<i64>(conn_sync)
+                            .map(|count| count > 0)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                    })
+                    .await?;
 
                     if lorebook_exists {
                         // Create association
@@ -382,25 +378,17 @@ impl CharacterService {
                             character_id: returned_id,
                             lorebook_id: lorebook_uuid,
                             user_id: user_id_val,
-                            created_at: Some(Utc::now()),
-                            updated_at: Some(Utc::now()),
+                            created_at: Some(Utc::now().into()),
+                            updated_at: Some(Utc::now().into()),
                         };
 
-                        let conn_insert = self.db_pool.get().await.map_err(|e| {
-                            AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                        })?;
-
-                        conn_insert
-                            .interact(move |conn_sync| {
-                                diesel::insert_into(character_lorebooks::table)
-                                    .values(&new_association)
-                                    .execute(conn_sync)
-                            })
-                            .await
-                            .map_err(|e| {
-                                AppError::DbInteractError(format!("DB interaction failed: {e}"))
-                            })?
-                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                        crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                            diesel::insert_into(character_lorebooks::table)
+                                .values(&new_association)
+                                .execute(conn_sync)
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                        })
+                        .await?;
 
                         info!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
                         associated_lorebook_ids.push(lorebook_uuid);
@@ -423,41 +411,31 @@ impl CharacterService {
     #[instrument(skip(self, update_dto, dek), err)]
     pub async fn update_character_details(
         &self,
-        character_id_to_update: Uuid,
-        user_id_val: Uuid, // For ownership check
+        character_id_to_update: crate::DbUuid,
+        user_id_val: crate::DbUuid, // For ownership check
         update_dto: CharacterUpdateDto,
         dek: &SessionDek,
     ) -> Result<CharacterDataForClient, AppError> {
         info!(character_id = %character_id_to_update, user_id = %user_id_val, "Attempting to update character in CharacterService");
 
         // Fetch the existing character from the database to verify ownership
-        let conn_fetch = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for fetch: {e}"
-            ))
-        })?;
-
-        let mut existing_character: Character = conn_fetch
-            .interact(move |conn_select_block| {
-                characters::table
-                    .filter(
-                        character_dsl_id
-                            .eq(character_id_to_update)
-                            .and(character_dsl_user_id.eq(user_id_val)),
-                    )
-                    .select(Character::as_select())
-                    .get_result::<Character>(conn_select_block)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
-            })?
-            .map_err(|e| match e {
-                DieselError::NotFound => AppError::NotFound(format!(
-                    "Character {character_id_to_update} not found or not owned by user {user_id_val}"
-                )),
-                _ => AppError::DatabaseQueryError(format!("Fetch DB error: {e}")),
-            })?;
+        let mut existing_character: Character = crate::db::with_conn(&self.db_pool, move |conn_select_block| {
+            characters::table
+                .filter(
+                    character_dsl_id
+                        .eq(character_id_to_update)
+                        .and(character_dsl_user_id.eq(user_id_val)),
+                )
+                .select(Character::as_select())
+                .get_result::<Character>(conn_select_block)
+                .map_err(|e| match e {
+                    DieselError::NotFound => AppError::NotFound(format!(
+                        "Character {character_id_to_update} not found or not owned by user {user_id_val}"
+                    )),
+                    _ => AppError::DatabaseQueryError(format!("Fetch DB error: {e}")),
+                })
+        })
+        .await?;
 
         info!(character_id = %character_id_to_update, "Found character to update, applying changes");
 
@@ -627,53 +605,36 @@ impl CharacterService {
         }
 
         // Always update the 'updated_at' timestamp
-        existing_character.updated_at = Utc::now();
+        existing_character.updated_at = Utc::now().into();
         // Update modification_date if it wasn't explicitly provided in the DTO
         if update_dto.modification_date.is_none() {
-            existing_character.modification_date = Some(Utc::now());
+            existing_character.modification_date = Some(Utc::now().into());
         }
 
         // Save the updated character
-        let conn_update = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for update: {e}"
-            ))
-        })?;
-
-        let updated_character_db: Character = conn_update
-            .interact(move |conn_update_block| {
-                diesel::update(characters::table.find(character_id_to_update))
-                    .set(&existing_character) // Pass the modified existing_character by reference
-                    .returning(Character::as_select())
-                    .get_result::<Character>(conn_update_block)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Update interaction error: {e}"))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))?;
+        let updated_character_db: Character = crate::db::with_conn(&self.db_pool, move |conn_update_block| {
+            diesel::update(characters::table.find(character_id_to_update))
+                .set(&existing_character) // Pass the modified existing_character by reference
+                .returning(Character::as_select())
+                .get_result::<Character>(conn_update_block)
+                .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))
+        })
+        .await?;
 
         info!(character_id = %character_id_to_update, "Character updated successfully in CharacterService");
 
         // Fetch all existing lorebook associations for this character
         use crate::schema::character_lorebooks;
-        let conn_fetch_lorebooks = self
-            .db_pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(format!("Failed to get DB connection: {e}")))?;
 
-        let mut associated_lorebook_ids: Vec<Uuid> = conn_fetch_lorebooks
-            .interact(move |conn_sync| {
-                character_lorebooks::table
-                    .filter(character_lorebooks::character_id.eq(character_id_to_update))
-                    .filter(character_lorebooks::user_id.eq(user_id_val))
-                    .select(character_lorebooks::lorebook_id)
-                    .load::<Uuid>(conn_sync)
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("Failed to fetch lorebooks: {e}")))?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get lorebooks: {e}")))?;
+        let mut associated_lorebook_ids: Vec<crate::DbUuid> = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+            character_lorebooks::table
+                .filter(character_lorebooks::character_id.eq(character_id_to_update))
+                .filter(character_lorebooks::user_id.eq(user_id_val))
+                .select(character_lorebooks::lorebook_id)
+                .load::<crate::DbUuid>(conn_sync)
+                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get lorebooks: {e}")))
+        })
+        .await?;
 
         // Handle lorebook association if world field was updated
         if let Some(world_val) = update_dto.world.as_ref() {
@@ -681,21 +642,16 @@ impl CharacterService {
             // TODO: In the future, add a separate endpoint for managing multiple lorebooks
 
             // First, remove any existing lorebook associations for this character
-            let conn_delete =
-                self.db_pool.get().await.map_err(|e| {
-                    AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                })?;
-
-            let _ = conn_delete
-                .interact(move |conn_sync| {
-                    diesel::delete(
-                        character_lorebooks::table
-                            .filter(character_lorebooks::character_id.eq(character_id_to_update))
-                            .filter(character_lorebooks::user_id.eq(user_id_val)),
-                    )
-                    .execute(conn_sync)
-                })
-                .await;
+            let _ = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                diesel::delete(
+                    character_lorebooks::table
+                        .filter(character_lorebooks::character_id.eq(character_id_to_update))
+                        .filter(character_lorebooks::user_id.eq(user_id_val)),
+                )
+                .execute(conn_sync)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await;
 
             // Clear the existing associations
             associated_lorebook_ids.clear();
@@ -705,24 +661,17 @@ impl CharacterService {
                 if let Ok(lorebook_uuid) = Uuid::parse_str(world_val) {
                     // Verify lorebook exists and belongs to user
                     use crate::schema::lorebooks;
-                    let conn_check = self.db_pool.get().await.map_err(|e| {
-                        AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                    })?;
 
-                    let lorebook_exists = conn_check
-                        .interact(move |conn_sync| {
-                            lorebooks::table
-                                .filter(lorebooks::id.eq(lorebook_uuid))
-                                .filter(lorebooks::user_id.eq(user_id_val))
-                                .count()
-                                .get_result::<i64>(conn_sync)
-                                .map(|count| count > 0)
-                        })
-                        .await
-                        .map_err(|e| {
-                            AppError::DbInteractError(format!("DB interaction failed: {e}"))
-                        })?
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                        lorebooks::table
+                            .filter(lorebooks::id.eq(lorebook_uuid))
+                            .filter(lorebooks::user_id.eq(user_id_val))
+                            .count()
+                            .get_result::<i64>(conn_sync)
+                            .map(|count| count > 0)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                    })
+                    .await?;
 
                     if lorebook_exists {
                         // Create association
@@ -732,21 +681,17 @@ impl CharacterService {
                             character_id: character_id_to_update,
                             lorebook_id: lorebook_uuid,
                             user_id: user_id_val,
-                            created_at: Some(Utc::now()),
-                            updated_at: Some(Utc::now()),
+                            created_at: Some(Utc::now().into()),
+                            updated_at: Some(Utc::now().into()),
                         };
 
-                        let conn_insert = self.db_pool.get().await.map_err(|e| {
-                            AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                        })?;
-
-                        match conn_insert
-                            .interact(move |conn_sync| {
-                                diesel::insert_into(character_lorebooks::table)
-                                    .values(&new_association)
-                                    .execute(conn_sync)
-                            })
-                            .await
+                        match crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                            diesel::insert_into(character_lorebooks::table)
+                                .values(&new_association)
+                                .execute(conn_sync)
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                        })
+                        .await
                         {
                             Ok(_) => {
                                 info!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");

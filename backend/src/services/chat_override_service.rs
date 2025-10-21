@@ -29,9 +29,9 @@ impl ChatOverrideService {
     #[tracing::instrument(skip_all, fields(chat_session_id, user_id, field_name))]
     pub async fn create_or_update_chat_override(
         &self,
-        chat_session_id: Uuid,
-        original_character_id: Uuid, // Added original_character_id, must be fetched by handler
-        _user_id: Uuid, // For logging and potential future checks, though immediate ownership check is in handler
+        chat_session_id: crate::DbUuid,
+        original_character_id: crate::DbUuid, // Added original_character_id, must be fetched by handler
+        _user_id: crate::DbUuid, // For logging and potential future checks, though immediate ownership check is in handler
         field_name: String,
         value: String, // Plaintext value from DTO
         session_dek: &SessionDek,
@@ -77,18 +77,51 @@ impl ChatOverrideService {
                     chat_character_overrides::updated_at.eq(Utc::now()), // Explicitly set updated_at
                 );
 
-                diesel::insert_into(chat_character_overrides::table)
-                    .values(&new_override_for_db)
-                    .on_conflict((
-                        chat_character_overrides::chat_session_id,
-                        chat_character_overrides::original_character_id,
-                        chat_character_overrides::field_name,
-                    ))
-                    .do_update()
-                    .set(changes_to_apply)
-                    .returning(ChatCharacterOverride::as_returning())
-                    .get_result::<ChatCharacterOverride>(conn)
-                    .map_err(AppError::from)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(chat_character_overrides::table)
+                        .values(&new_override_for_db)
+                        .on_conflict((
+                            chat_character_overrides::chat_session_id,
+                            chat_character_overrides::original_character_id,
+                            chat_character_overrides::field_name,
+                        ))
+                        .do_update()
+                        .set(changes_to_apply)
+                        .returning(ChatCharacterOverride::as_returning())
+                        .get_result::<ChatCharacterOverride>(conn)
+                        .map_err(AppError::from)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    // SQLite doesn't support RETURNING on UPSERT, so we upsert and query back
+                    let session_id_clone = new_override_for_db.chat_session_id;
+                    let char_id_clone = new_override_for_db.original_character_id;
+                    let field_name_clone = new_override_for_db.field_name.clone();
+
+                    diesel::insert_into(chat_character_overrides::table)
+                        .values(&new_override_for_db)
+                        .on_conflict((
+                            chat_character_overrides::chat_session_id,
+                            chat_character_overrides::original_character_id,
+                            chat_character_overrides::field_name,
+                        ))
+                        .do_update()
+                        .set(changes_to_apply)
+                        .execute(conn)
+                        .map_err(AppError::from)?;
+
+                    // Query back using the unique constraint
+                    chat_character_overrides::table
+                        .filter(chat_character_overrides::chat_session_id.eq(session_id_clone))
+                        .filter(chat_character_overrides::original_character_id.eq(char_id_clone))
+                        .filter(chat_character_overrides::field_name.eq(field_name_clone))
+                        .select(ChatCharacterOverride::as_select())
+                        .first::<ChatCharacterOverride>(conn)
+                        .map_err(AppError::from)
+                }
             })
             .await
             .map_err(|e| {

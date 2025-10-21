@@ -79,8 +79,8 @@ impl LorebookService {
     /// This bypasses the normal AuthSession requirement for testing purposes
     pub async fn list_lorebook_entries_for_test(
         &self,
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<Vec<LorebookEntrySummaryResponse>, AppError> {
         debug!(
             "Attempting to list lorebook entries for test (user: {}, lorebook: {})",
@@ -173,7 +173,7 @@ impl LorebookService {
     /// This bypasses the normal AuthSession requirement for testing purposes
     pub async fn create_lorebook_for_test(
         &self,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         payload: CreateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!("Attempting to create lorebook for test (user: {})", user_id);
@@ -235,8 +235,8 @@ impl LorebookService {
     /// This bypasses the normal AuthSession requirement for testing purposes
     pub async fn create_lorebook_entry_for_test(
         &self,
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
         payload: CreateLorebookEntryPayload,
         user_dek: &SecretBox<Vec<u8>>,
     ) -> Result<LorebookEntryResponse, AppError> {
@@ -344,29 +344,55 @@ impl LorebookService {
         };
 
         // 3. Insert into database
-        let lorebook_entry = conn
-            .interact(move |conn_sync| {
-                use crate::schema::lorebook_entries;
-                use diesel::RunQueryDsl;
+        #[cfg(feature = "postgres-backend")]
+        let lorebook_entry = {
+            conn
+                .interact(move |conn_sync| {
+                    use crate::schema::lorebook_entries;
+                    use diesel::RunQueryDsl;
+                    diesel::insert_into(lorebook_entries::table)
+                        .values(&new_entry_db)
+                        .returning(LorebookEntry::as_returning())
+                        .get_result(conn_sync)
+                })
+                .await
+                .map_err(|e| {
+                    error!(
+                        "Interaction error while creating lorebook entry for test: {:?}",
+                        e
+                    );
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Database interaction failed while creating lorebook entry: {e}"
+                    ))
+                })?
+                .map_err(|e| {
+                    error!("Failed to create lorebook entry for test: {:?}", e);
+                    AppError::DatabaseQueryError(format!("Failed to create lorebook entry: {e}"))
+                })?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let lorebook_entry = {
+            use diesel::prelude::*;
+            use crate::schema::lorebook_entries;
+
+            // SQLite doesn't support RETURNING, so we insert and query back by ID
+            let entry_id_clone = new_entry_db.id;
+
+            crate::db::with_conn(&self.db_pool, move |conn_sync| {
                 diesel::insert_into(lorebook_entries::table)
                     .values(&new_entry_db)
-                    .returning(LorebookEntry::as_returning())
-                    .get_result(conn_sync)
+                    .execute(conn_sync)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create lorebook entry: {e}")))?;
+
+                lorebook_entries::table
+                    .find(entry_id_clone)
+                    .select(LorebookEntry::as_select())
+                    .first::<LorebookEntry>(conn_sync)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to query lorebook entry after insert: {e}")))
             })
-            .await
-            .map_err(|e| {
-                error!(
-                    "Interaction error while creating lorebook entry for test: {:?}",
-                    e
-                );
-                AppError::InternalServerErrorGeneric(format!(
-                    "Database interaction failed while creating lorebook entry: {e}"
-                ))
-            })?
-            .map_err(|e| {
-                error!("Failed to create lorebook entry for test: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to create lorebook entry: {e}"))
-            })?;
+            .await?
+        };
 
         // 4. Return response (simplified for test - we'll just return basic info)
         Ok(LorebookEntryResponse {

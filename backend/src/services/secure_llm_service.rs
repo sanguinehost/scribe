@@ -39,7 +39,7 @@ impl SecureLlmService {
     pub async fn secure_exec_chat(
         &self,
         #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))] mut request: ChatRequest,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         _session_dek: &SessionDek,
     ) -> Result<ChatResponse, AppError> {
         debug!("Starting secure chat execution for user: {}", user_id);
@@ -153,7 +153,7 @@ impl SecureLlmService {
     pub async fn secure_stream_chat(
         &self,
         #[cfg_attr(not(feature = "local-llm"), allow(unused_mut))] mut request: ChatRequest,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         _session_dek: &SessionDek,
     ) -> Result<ChatStream, AppError> {
         debug!("Starting secure streaming chat for user: {}", user_id);
@@ -192,7 +192,7 @@ impl SecureLlmService {
     async fn sanitize_prompts(
         &self,
         messages: &mut Vec<ChatMessage>,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         debug!("Sanitizing prompts for user: {}", user_id);
 
@@ -236,7 +236,7 @@ impl SecureLlmService {
     async fn check_resource_limits(
         &self,
         request: &ChatRequest,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         debug!("Checking resource limits for user: {}", user_id);
 
@@ -316,7 +316,7 @@ impl SecureLlmService {
     async fn validate_output(
         &self,
         response: &ChatResponse,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<ChatResponse, AppError> {
         debug!("Validating output for user: {}", user_id);
 
@@ -355,7 +355,7 @@ impl SecureLlmService {
     fn validate_streaming_output(
         &self,
         response: &ChatResponse,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<ChatResponse, AppError> {
         // Lighter validation for streaming chunks
         let validator = OutputValidator::new(self.app_state.config.security.response_max_length)

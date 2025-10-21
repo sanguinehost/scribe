@@ -4,7 +4,6 @@ use crate::errors::AppError;
 use crate::models::chats::{MessageVariant, MessageVariantDto, NewMessageVariant};
 use crate::schema::message_variants;
 use crate::state::AppState;
-use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
@@ -13,25 +12,22 @@ use uuid::Uuid;
 /// Get all variants for a specific message
 pub async fn get_message_variants(
     state: Arc<AppState>,
-    message_id: Uuid,
-    user_id: Uuid,
+    message_id: crate::DbUuid,
+    user_id: crate::DbUuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<Vec<MessageVariantDto>, AppError> {
-    let conn = state.pool.get().await?;
-
-    let variants = conn
-        .interact(move |conn| {
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::user_id.eq(user_id))
-                .order(message_variants::variant_index.asc())
-                .select(MessageVariant::as_select())
-                .load::<MessageVariant>(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to load message variants: {e}"))
-                })
-        })
-        .await?;
+    let variants = crate::db::with_conn(&state.pool, move |conn| {
+        message_variants::table
+            .filter(message_variants::parent_message_id.eq(message_id))
+            .filter(message_variants::user_id.eq(user_id))
+            .order(message_variants::variant_index.asc())
+            .select(MessageVariant::as_select())
+            .load::<MessageVariant>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to load message variants: {e}"))
+            })
+    })
+    .await?;
 
     // Decrypt all variants
     let mut decrypted_variants = Vec::new();
@@ -46,9 +42,9 @@ pub async fn get_message_variants(
 /// Create a new variant for a message and return the updated parent message
 pub async fn create_message_variant(
     state: Arc<AppState>,
-    message_id: Uuid,
+    message_id: crate::DbUuid,
     content: &str,
-    user_id: Uuid,
+    user_id: crate::DbUuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<crate::models::chats::MessageResponse, AppError> {
     tracing::info!(
@@ -56,12 +52,12 @@ pub async fn create_message_variant(
         message_id,
         content.len()
     );
-    let conn = state.pool.get().await?;
 
     // Get the next variant index first
-    let next_index = conn
-        .interact(move |conn| get_next_variant_index(&mut *conn, message_id))
-        .await??;
+    let next_index = crate::db::with_conn(&state.pool, move |conn| {
+        get_next_variant_index(conn, message_id).map_err(AppError::from)
+    })
+    .await?;
 
     tracing::info!(
         "🔢 Next variant index for message {}: {}",
@@ -76,8 +72,7 @@ pub async fn create_message_variant(
     let dek_for_closure = SecretBox::new(Box::new(dek.expose_secret().clone()));
 
     // Insert variant and update parent message in transaction
-    let updated_message = conn
-        .interact(move |conn| {
+    let updated_message = crate::db::with_conn(&state.pool, move |conn| {
             use crate::models::chats::{MessageStatus, Message};
             use crate::schema::chat_messages;
 
@@ -154,15 +149,47 @@ pub async fn create_message_variant(
                 };
 
                 // Insert the new variant
-                diesel::insert_into(message_variants::table)
-                    .values(&new_variant)
-                    .returning(MessageVariant::as_returning())
-                    .get_result::<MessageVariant>(trans_conn)
-                    .map_err(|e| {
-                        AppError::DatabaseQueryError(format!(
-                            "Failed to create message variant: {e}"
-                        ))
-                    })?;
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(message_variants::table)
+                        .values(&new_variant)
+                        .returning(MessageVariant::as_returning())
+                        .get_result::<MessageVariant>(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to create message variant: {e}"
+                            ))
+                        })?;
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    // SQLite doesn't support RETURNING, insert and query back
+                    let parent_id_clone = new_variant.parent_message_id;
+                    let variant_idx_clone = new_variant.variant_index;
+
+                    diesel::insert_into(message_variants::table)
+                        .values(&new_variant)
+                        .execute(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to create message variant: {e}"
+                            ))
+                        })?;
+
+                    // Query back using unique constraint (parent_message_id, variant_index)
+                    message_variants::table
+                        .filter(message_variants::parent_message_id.eq(parent_id_clone))
+                        .filter(message_variants::variant_index.eq(variant_idx_clone))
+                        .select(MessageVariant::as_select())
+                        .first::<MessageVariant>(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to query message variant after insert: {e}"
+                            ))
+                        })?;
+                }
 
                 // Update parent message with new variant count and set current variant to the new one
                 let new_variant_count = final_variant_count;
@@ -173,21 +200,55 @@ pub async fn create_message_variant(
                     new_variant_count,
                     next_index
                 );
-                let updated_parent = diesel::update(chat_messages::table)
-                    .filter(chat_messages::id.eq(message_id))
-                    .set((
-                        chat_messages::variant_count.eq(new_variant_count),
-                        chat_messages::current_variant_index.eq(next_index),
-                        chat_messages::status.eq(MessageStatus::Completed.to_string()),
-                        chat_messages::error_message.eq(None::<String>),
-                    ))
-                    .returning(Message::as_returning())
-                    .get_result::<Message>(trans_conn)
-                    .map_err(|e| {
-                        AppError::DatabaseQueryError(format!(
-                            "Failed to update parent message: {e}"
+
+                #[cfg(feature = "postgres-backend")]
+                let updated_parent = {
+                    diesel::update(chat_messages::table)
+                        .filter(chat_messages::id.eq(message_id))
+                        .set((
+                            chat_messages::variant_count.eq(new_variant_count),
+                            chat_messages::current_variant_index.eq(next_index),
+                            chat_messages::status.eq(MessageStatus::Completed.to_string()),
+                            chat_messages::error_message.eq(None::<String>),
                         ))
-                    })?;
+                        .returning(Message::as_returning())
+                        .get_result::<Message>(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to update parent message: {e}"
+                            ))
+                        })?
+                };
+
+                #[cfg(feature = "sqlite-backend")]
+                let updated_parent = {
+                    use diesel::prelude::*;
+                    // SQLite doesn't support RETURNING, update and query back
+                    diesel::update(chat_messages::table)
+                        .filter(chat_messages::id.eq(message_id))
+                        .set((
+                            chat_messages::variant_count.eq(new_variant_count),
+                            chat_messages::current_variant_index.eq(next_index),
+                            chat_messages::status.eq(MessageStatus::Completed.to_string()),
+                            chat_messages::error_message.eq(None::<String>),
+                        ))
+                        .execute(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to update parent message: {e}"
+                            ))
+                        })?;
+
+                    chat_messages::table
+                        .find(message_id)
+                        .select(Message::as_select())
+                        .first::<Message>(trans_conn)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to query parent message after update: {e}"
+                            ))
+                        })?
+                };
 
                 tracing::info!(
                     "✅ Successfully created variant {} for message {} (total variants: {})",
@@ -198,7 +259,7 @@ pub async fn create_message_variant(
                 Ok(updated_parent)
             })
         })
-        .await??;
+        .await?;
 
     // Get the content for the current variant (the newly created one)
     let current_content = if next_index == 0 {
@@ -247,27 +308,24 @@ pub async fn create_message_variant(
 /// Get a specific variant by message ID and variant index
 pub async fn get_message_variant_by_index(
     state: Arc<AppState>,
-    message_id: Uuid,
+    message_id: crate::DbUuid,
     variant_index: i32,
-    user_id: Uuid,
+    user_id: crate::DbUuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<Option<MessageVariantDto>, AppError> {
-    let conn = state.pool.get().await?;
-
-    let variant = conn
-        .interact(move |conn| {
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::variant_index.eq(variant_index))
-                .filter(message_variants::user_id.eq(user_id))
-                .select(MessageVariant::as_select())
-                .first::<MessageVariant>(&mut *conn)
-                .optional()
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to load message variant: {e}"))
-                })
-        })
-        .await?;
+    let variant = crate::db::with_conn(&state.pool, move |conn| {
+        message_variants::table
+            .filter(message_variants::parent_message_id.eq(message_id))
+            .filter(message_variants::variant_index.eq(variant_index))
+            .filter(message_variants::user_id.eq(user_id))
+            .select(MessageVariant::as_select())
+            .first::<MessageVariant>(conn)
+            .optional()
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to load message variant: {e}"))
+            })
+    })
+    .await?;
 
     match variant? {
         Some(v) => Ok(Some(MessageVariantDto::from_model(v, dek)?)),
@@ -278,26 +336,23 @@ pub async fn get_message_variant_by_index(
 /// Delete a message variant
 pub async fn delete_message_variant(
     state: Arc<AppState>,
-    message_id: Uuid,
+    message_id: crate::DbUuid,
     variant_index: i32,
-    user_id: Uuid,
+    user_id: crate::DbUuid,
 ) -> Result<bool, AppError> {
-    let conn = state.pool.get().await?;
-
-    let deleted_count = conn
-        .interact(move |conn| {
-            diesel::delete(
-                message_variants::table
-                    .filter(message_variants::parent_message_id.eq(message_id))
-                    .filter(message_variants::variant_index.eq(variant_index))
-                    .filter(message_variants::user_id.eq(user_id)),
-            )
-            .execute(&mut *conn)
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}"))
-            })
+    let deleted_count = crate::db::with_conn(&state.pool, move |conn| {
+        diesel::delete(
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::variant_index.eq(variant_index))
+                .filter(message_variants::user_id.eq(user_id)),
+        )
+        .execute(conn)
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}"))
         })
-        .await?;
+    })
+    .await?;
 
     Ok(deleted_count? > 0)
 }
@@ -305,29 +360,26 @@ pub async fn delete_message_variant(
 /// Get the count of variants for a message
 pub async fn get_variant_count(
     state: Arc<AppState>,
-    message_id: Uuid,
-    user_id: Uuid,
+    message_id: crate::DbUuid,
+    user_id: crate::DbUuid,
 ) -> Result<i64, AppError> {
-    let conn = state.pool.get().await?;
-
-    let count = conn
-        .interact(move |conn| {
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::user_id.eq(user_id))
-                .count()
-                .get_result::<i64>(&mut *conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to count message variants: {e}"))
-                })
-        })
-        .await?;
+    let count = crate::db::with_conn(&state.pool, move |conn| {
+        message_variants::table
+            .filter(message_variants::parent_message_id.eq(message_id))
+            .filter(message_variants::user_id.eq(user_id))
+            .count()
+            .get_result::<i64>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to count message variants: {e}"))
+            })
+    })
+    .await?;
 
     Ok(count?)
 }
 
 /// Helper function to get the next variant index for a message
-fn get_next_variant_index(conn: &mut PgConnection, message_id: Uuid) -> Result<i32, AppError> {
+fn get_next_variant_index(conn: &mut crate::db::DbConn, message_id: crate::DbUuid) -> Result<i32, AppError> {
     let max_index: Option<i32> = message_variants::table
         .filter(message_variants::parent_message_id.eq(message_id))
         .select(diesel::dsl::max(message_variants::variant_index))
@@ -343,28 +395,25 @@ fn get_next_variant_index(conn: &mut PgConnection, message_id: Uuid) -> Result<i
 /// Returns the latest variant content that's not in a failed state
 pub async fn get_active_variant_content(
     state: Arc<AppState>,
-    message_id: Uuid,
-    user_id: Uuid,
+    message_id: crate::DbUuid,
+    user_id: crate::DbUuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<Option<String>, AppError> {
     use crate::models::chats::MessageStatus;
     use crate::schema::chat_messages;
 
-    let conn = state.pool.get().await?;
-
     // First check the parent message status
-    let parent_status = conn
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(message_id))
-                .select(chat_messages::status)
-                .first::<String>(&mut *conn)
-                .optional()
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to get message status: {e}"))
-                })
-        })
-        .await??;
+    let parent_status = crate::db::with_conn(&state.pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(message_id))
+            .select(chat_messages::status)
+            .first::<String>(conn)
+            .optional()
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to get message status: {e}"))
+            })
+    })
+    .await?;
 
     // If parent message doesn't exist or is failed/partial, look for variants
     match parent_status {
@@ -394,17 +443,14 @@ pub async fn get_active_variant_content(
 /// Store the original message content as variant index 0 if no variants exist yet
 pub async fn ensure_original_variant_exists(
     state: Arc<AppState>,
-    message_id: Uuid,
+    message_id: crate::DbUuid,
     original_content: &str,
-    user_id: Uuid,
+    user_id: crate::DbUuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<(), AppError> {
     let variant_count = get_variant_count(state.clone(), message_id, user_id).await?;
 
     if variant_count == 0 {
-        // Create variant index 0 with the original content
-        let conn = state.pool.get().await?;
-
         // Create original variant with encryption outside the closure
         let original_variant = NewMessageVariant::new(
             message_id,
@@ -414,15 +460,15 @@ pub async fn ensure_original_variant_exists(
             dek,
         )?;
 
-        conn.interact(move |conn| {
+        crate::db::with_conn(&state.pool, move |conn| {
             diesel::insert_into(message_variants::table)
                 .values(&original_variant)
-                .execute(&mut *conn)
+                .execute(conn)
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
                 })
         })
-        .await??;
+        .await?;
     }
 
     Ok(())
@@ -431,29 +477,26 @@ pub async fn ensure_original_variant_exists(
 /// Select a specific variant for a message by updating the current_variant_index
 pub async fn select_message_variant(
     state: Arc<AppState>,
-    message_id: Uuid,
+    message_id: crate::DbUuid,
     variant_index: i32,
-    user_id: Uuid,
+    user_id: crate::DbUuid,
     dek: &SecretBox<Vec<u8>>,
 ) -> Result<crate::models::chats::MessageResponse, AppError> {
     use crate::models::chats::Message;
     use crate::schema::chat_messages;
 
-    let conn = state.pool.get().await?;
-
     // First get the parent message to validate user ownership and variant bounds
-    let parent_message = conn
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(message_id))
-                .filter(chat_messages::user_id.eq(user_id))
-                .select(Message::as_select())
-                .first::<Message>(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to get parent message: {e}"))
-                })
-        })
-        .await??;
+    let parent_message = crate::db::with_conn(&state.pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(message_id))
+            .filter(chat_messages::user_id.eq(user_id))
+            .select(Message::as_select())
+            .first::<Message>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to get parent message: {e}"))
+            })
+    })
+    .await?;
 
     // Validate variant_index bounds
     if variant_index < 0 || variant_index >= parent_message.variant_count {
@@ -502,8 +545,9 @@ pub async fn select_message_variant(
     };
 
     // Update the parent message's current_variant_index
-    let updated_message = conn
-        .interact(move |conn| {
+    let updated_message = crate::db::with_conn(&state.pool, move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        {
             diesel::update(chat_messages::table)
                 .filter(chat_messages::id.eq(message_id))
                 .filter(chat_messages::user_id.eq(user_id))
@@ -515,8 +559,35 @@ pub async fn select_message_variant(
                         "Failed to update current variant index: {e}"
                     ))
                 })
-        })
-        .await??;
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING, update and query back
+            diesel::update(chat_messages::table)
+                .filter(chat_messages::id.eq(message_id))
+                .filter(chat_messages::user_id.eq(user_id))
+                .set(chat_messages::current_variant_index.eq(variant_index))
+                .execute(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to update current variant index: {e}"
+                    ))
+                })?;
+
+            chat_messages::table
+                .find(message_id)
+                .select(Message::as_select())
+                .first::<Message>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to query message after update: {e}"
+                    ))
+                })
+        }
+    })
+    .await?;
 
     // Build and return MessageResponse with the selected variant content
     let response = crate::models::chats::MessageResponse {

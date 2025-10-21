@@ -32,15 +32,15 @@ pub struct UsageMetadata {
     pub model_usage: std::collections::HashMap<String, i32>,
     pub feature_usage: std::collections::HashMap<String, i32>,
     pub request_count: i32,
-    pub last_activity: DateTime<Utc>,
+    pub last_activity: crate::DbDateTime,
 }
 
 #[cfg(feature = "payment")]
 #[derive(Debug)]
 pub struct UsageLimit {
     pub tokens_used_total: i32,
-    pub period_start: DateTime<Utc>,
-    pub period_end: DateTime<Utc>,
+    pub period_start: crate::DbDateTime,
+    pub period_end: crate::DbDateTime,
     pub is_unlimited: bool,
 }
 
@@ -64,8 +64,8 @@ impl UsageTrackingService {
     pub async fn track_usage(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
-        subscription_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        subscription_id: Option<crate::DbUuid>,
         tokens_used: i32,
         metadata: Option<UsageMetadata>,
     ) -> Result<PaymentUsageTracking, AppError> {
@@ -76,8 +76,8 @@ impl UsageTrackingService {
     pub fn track_usage_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
-        subscription_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        subscription_id: Option<crate::DbUuid>,
         tokens_used: i32,
         metadata: Option<UsageMetadata>,
     ) -> Result<PaymentUsageTracking, AppError> {
@@ -152,8 +152,8 @@ impl UsageTrackingService {
     pub async fn get_current_usage(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
-        subscription_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        subscription_id: Option<crate::DbUuid>,
     ) -> Result<Option<PaymentUsageTracking>, AppError> {
         self.get_current_usage_sync(conn, user_id, subscription_id)
     }
@@ -162,8 +162,8 @@ impl UsageTrackingService {
     pub fn get_current_usage_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
-        subscription_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        subscription_id: Option<crate::DbUuid>,
     ) -> Result<Option<PaymentUsageTracking>, AppError> {
         let now = Utc::now();
         let period_start = self.get_period_start(now);
@@ -193,7 +193,7 @@ impl UsageTrackingService {
     pub async fn get_usage_limits(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<UsageLimit, AppError> {
         self.get_usage_limits_sync(conn, user_id)
     }
@@ -202,7 +202,7 @@ impl UsageTrackingService {
     pub fn get_usage_limits_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<UsageLimit, AppError> {
         let now = Utc::now();
         let period_start = self.get_period_start(now);
@@ -230,7 +230,7 @@ impl UsageTrackingService {
     pub async fn can_use_tokens(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         _tokens_needed: i32,
     ) -> Result<bool, AppError> {
         if !self.config.payment.enforce_limits {
@@ -252,7 +252,7 @@ impl UsageTrackingService {
     pub async fn get_usage_history(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         limit: Option<i64>,
     ) -> Result<Vec<PaymentUsageTracking>, AppError> {
         let mut query = payment_usage_tracking::table
@@ -293,8 +293,8 @@ impl UsageTrackingService {
     pub async fn reset_usage_for_period(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
-        period_start: DateTime<Utc>,
+        user_id: crate::DbUuid,
+        period_start: crate::DbDateTime,
     ) -> Result<(), AppError> {
         let period_end = self.get_period_end(period_start);
 
@@ -314,12 +314,12 @@ impl UsageTrackingService {
     pub async fn get_usage_stats(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         months_back: i32,
-    ) -> Result<Vec<(DateTime<Utc>, i32)>, AppError> {
+    ) -> Result<Vec<(crate::DbDateTime, i32)>, AppError> {
         let cutoff = Utc::now() - Duration::days(months_back as i64 * 30);
 
-        let stats: Vec<(DateTime<Utc>, i32)> = payment_usage_tracking::table
+        let stats: Vec<(crate::DbDateTime, i32)> = payment_usage_tracking::table
             .filter(payment_usage_tracking::user_id.eq(user_id))
             .filter(payment_usage_tracking::period_start.ge(cutoff))
             .select((
@@ -327,7 +327,7 @@ impl UsageTrackingService {
                 payment_usage_tracking::tokens_used,
             ))
             .order(payment_usage_tracking::period_start.asc())
-            .load::<(DateTime<Utc>, i32)>(conn)
+            .load::<(crate::DbDateTime, i32)>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         Ok(stats)
@@ -337,7 +337,7 @@ impl UsageTrackingService {
     async fn get_token_limit_for_user(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
     ) -> Result<i32, AppError> {
         self.get_token_limit_for_user_sync(conn, user_id)
     }
@@ -346,7 +346,7 @@ impl UsageTrackingService {
     fn get_token_limit_for_user_sync(
         &self,
         _conn: &mut PgConnection,
-        _user_id: Uuid,
+        _user_id: crate::DbUuid,
     ) -> Result<i32, AppError> {
         // This would integrate with the subscription service to get the user's plan
         // For now, we'll return the free tier limit from config
@@ -361,7 +361,7 @@ impl UsageTrackingService {
     }
 
     /// Get the start of the current billing period
-    fn get_period_start(&self, date: DateTime<Utc>) -> DateTime<Utc> {
+    fn get_period_start(&self, date: crate::DbDateTime) -> crate::DbDateTime {
         // Monthly billing periods starting from the first of the month
         let naive_date = date.date_naive();
         let first_of_month = naive_date.with_day(1).unwrap();
@@ -369,7 +369,7 @@ impl UsageTrackingService {
     }
 
     /// Get the end of the billing period
-    fn get_period_end(&self, period_start: DateTime<Utc>) -> DateTime<Utc> {
+    fn get_period_end(&self, period_start: crate::DbDateTime) -> crate::DbDateTime {
         // End of month
         let next_month = if period_start.month() == 12 {
             period_start
@@ -391,7 +391,7 @@ impl UsageTrackingService {
     fn encrypt_usage_metadata(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         metadata: &UsageMetadata,
     ) -> Result<(Vec<u8>, Vec<u8>), AppError> {
         // Get user's encrypted DEK from database
@@ -452,7 +452,7 @@ impl UsageTrackingService {
     fn decrypt_usage_metadata_with_key(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         encrypted_data: &[u8],
         nonce: &[u8],
     ) -> Result<UsageMetadata, AppError> {

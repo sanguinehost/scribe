@@ -18,14 +18,12 @@ use secrecy::{ExposeSecret, SecretBox}; // Added SecretBox import
 #[instrument(skip(pool, payload, user_dek_secret_box), err)]
 pub async fn set_character_override(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::DbUuid,
+    session_id: crate::DbUuid,
     payload: CharacterOverrideDto,
     user_dek_secret_box: Option<&SecretBox<Vec<u8>>>, // Changed to Option<&SecretBox>
 ) -> Result<ChatCharacterOverride, AppError> {
-    let conn = pool.get().await?;
-
-    // Clone payload parts needed for the interact closure
+    // Clone payload parts needed for the closure
     let field_name_clone = payload.field_name.clone();
     let value_clone = payload.value.clone();
 
@@ -33,13 +31,13 @@ pub async fn set_character_override(
     let owned_user_dek_opt: Option<SecretBox<Vec<u8>>> =
         user_dek_secret_box.map(|sb_ref| SecretBox::new(Box::new(sb_ref.expose_secret().clone())));
 
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         conn.transaction(|transaction_conn| {
             // 1. Verify chat session ownership and get original character_id
             let (chat_owner_id, original_character_id_from_session) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((chat_sessions::user_id, chat_sessions::character_id))
-                .first::<(Uuid, Option<Uuid>)>(transaction_conn)
+                .first::<(crate::DbUuid, Option<crate::DbUuid>)>(transaction_conn)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
                         AppError::NotFound(format!("Chat session {session_id} not found."))
@@ -103,24 +101,64 @@ pub async fn set_character_override(
             // If not, this will always insert. A migration would be needed for the unique constraint.
             // Let's assume the constraint `chat_character_overrides_session_id_field_name_key` exists.
 
-            let result = diesel::insert_into(chat_character_overrides::table)
-                .values(&new_override)
-                .on_conflict((
-                    chat_character_overrides::chat_session_id,
-                    chat_character_overrides::field_name,
-                ))
-                .do_update()
-                .set((
-                    chat_character_overrides::overridden_value.eq(encrypted_value),
-                    chat_character_overrides::overridden_value_nonce.eq(nonce),
-                    chat_character_overrides::updated_at.eq(chrono::Utc::now()), // Explicitly set updated_at
-                ))
-                .returning(ChatCharacterOverride::as_select())
-                .get_result::<ChatCharacterOverride>(transaction_conn)
-                .map_err(|e| {
-                    error!("Failed to upsert chat character override: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+            #[cfg(feature = "postgres-backend")]
+            let result = {
+                diesel::insert_into(chat_character_overrides::table)
+                    .values(&new_override)
+                    .on_conflict((
+                        chat_character_overrides::chat_session_id,
+                        chat_character_overrides::field_name,
+                    ))
+                    .do_update()
+                    .set((
+                        chat_character_overrides::overridden_value.eq(encrypted_value.clone()),
+                        chat_character_overrides::overridden_value_nonce.eq(nonce.clone()),
+                        chat_character_overrides::updated_at.eq(chrono::Utc::now()), // Explicitly set updated_at
+                    ))
+                    .returning(ChatCharacterOverride::as_select())
+                    .get_result::<ChatCharacterOverride>(transaction_conn)
+                    .map_err(|e| {
+                        error!("Failed to upsert chat character override: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            };
+
+            #[cfg(feature = "sqlite-backend")]
+            let result = {
+                use diesel::prelude::*;
+                // SQLite doesn't support RETURNING on UPSERT, so we upsert and query back
+                let session_id_clone = new_override.chat_session_id;
+                let field_name_clone = new_override.field_name.clone();
+
+                diesel::insert_into(chat_character_overrides::table)
+                    .values(&new_override)
+                    .on_conflict((
+                        chat_character_overrides::chat_session_id,
+                        chat_character_overrides::field_name,
+                    ))
+                    .do_update()
+                    .set((
+                        chat_character_overrides::overridden_value.eq(encrypted_value),
+                        chat_character_overrides::overridden_value_nonce.eq(nonce),
+                        chat_character_overrides::updated_at.eq(chrono::Utc::now()),
+                    ))
+                    .execute(transaction_conn)
+                    .map_err(|e| {
+                        error!("Failed to upsert chat character override: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
+
+                // Query back using the unique constraint
+                chat_character_overrides::table
+                    .filter(chat_character_overrides::chat_session_id.eq(session_id_clone))
+                    .filter(chat_character_overrides::field_name.eq(field_name_clone))
+                    .select(ChatCharacterOverride::as_select())
+                    .first::<ChatCharacterOverride>(transaction_conn)
+                    .map_err(|e| {
+                        error!("Failed to query chat character override after upsert: {}", e);
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
+            };
 
             Ok(result)
         })

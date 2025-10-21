@@ -6,7 +6,7 @@ impl LorebookService {
     pub async fn associate_lorebook_to_chat(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: Uuid,
+        chat_session_id: crate::DbUuid,
         payload: AssociateLorebookToChatPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Added for entry decryption
         state: Arc<AppState>,                  // Added for embedding pipeline
@@ -420,7 +420,7 @@ impl LorebookService {
     pub async fn list_chat_lorebook_associations(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id_param: Uuid,
+        chat_session_id_param: crate::DbUuid,
     ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, AppError> {
         debug!(
             chat_session_id = "[REDACTED_UUID]",
@@ -441,7 +441,7 @@ impl LorebookService {
                 .filter(cs_dsl::id.eq(chat_session_id_param))
                 .filter(cs_dsl::user_id.eq(current_user_id))
                 .select(cs_dsl::id)
-                .first::<Uuid>(conn_sync)
+                .first::<crate::DbUuid>(conn_sync)
                 .optional()
         })
         .await
@@ -485,7 +485,7 @@ impl LorebookService {
                         l_dsl::name,         // lorebook name
                         csl_dsl::created_at, // association creation time
                     ))
-                    .load::<(Uuid, Uuid, Uuid, String, chrono::DateTime<Utc>)>(conn_sync)
+                    .load::<(crate::DbUuid, crate::DbUuid, crate::DbUuid, String, crate::DbDateTime)>(conn_sync)
             })
             .await
             .map_err(|e| {
@@ -524,7 +524,7 @@ impl LorebookService {
     pub async fn list_enhanced_chat_lorebook_associations(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id_param: Uuid,
+        chat_session_id_param: crate::DbUuid,
     ) -> Result<
         Vec<crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse>,
         AppError,
@@ -549,7 +549,7 @@ impl LorebookService {
                     .filter(cs_dsl::id.eq(chat_session_id_param))
                     .filter(cs_dsl::user_id.eq(current_user_id))
                     .select((cs_dsl::id, cs_dsl::character_id))
-                    .first::<(Uuid, Option<Uuid>)>(conn_sync)
+                    .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn_sync)
                     .optional()
             })
             .await
@@ -591,7 +591,7 @@ impl LorebookService {
                     .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .select((csl_dsl::lorebook_id, l_dsl::name, csl_dsl::created_at))
-                    .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
+                    .load::<(crate::DbUuid, String, crate::DbDateTime)>(conn_sync)?;
 
                 // Get character-linked associations (only for character-based chats)
                 let character_associations = if let Some(char_id) = character_id {
@@ -600,7 +600,7 @@ impl LorebookService {
                         .filter(cl_dsl::character_id.eq(char_id))
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
-                        .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?
+                        .load::<(crate::DbUuid, String, crate::DbDateTime)>(conn_sync)?
                 } else {
                     Vec::new()
                 };
@@ -610,7 +610,7 @@ impl LorebookService {
                     .filter(cclo_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(cclo_dsl::user_id.eq(current_user_id))
                     .select((cclo_dsl::lorebook_id, cclo_dsl::action))
-                    .load::<(Uuid, String)>(conn_sync)?;
+                    .load::<(crate::DbUuid, String)>(conn_sync)?;
 
                 Ok::<_, diesel::result::Error>((
                     chat_associations,
@@ -685,11 +685,11 @@ impl LorebookService {
         }
 
         // 3. Build override map
-        let override_map: std::collections::HashMap<Uuid, String> = overrides.into_iter().collect();
+        let override_map: std::collections::HashMap<crate::DbUuid, String> = overrides.into_iter().collect();
 
         // 4. Build a map to store unique lorebook associations, prioritizing chat-level
         let mut unique_associations: std::collections::HashMap<
-            Uuid,
+            crate::DbUuid,
             crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse,
         > = std::collections::HashMap::new();
 
@@ -740,8 +740,8 @@ impl LorebookService {
     pub async fn disassociate_lorebook_from_chat(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id_param: Uuid,
-        lorebook_id_param: Uuid,
+        chat_session_id_param: crate::DbUuid,
+        lorebook_id_param: crate::DbUuid,
     ) -> Result<(), AppError> {
         debug!("Attempting to disassociate lorebook [REDACTED_UUID] from chat [REDACTED_UUID]");
         let user = get_user_from_session(auth_session)?;
@@ -760,7 +760,7 @@ impl LorebookService {
                     .filter(cs_dsl::id.eq(chat_session_id_param))
                     .filter(cs_dsl::user_id.eq(current_user_id))
                     .select((cs_dsl::id, cs_dsl::character_id))
-                    .first::<(Uuid, Option<Uuid>)>(conn_sync)
+                    .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn_sync)
                     .optional()
             })
             .await
@@ -911,7 +911,7 @@ impl LorebookService {
     pub async fn list_associated_chat_sessions_for_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id_param: Uuid,
+        lorebook_id_param: crate::DbUuid,
         user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<ChatSessionBasicInfo>, AppError> {
         debug!(
@@ -933,7 +933,7 @@ impl LorebookService {
                 .filter(l_dsl::id.eq(lorebook_id_param))
                 .filter(l_dsl::user_id.eq(current_user_id))
                 .select(l_dsl::id)
-                .first::<Uuid>(conn_sync)
+                .first::<crate::DbUuid>(conn_sync)
                 .optional()
         })
         .await
@@ -972,7 +972,7 @@ impl LorebookService {
                         cs_dsl::title_ciphertext, // chat_session title (encrypted)
                         cs_dsl::title_nonce,      // chat_session title nonce
                     ))
-                    .load::<(Uuid, Option<Vec<u8>>, Option<Vec<u8>>)>(conn_sync)
+                    .load::<(crate::DbUuid, Option<Vec<u8>>, Option<Vec<u8>>)>(conn_sync)
             })
             .await
             .map_err(|e| {

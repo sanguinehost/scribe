@@ -29,16 +29,15 @@ use crate::{
 #[instrument(skip(pool), err)]
 pub async fn get_messages_for_session(
     pool: &DbPool, // Already correct
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::DbUuid,
+    session_id: crate::DbUuid,
 ) -> Result<Vec<ChatMessage>, AppError> {
     // Changed DbChatMessage to ChatMessage
-    let conn = pool.get().await?;
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         let session_owner_id = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select(chat_sessions::user_id)
-            .first::<Uuid>(conn)
+            .first::<crate::DbUuid>(conn)
             .optional()?;
 
         session_owner_id.map_or_else(
@@ -62,7 +61,7 @@ pub async fn get_messages_for_session(
             },
         )
     })
-    .await?
+    .await
 }
 /// Internal helper to save a chat message within a transaction.
 #[instrument(skip(conn), err)]
@@ -96,8 +95,8 @@ pub fn save_chat_message_internal(
 /// Parameters for saving a chat message.
 pub struct SaveMessageParams<'a> {
     pub state: Arc<AppState>,
-    pub session_id: Uuid,
-    pub user_id: Uuid,
+    pub session_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub message_type_enum: MessageRole, // Renamed for clarity (this is the enum)
     pub content: &'a str,               // This is the primary textual content
     pub role_str: Option<String>,       // ADDED: The string role ("user", "model", "assistant")
@@ -108,9 +107,9 @@ pub struct SaveMessageParams<'a> {
     pub raw_prompt_debug: Option<&'a str>, // Raw prompt for debugging (only for AI responses)
     pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
     pub error_message: Option<String>,               // Error message if status is failed
-    pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
+    pub variant_of: Option<crate::DbUuid>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
-    pub credits_cost_override: Option<bigdecimal::BigDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
+    pub credits_cost_override: Option<crate::DbBigDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -174,25 +173,20 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                     // Return the parent message with updated variant metadata
                     // We need to fetch the updated parent message to return it
                     let pool = state.pool.clone();
-                    let updated_parent = pool
-                        .get()
-                        .await
-                        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-                        .interact(move |conn| {
-                            use crate::schema::chat_messages::dsl::*;
-                            chat_messages
-                                .filter(id.eq(parent_message_id))
-                                .filter(user_id.eq(user_id))
-                                .select(ChatMessage::as_select())
-                                .first::<ChatMessage>(conn)
-                                .map_err(|e| {
-                                    AppError::DatabaseQueryError(format!(
-                                        "Parent message not found: {e}"
-                                    ))
-                                })
-                        })
-                        .await
-                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                    let updated_parent = crate::db::with_conn(&pool, move |conn| {
+                        use crate::schema::chat_messages::dsl::*;
+                        chat_messages
+                            .filter(id.eq(parent_message_id))
+                            .filter(user_id.eq(user_id))
+                            .select(ChatMessage::as_select())
+                            .first::<ChatMessage>(conn)
+                            .map_err(|e| {
+                                AppError::DatabaseQueryError(format!(
+                                    "Parent message not found: {e}"
+                                ))
+                            })
+                    })
+                    .await?;
 
                     return Ok(updated_parent);
                 }
@@ -276,7 +270,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
             let config_content = std::fs::read_to_string(config_path).unwrap_or_default();
 
-            if let Ok(tiers_config) = serde_json::from_str::<serde_json::Value>(&config_content) {
+            if let Ok(tiers_config) = serde_json::from_str::<crate::DbJson>(&config_content) {
                 let token_pricing = &tiers_config["credit_system"]["token_pricing"];
 
                 // Get base API costs for this model
@@ -362,14 +356,14 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // Convert to BigDecimal for database storage
     use std::str::FromStr;
     let actual_cost_bd = credits_cost_override.clone().unwrap_or_else(|| {
-        bigdecimal::BigDecimal::from_str(&actual_cost_dollars.to_string())
-            .unwrap_or_else(|_| bigdecimal::BigDecimal::from(0))
+        crate::DbBigDecimal::from_str(&actual_cost_dollars.to_string())
+            .unwrap_or_else(|_| crate::DbBigDecimal::from(0))
     });
 
-    let modified_cost_bd = bigdecimal::BigDecimal::from_str(&modified_cost_dollars.to_string())
-        .unwrap_or_else(|_| bigdecimal::BigDecimal::from(0));
+    let modified_cost_bd = crate::DbBigDecimal::from_str(&modified_cost_dollars.to_string())
+        .unwrap_or_else(|_| crate::DbBigDecimal::from(0));
 
-    let actual_charge_bd = bigdecimal::BigDecimal::from(0); // TODO: Implement actual charge tracking
+    let actual_charge_bd = crate::DbBigDecimal::from(0); // TODO: Implement actual charge tracking
 
     // For backwards compatibility with old code
     #[cfg(feature = "payment")]
@@ -460,11 +454,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     }
 
     let db_pool: DbPool = state.pool.clone(); // Ensure DbPool type
-    let saved_message_db = db_pool
-        .get()
-        .await?
-        .interact(move |conn| save_chat_message_internal(conn, new_message_to_insert))
-        .await??;
+    let saved_message_db = crate::db::with_conn(&db_pool, move |conn| {
+        save_chat_message_internal(conn, new_message_to_insert)
+    })
+    .await?;
 
     debug!(message_id = %saved_message_db.id, %session_id, "Message saved to DB successfully.");
 
@@ -551,54 +544,45 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
                 let total_tokens = prompt_tokens + completion_tokens;
                 if total_tokens > 0 {
-                    let conn_result = db_pool_for_tokens.get().await;
-                    if let Ok(conn) = conn_result {
-                        let model_name_clone = model_name_for_tracking.clone();
+                    let model_name_clone = model_name_for_tracking.clone();
 
-                        let track_result = conn
-                            .interact(move |conn| {
-                                let usage_service = UsageTrackingService::new(
-                                    (*state_config_for_payment).clone(),
-                                    EncryptionService::new(),
-                                );
+                    let track_result = crate::db::with_conn(&db_pool_for_tokens, move |conn| {
+                        let usage_service = UsageTrackingService::new(
+                            (*state_config_for_payment).clone(),
+                            EncryptionService::new(),
+                        );
 
-                                // Create metadata about this token usage
-                                let mut model_usage = HashMap::new();
-                                model_usage.insert(model_name_clone, total_tokens);
+                        // Create metadata about this token usage
+                        let mut model_usage = HashMap::new();
+                        model_usage.insert(model_name_clone, total_tokens);
 
-                                let mut feature_usage = HashMap::new();
-                                feature_usage.insert("chat_message".to_string(), 1);
+                        let mut feature_usage = HashMap::new();
+                        feature_usage.insert("chat_message".to_string(), 1);
 
-                                let metadata = UsageMetadata {
-                                    model_usage,
-                                    feature_usage,
-                                    request_count: 1,
-                                    last_activity: chrono::Utc::now(),
-                                };
+                        let metadata = UsageMetadata {
+                            model_usage,
+                            feature_usage,
+                            request_count: 1,
+                            last_activity: chrono::Utc::now(),
+                        };
 
-                                usage_service.track_usage_sync(
-                                    conn,
-                                    user_id_for_tokens,
-                                    None, // subscription_id will be looked up by the service
-                                    total_tokens,
-                                    Some(metadata),
-                                )
-                            })
-                            .await;
+                        usage_service.track_usage_sync(
+                            conn,
+                            user_id_for_tokens,
+                            None, // subscription_id will be looked up by the service
+                            total_tokens,
+                            Some(metadata),
+                        )
+                        .map_err(|e| crate::errors::AppError::DatabaseQueryError(format!("Failed to track usage: {}", e)))
+                    }).await;
 
-                        match track_result {
-                            Ok(Ok(_)) => {
-                                info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, total_tokens = total_tokens, "Successfully tracked payment usage");
-                            }
-                            Ok(Err(e)) => {
-                                error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to track payment usage");
-                            }
-                            Err(e) => {
-                                error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Database interaction failed for payment usage tracking");
-                            }
+                    match track_result {
+                        Ok(_) => {
+                            info!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, total_tokens = total_tokens, "Successfully tracked payment usage");
                         }
-                    } else {
-                        error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, "Failed to get database connection for payment usage tracking");
+                        Err(e) => {
+                            error!(session_id = %session_id_for_tokens, user_id = %user_id_for_tokens, error = ?e, "Failed to track payment usage");
+                        }
                     }
                 }
             }
@@ -698,23 +682,21 @@ fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_
 
 async fn update_cumulative_token_counts(
     pool: &crate::db::DbPool,
-    session_id: uuid::Uuid,
-    user_id: uuid::Uuid,
+    session_id: crate::DbUuid,
+    user_id: crate::DbUuid,
     prompt_tokens: i32,
     completion_tokens: i32,
     estimated_cost_cents: i32,
-    #[cfg(feature = "payment")] actual_cost: bigdecimal::BigDecimal,
-    #[cfg(feature = "payment")] modified_cost: bigdecimal::BigDecimal,
+    #[cfg(feature = "payment")] actual_cost: crate::DbBigDecimal,
+    #[cfg(feature = "payment")] modified_cost: crate::DbBigDecimal,
     #[cfg(feature = "payment")] credit_cost: i32,
-    #[cfg(feature = "payment")] actual_charge: bigdecimal::BigDecimal,
+    #[cfg(feature = "payment")] actual_charge: crate::DbBigDecimal,
     #[cfg(feature = "payment")] credits_charged: i32,
 ) -> Result<(), AppError> {
     use crate::schema::{chat_sessions, users};
     use diesel::prelude::*;
 
-    let conn = pool.get().await?;
-
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         // Start a transaction to ensure atomicity
         conn.transaction::<_, diesel::result::Error, _>(|conn| {
             // Update chat session cumulative counts
@@ -777,7 +759,6 @@ async fn update_cumulative_token_counts(
         })
     })
     .await
-    .map_err(AppError::from)?
     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
     Ok(())

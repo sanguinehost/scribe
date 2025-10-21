@@ -13,10 +13,8 @@
 -- - User's message
 -- Only the message author can decrypt this information
 
-ALTER TABLE chat_messages
-ADD COLUMN raw_prompt_ciphertext BLOB,
-ADD COLUMN raw_prompt_nonce BLOB;
-
+ALTER TABLE chat_messages ADD COLUMN raw_prompt_ciphertext BLOB;
+ALTER TABLE chat_messages ADD COLUMN raw_prompt_nonce BLOB;
 -- Add indexes for better query performance when filtering by these fields
 CREATE INDEX idx_chat_messages_raw_prompt_exists
 ON chat_messages (user_id, session_id)

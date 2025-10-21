@@ -1,9 +1,10 @@
 use crate::schema::chronicle_events;
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 use validator::Validate;
 
 /// EventSource represents where a chronicle event originated from
@@ -48,27 +49,28 @@ impl std::str::FromStr for EventSource {
 /// Simplified to focus on summaries and searchable keywords
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = chronicle_events)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct ChronicleEvent {
-    pub id: Uuid,
-    pub chronicle_id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub chronicle_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub event_type: String,
     pub summary: String, // Plaintext fallback (legacy)
     pub source: String,  // Will be converted to/from EventSource
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
     #[serde(skip_serializing)]
     pub summary_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
-    pub timestamp_iso8601: DateTime<Utc>,
+    pub timestamp_iso8601: DbDateTime,
     pub keywords: Option<Vec<Option<String>>>, // For search optimization
     #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
     pub keywords_nonce: Option<Vec<u8>>,
-    pub chat_session_id: Option<Uuid>, // Link to originating chat
+    pub chat_session_id: Option<crate::DbUuid>, // Link to originating chat
 }
 
 impl ChronicleEvent {
@@ -162,8 +164,8 @@ impl ChronicleEvent {
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = chronicle_events)]
 pub struct NewChronicleEvent {
-    pub chronicle_id: Uuid,
-    pub user_id: Uuid,
+    pub chronicle_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     #[validate(length(
         min = 1,
         max = 100,
@@ -179,23 +181,23 @@ pub struct NewChronicleEvent {
     pub source: String, // EventSource as string
     pub summary_encrypted: Option<Vec<u8>>,
     pub summary_nonce: Option<Vec<u8>>,
-    pub timestamp_iso8601: DateTime<Utc>,
+    pub timestamp_iso8601: DbDateTime,
     pub keywords: Option<Vec<Option<String>>>,
     pub keywords_encrypted: Option<Vec<u8>>,
     pub keywords_nonce: Option<Vec<u8>>,
-    pub chat_session_id: Option<Uuid>,
+    pub chat_session_id: Option<crate::DbUuid>,
 }
 
 impl NewChronicleEvent {
     /// Create a new event with EventSource enum
     pub fn new(
-        chronicle_id: Uuid,
-        user_id: Uuid,
+        chronicle_id: crate::DbUuid,
+        user_id: crate::DbUuid,
         event_type: String,
         summary: String,
         source: EventSource,
         keywords: Option<Vec<String>>,
-        chat_session_id: Option<Uuid>,
+        chat_session_id: Option<crate::DbUuid>,
     ) -> Self {
         Self {
             chronicle_id,
@@ -215,11 +217,11 @@ impl NewChronicleEvent {
 
     /// Create a simple event with just summary and keywords
     pub fn simple(
-        chronicle_id: Uuid,
-        user_id: Uuid,
+        chronicle_id: crate::DbUuid,
+        user_id: crate::DbUuid,
         summary: String,
         keywords: Vec<String>,
-        chat_session_id: Option<Uuid>,
+        chat_session_id: Option<crate::DbUuid>,
     ) -> Self {
         Self::new(
             chronicle_id,
@@ -289,8 +291,8 @@ pub struct CreateEventRequest {
     pub source: EventSource,
     #[validate(custom(function = "validate_keywords_count"))]
     pub keywords: Option<Vec<String>>,
-    pub timestamp_iso8601: Option<DateTime<Utc>>,
-    pub chat_session_id: Option<Uuid>,
+    pub timestamp_iso8601: Option<DbDateTime>,
+    pub chat_session_id: Option<crate::DbUuid>,
 }
 
 fn default_event_source() -> EventSource {
@@ -322,9 +324,9 @@ pub struct EventFilter {
     pub event_type: Option<String>,
     pub source: Option<EventSource>,
     pub keywords: Option<Vec<String>>, // Filter by keywords
-    pub after_timestamp: Option<DateTime<Utc>>,
-    pub before_timestamp: Option<DateTime<Utc>>,
-    pub chat_session_id: Option<Uuid>,
+    pub after_timestamp: Option<DbDateTime>,
+    pub before_timestamp: Option<DbDateTime>,
+    pub chat_session_id: Option<crate::DbUuid>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub order_by: Option<EventOrderBy>,

@@ -104,7 +104,7 @@ pub struct ContentPriority {
 
 impl ContentPriority {
     /// Calculate priority for a retrieved chunk
-    pub fn calculate(chunk: &RetrievedChunk, query_timestamp: DateTime<Utc>) -> Self {
+    pub fn calculate(chunk: &RetrievedChunk, query_timestamp: crate::DbDateTime) -> Self {
         let relevance = chunk.score;
 
         // Calculate recency boost based on content type and timestamp
@@ -161,7 +161,7 @@ impl DynamicRagSelector {
     pub async fn select_rag_content(
         &self,
         candidates: Vec<RetrievedChunk>,
-        query_timestamp: Option<DateTime<Utc>>,
+        query_timestamp: Option<crate::DbDateTime>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         let available_budget = self.budget_planner.available_rag_budget();
         let query_time = query_timestamp.unwrap_or_else(Utc::now);

@@ -477,52 +477,40 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
         // Check soft limits if enabled
         let soft_limit_service = SoftLimitService::new(state.config.clone());
         if soft_limit_service.is_enabled() {
-            // Get database connection
-            let Ok(conn) = state.pool.get().await else {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({
-                        "error": "Database connection error"
-                    })),
-                )
-                    .into_response();
-            };
-
             // Check soft limit status
             let user_id = user.id;
-            let check_result = conn
-                .interact(move |conn| {
-                    // Get or create daily usage
-                    let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
+            let pool = state.pool.clone();
+            let check_result = crate::db::with_conn(&pool, move |conn| {
+                // Get or create daily usage
+                let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
 
-                    // Get user's subscription tier (default to "free" if not found)
-                    let tier = "free"; // TODO: Get actual tier from subscription service
+                // Get user's subscription tier (default to "free" if not found)
+                let tier = "free"; // TODO: Get actual tier from subscription service
 
-                    // Get daily limit for tier
-                    let daily_limit = soft_limit_service.get_daily_limit(tier);
+                // Get daily limit for tier
+                let daily_limit = soft_limit_service.get_daily_limit(tier);
 
-                    // Calculate usage percentage
-                    let usage_percentage =
-                        (usage.message_count as f32 / daily_limit as f32 * 100.0) as i32;
+                // Calculate usage percentage
+                let usage_percentage =
+                    (usage.message_count as f32 / daily_limit as f32 * 100.0) as i32;
 
-                    // Check if soft limit is exceeded
-                    if usage.message_count >= daily_limit {
-                        // Check if hard limit grace period has passed
-                        if usage.soft_limit_triggered_at.is_some() {
-                            // For now, we'll allow with warning (could enforce hard stop here)
-                            Ok::<_, AppError>((true, usage_percentage, true)) // (has_limit, percentage, is_over_limit)
-                        } else {
-                            // First time hitting limit
-                            Ok::<_, AppError>((true, usage_percentage, true))
-                        }
+                // Check if soft limit is exceeded
+                if usage.message_count >= daily_limit {
+                    // Check if hard limit grace period has passed
+                    if usage.soft_limit_triggered_at.is_some() {
+                        // For now, we'll allow with warning (could enforce hard stop here)
+                        Ok::<_, AppError>((true, usage_percentage, true)) // (has_limit, percentage, is_over_limit)
                     } else {
-                        Ok::<_, AppError>((true, usage_percentage, false))
+                        // First time hitting limit
+                        Ok::<_, AppError>((true, usage_percentage, true))
                     }
-                })
-                .await;
+                } else {
+                    Ok::<_, AppError>((true, usage_percentage, false))
+                }
+            }).await;
 
             match check_result {
-                Ok(Ok((_has_limit, usage_percentage, is_over_limit))) => {
+                Ok((_has_limit, usage_percentage, is_over_limit)) => {
                     if is_over_limit {
                         // Add warning header but continue (soft limit, not hard limit)
                         warn!(
@@ -534,12 +522,8 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
                         // For now, we'll continue and let the handler decide
                     }
                 }
-                Ok(Err(e)) => {
-                    warn!("Failed to check soft limits: {}", e);
-                    // Continue on error - don't block the request
-                }
                 Err(e) => {
-                    warn!("Database interaction error checking soft limits: {}", e);
+                    warn!("Failed to check soft limits: {}", e);
                     // Continue on error - don't block the request
                 }
             }
@@ -594,52 +578,40 @@ pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> 
     }
 
     // Check soft limits
-    let Ok(conn) = state.pool.get().await else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({
-                "error": "Service temporarily unavailable"
-            })),
-        )
-            .into_response();
-    };
-
     let user_id = user.id;
-    let _state_clone = state.clone();
+    let pool = state.pool.clone();
 
-    let check_result = conn
-        .interact(move |conn| {
-            // Get daily usage
-            let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
+    let check_result = crate::db::with_conn(&pool, move |conn| {
+        // Get daily usage
+        let usage = soft_limit_service.get_or_create_daily_usage(conn, user_id)?;
 
-            // Get user's subscription tier (simplified for now)
-            // TODO: Integrate with actual subscription service when encryption service is available
-            let tier = "free".to_string();
+        // Get user's subscription tier (simplified for now)
+        // TODO: Integrate with actual subscription service when encryption service is available
+        let tier = "free".to_string();
 
-            // Get daily limit
-            let daily_limit = soft_limit_service.get_daily_limit(&tier);
+        // Get daily limit
+        let daily_limit = soft_limit_service.get_daily_limit(&tier);
 
-            // Calculate throttle delay based on usage
-            let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as u32;
-            let throttle_delay = if usage_percentage > 100 {
-                // Progressive throttling after limit
-                let over_percentage = usage_percentage - 100;
-                Some(std::time::Duration::from_millis(
-                    (over_percentage * 100) as u64,
-                ))
-            } else if usage_percentage > 80 {
-                // Mild throttling near limit
-                Some(std::time::Duration::from_millis(100))
-            } else {
-                None
-            };
+        // Calculate throttle delay based on usage
+        let usage_percentage = (usage.message_count as f32 / daily_limit as f32 * 100.0) as u32;
+        let throttle_delay = if usage_percentage > 100 {
+            // Progressive throttling after limit
+            let over_percentage = usage_percentage - 100;
+            Some(std::time::Duration::from_millis(
+                (over_percentage * 100) as u64,
+            ))
+        } else if usage_percentage > 80 {
+            // Mild throttling near limit
+            Some(std::time::Duration::from_millis(100))
+        } else {
+            None
+        };
 
-            Ok::<_, AppError>((usage.message_count, daily_limit, throttle_delay, tier))
-        })
-        .await;
+        Ok::<_, AppError>((usage.message_count, daily_limit, throttle_delay, tier))
+    }).await;
 
     match check_result {
-        Ok(Ok((current_usage, limit, throttle_info, tier))) => {
+        Ok((current_usage, limit, throttle_info, tier)) => {
             // Add headers with usage info
             let mut response = next.run(request).await;
             let headers = response.headers_mut();
@@ -684,12 +656,8 @@ pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> 
 
             response
         }
-        Ok(Err(e)) => {
-            warn!("Soft limit check failed: {}", e);
-            next.run(request).await
-        }
         Err(e) => {
-            warn!("Database error during soft limit check: {}", e);
+            warn!("Soft limit check failed: {}", e);
             next.run(request).await
         }
     }

@@ -1,24 +1,26 @@
 use crate::schema::user_settings;
 use bigdecimal::BigDecimal;
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone, Debug)]
 #[diesel(table_name = user_settings)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct UserSettings {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
 
     // Generation Settings (nullable - fall back to system defaults if not set)
     pub default_model_name: Option<String>,
-    pub default_temperature: Option<BigDecimal>,
+    pub default_temperature: Option<crate::DbBigDecimal>,
     pub default_max_output_tokens: Option<i32>,
-    pub default_frequency_penalty: Option<BigDecimal>,
-    pub default_presence_penalty: Option<BigDecimal>,
-    pub default_top_p: Option<BigDecimal>,
+    pub default_frequency_penalty: Option<crate::DbBigDecimal>,
+    pub default_presence_penalty: Option<crate::DbBigDecimal>,
+    pub default_top_p: Option<crate::DbBigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
@@ -39,11 +41,11 @@ pub struct UserSettings {
     // Local LLM Settings
     pub preferred_local_model: Option<String>,
     pub local_llm_enabled: Option<bool>,
-    pub local_model_preferences: Option<serde_json::Value>,
+    pub local_model_preferences: Option<crate::DbJson>,
 
     // Timestamps
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
     pub typing_speed: Option<i32>,
 }
 
@@ -51,15 +53,15 @@ pub struct UserSettings {
 #[diesel(table_name = user_settings)]
 #[diesel(treat_none_as_null = true)]
 pub struct NewUserSettings {
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
 
     // Generation Settings
     pub default_model_name: Option<String>,
-    pub default_temperature: Option<BigDecimal>,
+    pub default_temperature: Option<crate::DbBigDecimal>,
     pub default_max_output_tokens: Option<i32>,
-    pub default_frequency_penalty: Option<BigDecimal>,
-    pub default_presence_penalty: Option<BigDecimal>,
-    pub default_top_p: Option<BigDecimal>,
+    pub default_frequency_penalty: Option<crate::DbBigDecimal>,
+    pub default_presence_penalty: Option<crate::DbBigDecimal>,
+    pub default_top_p: Option<crate::DbBigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
@@ -79,18 +81,18 @@ pub struct NewUserSettings {
     pub typing_speed: Option<i32>,
     pub preferred_local_model: Option<String>,
     pub local_llm_enabled: Option<bool>,
-    pub local_model_preferences: Option<serde_json::Value>,
+    pub local_model_preferences: Option<crate::DbJson>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UpdateUserSettingsRequest {
     // Generation Settings
     pub default_model_name: Option<String>,
-    pub default_temperature: Option<BigDecimal>,
+    pub default_temperature: Option<crate::DbBigDecimal>,
     pub default_max_output_tokens: Option<i32>,
-    pub default_frequency_penalty: Option<BigDecimal>,
-    pub default_presence_penalty: Option<BigDecimal>,
-    pub default_top_p: Option<BigDecimal>,
+    pub default_frequency_penalty: Option<crate::DbBigDecimal>,
+    pub default_presence_penalty: Option<crate::DbBigDecimal>,
+    pub default_top_p: Option<crate::DbBigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
@@ -110,18 +112,18 @@ pub struct UpdateUserSettingsRequest {
     pub typing_speed: Option<i32>,
     pub preferred_local_model: Option<String>,
     pub local_llm_enabled: Option<bool>,
-    pub local_model_preferences: Option<serde_json::Value>,
+    pub local_model_preferences: Option<crate::DbJson>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)] // Added Deserialize
 pub struct UserSettingsResponse {
     // Generation Settings
     pub default_model_name: Option<String>,
-    pub default_temperature: Option<BigDecimal>,
+    pub default_temperature: Option<crate::DbBigDecimal>,
     pub default_max_output_tokens: Option<i32>,
-    pub default_frequency_penalty: Option<BigDecimal>,
-    pub default_presence_penalty: Option<BigDecimal>,
-    pub default_top_p: Option<BigDecimal>,
+    pub default_frequency_penalty: Option<crate::DbBigDecimal>,
+    pub default_presence_penalty: Option<crate::DbBigDecimal>,
+    pub default_top_p: Option<crate::DbBigDecimal>,
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
@@ -141,11 +143,11 @@ pub struct UserSettingsResponse {
     pub typing_speed: Option<i32>,
     pub preferred_local_model: Option<String>,
     pub local_llm_enabled: Option<bool>,
-    pub local_model_preferences: Option<serde_json::Value>,
+    pub local_model_preferences: Option<crate::DbJson>,
 
     // Timestamps
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 impl From<UserSettings> for UserSettingsResponse {

@@ -39,10 +39,9 @@ CREATE INDEX idx_template_preferences_character_id ON template_preferences(chara
 
 -- Add trigger to update updated_at DATETIME
 -- CREATE OR REPLACE FUNCTION update_template_preferences_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    ... -- Removed: SQLite does not support PL/pgSQL
-
+-- RETURNS TRIGGER AS $$
+-- BEGIN
+--     ... -- Removed: SQLite does not support PL/pgSQL
 
 -- SQLite trigger for updating timestamps on template_preferences
 CREATE TRIGGER IF NOT EXISTS update_template_preferences_timestamp

@@ -43,19 +43,19 @@ macro_rules! privacy_error {
 }
 
 /// Helper functions to create loggable wrappers with global salt
-pub fn loggable_user_id(uuid: Uuid) -> LoggableUserId {
+pub fn loggable_user_id(uuid: crate::DbUuid) -> LoggableUserId {
     LoggableUserId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
-pub fn loggable_session_id(uuid: Uuid) -> LoggableSessionId {
+pub fn loggable_session_id(uuid: crate::DbUuid) -> LoggableSessionId {
     LoggableSessionId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
-pub fn loggable_character_id(uuid: Uuid) -> LoggableCharacterId {
+pub fn loggable_character_id(uuid: crate::DbUuid) -> LoggableCharacterId {
     LoggableCharacterId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
-pub fn loggable_persona_id(uuid: Uuid) -> LoggablePersonaId {
+pub fn loggable_persona_id(uuid: crate::DbUuid) -> LoggablePersonaId {
     LoggablePersonaId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 

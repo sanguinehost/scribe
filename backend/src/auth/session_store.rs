@@ -30,7 +30,7 @@ use tracing::{debug, error, info, instrument};
 pub struct SessionRecord {
     pub id: String, // Keep as String to match DB schema (Text)
     // Use chrono::DateTime<Utc> for TIMESTAMPTZ
-    pub expires: Option<DateTime<Utc>>,
+    pub expires: Option<crate::DbDateTime>,
     // Session data is likely stringified JSON or similar
     pub session: String,
 }
@@ -111,7 +111,7 @@ impl DieselSessionStore {
         let metadata_result = crate::db::with_conn(&pool, move |conn| {
             let result = sessions::table
                 .select((sessions::id, sessions::expires))
-                .load::<(String, Option<DateTime<Utc>>)>(conn) // Load ID as String from DB
+                .load::<(String, Option<crate::DbDateTime>)>(conn) // Load ID as String from DB
                 .map(|rows| {
                     rows.into_iter()
                         .map(|(id, expires)| SessionMetadata { id, expires })
@@ -172,13 +172,13 @@ impl DieselSessionStore {
 
 // Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
 #[must_use]
-pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<DateTime<Utc>> {
+pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<crate::DbDateTime> {
     // Made pub
     offset_dt.and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
 }
 
 // Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime
-fn utc_to_offset(utc_dt: Option<DateTime<Utc>>) -> Option<OffsetDateTime> {
+fn utc_to_offset(utc_dt: Option<crate::DbDateTime>) -> Option<OffsetDateTime> {
     utc_dt.and_then(|dt| OffsetDateTime::from_unix_timestamp(dt.timestamp()).ok())
 }
 
@@ -186,7 +186,7 @@ fn utc_to_offset(utc_dt: Option<DateTime<Utc>>) -> Option<OffsetDateTime> {
 #[derive(Debug, Clone)]
 pub struct SessionMetadata {
     pub id: String, // Keep as String to match DB schema
-    pub expires: Option<DateTime<Utc>>,
+    pub expires: Option<crate::DbDateTime>,
 }
 
 #[async_trait]
@@ -286,7 +286,7 @@ impl SessionStore for DieselSessionStore {
             // Deserialize the db_record.session (JSON string) into HashMap<String, String> or appropriate type for session.data
             // tower_sessions::Record expects session.data to be HashMap<String, Value> where Value is usually String for JSON.
             // For axum-login, the user is typically serialized into a specific key.
-            let session_data_map: std::collections::HashMap<String, serde_json::Value> =
+            let session_data_map: std::collections::HashMap<String, crate::DbJson> =
                 serde_json::from_str(&db_record.session).map_err(|e| Self::map_json_error(&e))?;
 
             // --- Log the deserialized session.data HashMap ---

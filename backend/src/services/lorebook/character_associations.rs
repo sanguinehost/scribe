@@ -5,8 +5,8 @@ impl LorebookService {
     pub async fn associate_lorebook_to_character(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        character_id: Uuid,
-        lorebook_id: Uuid,
+        character_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
 
@@ -94,7 +94,7 @@ impl LorebookService {
     pub async fn list_character_lorebooks(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        character_id: Uuid,
+        character_id: crate::DbUuid,
     ) -> Result<Vec<LorebookResponse>, AppError> {
         let user = get_user_from_session(auth_session)?;
 
@@ -139,8 +139,8 @@ impl LorebookService {
     pub async fn set_character_lorebook_override(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: Uuid,
-        lorebook_id: Uuid,
+        chat_session_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
         action: String, // "disable" or "enable"
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
@@ -199,8 +199,8 @@ impl LorebookService {
     pub async fn remove_character_lorebook_override(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: Uuid,
-        lorebook_id: Uuid,
+        chat_session_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
@@ -242,7 +242,7 @@ impl LorebookService {
     pub async fn get_character_lorebook_overrides(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: Uuid,
+        chat_session_id: crate::DbUuid,
     ) -> Result<Vec<crate::models::lorebooks::ChatCharacterLorebookOverride>, AppError> {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;

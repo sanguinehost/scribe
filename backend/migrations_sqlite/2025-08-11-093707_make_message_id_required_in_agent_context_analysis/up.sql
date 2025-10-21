@@ -9,5 +9,5 @@
 DELETE FROM agent_context_analysis WHERE message_id IS NULL;
 
 -- Now make message_id NOT NULL
-ALTER TABLE agent_context_analysis
-ALTER COLUMN message_id SET NOT NULL;
+-- SQLite Note: Making message_id NOT NULL requires table recreation - defer to fix_nullable_columns.py
+-- ALTER TABLE agent_context_analysis ALTER COLUMN message_id SET NOT NULL;

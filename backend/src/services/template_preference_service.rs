@@ -32,12 +32,10 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn get_template_preferences(
         pool: &DbPool,
-        user_id: Uuid,
-        character_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        character_id: Option<crate::DbUuid>,
     ) -> Result<TemplatePreferenceResponse, AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             info!(%user_id, ?character_id, "GET: Looking for template preferences");
 
             // Try to find existing preferences for this user+character combination
@@ -89,10 +87,33 @@ impl TemplatePreferenceService {
                         enable_thinking: false,
                     };
 
-                    let created = diesel::insert_into(template_preferences::table)
-                        .values(&new_prefs)
-                        .get_result::<TemplatePreference>(conn)
-                        .map_err(map_diesel_error)?;
+                    #[cfg(feature = "postgres-backend")]
+                    let created = {
+                        diesel::insert_into(template_preferences::table)
+                            .values(&new_prefs)
+                            .get_result::<TemplatePreference>(conn)
+                            .map_err(map_diesel_error)?
+                    };
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let created = {
+                        use diesel::prelude::*;
+                        let user_id_clone = new_prefs.user_id;
+                        let character_id_clone = new_prefs.character_id;
+
+                        diesel::insert_into(template_preferences::table)
+                            .values(&new_prefs)
+                            .execute(conn)
+                            .map_err(map_diesel_error)?;
+
+                        // Query back using unique constraint (user_id, character_id)
+                        template_preferences::table
+                            .filter(template_preferences::user_id.eq(user_id_clone))
+                            .filter(template_preferences::character_id.eq(character_id_clone))
+                            .select(TemplatePreference::as_select())
+                            .first::<TemplatePreference>(conn)
+                            .map_err(map_diesel_error)?
+                    };
 
                     info!(%user_id, ?character_id, "Created default template preferences");
                     Ok(TemplatePreferenceResponse::from(created))
@@ -107,13 +128,11 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn update_template_preferences(
         pool: &DbPool,
-        user_id: Uuid,
-        character_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        character_id: Option<crate::DbUuid>,
         update_request: UpdateTemplatePreferenceRequest,
     ) -> Result<TemplatePreferenceResponse, AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             // Find or create preferences
             // Use .is_null() for None and .eq() for Some(uuid) to properly handle NULLs in Diesel
             let mut query = template_preferences::table
@@ -165,10 +184,33 @@ impl TemplatePreferenceService {
                     };
 
                     // Insert with the requested values, no need to UPDATE after
-                    let created = diesel::insert_into(template_preferences::table)
-                        .values(&new_prefs)
-                        .get_result::<TemplatePreference>(conn)
-                        .map_err(map_diesel_error)?;
+                    #[cfg(feature = "postgres-backend")]
+                    let created = {
+                        diesel::insert_into(template_preferences::table)
+                            .values(&new_prefs)
+                            .get_result::<TemplatePreference>(conn)
+                            .map_err(map_diesel_error)?
+                    };
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let created = {
+                        use diesel::prelude::*;
+                        let user_id_clone = new_prefs.user_id;
+                        let character_id_clone = new_prefs.character_id;
+
+                        diesel::insert_into(template_preferences::table)
+                            .values(&new_prefs)
+                            .execute(conn)
+                            .map_err(map_diesel_error)?;
+
+                        // Query back using unique constraint (user_id, character_id)
+                        template_preferences::table
+                            .filter(template_preferences::user_id.eq(user_id_clone))
+                            .filter(template_preferences::character_id.eq(character_id_clone))
+                            .select(TemplatePreference::as_select())
+                            .first::<TemplatePreference>(conn)
+                            .map_err(map_diesel_error)?
+                    };
 
                     info!(
                         %user_id, ?character_id,
@@ -254,12 +296,10 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn delete_template_preferences(
         pool: &DbPool,
-        user_id: Uuid,
-        character_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        character_id: Option<crate::DbUuid>,
     ) -> Result<(), AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             // Use .is_null() for None and .eq() for Some(uuid) to properly handle NULLs in Diesel
             let deleted_count = match character_id {
                 Some(char_id) => diesel::delete(

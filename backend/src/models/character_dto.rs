@@ -2,7 +2,7 @@
 
 use diesel_json::Json;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use crate::DbJson as JsonValue;
 
 /// DTO for character creation requests
 #[derive(Debug, Serialize, Deserialize)]

@@ -207,9 +207,9 @@ impl NarrativeIntelligenceService {
     ))]
     pub async fn process_conversation_context(
         &self,
-        user_id: Uuid,
-        session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        session_id: crate::DbUuid,
+        chronicle_id: Option<crate::DbUuid>,
         recent_messages: &[ChatMessage],
         existing_rag_context: &[RetrievedChunk],
         session_dek: &SessionDek,
@@ -295,9 +295,9 @@ impl NarrativeIntelligenceService {
     /// It's designed specifically for the re-chronicle feature.
     pub async fn process_chat_history_batch(
         &self,
-        user_id: Uuid,
-        session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::DbUuid,
+        session_id: crate::DbUuid,
+        chronicle_id: Option<crate::DbUuid>,
         messages: Vec<ChatMessage>,
         session_dek: &SessionDek,
     ) -> Result<NarrativeProcessingResult, AppError> {
@@ -394,9 +394,9 @@ impl NarrativeIntelligenceService {
     #[allow(dead_code)]
     pub fn should_process_session(
         &self,
-        _user_id: Uuid,
-        _session_id: Uuid,
-        _chronicle_id: Option<Uuid>,
+        _user_id: crate::DbUuid,
+        _session_id: crate::DbUuid,
+        _chronicle_id: Option<crate::DbUuid>,
     ) -> bool {
         // TODO: Add per-user/session configuration
         // For now, just use global config
@@ -544,7 +544,7 @@ impl NarrativeIntelligenceService {
     /// Retrieve the user's current persona context for narrative intelligence
     async fn get_user_persona_context(
         &self,
-        user_id: Uuid,
+        user_id: crate::DbUuid,
         session_dek: &SessionDek,
     ) -> Result<UserPersonaContext, AppError> {
         // Get the user from the database to access their default_persona_id

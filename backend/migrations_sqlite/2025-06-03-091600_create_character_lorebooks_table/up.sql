@@ -22,18 +22,14 @@ CREATE INDEX idx_character_lorebooks_user_id ON character_lorebooks (user_id);
 CREATE INDEX idx_character_lorebooks_character_id ON character_lorebooks (character_id);
 CREATE INDEX idx_character_lorebooks_lorebook_id ON character_lorebooks (lorebook_id);
 
--- Add a trigger to automatically update the updated_at column
--- CREATE OR REPLACE FUNCTION trigger_set_timestamp()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NO... -- Removed: SQLite does not support PL/pgSQL
-
-
 -- SQLite trigger for updating timestamps on character_lorebooks
-CREATE TRIGGER IF NOT EXISTS update_character_lorebooks_timestamp
+-- Note: This table uses composite primary key, so we match on both columns
+CREATE TRIGGER update_character_lorebooks_timestamp
 AFTER UPDATE ON character_lorebooks
 FOR EACH ROW
 WHEN NEW.updated_at = OLD.updated_at OR NEW.updated_at IS NULL
 BEGIN
-    UPDATE character_lorebooks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    UPDATE character_lorebooks
+    SET updated_at = CURRENT_TIMESTAMP
+    WHERE character_id = NEW.character_id AND lorebook_id = NEW.lorebook_id;
 END;

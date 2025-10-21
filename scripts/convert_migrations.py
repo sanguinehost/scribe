@@ -44,6 +44,173 @@ class ConversionResult:
                 f"Warnings: {len(self.warnings)}, "
                 f"Errors: {len(self.errors)}")
 
+@dataclass
+class ColumnDefinition:
+    """Represents a column in a table schema"""
+    name: str
+    data_type: str
+    not_null: bool = False
+    primary_key: bool = False
+    default: str = None
+    references: str = None  # "table_name(column_name)"
+
+    def to_sql(self) -> str:
+        """Generate SQL column definition"""
+        parts = [self.name, self.data_type]
+
+        if self.primary_key:
+            if self.data_type == 'INTEGER':
+                parts.append('PRIMARY KEY AUTOINCREMENT')
+            else:
+                parts.append('PRIMARY KEY')
+
+        if self.not_null and not self.primary_key:
+            parts.append('NOT NULL')
+
+        if self.default:
+            parts.append(f'DEFAULT {self.default}')
+
+        if self.references:
+            parts.append(f'REFERENCES {self.references}')
+
+        return ' '.join(parts)
+
+@dataclass
+class TableSchema:
+    """Represents a table's schema state"""
+    name: str
+    columns: List[ColumnDefinition] = field(default_factory=list)
+    indexes: List[str] = field(default_factory=list)
+    triggers: List[str] = field(default_factory=list)
+
+    def get_column(self, name: str) -> ColumnDefinition:
+        """Get column by name"""
+        for col in self.columns:
+            if col.name == name:
+                return col
+        return None
+
+    def to_create_table_sql(self) -> str:
+        """Generate CREATE TABLE SQL"""
+        col_defs = [f'    {col.to_sql()}' for col in self.columns]
+        return f"CREATE TABLE {self.name} (\n" + ',\n'.join(col_defs) + "\n)"
+
+class MigrationStateTracker:
+    """Tracks cumulative schema changes across migrations for intelligent conversion"""
+
+    def __init__(self):
+        self.tables = {}  # table_name -> TableSchema
+
+    def parse_create_table(self, sql: str) -> None:
+        """Parse CREATE TABLE statement and store initial state"""
+        # Extract table name
+        match = re.search(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(', sql, re.IGNORECASE)
+        if not match:
+            return
+
+        table_name = match.group(1)
+
+        # Extract column definitions (simplified parser)
+        # This is a basic implementation - could be enhanced
+        table_body = sql[match.end():sql.rfind(')')]
+
+        columns = []
+        for line in table_body.split(','):
+            line = line.strip()
+            if not line or line.startswith('--') or line.upper().startswith('CONSTRAINT'):
+                continue
+
+            # Parse column definition
+            parts = line.split()
+            if len(parts) >= 2:
+                col_name = parts[0]
+                col_type = parts[1]
+
+                col = ColumnDefinition(
+                    name=col_name,
+                    data_type=col_type,
+                    not_null='NOT NULL' in line.upper(),
+                    primary_key='PRIMARY KEY' in line.upper(),
+                    default=self._extract_default(line),
+                    references=self._extract_references(line)
+                )
+                columns.append(col)
+
+        self.tables[table_name] = TableSchema(name=table_name, columns=columns)
+
+    def _extract_default(self, line: str) -> str:
+        """Extract DEFAULT value from column definition"""
+        match = re.search(r'DEFAULT\s+([^,\s]+)', line, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    def _extract_references(self, line: str) -> str:
+        """Extract REFERENCES clause from column definition"""
+        match = re.search(r'REFERENCES\s+(\w+\([^)]+\))', line, re.IGNORECASE)
+        return match.group(1) if match else None
+
+    def apply_alter_column(self, table_name: str, column_name: str, operation: str, value: str = None) -> None:
+        """Apply ALTER COLUMN operation to tracked state"""
+        if table_name not in self.tables:
+            return
+
+        table = self.tables[table_name]
+        col = table.get_column(column_name)
+
+        if not col:
+            return
+
+        if operation == 'drop_not_null':
+            col.not_null = False
+        elif operation == 'set_not_null':
+            col.not_null = True
+        elif operation == 'set_type':
+            col.data_type = value
+        elif operation == 'set_default':
+            col.default = value
+        elif operation == 'drop_default':
+            col.default = None
+
+    def generate_table_recreation_sql(self, table_name: str) -> str:
+        """Generate SQLite table recreation SQL with current tracked state"""
+        if table_name not in self.tables:
+            return f"-- ERROR: Table '{table_name}' not found in state tracker"
+
+        table = self.tables[table_name]
+
+        sql = f"""-- SQLite: Recreate table '{table_name}' to apply ALTER COLUMN changes
+BEGIN TRANSACTION;
+
+{table.to_create_table_sql().replace(table_name, f'{table_name}_new')}
+
+-- Copy data
+INSERT INTO {table_name}_new SELECT * FROM {table_name};
+
+-- Drop old table
+DROP TABLE {table_name};
+
+-- Rename new table
+ALTER TABLE {table_name}_new RENAME TO {table_name};
+
+"""
+
+        # Add indexes
+        if table.indexes:
+            sql += "-- Recreate indexes\n"
+            for index_sql in table.indexes:
+                sql += f"{index_sql};\n"
+            sql += "\n"
+
+        # Add triggers
+        if table.triggers:
+            sql += "-- Recreate triggers\n"
+            for trigger_sql in table.triggers:
+                sql += f"{trigger_sql};\n"
+            sql += "\n"
+
+        sql += "COMMIT;\n"
+
+        return sql
+
 class MigrationConverter:
     """Converts PostgreSQL migrations to SQLite format"""
 
@@ -145,20 +312,34 @@ class MigrationConverter:
 
     def __init__(self):
         self.result = ConversionResult()
+        self.state_tracker = MigrationStateTracker()
 
     def convert(self, sql: str) -> str:
         """Main conversion method - applies all transformations"""
+        # First pass: Track CREATE TABLE statements for state
+        self._track_create_tables(sql)
+
         sql = self._remove_extensions(sql)
         sql = self._remove_enum_types(sql)
         sql = self._remove_functions(sql)
         sql = self._convert_create_tables(sql)
-        sql = self._convert_alter_tables(sql)
+        sql = self._convert_alter_tables(sql)  # Now uses state tracker
         sql = self._convert_indexes(sql)
         sql = self._convert_triggers(sql)
         sql = self._convert_defaults(sql)
         sql = self._apply_type_mappings(sql)
 
         return sql
+
+    def _track_create_tables(self, sql: str) -> None:
+        """First pass: Track all CREATE TABLE statements in state tracker"""
+        # Find all CREATE TABLE statements
+        pattern = r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\([^;]+\);'
+        matches = re.finditer(pattern, sql, re.IGNORECASE | re.DOTALL)
+
+        for match in matches:
+            table_sql = match.group(0)
+            self.state_tracker.parse_create_table(table_sql)
 
     def _remove_extensions(self, sql: str) -> str:
         """Remove PostgreSQL extension creation"""
@@ -237,9 +418,130 @@ class MigrationConverter:
         return sql
 
     def _convert_alter_tables(self, sql: str) -> str:
-        """Convert ALTER TABLE statements"""
-        # Most ALTER TABLE syntax is compatible, just need type conversions
-        # Those will be handled by _apply_type_mappings
+        """Convert ALTER TABLE statements using state tracker for intelligent recreation"""
+        from collections import defaultdict
+
+        # Track which tables need recreation
+        tables_to_recreate = set()
+        alter_operations = defaultdict(list)
+
+        # Pattern 1: ALTER COLUMN ... DROP NOT NULL
+        pattern_drop_not_null = r'ALTER\s+TABLE\s+(\w+)\s+ALTER\s+COLUMN\s+(\w+)\s+DROP\s+NOT\s+NULL\s*;'
+
+        for match in re.finditer(pattern_drop_not_null, sql, re.IGNORECASE):
+            table_name = match.group(1)
+            column_name = match.group(2)
+
+            # Update state tracker
+            self.state_tracker.apply_alter_column(table_name, column_name, 'drop_not_null')
+            tables_to_recreate.add(table_name)
+            alter_operations[table_name].append(f"DROP NOT NULL on {column_name}")
+
+            self.result.changes.append(
+                f"Table '{table_name}': Will recreate to make '{column_name}' nullable"
+            )
+
+        # Pattern 2: ALTER COLUMN ... SET NOT NULL
+        pattern_set_not_null = r'ALTER\s+TABLE\s+(\w+)\s+ALTER\s+COLUMN\s+(\w+)\s+SET\s+NOT\s+NULL\s*;'
+
+        for match in re.finditer(pattern_set_not_null, sql, re.IGNORECASE):
+            table_name = match.group(1)
+            column_name = match.group(2)
+
+            # Update state tracker
+            self.state_tracker.apply_alter_column(table_name, column_name, 'set_not_null')
+            tables_to_recreate.add(table_name)
+            alter_operations[table_name].append(f"SET NOT NULL on {column_name}")
+
+            self.result.changes.append(
+                f"Table '{table_name}': Will recreate to make '{column_name}' NOT NULL"
+            )
+
+        # Pattern 3: ALTER COLUMN ... SET DATA TYPE
+        pattern_set_type = r'ALTER\s+TABLE\s+(\w+)\s+ALTER\s+COLUMN\s+(\w+)\s+(?:SET\s+DATA\s+)?TYPE\s+([^;]+);'
+
+        for match in re.finditer(pattern_set_type, sql, re.IGNORECASE):
+            table_name = match.group(1)
+            column_name = match.group(2)
+            new_type = match.group(3).strip()
+
+            # Update state tracker
+            self.state_tracker.apply_alter_column(table_name, column_name, 'set_type', new_type)
+            tables_to_recreate.add(table_name)
+            alter_operations[table_name].append(f"TYPE {new_type} on {column_name}")
+
+            self.result.changes.append(
+                f"Table '{table_name}': Will recreate to change '{column_name}' type to {new_type}"
+            )
+
+        # Pattern 4: ALTER COLUMN ... SET DEFAULT
+        pattern_set_default = r'ALTER\s+TABLE\s+(\w+)\s+ALTER\s+COLUMN\s+(\w+)\s+SET\s+DEFAULT\s+([^;]+);'
+
+        for match in re.finditer(pattern_set_default, sql, re.IGNORECASE):
+            table_name = match.group(1)
+            column_name = match.group(2)
+            default_value = match.group(3).strip()
+
+            # Update state tracker
+            self.state_tracker.apply_alter_column(table_name, column_name, 'set_default', default_value)
+            tables_to_recreate.add(table_name)
+            alter_operations[table_name].append(f"SET DEFAULT {default_value} on {column_name}")
+
+            self.result.changes.append(
+                f"Table '{table_name}': Will recreate to set default {default_value} on '{column_name}'"
+            )
+
+        # Pattern 5: ALTER COLUMN ... DROP DEFAULT
+        pattern_drop_default = r'ALTER\s+TABLE\s+(\w+)\s+ALTER\s+COLUMN\s+(\w+)\s+DROP\s+DEFAULT\s*;'
+
+        for match in re.finditer(pattern_drop_default, sql, re.IGNORECASE):
+            table_name = match.group(1)
+            column_name = match.group(2)
+
+            # Update state tracker
+            self.state_tracker.apply_alter_column(table_name, column_name, 'drop_default')
+            tables_to_recreate.add(table_name)
+            alter_operations[table_name].append(f"DROP DEFAULT on {column_name}")
+
+            self.result.changes.append(
+                f"Table '{table_name}': Will recreate to remove default from '{column_name}'"
+            )
+
+        # Now generate table recreation SQL for each affected table
+        for table_name in tables_to_recreate:
+            operations_list = ', '.join(alter_operations[table_name])
+            self.result.changes.append(
+                f"Generating table recreation SQL for '{table_name}' ({operations_list})"
+            )
+
+            # Generate recreation SQL
+            recreation_sql = self.state_tracker.generate_table_recreation_sql(table_name)
+
+            # Find where to insert the recreation SQL
+            # We'll replace all ALTER COLUMN statements for this table with the recreation
+            patterns_for_table = [
+                r'ALTER\s+TABLE\s+' + table_name + r'\s+ALTER\s+COLUMN\s+\w+\s+(?:DROP|SET)\s+(?:NOT\s+)?(?:NULL|DEFAULT|DATA\s+TYPE)[^;]*;'
+            ]
+
+            # Replace first occurrence with recreation SQL, rest with empty string
+            first_replaced = False
+            for pattern in patterns_for_table:
+                def replacer(match):
+                    nonlocal first_replaced
+                    if not first_replaced:
+                        first_replaced = True
+                        return recreation_sql
+                    else:
+                        return ''  # Remove subsequent ALTER COLUMN for same table
+
+                sql = re.sub(pattern, replacer, sql, flags=re.IGNORECASE)
+
+        # Remove any remaining ALTER COLUMN statements (ones we couldn't track)
+        remaining_alters = re.findall(r'ALTER\s+TABLE\s+\w+\s+ALTER\s+COLUMN[^;]*;', sql, re.IGNORECASE)
+        if remaining_alters:
+            for alter in remaining_alters[:3]:  # Show first 3
+                self.result.warnings.append(f"Unhandled ALTER COLUMN: {alter[:80]}...")
+
         return sql
 
     def _convert_indexes(self, sql: str) -> str:

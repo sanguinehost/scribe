@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS chat_character_overrides (
 
 -- Create a trigger to automatically update updated_at
 -- Attempt to drop trigger first to make it idempotent, then create.
-DROP TRIGGER IF EXISTS set_timestamp_chat_character_overrides ON chat_character_overrides;
+-- Note: SQLite DROP TRIGGER syntax doesn't use "ON table_name"
+DROP TRIGGER IF EXISTS set_timestamp_chat_character_overrides;
 
 -- SQLite trigger for updating timestamps on chat_character_overrides
 CREATE TRIGGER IF NOT EXISTS update_chat_character_overrides_timestamp

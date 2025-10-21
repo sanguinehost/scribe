@@ -1,22 +1,24 @@
 // backend/src/models/character_assets.rs
 
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::character_assets)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct CharacterAsset {
     pub id: i32,
-    pub character_id: Uuid,
+    pub character_id: crate::DbUuid,
     pub asset_type: String,
     pub uri: Option<String>,
     pub name: String,
     pub ext: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
     pub data: Option<Vec<u8>>,
     pub content_type: Option<String>,
 }
@@ -24,7 +26,7 @@ pub struct CharacterAsset {
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::character_assets)]
 pub struct NewCharacterAsset {
-    pub character_id: Uuid,
+    pub character_id: crate::DbUuid,
     pub asset_type: String,
     pub uri: Option<String>,
     pub name: String,
@@ -35,7 +37,7 @@ pub struct NewCharacterAsset {
 
 impl NewCharacterAsset {
     pub fn new_avatar(
-        character_id: Uuid,
+        character_id: crate::DbUuid,
         name: &str,
         image_data: Vec<u8>,
         content_type: Option<String>,

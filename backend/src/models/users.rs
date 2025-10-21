@@ -1,7 +1,8 @@
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::Insertable;
 use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
@@ -9,7 +10,7 @@ use secrecy::{SecretBox, SecretString};
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use tracing;
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 // User role enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -188,13 +189,14 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct UserDbQuery {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub username: String,
     pub password_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
     pub email: String,
     pub kek_salt: String,
     pub encrypted_dek: Vec<u8>,
@@ -204,15 +206,15 @@ pub struct UserDbQuery {
     pub recovery_dek_nonce: Option<Vec<u8>>,
     pub role: UserRole,
     pub account_status: AccountStatus,
-    pub default_persona_id: Option<Uuid>,
+    pub default_persona_id: Option<crate::DbUuid>,
     pub total_prompt_tokens: i64,
     pub total_completion_tokens: i64,
     pub total_token_cost_cents: i64,
-    pub tokens_last_reset_at: Option<DateTime<Utc>>,
-    pub token_usage_updated_at: DateTime<Utc>,
+    pub tokens_last_reset_at: Option<DbDateTime>,
+    pub token_usage_updated_at: DbDateTime,
     pub cached_credit_balance: Option<i32>,
     pub cached_subscription_tier: Option<String>,
-    pub last_daily_usage_reset: Option<DateTime<Utc>>,
+    pub last_daily_usage_reset: Option<DbDateTime>,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -257,7 +259,7 @@ impl std::fmt::Debug for UserDbQuery {
 #[diesel(table_name = users)] // Identifiable needs this to know the table for the ID.
 #[diesel(primary_key(id))] // Explicitly state primary key for Identifiable
 pub struct User {
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     pub username: String,
     pub email: String,
     #[serde(skip_serializing, skip_deserializing)]
@@ -283,16 +285,16 @@ pub struct User {
     #[serde(skip_serializing, skip_deserializing)]
     pub recovery_phrase: Option<String>,
 
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
-    pub default_persona_id: Option<Uuid>,
+    pub default_persona_id: Option<crate::DbUuid>,
     pub total_prompt_tokens: i64,
     pub total_completion_tokens: i64,
     pub total_token_cost_cents: i64,
-    pub tokens_last_reset_at: Option<DateTime<Utc>>,
-    pub token_usage_updated_at: DateTime<Utc>,
+    pub tokens_last_reset_at: Option<DbDateTime>,
+    pub token_usage_updated_at: DbDateTime,
 }
 
 // Manual Debug implementation for User
@@ -406,7 +408,7 @@ impl Clone for User {
 }
 
 impl AuthUser for User {
-    type Id = Uuid;
+    type Id = crate::DbUuid;
 
     fn id(&self) -> Self::Id {
         self.id
@@ -436,8 +438,8 @@ pub struct NewUser {
     pub total_prompt_tokens: i64,
     pub total_completion_tokens: i64,
     pub total_token_cost_cents: i64,
-    pub tokens_last_reset_at: Option<DateTime<Utc>>,
-    pub token_usage_updated_at: DateTime<Utc>,
+    pub tokens_last_reset_at: Option<DbDateTime>,
+    pub token_usage_updated_at: DbDateTime,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -481,7 +483,7 @@ mod tests {
     use chrono::Utc;
 
     struct TestUserParams<'a> {
-        id: Uuid,
+        id: crate::DbUuid,
         username: &'a str,
         password_hash: &'a str,
         email: &'a str,
@@ -493,7 +495,7 @@ mod tests {
         recovery_dek_nonce: Option<Vec<u8>>,
         dek: Option<SerializableSecretDek>,
         role: UserRole,
-        default_persona_id: Option<Uuid>,
+        default_persona_id: Option<crate::DbUuid>,
     }
 
     impl User {

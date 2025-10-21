@@ -8,7 +8,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPersonaContext {
     /// The persona ID
-    pub id: Uuid,
+    pub id: crate::DbUuid,
     /// The name of the persona (e.g., "Lucas")
     pub name: String,
     /// Detailed description of the persona
@@ -22,7 +22,7 @@ pub struct UserPersonaContext {
 impl UserPersonaContext {
     /// Create a new UserPersonaContext
     pub fn new(
-        id: Uuid,
+        id: crate::DbUuid,
         name: String,
         description: Option<String>,
         personality: Option<String>,

@@ -840,7 +840,7 @@ fn build_rag_context_string(
                 &rag_item.metadata
             {
                 // Try to parse the text as JSON to extract rich chronicle data
-                if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&rag_item.text) {
+                if let Ok(event_data) = serde_json::from_str::<crate::DbJson>(&rag_item.text) {
                     write!(
                         rag_context,
                         "<chronicle_event type=\"{}\" timestamp=\"{}\"",
@@ -1226,11 +1226,11 @@ async fn build_final_prompt_strings(
         });
 
         if let Some(personality) = character_personality {
-            char_obj["personality"] = serde_json::Value::String(personality);
+            char_obj["personality"] = crate::DbJson::String(personality);
         }
 
         if let Some(description) = character_description {
-            char_obj["description"] = serde_json::Value::String(description);
+            char_obj["description"] = crate::DbJson::String(description);
         }
 
         template_context["char"] = char_obj;
@@ -1239,29 +1239,29 @@ async fn build_final_prompt_strings(
     // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
         template_context["persona_override"] =
-            serde_json::Value::String(calculation.persona_override_prompt_str.clone());
+            crate::DbJson::String(calculation.persona_override_prompt_str.clone());
     }
 
     // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
         template_context["character_definition"] =
-            serde_json::Value::String(calculation.character_definition_str.clone());
+            crate::DbJson::String(calculation.character_definition_str.clone());
     }
 
     // Add character details if available
     if !calculation.character_details_str.is_empty() {
         template_context["character_details"] =
-            serde_json::Value::String(calculation.character_details_str.clone());
+            crate::DbJson::String(calculation.character_details_str.clone());
     }
 
     // Add RAG context if available
     if !enhanced_rag_context.is_empty() {
-        template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone());
+        template_context["rag_context"] = crate::DbJson::String(enhanced_rag_context.clone());
     }
 
     // Add agent context as separate template variable for sections list generation
     if let Some(agent_ctx) = agent_context {
-        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
+        template_context["agent_context"] = crate::DbJson::String(agent_ctx.to_string());
     }
 
     // Use render_with_style to inject narrative style variables into the template
@@ -1820,10 +1820,10 @@ mod tests {
             let rag_chunk = RetrievedChunk {
                 text: "Some context".to_string(),
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
-                    message_id: uuid::Uuid::new_v4(),
-                    session_id: uuid::Uuid::new_v4(),
+                    message_id: crate::DbUuid::new_v4(),
+                    session_id: crate::DbUuid::new_v4(),
                     chronicle_id: None,
-                    user_id: uuid::Uuid::new_v4(),
+                    user_id: crate::DbUuid::new_v4(),
                     speaker: "user".to_string(),
                     timestamp: chrono::Utc::now(),
                     text: "Some context".to_string(),
@@ -1924,7 +1924,7 @@ mod tests {
         );
 
         // Test JSON parsing of the event data
-        let parsed: serde_json::Value = serde_json::from_str(chronicle_event_json).unwrap();
+        let parsed: crate::DbJson = serde_json::from_str(chronicle_event_json).unwrap();
         assert_eq!(parsed["action"], "Agreed");
         assert_eq!(parsed["actors"][0]["id"], "sol");
         assert_eq!(parsed["valence"][0]["change"], 0.3);

@@ -1,14 +1,15 @@
 use crate::models::characters::Character;
 use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
+use crate::DbDateTime;
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel_json::Json;
 use serde::{Deserialize, Serialize}; // Added Deserializer
-use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
-use serde_json::Value as JsonValue;
+use crate::DbJson as Value; // Using Value for flexibility in extensions and mixed types like id
+use crate::DbJson as JsonValue;
 use std::collections::HashMap;
-use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value // Add use statement for canonical Character struct
+use crate::DbUuid as Uuid; // <-- Add Uuid import // Alias serde_json::Value // Add use statement for canonical Character struct
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -159,7 +160,7 @@ pub struct CharacterCardDataV3 {
 
     // --- V2 fields changed/clarified in V3 ---
     // `creator_notes`: Already included above, V3 clarifies multilingual handling.
-    pub character_book: Option<serde_json::Value>, // Use Value for flexible parsing
+    pub character_book: Option<crate::DbJson>, // Use Value for flexible parsing
 
     // --- New Fields in V3 ---
     pub assets: Option<Vec<Asset>>,
@@ -455,7 +456,7 @@ use crate::schema::character_assets;
 #[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
 pub struct NewCharacter {
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
     pub spec: String,
     pub spec_version: String,
     pub name: String,
@@ -483,8 +484,8 @@ pub struct NewCharacter {
     pub creator_notes_multilingual: Option<Json<JsonValue>>,
     pub source: Option<Vec<Option<String>>>,
     pub group_only_greetings: Option<Vec<Option<String>>>,
-    pub creation_date: Option<DateTime<Utc>>,
-    pub modification_date: Option<DateTime<Utc>>,
+    pub creation_date: Option<DbDateTime>,
+    pub modification_date: Option<DbDateTime>,
     pub extensions: Option<Json<JsonValue>>, // Added extensions field
     // Fields from Character struct that are also in NewCharacter based on schema.rs and common use
     pub persona: Option<Vec<u8>>,
@@ -507,7 +508,7 @@ pub struct NewCharacter {
     pub favorite: Option<bool>,
     pub first_message_visibility: Option<String>,
     // height: Option<BigDecimal>,
-    // last_activity: Option<DateTime<Utc>>,
+    // last_activity: Option<DbDateTime>,
     pub migrated_from: Option<String>,
     pub model_prompt: Option<Vec<u8>>,
     pub model_prompt_nonce: Option<Vec<u8>>,
@@ -536,14 +537,14 @@ pub struct NewCharacter {
     pub depth_prompt: Option<Vec<u8>>,
     pub depth_prompt_depth: Option<i32>,
     pub depth_prompt_role: Option<String>,
-    pub talkativeness: Option<bigdecimal::BigDecimal>,
+    pub talkativeness: Option<crate::DbBigDecimal>,
     pub depth_prompt_ciphertext: Option<Vec<u8>>,
     pub depth_prompt_nonce: Option<Vec<u8>>,
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DateTime<Utc>>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>, // Make consistent with schema and Character struct
+    pub updated_at: Option<DbDateTime>,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -636,7 +637,7 @@ use crate::services::character_parser::ParsedCharacterCard;
 
 impl NewCharacter {
     // Add user_id parameter
-    fn from_v3_card(data_v3_card: &CharacterCardV3, user_id: Uuid) -> Self {
+    fn from_v3_card(data_v3_card: &CharacterCardV3, user_id: crate::DbUuid) -> Self {
         // --- Handling V3 Card ---
         // Extract spec and version
         let spec = data_v3_card.spec.clone();
@@ -681,11 +682,11 @@ impl NewCharacter {
             .extensions // data.extensions is HashMap<String, Value>
             .clone()
             .into_iter()
-            .collect::<serde_json::Map<String, serde_json::Value>>();
+            .collect::<serde_json::Map<String, crate::DbJson>>();
         let extensions_option_json = if extensions_json.is_empty() {
             None
         } else {
-            Some(Json(serde_json::Value::Object(extensions_json.clone()))) // Wrap Value in Json for Option<Json<Value>>
+            Some(Json(crate::DbJson::Object(extensions_json.clone()))) // Wrap Value in Json for Option<Json<Value>>
         };
 
         // Extract SillyTavern v3 fields from extensions
@@ -694,7 +695,7 @@ impl NewCharacter {
             .get("talkativeness")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<f64>().ok())
-            .and_then(|f| bigdecimal::BigDecimal::try_from(f).ok());
+            .and_then(|f| crate::DbBigDecimal::try_from(f).ok());
 
         let fav = data.extensions.get("fav").and_then(|v| v.as_bool());
 
@@ -800,8 +801,8 @@ impl NewCharacter {
             creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
             source,                  // Already converted to Option<Vec<Option<String>>>>
             group_only_greetings,    // Already Option<Vec<Option<String>>>
-            creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
-            modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
+            creation_date: creation_date_ts, // Already Option<DbDateTime>
+            modification_date: modification_date_ts, // Already Option<DbDateTime>
             extensions: extensions_option_json, // Assign the calculated extensions
             persona: None,
             persona_nonce: None,
@@ -853,7 +854,7 @@ impl NewCharacter {
         }
     }
 
-    fn from_v2_fallback(data: &CharacterCardDataV3, user_id: Uuid) -> Self {
+    fn from_v2_fallback(data: &CharacterCardDataV3, user_id: crate::DbUuid) -> Self {
         let description = if data.description.is_empty() {
             None
         } else {
@@ -925,7 +926,7 @@ impl NewCharacter {
             extensions: if data.extensions.is_empty() {
                 None
             } else {
-                Some(diesel_json::Json(serde_json::Value::Object(
+                Some(diesel_json::Json(crate::DbJson::Object(
                     data.extensions.clone().into_iter().collect(),
                 )))
             },
@@ -999,7 +1000,7 @@ impl NewCharacter {
     }
 
     #[must_use]
-    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
+    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: crate::DbUuid) -> Self {
         match parsed {
             ParsedCharacterCard::V3(data_v3_card) => Self::from_v3_card(data_v3_card, user_id),
             ParsedCharacterCard::V2Fallback(data) => Self::from_v2_fallback(data, user_id),
@@ -1012,8 +1013,8 @@ impl NewCharacter {
 #[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
 pub struct CharacterAsset {
     pub id: i32,
-    #[diesel(deserialize_as = Uuid)]
-    pub character_id: Uuid, // Changed from i32
+    #[diesel(deserialize_as = crate::DbUuid)]
+    pub character_id: crate::DbUuid, // Changed from i32
     #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
     pub asset_type: String, // Renamed from `type_` to match DB column
     pub uri: String,
@@ -1037,8 +1038,8 @@ impl std::fmt::Debug for CharacterAsset {
 #[derive(Insertable)]
 #[diesel(table_name = character_assets)]
 pub struct NewCharacterAsset {
-    #[diesel(serialize_as = Uuid)]
-    pub character_id: Uuid, // Changed from i32
+    #[diesel(serialize_as = crate::DbUuid)]
+    pub character_id: crate::DbUuid, // Changed from i32
     pub asset_type: String, // Renamed from `type_`
     pub uri: String,
     pub name: String,
@@ -1411,7 +1412,7 @@ mod tests {
             )])),
             extensions: HashMap::from([(
                 "ext_key".to_string(),
-                serde_json::Value::String("ext_val".to_string()),
+                crate::DbJson::String("ext_val".to_string()),
             )]),
             ..Default::default()
         };

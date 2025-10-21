@@ -532,13 +532,13 @@ mod tests {
 
     // Helper struct for creating mock ScoredPoint
     struct MockScoredPointParams<'a> {
-        id_uuid: Uuid,
+        id_uuid: crate::DbUuid,
         score: f32,
-        session_id: Uuid,
-        message_id: Uuid,
-        user_id: Uuid,
+        session_id: crate::DbUuid,
+        message_id: crate::DbUuid,
+        user_id: crate::DbUuid,
         speaker: &'a str,
-        timestamp: chrono::DateTime<Utc>,
+        timestamp: chrono::crate::DbDateTime,
         text: &'a str,
         source_type: &'a str,
     }
@@ -1228,9 +1228,9 @@ mod tests {
     #[derive(Clone)]
     struct TestLorebookParams {
         params: LorebookEntryParams,
-        original_id: Uuid,
-        lorebook_id: Uuid,
-        user_id: Uuid,
+        original_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
+        user_id: crate::DbUuid,
         content: String,
     }
 
@@ -1765,11 +1765,11 @@ mod tests {
     // Helper to create a mock ScoredPoint for Lorebook entries
     // Helper struct for creating mock lorebook ScoredPoint
     struct MockLorebookScoredPointParams<'a> {
-        point_uuid: Uuid,
+        point_uuid: crate::DbUuid,
         score: f32,
-        original_lorebook_entry_id: Uuid,
-        lorebook_id: Uuid,
-        user_id: Uuid,
+        original_lorebook_entry_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
+        user_id: crate::DbUuid,
         chunk_text: &'a str,
         entry_title: Option<String>,
         keywords: Option<Vec<String>>,
@@ -1986,9 +1986,9 @@ mod tests {
 
     fn verify_lorebook_filter_conditions(
         filter: &Filter,
-        user_id: Uuid,
-        lorebook_id1: Uuid,
-        lorebook_id2: Uuid,
+        user_id: crate::DbUuid,
+        lorebook_id1: crate::DbUuid,
+        lorebook_id2: crate::DbUuid,
     ) {
         assert_eq!(filter.must.len(), 3); // user_id, source_type, is_enabled
         assert_eq!(filter.should.len(), 2); // lorebook_id1, lorebook_id2
@@ -2371,8 +2371,8 @@ mod tests {
     }
 
     fn create_mock_chat_results_for_limit_test(
-        user_id: Uuid,
-        session_id: Uuid,
+        user_id: crate::DbUuid,
+        session_id: crate::DbUuid,
         dek: &SessionDek,
     ) -> Vec<ScoredPoint> {
         let chat_point1 = Uuid::new_v4();
@@ -2411,8 +2411,8 @@ mod tests {
     }
 
     fn create_mock_lore_results_for_limit_test(
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::DbUuid,
+        lorebook_id: crate::DbUuid,
         dek: &SessionDek,
     ) -> Vec<ScoredPoint> {
         let lore_point1 = Uuid::new_v4();

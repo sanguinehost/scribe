@@ -1,62 +1,59 @@
 -- SQLite Migration (Converted from PostgreSQL)
--- Original: up.sql
--- Conversion date: 2025-10-19T11:15:25.492881
+-- Original: up.sql - Major schema change for lorebooks table
 --
--- IMPORTANT: Review warnings below and verify functionality
+-- IMPORTANT: SQLite doesn't support complex ALTER TABLE operations
+-- This migration uses the table recreation pattern:
+-- 1. Create new table with desired schema
+-- 2. Copy compatible data
+-- 3. Drop old table
+-- 4. Rename new table
 -- ================================================================
 
--- Ensure TEXT-ossp extension is available
--- CREATE EXTENSION IF NOT EXISTS "TEXT-ossp"; -- Removed: SQLite does not support extensions
+-- Create new lorebooks table with updated schema
+CREATE TABLE lorebooks_new (
+    id TEXT PRIMARY KEY,  -- Changed from INTEGER to TEXT (UUID)
+    user_id TEXT NOT NULL,  -- NEW: Owner of the lorebook (FK to users, enforced at app level)
+    name TEXT NOT NULL,  -- Changed from nullable to NOT NULL
+    description TEXT,  -- Remains nullable
+    source_format TEXT NOT NULL,  -- NEW: Format of imported lorebook
+    is_public BOOLEAN NOT NULL DEFAULT false,  -- NEW: Visibility flag
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
--- Drop the foreign key constraint from lorebook_entries referencing lorebooks.id
--- This constraint will be recreated in the alter_lorebook_entries_table migration with the correct TEXT type.
--- Assuming default naming convention: lorebook_entries_lorebook_id_fkey
-ALTER TABLE lorebook_entries DROP CONSTRAINT IF EXISTS lorebook_entries_lorebook_id_fkey;
+-- Create index for user_id lookups
+CREATE INDEX idx_lorebooks_new_user_id ON lorebooks_new(user_id);
 
--- 1. Change primary key from INTEGER to TEXT for lorebooks table
-ALTER TABLE lorebooks ADD COLUMN id_uuid TEXT ;
+-- Copy compatible data from old table
+-- NOTE: This migration cannot preserve existing data because:
+-- 1. Primary key type changed (INTEGER -> TEXT/UUID)
+-- 2. New NOT NULL columns (user_id, source_format) have no source data
+-- 3. Structural changes are too significant
+-- If there is existing data, it must be migrated manually or re-imported
+INSERT INTO lorebooks_new (id, user_id, name, description, source_format, is_public, created_at, updated_at)
+SELECT
+    CAST(id AS TEXT) as id,  -- Convert INTEGER id to TEXT
+    'default-user-id' as user_id,  -- Placeholder - must be updated manually
+    COALESCE(name, 'Unnamed Lorebook') as name,  -- Ensure NOT NULL
+    description,
+    'legacy' as source_format,  -- Mark as legacy imports
+    false as is_public,
+    created_at,
+    updated_at
+FROM lorebooks
+WHERE name IS NOT NULL;  -- Only migrate lorebooks with names
 
--- Drop the old INTEGER PRIMARY KEY AUTOINCREMENT. This also drops the primary key constraint.
-ALTER TABLE lorebooks DROP COLUMN id CASCADE; -- CASCADE will drop dependent objects like the old PK constraint
-ALTER TABLE lorebooks RENAME COLUMN id_uuid TO id;
-ALTER TABLE lorebooks ADD PRIMARY KEY (id);
+-- Drop old table
+DROP TABLE lorebooks;
 
--- 2. Drop old columns not in the new design
-ALTER TABLE lorebooks
-DROP COLUMN IF EXISTS character_id,
-DROP COLUMN IF EXISTS scan_depth,
-DROP COLUMN IF EXISTS token_budget,
-DROP COLUMN IF EXISTS recursive_scanning,
-DROP COLUMN IF EXISTS extensions;
+-- Rename new table to original name
+ALTER TABLE lorebooks_new RENAME TO lorebooks;
 
--- 3. Add new columns as per the design document
-ALTER TABLE lorebooks
-ADD COLUMN user_id TEXT,
-ADD COLUMN source_format TEXT,
-ADD COLUMN is_public BOOLEAN DEFAULT false;
-
--- Set NOT NULL constraints for new columns
-ALTER TABLE lorebooks
-ALTER COLUMN user_id SET NOT NULL,
-ALTER COLUMN source_format SET NOT NULL,
-ALTER COLUMN is_public SET NOT NULL;
-
--- Add foreign key for user_id
-ALTER TABLE lorebooks
-ADD CONSTRAINT fk_lorebooks_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
--- 4. Adjust existing columns if necessary
--- Ensure 'name' is NOT NULL (original was nullable, new design implies NOT NULL)
-ALTER TABLE lorebooks ALTER COLUMN name SET NOT NULL;
--- 'description' TEXT remains nullable (optional in new design)
-
--- Ensure created_at and updated_at are present and have defaults (they should be from initial migration)
-ALTER TABLE lorebooks
-ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
-ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP;
-
--- Ensure the updated_at trigger is in place
-DROP TRIGGER IF EXISTS set_updated_at ON lorebooks;
+-- Recreate trigger for updated_at
 CREATE TRIGGER set_updated_at
 BEFORE UPDATE ON lorebooks
-FOR EACH ROW EXECUTE PROCEDURE diesel_set_updated_at();
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at OR NEW.updated_at IS NULL
+BEGIN
+    UPDATE lorebooks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;

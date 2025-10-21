@@ -43,7 +43,7 @@ pub struct DuplicateDetectionResult {
     /// Whether a duplicate was found
     pub is_duplicate: bool,
     /// The duplicate event ID if found
-    pub duplicate_event_id: Option<Uuid>,
+    pub duplicate_event_id: Option<crate::DbUuid>,
     /// Confidence score of the duplicate detection (0.0-1.0)
     pub confidence: f32,
     /// Reasoning for the duplicate detection
@@ -117,11 +117,6 @@ impl ChronicleDeduplicationService {
         &self,
         new_event: &ChronicleEvent,
     ) -> Result<Vec<ChronicleEvent>, AppError> {
-        let connection =
-            self.db_pool.get().await.map_err(|e| {
-                AppError::DbPoolError(format!("Failed to get DB connection: {}", e))
-            })?;
-
         // Calculate time window - look backward only for deduplication
         // We want to find events that happened BEFORE this one within the time window
         let time_window_start =
@@ -143,25 +138,20 @@ impl ChronicleDeduplicationService {
         let max_events = self.config.max_events_to_check;
 
         // Query for events in the same chronicle within the time window
-        let events = connection
-            .interact(move |conn| {
-                chronicle_events_dsl::chronicle_events
-                    .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
-                    .filter(chronicle_events_dsl::user_id.eq(user_id))
-                    .filter(chronicle_events_dsl::id.ne(event_id)) // Exclude the new event itself
-                    .filter(
-                        chronicle_events_dsl::timestamp_iso8601
-                            .between(time_window_start, time_window_end),
-                    )
-                    .order(chronicle_events_dsl::timestamp_iso8601.desc())
-                    .limit(max_events)
-                    .load::<ChronicleEvent>(conn)
-            })
-            .await
-            .map_err(|e| {
-                AppError::DbInteractError(format!("Failed to interact with database: {}", e))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let events = crate::db::with_conn(&self.db_pool, move |conn| {
+            chronicle_events_dsl::chronicle_events
+                .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
+                .filter(chronicle_events_dsl::user_id.eq(user_id))
+                .filter(chronicle_events_dsl::id.ne(event_id)) // Exclude the new event itself
+                .filter(
+                    chronicle_events_dsl::timestamp_iso8601
+                        .between(time_window_start, time_window_end),
+                )
+                .order(chronicle_events_dsl::timestamp_iso8601.desc())
+                .limit(max_events)
+                .load::<ChronicleEvent>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        }).await?;
 
         Ok(events)
     }
@@ -296,30 +286,20 @@ impl ChronicleDeduplicationService {
     #[instrument(skip(self))]
     pub async fn find_duplicate_events(
         &self,
-        chronicle_id: Uuid,
-        user_id: Uuid,
-    ) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+        chronicle_id: crate::DbUuid,
+        user_id: crate::DbUuid,
+    ) -> Result<Vec<(crate::DbUuid, crate::DbUuid)>, AppError> {
         debug!("Finding duplicate events for chronicle {}", chronicle_id);
 
-        let connection =
-            self.db_pool.get().await.map_err(|e| {
-                AppError::DbPoolError(format!("Failed to get DB connection: {}", e))
-            })?;
-
         // Get all events for the chronicle
-        let events = connection
-            .interact(move |conn| {
-                chronicle_events_dsl::chronicle_events
-                    .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
-                    .filter(chronicle_events_dsl::user_id.eq(user_id))
-                    .order(chronicle_events_dsl::timestamp_iso8601.asc())
-                    .load::<ChronicleEvent>(conn)
-            })
-            .await
-            .map_err(|e| {
-                AppError::DbInteractError(format!("Failed to interact with database: {}", e))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let events = crate::db::with_conn(&self.db_pool, move |conn| {
+            chronicle_events_dsl::chronicle_events
+                .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
+                .filter(chronicle_events_dsl::user_id.eq(user_id))
+                .order(chronicle_events_dsl::timestamp_iso8601.asc())
+                .load::<ChronicleEvent>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        }).await?;
 
         let mut duplicates = Vec::new();
 

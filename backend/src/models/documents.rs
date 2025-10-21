@@ -1,20 +1,22 @@
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 // Document model
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = crate::schema::old_documents)] // Use old_documents
 #[diesel(primary_key(id, created_at))]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct Document {
-    pub id: Uuid,
-    pub created_at: DateTime<Utc>,
+    pub id: crate::DbUuid,
+    pub created_at: DbDateTime,
     pub title: String,
     pub content: Option<String>,
     pub kind: String,
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
 }
 
 impl std::fmt::Debug for Document {
@@ -34,12 +36,12 @@ impl std::fmt::Debug for Document {
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::old_documents)] // Use old_documents
 pub struct NewDocument {
-    pub id: Uuid,
-    pub created_at: DateTime<Utc>,
+    pub id: crate::DbUuid,
+    pub created_at: DbDateTime,
     pub title: String,
     pub content: Option<String>,
     pub kind: String,
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
 }
 
 impl std::fmt::Debug for NewDocument {
@@ -58,18 +60,19 @@ impl std::fmt::Debug for NewDocument {
 // Suggestion model
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = crate::schema::old_suggestions)] // Use old_suggestions
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct Suggestion {
-    pub id: Uuid,
-    pub document_id: Uuid,
-    pub document_created_at: DateTime<Utc>,
+    pub id: crate::DbUuid,
+    pub document_id: crate::DbUuid,
+    pub document_created_at: DbDateTime,
     pub original_text: String,
     pub suggested_text: String,
     #[diesel(sql_type = Nullable<diesel::sql_types::Text>)] // Re-added explicit SQL type
     pub description: Option<String>,
     pub is_resolved: bool,
-    pub user_id: Uuid,
-    pub created_at: DateTime<Utc>,
+    pub user_id: crate::DbUuid,
+    pub created_at: DbDateTime,
 }
 
 impl std::fmt::Debug for Suggestion {
@@ -92,15 +95,15 @@ impl std::fmt::Debug for Suggestion {
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::old_suggestions)] // Use old_suggestions
 pub struct NewSuggestion {
-    pub id: Uuid,
-    pub document_id: Uuid,
-    pub document_created_at: DateTime<Utc>,
+    pub id: crate::DbUuid,
+    pub document_id: crate::DbUuid,
+    pub document_created_at: DbDateTime,
     pub original_text: String,
     pub suggested_text: String,
     pub description: Option<String>,
     pub is_resolved: bool,
-    pub user_id: Uuid,
-    pub created_at: DateTime<Utc>,
+    pub user_id: crate::DbUuid,
+    pub created_at: DbDateTime,
 }
 
 impl std::fmt::Debug for NewSuggestion {
@@ -139,12 +142,12 @@ impl std::fmt::Debug for CreateDocumentRequest {
 
 #[derive(Serialize)]
 pub struct DocumentResponse {
-    pub id: Uuid,
-    pub created_at: DateTime<Utc>,
+    pub id: crate::DbUuid,
+    pub created_at: DbDateTime,
     pub title: String,
     pub content: Option<String>,
     pub kind: String,
-    pub user_id: Uuid,
+    pub user_id: crate::DbUuid,
 }
 
 impl std::fmt::Debug for DocumentResponse {
@@ -162,8 +165,8 @@ impl std::fmt::Debug for DocumentResponse {
 
 #[derive(Deserialize)]
 pub struct CreateSuggestionRequest {
-    pub document_id: Uuid,
-    pub document_created_at: DateTime<Utc>,
+    pub document_id: crate::DbUuid,
+    pub document_created_at: DbDateTime,
     pub original_text: String,
     pub suggested_text: String,
     pub description: Option<String>,

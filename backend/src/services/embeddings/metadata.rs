@@ -10,12 +10,12 @@ use uuid::Uuid;
 // Metadata for chat message chunks
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ChatMessageChunkMetadata {
-    pub message_id: Uuid,
-    pub session_id: Uuid,
-    pub chronicle_id: Option<Uuid>, // Added for chronicle-scoped search
-    pub user_id: Uuid,              // Added user_id
+    pub message_id: crate::DbUuid,
+    pub session_id: crate::DbUuid,
+    pub chronicle_id: Option<crate::DbUuid>, // Added for chronicle-scoped search
+    pub user_id: crate::DbUuid,              // Added user_id
     pub speaker: String,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub timestamp: crate::DbDateTime,
     #[deprecated(note = "Use encrypted_text instead for security")]
     pub text: String, // Full text of the chunk (DEPRECATED - use encrypted_text)
     pub source_type: String,
@@ -105,9 +105,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
 // Metadata for lorebook entry chunks
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LorebookChunkMetadata {
-    pub original_lorebook_entry_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub original_lorebook_entry_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     #[deprecated(note = "Use encrypted_chunk_text instead for security")]
     pub chunk_text: String, // Full text of the chunk (DEPRECATED - use encrypted_chunk_text)
     pub entry_title: Option<String>,
@@ -231,9 +231,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
 /// Parameters for processing a lorebook entry
 #[derive(Debug)]
 pub struct LorebookEntryParams {
-    pub original_lorebook_entry_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub original_lorebook_entry_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub decrypted_content: String,
     pub decrypted_title: Option<String>,
     pub decrypted_keywords: Option<Vec<String>>,

@@ -5,14 +5,15 @@ use crate::schema::{
     character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks,
     lorebook_entries, lorebooks,
 };
-use chrono::{DateTime, Utc};
+use crate::DbDateTime;
+use chrono::Utc;
 use diesel::{
     AsChangeset, Associations, ExpressionMethods, Identifiable, Insertable, JoinOnDsl,
     PgConnection, QueryDsl, QueryResult, Queryable, RunQueryDsl, Selectable,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use uuid::Uuid;
+use crate::DbUuid as Uuid;
 
 // --------------------
 // --- Lorebook Model ---
@@ -34,27 +35,27 @@ use uuid::Uuid;
 #[diesel(table_name = lorebooks)]
 #[diesel(belongs_to(User))]
 pub struct Lorebook {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub name: String,
     pub description: Option<String>,
     pub source_format: String,
     pub is_public: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = lorebooks)]
 pub struct NewLorebook {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub name: String,
     pub description: Option<String>,
     pub source_format: String,
     pub is_public: bool,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
 }
 
 // -------------------------
@@ -78,9 +79,9 @@ pub struct NewLorebook {
 #[diesel(belongs_to(Lorebook))]
 #[diesel(belongs_to(User))]
 pub struct LorebookEntry {
-    pub id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub original_sillytavern_uid: Option<i32>,
     pub entry_title_ciphertext: Vec<u8>,
     pub entry_title_nonce: Vec<u8>,
@@ -97,16 +98,16 @@ pub struct LorebookEntry {
     pub sillytavern_metadata_ciphertext: Option<Vec<u8>>,
     pub sillytavern_metadata_nonce: Option<Vec<u8>>,
     pub name: Option<String>, // As per schema.rs, might be deprecated in favor of encrypted title
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = lorebook_entries)]
 pub struct NewLorebookEntry {
-    pub id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub original_sillytavern_uid: Option<i32>,
     pub entry_title_ciphertext: Vec<u8>,
     pub entry_title_nonce: Vec<u8>,
@@ -123,8 +124,8 @@ pub struct NewLorebookEntry {
     pub sillytavern_metadata_ciphertext: Option<Vec<u8>>,
     pub sillytavern_metadata_nonce: Option<Vec<u8>>,
     pub name: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
 }
 
 // --------------------------------
@@ -149,11 +150,11 @@ pub struct NewLorebookEntry {
 #[diesel(belongs_to(Lorebook, foreign_key = lorebook_id))]
 #[diesel(belongs_to(User, foreign_key = user_id))]
 pub struct ChatSessionLorebook {
-    pub chat_session_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub chat_session_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 impl ChatSessionLorebook {
@@ -175,8 +176,8 @@ impl ChatSessionLorebook {
     /// Returns `QueryResult` error if the database query fails
     pub fn get_active_lorebook_ids_for_session(
         conn: &mut PgConnection,
-        session_id_param: Uuid,
-    ) -> QueryResult<Option<Vec<Uuid>>> {
+        session_id_param: crate::DbUuid,
+    ) -> QueryResult<Option<Vec<crate::DbUuid>>> {
         use crate::schema::chat_session_lorebooks::dsl::{
             chat_session_id, chat_session_lorebooks, lorebook_id,
         };
@@ -184,7 +185,7 @@ impl ChatSessionLorebook {
         let ids = chat_session_lorebooks
             .filter(chat_session_id.eq(session_id_param))
             .select(lorebook_id)
-            .load::<Uuid>(conn)?;
+            .load::<crate::DbUuid>(conn)?;
 
         Ok(if ids.is_empty() { None } else { Some(ids) })
     }
@@ -216,10 +217,10 @@ impl ChatSessionLorebook {
     /// Returns `QueryResult` error if the database query fails
     pub fn get_comprehensive_active_lorebook_ids(
         conn: &mut PgConnection,
-        session_id_param: Uuid,
-        character_id_param: Uuid,
-        user_id_param: Uuid,
-    ) -> QueryResult<Option<Vec<Uuid>>> {
+        session_id_param: crate::DbUuid,
+        character_id_param: crate::DbUuid,
+        user_id_param: crate::DbUuid,
+    ) -> QueryResult<Option<Vec<crate::DbUuid>>> {
         use crate::schema::{
             character_lorebooks::dsl::{
                 character_id, character_lorebooks, lorebook_id as character_lorebook_id,
@@ -241,7 +242,7 @@ impl ChatSessionLorebook {
             .filter(chat_session_id.eq(session_id_param))
             .filter(lorebook_user_id.eq(user_id_param))
             .select(session_lorebook_id)
-            .load::<Uuid>(conn)?;
+            .load::<crate::DbUuid>(conn)?;
 
         // Get character-linked lorebook IDs that belong to the user
         let character_lorebook_ids = character_lorebooks
@@ -249,17 +250,17 @@ impl ChatSessionLorebook {
             .filter(character_id.eq(character_id_param))
             .filter(lorebook_user_id.eq(user_id_param))
             .select(character_lorebook_id)
-            .load::<Uuid>(conn)?;
+            .load::<crate::DbUuid>(conn)?;
 
         // Get chat-level overrides for this session and user
         let overrides = chat_character_lorebook_overrides
             .filter(override_chat_session_id.eq(session_id_param))
             .filter(override_user_id.eq(user_id_param))
             .select((override_lorebook_id, action))
-            .load::<(Uuid, String)>(conn)?;
+            .load::<(crate::DbUuid, String)>(conn)?;
 
         // Build a map of lorebook overrides: lorebook_id -> action
-        let override_map: HashMap<Uuid, String> = overrides.into_iter().collect();
+        let override_map: HashMap<crate::DbUuid, String> = overrides.into_iter().collect();
 
         // Start with session-linked lorebooks (these are always included)
         let mut combined_ids = session_lorebook_ids;
@@ -313,12 +314,12 @@ impl ChatSessionLorebook {
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_session_lorebooks)]
 pub struct NewChatSessionLorebook {
-    pub chat_session_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub chat_session_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     // Timestamps are typically optional for New structs, allowing DB defaults
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
 }
 
 // ----------------------------------------------
@@ -342,25 +343,25 @@ pub struct NewChatSessionLorebook {
 #[diesel(belongs_to(Lorebook, foreign_key = lorebook_id))]
 #[diesel(belongs_to(User, foreign_key = user_id))]
 pub struct ChatCharacterLorebookOverride {
-    pub id: Uuid,
-    pub chat_session_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::DbUuid,
+    pub chat_session_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub action: String, // 'disable' or 'enable'
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_character_lorebook_overrides)]
 pub struct NewChatCharacterLorebookOverride {
-    pub chat_session_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub chat_session_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     pub action: String,
     // Timestamps are typically optional for New structs, allowing DB defaults
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
 }
 
 // --------------------------------
@@ -385,20 +386,20 @@ pub struct NewChatCharacterLorebookOverride {
 #[diesel(belongs_to(Lorebook, foreign_key = lorebook_id))]
 #[diesel(belongs_to(User, foreign_key = user_id))]
 pub struct CharacterLorebook {
-    pub character_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub character_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
+    pub created_at: DbDateTime,
+    pub updated_at: DbDateTime,
 }
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = character_lorebooks)]
 pub struct NewCharacterLorebook {
-    pub character_id: Uuid,
-    pub lorebook_id: Uuid,
-    pub user_id: Uuid,
+    pub character_id: crate::DbUuid,
+    pub lorebook_id: crate::DbUuid,
+    pub user_id: crate::DbUuid,
     // Timestamps are typically optional for New structs, allowing DB defaults
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbDateTime>,
+    pub updated_at: Option<DbDateTime>,
 }
