@@ -47,6 +47,8 @@ pub struct Lorebook {
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = lorebooks)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewLorebook {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,
@@ -104,6 +106,8 @@ pub struct LorebookEntry {
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = lorebook_entries)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewLorebookEntry {
     pub id: crate::DbUuid,
     pub lorebook_id: crate::DbUuid,
@@ -313,6 +317,8 @@ impl ChatSessionLorebook {
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_session_lorebooks)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewChatSessionLorebook {
     pub chat_session_id: crate::DbUuid,
     pub lorebook_id: crate::DbUuid,
@@ -354,6 +360,8 @@ pub struct ChatCharacterLorebookOverride {
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = chat_character_lorebook_overrides)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewChatCharacterLorebookOverride {
     pub chat_session_id: crate::DbUuid,
     pub lorebook_id: crate::DbUuid,
@@ -395,6 +403,8 @@ pub struct CharacterLorebook {
 
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = character_lorebooks)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCharacterLorebook {
     pub character_id: crate::DbUuid,
     pub lorebook_id: crate::DbUuid,

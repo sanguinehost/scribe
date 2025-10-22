@@ -35,6 +35,8 @@ impl std::fmt::Debug for Document {
 // New Document for insertion
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::old_documents)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewDocument {
     pub id: crate::DbUuid,
     pub created_at: DbDateTime,
@@ -94,6 +96,8 @@ impl std::fmt::Debug for Suggestion {
 // New Suggestion for insertion
 #[derive(Insertable)]
 #[diesel(table_name = crate::schema::old_suggestions)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewSuggestion {
     pub id: crate::DbUuid,
     pub document_id: crate::DbUuid,

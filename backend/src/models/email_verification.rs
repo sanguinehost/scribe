@@ -22,6 +22,8 @@ pub struct EmailVerificationToken {
 /// New email verification token for insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = email_verification_tokens)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewEmailVerificationToken {
     pub user_id: crate::DbUuid,
     pub token: String,

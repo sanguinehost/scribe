@@ -27,6 +27,8 @@ pub struct CreditBalance {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::user_credits)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCreditBalance {
     pub user_id: crate::DbUuid,
     pub balance: i32,
@@ -61,6 +63,8 @@ pub struct CreditTransaction {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::credit_transactions)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCreditTransaction {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,
@@ -114,6 +118,8 @@ pub struct DailyUsage {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::daily_usage_tracking)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewDailyUsage {
     pub user_id: crate::DbUuid,
     pub date: NaiveDate,
@@ -159,6 +165,8 @@ pub struct CreditPackage {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::credit_packages)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCreditPackage {
     pub package_id: String,
     pub name: String,

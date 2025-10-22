@@ -108,6 +108,8 @@ pub struct Subscription {
 /// New subscription for database insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = subscriptions)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewSubscription {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,
@@ -191,6 +193,8 @@ pub struct PaymentUsageTracking {
 /// New payment usage tracking for database insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = payment_usage_tracking)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewPaymentUsageTracking {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,
@@ -244,6 +248,8 @@ pub struct PaymentTransaction {
 /// New payment transaction for database insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = payment_transactions)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewPaymentTransaction {
     pub paddle_transaction_id: String,
     pub user_id: crate::DbUuid,
@@ -351,6 +357,8 @@ pub struct WebhookEvent {
 /// New webhook event for insertion
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::webhook_events)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewWebhookEvent {
     pub event_id: String,
     pub event_type: String,

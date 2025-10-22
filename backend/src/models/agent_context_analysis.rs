@@ -341,6 +341,8 @@ impl AgentContextAnalysis {
 /// Insertable struct for creating new agent context analysis records
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize)]
 #[diesel(table_name = agent_context_analysis)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewAgentContextAnalysis {
     pub chat_session_id: crate::DbUuid,
     pub user_id: crate::DbUuid,

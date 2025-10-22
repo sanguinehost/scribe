@@ -39,6 +39,8 @@ impl fmt::Debug for ChatCharacterOverride {
 
 #[derive(Insertable, Serialize, Deserialize, Debug)]
 #[diesel(table_name = chat_character_overrides)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewChatCharacterOverride {
     pub id: crate::DbUuid,
     pub chat_session_id: crate::DbUuid,

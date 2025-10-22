@@ -25,6 +25,8 @@ pub struct CharacterAsset {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::character_assets)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCharacterAsset {
     pub id: Option<crate::DbUuid>,
     pub character_id: crate::DbUuid,

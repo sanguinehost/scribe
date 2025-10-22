@@ -455,6 +455,8 @@ use crate::schema::character_assets;
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
 #[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCharacter {
     pub id: Option<crate::DbUuid>,
     pub user_id: crate::DbUuid,
@@ -1042,6 +1044,8 @@ impl std::fmt::Debug for CharacterAsset {
 
 #[derive(Insertable)]
 #[diesel(table_name = character_assets)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCharacterAsset {
     pub id: Option<crate::DbUuid>,
     #[diesel(serialize_as = crate::DbUuid)]

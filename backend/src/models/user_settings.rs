@@ -52,6 +52,8 @@ pub struct UserSettings {
 #[derive(Insertable, Debug)]
 #[diesel(table_name = user_settings)]
 #[diesel(treat_none_as_null = true)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewUserSettings {
     pub user_id: crate::DbUuid,
 

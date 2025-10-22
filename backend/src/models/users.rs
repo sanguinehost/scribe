@@ -423,6 +423,8 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewUser {
     pub username: String,
     pub password_hash: String,

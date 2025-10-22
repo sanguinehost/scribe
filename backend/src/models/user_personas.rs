@@ -37,6 +37,8 @@ struct DecryptedPersonaFields {
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::user_personas)]
 #[diesel(treat_none_as_null = true)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct UserPersona {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,

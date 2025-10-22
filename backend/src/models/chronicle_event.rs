@@ -163,6 +163,8 @@ impl ChronicleEvent {
 /// Simplified structure focusing on summaries and keywords
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = chronicle_events)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewChronicleEvent {
     pub id: Option<crate::DbUuid>,
     pub chronicle_id: crate::DbUuid,

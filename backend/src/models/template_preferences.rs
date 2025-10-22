@@ -33,6 +33,8 @@ pub struct TemplatePreference {
 #[derive(Insertable, Debug)]
 #[diesel(table_name = template_preferences)]
 #[diesel(treat_none_as_null = true)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewTemplatePreference {
     pub user_id: crate::DbUuid,
     pub character_id: Option<crate::DbUuid>,

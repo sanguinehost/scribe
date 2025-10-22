@@ -23,6 +23,8 @@ pub struct PlayerChronicle {
 /// NewPlayerChronicle for creating new chronicles
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = player_chronicles)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewPlayerChronicle {
     pub id: Option<crate::DbUuid>,
     pub user_id: crate::DbUuid,

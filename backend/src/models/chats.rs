@@ -264,6 +264,8 @@ impl std::fmt::Debug for Chat {
 // New Chat for insertion
 #[derive(Insertable, Clone)]
 #[diesel(table_name = chat_sessions)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewChat {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,
@@ -1341,6 +1343,8 @@ impl std::fmt::Debug for ChatMessageForClient {
 // For inserting a new chat message
 #[derive(Insertable, Default, Clone)]
 #[diesel(table_name = chat_messages)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewChatMessage {
     pub id: crate::DbUuid,
     pub session_id: crate::DbUuid,
@@ -1401,6 +1405,8 @@ impl std::fmt::Debug for NewChatMessage {
 // For inserting a new chat message with better naming clarity
 #[derive(Insertable, Clone)]
 #[diesel(table_name = chat_messages)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
     pub chat_id: crate::DbUuid,
@@ -3212,6 +3218,8 @@ pub struct MessageVariant {
 /// Insertable model for creating new message variants
 #[derive(Insertable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = message_variants)]
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewMessageVariant {
     pub parent_message_id: crate::DbUuid,
     pub variant_index: i32,
