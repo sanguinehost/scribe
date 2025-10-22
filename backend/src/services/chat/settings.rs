@@ -331,7 +331,7 @@ pub async fn get_session_settings(
     crate::db::with_conn(pool, move |conn| {
         verify_session_ownership(conn, session_id, user_id)?;
         info!(%session_id, %user_id, "Fetching settings for owned session");
-        let settings_tuple = chat_sessions::table
+        let settings_tuple: SettingsTuple = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
                 chat_sessions::system_prompt_ciphertext,
@@ -354,7 +354,7 @@ pub async fn get_session_settings(
                 chat_sessions::active_custom_persona_id,
                 chat_sessions::prompt_template_id,
             ))
-            .first::<SettingsTuple>(conn)
+            .first(conn)
             .map_err(|e| {
                 error!(%session_id, %user_id, error = ?e, "Failed to fetch settings after ownership check");
                 AppError::DatabaseQueryError(e.to_string())

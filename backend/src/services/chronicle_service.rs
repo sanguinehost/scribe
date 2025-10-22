@@ -97,7 +97,6 @@ impl ChronicleService {
                 // Query back the inserted chronicle
                 player_chronicles::table
                     .find(chronicle_id)
-                    .select(PlayerChronicle::as_select())
                     .first(conn)
                     .map_err(|e| {
                         error!("Failed to query chronicle after insert: {}", e);

@@ -46,7 +46,7 @@ diesel::table! {
         id -> Integer,
         character_id -> Text,
         asset_type -> Text,
-        uri -> Text,
+        uri -> Nullable<Text>,
         name -> Text,
         ext -> Text,
         created_at -> Timestamp,
@@ -234,7 +234,7 @@ diesel::table! {
     chat_sessions (id) {
         id -> Text,
         user_id -> Text,
-        character_id -> Text,
+        character_id -> Nullable<Text>,
         temperature -> Nullable<Double>,
         max_output_tokens -> Nullable<Integer>,
         created_at -> Timestamp,

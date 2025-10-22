@@ -464,7 +464,7 @@ pub async fn upload_character_handler(
     let asset_result: Result<CharacterAsset, diesel::result::Error> = {
         use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
-        let asset_id = new_asset.id;
+        let asset_id = new_asset.id.expect("NewCharacterAsset should have id set before insertion");
 
         crate::db::with_conn(&state.pool, move |conn_asset_block| {
             diesel::insert_into(character_assets)
@@ -475,8 +475,7 @@ pub async fn upload_character_handler(
             // Fetch the inserted asset
             character_assets
                 .find(asset_id)
-                .select(CharacterAsset::as_select())
-                .first::<CharacterAsset>(conn_asset_block)
+                .first(conn_asset_block)
         }).await
     };
 

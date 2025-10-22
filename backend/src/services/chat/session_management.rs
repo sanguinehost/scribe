@@ -151,8 +151,7 @@ fn fetch_user_persona(
     match user_personas::table
         .filter(user_personas::id.eq(persona_id))
         .filter(user_personas::user_id.eq(user_id))
-        .select(crate::models::user_personas::UserPersona::as_select())
-        .first::<crate::models::user_personas::UserPersona>(conn)
+        .first(conn)
         .optional()
     {
         Ok(Some(persona)) => Some(persona),
@@ -276,8 +275,7 @@ fn validate_and_get_character(
     info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
     let character: Character = characters::table
         .filter(characters::id.eq(character_id))
-        .select(Character::as_select())
-        .first::<Character>(transaction_conn)
+        .first(transaction_conn)
         .map_err(|e| match e {
             DieselError::NotFound => AppError::NotFound("Character not found".into()),
             _ => AppError::DatabaseQueryError(e.to_string()),
