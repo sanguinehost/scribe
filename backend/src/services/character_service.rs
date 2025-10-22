@@ -344,7 +344,6 @@ impl CharacterService {
         let inserted_character: Character = crate::db::with_conn(&self.db_pool, move |conn_select_block| {
             characters::table
                 .find(returned_id)
-                .select(Character::as_select())
                 .get_result::<Character>(conn_select_block)
                 .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))
         })
@@ -429,7 +428,6 @@ impl CharacterService {
                         .eq(character_id_to_update)
                         .and(character_dsl_user_id.eq(user_id_val)),
                 )
-                .select(Character::as_select())
                 .get_result::<Character>(conn_select_block)
                 .map_err(|e| match e {
                     DieselError::NotFound => AppError::NotFound(format!(

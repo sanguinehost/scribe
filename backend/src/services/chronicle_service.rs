@@ -120,7 +120,6 @@ impl ChronicleService {
             player_chronicles::table
                 .filter(player_chronicles::user_id.eq(user_id))
                 .order(player_chronicles::updated_at.desc())
-                .select(PlayerChronicle::as_select())
                 .load(conn)
                 .map_err(|e| {
                     error!("Diesel error when getting user chronicles: {}", e);
@@ -149,7 +148,6 @@ impl ChronicleService {
             let chronicles: Vec<PlayerChronicle> = player_chronicles::table
                 .filter(player_chronicles::user_id.eq(user_id))
                 .order(player_chronicles::updated_at.desc())
-                .select(PlayerChronicle::as_select())
                 .load(conn)
                 .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load chronicles: {e}")))?;
 
@@ -203,7 +201,6 @@ impl ChronicleService {
                         .eq(chronicle_id)
                         .and(player_chronicles::user_id.eq(user_id)),
                 )
-                .select(PlayerChronicle::as_select())
                 .first(conn)
                 .map_err(|e| {
                     error!("Diesel error when getting chronicle: {}", e);
@@ -331,7 +328,6 @@ impl ChronicleService {
                 // Query back the updated chronicle
                 player_chronicles::table
                     .find(chronicle_id)
-                    .select(PlayerChronicle::as_select())
                     .first(conn)
                     .map_err(|e| {
                         error!("Failed to query chronicle after update: {}", e);
@@ -532,7 +528,6 @@ impl ChronicleService {
                 // Query back the inserted event
                 chronicle_events::table
                     .find(event_id)
-                    .select(ChronicleEvent::as_select())
                     .first(conn)
                     .map_err(|e| {
                         error!("Failed to query event after insert: {}", e);
@@ -605,7 +600,6 @@ impl ChronicleService {
                 query = query.limit(limit);
             }
 
-            query.select(ChronicleEvent::as_select()).load(conn)
                 .map_err(|e| {
                     error!("Diesel error when getting events: {}", e);
                     AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
@@ -636,7 +630,6 @@ impl ChronicleService {
                         .eq(event_id)
                         .and(chronicle_events::user_id.eq(user_id)),
                 )
-                .select(ChronicleEvent::as_select())
                 .first(conn)
                 .map_err(|e| {
                     error!("Diesel error when getting event: {}", e);
@@ -693,7 +686,6 @@ impl ChronicleService {
                         .eq(user_id)
                         .and(chronicle_events::chat_session_id.eq(Some(session_id))),
                 )
-                .select(ChronicleEvent::as_select())
                 .load(conn)
                 .map_err(|e| {
                     error!("Diesel error when getting events for chat session: {}", e);

@@ -46,7 +46,6 @@ pub async fn get_messages_for_session(
                 if owner_id == user_id {
                     chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
-                        .select(<ChatMessage as SelectableHelper<diesel::pg::Pg>>::as_select()) // Changed DbChatMessage
                         .order(chat_messages::created_at.asc())
                         .load::<ChatMessage>(conn) // Changed DbChatMessage
                         .map_err(|e| {
@@ -178,7 +177,6 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                         chat_messages
                             .filter(id.eq(parent_message_id))
                             .filter(user_id.eq(user_id))
-                            .select(ChatMessage::as_select())
                             .first::<ChatMessage>(conn)
                             .map_err(|e| {
                                 AppError::DatabaseQueryError(format!(

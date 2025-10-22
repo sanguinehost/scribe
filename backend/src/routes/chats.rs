@@ -203,7 +203,6 @@ pub async fn get_chats_by_character_handler(
             .filter(chat_sessions::user_id.eq(user.id))
             .filter(chat_sessions::character_id.eq(character_id))
             .order_by(chat_sessions::created_at.desc())
-            .select(Chat::as_select())
             .load::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -243,7 +242,6 @@ pub async fn get_chats_handler(
         chat_sessions::table
             .filter(chat_sessions::user_id.eq(user.id))
             .order_by(chat_sessions::created_at.desc())
-            .select(Chat::as_select()) // Added select
             .load::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
     })
@@ -369,7 +367,6 @@ pub async fn get_chat_by_id_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
-            .select(Chat::as_select()) // Use SelectableHelper trait
             .first::<Chat>(conn)
             .map_err(AppError::from) // Use From trait to handle NotFound correctly
     })
@@ -411,7 +408,6 @@ pub async fn get_chat_deletion_analysis_handler(
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
             .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
-            .select(Chat::as_select())
             .first::<Chat>(conn)
             .map_err(|e| {
                 AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
@@ -466,7 +462,6 @@ pub async fn delete_chat_handler(
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
             .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
-            .select(Chat::as_select())
             .first::<Chat>(conn)
             .map_err(|e| {
                 AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
@@ -654,7 +649,6 @@ fn fetch_chat_with_ownership_check(
 
     let chat = chat_sessions::table
         .filter(chat_sessions::id.eq(chat_id))
-        .select(Chat::as_select())
         .first::<Chat>(conn)
         .map_err(|e| {
             if e == diesel::result::Error::NotFound {
@@ -706,7 +700,6 @@ async fn fetch_paginated_chat_messages(
                 .filter(chat_messages::status.eq("completed")) // Only get completed messages
                 .order_by(chat_messages::created_at.desc()) // Order by descending for reverse pagination
                 .limit(limit)
-                .select(Message::as_select())
                 .into_boxed(); // Use into_boxed to allow dynamic query building
 
             if let Some(cursor_timestamp) = cursor {
@@ -762,7 +755,6 @@ async fn get_default_variant_content(
             .filter(message_variants::parent_message_id.eq(message_id))
             .filter(message_variants::user_id.eq(user_id))
             .filter(message_variants::variant_index.eq(0)) // Always get variant 0 (original)
-            .select(MessageVariant::as_select())
             .first::<MessageVariant>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
@@ -1223,7 +1215,6 @@ pub async fn get_message_by_id_handler(
     let message_db: Message = crate::db::with_conn(&pool, move |conn| {
         chat_messages::table
             .filter(chat_messages::id.eq(id))
-            .select(Message::as_select())
             .first::<Message>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1233,7 +1224,6 @@ pub async fn get_message_by_id_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message_db.session_id))
-            .select(Chat::as_select())
             .first::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1384,7 +1374,6 @@ pub async fn vote_message_handler(
     let message = crate::db::with_conn(&pool, move |conn| {
         chat_messages::table
             .filter(chat_messages::id.eq(id))
-            .select(Message::as_select()) // Use SelectableHelper trait
             .first::<Message>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1395,7 +1384,6 @@ pub async fn vote_message_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message.session_id))
-            .select(Chat::as_select()) // Use SelectableHelper trait
             .first::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1455,7 +1443,6 @@ pub async fn get_votes_by_chat_id_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
-            .select(Chat::as_select()) // Use SelectableHelper trait
             .first::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1511,7 +1498,6 @@ pub async fn delete_trailing_messages_handler(
     let message = crate::db::with_conn(&pool, move |conn| {
         chat_messages::table
             .filter(chat_messages::id.eq(id))
-            .select(Message::as_select()) // Use SelectableHelper trait
             .first::<Message>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1522,7 +1508,6 @@ pub async fn delete_trailing_messages_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message.session_id))
-            .select(Chat::as_select()) // Use SelectableHelper trait
             .first::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1626,7 +1611,6 @@ pub async fn delete_message_handler(
     let message = crate::db::with_conn(&pool, move |conn| {
         chat_messages::table
             .filter(chat_messages::id.eq(id))
-            .select(Message::as_select())
             .first::<Message>(conn)
             .map_err(|e| match e {
                 diesel::result::Error::NotFound => {
@@ -1642,7 +1626,6 @@ pub async fn delete_message_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message.session_id))
-            .select(Chat::as_select())
             .first::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1720,7 +1703,6 @@ pub async fn update_chat_visibility_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
-            .select(Chat::as_select()) // Use SelectableHelper trait
             .first::<Chat>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -1877,7 +1859,6 @@ async fn get_chat_token_usage_handler(
     let chat = conn
         .interact(move |conn| {
             chat_sessions::table
-                .select(Chat::as_select())
                 .filter(chat_sessions::id.eq(id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .first::<Chat>(conn)
@@ -1951,7 +1932,6 @@ pub async fn select_message_variant_handler(
         chat_messages::table
             .filter(chat_messages::id.eq(message_id))
             .filter(chat_messages::user_id.eq(user.id))
-            .select(Message::as_select())
             .first::<Message>(conn)
             .optional()
     })
@@ -1981,7 +1961,6 @@ pub async fn select_message_variant_handler(
         // Get the updated message
         chat_messages::table
             .filter(chat_messages::id.eq(message_id))
-            .select(Message::as_select())
             .first::<Message>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })

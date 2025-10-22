@@ -546,7 +546,6 @@ fn fetch_created_session(
 ) -> Result<Chat, AppError> {
     chat_sessions::table
         .filter(chat_sessions::id.eq(new_session_id))
-        .select(Chat::as_select())
         .first(transaction_conn)
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
 }
@@ -865,7 +864,6 @@ pub async fn list_sessions_for_user(pool: &DbPool, user_id: crate::DbUuid) -> Re
     crate::db::with_conn(pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::user_id.eq(user_id))
-            .select(Chat::as_select()) // ChatSession is aliased as Chat
             .order(chat_sessions::updated_at.desc())
             .load::<Chat>(conn) // ChatSession is aliased as Chat
             .map_err(|e| {
@@ -903,7 +901,6 @@ pub async fn get_chat_session_by_id(
         info!(%session_id, %user_id, "Attempting to fetch chat session details by ID");
         let session_result = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
-            .select(Chat::as_select())
             .first::<Chat>(conn)
             .optional()?;
 
@@ -938,7 +935,6 @@ pub async fn associate_chat_with_chronicle(
         let session = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .filter(chat_sessions::user_id.eq(user_id))
-            .select(Chat::as_select())
             .first::<Chat>(conn)
             .optional()?;
 

@@ -412,7 +412,6 @@ pub async fn upload_character_handler(
         .interact(move |conn_select_block| {
             characters
                 .find(returned_id)
-                .select(Character::as_select())
                 .get_result::<Character>(conn_select_block)
         })
         .await
@@ -423,7 +422,6 @@ pub async fn upload_character_handler(
     let inserted_character: Character = crate::db::with_conn(&state.pool, move |conn_select_block| {
         characters
             .find(returned_id)
-            .select(Character::as_select())
             .get_result::<Character>(conn_select_block)
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
     }).await?;
@@ -720,7 +718,6 @@ pub async fn list_characters_handler(
     let characters_db: Vec<Character> = crate::db::with_conn(&state.pool, move |conn_block| {
         characters
             .filter(user_id.eq(local_user_id))
-            .select(Character::as_select())
             .load::<Character>(conn_block)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     }).await?;
@@ -763,7 +760,6 @@ pub async fn get_character_handler(
                     id.eq(character_id_for_direct_clone)
                         .and(user_id.eq(user_id_for_direct_clone)),
                 )
-                .select(Character::as_select())
                 .first::<Character>(conn)
                 .optional()
                 .map_err(|e| {
@@ -877,7 +873,6 @@ pub async fn get_character_handler(
     let character_db_result: Option<Character> = crate::db::with_conn(&state.pool, move |conn| {
         characters
             .filter(id.eq(character_id_for_fetch_clone))
-            .select(Character::as_select())
             .first::<Character>(conn)
             .optional()
             .map_err(|e| {
@@ -1206,7 +1201,6 @@ pub async fn get_character_asset_handler(
         characters
             .find(character_id)
             .filter(user_id.eq(local_user_id))
-            .select(Character::as_select())
             .first::<Character>(conn_block)
             .optional()
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}")))
@@ -1220,7 +1214,6 @@ pub async fn get_character_asset_handler(
         character_assets
             .find(asset_id)
             .filter(crate::schema::character_assets::character_id.eq(character_id))
-            .select(CharacterAsset::as_select())
             .first::<CharacterAsset>(conn_asset_block)
             .optional()
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))
