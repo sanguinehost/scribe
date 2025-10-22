@@ -4,7 +4,7 @@
 //! This moves beyond simple semantic similarity to structured event reasoning.
 
 use chrono::Duration;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
@@ -149,6 +149,7 @@ impl ChronicleDeduplicationService {
                 )
                 .order(chronicle_events_dsl::timestamp_iso8601.desc())
                 .limit(max_events)
+                .select(ChronicleEvent::as_select())
                 .load::<ChronicleEvent>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         }).await?;
@@ -297,6 +298,7 @@ impl ChronicleDeduplicationService {
                 .filter(chronicle_events_dsl::chronicle_id.eq(chronicle_id))
                 .filter(chronicle_events_dsl::user_id.eq(user_id))
                 .order(chronicle_events_dsl::timestamp_iso8601.asc())
+                .select(ChronicleEvent::as_select())
                 .load::<ChronicleEvent>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         }).await?;

@@ -111,7 +111,6 @@ pub async fn get_session_data_for_generation(
                 let user_db_query = crate::db::with_conn(&state.pool, move |c| {
                     crate::schema::users::table
                         .filter(crate::schema::users::id.eq(user_id))
-                        .select(crate::models::users::UserDbQuery::as_select())
                         .first::<crate::models::users::UserDbQuery>(c)
                         .map_err(|e| AppError::NotFound(format!(
                             "UserDbQuery for user {} not found: {e}",
@@ -306,6 +305,7 @@ pub async fn get_session_data_for_generation(
 
             let character_db: Character = characters::table
                 .filter(characters::id.eq(char_id))
+                .select(Character::as_select())
                 .first::<Character>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -320,6 +320,7 @@ pub async fn get_session_data_for_generation(
             let overrides_db: Vec<ChatCharacterOverride> = chat_character_overrides::table
                 .filter(chat_character_overrides::chat_session_id.eq(session_id))
                 .filter(chat_character_overrides::original_character_id.eq(char_id))
+                .select(ChatCharacterOverride::as_select())
                 .load::<ChatCharacterOverride>(conn_interaction)
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to query overrides: {e}"))
@@ -521,18 +522,18 @@ pub async fn get_session_data_for_generation(
                 };
 
                 DbChatMessage {
-                    id: Uuid::new_v4(), // Generate temporary ID for frontend messages
+                    id: Uuid::new_v4().into(), // Generate temporary ID for frontend messages
                     session_id,
                     user_id,
                     message_type: message_role,
                     content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
                     content_nonce: None, // No encryption for frontend-provided history
-                    created_at: chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64), // Fake timestamps
+                    created_at: (chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64)).into(), // Fake timestamps
                     prompt_tokens: None,
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
-                    model_name: session_model_name_db.clone(), // Use session model for frontend-provided history
+                    model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
                     superseded_at: None,
@@ -934,7 +935,7 @@ pub async fn get_session_data_for_generation(
 
             // Use the unified RAG selector to choose content within budget
             match rag_selector
-                .select_rag_content(combined_rag_candidates, Some(chrono::Utc::now()))
+                .select_rag_content(combined_rag_candidates, Some(chrono::Utc::now().into()))
                 .await
             {
                 Ok(selected_chunks) => {
@@ -1039,18 +1040,18 @@ pub async fn get_session_data_for_generation(
 
         if let Some(content) = first_mes_content_to_add {
             let first_mes_db_chat_message = DbChatMessage {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 session_id,
                 user_id,
                 message_type: MessageRole::Assistant,
                 content: content.into_bytes(), // Content is already decrypted String
                 content_nonce: None,
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
                 prompt_tokens: None,
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
-                model_name: session_model_name_db.clone(), // Use session model for character first message
+                model_name: session_model_name_db.to_string(), // Use session model for character first message
                 status: "completed".to_string(),           // First message is considered completed
                 error_message: None,
                 superseded_at: None,
@@ -1076,12 +1077,12 @@ pub async fn get_session_data_for_generation(
         MessageRole::User,
         user_message_content_for_closure.into_bytes(),
         None,
-        session_model_name_db.clone(),
+        session_model_name_db.to_string(),
     );
 
     user_db_message_to_save = user_db_message_to_save
         .with_role("user".to_string())
-        .with_parts(serde_json::json!([{"text": user_message_content}]))
+        .with_parts(serde_json::json!([{"text": user_message_content}]).into())
         .with_token_counts(user_prompt_tokens_val, None);
 
     // --- Construct Final Tuple ---
@@ -1098,7 +1099,7 @@ pub async fn get_session_data_for_generation(
         session_top_k_db,       // 9: top_k (Option<i32>)
         session_top_p_db,       // 10: top_p (Option<crate::DbBigDecimal>)
         session_seed_db,        // 11: seed (Option<i32>) - MOVED
-        session_model_name_db,  // 12: model_name (String) - MOVED
+        session_model_name_db.to_string(),  // 12: model_name (String) - MOVED
         session_model_provider_db, // 13: model_provider (Option<String>) - NEW
         // -- Gemini Specific Options --
         session_gemini_thinking_budget_db, // 14: gemini_thinking_budget (Option<i32>) - MOVED
@@ -2134,6 +2135,7 @@ async fn get_message_content_with_variant(
                 .filter(message_variants::parent_message_id.eq(message_id))
                 .filter(message_variants::user_id.eq(user_id))
                 .filter(message_variants::variant_index.eq(current_variant_index))
+                .select(MessageVariant::as_select())
                 .first::<MessageVariant>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))

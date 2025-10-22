@@ -113,7 +113,7 @@ pub struct AgentContextAnalysis {
 impl AgentContextAnalysis {
     /// Fetch active (non-superseded) agent analysis for a session and type
     pub fn get_for_session(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         session_id: crate::DbUuid,
         analysis_type: AnalysisType,
         message_id: crate::DbUuid,
@@ -128,6 +128,7 @@ impl AgentContextAnalysis {
             .filter(dsl::analysis_type.eq(analysis_type_str))
             .filter(dsl::message_id.eq(message_id))
             .filter(dsl::superseded_at.is_null())
+            .select(Self::as_select())
             .first::<Self>(conn)
             .optional()
             .map_err(|e| {
@@ -147,7 +148,7 @@ impl AgentContextAnalysis {
 
     /// Mark failed/partial analyses as superseded for a session
     pub fn supersede_failed_analyses(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         session_id: crate::DbUuid,
         analysis_type: AnalysisType,
     ) -> Result<usize, AppError> {
@@ -177,7 +178,7 @@ impl AgentContextAnalysis {
 
     /// Update the status of an analysis
     pub fn update_status(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         analysis_id: crate::DbUuid,
         status: AnalysisStatus,
         error_message: Option<String>,
@@ -203,7 +204,7 @@ impl AgentContextAnalysis {
 
     /// Update the assistant_message_id for this analysis
     pub fn update_assistant_message_id(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         analysis_id: crate::DbUuid,
         assistant_message_id: crate::DbUuid,
     ) -> Result<(), AppError> {

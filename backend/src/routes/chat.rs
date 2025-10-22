@@ -1,13 +1,29 @@
 // backend/src/routes/chat.rs
 
 use crate::auth::session_dek::SessionDek;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::auth::user_store::Backend as AuthBackend;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::errors::AppError;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::characters::{Character, CharacterMetadata}; // Added Character
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::chats::CreateChatSessionPayload;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::chats::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     Chat,
     ChatMode,
     CreateMessageVariantPayload,
@@ -24,25 +40,53 @@ use crate::models::chats::{
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
 };
 use crate::privacy::logging::loggable_user_id;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::prompt_builder;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::prompt_templates::{Narration, NarrativeStyle, Perspective, ResponseLength, Tense};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::agentic::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
 };
 use crate::services::chat;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::chat::types::ScribeSseEvent;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::hybrid_token_counter::CountingMode;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::template_preference_service::TemplatePreferenceService;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::ChronicleService;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use secrecy::ExposeSecret; // Added for ExposeSecret
                            // RetrievedMetadata is no longer directly used in this file for RAG string construction
                            // use crate::services::embedding_pipeline::RetrievedMetadata;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                            // RetrievedChunk is used by prompt_builder, not directly here.
                            // use crate::services::embedding_pipeline::RetrievedChunk;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::state::AppState;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -413,7 +457,11 @@ pub async fn generate_chat_response(
     #[cfg(feature = "payment")]
     {
         use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         use crate::services::payment::{CreditService, SubscriptionService};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
         let conn = state_arc
             .pool
@@ -715,6 +763,8 @@ pub async fn generate_chat_response(
         // For now, we'll create a placeholder since the agent analysis expects a user message
         // In the future, we might want to find the actual user message that prompted the variant
         use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         ChatMessage {
             id: crate::DbUuid::new_v4(), // Temporary ID
             session_id,
@@ -1473,7 +1523,11 @@ pub async fn generate_chat_response(
                     #[cfg(feature = "payment")]
                     if should_track_usage && total_tokens > 0 {
                         use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                         use crate::services::payment::UsageTrackingService;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
                         let usage_service = UsageTrackingService::new(
                             state_arc.config.as_ref().clone(),
@@ -2377,6 +2431,8 @@ pub async fn get_agent_analysis_handler(
     let session_exists = conn
         .interact(move |conn| {
             use crate::schema::chat_sessions;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             use diesel::prelude::*;
 
             chat_sessions::table
@@ -2410,6 +2466,8 @@ pub async fn get_agent_analysis_handler(
     let analysis_records = conn
         .interact(move |conn| {
             use crate::schema::agent_context_analysis::dsl::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             use diesel::prelude::*;
 
             let mut query = agent_context_analysis
@@ -2429,6 +2487,7 @@ pub async fn get_agent_analysis_handler(
 
             query
                 .order(created_at.desc())
+                .select(AgentContextAnalysis::as_select())
                 .load::<AgentContextAnalysis>(conn)
         })
         .await
@@ -3164,6 +3223,8 @@ pub async fn expand_text_handler(
         .await?
         .interact(move |conn| {
             use crate::schema::chat_messages;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
@@ -3222,6 +3283,8 @@ pub async fn expand_text_handler(
         .await?
         .interact(move |conn| {
             use crate::schema::chat_sessions;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((
@@ -3386,6 +3449,8 @@ pub async fn expand_text_handler(
         .await?
         .interact(move |conn| {
             use crate::schema::chat_messages;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             // Find the most recent message for this session and delete it (it will be the AI response we just generated)
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
@@ -3487,6 +3552,8 @@ pub async fn impersonate_handler(
         .await?
         .interact(move |conn| {
             use crate::schema::chat_messages;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
@@ -3557,6 +3624,8 @@ pub async fn impersonate_handler(
         .await?
         .interact(move |conn| {
             use crate::schema::chat_sessions;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((
@@ -3712,6 +3781,8 @@ pub async fn impersonate_handler(
         .await?
         .interact(move |conn| {
             use crate::schema::chat_messages;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             // Find the most recent message for this session and delete it (it will be the AI response we just generated)
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))

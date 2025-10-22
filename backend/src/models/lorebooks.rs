@@ -9,7 +9,7 @@ use crate::DbDateTime;
 use chrono::Utc;
 use diesel::{
     AsChangeset, Associations, ExpressionMethods, Identifiable, Insertable, JoinOnDsl,
-    PgConnection, QueryDsl, QueryResult, Queryable, RunQueryDsl, Selectable,
+    QueryDsl, QueryResult, Queryable, RunQueryDsl, Selectable,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -175,7 +175,7 @@ impl ChatSessionLorebook {
     /// # Errors
     /// Returns `QueryResult` error if the database query fails
     pub fn get_active_lorebook_ids_for_session(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         session_id_param: crate::DbUuid,
     ) -> QueryResult<Option<Vec<crate::DbUuid>>> {
         use crate::schema::chat_session_lorebooks::dsl::{
@@ -216,7 +216,7 @@ impl ChatSessionLorebook {
     /// # Errors
     /// Returns `QueryResult` error if the database query fails
     pub fn get_comprehensive_active_lorebook_ids(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         session_id_param: crate::DbUuid,
         character_id_param: crate::DbUuid,
         user_id_param: crate::DbUuid,

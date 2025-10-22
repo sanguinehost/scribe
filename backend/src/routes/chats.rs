@@ -36,7 +36,7 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
 use crate::services::chat;
 use crate::state::AppState;
 use diesel::{
-    ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
+    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -52,7 +52,7 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
-    Router::new()
+    let mut router = Router::new()
         .route("/", get(get_chats_handler)) // Keep GET / for listing
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
@@ -84,17 +84,25 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/messages/:id/select-variant",
             post(select_message_variant_handler),
         )
-        .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
             delete(delete_trailing_messages_handler),
         )
-        .route("/:id/votes", get(get_votes_by_chat_id_handler))
         .route(
             "/:id/character/overrides",
             post(set_chat_character_override_handler),
         )
-        .route("/:id/token-usage", get(get_chat_token_usage_handler))
+        .route("/:id/token-usage", get(get_chat_token_usage_handler));
+
+    // Postgres-only routes (voting feature not yet implemented for SQLite)
+    #[cfg(feature = "postgres-backend")]
+    {
+        router = router
+            .route("/messages/:id/vote", post(vote_message_handler))
+            .route("/:id/votes", get(get_votes_by_chat_id_handler));
+    }
+
+    router
 }
 
 /// Sets character overrides for a chat session.
@@ -610,7 +618,9 @@ pub struct PaginatedMessagesResponse {
 ///
 /// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
 fn parse_chat_id(id: &str) -> Result<crate::DbUuid, AppError> {
-    Uuid::parse_str(id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
+    Uuid::parse_str(id)
+        .map(Into::into)
+        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
 }
 
 /// Helper function to get authenticated user
@@ -636,7 +646,7 @@ async fn fetch_and_verify_chat_ownership(
 
 /// Database operation to fetch chat and check ownership
 fn fetch_chat_with_ownership_check(
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
     chat_id: crate::DbUuid,
     user_id: crate::DbUuid,
 ) -> Result<Chat, AppError> {
@@ -830,8 +840,8 @@ async fn process_messages_for_response(
 
         // Always reconstruct parts from the current content (original or variant)
         // This ensures the frontend gets the correct variant content, not the original parts
-        let response_parts = json!([{"text": content.clone()}]);
-        let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
+        let response_parts = json!([{"text": content.clone()}]).into();
+        let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]).into());
 
         let response_role = msg_db
             .role
@@ -1034,8 +1044,8 @@ pub async fn create_message_handler(
             message_type_enum: message_role_enum,
             content: &payload.content,
             role_str: Some(payload.role.clone()),
-            parts: payload.parts.clone(),
-            attachments: payload.attachments.clone(),
+            parts: payload.parts.clone().map(Into::into),
+            attachments: payload.attachments.clone().map(Into::into),
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
             raw_prompt_debug: None,
@@ -1162,8 +1172,8 @@ pub async fn create_message_handler(
     // Use client_message.content (String) for parts if payload.parts is None
     let response_parts = payload
         .parts
-        .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));
-    let response_attachments = payload.attachments.unwrap_or_else(|| json!([]));
+        .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]).into());
+    let response_attachments = payload.attachments.unwrap_or_else(|| json!([]).into());
 
     let response = MessageResponse {
         id: client_message.id,

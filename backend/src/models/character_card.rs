@@ -456,6 +456,7 @@ use crate::schema::character_assets;
 #[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
 pub struct NewCharacter {
+    pub id: Option<crate::DbUuid>,
     pub user_id: crate::DbUuid,
     pub spec: String,
     pub spec_version: String,
@@ -665,10 +666,12 @@ impl NewCharacter {
         // Convert timestamps
         let creation_date_ts = data
             .creation_date
-            .and_then(|ts| DateTime::from_timestamp(ts, 0));
+            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+            .map(|dt| dt.into());
         let modification_date_ts = data
             .modification_date
-            .and_then(|ts| DateTime::from_timestamp(ts, 0));
+            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+            .map(|dt| dt.into());
 
         // Convert HashMaps to JsonValue for JSONB fields
         let creator_notes_multilingual_json = data
@@ -676,17 +679,17 @@ impl NewCharacter {
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
             .filter(|v| !v.is_null())
-            .map(Json); // Wrap Option<Value> in Json for Option<Json<Value>> type
+            .map(|v| Json(v.into())); // Wrap Option<Value> in Json<SqliteJson>
 
         let extensions_json = data
             .extensions // data.extensions is HashMap<String, Value>
             .clone()
             .into_iter()
-            .collect::<serde_json::Map<String, crate::DbJson>>();
+            .collect::<serde_json::Map<String, serde_json::Value>>();
         let extensions_option_json = if extensions_json.is_empty() {
             None
         } else {
-            Some(Json(crate::DbJson::Object(extensions_json.clone()))) // Wrap Value in Json for Option<Json<Value>>
+            Some(Json(serde_json::Value::Object(extensions_json.clone()).into())) // Wrap Value in Json for Option<Json<Value>>
         };
 
         // Extract SillyTavern v3 fields from extensions
@@ -738,6 +741,7 @@ impl NewCharacter {
 
         Self {
             // Changed from NewCharacter
+            id: None,
             user_id,                                     // Use passed user_id
             name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
             // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
@@ -897,6 +901,7 @@ impl NewCharacter {
         };
 
         Self {
+            id: None,
             user_id,
             name: data.name.clone().unwrap_or_default(),
             description,
@@ -1038,6 +1043,7 @@ impl std::fmt::Debug for CharacterAsset {
 #[derive(Insertable)]
 #[diesel(table_name = character_assets)]
 pub struct NewCharacterAsset {
+    pub id: Option<crate::DbUuid>,
     #[diesel(serialize_as = crate::DbUuid)]
     pub character_id: crate::DbUuid, // Changed from i32
     pub asset_type: String, // Renamed from `type_`

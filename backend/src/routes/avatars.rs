@@ -213,7 +213,7 @@ pub async fn upload_user_avatar(
         Json(serde_json::json!({
             "message": "Avatar uploaded successfully",
             "asset_id": asset_result.id
-        })),
+        }).into()),
     ))
 }
 
@@ -426,7 +426,7 @@ pub async fn upload_persona_avatar(
         Json(serde_json::json!({
             "message": "Persona avatar uploaded successfully",
             "asset_id": asset_result.id
-        })),
+        }).into()),
     ))
 }
 

@@ -143,6 +143,7 @@ impl CharacterService {
 
         // Create a NewCharacter from the DTO
         let mut new_character_for_db = NewCharacter {
+            id: None,
             user_id: user_id_val,
             name: create_dto
                 .name
@@ -215,13 +216,15 @@ impl CharacterService {
             },
             creation_date: create_dto
                 .creation_date
-                .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                .and_then(|ts| DateTime::from_timestamp(ts, 0))
+                .map(|dt| dt.into()),
             modification_date: create_dto
                 .modification_date
-                .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                .and_then(|ts| DateTime::from_timestamp(ts, 0))
+                .map(|dt| dt.into()),
             extensions: Some(create_dto.extensions.map_or_else(
-                || diesel_json::Json(serde_json::json!({})),
-                |j| diesel_json::Json(j.0),
+                || diesel_json::Json(serde_json::json!({}).into()),
+                |j| j,
             )),
             persona: None,
             persona_nonce: None,
@@ -376,7 +379,7 @@ impl CharacterService {
 
                         let new_association = NewCharacterLorebook {
                             character_id: returned_id,
-                            lorebook_id: lorebook_uuid,
+                            lorebook_id: lorebook_uuid.into(),
                             user_id: user_id_val,
                             created_at: Some(Utc::now().into()),
                             updated_at: Some(Utc::now().into()),
@@ -391,7 +394,7 @@ impl CharacterService {
                         .await?;
 
                         info!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
-                        associated_lorebook_ids.push(lorebook_uuid);
+                        associated_lorebook_ids.push(lorebook_uuid.into());
                     } else {
                         warn!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Lorebook not found or not owned by user");
                     }
@@ -546,10 +549,10 @@ impl CharacterService {
             };
         }
         if let Some(cd_ts) = update_dto.creation_date {
-            existing_character.creation_date = DateTime::from_timestamp(cd_ts, 0);
+            existing_character.creation_date = DateTime::from_timestamp(cd_ts, 0).map(|dt| dt.into());
         }
         if let Some(md_ts) = update_dto.modification_date {
-            existing_character.modification_date = DateTime::from_timestamp(md_ts, 0);
+            existing_character.modification_date = DateTime::from_timestamp(md_ts, 0).map(|dt| dt.into());
         }
         if let Some(ext_val) = update_dto.extensions {
             existing_character.extensions = Some(ext_val.0);
@@ -679,7 +682,7 @@ impl CharacterService {
 
                         let new_association = NewCharacterLorebook {
                             character_id: character_id_to_update,
-                            lorebook_id: lorebook_uuid,
+                            lorebook_id: lorebook_uuid.into(),
                             user_id: user_id_val,
                             created_at: Some(Utc::now().into()),
                             updated_at: Some(Utc::now().into()),
@@ -695,7 +698,7 @@ impl CharacterService {
                         {
                             Ok(_) => {
                                 info!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
-                                associated_lorebook_ids.push(lorebook_uuid);
+                                associated_lorebook_ids.push(lorebook_uuid.into());
                             }
                             Err(e) => {
                                 warn!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, error = %e, "Failed to associate lorebook with character");

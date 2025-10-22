@@ -803,6 +803,7 @@ pub async fn verify_transaction(
             payment_transactions
                 .filter(paddle_transaction_id.eq(&transaction_id_for_db))
                 .filter(user_id.eq(&user_id_for_check))
+                .select(PaymentTransaction::as_select())
                 .first::<PaymentTransaction>(conn)
                 .optional()
         })
@@ -1075,6 +1076,7 @@ pub async fn verify_transaction(
                         payment_transactions
                             .filter(paddle_transaction_id.eq(&transaction_id_for_check))
                             .filter(status.eq("completed"))
+                            .select(PaymentTransaction::as_select())
                             .first::<PaymentTransaction>(conn)
                             .optional()
                     })
@@ -2441,6 +2443,7 @@ async fn process_transaction_completed(
                 dsl::credit_packages
                     .filter(dsl::paddle_price_id.eq(&price_data_for_credit_check))
                     .filter(dsl::active.eq(true))
+                    .select(CreditPackage::as_select())
                     .first::<CreditPackage>(conn)
                     .optional()
             })
@@ -3341,7 +3344,6 @@ async fn process_subscription_updated(
                 .filter(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
-                .select(crate::models::payment::Subscription::as_select())
                 .first::<crate::models::payment::Subscription>(conn)
                 .optional()
         })
@@ -3902,7 +3904,6 @@ async fn process_subscription_cancelled(
                 .filter(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
-                .select(crate::models::payment::Subscription::as_select())
                 .first::<crate::models::payment::Subscription>(conn)
                 .optional()
         })
@@ -4113,6 +4114,7 @@ pub async fn get_credit_packages(
             dsl::credit_packages
                 .filter(dsl::active.eq(true))
                 .order(dsl::credits.asc())
+                .select(CreditPackage::as_select())
                 .load::<CreditPackage>(conn)
         })
         .await
@@ -4239,6 +4241,7 @@ pub async fn get_payment_transactions(
                 .order(created_at.desc())
                 .limit(limit)
                 .offset(offset)
+                .select(PaymentTransaction::as_select())
                 .load::<PaymentTransaction>(conn)
         })
         .await
@@ -4303,6 +4306,7 @@ pub async fn get_payment_transaction(
             payment_transactions
                 .filter(id.eq(transaction_id))
                 .filter(user_id.eq(user_id))
+                .select(PaymentTransaction::as_select())
                 .first::<PaymentTransaction>(conn)
         })
         .await

@@ -369,13 +369,13 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de::{Error, Unexpected};
-    use crate::DbJson as Value;
 
-    let value = Value::deserialize(deserializer)?;
+    let db_json = crate::DbJson::deserialize(deserializer)?;
+    let value = &db_json.0;
 
     match value {
-        Value::Null => Ok(None),
-        Value::Number(n) => {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Ok(Some(i as i32))
             } else {
@@ -385,7 +385,7 @@ where
                 ))
             }
         }
-        Value::String(s) => {
+        serde_json::Value::String(s) => {
             match s.as_str() {
                 "before_char" | "before_prompt" => Ok(Some(0)),
                 "after_char" | "after_prompt" => Ok(Some(1)),

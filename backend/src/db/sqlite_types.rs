@@ -35,6 +35,10 @@ impl SqliteUuid {
         Self(Uuid::nil())
     }
 
+    pub fn parse_str(input: &str) -> Result<Self, uuid::Error> {
+        Uuid::parse_str(input).map(Self)
+    }
+
     pub fn into_inner(self) -> Uuid {
         self.0
     }
@@ -81,8 +85,8 @@ impl FromSql<Text, Sqlite> for SqliteUuid {
 
 impl ToSql<Text, Sqlite> for SqliteUuid {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        let uuid_str = self.0.to_string();
-        <String as ToSql<Text, Sqlite>>::to_sql(&uuid_str, &mut out.reborrow())
+        out.set_value(self.0.to_string());
+        Ok(IsNull::No)
     }
 }
 
@@ -111,6 +115,10 @@ pub struct SqliteDateTime(pub DateTime<Utc>);
 impl SqliteDateTime {
     pub fn new(dt: DateTime<Utc>) -> Self {
         Self(dt)
+    }
+
+    pub fn now() -> Self {
+        Self(Utc::now())
     }
 
     pub fn into_inner(self) -> DateTime<Utc> {
@@ -159,8 +167,8 @@ impl FromSql<Timestamp, Sqlite> for SqliteDateTime {
 
 impl ToSql<Timestamp, Sqlite> for SqliteDateTime {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        let timestamp = self.0.timestamp();
-        <i64 as ToSql<diesel::sql_types::BigInt, Sqlite>>::to_sql(&timestamp, &mut out.reborrow())
+        out.set_value(self.0.timestamp());
+        Ok(IsNull::No)
     }
 }
 
@@ -243,6 +251,29 @@ impl SqliteJson {
     pub fn as_value(&self) -> &serde_json::Value {
         &self.0
     }
+
+    // Constructor functions matching serde_json::Value enum variants
+    pub fn String(s: String) -> Self {
+        Self(serde_json::Value::String(s))
+    }
+
+    pub fn Object(map: serde_json::Map<String, serde_json::Value>) -> Self {
+        Self(serde_json::Value::Object(map))
+    }
+
+    pub fn Array(arr: Vec<serde_json::Value>) -> Self {
+        Self(serde_json::Value::Array(arr))
+    }
+
+    pub fn Number(n: serde_json::Number) -> Self {
+        Self(serde_json::Value::Number(n))
+    }
+
+    pub fn Bool(b: bool) -> Self {
+        Self(serde_json::Value::Bool(b))
+    }
+
+    pub const Null: Self = Self(serde_json::Value::Null);
 
     // Convenience accessors delegating to serde_json::Value methods
     pub fn as_str(&self) -> Option<&str> {
@@ -353,7 +384,8 @@ impl ToSql<Text, Sqlite> for SqliteJson {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         let json_str = serde_json::to_string(&self.0)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-        <String as ToSql<Text, Sqlite>>::to_sql(&json_str, &mut out.reborrow())
+        out.set_value(json_str);
+        Ok(IsNull::No)
     }
 }
 
@@ -367,7 +399,7 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
 }
 
 /// Newtype wrapper for BigDecimal to enable SQLite Double mapping
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
 #[diesel(sql_type = diesel::sql_types::Double)]
 #[repr(transparent)]
 #[serde(transparent)]
@@ -376,6 +408,11 @@ pub struct SqliteBigDecimal(pub bigdecimal::BigDecimal);
 impl SqliteBigDecimal {
     pub fn new(value: bigdecimal::BigDecimal) -> Self {
         Self(value)
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, bigdecimal::ParseBigDecimalError> {
+        use std::str::FromStr;
+        bigdecimal::BigDecimal::from_str(s).map(Self)
     }
 
     pub fn into_inner(self) -> bigdecimal::BigDecimal {
@@ -427,7 +464,8 @@ impl ToSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
         use std::str::FromStr;
         let value = f64::from_str(&self.0.to_string())
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-        <f64 as ToSql<diesel::sql_types::Double, Sqlite>>::to_sql(&value, &mut out.reborrow())
+        out.set_value(value);
+        Ok(IsNull::No)
     }
 }
 
@@ -462,7 +500,8 @@ impl ToSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
         use std::str::FromStr;
         let value = i32::from_str(&self.0.to_string())
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-        <i32 as ToSql<diesel::sql_types::Integer, Sqlite>>::to_sql(&value, &mut out.reborrow())
+        out.set_value(value);
+        Ok(IsNull::No)
     }
 }
 

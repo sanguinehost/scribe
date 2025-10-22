@@ -5,6 +5,8 @@ use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 use uuid::Uuid;
 
 use crate::auth::session_dek::SessionDek;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::chat_override::{ChatCharacterOverride, NewChatCharacterOverride};
@@ -74,7 +76,7 @@ impl ChatOverrideService {
                 let changes_to_apply = (
                     chat_character_overrides::overridden_value.eq(&update_encrypted_value),
                     chat_character_overrides::overridden_value_nonce.eq(&update_nonce),
-                    chat_character_overrides::updated_at.eq(Utc::now()), // Explicitly set updated_at
+                    chat_character_overrides::updated_at.eq(Utc::now().into()), // Explicitly set updated_at
                 );
 
                 #[cfg(feature = "postgres-backend")]
@@ -140,7 +142,9 @@ impl ChatOverrideService {
 mod tests {
     // use super::*;
     // use crate::test_helpers::db::create_test_db_pool;
+#[cfg(feature = "sqlite-backend")]
     // use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "sqlite-backend")]
     // use std::sync::Arc;
 
     // TODO: Add unit tests for ChatOverrideService

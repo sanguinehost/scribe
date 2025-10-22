@@ -784,7 +784,7 @@ impl Character {
             creator_notes_multilingual: self
                 .creator_notes_multilingual
                 .map(Json)
-                .or_else(|| Some(Json(serde_json::json!({})))),
+                .or_else(|| Some(serde_json::json!({}).into())),
             source: self.source.or_else(|| Some(Vec::new())),
             group_only_greetings: self.group_only_greetings.or_else(|| Some(Vec::new())),
             creation_date: self.creation_date,
@@ -806,7 +806,7 @@ impl Character {
             extensions: self
                 .extensions
                 .map(Json)
-                .or_else(|| Some(Json(serde_json::json!({})))),
+                .or_else(|| Some(serde_json::json!({}).into())),
             data_id: self.data_id,
             category: default_empty_string_if_none(self.category),
             definition_visibility: default_empty_string_if_none(self.definition_visibility),
@@ -832,7 +832,7 @@ impl Character {
             usage_hints: self
                 .usage_hints
                 .map(Json)
-                .or_else(|| Some(Json(serde_json::json!({})))),
+                .or_else(|| Some(serde_json::json!({}).into())),
             user_persona: decrypted_fields.user_persona,
             user_persona_visibility: default_empty_string_if_none(self.user_persona_visibility),
             visibility: default_empty_string_if_none(self.visibility),
@@ -1278,8 +1278,8 @@ pub fn create_dummy_character() -> Character {
         group_only_greetings: None,
         creation_date: None,
         modification_date: None,
-        created_at: now,
-        updated_at: now,
+        created_at: now.into(),
+        updated_at: now.into(),
         persona: None,
         world_scenario: None,
         avatar: None,

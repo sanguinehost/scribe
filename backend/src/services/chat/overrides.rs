@@ -83,7 +83,7 @@ pub async fn set_character_override(
 
             // 3. Perform an upsert (insert or update on conflict)
             let new_override = NewChatCharacterOverride {
-                id: Uuid::new_v4(), // Generate a new ID for insert, conflict target will handle existing
+                id: Uuid::new_v4().into(), // Generate a new ID for insert, conflict target will handle existing
                 chat_session_id: session_id,
                 original_character_id,
                 field_name: field_name_clone,
@@ -140,7 +140,7 @@ pub async fn set_character_override(
                     .set((
                         chat_character_overrides::overridden_value.eq(encrypted_value),
                         chat_character_overrides::overridden_value_nonce.eq(nonce),
-                        chat_character_overrides::updated_at.eq(chrono::Utc::now()),
+                        chat_character_overrides::updated_at.eq(chrono::Utc::now().into()),
                     ))
                     .execute(transaction_conn)
                     .map_err(|e| {

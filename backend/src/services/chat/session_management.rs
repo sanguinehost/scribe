@@ -90,7 +90,7 @@ fn handle_persona_query_result(
 }
 
 /// Fetches the user's default persona ID from the database
-fn get_user_default_persona_id(user_id: crate::DbUuid, conn: &mut PgConnection) -> Option<crate::DbUuid> {
+fn get_user_default_persona_id(user_id: crate::DbUuid, conn: &mut crate::DbConnection) -> Option<crate::DbUuid> {
     let db_result = crate::schema::users::table
         .filter(users_dsl::id.eq(user_id))
         .select(users_dsl::default_persona_id)
@@ -111,7 +111,7 @@ fn get_user_default_persona_id(user_id: crate::DbUuid, conn: &mut PgConnection) 
 fn determine_effective_persona_id(
     user_id: crate::DbUuid,
     active_custom_persona_id: Option<crate::DbUuid>,
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
 ) -> Option<crate::DbUuid> {
     if let Some(persona_id) = active_custom_persona_id {
         return Some(persona_id);
@@ -126,7 +126,7 @@ fn extract_persona_system_prompt(
     persona_id: crate::DbUuid,
     user_id: crate::DbUuid,
     user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
 ) -> Option<String> {
     let persona = fetch_user_persona(persona_id, user_id, conn)?;
     let sp_bytes_vec = persona.system_prompt.as_ref()?;
@@ -144,7 +144,7 @@ fn extract_persona_system_prompt(
 fn fetch_user_persona(
     persona_id: crate::DbUuid,
     user_id: crate::DbUuid,
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
 ) -> Option<crate::models::user_personas::UserPersona> {
     use crate::schema::user_personas;
 
@@ -226,7 +226,7 @@ fn determine_system_prompt(
     persona_id: Option<crate::DbUuid>,
     user_id: crate::DbUuid,
     user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
 ) -> Option<String> {
     // Try persona first if available
     if let Some(pid) = persona_id {
@@ -271,7 +271,7 @@ fn determine_system_prompt(
 fn validate_and_get_character(
     character_id: crate::DbUuid,
     user_id: crate::DbUuid,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<Character, AppError> {
     info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
     let character: Character = characters::table
@@ -312,7 +312,7 @@ fn encrypt_session_data(
     effective_active_persona_id: Option<crate::DbUuid>,
     user_id: crate::DbUuid,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<EncryptedSessionData, AppError> {
     // Create and encrypt session title
     let session_title_for_encryption = format!("Chat with {sanitized_character_name}");
@@ -358,7 +358,7 @@ fn encrypt_assistant_session_data(
     _effective_active_persona_id: Option<crate::DbUuid>,
     _user_id: crate::DbUuid,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
-    _transaction_conn: &mut PgConnection,
+    _transaction_conn: &mut crate::DbConnection,
 ) -> Result<EncryptedSessionData, AppError> {
     // Encrypt session title
     let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
@@ -390,7 +390,7 @@ fn encrypt_rpg_session_data(
     _effective_active_persona_id: Option<crate::DbUuid>,
     _user_id: crate::DbUuid,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
-    _transaction_conn: &mut PgConnection,
+    _transaction_conn: &mut crate::DbConnection,
 ) -> Result<EncryptedSessionData, AppError> {
     // Encrypt session title
     let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
@@ -437,7 +437,7 @@ struct ChatSessionInsertParams {
 /// Inserts the chat session into the database
 fn insert_chat_session(
     params: ChatSessionInsertParams,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     diesel::insert_into(chat_sessions::table)
         .values((
@@ -468,7 +468,7 @@ fn insert_chat_session(
 fn validate_lorebook_ownership(
     lorebook_id: crate::DbUuid,
     user_id: crate::DbUuid,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     use crate::schema::lorebooks;
 
@@ -503,7 +503,7 @@ fn associate_lorebooks(
     user_id: crate::DbUuid,
     _character_id: crate::DbUuid, // Not strictly needed if we only handle explicit IDs here
     explicit_lorebook_ids: Option<Vec<crate::DbUuid>>,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     if let Some(explicit_ids) = explicit_lorebook_ids {
         if !explicit_ids.is_empty() {
@@ -544,7 +544,7 @@ fn associate_lorebooks(
 /// Fetches the fully created session from the database
 fn fetch_created_session(
     new_session_id: crate::DbUuid,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<Chat, AppError> {
     chat_sessions::table
         .filter(chat_sessions::id.eq(new_session_id))
@@ -555,7 +555,7 @@ fn fetch_created_session(
 
 /// Creates a new chat session in the database
 fn create_session_in_transaction(
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
     user_id: crate::DbUuid,
     character_id: Option<crate::DbUuid>,
     chat_mode: ChatMode,
@@ -660,7 +660,7 @@ fn create_session_in_transaction(
         }
     };
 
-    let new_session_id = Uuid::new_v4();
+    let new_session_id: crate::DbUuid = Uuid::new_v4().into();
 
     // Chronicles are now created when the first message is sent, not at session creation
     let chronicle_id = None;
@@ -814,8 +814,8 @@ pub async fn create_session_and_maybe_first_message(
             preferred_local_model: None,
             local_llm_enabled: Some(false),
             local_model_preferences: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         }
     });
 

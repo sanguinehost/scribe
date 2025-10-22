@@ -184,8 +184,8 @@ impl LorebookService {
             chat_session_id,
             lorebook_id: lorebook_id_to_associate_clone_for_insert,
             user_id: current_user_id_clone_for_insert,
-            created_at: Some(association_creation_time),
-            updated_at: Some(association_creation_time),
+            created_at: Some(association_creation_time.into()),
+            updated_at: Some(association_creation_time.into()),
         };
 
         conn.interact(move |conn_sync| {
@@ -233,7 +233,7 @@ impl LorebookService {
                 lorebook_id: lorebook_id_to_associate,
                 user_id: current_user_id,
                 lorebook_name,
-                created_at: association_creation_time,
+                created_at: association_creation_time.into(),
             });
         };
 
@@ -412,7 +412,7 @@ impl LorebookService {
             lorebook_id: lorebook_id_to_associate,
             user_id: current_user_id,
             lorebook_name,
-            created_at: association_creation_time, // Use the time captured before DB interaction
+            created_at: association_creation_time.into(), // Use the time captured before DB interaction
         })
     }
 

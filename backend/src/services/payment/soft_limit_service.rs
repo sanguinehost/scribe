@@ -69,6 +69,7 @@ impl SoftLimitService {
         let existing = dsl::daily_usage_tracking
             .filter(dsl::user_id.eq(user_id))
             .filter(dsl::date.eq(today))
+            .select(DailyUsage::as_select())
             .first::<DailyUsage>(conn)
             .optional()
             .map_err(|e| {
@@ -280,6 +281,7 @@ impl SoftLimitService {
             query = query.filter(dsl::date.ge(start_date));
         }
 
+        .select(DailyUsage::as_select())
         query.load::<DailyUsage>(conn).map_err(|e| {
             error!("Failed to get usage stats: {}", e);
             AppError::DatabaseQueryError(e.to_string())

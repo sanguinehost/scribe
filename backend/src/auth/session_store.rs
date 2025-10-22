@@ -12,6 +12,7 @@ use diesel::result::Error as DieselError;
 use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
 use crate::state::DbPool; // Import DbPool type alias
+use crate::db::DbDateTime; // Import backend-agnostic DateTime type
 use axum_login::tower_sessions::{
     session::{Id, Record}, // Use tower_sessions::session types
     session_store,
@@ -24,9 +25,11 @@ use tracing::{debug, error, info, instrument};
 
 // --- Session Data Struct ---
 // This mirrors the table structure in schema.rs for the sessions table
-#[derive(Queryable, Insertable, AsChangeset, Identifiable, Debug, Clone)]
+#[derive(Queryable, Selectable, Insertable, AsChangeset, Identifiable, Debug, Clone)]
 #[diesel(table_name = sessions)]
 #[diesel(primary_key(id))] // Explicitly define primary key if not id by convention
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct SessionRecord {
     pub id: String, // Keep as String to match DB schema (Text)
     // Use chrono::DateTime<Utc> for TIMESTAMPTZ
@@ -143,7 +146,7 @@ impl DieselSessionStore {
         info!("DieselSessionStore::delete_expired_sessions ENTERED");
 
         let pool = self.pool.clone();
-        let now = Utc::now();
+        let now = DbDateTime::now();
 
         debug!(now = %now, "Attempting to delete expired sessions...");
 
@@ -174,7 +177,7 @@ impl DieselSessionStore {
 #[must_use]
 pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<crate::DbDateTime> {
     // Made pub
-    offset_dt.and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0))
+    offset_dt.and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0).map(|dt| dt.into()))
 }
 
 // Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime
@@ -270,6 +273,7 @@ impl SessionStore for DieselSessionStore {
             // Move the clone into the closure
             let result = sessions::table
                 .find(&session_id_clone_for_closure) // Use the String clone here
+                .select(SessionRecord::as_select())
                 .first::<SessionRecord>(conn) // Load as SessionRecord (DB representation)
                 .optional() // Handle not found gracefully within Diesel
                 .map_err(|e| Self::map_diesel_error(&e))?;
@@ -295,7 +299,7 @@ impl SessionStore for DieselSessionStore {
             let mut session_record_for_tower = Record {
                 // Construct tower_sessions::Record
                 id: *session_id,                        // Use original Id
-                data: session_data_map,                 // Assign deserialized map
+                data: session_data_map.into_iter().map(|(k, v)| (k, v.0)).collect(), // Convert SqliteJson to Value
                 expiry_date: OffsetDateTime::now_utc(), // Placeholder, will be overwritten
             };
 

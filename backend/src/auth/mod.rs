@@ -130,6 +130,14 @@ impl From<diesel::result::Error> for AuthError {
     }
 }
 
+// From implementation for AppError
+impl From<crate::errors::AppError> for AuthError {
+    fn from(err: crate::errors::AppError) -> Self {
+        // Map AppError to AuthError variants appropriately
+        Self::DatabaseError(err.to_string())
+    }
+}
+
 /// Check if there are any users in the database
 ///
 /// # Errors
@@ -777,7 +785,7 @@ fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option
             }, |session_user_id_str| Uuid::parse_str(session_user_id_str).map_or_else(|_| {
                 warn!(session_id, "Failed to parse userId UUID from session data during invalidation sweep.");
                 None
-            }, Some))
+            }, |id| Some(id.into())))
         }
         Err(e) => {
             warn!(session_id, error = ?e, "Failed to parse session data JSON during invalidation sweep.");
@@ -883,7 +891,7 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
         .map_err(|_| AuthError::InvalidVerificationToken)?;
 
     // 2. Check if the token has expired
-    if verification_token.expires_at < Utc::now() {
+    if verification_token.expires_at < Utc::now().into() {
         warn!(token_id = %verification_token.id, "Attempted to use expired verification token");
         // Optionally, delete the expired token
         diesel::delete(email_verification_tokens::table.find(verification_token.id))

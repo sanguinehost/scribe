@@ -182,14 +182,14 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id,
             name: payload.name.clone(),
             description: payload.description.clone(),
             source_format: "scribe_v1".to_string(),
             is_public: false, // Default for tests
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -320,7 +320,7 @@ impl LorebookService {
         let new_entry_id = Uuid::new_v4();
 
         let new_entry_db = crate::models::NewLorebookEntry {
-            id: new_entry_id,
+            id: new_entry_id.into(),
             lorebook_id,
             user_id,
             original_sillytavern_uid: None,
@@ -339,8 +339,8 @@ impl LorebookService {
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: Some(payload.entry_title.clone()),
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         // 3. Insert into database
@@ -379,7 +379,7 @@ impl LorebookService {
             // SQLite doesn't support RETURNING, so we insert and query back by ID
             let entry_id_clone = new_entry_db.id;
 
-            crate::db::with_conn(&self.db_pool, move |conn_sync| {
+            crate::db::with_conn(&self.pool, move |conn_sync| {
                 diesel::insert_into(lorebook_entries::table)
                     .values(&new_entry_db)
                     .execute(conn_sync)

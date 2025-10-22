@@ -3,7 +3,7 @@ use bigdecimal::{BigDecimal, ToPrimitive};
 use crate::DbDateTime;
 use chrono::Utc;
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel::{BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
+use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 use crate::DbUuid as Uuid;
@@ -430,7 +430,8 @@ impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for MessageRole {
             Self::Assistant => "Assistant",
             Self::System => "System",
         };
-        <String as ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>>::to_sql(&s.to_string(), &mut out.reborrow())
+        out.set_value(s.to_string());
+        Ok(IsNull::No)
     }
 }
 
@@ -517,7 +518,8 @@ impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for ChatMode {
             ChatMode::ScribeAssistant => "ScribeAssistant",
             ChatMode::Rpg => "Rpg",
         };
-        <String as ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>>::to_sql(&s.to_string(), &mut out.reborrow())
+        out.set_value(s.to_string());
+        Ok(IsNull::No)
     }
 }
 
@@ -596,7 +598,7 @@ impl Default for ChatMessage {
             message_type: MessageRole::User,
             content: vec![],
             content_nonce: None,
-            created_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -808,7 +810,7 @@ impl ChatMessage {
 
     /// Update the status and error message of this message in the database
     pub fn update_status(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         message_id: crate::DbUuid,
         new_status: MessageStatus,
         error_msg: Option<String>,
@@ -819,7 +821,7 @@ impl ChatMessage {
             .set((
                 status.eq(new_status.to_string()),
                 error_message.eq(error_msg),
-                updated_at.eq(chrono::Utc::now()),
+                updated_at.eq(chrono::Utc::now().into()),
             ))
             .execute(conn)
             .map_err(|e| {
@@ -831,7 +833,7 @@ impl ChatMessage {
 
     /// Mark messages as superseded when retrying
     pub fn supersede_failed_messages(
-        conn: &mut PgConnection,
+        conn: &mut crate::DbConnection,
         session_id_val: crate::DbUuid,
         after_timestamp: DbDateTime,
     ) -> Result<usize, AppError> {
@@ -2211,8 +2213,8 @@ fn validate_optional_history_strategy(strategy: &String) -> Result<(), Validatio
 /// # Errors
 /// Returns `ValidationError` if temperature is not between 0.0 and 2.0
 fn validate_optional_temperature(temp: &crate::DbBigDecimal) -> Result<(), ValidationError> {
-    let zero = BigDecimal::from(0);
-    let two = BigDecimal::from(2);
+    let zero = BigDecimal::from(0).into();
+    let two = BigDecimal::from(2).into();
     if *temp < zero || *temp > two {
         let mut err = ValidationError::new("range");
         err.add_param("min".into(), &0.0);
@@ -2227,8 +2229,8 @@ fn validate_optional_temperature(temp: &crate::DbBigDecimal) -> Result<(), Valid
 /// # Errors
 /// Returns `ValidationError` if frequency penalty is not between -2.0 and 2.0
 fn validate_optional_frequency_penalty(penalty: &crate::DbBigDecimal) -> Result<(), ValidationError> {
-    let neg_two = BigDecimal::from(-2);
-    let two = BigDecimal::from(2);
+    let neg_two = BigDecimal::from(-2).into();
+    let two = BigDecimal::from(2).into();
     if *penalty < neg_two || *penalty > two {
         let mut err = ValidationError::new("range");
         err.add_param("min".into(), &-2.0);
@@ -2243,8 +2245,8 @@ fn validate_optional_frequency_penalty(penalty: &crate::DbBigDecimal) -> Result<
 /// # Errors
 /// Returns `ValidationError` if presence penalty is not between -2.0 and 2.0
 fn validate_optional_presence_penalty(penalty: &crate::DbBigDecimal) -> Result<(), ValidationError> {
-    let neg_two = BigDecimal::from(-2);
-    let two = BigDecimal::from(2);
+    let neg_two = BigDecimal::from(-2).into();
+    let two = BigDecimal::from(2).into();
     if *penalty < neg_two || *penalty > two {
         let mut err = ValidationError::new("range");
         err.add_param("min".into(), &-2.0);
@@ -2259,8 +2261,8 @@ fn validate_optional_presence_penalty(penalty: &crate::DbBigDecimal) -> Result<(
 /// # Errors
 /// Returns `ValidationError` if top-p value is not between 0.0 and 1.0
 fn validate_optional_top_p(value: &crate::DbBigDecimal) -> Result<(), ValidationError> {
-    let zero = BigDecimal::from(0);
-    let one = BigDecimal::from(1);
+    let zero = BigDecimal::from(0).into();
+    let one = BigDecimal::from(1).into();
     if *value < zero || *value > one {
         let mut err = ValidationError::new("range");
         err.add_param("min".into(), &0.0);

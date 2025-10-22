@@ -15,6 +15,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     auth::{session_dek::SessionDek, user_store::Backend as AuthBackend},
     errors::AppError,
     models::{
@@ -583,6 +585,8 @@ async fn get_character_name_for_session(
     user_id: crate::DbUuid,
 ) -> Result<Option<String>, AppError> {
     use crate::schema::{characters, chat_sessions};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
 
     let conn = crate::db::get_conn(&state.pool).await?;
@@ -614,6 +618,8 @@ async fn get_character_for_session(
     user_id: crate::DbUuid,
 ) -> Result<Option<crate::models::characters::Character>, AppError> {
     use crate::schema::{characters, chat_sessions};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::{
         ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl,
         RunQueryDsl, SelectableHelper,
@@ -629,7 +635,6 @@ async fn get_character_for_session(
                 )
                 .filter(chat_sessions::id.eq(chat_session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
-                .select(crate::models::characters::Character::as_select())
                 .first::<crate::models::characters::Character>(conn)
         })
         .await
@@ -647,6 +652,8 @@ async fn get_chat_messages(
     user_id: crate::DbUuid,
 ) -> Result<Vec<ChatMessage>, AppError> {
     use crate::schema::{chat_messages, chat_sessions};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::{
         BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl,
         SelectableHelper,
@@ -665,6 +672,7 @@ async fn get_chat_messages(
                 .filter(chat_messages::session_id.eq(chat_session_id))
                 .select(ChatMessage::as_select())
                 .order(chat_messages::created_at.asc())
+                .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
         })
         .await
@@ -717,7 +725,11 @@ async fn generate_chronicle_name(
     Json(request): Json<GenerateChronicleNameRequest>,
 ) -> Result<Json<GenerateChronicleNameResponse>, AppError> {
     use crate::schema::{chat_messages, chat_sessions};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use crate::services::agentic::AgenticNarrativeFactory;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::prelude::*;
 
     // Validate the request
@@ -751,6 +763,7 @@ async fn generate_chronicle_name(
                 .filter(chat_messages::session_id.eq(request.chat_session_id))
                 .select(ChatMessage::as_select())
                 .order(chat_messages::created_at.asc())
+                .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
         })
         .await

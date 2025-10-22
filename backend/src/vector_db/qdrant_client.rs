@@ -723,7 +723,7 @@ pub fn create_qdrant_point(
                 ));
             }
             // Convert serde_json::Value to the target HashMap type
-            serde_json::from_value(json_value).map_err(|e| {
+            serde_json::from_value(json_value.0).map_err(|e| {
                 error!(error = %e, "Failed to deserialize JSON payload into Qdrant Value map");
                 AppError::SerializationError(format!(
                     "Failed to deserialize payload for Qdrant: {e}"

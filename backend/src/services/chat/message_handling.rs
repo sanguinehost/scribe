@@ -67,7 +67,7 @@ pub async fn get_messages_for_session(
 #[instrument(skip(conn), err)]
 pub fn save_chat_message_internal(
     // Made function public
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
     message: DbInsertableChatMessage,
 ) -> Result<ChatMessage, AppError> {
     // Changed DbChatMessage to ChatMessage
@@ -404,10 +404,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         new_message_to_insert = new_message_to_insert.with_role(role);
     }
     if let Some(parts_val) = parts {
-        new_message_to_insert = new_message_to_insert.with_parts(parts_val);
+        new_message_to_insert = new_message_to_insert.with_parts(parts_val.into());
     }
     if let Some(attachments_val) = attachments {
-        new_message_to_insert = new_message_to_insert.with_attachments(attachments_val);
+        new_message_to_insert = new_message_to_insert.with_attachments(attachments_val.into());
     }
     new_message_to_insert =
         new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);

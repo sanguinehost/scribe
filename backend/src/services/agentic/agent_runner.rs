@@ -62,7 +62,7 @@ fn get_triage_schema() -> crate::DbJson {
             }
         },
         "required": ["summary"]
-    })
+    }).into()
 }
 
 /// JSON schema for action plans (chronicle event creation)
@@ -115,7 +115,7 @@ fn get_action_plan_schema() -> crate::DbJson {
             }
         },
         "required": ["actions"]
-    })
+    }).into()
 }
 
 /// JSON schema for chronicle naming
@@ -129,7 +129,7 @@ fn get_chronicle_naming_schema() -> crate::DbJson {
             }
         },
         "required": ["name"]
-    })
+    }).into()
 }
 
 /// Result of the triage analysis step
@@ -322,7 +322,7 @@ RULES:
                         if tool_name == "create_lorebook_entry"
                             || tool_name == "create_chronicle_event"
                         {
-                            if let crate::DbJson::Object(ref mut obj) = enriched_params {
+                            if let serde_json::Value::Object(ref mut obj) = &mut enriched_params {
                                 // Add user_id if not present
                                 if !obj.contains_key("user_id") {
                                     obj.insert("user_id".to_string(), json!(user_id.to_string()));
@@ -750,12 +750,12 @@ IMPORTANT RULES:
                     if action.tool_name == "create_chronicle_event"
                         || action.tool_name == "create_lorebook_entry"
                     {
-                        if let crate::DbJson::Object(ref mut obj) = enriched_parameters {
+                        if let serde_json::Value::Object(ref mut obj) = &mut enriched_parameters {
                             // Add user_id if not present
                             if !obj.contains_key("user_id") {
                                 obj.insert(
                                     "user_id".to_string(),
-                                    crate::DbJson::String(user_id.to_string()),
+                                    serde_json::Value::String(user_id.to_string()),
                                 );
                             }
 
@@ -766,7 +766,7 @@ IMPORTANT RULES:
                                 if let Some(chron_id) = chronicle_id {
                                     obj.insert(
                                         "chronicle_id".to_string(),
-                                        crate::DbJson::String(chron_id.to_string()),
+                                        serde_json::Value::String(chron_id.to_string()),
                                     );
                                 }
                             }
@@ -780,7 +780,7 @@ IMPORTANT RULES:
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert(
                                     "session_dek".to_string(),
-                                    crate::DbJson::String(session_dek_hex),
+                                    serde_json::Value::String(session_dek_hex),
                                 );
                             }
                         } else {
@@ -788,14 +788,14 @@ IMPORTANT RULES:
                             let mut obj = serde_json::Map::new();
                             obj.insert(
                                 "user_id".to_string(),
-                                crate::DbJson::String(user_id.to_string()),
+                                serde_json::Value::String(user_id.to_string()),
                             );
 
                             if action.tool_name == "create_chronicle_event" {
                                 if let Some(chron_id) = chronicle_id {
                                     obj.insert(
                                         "chronicle_id".to_string(),
-                                        crate::DbJson::String(chron_id.to_string()),
+                                        serde_json::Value::String(chron_id.to_string()),
                                     );
                                 }
                             }
@@ -807,19 +807,19 @@ IMPORTANT RULES:
                                 let session_dek_hex = hex::encode(session_dek.0.expose_secret());
                                 obj.insert(
                                     "session_dek".to_string(),
-                                    crate::DbJson::String(session_dek_hex),
+                                    serde_json::Value::String(session_dek_hex),
                                 );
                             }
 
                             // Merge with existing parameters if they were in a different format
                             if let Ok(existing_obj) = serde_json::from_value::<
-                                serde_json::Map<String, crate::DbJson>,
+                                serde_json::Map<String, serde_json::Value>,
                             >(
                                 action.parameters.clone()
                             ) {
                                 obj.extend(existing_obj);
                             }
-                            enriched_parameters = crate::DbJson::Object(obj);
+                            enriched_parameters = crate::DbJson::Object(obj).into();
                         }
                     }
 
@@ -1163,7 +1163,7 @@ RULES:
         let events = match self
             .chronicle_service
             .get_chronicle_events(
-                Uuid::nil(), // This is a workaround - ideally the service wouldn't require user_id for reads
+                Uuid::nil().into(), // This is a workaround - ideally the service wouldn't require user_id for reads
                 chronicle_id,
                 filter,
             )

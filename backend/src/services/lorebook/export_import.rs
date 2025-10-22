@@ -170,14 +170,14 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id: user.id,
             name: payload.name,
             description: payload.description,
             source_format: "silly_tavern_full_v1".to_string(), // Set correct format
             is_public: payload.is_public,                      // Use payload's is_public
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -325,7 +325,7 @@ impl LorebookService {
             };
 
             let new_entry_db = NewLorebookEntry {
-                id: new_entry_id,
+                id: new_entry_id.into(),
                 lorebook_id: lorebook.id,
                 user_id: user.id,
                 entry_title_ciphertext,
@@ -344,8 +344,8 @@ impl LorebookService {
                 original_sillytavern_uid: entry.uid,
                 sillytavern_metadata_ciphertext: None,
                 sillytavern_metadata_nonce: None,
-                created_at: Some(current_time),
-                updated_at: Some(current_time),
+                created_at: Some(current_time.into()),
+                updated_at: Some(current_time.into()),
             };
 
             // Store the entry data for embedding generation

@@ -297,8 +297,8 @@ impl TemplateManager {
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
     fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
-        match value {
-            crate::DbJson::String(s) => {
+        match &value.0 {
+            serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s
                     .replace("{%", "{ %") // Escape Jinja control structures
@@ -321,31 +321,32 @@ impl TemplateManager {
                     crate::DbJson::String(sanitized)
                 }
             }
-            crate::DbJson::Array(arr) => {
+            serde_json::Value::Array(arr) => {
                 crate::DbJson::Array(
-                    arr.into_iter()
+                    arr.iter()
                         .take(100) // Limit array size
-                        .map(|v| self.sanitize_context(v, skip_keys))
+                        .map(|v| self.sanitize_context(v.clone().into(), skip_keys))
+                        .map(|v| v.0)
                         .collect(),
                 )
             }
-            crate::DbJson::Object(obj) => {
+            serde_json::Value::Object(obj) => {
                 crate::DbJson::Object(
-                    obj.into_iter()
+                    obj.iter()
                         .take(100) // Limit object size
                         .map(|(k, v)| {
                             if skip_keys.contains(&k.as_str()) {
                                 // Don't sanitize template sections - they need Jinja2 syntax
-                                (k, v)
+                                (k.clone(), v.clone())
                             } else {
-                                (k, self.sanitize_context(v, skip_keys))
+                                (k.clone(), self.sanitize_context(v.clone().into(), skip_keys).0)
                             }
                         })
                         .collect(),
                 )
             }
             // Numbers, booleans, and null are safe
-            other => other,
+            _ => value,
         }
     }
 
@@ -403,8 +404,8 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let mut context_map: serde_json::Map<String, crate::DbJson> = match context {
-            crate::DbJson::Object(map) => map,
+        let mut context_map: serde_json::Map<String, serde_json::Value> = match &context.0 {
+            serde_json::Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
         };
 
@@ -412,19 +413,19 @@ impl TemplateManager {
         let narrative_style = style.unwrap_or_default();
         context_map.insert(
             "tense".to_string(),
-            crate::DbJson::String(narrative_style.tense.as_str().to_string()),
+            serde_json::Value::String(narrative_style.tense.as_str().to_string()),
         );
         context_map.insert(
             "narration".to_string(),
-            crate::DbJson::String(narrative_style.narration.as_str().to_string()),
+            serde_json::Value::String(narrative_style.narration.as_str().to_string()),
         );
         context_map.insert(
             "perspective".to_string(),
-            crate::DbJson::String(narrative_style.perspective.as_str().to_string()),
+            serde_json::Value::String(narrative_style.perspective.as_str().to_string()),
         );
         context_map.insert(
             "length".to_string(),
-            crate::DbJson::String(narrative_style.length.as_str().to_string()),
+            serde_json::Value::String(narrative_style.length.as_str().to_string()),
         );
 
         // For templates with complex Jinja2 in sections, render each section with the full context
@@ -484,7 +485,7 @@ impl TemplateManager {
         // Add rendered sections to context
         context_map.insert(
             "self".to_string(),
-            serde_json::to_value(&rendered_sections).unwrap_or(crate::DbJson::Null),
+            serde_json::to_value(&rendered_sections).unwrap_or(serde_json::Value::Null),
         );
 
         let enhanced_context = crate::DbJson::Object(context_map);

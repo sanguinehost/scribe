@@ -142,7 +142,7 @@ pub fn get_field_generation_schema() -> crate::DbJson {
             }
         },
         "required": ["content", "style_applied"]
-    })
+    }).into()
 }
 
 pub fn get_full_character_schema() -> crate::DbJson {
@@ -198,7 +198,7 @@ pub fn get_full_character_schema() -> crate::DbJson {
             }
         },
         "required": ["name", "description", "first_mes", "tags"]
-    })
+    }).into()
 }
 
 pub fn get_enhancement_schema() -> crate::DbJson {
@@ -228,7 +228,7 @@ pub fn get_enhancement_schema() -> crate::DbJson {
             }
         },
         "required": ["enhanced_content", "changes_made", "improvement_reasoning"]
-    })
+    }).into()
 }
 
 pub fn get_style_analysis_schema() -> crate::DbJson {
@@ -262,7 +262,7 @@ pub fn get_style_analysis_schema() -> crate::DbJson {
             }
         },
         "required": ["detected_style", "confidence"]
-    })
+    }).into()
 }
 
 // ============================================================================
@@ -369,7 +369,7 @@ pub fn get_lorebook_entry_schema() -> crate::DbJson {
             }
         },
         "required": ["name", "content", "keys"]
-    })
+    }).into()
 }
 
 /// JSON schema for batch lorebook entries generation
@@ -420,5 +420,5 @@ pub fn get_batch_lorebook_entries_schema() -> crate::DbJson {
             }
         },
         "required": ["entries"]
-    })
+    }).into()
 }

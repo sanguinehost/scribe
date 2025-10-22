@@ -15,6 +15,8 @@ use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     auth::session_dek::SessionDek,
     errors::AppError,
     llm::{AiClient, EmbeddingClient},
@@ -558,6 +560,7 @@ impl NarrativeIntelligenceService {
             .interact(move |db_conn| {
                 users_dsl::users
                     .filter(users_dsl::id.eq(user_id))
+                    .select(UserDbQuery::as_select())
                     .first::<UserDbQuery>(db_conn)
                     .optional()
             })

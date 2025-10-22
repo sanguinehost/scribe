@@ -24,6 +24,7 @@ pub struct PlayerChronicle {
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = player_chronicles)]
 pub struct NewPlayerChronicle {
+    pub id: Option<crate::DbUuid>,
     pub user_id: crate::DbUuid,
     #[validate(length(
         min = 1,
@@ -98,6 +99,7 @@ pub struct UpdateChronicleRequest {
 impl From<CreateChronicleRequest> for NewPlayerChronicle {
     fn from(request: CreateChronicleRequest) -> Self {
         Self {
+            id: None,
             user_id: Uuid::nil(), // Will be set by the service
             name: request.name,
             description: request.description,

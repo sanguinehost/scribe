@@ -164,7 +164,7 @@ impl DynamicRagSelector {
         query_timestamp: Option<crate::DbDateTime>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         let available_budget = self.budget_planner.available_rag_budget();
-        let query_time = query_timestamp.unwrap_or_else(Utc::now);
+        let query_time = query_timestamp.unwrap_or_else(|| Utc::now().into());
 
         debug!(
             num_candidates = candidates.len(),

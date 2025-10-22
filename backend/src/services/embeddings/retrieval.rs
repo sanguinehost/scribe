@@ -120,7 +120,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
             event_type,
             chronicle_id,
             user_id,
-            created_at,
+            created_at: created_at.into(),
         })
     }
 }

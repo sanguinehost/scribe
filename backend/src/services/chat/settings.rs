@@ -236,7 +236,7 @@ struct ChatSessionUpdateChangeset {
 }
 /// Verifies session ownership and returns the owner ID
 fn verify_session_ownership(
-    conn: &mut diesel::PgConnection,
+    conn: &mut crate::DbConnection,
     session_id: crate::DbUuid,
     user_id: crate::DbUuid,
 ) -> Result<(), AppError> {
@@ -533,11 +533,11 @@ fn apply_payload_to_builder(
 fn execute_update(
     update_builder: ChatSessionUpdateBuilder,
     session_id: crate::DbUuid,
-    transaction_conn: &mut diesel::PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     if update_builder.has_changes() {
         let mut builder = update_builder;
-        builder.updated_at = DatabaseUpdate::SetValue(chrono::Utc::now());
+        builder.updated_at = DatabaseUpdate::SetValue(chrono::Utc::now().into());
         let changeset = builder.build();
         diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
             .set(&changeset)

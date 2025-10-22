@@ -14,9 +14,7 @@ mod tests {
         models::chats::MessageRole,
         services::lorebook::LorebookService, // Added for LorebookService
         state::AppStateServices,
-        test_helpers::{
-            db::setup_test_database, MockAiClient, MockEmbeddingClient, MockQdrantClientService,
-        },
+        test_helpers::{db::create_test_pool, MockAiClient, MockEmbeddingClient, MockQdrantClientService},
         text_processing::chunking::ChunkingMetric,
     };
     use chrono::Utc;
@@ -222,7 +220,7 @@ mod tests {
     ) {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         let mock_embed_client = Arc::new(MockEmbeddingClient::new());
-        let (pool, _test_db_name) = setup_test_database(None).await;
+        let (pool, _test_db_name) = create_test_pool(None).await;
         let config = Arc::new(Config::default());
         let ai_client = Arc::new(MockAiClient::new());
 

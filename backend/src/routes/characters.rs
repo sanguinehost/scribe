@@ -6,6 +6,8 @@
 use crate::auth::session_dek::SessionDek;
 use crate::crypto;
 use crate::errors::AppError;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};
 use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterDataForClient};
@@ -355,6 +357,7 @@ pub async fn upload_character_handler(
 
     info!(?new_character_for_db.name, user_id = %local_user_id, "Attempting to insert character into DB for user");
 
+    #[cfg(feature = "postgres-backend")]
     let conn_insert_op = state
         .pool
         .get()
@@ -397,11 +400,14 @@ pub async fn upload_character_handler(
 
     info!(character_id = %returned_id, "Character basic info returned after insert");
 
+    #[cfg(feature = "postgres-backend")]
     let conn_fetch_op = state
         .pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    #[cfg(feature = "postgres-backend")]
     let inserted_character: Character = conn_fetch_op
         .interact(move |conn_select_block| {
             characters
@@ -412,6 +418,15 @@ pub async fn upload_character_handler(
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
+
+    #[cfg(feature = "sqlite-backend")]
+    let inserted_character: Character = crate::db::with_conn(&state.pool, move |conn_select_block| {
+        characters
+            .find(returned_id)
+            .select(Character::as_select())
+            .get_result::<Character>(conn_select_block)
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
+    }).await?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
@@ -425,12 +440,14 @@ pub async fn upload_character_handler(
     );
 
     // Save asset record to database
+    #[cfg(feature = "postgres-backend")]
     let conn_asset_op = state
         .pool
         .get()
         .await
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
+    #[cfg(feature = "postgres-backend")]
     let asset_result: Result<CharacterAsset, diesel::result::Error> = conn_asset_op
         .interact(move |conn_asset_block| {
             diesel::insert_into(character_assets)
@@ -443,6 +460,26 @@ pub async fn upload_character_handler(
             AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
         })?;
 
+    #[cfg(feature = "sqlite-backend")]
+    let asset_result: Result<CharacterAsset, diesel::result::Error> = {
+        use diesel::prelude::*;
+        let new_asset_clone = new_asset.clone();
+        let asset_id = new_asset.id;
+
+        crate::db::with_conn(&state.pool, move |conn_asset_block| {
+            diesel::insert_into(character_assets)
+                .values(&new_asset_clone)
+                .execute(conn_asset_block)
+                .map_err(|e| e)?;
+
+            // Fetch the inserted asset
+            character_assets
+                .find(asset_id)
+                .select(CharacterAsset::as_select())
+                .first::<CharacterAsset>(conn_asset_block)
+        }).await
+    };
+
     match asset_result {
         Ok(asset) => {
             info!(character_id = %inserted_character.id, asset_id = asset.id, "Character avatar stored in database successfully");
@@ -450,12 +487,15 @@ pub async fn upload_character_handler(
             // Update character record with asset reference (asset ID as string)
             let character_id_for_update = inserted_character.id;
             let asset_id_for_update = asset.id.to_string();
+
+            #[cfg(feature = "postgres-backend")]
             let conn_update_op = state
                 .pool
                 .get()
                 .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
+            #[cfg(feature = "postgres-backend")]
             let update_result = conn_update_op
                 .interact(move |conn_update_block| {
                     diesel::update(characters.find(character_id_for_update))
@@ -468,6 +508,14 @@ pub async fn upload_character_handler(
                         "Avatar update interaction error: {e}"
                     ))
                 })?;
+
+            #[cfg(feature = "sqlite-backend")]
+            let update_result = crate::db::with_conn(&state.pool, move |conn_update_block| {
+                diesel::update(characters.find(character_id_for_update))
+                    .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
+                    .execute(conn_update_block)
+                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Avatar update error: {e}")))
+            }).await?;
 
             match update_result {
                 Ok(_) => {
@@ -670,21 +718,13 @@ pub async fn list_characters_handler(
 
     info!(%local_user_id, "Listing characters for user");
 
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
-    let characters_db: Vec<Character> = conn
-        .interact(move |conn_block| {
-            characters
-                .filter(user_id.eq(local_user_id))
-                .select(Character::as_select()) // Select full Character
-                .load::<Character>(conn_block)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await??;
+    let characters_db: Vec<Character> = crate::db::with_conn(&state.pool, move |conn_block| {
+        characters
+            .filter(user_id.eq(local_user_id))
+            .select(Character::as_select())
+            .load::<Character>(conn_block)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    }).await?;
 
     let mut characters_for_client = Vec::new();
     for char_db in characters_db {
@@ -714,51 +754,31 @@ pub async fn get_character_handler(
     info!(target: "test_log", %character_id, %user_id_val, "Attempting to get character details for user (hybrid auth: direct owner OR session-based)");
 
     // --- Try 1: Direct Ownership Check ---
-    let conn_direct_owner_check = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
     let user_id_for_direct_clone = user_id_val;
     let character_id_for_direct_clone = character_id;
 
     let directly_owned_character_result: Result<Option<Character>, AppError> =
-        conn_direct_owner_check
-            .interact(move |conn| {
-                characters
-                    .filter(
-                        id.eq(character_id_for_direct_clone)
-                            .and(user_id.eq(user_id_for_direct_clone)),
-                    )
-                    .select(Character::as_select())
-                    .first::<Character>(conn)
-                    .optional()
-                    .map_err(|e| {
-                        error!(
-                            target: "test_log",
-                            handler = "get_character_handler (direct ownership query)",
-                            %character_id_for_direct_clone,
-                            %user_id_for_direct_clone,
-                            error = %e,
-                            "DB error during direct ownership character query."
-                        );
-                        AppError::DatabaseQueryError(e.to_string())
-                    })
-            })
-            .await // For the outer Result from interact (e.g., PoolError)
-            .map_err(|interact_err| {
-                error!(
-                    target: "test_log",
-                    handler = "get_character_handler (direct ownership interact)",
-                    %character_id,
-                    %user_id_val,
-                    error = ?interact_err,
-                    "Interact error during direct ownership character fetch."
-                );
-                AppError::DbInteractError(format!(
-                    "Interact error during direct ownership character fetch: {interact_err}"
-                ))
-            })?;
+        crate::db::with_conn(&state.pool, move |conn| {
+            characters
+                .filter(
+                    id.eq(character_id_for_direct_clone)
+                        .and(user_id.eq(user_id_for_direct_clone)),
+                )
+                .select(Character::as_select())
+                .first::<Character>(conn)
+                .optional()
+                .map_err(|e| {
+                    error!(
+                        target: "test_log",
+                        handler = "get_character_handler (direct ownership query)",
+                        %character_id_for_direct_clone,
+                        %user_id_for_direct_clone,
+                        error = %e,
+                        "DB error during direct ownership character query."
+                    );
+                    AppError::DatabaseQueryError(e.to_string())
+                })
+        }).await?;
 
     match directly_owned_character_result {
         Ok(Some(character)) => {
@@ -798,57 +818,38 @@ pub async fn get_character_handler(
 
     // --- Try 2: Session-Based Authorization Check (if not directly owned) ---
     info!(target: "test_log", %character_id, %user_id_val, "Attempting session-based auth for character details");
-    let conn_auth_check = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
     let user_id_for_session_clone = user_id_val;
     let character_id_for_session_clone = character_id;
 
-    let has_session_with_character: bool = conn_auth_check
-        .interact(move |conn| {
-            diesel::select(diesel::dsl::exists(
-                chat_sessions::table
-                    .filter(chat_sessions::user_id.eq(user_id_for_session_clone))
-                    .filter(chat_sessions::character_id.eq(character_id_for_session_clone))
-            ))
-            .get_result::<bool>(conn)
-            .or_else(|e| if e == DieselError::NotFound {
-                     error!(
-                        target: "test_log",
-                        handler = "get_character_handler (session link exists query)",
-                        %character_id_for_session_clone,
-                        %user_id_for_session_clone,
-                        error = %e,
-                        "DieselError::NotFound encountered unexpectedly for exists query. Interpreting as false."
-                    );
-                    Ok(false)
-                } else {
-                    error!(
-                        target: "test_log",
-                        handler = "get_character_handler (session link exists query)",
-                        %character_id_for_session_clone,
-                        %user_id_for_session_clone,
-                        error = %e,
-                        "DB error checking session link."
-                    );
-                    Err(AppError::DatabaseQueryError(format!("DB error checking session link: {e}")))
-                })
-        })
-        .await
-        .map_err(|e| {
-             error!(
-                target: "test_log",
-                handler = "get_character_handler (session link interact)",
-                %character_id,
-                %user_id_val,
-                error = %e,
-                "Interact dispatch error checking session link."
-            );
-            AppError::DbInteractError(format!("Interact error checking session link: {e}"))
-        })??;
+    let has_session_with_character: bool = crate::db::with_conn(&state.pool, move |conn| {
+        diesel::select(diesel::dsl::exists(
+            chat_sessions::table
+                .filter(chat_sessions::user_id.eq(user_id_for_session_clone))
+                .filter(chat_sessions::character_id.eq(character_id_for_session_clone))
+        ))
+        .get_result::<bool>(conn)
+        .or_else(|e| if e == DieselError::NotFound {
+                 error!(
+                    target: "test_log",
+                    handler = "get_character_handler (session link exists query)",
+                    %character_id_for_session_clone,
+                    %user_id_for_session_clone,
+                    error = %e,
+                    "DieselError::NotFound encountered unexpectedly for exists query. Interpreting as false."
+                );
+                Ok(false)
+            } else {
+                error!(
+                    target: "test_log",
+                    handler = "get_character_handler (session link exists query)",
+                    %character_id_for_session_clone,
+                    %user_id_for_session_clone,
+                    error = %e,
+                    "DB error checking session link."
+                );
+                Err(AppError::DatabaseQueryError(format!("DB error checking session link: {e}")))
+            })
+    }).await?;
 
     if !has_session_with_character {
         info!(
@@ -872,42 +873,25 @@ pub async fn get_character_handler(
         "User has session link. Fetching character by ID."
     );
 
-    let conn_char_fetch = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
     let character_id_for_fetch_clone = character_id;
 
-    let character_db_result: Option<Character> = conn_char_fetch
-        .interact(move |conn| {
-            characters
-                .filter(id.eq(character_id_for_fetch_clone))
-                .select(Character::as_select())
-                .first::<Character>(conn)
-                .optional()
-                .map_err(|e| {
-                    error!(
-                        target: "test_log",
-                        handler = "get_character_handler (fetch by ID after session auth)",
-                        %character_id_for_fetch_clone,
-                        error = %e,
-                        "DB error fetching character by ID (after session auth)."
-                    );
-                    AppError::DatabaseQueryError(format!("DB error fetching character by ID: {e}"))
-                })
-        })
-        .await
-        .map_err(|e| {
-            error!(
-                target: "test_log",
-                handler = "get_character_handler (fetch by ID interact)",
-                %character_id,
-                error = %e,
-                "Interact dispatch error fetching character by ID."
-            );
-            AppError::DbInteractError(format!("Interact error fetching character by ID: {e}"))
-        })??;
+    let character_db_result: Option<Character> = crate::db::with_conn(&state.pool, move |conn| {
+        characters
+            .filter(id.eq(character_id_for_fetch_clone))
+            .select(Character::as_select())
+            .first::<Character>(conn)
+            .optional()
+            .map_err(|e| {
+                error!(
+                    target: "test_log",
+                    handler = "get_character_handler (fetch by ID after session auth)",
+                    %character_id_for_fetch_clone,
+                    error = %e,
+                    "DB error fetching character by ID (after session auth)."
+                );
+                AppError::DatabaseQueryError(format!("DB error fetching character by ID: {e}"))
+            })
+    }).await?;
 
     if let Some(character) = character_db_result {
         info!(
@@ -1117,25 +1101,16 @@ pub async fn delete_character_handler(
     let local_user_id = user.id;
     info!(target: "handler_log", user_id = %local_user_id, target_character_id = %character_id, "User attempting to DELETE character.");
 
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
-    let character_exists = conn
-        .interact(move |conn_block| {
-            tracing::info!(target: "test_log", %character_id, "Checking if character exists at all");
-            let exists = characters
-                .filter(id.eq(character_id))
-                .select(id)  // Just select the ID for efficiency
-                .first::<crate::DbUuid>(conn_block)
-                .optional()
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()));
-            exists.map(|opt| opt.is_some())
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(format!("Interact error checking character: {e}")))?;
+    let character_exists = crate::db::with_conn(&state.pool, move |conn_block| {
+        tracing::info!(target: "test_log", %character_id, "Checking if character exists at all");
+        let exists = characters
+            .filter(id.eq(character_id))
+            .select(id)
+            .first::<crate::DbUuid>(conn_block)
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()));
+        exists.map(|opt| opt.is_some())
+    }).await?;
 
     if !character_exists? {
         info!(target: "test_log", %character_id, "Character does not exist at all");
@@ -1147,34 +1122,21 @@ pub async fn delete_character_handler(
     // Character exists, now perform deletion with user_id filter
     info!(%character_id, %local_user_id, "Character exists, performing delete for user");
 
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
-    let rows_deleted = conn
-        .interact(move |conn_block| { // Renamed conn -> conn_block for clarity
-            // Log inside interact block too, just in case
-            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Executing delete query in interact block"); // Log values used
-            let delete_result = diesel::delete(
-                characters
-                    .filter(id.eq(character_id))
-                    .filter(user_id.eq(local_user_id)), // Ensure this user_id_val is correct
-            );
-            let execution_result = delete_result.execute(conn_block); // Use conn_block
-            info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, ?execution_result, "Delete query execution result (inside interact)"); // Log result
-            execution_result.map_err(|e| { // Map error after logging
-                error!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Delete query failed: {}", e); // Log DB error
-                // Convert DieselError to AppError before returning from interact
-                // Note: .execute() returns usize, not typically DieselError::NotFound directly unless the connection fails entirely.
-                // The check for 0 rows deleted later handles the "not found" case for the specific character/user combo.
-                AppError::DatabaseQueryError(e.to_string())
-            })
+    let rows_deleted = crate::db::with_conn(&state.pool, move |conn_block| {
+        // Log inside interact block too, just in case
+        info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Executing delete query in interact block");
+        let delete_result = diesel::delete(
+            characters
+                .filter(id.eq(character_id))
+                .filter(user_id.eq(local_user_id)),
+        );
+        let execution_result = delete_result.execute(conn_block);
+        info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, ?execution_result, "Delete query execution result (inside interact)");
+        execution_result.map_err(|e| {
+            error!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, "Delete query failed: {}", e);
+            AppError::DatabaseQueryError(e.to_string())
         })
-        .await // First await for interact result
-        .map_err(|e| AppError::DbInteractError(format!("Interact error during delete: {e}")))? // Handle interact error
-        ?; // Second await for the Result<usize, AppError> inside interact
+    }).await?;
 
     // Log the result (rows_deleted)
     info!(target: "test_log", handler = "delete_character_handler", character_id = %character_id, user_id = %local_user_id, rows_deleted = %rows_deleted, "Delete query completed (outside interact)");
@@ -1241,53 +1203,29 @@ pub async fn get_character_asset_handler(
     tracing::info!(%character_id, %asset_id, user_id = %loggable_user_id(local_user_id), "Fetching character asset for user");
 
     // First, verify that the character belongs to the user
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
-    let character = conn
-        .interact(move |conn_block| {
-            characters
-                .find(character_id)
-                .filter(user_id.eq(local_user_id))
-                .select(Character::as_select())
-                .first::<Character>(conn_block)
-                .optional()
-        })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Character lookup interaction error: {e}"))
-        })?
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
-        })?;
+    let character = crate::db::with_conn(&state.pool, move |conn_block| {
+        characters
+            .find(character_id)
+            .filter(user_id.eq(local_user_id))
+            .select(Character::as_select())
+            .first::<Character>(conn_block)
+            .optional()
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}")))
+    }).await?;
 
     let _character = character
         .ok_or_else(|| AppError::NotFound("Character not found or not accessible".to_string()))?;
 
     // Load the asset from database
-    let conn_asset = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
-    let asset = conn_asset
-        .interact(move |conn_asset_block| {
-            character_assets
-                .find(asset_id)
-                .filter(crate::schema::character_assets::character_id.eq(character_id))
-                .select(CharacterAsset::as_select())
-                .first::<CharacterAsset>(conn_asset_block)
-                .optional()
-        })
-        .await
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Asset lookup interaction error: {e}"))
-        })?
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))?;
+    let asset = crate::db::with_conn(&state.pool, move |conn_asset_block| {
+        character_assets
+            .find(asset_id)
+            .filter(crate::schema::character_assets::character_id.eq(character_id))
+            .select(CharacterAsset::as_select())
+            .first::<CharacterAsset>(conn_asset_block)
+            .optional()
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))
+    }).await?;
 
     let asset = asset.ok_or_else(|| AppError::NotFound("Character asset not found".to_string()))?;
 
@@ -1445,5 +1383,5 @@ pub async fn analyze_style_handler(
         "recommendations": analysis.recommendations
     });
 
-    Ok(Json(result))
+    Ok(Json(result.into()))
 }

@@ -54,6 +54,7 @@ impl TemplatePreferenceService {
             }
 
             let existing = query
+                .select(TemplatePreference::as_select())
                 .first::<TemplatePreference>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -149,6 +150,7 @@ impl TemplatePreferenceService {
             }
 
             let existing = query
+                .select(TemplatePreference::as_select())
                 .first::<TemplatePreference>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -277,6 +279,7 @@ impl TemplatePreferenceService {
             // Retrieve updated preferences
             let updated = template_preferences::table
                 .filter(template_preferences::id.eq(existing_prefs.id))
+                .select(TemplatePreference::as_select())
                 .first::<TemplatePreference>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

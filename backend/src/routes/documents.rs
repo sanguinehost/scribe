@@ -6,6 +6,8 @@
 #![cfg(feature = "postgres-backend")]
 
 use crate::auth::user_store::Backend as AuthBackend;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::errors::AppError;
 use crate::models::documents::{
     CreateDocumentRequest, CreateSuggestionRequest, Document, DocumentResponse, NewDocument,
@@ -108,6 +110,7 @@ async fn get_documents_by_id_handler(
             let documents = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(id)) // Use old_documents
                 .order_by(crate::schema::old_documents::dsl::created_at.asc()) // Use old_documents
+                .select(Document::as_select())
                 .load::<Document>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
 
@@ -159,6 +162,7 @@ async fn get_document_by_id_handler(
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(id)) // Use old_documents
                 .order_by(crate::schema::old_documents::dsl::created_at.desc()) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
 
@@ -207,6 +211,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
         .interact(move |conn| {
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(id)) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
@@ -277,6 +282,7 @@ async fn create_suggestion_handler(
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(document_id)) // Use old_documents
                 .filter(crate::schema::old_documents::dsl::created_at.eq(document_created_at)) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
@@ -343,6 +349,7 @@ async fn get_suggestions_by_document_id_handler(
         .interact(move |conn| {
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(document_id)) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
@@ -370,6 +377,7 @@ async fn get_suggestions_by_document_id_handler(
         .interact(move |conn| {
             crate::schema::old_suggestions::table // Use old_suggestions
                 .filter(crate::schema::old_suggestions::dsl::document_id.eq(document_id)) // Use old_suggestions
+                .select(Suggestion::as_select())
                 .load::<Suggestion>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })

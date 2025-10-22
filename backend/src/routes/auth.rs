@@ -403,8 +403,13 @@ pub async fn login_handler(
                         AuthError::DatabaseError(db_err) => {
                             Err(AppError::DatabaseQueryError(db_err))
                         }
+                        #[cfg(feature = "postgres-backend")]
                         AuthError::PoolError(pool_err) => {
                             Err(AppError::DbPoolError(pool_err.to_string()))
+                        }
+                        #[cfg(feature = "sqlite-backend")]
+                        AuthError::PoolErrorSqlite(pool_err) => {
+                            Err(AppError::DbPoolError(pool_err))
                         }
                         AuthError::InteractError(int_err) => {
                             Err(AppError::InternalServerErrorGeneric(int_err))

@@ -446,10 +446,10 @@ impl AppError {
                         err_map.insert("message".to_string(), json!(message));
                     }
                     // Add params if they exist and are useful
-                    let params: serde_json::Map<String, crate::DbJson> = error
+                    let params: serde_json::Map<String, serde_json::Value> = error
                         .params
                         .iter()
-                        .map(|(k, v)| (k.to_string(), json!(v)))
+                        .map(|(k, v)| (k.to_string(), json!(v).into()))
                         .collect();
                     if !params.is_empty() {
                         err_map.insert("params".to_string(), json!(params));
@@ -1294,7 +1294,10 @@ impl From<crate::auth::AuthError> for AppError {
             } // This remains, not PasswordProcessingError, as From<AuthError> is generic
             crate::auth::AuthError::UserNotFound => Self::UserNotFound,
             crate::auth::AuthError::DatabaseError(msg) => Self::DatabaseQueryError(msg),
+            #[cfg(feature = "postgres-backend")]
             crate::auth::AuthError::PoolError(e) => Self::DbPoolError(e.to_string()),
+            #[cfg(feature = "sqlite-backend")]
+            crate::auth::AuthError::PoolErrorSqlite(s) => Self::DbPoolError(s),
             crate::auth::AuthError::InteractError(s) => Self::DbInteractError(s),
             crate::auth::AuthError::CryptoOperationFailed(crypto_err) => {
                 Self::InternalServerErrorGeneric(format!(

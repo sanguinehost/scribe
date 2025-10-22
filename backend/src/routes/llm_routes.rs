@@ -1515,7 +1515,7 @@ async fn get_model_capabilities(
                 "recommended_settings": registry.get_recommended_context_settings(&model_id)
             });
 
-            Ok(Json(response))
+            Ok(Json(response.into()))
         }
         None => {
             warn!("Model not found: {}", model_id);

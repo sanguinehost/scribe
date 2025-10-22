@@ -182,6 +182,7 @@ impl UsageTrackingService {
         }
 
         let usage = query
+            .select(PaymentUsageTracking::as_select())
             .first::<PaymentUsageTracking>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -265,6 +266,7 @@ impl UsageTrackingService {
         }
 
         let history = query
+            .select(PaymentUsageTracking::as_select())
             .load::<PaymentUsageTracking>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

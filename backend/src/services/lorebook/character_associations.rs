@@ -67,8 +67,8 @@ impl LorebookService {
             character_id,
             lorebook_id,
             user_id: user.id,
-            created_at: Some(Utc::now()),
-            updated_at: Some(Utc::now()),
+            created_at: Some(Utc::now().into()),
+            updated_at: Some(Utc::now().into()),
         };
 
         conn.interact(move |conn_sync| {
@@ -258,7 +258,6 @@ impl LorebookService {
                 dsl::chat_character_lorebook_overrides
                     .filter(dsl::chat_session_id.eq(chat_session_id))
                     .filter(dsl::user_id.eq(user_id))
-                    .select(crate::models::lorebooks::ChatCharacterLorebookOverride::as_select())
                     .load::<crate::models::lorebooks::ChatCharacterLorebookOverride>(conn_sync)
             })
             .await

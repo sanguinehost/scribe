@@ -34,7 +34,7 @@ impl SqlitePoolExt for DbPool {
         let pool = self.clone();
         tokio::task::spawn_blocking(move || pool.get())
             .await
-            .map_err(|e| r2d2::Error::from(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+            .unwrap_or_else(|_| Err(r2d2::Error::ConnectionError(anyhow::anyhow!("spawn_blocking panicked"))))?
     }
 }
 
@@ -106,6 +106,7 @@ pub async fn get_conn(
 ///
 /// let result = with_conn(&pool, |conn| {
 ///     // Your database operation here
+.select(User::as_select())
 ///     users::table.load::<User>(conn)
 ///         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
 /// }).await?;

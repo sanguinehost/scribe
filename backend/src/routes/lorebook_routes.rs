@@ -503,7 +503,7 @@ async fn import_lorebook_handler(
     let response: Result<axum::response::Response, AppError> = match params.format {
         ImportFormat::ScribeMinimal => {
             let scribe_payload: crate::models::lorebook_dtos::ScribeMinimalLorebook =
-                serde_json::from_value(payload).map_err(|e| {
+                serde_json::from_value(payload.0.clone()).map_err(|e| {
                     AppError::BadRequest(format!("Invalid Scribe Minimal payload: {}", e))
                 })?;
 
@@ -528,7 +528,7 @@ async fn import_lorebook_handler(
                 if entries.is_array() {
                     // This is actually a Scribe format, not SillyTavern
                     let scribe_payload: crate::models::lorebook_dtos::ScribeMinimalLorebook =
-                        serde_json::from_value(payload).map_err(|e| {
+                        serde_json::from_value(payload.0.clone()).map_err(|e| {
                             AppError::BadRequest(format!("Invalid lorebook format: {}", e))
                         })?;
 
@@ -544,7 +544,7 @@ async fn import_lorebook_handler(
                 } else if entries.is_object() {
                     // This is SillyTavern format
                     let sillytavern_import_payload: crate::models::lorebook_dtos::SillyTavernImportPayload =
-                        serde_json::from_value(payload)
+                        serde_json::from_value(payload.0.clone())
                             .map_err(|e| AppError::BadRequest(format!("Invalid SillyTavern Full payload: {}", e)))?;
 
                     // Construct LorebookUploadPayload from SillyTavernImportPayload

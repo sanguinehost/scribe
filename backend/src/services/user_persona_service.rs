@@ -5,14 +5,28 @@ use tracing::debug;
 use uuid::Uuid; // Added for logging
 
 use crate::errors::AppError;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::user_personas::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient,
 };
 use crate::models::users::{User, UserDbQuery};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::privacy::logging::loggable_user_id;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::state::DbPool;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
 // Type alias for encrypted field result
 type EncryptedFieldResult = Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
@@ -162,6 +176,7 @@ impl UserPersonaService {
             .interact(move |db_conn| {
                 user_personas_dsl::user_personas
                     .filter(user_personas_dsl::id.eq(persona_id))
+                    .select(UserPersona::as_select())
                     .first::<UserPersona>(db_conn)
                     .optional()
             })
@@ -212,6 +227,7 @@ impl UserPersonaService {
                 user_personas_dsl::user_personas
                     .filter(user_personas_dsl::user_id.eq(user_id_for_query))
                     .order(user_personas_dsl::updated_at.desc()) // Example ordering
+                    .select(UserPersona::as_select())
                     .load::<UserPersona>(db_conn)
                     .map_err(AppError::from)
             })
@@ -259,6 +275,7 @@ impl UserPersonaService {
             .interact(move |db_conn| {
                 user_personas_dsl::user_personas
                     .filter(user_personas_dsl::id.eq(persona_id))
+                    .select(UserPersona::as_select())
                     .first::<UserPersona>(db_conn)
                     .optional()
             })
@@ -423,6 +440,7 @@ impl UserPersonaService {
                 // Changed conn to db_conn
                 user_personas_dsl::user_personas
                     .filter(user_personas_dsl::id.eq(persona_id))
+                    .select(UserPersona::as_select())
                     .first::<UserPersona>(db_conn) // Changed conn to db_conn
                     .optional()
             })
@@ -564,6 +582,7 @@ impl UserPersonaService {
                 user_personas_dsl::user_personas
                     .filter(user_personas_dsl::id.eq(persona_id_val))
                     .filter(user_personas_dsl::user_id.eq(user_id_val))
+                    .select(UserPersona::as_select())
                     .first::<UserPersona>(db_conn)
                     .optional()
                     .map_err(AppError::from)

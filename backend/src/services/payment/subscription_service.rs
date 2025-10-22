@@ -367,6 +367,7 @@ impl SubscriptionService {
     ) -> Result<Option<PlanFeatures>, AppError> {
         let features = plan_features::table
             .find(plan_type)
+            .select(PlanFeatures::as_select())
             .first::<PlanFeatures>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -381,6 +382,7 @@ impl SubscriptionService {
     ) -> Result<Vec<PlanFeatures>, AppError> {
         let plans = plan_features::table
             .order(plan_features::price_cents.asc().nulls_first())
+            .select(PlanFeatures::as_select())
             .load::<PlanFeatures>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

@@ -1,18 +1,12 @@
--- SQLite Migration (Converted from PostgreSQL)
--- Original: up.sql
--- Conversion date: 2025-10-19T11:15:25.500005
---
--- IMPORTANT: Review warnings below and verify functionality
--- ================================================================
+-- SQLite Migration: Rename frontend tables to match backend tables
+-- NOTE: chats/messages tables don't exist in backend (always chat_sessions/chat_messages)
+-- But votes, documents, suggestions DO exist and need renaming
 
--- Rename frontend tables to match backend tables
--- NOTE: This migration is frontend-specific and not applicable to backend SQLite schema
--- The backend schema never had tables named 'chats' or 'messages'
--- They were always called 'chat_sessions' and 'chat_messages'
--- Making this a no-op for backend SQLite migrations
+-- Skip chats and messages (don't exist in backend schema)
+-- ALTER TABLE chats RENAME TO old_chats;
+-- ALTER TABLE messages RENAME TO old_messages;
 
--- ALTER TABLE chats RENAME TO old_chats;  -- Table doesn't exist in backend schema
--- ALTER TABLE messages RENAME TO old_messages;  -- Table doesn't exist in backend schema
--- ALTER TABLE votes RENAME TO old_votes;  -- Table doesn't exist in backend schema
--- ALTER TABLE documents RENAME TO old_documents;  -- Table doesn't exist in backend schema
--- ALTER TABLE suggestions RENAME TO old_suggestions;  -- Table doesn't exist in backend schema
+-- Rename tables that DO exist
+ALTER TABLE votes RENAME TO old_votes;
+ALTER TABLE documents RENAME TO old_documents;
+ALTER TABLE suggestions RENAME TO old_suggestions;

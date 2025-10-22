@@ -70,6 +70,7 @@ impl CreditService {
 
         let balance = dsl::user_credits
             .find(user_id)
+            .select(CreditBalance::as_select())
             .first::<CreditBalance>(conn)
             .optional()
             .map_err(|e| {
@@ -275,6 +276,7 @@ impl CreditService {
             let mut balance = user_credits::table
                 .filter(user_credits::user_id.eq(user_id))
                 .for_update()
+                .select(CreditBalance::as_select())
                 .first::<CreditBalance>(conn)
                 .map_err(|e| match e {
                     diesel::NotFound => {
@@ -1089,6 +1091,7 @@ impl CreditService {
             query = query.offset(o);
         }
 
+        .select(CreditTransaction::as_select())
         let transactions = query.load::<CreditTransaction>(conn).map_err(|e| {
             error!("Failed to get transaction history: {}", e);
             AppError::DatabaseQueryError(e.to_string())

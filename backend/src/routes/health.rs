@@ -49,7 +49,7 @@ impl HealthCheckResponse {
             status: ComponentStatus::Ok,
             version: env!("CARGO_PKG_VERSION").to_string(),
             components: HashMap::new(),
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
         }
     }
 

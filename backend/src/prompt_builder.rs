@@ -1226,11 +1226,11 @@ async fn build_final_prompt_strings(
         });
 
         if let Some(personality) = character_personality {
-            char_obj["personality"] = crate::DbJson::String(personality);
+            char_obj["personality"] = serde_json::Value::String(personality).into();
         }
 
         if let Some(description) = character_description {
-            char_obj["description"] = crate::DbJson::String(description);
+            char_obj["description"] = serde_json::Value::String(description).into();
         }
 
         template_context["char"] = char_obj;
@@ -1239,35 +1239,35 @@ async fn build_final_prompt_strings(
     // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
         template_context["persona_override"] =
-            crate::DbJson::String(calculation.persona_override_prompt_str.clone());
+            serde_json::Value::String(calculation.persona_override_prompt_str.clone()).into();
     }
 
     // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
         template_context["character_definition"] =
-            crate::DbJson::String(calculation.character_definition_str.clone());
+            serde_json::Value::String(calculation.character_definition_str.clone()).into();
     }
 
     // Add character details if available
     if !calculation.character_details_str.is_empty() {
         template_context["character_details"] =
-            crate::DbJson::String(calculation.character_details_str.clone());
+            serde_json::Value::String(calculation.character_details_str.clone()).into();
     }
 
     // Add RAG context if available
     if !enhanced_rag_context.is_empty() {
-        template_context["rag_context"] = crate::DbJson::String(enhanced_rag_context.clone());
+        template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone()).into();
     }
 
     // Add agent context as separate template variable for sections list generation
     if let Some(agent_ctx) = agent_context {
-        template_context["agent_context"] = crate::DbJson::String(agent_ctx.to_string());
+        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string()).into();
     }
 
     // Use render_with_style to inject narrative style variables into the template
     let final_system_prompt = TEMPLATE_MANAGER.render_with_style(
         template_id,
-        template_context,
+        template_context.into(),
         narrative_style.cloned(),
     )?;
 

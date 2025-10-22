@@ -1,6 +1,8 @@
 use super::get_user_from_session;
 use super::*;
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
@@ -91,7 +93,7 @@ AppError::InternalServerErrorGeneric(format!(
         let new_entry_id = Uuid::new_v4();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id,
+            id: new_entry_id.into(),
             lorebook_id,
             user_id: user.id,
             original_sillytavern_uid: None,
@@ -110,8 +112,8 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated in favor of encrypted title
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         // 3. Save to DB
@@ -1112,55 +1114,45 @@ AppError::InternalServerErrorGeneric(format!(
         // 1. Get current user
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
         // 2. Fetch lorebook entry and verify ownership in a single query
+        crate::db::with_conn(&self.pool, move |conn| {
+            use crate::schema::lorebook_entries::dsl::{id, lorebook_entries, lorebook_id, user_id};
 
-        conn
-            .interact(move |conn| {
-                use crate::schema::lorebook_entries::dsl::{id, lorebook_entries, lorebook_id, user_id};
+            // First, verify the entry exists and belongs to the user
+            let entry_owner = lorebook_entries
+                .filter(id.eq(entry_id))
+                .filter(lorebook_id.eq(lorebook_id))
+                .select(user_id)
+                .first::<crate::DbUuid>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                // First, verify the entry exists and belongs to the user
-                let entry_owner = lorebook_entries
-                    .filter(id.eq(entry_id))
-                    .filter(lorebook_id.eq(lorebook_id))
-                    .select(user_id)
-                    .first::<crate::DbUuid>(conn)
-                    .optional()
+            match entry_owner {
+                Some(owner_id) if owner_id == user.id => {
+                    // User owns this entry, proceed with deletion
+                    diesel::delete(
+                        lorebook_entries
+                            .filter(id.eq(entry_id))
+                            .filter(user_id.eq(user.id)),
+                    )
+                    .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                match entry_owner {
-                    Some(owner_id) if owner_id == user.id => {
-                        // User owns this entry, proceed with deletion
-                        diesel::delete(
-                            lorebook_entries
-                                .filter(id.eq(entry_id))
-                                .filter(user_id.eq(user.id)),
-                        )
-                        .execute(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                        tracing::info!(
-                            "Successfully deleted lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
-                        );
-                        Ok(())
-                    }
-                    Some(_) => {
-                        // Entry exists but belongs to another user
-                        Err(AppError::Forbidden("Access denied to lorebook entry".to_string()))
-                    }
-                    None => {
-                        // Entry doesn't exist
-                        Err(AppError::NotFound("Lorebook entry not found".to_string()))
-                    }
+                    tracing::info!(
+                        "Successfully deleted lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
+                    );
+                    Ok(())
                 }
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))?
+                Some(_) => {
+                    // Entry exists but belongs to another user
+                    Err(AppError::Forbidden("Access denied to lorebook entry".to_string()))
+                }
+                None => {
+                    // Entry doesn't exist
+                    Err(AppError::NotFound("Lorebook entry not found".to_string()))
+                }
+            }
+        }).await?
     }
 
     /// Create a lorebook entry for narrative intelligence processing
@@ -1242,7 +1234,7 @@ AppError::InternalServerErrorGeneric(format!(
         let new_entry_id = Uuid::new_v4();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id,
+            id: new_entry_id.into(),
             lorebook_id: target_lorebook_id,
             user_id,
             original_sillytavern_uid: None,
@@ -1261,8 +1253,8 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         // 3. Save to database
@@ -1441,14 +1433,14 @@ AppError::InternalServerErrorGeneric(format!(
         let current_time = Utc::now();
 
         let new_lorebook = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id,
             name: ai_lorebook_name.to_string(),
             description: Some("Automatically generated lorebook entries from AI narrative intelligence. This contains world-building information extracted from your roleplay conversations.".to_string()),
             source_format: "scribe_ai_v1".to_string(),
             is_public: false,
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         let created_lorebook = conn

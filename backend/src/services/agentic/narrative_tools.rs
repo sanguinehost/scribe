@@ -43,7 +43,7 @@ fn get_text_significance_triage_schema() -> crate::DbJson {
             }
         },
         "required": ["is_significant", "confidence", "reason", "suggested_categories"]
-    })
+    }).into()
 }
 
 /// Tool for creating a single chronicle event (atomic operation)
@@ -161,6 +161,7 @@ impl ScribeTool for CreateChronicleEventTool {
             chrono::DateTime::parse_from_rfc3339(ts_str)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .ok()
+                .map(|dt| dt.into())
         } else {
             None
         };
@@ -198,8 +199,8 @@ impl ScribeTool for CreateChronicleEventTool {
         match self
             .chronicle_service
             .create_event(
-                user_uuid,
-                chronicle_uuid,
+                user_uuid.into(),
+                chronicle_uuid.into(),
                 create_request,
                 Some(&session_dek_wrapper), // Pass SessionDek for AI-generated events encryption
             )
@@ -544,8 +545,8 @@ impl ScribeTool for CreateLorebookEntryTool {
         match self
             .lorebook_service
             .create_entry_for_narrative_intelligence(
-                user_uuid,
-                lorebook_id,
+                user_uuid.into(),
+                lorebook_id.map(|id| id.into()),
                 name.to_string(),
                 content.to_string(),
                 keywords,
@@ -945,7 +946,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
             if includes_lorebooks {
                 // Fetch lorebook IDs associated with this session
-                let lorebook_ids = self.get_session_lorebook_ids(session_id, user_id).await?;
+                let lorebook_ids = self.get_session_lorebook_ids(session_id.into(), user_id.into()).await?;
                 info!(
                     "Session {} has {} associated lorebooks: {:?}",
                     session_id,
@@ -1084,7 +1085,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
             // Get all lorebook IDs from all sessions in this chronicle
             let chronicle_lorebook_ids =
-                match self.get_chronicle_lorebook_ids(chronicle_id, user_id).await {
+                match self.get_chronicle_lorebook_ids(chronicle_id.into(), user_id.into()).await {
                     Ok(ids) => ids,
                     Err(e) => {
                         warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
@@ -1281,7 +1282,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             // Try to parse as different metadata types
             if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if lorebook_meta.user_id != user_id {
+                if lorebook_meta.user_id != user_id.into() {
                     error!(
                         "SECURITY VIOLATION: Lorebook result for user {} returned to user {}",
                         lorebook_meta.user_id, user_id
@@ -1384,7 +1385,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 }
             } else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if chat_meta.user_id != user_id {
+                if chat_meta.user_id != user_id.into() {
                     error!(
                         "SECURITY VIOLATION: Chat result for user {} returned to user {}",
                         chat_meta.user_id, user_id
@@ -1436,7 +1437,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             } else if let Ok(chronicle_meta) = ChronicleEventMetadata::try_from(payload_map.clone())
             {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if chronicle_meta.user_id != user_id {
+                if chronicle_meta.user_id != user_id.into() {
                     error!(
                         "SECURITY VIOLATION: Chronicle result for user {} returned to user {}",
                         chronicle_meta.user_id, user_id
@@ -1511,7 +1512,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
                     // Prioritize results from the specified chronicle_id
                     if let Some(target_chronicle_id) = chronicle_id_opt {
-                        if chronicle_meta.chronicle_id == target_chronicle_id {
+                        if chronicle_meta.chronicle_id == target_chronicle_id.into() {
                             chronicle_priority_results.push(result);
                         } else {
                             results.push(result);
@@ -2171,8 +2172,8 @@ You must respond with a JSON object containing an array of {} entries."#,
             match self
                 .lorebook_service
                 .create_entry_for_narrative_intelligence(
-                    user_uuid,
-                    lorebook_id,
+                    user_uuid.into(),
+                    lorebook_id.map(|id| id.into()),
                     entry_output.name.clone(),
                     entry_output.content.clone(),
                     keywords,

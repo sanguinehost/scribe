@@ -300,7 +300,7 @@ impl ChronicleService {
                         .set((
                             player_chronicles::name.eq(name),
                             player_chronicles::description.eq(description),
-                            player_chronicles::updated_at.eq(Utc::now()),
+                            player_chronicles::updated_at.eq(Utc::now().into()),
                         ))
                         .execute(conn),
                     (Some(name), None) => diesel::update(target)
@@ -451,14 +451,14 @@ impl ChronicleService {
 
         // Create temporary event for deduplication check
         let temp_event = ChronicleEvent {
-            id: Uuid::new_v4(), // Temporary ID
+            id: Uuid::new_v4().into(), // Temporary ID
             chronicle_id: new_event.chronicle_id,
             user_id: new_event.user_id,
             event_type: new_event.event_type.clone(),
             summary: new_event.summary.clone(),
             source: new_event.source.clone(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
             summary_encrypted: new_event.summary_encrypted.clone(),
             summary_nonce: new_event.summary_nonce.clone(),
             timestamp_iso8601: new_event.timestamp_iso8601,

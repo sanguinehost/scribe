@@ -237,7 +237,7 @@ impl FieldGenerator {
             .await?;
 
         // Parse the structured output
-        let mut field_output: CharacterFieldOutput = serde_json::from_value(generated_output)
+        let mut field_output: CharacterFieldOutput = serde_json::from_value(generated_output.0)
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse field generation output: {}",
@@ -1238,7 +1238,7 @@ Show different scenarios, moods, or personality aspects."#
                     "reasoning": "Generated as plain text response due to JSON parsing failure",
                     "style_applied": "auto",
                     "quality_score": 7
-                }))
+                }).into())
             }
         }
     }
@@ -1375,7 +1375,7 @@ Provide a detailed analysis including:
             .await?;
 
         // Parse the structured output
-        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output)
+        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output.0)
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse style analysis output: {}",

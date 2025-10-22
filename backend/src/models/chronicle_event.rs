@@ -164,6 +164,7 @@ impl ChronicleEvent {
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = chronicle_events)]
 pub struct NewChronicleEvent {
+    pub id: Option<crate::DbUuid>,
     pub chronicle_id: crate::DbUuid,
     pub user_id: crate::DbUuid,
     #[validate(length(
@@ -200,6 +201,7 @@ impl NewChronicleEvent {
         chat_session_id: Option<crate::DbUuid>,
     ) -> Self {
         Self {
+            id: None,
             chronicle_id,
             user_id,
             event_type,
@@ -207,7 +209,7 @@ impl NewChronicleEvent {
             source: source.to_string(),
             summary_encrypted: None, // Will be set by service if encryption is available
             summary_nonce: None,     // Will be set by service if encryption is available
-            timestamp_iso8601: Utc::now(),
+            timestamp_iso8601: Utc::now().into(),
             keywords: keywords.map(|k| k.into_iter().map(Some).collect()),
             keywords_encrypted: None, // Will be set by service if encryption is available
             keywords_nonce: None,     // Will be set by service if encryption is available
@@ -366,9 +368,10 @@ impl Default for EventFilter {
 
 impl From<CreateEventRequest> for NewChronicleEvent {
     fn from(request: CreateEventRequest) -> Self {
-        let timestamp = request.timestamp_iso8601.unwrap_or_else(Utc::now);
+        let timestamp = request.timestamp_iso8601.unwrap_or_else(|| Utc::now().into());
 
         Self {
+            id: None,
             chronicle_id: Uuid::nil(), // Will be set by the service
             user_id: Uuid::nil(),      // Will be set by the service
             event_type: request.event_type,

@@ -10,17 +10,33 @@ use std::net::SocketAddr;
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::embeddings::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use genai::chat::Usage; // Added ChunkConfig
                         // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::{
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
     // Ensure build_gemini_client is removed if present
@@ -56,10 +72,14 @@ use crate::{
 // Conditionally import documents module (PostgreSQL only)
 #[cfg(feature = "postgres-backend")]
 use crate::routes::documents::document_routes;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
 // Conditionally import pool type (PostgreSQL only - test_helpers currently PostgreSQL-only)
 #[cfg(feature = "postgres-backend")]
 use crate::PgPool;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
@@ -108,9 +128,14 @@ use tower_sessions::{
 }; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
+use crate::db::{DbUuid, DbPool}; // Added for backend-agnostic database types
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 #[cfg(feature = "local-llm")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "local-llm")]
@@ -1096,7 +1121,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
 // --- END Placeholder Mock Definitions ---
 
 pub struct TestAppStateBuilder {
-    db_pool: PgPool,
+    db_pool: DbPool,
     config: Arc<Config>,
     ai_client: Arc<dyn AiClient + Send + Sync>,
     embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
@@ -1112,7 +1137,7 @@ pub struct TestAppStateBuilder {
 impl TestAppStateBuilder {
     #[must_use]
     pub fn new(
-        db_pool: PgPool,
+        db_pool: DbPool,
         config: Arc<Config>,
         ai_client: Arc<dyn AiClient + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
@@ -1344,7 +1369,7 @@ pub fn ensure_rustls_provider_installed() {
 pub struct TestApp {
     pub address: String,
     pub router: Router,
-    pub db_pool: PgPool,
+    pub db_pool: DbPool,
     pub test_db_name: Option<String>, // Test database name for cleanup
     pub config: Arc<Config>,          // Add config field
     // Store the actual AI client being used (could be real or mock)
@@ -1593,23 +1618,60 @@ pub async fn spawn_app_with_rate_limiting_options(
         .unwrap_or_else(|| std::path::PathBuf::from(".."));
     dotenvy::from_path(project_root.join(".env")).ok();
 
-    let test_db_name_suffix = if multi_thread {
-        Some(Uuid::new_v4().to_string()) // Ensure it's String for suffix
-    } else {
-        None
+    // PostgreSQL: Create unique test database per test (if multi-threaded)
+    #[cfg(feature = "postgres-backend")]
+    let (pool, test_db_name) = {
+        let test_db_name_suffix = if multi_thread {
+            Some(DbUuid::new_v4().to_string()) // Ensure it's String for suffix
+        } else {
+            None
+        };
+        db::setup_test_database(test_db_name_suffix.as_deref()).await
     };
-    let (pool, test_db_name) = db::setup_test_database(test_db_name_suffix.as_deref()).await;
+
+    // SQLite: Use in-memory database for tests
+    #[cfg(feature = "sqlite-backend")]
+    let (pool, test_db_name) = {
+        use diesel::r2d2::{ConnectionManager, Pool};
+        use diesel_migrations::MigrationHarness;
+
+        let database_url = if multi_thread {
+            // Each test gets a unique in-memory database
+            format!(":memory:?cache=private&uuid={}", DbUuid::new_v4())
+        } else {
+            ":memory:".to_string()
+        };
+
+        let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("Failed to create SQLite test pool");
+
+        // Run migrations on in-memory database
+        let mut conn = pool.get().expect("Failed to get connection for migrations");
+        const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations_sqlite");
+        conn.run_pending_migrations(MIGRATIONS)
+            .expect("Failed to run SQLite migrations");
+
+        (pool, String::new()) // SQLite uses in-memory, no real database name
+    };
 
     let mut config_loader = Config::load().expect("Failed to load test configuration");
-    if let Some(ref suffix) = test_db_name_suffix {
-        config_loader.database_url = Some(format!(
-            "{}_{}",
-            config_loader
-                .database_url
-                .unwrap_or_else(|| "postgres://user:pass@localhost/testdb".to_string()), // Provide a default if None
-            suffix
-        ));
+
+    // PostgreSQL-specific database URL configuration
+    #[cfg(feature = "postgres-backend")]
+    {
+        // Note: For PostgreSQL, the database_url is already set by setup_test_database
+        // This is kept for potential future configuration needs
     }
+
+    // SQLite-specific database URL configuration
+    #[cfg(feature = "sqlite-backend")]
+    {
+        config_loader.database_url = Some(":memory:".to_string());
+    }
+
     config_loader.port = 0;
 
     // Enable credit system for integration tests
@@ -1876,16 +1938,28 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
                                              // Import AppError
 
-    use crate::PgPool; // This should refer to the top-level crate::PgPool
+    use crate::db::DbPool; // Backend-agnostic pool type
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use uuid::Uuid;
+
+    // PostgreSQL-specific imports
+    #[cfg(feature = "postgres-backend")]
+    use crate::PgPool;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
     // For logging macros
     use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
     use crate::auth::{self};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     #[cfg(feature = "postgres-backend")]
     use deadpool_diesel::postgres::{
         Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
@@ -1899,9 +1973,51 @@ pub mod db {
     };
     // Keep if CryptoError is used directly, else it comes via crate::crypto
     use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                        // and UserDbQuery is imported above
 
-    /// Sets up a clean test database with migrations run.
+    /// Creates a test database pool (backend-agnostic).
+    ///
+    /// For PostgreSQL: Creates a new test database with migrations.
+    /// For SQLite: Creates an in-memory database with migrations.
+    ///
+    /// Returns (pool, test_db_name) for PostgreSQL, (pool, "") for SQLite.
+    pub async fn create_test_pool(db_name_suffix: Option<&str>) -> (DbPool, String) {
+        #[cfg(feature = "postgres-backend")]
+        {
+            setup_test_database(db_name_suffix).await
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            use diesel::r2d2::{ConnectionManager, Pool};
+            use super::DbUuid;
+
+            let database_url = if db_name_suffix.is_some() {
+                format!(":memory:?cache=private&uuid={}", DbUuid::new_v4())
+            } else {
+                ":memory:".to_string()
+            };
+
+            let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
+            let pool = Pool::builder()
+                .max_size(1)
+                .build(manager)
+                .expect("Failed to create SQLite test pool");
+
+            // Run migrations
+            let mut conn = pool.get().expect("Failed to get connection for migrations");
+            const MIGRATIONS: diesel_migrations::EmbeddedMigrations =
+                diesel_migrations::embed_migrations!("migrations_sqlite");
+            conn.run_pending_migrations(MIGRATIONS)
+                .expect("Failed to run SQLite migrations");
+
+            (pool, String::new())
+        }
+    }
+
+    /// Sets up a clean test database with migrations run (PostgreSQL only).
     ///
     /// # Panics
     ///
@@ -1979,7 +2095,7 @@ pub mod db {
     ///
     /// Returns an error if the database operation fails
     pub async fn create_test_user(
-        pool: &PgPool,
+        pool: &DbPool,
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
@@ -2084,7 +2200,7 @@ pub mod db {
     ///
     /// Returns an error if the database operation fails
     pub async fn create_pending_test_user(
-        pool: &PgPool,
+        pool: &DbPool,
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
@@ -2193,13 +2309,19 @@ pub mod db {
     ///
     /// Returns an error if the database operation fails
     pub async fn create_test_character(
-        pool: &PgPool,
+        pool: &DbPool,
         user_id: crate::DbUuid,
         name: String,
     ) -> Result<crate::models::characters::Character, anyhow::Error> {
         use crate::models::character_card::NewCharacter;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         use crate::models::characters::Character; // Already imported at top of file usually
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                                   // use crate::schema::characters; // Already imported at top of file usually
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         use chrono::Utc;
 
         let conn = crate::db::get_conn(&pool).await?;
@@ -2360,7 +2482,7 @@ pub mod db {
 ///
 /// Note: The test database itself is cleaned up automatically by TestAppGuard.
 pub struct TestDataGuard {
-    pool: PgPool,
+    pool: DbPool,
     test_db_name: Option<String>,
     user_ids: Vec<crate::DbUuid>,
     character_ids: Vec<crate::DbUuid>,
@@ -2386,7 +2508,7 @@ impl fmt::Debug for TestDataGuard {
 
 impl TestDataGuard {
     #[must_use]
-    pub fn new(pool: PgPool, test_db_name: Option<String>) -> Self {
+    pub fn new(pool: DbPool, test_db_name: Option<String>) -> Self {
         // Changed to PgPool and added test_db_name parameter
         Self {
             pool,
@@ -2653,7 +2775,7 @@ pub fn db_specific_cleanup(
 /// - The login response doesn't have the expected status code
 pub async fn create_user_with_dek_in_session(
     app_router: &Router, // Pass the app router to make login requests
-    pool: &PgPool,
+    pool: &DbPool,
     username: String,
     password_str: String,
     plaintext_dek: Option<SecretString>, // Option to allow no DEK for some tests

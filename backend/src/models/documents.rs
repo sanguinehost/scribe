@@ -6,7 +6,7 @@ use crate::DbUuid as Uuid;
 
 // Document model
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
-#[diesel(table_name = crate::schema::old_documents)] // Use old_documents
+#[diesel(table_name = crate::schema::old_documents)]
 #[diesel(primary_key(id, created_at))]
 #[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
 #[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
@@ -34,7 +34,7 @@ impl std::fmt::Debug for Document {
 
 // New Document for insertion
 #[derive(Insertable)]
-#[diesel(table_name = crate::schema::old_documents)] // Use old_documents
+#[diesel(table_name = crate::schema::old_documents)]
 pub struct NewDocument {
     pub id: crate::DbUuid,
     pub created_at: DbDateTime,
@@ -59,7 +59,7 @@ impl std::fmt::Debug for NewDocument {
 
 // Suggestion model
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
-#[diesel(table_name = crate::schema::old_suggestions)] // Use old_suggestions
+#[diesel(table_name = crate::schema::old_suggestions)]
 #[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
 #[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct Suggestion {
@@ -93,7 +93,7 @@ impl std::fmt::Debug for Suggestion {
 
 // New Suggestion for insertion
 #[derive(Insertable)]
-#[diesel(table_name = crate::schema::old_suggestions)] // Use old_suggestions
+#[diesel(table_name = crate::schema::old_suggestions)]
 pub struct NewSuggestion {
     pub id: crate::DbUuid,
     pub document_id: crate::DbUuid,

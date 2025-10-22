@@ -979,7 +979,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         agent_context_analysis::status.eq(AnalysisStatus::Pending.to_string()),
                         agent_context_analysis::retry_count.eq(0),
                         agent_context_analysis::model_used.eq(Some("gemini-2.5-flash-lite")),
-                        agent_context_analysis::created_at.eq(chrono::Utc::now()),
+                        agent_context_analysis::created_at.eq(chrono::Utc::now().into()),
                         agent_context_analysis::updated_at.eq(chrono::Utc::now()),
                     ))
                     .execute(conn)
@@ -1043,7 +1043,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     Some(nonce),
                 )
             } else {
-                (Some(serde_json::to_value(execution_log)?), None)
+                (Some(serde_json::to_value(execution_log)?.into()), None)
             }
         };
 

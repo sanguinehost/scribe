@@ -233,9 +233,9 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             // 2c. Create Qdrant point
             let point_id = Uuid::new_v4(); // Unique ID per chunk point
             let point = match create_qdrant_point(
-                point_id,
+                point_id.into(),
                 embedding_vector,
-                Some(serde_json::to_value(metadata)?),
+                Some(serde_json::to_value(metadata)?.into()),
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -429,9 +429,9 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
         let point_id = Uuid::new_v4(); // Unique ID for the atomic lorebook entry
         let point = match create_qdrant_point(
-            point_id,
+            point_id.into(),
             embedding_vector,
-            Some(serde_json::to_value(metadata)?),
+            Some(serde_json::to_value(metadata)?.into()),
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -1172,7 +1172,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         if let Some(chat_session_id) = event.chat_session_id {
-            event_json["chat_session_id"] = crate::DbJson::String(chat_session_id.to_string());
+            event_json["chat_session_id"] = crate::DbJson::String(chat_session_id.to_string()).into();
         }
 
         // Encrypt content if SessionDek is available
@@ -1254,7 +1254,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             metadata_json["chunk_text_nonce"] = serde_json::json!(nonce);
         }
 
-        let point = match create_qdrant_point(point_id, embedding_vector, Some(metadata_json)) {
+        let point = match create_qdrant_point(point_id.into(), embedding_vector, Some(metadata_json.into())) {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
