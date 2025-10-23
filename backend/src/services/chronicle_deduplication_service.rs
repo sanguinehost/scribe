@@ -43,7 +43,7 @@ pub struct DuplicateDetectionResult {
     /// Whether a duplicate was found
     pub is_duplicate: bool,
     /// The duplicate event ID if found
-    pub duplicate_event_id: Option<crate::DbUuid>,
+    pub duplicate_event_id: Option<crate::db::DbId>,
     /// Confidence score of the duplicate detection (0.0-1.0)
     pub confidence: f32,
     /// Reasoning for the duplicate detection
@@ -152,7 +152,8 @@ impl ChronicleDeduplicationService {
                 .select(ChronicleEvent::as_select())
                 .load::<ChronicleEvent>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        }).await?;
+        })
+        .await?;
 
         Ok(events)
     }
@@ -287,9 +288,9 @@ impl ChronicleDeduplicationService {
     #[instrument(skip(self))]
     pub async fn find_duplicate_events(
         &self,
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
-    ) -> Result<Vec<(crate::DbUuid, crate::DbUuid)>, AppError> {
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    ) -> Result<Vec<(crate::db::DbId, crate::db::DbId)>, AppError> {
         debug!("Finding duplicate events for chronicle {}", chronicle_id);
 
         // Get all events for the chronicle
@@ -301,7 +302,8 @@ impl ChronicleDeduplicationService {
                 .select(ChronicleEvent::as_select())
                 .load::<ChronicleEvent>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        }).await?;
+        })
+        .await?;
 
         let mut duplicates = Vec::new();
 
@@ -393,13 +395,13 @@ mod tests {
     //     let service = ChronicleDeduplicationService::new(pool, None);
 
     //     let event1 = create_test_event_with_actors("DISCOVERED", vec![
-    //         (Uuid::new_v4(), "AGENT"),
-    //         (Uuid::new_v4(), "PATIENT"),
+    //         (DbId::new(), "AGENT"),
+    //         (DbId::new(), "PATIENT"),
     //     ]);
 
     //     let event2 = create_test_event_with_actors("DISCOVERED", vec![
     //         (event1.get_actors().unwrap()[0].entity_id, "AGENT"), // Same entity
-    //         (Uuid::new_v4(), "WITNESS"), // Different entity
+    //         (DbId::new(), "WITNESS"), // Different entity
     //     ]);
 
     //     let overlap = service.calculate_actor_overlap(&event1, &event2).await.unwrap();
@@ -408,9 +410,9 @@ mod tests {
 
     fn create_test_event(action: &str) -> ChronicleEvent {
         ChronicleEvent {
-            id: Uuid::new_v4(),
-            chronicle_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            chronicle_id: DbId::new(),
+            user_id: DbId::new(),
             event_type: "TEST.EVENT".to_string(),
             summary: format!("Test event with action: {}", action),
             source: "AI_EXTRACTED".to_string(),

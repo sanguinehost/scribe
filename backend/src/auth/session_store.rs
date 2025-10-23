@@ -11,8 +11,8 @@ use diesel::result::Error as DieselError;
 // use secrecy::{ExposeSecret, SecretString};
 use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
+use crate::db::DbTimestamp; // Import backend-agnostic DateTime type
 use crate::state::DbPool; // Import DbPool type alias
-use crate::db::DbDateTime; // Import backend-agnostic DateTime type
 use axum_login::tower_sessions::{
     session::{Id, Record}, // Use tower_sessions::session types
     session_store,
@@ -28,12 +28,18 @@ use tracing::{debug, error, info, instrument};
 #[derive(Queryable, Selectable, Insertable, AsChangeset, Identifiable, Debug, Clone)]
 #[diesel(table_name = sessions)]
 #[diesel(primary_key(id))] // Explicitly define primary key if not id by convention
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct SessionRecord {
     pub id: String, // Keep as String to match DB schema (Text)
     // Use chrono::DateTime<Utc> for TIMESTAMPTZ
-    pub expires: Option<crate::DbDateTime>,
+    pub expires: Option<crate::DbTimestamp>,
     // Session data is likely stringified JSON or similar
     pub session: String,
 }
@@ -114,7 +120,7 @@ impl DieselSessionStore {
         let metadata_result = crate::db::with_conn(&pool, move |conn| {
             let result = sessions::table
                 .select((sessions::id, sessions::expires))
-                .load::<(String, Option<crate::DbDateTime>)>(conn) // Load ID as String from DB
+                .load::<(String, Option<crate::DbTimestamp>)>(conn) // Load ID as String from DB
                 .map(|rows| {
                     rows.into_iter()
                         .map(|(id, expires)| SessionMetadata { id, expires })
@@ -146,7 +152,7 @@ impl DieselSessionStore {
         info!("DieselSessionStore::delete_expired_sessions ENTERED");
 
         let pool = self.pool.clone();
-        let now = DbDateTime::now();
+        let now = DbTimestamp::now();
 
         debug!(now = %now, "Attempting to delete expired sessions...");
 
@@ -175,13 +181,13 @@ impl DieselSessionStore {
 
 // Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
 #[must_use]
-pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<crate::DbDateTime> {
+pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<crate::DbTimestamp> {
     // Made pub
     offset_dt.and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0).map(|dt| dt.into()))
 }
 
 // Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime
-fn utc_to_offset(utc_dt: Option<crate::DbDateTime>) -> Option<OffsetDateTime> {
+fn utc_to_offset(utc_dt: Option<crate::DbTimestamp>) -> Option<OffsetDateTime> {
     utc_dt.and_then(|dt| OffsetDateTime::from_unix_timestamp(dt.timestamp()).ok())
 }
 
@@ -189,7 +195,7 @@ fn utc_to_offset(utc_dt: Option<crate::DbDateTime>) -> Option<OffsetDateTime> {
 #[derive(Debug, Clone)]
 pub struct SessionMetadata {
     pub id: String, // Keep as String to match DB schema
-    pub expires: Option<crate::DbDateTime>,
+    pub expires: Option<crate::DbTimestamp>,
 }
 
 #[async_trait]
@@ -297,8 +303,11 @@ impl SessionStore for DieselSessionStore {
 
             let mut session_record_for_tower = Record {
                 // Construct tower_sessions::Record
-                id: *session_id,                        // Use original Id
-                data: session_data_map.into_iter().map(|(k, v)| (k, v.0)).collect(), // Convert SqliteJson to Value
+                id: *session_id, // Use original Id
+                data: session_data_map
+                    .into_iter()
+                    .map(|(k, v)| (k, (*v).clone()))
+                    .collect(), // Convert DbJson to Value
                 expiry_date: OffsetDateTime::now_utc(), // Placeholder, will be overwritten
             };
 

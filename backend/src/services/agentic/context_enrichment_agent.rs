@@ -40,8 +40,8 @@ pub enum EnrichmentMode {
 /// Complete result of context enrichment including audit trail
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContextEnrichmentResult {
-    pub session_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub mode: EnrichmentMode,
     pub agent_reasoning: String,
     pub planned_searches: Vec<PlannedSearch>,
@@ -51,7 +51,7 @@ pub struct ContextEnrichmentResult {
     pub total_tokens_used: u32,
     pub execution_time_ms: u64,
     pub model_used: String,
-    pub analysis_id: Option<crate::DbUuid>, // ID of the stored analysis for later updates
+    pub analysis_id: Option<crate::db::DbId>, // ID of the stored analysis for later updates
 }
 
 /// A search query planned by the agent
@@ -74,7 +74,7 @@ pub struct AgentExecutionLog {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AgentStep {
     pub step_number: u32,
-    pub timestamp: crate::DbDateTime,
+    pub timestamp: crate::DbTimestamp,
     pub action_type: String, // "planning", "search", "synthesis"
     pub thought: String,
     pub tool_call: Option<ToolCall>,
@@ -116,13 +116,13 @@ impl ContextEnrichmentAgent {
     /// Main entry point: Enrich context for a chat session
     pub async fn enrich_context(
         &self,
-        session_id: crate::DbUuid,
-        user_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,    // Added for scoped search
-        messages: &[(String, String)], // (role, content) pairs
+        session_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>, // Added for scoped search
+        messages: &[(String, String)],         // (role, content) pairs
         mode: EnrichmentMode,
         session_dek: &[u8],
-        message_id: crate::DbUuid, // Required message ID to link analysis to specific message
+        message_id: crate::db::DbId, // Required message ID to link analysis to specific message
     ) -> Result<ContextEnrichmentResult, AppError> {
         let start_time = Instant::now();
         let mut execution_log = AgentExecutionLog {
@@ -644,9 +644,9 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     async fn execute_search(
         &self,
         search: &PlannedSearch,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         session_dek: &[u8],
     ) -> Result<(Value, u32), AppError> {
         debug!(
@@ -888,7 +888,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Supersede any failed analyses for this session
     async fn supersede_failed_analyses(
         &self,
-        session_id: crate::DbUuid,
+        session_id: crate::db::DbId,
         mode: EnrichmentMode,
     ) -> Result<(), AppError> {
         use crate::models::{AgentContextAnalysis, AnalysisType};
@@ -917,12 +917,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Create a new pending analysis record
     async fn create_pending_analysis(
         &self,
-        session_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        session_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         mode: EnrichmentMode,
         session_dek: &[u8],
-        message_id: crate::DbUuid,
-    ) -> Result<crate::DbUuid, AppError> {
+        message_id: crate::db::DbId,
+    ) -> Result<crate::db::DbId, AppError> {
         use crate::models::{AnalysisStatus, AnalysisType};
         use crate::schema::agent_context_analysis;
         use diesel::prelude::*;
@@ -942,7 +942,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
             crate::db::with_conn(&self.state.pool, move |conn| {
                 diesel::insert_into(agent_context_analysis::table)
                     .values((
-                        agent_context_analysis::id.eq(Uuid::new_v4()),
+                        agent_context_analysis::id.eq(DbId::new()),
                         agent_context_analysis::chat_session_id.eq(session_id),
                         agent_context_analysis::user_id.eq(user_id),
                         agent_context_analysis::analysis_type.eq(analysis_type_str),
@@ -954,7 +954,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         agent_context_analysis::updated_at.eq(diesel::dsl::now),
                     ))
                     .returning(agent_context_analysis::id)
-                    .get_result::<crate::DbUuid>(conn)
+                    .get_result::<crate::db::DbId>(conn)
             })
             .await
             .map_err(|e| {
@@ -966,7 +966,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         let analysis_id = {
             use diesel::prelude::*;
             // SQLite doesn't support RETURNING, so we generate UUID before insert
-            let generated_id = Uuid::new_v4().into();
+            let generated_id = DbId::new().into();
 
             crate::db::with_conn(&self.state.pool, move |conn| {
                 diesel::insert_into(agent_context_analysis::table)
@@ -984,7 +984,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     ))
                     .execute(conn)
                     .map(|_| generated_id)
-                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create pending analysis: {}", e)))
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create pending analysis: {}",
+                            e
+                        ))
+                    })
             })
             .await?
         };
@@ -1000,7 +1005,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Update an existing analysis with results
     async fn update_analysis(
         &self,
-        analysis_id: crate::DbUuid,
+        analysis_id: crate::db::DbId,
         agent_reasoning: &str,
         planned_searches: &[PlannedSearch],
         execution_log: &AgentExecutionLog,
@@ -1099,7 +1104,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Mark an analysis as failed
     async fn mark_analysis_failed(
         &self,
-        analysis_id: crate::DbUuid,
+        analysis_id: crate::db::DbId,
         error_message: &str,
     ) -> Result<(), AppError> {
         use crate::models::{AgentContextAnalysis, AnalysisStatus};

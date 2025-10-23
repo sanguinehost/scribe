@@ -7,7 +7,7 @@
 
 use crate::auth::user_store::Backend as AuthBackend;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::errors::AppError;
 use crate::models::documents::{
     CreateDocumentRequest, CreateSuggestionRequest, Document, DocumentResponse, NewDocument,
@@ -57,7 +57,7 @@ async fn create_document_handler(
     let pool = state.pool.clone();
 
     let new_document = NewDocument {
-        id: Uuid::new_v4(),
+        id: DbId::new(),
         created_at: Utc::now(),
         title: payload.title,
         content: payload.content,
@@ -95,7 +95,7 @@ async fn create_document_handler(
 async fn get_documents_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -147,7 +147,7 @@ async fn get_documents_by_id_handler(
 async fn get_document_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -192,7 +192,7 @@ async fn get_document_by_id_handler(
 async fn delete_documents_by_id_after_timestamp_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path((id, timestamp)): Path<(crate::DbUuid, String)>,
+    Path((id, timestamp)): Path<(crate::db::DbId, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -303,7 +303,7 @@ async fn create_suggestion_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     let new_suggestion = NewSuggestion {
-        id: Uuid::new_v4(),
+        id: DbId::new(),
         document_id: payload.document_id,
         document_created_at: payload.document_created_at,
         original_text: payload.original_text,
@@ -335,7 +335,7 @@ async fn create_suggestion_handler(
 async fn get_suggestions_by_document_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(document_id): Path<crate::DbUuid>,
+    Path(document_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user

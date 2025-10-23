@@ -22,23 +22,23 @@ type CurrentAuthSession = AuthSession<AuthBackend>;
 // DTO for user list display
 #[derive(Debug, Serialize)]
 pub struct AdminUserListResponse {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub username: String,
     pub role: UserRole,
-    pub account_status: String,            // "active" or "locked"
-    pub last_login: Option<crate::DbDateTime>, // We'll use updated_at for now as proxy for last login
+    pub account_status: String,                 // "active" or "locked"
+    pub last_login: Option<crate::DbTimestamp>, // We'll use updated_at for now as proxy for last login
 }
 
 // DTO for user details
 #[derive(Debug, Serialize)]
 pub struct AdminUserDetailResponse {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub username: String,
     pub email: String,
     pub role: UserRole,
     pub account_status: String,
-    pub created_at: crate::DbDateTime,
-    pub updated_at: crate::DbDateTime, // Using as last login for now
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp, // Using as last login for now
 }
 
 // Update user role request payload
@@ -86,7 +86,6 @@ async fn list_users_handler(
     // Fetch all users from the database
     let users = crate::db::with_conn(&state.pool, |conn| {
         users::table
-            .select(UserDbQuery::as_select())
             .load::<UserDbQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
@@ -112,7 +111,7 @@ async fn list_users_handler(
 async fn get_user_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session)?;
@@ -123,7 +122,6 @@ async fn get_user_handler(
     let user = crate::db::with_conn(&state.pool, move |conn| {
         users::table
             .filter(users::id.eq(user_id))
-            .select(UserDbQuery::as_select())
             .first::<UserDbQuery>(conn)
             .map_err(|e| {
                 if e == diesel::result::Error::NotFound {
@@ -154,7 +152,7 @@ async fn get_user_handler(
 async fn lock_user_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session)?;
@@ -201,7 +199,6 @@ async fn lock_user_handler(
 
             users::table
                 .find(user_id)
-                .select(UserDbQuery::as_select())
                 .first::<UserDbQuery>(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -229,7 +226,7 @@ async fn lock_user_handler(
 async fn unlock_user_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
     require_admin(&auth_session)?;
@@ -266,7 +263,6 @@ async fn unlock_user_handler(
 
             users::table
                 .find(user_id)
-                .select(UserDbQuery::as_select())
                 .first::<UserDbQuery>(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -294,7 +290,7 @@ async fn unlock_user_handler(
 async fn update_user_role_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateUserRoleRequest>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
@@ -342,7 +338,6 @@ async fn update_user_role_handler(
 
             users::table
                 .find(user_id)
-                .select(UserDbQuery::as_select())
                 .first::<UserDbQuery>(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {

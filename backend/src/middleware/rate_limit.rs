@@ -507,7 +507,8 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
                 } else {
                     Ok::<_, AppError>((true, usage_percentage, false))
                 }
-            }).await;
+            })
+            .await;
 
             match check_result {
                 Ok((_has_limit, usage_percentage, is_over_limit)) => {
@@ -608,7 +609,8 @@ pub async fn soft_limit_enforcement_middleware(request: Request, next: Next) -> 
         };
 
         Ok::<_, AppError>((usage.message_count, daily_limit, throttle_delay, tier))
-    }).await;
+    })
+    .await;
 
     match check_result {
         Ok((current_usage, limit, throttle_info, tier)) => {

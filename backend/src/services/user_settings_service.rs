@@ -18,7 +18,7 @@ impl UserSettingsService {
     #[instrument(skip(pool), err)]
     pub async fn get_user_settings(
         pool: &DbPool,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         config: &Config,
     ) -> Result<UserSettingsResponse, AppError> {
         // Clone config values we need to move into the closure
@@ -32,7 +32,7 @@ impl UserSettingsService {
             let settings_exist = user_settings::table
                 .filter(user_settings::user_id.eq(user_id))
                 .select(user_settings::id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -60,11 +60,11 @@ impl UserSettingsService {
                         ))
                         .first::<(
                             Option<String>,
-                            Option<crate::DbBigDecimal>,
+                            Option<crate::db::DbDecimal>,
                             Option<i32>,
-                            Option<crate::DbBigDecimal>,
-                            Option<crate::DbBigDecimal>,
-                            Option<crate::DbBigDecimal>,
+                            Option<crate::db::DbDecimal>,
+                            Option<crate::db::DbDecimal>,
+                            Option<crate::db::DbDecimal>,
                             Option<i32>,
                             Option<i32>,
                             Option<i32>,
@@ -92,7 +92,7 @@ impl UserSettingsService {
                             ),
                         ))
                         .first::<(
-                            (crate::DbDateTime, crate::DbDateTime),
+                            (crate::DbTimestamp, crate::DbTimestamp),
                             (Option<bool>, Option<i32>),
                             (Option<String>, Option<bool>, Option<crate::DbJson>),
                         )>(conn)
@@ -155,17 +155,17 @@ impl UserSettingsService {
                         .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
                             default_model.clone(),
                         ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_total_limit,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_history_budget,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_rag_budget,
-                    ))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_total_limit,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_history_budget,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_rag_budget,
+                        ))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     // Then retrieve using a simple query
                     let created_settings = user_settings::table
@@ -193,8 +193,8 @@ impl UserSettingsService {
                             Option<bool>,
                             Option<i32>,
                             Option<bool>,
-                            crate::DbDateTime,
-                            crate::DbDateTime,
+                            crate::DbTimestamp,
+                            crate::DbTimestamp,
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -236,7 +236,7 @@ impl UserSettingsService {
     #[instrument(skip(pool), err)]
     pub async fn update_user_settings(
         pool: &DbPool,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         update_request: UpdateUserSettingsRequest,
         config: &Config,
     ) -> Result<UserSettingsResponse, AppError> {
@@ -251,7 +251,7 @@ impl UserSettingsService {
             let settings_id = user_settings::table
                 .filter(user_settings::user_id.eq(user_id))
                 .select(user_settings::id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -283,23 +283,23 @@ impl UserSettingsService {
                         .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
                             default_model.clone(),
                         ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_total_limit,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_history_budget,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_rag_budget,
-                    ))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_total_limit,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_history_budget,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_rag_budget,
+                        ))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     // Get the ID of the newly created settings
                     user_settings::table
                         .filter(user_settings::user_id.eq(user_id))
                         .select(user_settings::id)
-                        .first::<crate::DbUuid>(conn)
+                        .first::<crate::db::DbId>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
                 }
             };
@@ -371,11 +371,11 @@ impl UserSettingsService {
                 ))
                 .first::<(
                     Option<String>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
-                    Option<crate::DbBigDecimal>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
                     Option<i32>,
                     Option<i32>,
@@ -403,7 +403,7 @@ impl UserSettingsService {
                     ),
                 ))
                 .first::<(
-                    (crate::DbDateTime, crate::DbDateTime),
+                    (crate::DbTimestamp, crate::DbTimestamp),
                     (Option<bool>, Option<i32>),
                     (Option<String>, Option<bool>, Option<crate::DbJson>),
                 )>(conn)
@@ -442,7 +442,10 @@ impl UserSettingsService {
 
     /// Deletes user settings for a specific user (resets to system defaults)
     #[instrument(skip(pool), err)]
-    pub async fn delete_user_settings(pool: &DbPool, user_id: crate::DbUuid) -> Result<(), AppError> {
+    pub async fn delete_user_settings(
+        pool: &DbPool,
+        user_id: crate::db::DbId,
+    ) -> Result<(), AppError> {
         crate::db::with_conn(pool, move |conn| {
             let deleted_count =
                 diesel::delete(user_settings::table.filter(user_settings::user_id.eq(user_id)))

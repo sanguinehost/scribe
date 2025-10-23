@@ -1,17 +1,23 @@
+use crate::db::DbId;
 use crate::schema::template_preferences;
 use chrono::{DateTime, NaiveDateTime};
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use crate::DbUuid as Uuid;
 
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone, Debug)]
 #[diesel(table_name = template_preferences)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct TemplatePreference {
-    pub id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
-    pub character_id: Option<crate::DbUuid>,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
     pub template_id: Option<String>,
 
     // Narrative style variables
@@ -33,11 +39,17 @@ pub struct TemplatePreference {
 #[derive(Insertable, Debug)]
 #[diesel(table_name = template_preferences)]
 #[diesel(treat_none_as_null = true)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewTemplatePreference {
-    pub user_id: crate::DbUuid,
-    pub character_id: Option<crate::DbUuid>,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
     pub template_id: Option<String>,
 
     pub tense: String,

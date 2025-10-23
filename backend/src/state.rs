@@ -81,8 +81,8 @@ pub struct AppState {
     pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
     pub user_persona_service: Arc<UserPersonaService>,   // <<< ADDED THIS FIELD
     // Remove #[cfg(test)]
-    pub embedding_call_tracker: Arc<TokioMutex<Vec<crate::DbUuid>>>, // Track message IDs for embedding calls
-    pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
+    pub embedding_call_tracker: Arc<TokioMutex<Vec<crate::db::DbId>>>, // Track message IDs for embedding calls
+    pub token_counter: Arc<HybridTokenCounter>,                        // Added for token counting
     pub encryption_service: Arc<EncryptionService>, // Added for lorebook and other encryption needs
     pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
@@ -114,7 +114,10 @@ impl fmt::Debug for AppState {
             )
             .field("chat_override_service", &"<Arc<ChatOverrideService>>") // <<< ADDED THIS LINE FOR DEBUG
             .field("user_persona_service", &"<Arc<UserPersonaService>>") // <<< ADDED THIS LINE FOR DEBUG
-            .field("embedding_call_tracker", &"<Arc<TokioMutex<Vec<crate::DbUuid>>>>") // Or try to debug its contents if safe
+            .field(
+                "embedding_call_tracker",
+                &"<Arc<TokioMutex<Vec<crate::db::DbId>>>>",
+            ) // Or try to debug its contents if safe
             .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
             .field("encryption_service", &"<Arc<EncryptionService>>") // Added
             .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService

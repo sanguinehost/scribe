@@ -93,12 +93,12 @@ impl serde::Serialize for LoginPayload {
 // Response for successful login/registration
 #[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct AuthResponse {
-    pub user_id: crate::DbUuid,
+    pub user_id: crate::db::DbId,
     pub username: String,
     pub email: String,
     pub role: String,                 // Added role field
     pub recovery_key: Option<String>, // Added recovery key field
-    pub default_persona_id: Option<crate::DbUuid>,
+    pub default_persona_id: Option<crate::db::DbId>,
 }
 
 impl std::fmt::Debug for AuthResponse {

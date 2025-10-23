@@ -26,7 +26,7 @@ impl EnhancementService {
     pub async fn enhance_field(
         &self,
         request: EnhancementRequest,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<EnhancementResult, AppError> {
         let start_time = Instant::now();
 

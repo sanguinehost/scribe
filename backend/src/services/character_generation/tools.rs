@@ -30,7 +30,7 @@ impl CharacterGenerationTool {
     pub async fn execute_tool_call(
         &self,
         call: CharacterGenerationToolCall,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<CharacterGenerationToolResponse, AppError> {
         info!("Executing character generation tool: {}", call.tool_name);
 
@@ -67,11 +67,12 @@ impl CharacterGenerationTool {
     async fn handle_generate_field(
         &self,
         parameters: crate::DbJson,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<crate::DbJson, AppError> {
-        let request: FieldGenerationRequest = serde_json::from_value(parameters.0).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid field generation parameters: {}", e))
-        })?;
+        let request: FieldGenerationRequest =
+            serde_json::from_value(parameters.clone()).map_err(|e| {
+                AppError::InvalidInput(format!("Invalid field generation parameters: {}", e))
+            })?;
 
         let result = self
             .field_generator
@@ -84,11 +85,12 @@ impl CharacterGenerationTool {
     async fn handle_create_character(
         &self,
         parameters: crate::DbJson,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<crate::DbJson, AppError> {
-        let request: FullCharacterRequest = serde_json::from_value(parameters.0).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid character creation parameters: {}", e))
-        })?;
+        let request: FullCharacterRequest =
+            serde_json::from_value(parameters.clone()).map_err(|e| {
+                AppError::InvalidInput(format!("Invalid character creation parameters: {}", e))
+            })?;
 
         let result = self
             .full_character_generator
@@ -101,11 +103,12 @@ impl CharacterGenerationTool {
     async fn handle_enhance_field(
         &self,
         parameters: crate::DbJson,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<crate::DbJson, AppError> {
-        let request: EnhancementRequest = serde_json::from_value(parameters.0).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e))
-        })?;
+        let request: EnhancementRequest =
+            serde_json::from_value(parameters.clone()).map_err(|e| {
+                AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e))
+            })?;
 
         let result = self
             .enhancement_service
@@ -124,9 +127,10 @@ impl CharacterGenerationTool {
             content: String,
         }
 
-        let params: StyleAnalysisParams = serde_json::from_value(parameters.0).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e))
-        })?;
+        let params: StyleAnalysisParams =
+            serde_json::from_value(parameters.clone()).map_err(|e| {
+                AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e))
+            })?;
 
         // Simplified style analysis - could be enhanced with ML or more sophisticated analysis
         let detected_style = self.detect_style(&params.content);

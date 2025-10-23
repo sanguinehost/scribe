@@ -39,8 +39,8 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct SessionRequest {
     pub id: String,
-    pub user_id: crate::DbUuid,
-    pub expires_at: crate::DbDateTime,
+    pub user_id: crate::db::DbId,
+    pub expires_at: crate::DbTimestamp,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,8 +52,8 @@ pub struct SessionWithUserResponse {
 #[derive(Debug, Serialize)]
 pub struct SessionResponse {
     pub id: String, // This is the session_id from tower_sessions
-    pub user_id: crate::DbUuid,
-    pub expires_at: crate::DbDateTime,
+    pub user_id: crate::db::DbId,
+    pub expires_at: crate::DbTimestamp,
 }
 
 // New response structure for successful login
@@ -61,7 +61,7 @@ pub struct SessionResponse {
 pub struct LoginSuccessResponse {
     pub user: AuthResponse,
     pub session_id: String,
-    pub expires_at: crate::DbDateTime,
+    pub expires_at: crate::DbTimestamp,
 }
 
 pub fn auth_routes() -> Router<AppState> {
@@ -592,7 +592,7 @@ pub async fn create_session_handler(
                     sessions::session.eq(format!("{{\"userId\":\"{}\"}}", payload.user_id)),
                 ))
                 .returning((sessions::id, sessions::expires))
-                .get_result::<(String, Option<crate::DbDateTime>)>(conn)
+                .get_result::<(String, Option<crate::DbTimestamp>)>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         }
 
@@ -612,7 +612,7 @@ pub async fn create_session_handler(
             sessions::table
                 .filter(sessions::id.eq(payload.id))
                 .select((sessions::id, sessions::expires))
-                .first::<(String, Option<crate::DbDateTime>)>(conn)
+                .first::<(String, Option<crate::DbTimestamp>)>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         }
     })
@@ -713,7 +713,7 @@ pub async fn extend_session_handler(
                 .filter(sessions::id.eq(&session_id))
                 .set(sessions::expires.eq(new_expiry))
                 .returning((sessions::id, sessions::expires, sessions::session))
-                .get_result::<(String, Option<crate::DbDateTime>, String)>(conn)
+                .get_result::<(String, Option<crate::DbTimestamp>, String)>(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
                         AppError::NotFound("Session not found".to_string())
@@ -736,7 +736,7 @@ pub async fn extend_session_handler(
             sessions::table
                 .filter(sessions::id.eq(session_id))
                 .select((sessions::id, sessions::expires, sessions::session))
-                .first::<(String, Option<crate::DbDateTime>, String)>(conn)
+                .first::<(String, Option<crate::DbTimestamp>, String)>(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
                         AppError::NotFound("Session not found".to_string())
@@ -756,7 +756,7 @@ pub async fn extend_session_handler(
         .as_str()
         .ok_or_else(|| AppError::BadRequest("Invalid session data: missing userId".to_string()))?;
 
-    let user_id = Uuid::parse_str(user_id)
+    let user_id = DbId::parse_str(user_id)
         .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?
         .into();
 
@@ -796,7 +796,7 @@ pub async fn delete_session_handler(
 /// Returns `AppError` if database operations fail or session deletion fails
 pub async fn delete_user_sessions_handler(
     State(state): State<AppState>,
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let pool = state.pool.clone();
 
@@ -819,8 +819,8 @@ pub async fn delete_user_sessions_handler(
                     // Extract the userId if it exists
                     if let Some(session_user_id) = json["userId"].as_str() {
                         // Check if it matches our target userId
-                        if let Ok(parsed_id) = Uuid::parse_str(session_user_id) {
-                            let parsed_id: crate::DbUuid = parsed_id.into();
+                        if let Ok(parsed_id) = DbId::parse_str(session_user_id) {
+                            let parsed_id: crate::db::DbId = parsed_id.into();
                             if parsed_id == user_id {
                                 return Some(session_db_id); // Return renamed variable
                             }

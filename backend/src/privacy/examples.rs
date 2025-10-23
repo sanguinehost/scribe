@@ -13,7 +13,7 @@ pub mod ai_client_factory_example {
     use super::*;
 
     pub fn demonstrate_user_logging_transformation() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
 
         // BEFORE: Logs actual user ID
         // warn!(%user_id, error = ?e, "Failed to get user settings, using fallback client");
@@ -41,7 +41,7 @@ pub mod chat_generation_example {
     use super::*;
 
     pub fn demonstrate_chat_logging_transformation() {
-        let session_id = Uuid::new_v4();
+        let session_id = DbId::new();
         let user_content = "Tell me about quantum physics";
         let system_prompt = "You are a helpful AI assistant...";
 
@@ -71,8 +71,8 @@ pub mod admin_routes_example {
     use super::*;
 
     pub fn demonstrate_admin_logging_transformation() {
-        let user_id = Uuid::new_v4();
-        let admin_user_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let admin_user_id = DbId::new();
         let _username = "john.doe";
 
         // BEFORE: Logs actual user IDs and username
@@ -103,8 +103,8 @@ pub mod request_correlation_example {
     use crate::privacy::PrivacyContext;
 
     pub fn demonstrate_request_correlation() {
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
 
         // Create privacy context for request
         let privacy_ctx = PrivacyContext::new(crate::privacy::PrivacyConfig::default());
@@ -133,8 +133,8 @@ pub mod error_handling_example {
     use super::*;
 
     pub fn demonstrate_error_logging_transformation() {
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
 
         // BEFORE: Potentially exposes user data in error messages
         // error!(
@@ -161,7 +161,7 @@ pub mod auth_example {
     use super::*;
 
     pub fn demonstrate_auth_logging_transformation() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let _email = "user@example.com";
         let _ip_address = "192.168.1.100";
 
@@ -225,8 +225,8 @@ pub fn show_transformation_patterns() {
 
 /// Demonstrates output format differences
 pub fn demonstrate_log_output_differences() {
-    let _user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-    let _session_id = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+    let _user_id = DbId::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let _session_id = DbId::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
 
     println!("=== Log Output Format Comparison ===\n");
 
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_user_id_obfuscation_consistency() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let loggable1 = loggable_user_id(user_id);
         let loggable2 = loggable_user_id(user_id);
 
@@ -293,8 +293,8 @@ mod tests {
 
     #[test]
     fn test_different_ids_produce_different_hashes() {
-        let user_id1 = Uuid::new_v4();
-        let user_id2 = Uuid::new_v4();
+        let user_id1 = DbId::new();
+        let user_id2 = DbId::new();
 
         let loggable1 = loggable_user_id(user_id1);
         let loggable2 = loggable_user_id(user_id2);

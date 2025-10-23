@@ -29,7 +29,7 @@ pub struct UserRateLimit {
 /// Global rate limiter for LLM operations
 #[derive(Debug)]
 pub struct LlmRateLimiter {
-    user_limits: Arc<RwLock<HashMap<crate::DbUuid, UserRateLimit>>>,
+    user_limits: Arc<RwLock<HashMap<crate::db::DbId, UserRateLimit>>>,
     max_requests_per_minute: u32,
     max_requests_per_hour: u32,
     cleanup_interval: Duration,
@@ -48,7 +48,7 @@ impl LlmRateLimiter {
     }
 
     /// Check if user is allowed to make a request
-    pub fn check_rate_limit(&self, user_id: crate::DbUuid) -> Result<(), RateLimitError> {
+    pub fn check_rate_limit(&self, user_id: crate::db::DbId) -> Result<(), RateLimitError> {
         let now = Instant::now();
 
         // Cleanup old entries if needed
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn test_rate_limiter() {
         let limiter = LlmRateLimiter::new(2, 5); // 2 per minute, 5 per hour
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
 
         // First two requests should pass
         assert!(limiter.check_rate_limit(user_id).is_ok());

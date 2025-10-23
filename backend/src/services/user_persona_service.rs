@@ -1,5 +1,5 @@
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
@@ -17,7 +17,8 @@ use crate::services::encryption_service::EncryptionService;
 use crate::state::DbPool;
 
 // Type alias for encrypted field result
-type EncryptedFieldResult = Result<(Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
+type EncryptedFieldResult =
+    Result<(Option<crate::db::DbBlob>, Option<crate::db::DbBlob>), AppError>;
 
 #[derive(Clone)]
 pub struct UserPersonaService {
@@ -44,7 +45,10 @@ impl UserPersonaService {
                 let (ciphertext, nonce) = self
                     .encryption_service
                     .encrypt(&plaintext, dek.expose_secret().as_slice())?;
-                Ok((Some(ciphertext), Some(nonce)))
+                Ok((
+                    Some(crate::db::DbBlob::from(ciphertext)),
+                    Some(crate::db::DbBlob::from(nonce)),
+                ))
             }
             _ => Ok((None, None)), // Empty or None string results in None for data and nonce
         }
@@ -101,7 +105,7 @@ impl UserPersonaService {
             self.encrypt_optional_string_for_db(create_dto.post_history_instructions, dek)?;
 
         let new_persona_db = UserPersona {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id: current_user.id,
             name: create_dto.name,
             description: description_ciphertext,
@@ -127,7 +131,8 @@ impl UserPersonaService {
         };
 
         let pool = self.db_pool.clone();
-        let conn = crate::db::get_conn(&pool).await
+        let conn = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let inserted_persona = conn
             .interact(move |db_conn| {
@@ -158,7 +163,8 @@ impl UserPersonaService {
             .await
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!("DB interact join error: {e}"))
-            }).and_then(|r| r)?; // Flatten Result<Result<T, E1>, E2>
+            })
+            .and_then(|r| r)?; // Flatten Result<Result<T, E1>, E2>
 
         tracing::info!(user_id = %loggable_user_id(current_user.id), persona_id = %inserted_persona.id, "Successfully created user persona");
 
@@ -170,10 +176,11 @@ impl UserPersonaService {
         &self,
         current_user: &User,
         dek_opt: Option<&SecretBox<Vec<u8>>>,
-        persona_id: crate::DbUuid,
+        persona_id: crate::db::DbId,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let conn = crate::db::get_conn(&pool).await
+        let conn = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let found_persona_db = conn
             .interact(move |db_conn| {
@@ -220,7 +227,8 @@ impl UserPersonaService {
     ) -> Result<Vec<UserPersonaDataForClient>, AppError> {
         let pool = self.db_pool.clone();
         let user_id_for_query = current_user.id;
-        let conn = crate::db::get_conn(&pool).await
+        let conn = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         let personas_db = conn
@@ -264,11 +272,12 @@ impl UserPersonaService {
         &self,
         current_user: &User,
         dek: &SecretBox<Vec<u8>>,
-        persona_id: crate::DbUuid,
+        persona_id: crate::db::DbId,
         update_dto: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let conn_fetch = crate::db::get_conn(&pool).await
+        let conn_fetch = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_to_update_db = conn_fetch
             .interact(move |db_conn| {
@@ -397,7 +406,8 @@ impl UserPersonaService {
 
         // Get a new connection instance from the cloned pool for the update interaction
         // pool was cloned at the start of the function. We need a connection from it.
-        let conn_update = crate::db::get_conn(&pool).await
+        let conn_update = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let updated_persona_db = conn_update
             .interact(move |db_conn| {
@@ -422,12 +432,13 @@ impl UserPersonaService {
     pub async fn delete_user_persona(
         &self,
         current_user: &User,
-        persona_id: crate::DbUuid,
+        persona_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let pool = self.db_pool.clone();
 
         // First, fetch to verify ownership before deleting
-        let conn_fetch = crate::db::get_conn(&pool).await
+        let conn_fetch = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_to_delete_opt = conn_fetch
             .interact(move |db_conn| {
@@ -462,7 +473,8 @@ impl UserPersonaService {
                 // Proceed with deletion
                 // Get a new connection instance from the cloned pool for the delete interaction
                 // pool was cloned at the start of the function.
-                let conn_delete = crate::db::get_conn(&pool).await
+                let conn_delete = crate::db::get_conn(&pool)
+                    .await
                     .map_err(|e| AppError::DbPoolError(e.to_string()))?;
                 let num_deleted = conn_delete
                     .interact(move |db_conn| {
@@ -479,7 +491,8 @@ impl UserPersonaService {
                         AppError::InternalServerErrorGeneric(format!(
                             "DB interact join error for delete_user_persona (delete): {e}"
                         ))
-                    }).and_then(|r| r)?;
+                    })
+                    .and_then(|r| r)?;
 
                 if num_deleted == 0 {
                     // This case should ideally not be reached if the fetch & ownership check passed,
@@ -502,29 +515,29 @@ impl UserPersonaService {
     #[tracing::instrument(skip(pool), err)]
     pub async fn set_default_persona(
         pool: &DbPool, // Changed to pass pool directly as it's a static-like method now
-        user_id_val: crate::DbUuid,
-        persona_id_val: Option<crate::DbUuid>,
+        user_id_val: crate::db::DbId,
+        persona_id_val: Option<crate::db::DbId>,
     ) -> Result<User, AppError> {
         // Return the updated User
-        let conn = crate::db::get_conn(&pool).await
+        let conn = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         #[cfg(feature = "postgres-backend")]
         let updated_user_db_query = {
-            conn
-                .interact(move |db_conn| {
-                    diesel::update(users_dsl::users.find(user_id_val))
-                        .set(users_dsl::default_persona_id.eq(persona_id_val))
-                        .returning(UserDbQuery::as_select())
-                        .get_result(db_conn) // Fetch UserDbQuery
-                        .map_err(AppError::from)
-                })
-                .await
-                .map_err(|e| {
-                    AppError::InternalServerErrorGeneric(format!(
-                        "DB interact join error for set_default_persona: {e}"
-                    ))
-                })??
+            conn.interact(move |db_conn| {
+                diesel::update(users_dsl::users.find(user_id_val))
+                    .set(users_dsl::default_persona_id.eq(persona_id_val))
+                    .returning(UserDbQuery::as_select())
+                    .get_result(db_conn) // Fetch UserDbQuery
+                    .map_err(AppError::from)
+            })
+            .await
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "DB interact join error for set_default_persona: {e}"
+                ))
+            })??
         };
 
         #[cfg(feature = "sqlite-backend")]
@@ -558,11 +571,12 @@ impl UserPersonaService {
     #[tracing::instrument(skip(pool), err)]
     pub async fn get_user_persona_by_id_and_user_id(
         pool: &DbPool,
-        persona_id_val: crate::DbUuid,
-        user_id_val: crate::DbUuid,
+        persona_id_val: crate::db::DbId,
+        user_id_val: crate::db::DbId,
     ) -> Result<Option<UserPersona>, AppError> {
         debug!(%persona_id_val, %user_id_val, "Attempting to get user persona by ID and user ID");
-        let conn = crate::db::get_conn(&pool).await
+        let conn = crate::db::get_conn(&pool)
+            .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_result = conn
             .interact(move |db_conn| {

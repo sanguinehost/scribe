@@ -73,12 +73,12 @@ impl<T> From<NullableEncryptedField<T>> for Option<Option<T>> {
 struct ChatSessionUpdateBuilder {
     system_prompt_ciphertext: NullableEncryptedField<Vec<u8>>,
     system_prompt_nonce: NullableEncryptedField<Vec<u8>>,
-    temperature: DatabaseUpdate<crate::DbBigDecimal>,
+    temperature: DatabaseUpdate<crate::db::DbDecimal>,
     max_output_tokens: DatabaseUpdate<i32>,
-    frequency_penalty: DatabaseUpdate<crate::DbBigDecimal>,
-    presence_penalty: DatabaseUpdate<crate::DbBigDecimal>,
+    frequency_penalty: DatabaseUpdate<crate::db::DbDecimal>,
+    presence_penalty: DatabaseUpdate<crate::db::DbDecimal>,
     top_k: DatabaseUpdate<i32>,
-    top_p: DatabaseUpdate<crate::DbBigDecimal>,
+    top_p: DatabaseUpdate<crate::db::DbDecimal>,
     seed: DatabaseUpdate<i32>,
     stop_sequences: DatabaseUpdate<Vec<String>>,
     history_management_strategy: DatabaseUpdate<String>,
@@ -87,11 +87,11 @@ struct ChatSessionUpdateBuilder {
     model_provider: DatabaseUpdate<String>,
     gemini_thinking_budget: DatabaseUpdate<i32>,
     gemini_enable_code_execution: DatabaseUpdate<bool>,
-    player_chronicle_id: DatabaseUpdate<Option<crate::DbUuid>>,
+    player_chronicle_id: DatabaseUpdate<Option<crate::db::DbId>>,
     agent_mode: DatabaseUpdate<String>,
-    active_custom_persona_id: DatabaseUpdate<Option<crate::DbUuid>>,
+    active_custom_persona_id: DatabaseUpdate<Option<crate::db::DbId>>,
     prompt_template_id: DatabaseUpdate<String>,
-    updated_at: DatabaseUpdate<crate::DbDateTime>,
+    updated_at: DatabaseUpdate<crate::DbTimestamp>,
 }
 
 impl ChatSessionUpdateBuilder {
@@ -128,7 +128,9 @@ impl ChatSessionUpdateBuilder {
                 _ => None,
             },
             stop_sequences: match self.stop_sequences {
-                DatabaseUpdate::SetValue(v) => Some(crate::models::OptionalStringArray::from_vec_string(v)),
+                DatabaseUpdate::SetValue(v) => {
+                    Some(crate::models::OptionalStringArray::from_vec_string(v))
+                }
                 _ => None,
             },
             history_management_strategy: match self.history_management_strategy {
@@ -217,12 +219,12 @@ struct ChatSessionUpdateChangeset {
     system_prompt_ciphertext: Option<Option<Vec<u8>>>,
     /// Encrypted system prompt nonce - uses Option<Option<T>> pattern for nullable fields
     system_prompt_nonce: Option<Option<Vec<u8>>>,
-    temperature: Option<crate::DbBigDecimal>,
+    temperature: Option<crate::db::DbDecimal>,
     max_output_tokens: Option<i32>,
-    frequency_penalty: Option<crate::DbBigDecimal>,
-    presence_penalty: Option<crate::DbBigDecimal>,
+    frequency_penalty: Option<crate::db::DbDecimal>,
+    presence_penalty: Option<crate::db::DbDecimal>,
     top_k: Option<i32>,
-    top_p: Option<crate::DbBigDecimal>,
+    top_p: Option<crate::db::DbDecimal>,
     seed: Option<i32>,
     stop_sequences: Option<crate::models::OptionalStringArray>,
     history_management_strategy: Option<String>,
@@ -231,22 +233,22 @@ struct ChatSessionUpdateChangeset {
     model_provider: Option<String>,
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
-    player_chronicle_id: Option<Option<crate::DbUuid>>,
+    player_chronicle_id: Option<Option<crate::db::DbId>>,
     agent_mode: Option<String>,
-    active_custom_persona_id: Option<Option<crate::DbUuid>>,
+    active_custom_persona_id: Option<Option<crate::db::DbId>>,
     prompt_template_id: Option<String>,
-    updated_at: Option<crate::DbDateTime>,
+    updated_at: Option<crate::DbTimestamp>,
 }
 /// Verifies session ownership and returns the owner ID
 fn verify_session_ownership(
     conn: &mut crate::DbConnection,
-    session_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<(), AppError> {
     let owner_id_result = chat_sessions::table
         .filter(chat_sessions::id.eq(session_id))
         .select(chat_sessions::user_id)
-        .first::<crate::DbUuid>(conn)
+        .first::<crate::db::DbId>(conn)
         .optional()
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -270,8 +272,8 @@ fn decrypt_system_prompt(
     ciphertext: Option<&Vec<u8>>,
     nonce: Option<&Vec<u8>>,
     user_dek: Option<&SecretBox<Vec<u8>>>,
-    session_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Option<String>, AppError> {
     info!(%session_id, %user_id,
           has_ciphertext = ciphertext.is_some(),
@@ -325,8 +327,8 @@ fn decrypt_system_prompt(
 #[instrument(skip(pool, user_dek), err)]
 pub async fn get_session_settings(
     pool: &DbPool,
-    user_id: crate::DbUuid,
-    session_id: crate::DbUuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<ChatSettingsResponse, AppError> {
     let user_dek_cloned = user_dek.map(|dek| SecretBox::new(Box::new(dek.expose_secret().clone())));
@@ -541,7 +543,7 @@ fn apply_payload_to_builder(
 /// Executes the database update if there are changes
 fn execute_update(
     update_builder: ChatSessionUpdateBuilder,
-    session_id: crate::DbUuid,
+    session_id: crate::db::DbId,
     transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     if update_builder.has_changes() {
@@ -566,8 +568,8 @@ fn execute_update(
 #[instrument(skip(pool, payload), err)]
 pub async fn update_session_settings(
     pool: &DbPool,
-    user_id: crate::DbUuid,
-    session_id: crate::DbUuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     payload: UpdateChatSettingsRequest,
     user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<ChatSettingsResponse, AppError> {

@@ -5,9 +5,9 @@
 
 use crate::auth::session_dek::SessionDek;
 use crate::crypto;
-use crate::errors::AppError;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::errors::AppError;
 use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};
 use crate::models::character_card::NewCharacter;
 use crate::models::characters::{Character, CharacterDataForClient};
@@ -365,13 +365,13 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     #[cfg(feature = "postgres-backend")]
-    let returned_id: crate::DbUuid = {
+    let returned_id: crate::db::DbId = {
         conn_insert_op
             .interact(move |conn_insert_block| {
                 diesel::insert_into(characters)
                     .values(new_character_for_db)
                     .returning(id)
-                    .get_result::<crate::DbUuid>(conn_insert_block)
+                    .get_result::<crate::db::DbId>(conn_insert_block)
             })
             .await
             .map_err(|e| {
@@ -381,10 +381,10 @@ pub async fn upload_character_handler(
     };
 
     #[cfg(feature = "sqlite-backend")]
-    let returned_id: crate::DbUuid = {
+    let returned_id: crate::db::DbId = {
         use diesel::prelude::*;
         // SQLite doesn't support RETURNING, so we generate UUID before insert
-        let generated_id = crate::DbUuid::new_v4();
+        let generated_id = crate::db::DbId::new_v4();
         let mut character_with_id = new_character_for_db;
         character_with_id.id = Some(generated_id.into());
 
@@ -419,12 +419,14 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     #[cfg(feature = "sqlite-backend")]
-    let inserted_character: Character = crate::db::with_conn(&state.pool, move |conn_select_block| {
-        characters
-            .find(returned_id)
-            .get_result::<Character>(conn_select_block)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
-    }).await?;
+    let inserted_character: Character =
+        crate::db::with_conn(&state.pool, move |conn_select_block| {
+            characters
+                .find(returned_id)
+                .get_result::<Character>(conn_select_block)
+                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
+        })
+        .await?;
 
     info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
 
@@ -462,7 +464,9 @@ pub async fn upload_character_handler(
     let asset_result: Result<CharacterAsset, diesel::result::Error> = {
         use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
-        let asset_id = new_asset.id.expect("NewCharacterAsset should have id set before insertion");
+        let asset_id = new_asset
+            .id
+            .expect("NewCharacterAsset should have id set before insertion");
 
         crate::db::with_conn(&state.pool, move |conn_asset_block| {
             diesel::insert_into(character_assets)
@@ -474,7 +478,8 @@ pub async fn upload_character_handler(
                 .find(asset_id)
                 .first(conn_asset_block)
                 .map_err(Into::into)
-        }).await
+        })
+        .await
     };
 
     match asset_result {
@@ -511,8 +516,11 @@ pub async fn upload_character_handler(
                 diesel::update(characters.find(character_id_for_update))
                     .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
                     .execute(conn_update_block)
-                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Avatar update error: {e}")))
-            }).await?;
+                    .map_err(|e| {
+                        AppError::InternalServerErrorGeneric(format!("Avatar update error: {e}"))
+                    })
+            })
+            .await?;
 
             match update_result {
                 Ok(_) => {
@@ -720,7 +728,8 @@ pub async fn list_characters_handler(
             .filter(user_id.eq(local_user_id))
             .load::<Character>(conn_block)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-    }).await?;
+    })
+    .await?;
 
     let mut characters_for_client = Vec::new();
     for char_db in characters_db {
@@ -737,7 +746,7 @@ pub async fn get_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek,
-    Path(character_id): Path<crate::DbUuid>,
+    Path(character_id): Path<crate::db::DbId>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id);
 
@@ -773,7 +782,8 @@ pub async fn get_character_handler(
                     );
                     AppError::DatabaseQueryError(e.to_string())
                 })
-        }).await?;
+        })
+        .await?;
 
     match directly_owned_character_result {
         Ok(Some(character)) => {
@@ -788,7 +798,7 @@ pub async fn get_character_handler(
             let lorebooks = lorebook_service
                 .list_character_lorebooks(&auth_session, character_id)
                 .await?;
-            let lorebook_ids: Vec<crate::DbUuid> = lorebooks.iter().map(|lb| lb.id).collect();
+            let lorebook_ids: Vec<crate::db::DbId> = lorebooks.iter().map(|lb| lb.id).collect();
 
             return match character.into_decrypted_for_client(Some(&dek.0), lorebook_ids) {
                 Ok(character_for_client) => {
@@ -885,7 +895,8 @@ pub async fn get_character_handler(
                 );
                 AppError::DatabaseQueryError(format!("DB error fetching character by ID: {e}"))
             })
-    }).await?;
+    })
+    .await?;
 
     if let Some(character) = character_db_result {
         info!(
@@ -904,7 +915,7 @@ pub async fn get_character_handler(
         let lorebooks = lorebook_service
             .list_character_lorebooks(&auth_session, character_id)
             .await?;
-        let lorebook_ids: Vec<crate::DbUuid> = lorebooks.iter().map(|lb| lb.id).collect();
+        let lorebook_ids: Vec<crate::db::DbId> = lorebooks.iter().map(|lb| lb.id).collect();
 
         match character.into_decrypted_for_client(Some(&dek.0), lorebook_ids) {
             Ok(character_for_client) => {
@@ -965,7 +976,7 @@ pub async fn generate_character_handler(
     // Placeholder: Create a dummy Character, encrypt its description, then convert for client.
     let mut dummy_char_for_db = Character {
         // This is a Character struct, not NewCharacter
-        id: Uuid::new_v4().into(),
+        id: DbId::new().into(),
         user_id: user_id_val,
         spec: "dummy_spec_placeholder".to_string(),
         spec_version: "dummy_spec_version_placeholder".to_string(),
@@ -1085,7 +1096,7 @@ pub async fn generate_character_handler(
 pub async fn delete_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(character_id): Path<crate::DbUuid>,
+    Path(character_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     info!(target: "handler_log", ">>> ENTERING delete_character_handler for character_id: {}", character_id);
 
@@ -1100,11 +1111,12 @@ pub async fn delete_character_handler(
         let exists = characters
             .filter(id.eq(character_id))
             .select(id)
-            .first::<crate::DbUuid>(conn_block)
+            .first::<crate::db::DbId>(conn_block)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()));
         exists.map(|opt| opt.is_some())
-    }).await?;
+    })
+    .await?;
 
     if !character_exists {
         info!(target: "test_log", %character_id, "Character does not exist at all");
@@ -1154,7 +1166,7 @@ pub async fn update_character_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek,
-    Path(character_id_to_update): Path<crate::DbUuid>, // Renamed to avoid conflict
+    Path(character_id_to_update): Path<crate::db::DbId>, // Renamed to avoid conflict
     Json(update_dto): Json<CharacterUpdateDto>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     let user = auth_session
@@ -1182,7 +1194,7 @@ pub async fn update_character_handler(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_character_asset_handler(
-    Path((character_id, asset_id)): Path<(crate::DbUuid, crate::DbUuid)>,
+    Path((character_id, asset_id)): Path<(crate::db::DbId, crate::db::DbId)>,
     Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
@@ -1203,8 +1215,11 @@ pub async fn get_character_asset_handler(
             .filter(user_id.eq(local_user_id))
             .first::<Character>(conn_block)
             .optional()
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}")))
-    }).await?;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
+            })
+    })
+    .await?;
 
     let _character = character
         .ok_or_else(|| AppError::NotFound("Character not found or not accessible".to_string()))?;
@@ -1214,11 +1229,13 @@ pub async fn get_character_asset_handler(
         character_assets
             .find(asset_id)
             .filter(crate::schema::character_assets::character_id.eq(character_id))
-            .select(CharacterAsset::as_select())
             .first::<CharacterAsset>(conn_asset_block)
             .optional()
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))
-    }).await?;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}"))
+            })
+    })
+    .await?;
 
     let asset = asset.ok_or_else(|| AppError::NotFound("Character asset not found".to_string()))?;
 

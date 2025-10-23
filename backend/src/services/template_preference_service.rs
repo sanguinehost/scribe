@@ -32,8 +32,8 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn get_template_preferences(
         pool: &DbPool,
-        user_id: crate::DbUuid,
-        character_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        character_id: Option<crate::db::DbId>,
     ) -> Result<TemplatePreferenceResponse, AppError> {
         crate::db::with_conn(pool, move |conn| {
             info!(%user_id, ?character_id, "GET: Looking for template preferences");
@@ -129,8 +129,8 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn update_template_preferences(
         pool: &DbPool,
-        user_id: crate::DbUuid,
-        character_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        character_id: Option<crate::db::DbId>,
         update_request: UpdateTemplatePreferenceRequest,
     ) -> Result<TemplatePreferenceResponse, AppError> {
         crate::db::with_conn(pool, move |conn| {
@@ -299,8 +299,8 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn delete_template_preferences(
         pool: &DbPool,
-        user_id: crate::DbUuid,
-        character_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        character_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         crate::db::with_conn(pool, move |conn| {
             // Use .is_null() for None and .eq() for Some(uuid) to properly handle NULLs in Diesel

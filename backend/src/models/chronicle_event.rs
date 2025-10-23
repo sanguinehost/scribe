@@ -1,11 +1,11 @@
+use crate::db::DbId;
+use crate::db::DbTimestamp;
+use crate::models::OptionalStringArray;
 use crate::schema::chronicle_events;
-use crate::DbDateTime;
 use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use crate::DbUuid as Uuid;
-use crate::models::OptionalStringArray;
 use validator::Validate;
 
 /// EventSource represents where a chronicle event originated from
@@ -50,28 +50,34 @@ impl std::str::FromStr for EventSource {
 /// Simplified to focus on summaries and searchable keywords
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = chronicle_events)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct ChronicleEvent {
-    pub id: crate::DbUuid,
-    pub chronicle_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub chronicle_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub event_type: String,
     pub summary: String, // Plaintext fallback (legacy)
     pub source: String,  // Will be converted to/from EventSource
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     #[serde(skip_serializing)]
     pub summary_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
-    pub timestamp_iso8601: DbDateTime,
+    pub timestamp_iso8601: DbTimestamp,
     pub keywords: crate::models::OptionalStringArray, // For search optimization
     #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
     pub keywords_nonce: Option<Vec<u8>>,
-    pub chat_session_id: Option<crate::DbUuid>, // Link to originating chat
+    pub chat_session_id: Option<crate::db::DbId>, // Link to originating chat
 }
 
 impl ChronicleEvent {
@@ -164,12 +170,18 @@ impl ChronicleEvent {
 /// Simplified structure focusing on summaries and keywords
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = chronicle_events)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewChronicleEvent {
-    pub id: Option<crate::DbUuid>,
-    pub chronicle_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub id: Option<crate::db::DbId>,
+    pub chronicle_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     #[validate(length(
         min = 1,
         max = 100,
@@ -185,23 +197,23 @@ pub struct NewChronicleEvent {
     pub source: String, // EventSource as string
     pub summary_encrypted: Option<Vec<u8>>,
     pub summary_nonce: Option<Vec<u8>>,
-    pub timestamp_iso8601: DbDateTime,
+    pub timestamp_iso8601: DbTimestamp,
     pub keywords: crate::models::OptionalStringArray,
     pub keywords_encrypted: Option<Vec<u8>>,
     pub keywords_nonce: Option<Vec<u8>>,
-    pub chat_session_id: Option<crate::DbUuid>,
+    pub chat_session_id: Option<crate::db::DbId>,
 }
 
 impl NewChronicleEvent {
     /// Create a new event with EventSource enum
     pub fn new(
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         event_type: String,
         summary: String,
         source: EventSource,
         keywords: Option<Vec<String>>,
-        chat_session_id: Option<crate::DbUuid>,
+        chat_session_id: Option<crate::db::DbId>,
     ) -> Self {
         Self {
             id: None,
@@ -222,11 +234,11 @@ impl NewChronicleEvent {
 
     /// Create a simple event with just summary and keywords
     pub fn simple(
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         summary: String,
         keywords: Vec<String>,
-        chat_session_id: Option<crate::DbUuid>,
+        chat_session_id: Option<crate::db::DbId>,
     ) -> Self {
         Self::new(
             chronicle_id,
@@ -296,8 +308,8 @@ pub struct CreateEventRequest {
     pub source: EventSource,
     #[validate(custom(function = "validate_keywords_count"))]
     pub keywords: Option<Vec<String>>,
-    pub timestamp_iso8601: Option<DbDateTime>,
-    pub chat_session_id: Option<crate::DbUuid>,
+    pub timestamp_iso8601: Option<DbTimestamp>,
+    pub chat_session_id: Option<crate::db::DbId>,
 }
 
 fn default_event_source() -> EventSource {
@@ -329,9 +341,9 @@ pub struct EventFilter {
     pub event_type: Option<String>,
     pub source: Option<EventSource>,
     pub keywords: Option<Vec<String>>, // Filter by keywords
-    pub after_timestamp: Option<DbDateTime>,
-    pub before_timestamp: Option<DbDateTime>,
-    pub chat_session_id: Option<crate::DbUuid>,
+    pub after_timestamp: Option<DbTimestamp>,
+    pub before_timestamp: Option<DbTimestamp>,
+    pub chat_session_id: Option<crate::db::DbId>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub order_by: Option<EventOrderBy>,
@@ -371,7 +383,9 @@ impl Default for EventFilter {
 
 impl From<CreateEventRequest> for NewChronicleEvent {
     fn from(request: CreateEventRequest) -> Self {
-        let timestamp = request.timestamp_iso8601.unwrap_or_else(|| Utc::now().into());
+        let timestamp = request
+            .timestamp_iso8601
+            .unwrap_or_else(|| Utc::now().into());
 
         Self {
             id: None,
@@ -383,7 +397,9 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             summary_encrypted: None, // Will be set by service if encryption is available
             summary_nonce: None,     // Will be set by service if encryption is available
             timestamp_iso8601: timestamp,
-            keywords: OptionalStringArray(request.keywords.map(|k| k.into_iter().map(Some).collect())),
+            keywords: OptionalStringArray(
+                request.keywords.map(|k| k.into_iter().map(Some).collect()),
+            ),
             keywords_encrypted: None, // Will be set by service if encryption is available
             keywords_nonce: None,     // Will be set by service if encryption is available
             chat_session_id: request.chat_session_id,

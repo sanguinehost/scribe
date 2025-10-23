@@ -8,7 +8,7 @@ impl LorebookService {
         &self,
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<crate::models::lorebook_dtos::ExportedLorebook, AppError> {
         let _user = get_user_from_session(auth_session)?;
 
@@ -111,7 +111,7 @@ impl LorebookService {
         &self,
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<crate::models::lorebook_dtos::ScribeMinimalLorebook, AppError> {
         let _user = get_user_from_session(auth_session)?;
 
@@ -168,7 +168,7 @@ impl LorebookService {
     ) -> Result<LorebookResponse, AppError> {
         let user = get_user_from_session(auth_session)?;
 
-        let new_lorebook_id = Uuid::new_v4();
+        let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
@@ -278,7 +278,7 @@ impl LorebookService {
                 "Preparing lorebook entry [REDACTED_UUID]: title='[REDACTED]', content_len=[REDACTED], keys=[REDACTED]"
             );
 
-            let new_entry_id = Uuid::new_v4();
+            let new_entry_id = DbId::new();
 
             // Encrypt the fields if DEK is provided
             let (entry_title_ciphertext, entry_title_nonce) = if let Some(dek) = user_dek {
@@ -394,34 +394,34 @@ impl LorebookService {
 
             #[cfg(feature = "postgres-backend")]
             let inserted_entries: Vec<LorebookEntry> = {
-                conn
-                    .interact(move |conn_sync| {
-                        info!("Inside database interaction, executing batch insert SQL...");
-                        let result = diesel::insert_into(lorebook_entries::table)
-                            .values(&new_entries_batch)
-                            .returning(LorebookEntry::as_returning())
-                            .get_results::<LorebookEntry>(conn_sync);
-                        info!("Batch insert SQL execution completed");
-                        result
-                    })
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to batch insert lorebook entries: {}", e);
-                        AppError::InternalServerErrorGeneric(format!(
-                            "Failed to batch insert entries: {e}"
-                        ))
-                    })?
-                    .map_err(|e| {
-                        error!("Database error during batch insert: {}", e);
-                        AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
-                    })?
+                conn.interact(move |conn_sync| {
+                    info!("Inside database interaction, executing batch insert SQL...");
+                    let result = diesel::insert_into(lorebook_entries::table)
+                        .values(&new_entries_batch)
+                        .returning(LorebookEntry::as_returning())
+                        .get_results::<LorebookEntry>(conn_sync);
+                    info!("Batch insert SQL execution completed");
+                    result
+                })
+                .await
+                .map_err(|e| {
+                    error!("Failed to batch insert lorebook entries: {}", e);
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Failed to batch insert entries: {e}"
+                    ))
+                })?
+                .map_err(|e| {
+                    error!("Database error during batch insert: {}", e);
+                    AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
+                })?
             };
 
             #[cfg(feature = "sqlite-backend")]
             let inserted_entries: Vec<LorebookEntry> = {
                 use diesel::prelude::*;
                 // Collect IDs before insert for querying back
-                let entry_ids: Vec<crate::DbUuid> = new_entries_batch.iter().map(|e| e.id).collect();
+                let entry_ids: Vec<crate::db::DbId> =
+                    new_entries_batch.iter().map(|e| e.id).collect();
 
                 crate::db::with_conn(&self.pool, move |conn_sync| {
                     info!("Inside database interaction, executing batch insert SQL...");
@@ -441,7 +441,9 @@ impl LorebookService {
                         .load::<LorebookEntry>(conn_sync)
                         .map_err(|e| {
                             error!("Failed to query inserted entries: {}", e);
-                            AppError::DatabaseQueryError(format!("Failed to query inserted entries: {e}"))
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to query inserted entries: {e}"
+                            ))
                         })
                 })
                 .await?

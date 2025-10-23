@@ -198,7 +198,8 @@ pub fn get_full_character_schema() -> crate::DbJson {
             }
         },
         "required": ["name", "description", "first_mes", "tags"]
-    }).into()
+    })
+    .into()
 }
 
 pub fn get_enhancement_schema() -> crate::DbJson {
@@ -228,7 +229,8 @@ pub fn get_enhancement_schema() -> crate::DbJson {
             }
         },
         "required": ["enhanced_content", "changes_made", "improvement_reasoning"]
-    }).into()
+    })
+    .into()
 }
 
 pub fn get_style_analysis_schema() -> crate::DbJson {
@@ -262,7 +264,8 @@ pub fn get_style_analysis_schema() -> crate::DbJson {
             }
         },
         "required": ["detected_style", "confidence"]
-    }).into()
+    })
+    .into()
 }
 
 // ============================================================================

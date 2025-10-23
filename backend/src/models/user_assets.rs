@@ -1,50 +1,61 @@
 // backend/src/models/user_assets.rs
 
-use crate::DbDateTime;
+use crate::db::{DbBlob, DbId, DbTimestamp};
 use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::DbUuid as Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::user_assets)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct UserAsset {
     pub id: i32,
-    pub user_id: crate::DbUuid,
-    pub persona_id: Option<crate::DbUuid>,
+    pub user_id: DbId,
+    pub persona_id: Option<DbId>,
     pub asset_type: String,
     pub uri: Option<String>,
     pub name: String,
     pub ext: String,
-    pub data: Option<Vec<u8>>,
+    pub data: Option<DbBlob>,
     pub content_type: Option<String>,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::user_assets)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewUserAsset {
-    pub user_id: crate::DbUuid,
-    pub persona_id: Option<crate::DbUuid>,
+    pub user_id: DbId,
+    pub persona_id: Option<DbId>,
     pub asset_type: String,
     pub uri: Option<String>,
     pub name: String,
     pub ext: String,
-    pub data: Option<Vec<u8>>,
+    pub data: Option<DbBlob>,
     pub content_type: Option<String>,
 }
 
 impl NewUserAsset {
     /// Create a new user avatar asset
     pub fn new_user_avatar(
-        user_id: crate::DbUuid,
+        user_id: DbId,
         name: &str,
-        image_data: Vec<u8>,
+        image_data: DbBlob,
         content_type: Option<String>,
     ) -> Self {
         let ext = content_type.as_ref().map_or("png".to_string(), |ct| {
@@ -70,10 +81,10 @@ impl NewUserAsset {
 
     /// Create a new persona avatar asset
     pub fn new_persona_avatar(
-        user_id: crate::DbUuid,
-        persona_id: crate::DbUuid,
+        user_id: DbId,
+        persona_id: DbId,
         name: &str,
-        image_data: Vec<u8>,
+        image_data: DbBlob,
         content_type: Option<String>,
     ) -> Self {
         let ext = content_type.as_ref().map_or("png".to_string(), |ct| {

@@ -824,10 +824,7 @@ impl Config {
     }
 
     #[cfg(feature = "payment")]
-    fn validate_feature_flags(
-        &self,
-        feature_flags: &crate::DbJson,
-    ) -> Result<(), anyhow::Error> {
+    fn validate_feature_flags(&self, feature_flags: &crate::DbJson) -> Result<(), anyhow::Error> {
         // Check required feature flags exist
         let required_flags = ["credits_enabled", "soft_limits_enabled"];
         for flag in &required_flags {

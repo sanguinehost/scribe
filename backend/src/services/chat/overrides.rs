@@ -18,8 +18,8 @@ use secrecy::{ExposeSecret, SecretBox}; // Added SecretBox import
 #[instrument(skip(pool, payload, user_dek_secret_box), err)]
 pub async fn set_character_override(
     pool: &DbPool,
-    user_id: crate::DbUuid,
-    session_id: crate::DbUuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     payload: CharacterOverrideDto,
     user_dek_secret_box: Option<&SecretBox<Vec<u8>>>, // Changed to Option<&SecretBox>
 ) -> Result<ChatCharacterOverride, AppError> {
@@ -37,7 +37,7 @@ pub async fn set_character_override(
             let (chat_owner_id, original_character_id_from_session) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((chat_sessions::user_id, chat_sessions::character_id))
-                .first::<(crate::DbUuid, Option<crate::DbUuid>)>(transaction_conn)
+                .first::<(crate::db::DbId, Option<crate::db::DbId>)>(transaction_conn)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
                         AppError::NotFound(format!("Chat session {session_id} not found."))
@@ -83,7 +83,7 @@ pub async fn set_character_override(
 
             // 3. Perform an upsert (insert or update on conflict)
             let new_override = NewChatCharacterOverride {
-                id: Uuid::new_v4().into(), // Generate a new ID for insert, conflict target will handle existing
+                id: DbId::new().into(), // Generate a new ID for insert, conflict target will handle existing
                 chat_session_id: session_id,
                 original_character_id,
                 field_name: field_name_clone,
@@ -155,7 +155,10 @@ pub async fn set_character_override(
                     .select(ChatCharacterOverride::as_select())
                     .first::<ChatCharacterOverride>(transaction_conn)
                     .map_err(|e| {
-                        error!("Failed to query chat character override after upsert: {}", e);
+                        error!(
+                            "Failed to query chat character override after upsert: {}",
+                            e
+                        );
                         AppError::DatabaseQueryError(e.to_string())
                     })?
             };

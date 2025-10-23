@@ -2,7 +2,7 @@
 
 pub mod sql_types {
     // Re-export custom SQLite types for use in table definitions
-    pub use crate::db::sqlite_types::{SqliteUuid, SqliteDateTime, SqliteJson, SqliteBigDecimal};
+    pub use crate::db::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteJson, SqliteUuid};
 
     // MessageType: SQLite doesn't have native enums, so we just use Text
     // The application layer (models/chats.rs) handles the enum conversion

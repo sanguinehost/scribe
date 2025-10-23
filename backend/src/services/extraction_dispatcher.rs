@@ -59,9 +59,9 @@ impl ExtractionDispatcher {
     #[instrument(skip(self, messages, session_dek), fields(user_id = %user_id, num_messages = messages.len()))]
     pub async fn extract_events_from_chat(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
@@ -113,9 +113,9 @@ impl ExtractionDispatcher {
     /// Extract events using the manual system
     async fn extract_events_manual(
         &self,
-        _user_id: crate::DbUuid,
-        _chat_session_id: crate::DbUuid,
-        _chronicle_id: Option<crate::DbUuid>,
+        _user_id: crate::db::DbId,
+        _chat_session_id: crate::db::DbId,
+        _chronicle_id: Option<crate::db::DbId>,
         _messages: &[ChatMessage],
         _session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
@@ -144,9 +144,9 @@ impl ExtractionDispatcher {
     /// Extract events using the agentic system
     async fn extract_events_agentic(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
@@ -244,9 +244,9 @@ impl ExtractionDispatcher {
     /// Run both manual and agentic extraction for comparison
     async fn extract_events_dual_mode(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {

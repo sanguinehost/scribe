@@ -1256,7 +1256,8 @@ async fn build_final_prompt_strings(
 
     // Add RAG context if available
     if !enhanced_rag_context.is_empty() {
-        template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone()).into();
+        template_context["rag_context"] =
+            serde_json::Value::String(enhanced_rag_context.clone()).into();
     }
 
     // Add agent context as separate template variable for sections list generation
@@ -1379,8 +1380,8 @@ mod tests {
     #[test]
     fn test_build_prompt_character_with_description() {
         let char_meta = CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Test Bot".to_string(),
             description: Some(b"A friendly test bot.".to_vec()),
             description_nonce: None,
@@ -1412,8 +1413,8 @@ mod tests {
     #[test]
     fn test_build_prompt_character_no_description() {
         let char_meta = CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Minimal Bot".to_string(),
             description: None, // No description
             description_nonce: None,
@@ -1441,8 +1442,8 @@ mod tests {
     #[test]
     fn test_build_prompt_character_empty_description() {
         let char_meta = CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Silent Bot".to_string(),
             description: Some(b"".to_vec()), // Empty description
             description_nonce: None,
@@ -1820,10 +1821,10 @@ mod tests {
             let rag_chunk = RetrievedChunk {
                 text: "Some context".to_string(),
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
-                    message_id: crate::DbUuid::new_v4(),
-                    session_id: crate::DbUuid::new_v4(),
+                    message_id: crate::db::DbId::new_v4(),
+                    session_id: crate::db::DbId::new_v4(),
                     chronicle_id: None,
-                    user_id: crate::DbUuid::new_v4(),
+                    user_id: crate::db::DbId::new_v4(),
                     speaker: "user".to_string(),
                     timestamp: chrono::Utc::now(),
                     text: "Some context".to_string(),

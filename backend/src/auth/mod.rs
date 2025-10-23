@@ -6,9 +6,7 @@ use crate::schema::users;
 use bcrypt::BcryptError;
 #[cfg(feature = "postgres-backend")]
 use deadpool_diesel::InteractError;
-use diesel::{
-    BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
-};
+use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -29,7 +27,7 @@ type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthEr
 /// Generate a secure random verification token
 fn generate_verification_token() -> String {
     // Generate a 32-character alphanumeric token using UUID for simplicity and security
-    format!("{}", crate::DbUuid::new_v4().simple())
+    format!("{}", crate::db::DbId::new().simple())
 }
 
 // Make AuthError enum public
@@ -180,7 +178,7 @@ pub async fn create_user_with_verification(
 
     // Generate verification token
     let verification_token = generate_verification_token();
-    let expires_at = (Utc::now() + Duration::hours(24)).into();
+    let expires_at: crate::db::DbTimestamp = (Utc::now() + Duration::hours(24)).into();
 
     let new_token = NewEmailVerificationToken {
         user_id: user.id,
@@ -321,11 +319,11 @@ pub fn create_user_sync(
         password_hash,                          // Use the pre-hashed password
         email: credentials.email.clone(),       // Clone email from credentials
         kek_salt,
-        encrypted_dek,
-        encrypted_dek_by_recovery,
+        encrypted_dek: crate::db::DbBlob::from(encrypted_dek),
+        encrypted_dek_by_recovery: encrypted_dek_by_recovery.map(crate::db::DbBlob::from),
         recovery_kek_salt,
-        dek_nonce,
-        recovery_dek_nonce,
+        dek_nonce: crate::db::DbBlob::from(dek_nonce),
+        recovery_dek_nonce: recovery_dek_nonce.map(crate::db::DbBlob::from),
         role: user_role, // Using appropriate role based on whether this is the first user
         account_status: AccountStatus::Pending, // Default to Pending account status
         total_prompt_tokens: 0,
@@ -383,7 +381,10 @@ pub fn create_user_sync(
 /// - The database query fails
 /// - The user is not found
 #[instrument(skip(conn), err)]
-pub fn get_user_by_username(conn: &mut crate::db::DbConn, username: &str) -> Result<User, AuthError> {
+pub fn get_user_by_username(
+    conn: &mut crate::db::DbConn,
+    username: &str,
+) -> Result<User, AuthError> {
     // --- Log username explicitly ---
     info!("Attempting to find user by username"); // Removed PII: username
     users::table
@@ -401,7 +402,7 @@ pub fn get_user_by_username(conn: &mut crate::db::DbConn, username: &str) -> Res
 /// - The database query fails
 /// - The user is not found
 #[instrument(skip(conn), err)]
-pub fn get_user(conn: &mut crate::db::DbConn, user_id: crate::DbUuid) -> Result<User, AuthError> {
+pub fn get_user(conn: &mut crate::db::DbConn, user_id: crate::db::DbId) -> Result<User, AuthError> {
     // --- Log user_id explicitly ---
     info!(%user_id, "Attempting to find user by ID");
     users::table
@@ -424,7 +425,10 @@ pub fn find_user_by_email(conn: &mut crate::db::DbConn, email: &str) -> Result<U
     Ok(User::from(user_db_query))
 }
 
-pub fn find_user_by_id(conn: &mut crate::db::DbConn, user_id: crate::DbUuid) -> Result<User, AuthError> {
+pub fn find_user_by_id(
+    conn: &mut crate::db::DbConn,
+    user_id: crate::db::DbId,
+) -> Result<User, AuthError> {
     info!("Finding user by ID: {}", user_id);
 
     let user_db_query = users::table
@@ -552,7 +556,7 @@ pub async fn hash_password(password: SecretString) -> Result<String, AuthError> 
 #[instrument(skip(backend, current_db_user, current_password_payload, new_password_payload), err, fields(user_id = %user_id))]
 pub async fn change_user_password(
     backend: &user_store::Backend,
-    user_id: crate::DbUuid,
+    user_id: crate::db::DbId,
     current_db_user: User, // Assumes this is a fresh fetch of the user
     current_password_payload: SecretString, // Corrected: Was Secret<String>
     new_password_payload: SecretString, // Corrected: Was Secret<String>
@@ -642,9 +646,9 @@ pub async fn change_user_password(
             user_id,
             UserCryptoFields {
                 password_hash: Some(new_password_hash_str),
-                dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
-                dek_nonce: Some(new_nonce_dek_bytes),           // Pass nonce
-                kek_salt: Some(new_kek_salt_str),               // KEK salt (already a string)
+                dek_ciphertext: Some(crate::db::DbBlob::from(new_ciphertext_dek_bytes)), // Pass ciphertext
+                dek_nonce: Some(crate::db::DbBlob::from(new_nonce_dek_bytes)), // Pass nonce
+                kek_salt: Some(new_kek_salt_str), // KEK salt (already a string)
                 recovery_dek_ciphertext: updated_encrypted_dek_by_recovery,
                 recovery_dek_nonce: current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
             },
@@ -662,7 +666,7 @@ pub async fn recover_user_password_with_phrase(
     identifier: String,
     recovery_phrase_payload: SecretString, // Corrected: Was Secret<String>
     new_password_payload: SecretString,    // Corrected: Was Secret<String>
-) -> Result<crate::DbUuid, AuthError> {
+) -> Result<crate::db::DbId, AuthError> {
     info!("Attempting password recovery with phrase"); // Removed PII: identifier
 
     // 1. Fetch user by identifier (username or email)
@@ -755,8 +759,8 @@ pub async fn recover_user_password_with_phrase(
             user.id,
             UserCryptoFields {
                 password_hash: Some(new_password_hash_str),
-                dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
-                dek_nonce: Some(new_nonce_dek_bytes),           // Pass nonce
+                dek_ciphertext: Some(crate::db::DbBlob::from(new_ciphertext_dek_bytes)), // Pass ciphertext
+                dek_nonce: Some(crate::db::DbBlob::from(new_nonce_dek_bytes)), // Pass nonce
                 kek_salt: Some(new_kek_salt_str), // The new KEK salt (already a string)
                 recovery_dek_ciphertext: user.encrypted_dek_by_recovery.clone(), // This remains unchanged
                 recovery_dek_nonce: user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
@@ -769,16 +773,16 @@ pub async fn recover_user_password_with_phrase(
 }
 
 /// Extracts user ID from session data JSON
-fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option<crate::DbUuid> {
-    match serde_json::from_str::<crate::DbJson>(data_json_str) {
+fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option<crate::db::DbId> {
+    match serde_json::from_str::<serde_json::Value>(data_json_str) {
         Ok(json_value) => {
-            json_value.get("userId").and_then(crate::DbJson::as_str).map_or_else(|| {
+            json_value.get("userId").and_then(|v| v.as_str()).map_or_else(|| {
                 warn!(session_id, "Session data does not contain a 'userId' string field during invalidation sweep.");
                 None
             }, |session_user_id_str| Uuid::parse_str(session_user_id_str).map_or_else(|_| {
                 warn!(session_id, "Failed to parse userId UUID from session data during invalidation sweep.");
                 None
-            }, |id| Some(id.into())))
+            }, |id| Some(crate::db::DbId::from(id))))
         }
         Err(e) => {
             warn!(session_id, error = ?e, "Failed to parse session data JSON during invalidation sweep.");
@@ -790,7 +794,7 @@ fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option
 /// Filters sessions to find those belonging to the target user
 fn filter_sessions_for_user(
     all_sessions_data: Vec<(String, String)>,
-    user_id_to_invalidate: crate::DbUuid,
+    user_id_to_invalidate: crate::db::DbId,
 ) -> Vec<String> {
     all_sessions_data
         .into_iter()
@@ -830,7 +834,7 @@ fn delete_sessions_from_db(
 #[instrument(skip(pool), err, fields(user_id = %user_id_to_invalidate))]
 pub async fn delete_all_sessions_for_user(
     pool: &DbPool,
-    user_id_to_invalidate: crate::DbUuid,
+    user_id_to_invalidate: crate::db::DbId,
 ) -> Result<usize, AuthError> {
     use crate::schema::sessions::dsl::{
         id as session_id_col, session as session_data_col, sessions,
@@ -854,11 +858,10 @@ pub async fn delete_all_sessions_for_user(
             filter_sessions_for_user(all_sessions_data, user_id_to_invalidate);
 
         // 3. Delete the identified sessions
-        delete_sessions_from_db(conn, &session_ids_to_delete)
-            .map_err(|e| match e {
-                AuthError::DatabaseError(msg) => crate::errors::AppError::DatabaseQueryError(msg),
-                _ => crate::errors::AppError::InternalServerErrorGeneric(e.to_string()),
-            })
+        delete_sessions_from_db(conn, &session_ids_to_delete).map_err(|e| match e {
+            AuthError::DatabaseError(msg) => crate::errors::AppError::DatabaseQueryError(msg),
+            _ => crate::errors::AppError::InternalServerErrorGeneric(e.to_string()),
+        })
     })
     .await
     .map_err(AuthError::from)?;

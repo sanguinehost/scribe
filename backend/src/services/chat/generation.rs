@@ -81,8 +81,8 @@ use super::{
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
     state: Arc<AppState>,
-    user_id: crate::DbUuid,
-    session_id: crate::DbUuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     user_message_content: String,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
     frontend_history: Option<Vec<crate::models::chats::ApiChatMessage>>,
@@ -91,15 +91,16 @@ pub async fn get_session_data_for_generation(
     info!(target: "chat_service_persona_debug", %session_id, %user_id, "Entering get_session_data_for_generation.");
 
     // --- Determine Effective System Prompt & Lorebook IDs (Pre-Main-Interact) ---
-    let maybe_active_persona_id_from_session: Option<crate::DbUuid> = crate::db::with_conn(&state.pool, move |c| {
-        chat_sessions::table
-            .filter(chat_sessions::id.eq(session_id))
-            .filter(chat_sessions::user_id.eq(user_id))
-            .select(chat_sessions::active_custom_persona_id)
-            .first::<Option<crate::DbUuid>>(c)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-    })
-    .await?;
+    let maybe_active_persona_id_from_session: Option<crate::db::DbId> =
+        crate::db::with_conn(&state.pool, move |c| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::active_custom_persona_id)
+                .first::<Option<crate::db::DbId>>(c)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
     info!(target: "chat_service_persona_debug", %session_id, ?maybe_active_persona_id_from_session, "Fetched active_custom_persona_id from session.");
 
     let mut effective_system_prompt: Option<String> = None;
@@ -112,10 +113,12 @@ pub async fn get_session_data_for_generation(
                     crate::schema::users::table
                         .filter(crate::schema::users::id.eq(user_id))
                         .first::<crate::models::users::UserDbQuery>(c)
-                        .map_err(|e| AppError::NotFound(format!(
-                            "UserDbQuery for user {} not found: {e}",
-                            loggable_user_id(user_id)
-                        )))
+                        .map_err(|e| {
+                            AppError::NotFound(format!(
+                                "UserDbQuery for user {} not found: {e}",
+                                loggable_user_id(user_id)
+                            ))
+                        })
                 })
                 .await?;
                 user_db_query.into()
@@ -250,15 +253,15 @@ pub async fn get_session_data_for_generation(
                 .first::<(
                     String,
                     i32,
-                    Option<crate::DbUuid>,
+                    Option<crate::db::DbId>,
                     Option<Vec<u8>>,
                     Option<Vec<u8>>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
                     Option<crate::models::OptionalStringArray>,
                     String,
@@ -284,9 +287,12 @@ pub async fn get_session_data_for_generation(
                         chat_sessions::player_chronicle_id,
                         chat_sessions::agent_mode,
                     ))
-                    .first::<(Option<i32>, Option<bool>, Option<crate::DbUuid>, Option<String>)>(
-                        conn_interaction,
-                    )
+                    .first::<(
+                        Option<i32>,
+                        Option<bool>,
+                        Option<crate::db::DbId>,
+                        Option<String>,
+                    )>(conn_interaction)
                     .map_err(|e| match e {
                         DieselError::NotFound => {
                             AppError::NotFound(format!("Chat session {session_id} not found"))
@@ -330,7 +336,6 @@ pub async fn get_session_data_for_generation(
                 chat_messages::table
                     .filter(chat_messages::session_id.eq(session_id))
                     .order(chat_messages::created_at.asc()) // Fetch in ascending order for correct processing later
-                    .select(DbChatMessage::as_select())
                     .load::<DbChatMessage>(conn_interaction)
                     .map_err(|e| {
                         AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
@@ -445,7 +450,7 @@ pub async fn get_session_data_for_generation(
     };
 
     // --- Retrieve Comprehensive Active Lorebook IDs (now that character_id is available) ---
-    let active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>> = {
+    let active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>> = {
         let pool_clone_lore = state.pool.clone();
         let user_id_clone = user_id;
         let session_id_clone = session_id;
@@ -521,13 +526,15 @@ pub async fn get_session_data_for_generation(
                 };
 
                 DbChatMessage {
-                    id: Uuid::new_v4().into(), // Generate temporary ID for frontend messages
+                    id: DbId::new().into(), // Generate temporary ID for frontend messages
                     session_id,
                     user_id,
                     message_type: message_role,
                     content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
                     content_nonce: None, // No encryption for frontend-provided history
-                    created_at: (chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64)).into(), // Fake timestamps
+                    created_at: (chrono::Utc::now()
+                        - chrono::Duration::seconds(1000 - index as i64))
+                    .into(), // Fake timestamps
                     prompt_tokens: None,
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
@@ -539,12 +546,12 @@ pub async fn get_session_data_for_generation(
                     variant_count: 0,
                     current_variant_index: 0,
                     credits_charged: 0,
-                    credits_cost: crate::DbBigDecimal::from(0),
+                    credits_cost: crate::db::DbDecimal::from(0),
                     // New cost tracking fields
-                    actual_cost: crate::DbBigDecimal::from(0),
-                    modified_cost: crate::DbBigDecimal::from(0),
+                    actual_cost: crate::db::DbDecimal::from(0),
+                    modified_cost: crate::db::DbDecimal::from(0),
                     credit_cost: 0,
-                    actual_charge: crate::DbBigDecimal::from(0),
+                    actual_charge: crate::db::DbDecimal::from(0),
                 }
             })
             .collect()
@@ -846,7 +853,7 @@ pub async fn get_session_data_for_generation(
             {
                 Ok(mut older_chat_chunks) => {
                     info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                    let recent_message_ids: std::collections::HashSet<crate::DbUuid> =
+                    let recent_message_ids: std::collections::HashSet<crate::db::DbId> =
                         managed_recent_history.iter().map(|msg| msg.id).collect();
                     debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
@@ -1039,7 +1046,7 @@ pub async fn get_session_data_for_generation(
 
         if let Some(content) = first_mes_content_to_add {
             let first_mes_db_chat_message = DbChatMessage {
-                id: Uuid::new_v4().into(),
+                id: DbId::new().into(),
                 session_id,
                 user_id,
                 message_type: MessageRole::Assistant,
@@ -1051,18 +1058,18 @@ pub async fn get_session_data_for_generation(
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: session_model_name_db.to_string(), // Use session model for character first message
-                status: "completed".to_string(),           // First message is considered completed
+                status: "completed".to_string(), // First message is considered completed
                 error_message: None,
                 superseded_at: None,
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: crate::DbBigDecimal::from(0),
+                credits_cost: crate::db::DbDecimal::from(0),
                 // New cost tracking fields
-                actual_cost: crate::DbBigDecimal::from(0),
-                modified_cost: crate::DbBigDecimal::from(0),
+                actual_cost: crate::db::DbDecimal::from(0),
+                modified_cost: crate::db::DbDecimal::from(0),
                 credit_cost: 0,
-                actual_charge: crate::DbBigDecimal::from(0),
+                actual_charge: crate::db::DbDecimal::from(0),
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -1088,18 +1095,18 @@ pub async fn get_session_data_for_generation(
     Ok((
         managed_recent_history, // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
         final_effective_system_prompt, // 1: system_prompt (Option<String>)
-        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<crate::DbUuid>>)
-        session_character_id_db, // 3: session_character_id (Option<crate::DbUuid>)
-        raw_character_system_prompt, // 4: raw_character_system_prompt (Option<String>)
-        session_temperature_db, // 5: temperature (Option<crate::DbBigDecimal>)
-        session_max_output_tokens_db, // 6: max_output_tokens (Option<i32>)
-        session_frequency_penalty_db, // 7: frequency_penalty (Option<crate::DbBigDecimal>)
-        session_presence_penalty_db, // 8: presence_penalty (Option<crate::DbBigDecimal>)
-        session_top_k_db,       // 9: top_k (Option<i32>)
-        session_top_p_db,       // 10: top_p (Option<crate::DbBigDecimal>)
-        session_seed_db,        // 11: seed (Option<i32>) - MOVED
-        session_model_name_db.to_string(),  // 12: model_name (String) - MOVED
-        session_model_provider_db, // 13: model_provider (Option<String>) - NEW
+        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<crate::db::DbId>>)
+        session_character_id_db,        // 3: session_character_id (Option<crate::db::DbId>)
+        raw_character_system_prompt,    // 4: raw_character_system_prompt (Option<String>)
+        session_temperature_db,         // 5: temperature (Option<crate::db::DbDecimal>)
+        session_max_output_tokens_db,   // 6: max_output_tokens (Option<i32>)
+        session_frequency_penalty_db,   // 7: frequency_penalty (Option<crate::db::DbDecimal>)
+        session_presence_penalty_db,    // 8: presence_penalty (Option<crate::db::DbDecimal>)
+        session_top_k_db,               // 9: top_k (Option<i32>)
+        session_top_p_db,               // 10: top_p (Option<crate::db::DbDecimal>)
+        session_seed_db,                // 11: seed (Option<i32>) - MOVED
+        session_model_name_db.to_string(), // 12: model_name (String) - MOVED
+        session_model_provider_db,      // 13: model_provider (Option<String>) - NEW
         // -- Gemini Specific Options --
         session_gemini_thinking_budget_db, // 14: gemini_thinking_budget (Option<i32>) - MOVED
         session_gemini_enable_code_execution_db, // 15: gemini_enable_code_execution (Option<bool>) - MOVED
@@ -1111,35 +1118,35 @@ pub async fn get_session_data_for_generation(
         history_management_strategy_db_val, // 19: history_management_strategy (String) - MOVED
         history_management_limit_db_val,    // 20: history_management_limit (i32) - MOVED
         user_persona_name,                  // 21: user_persona_name (Option<String>) - NEW
-        player_chronicle_id_from_session,   // 22: player_chronicle_id (Option<crate::DbUuid>) - NEW
-        agent_mode_from_session,            // 23: agent_mode (Option<String>) - NEW
+        player_chronicle_id_from_session, // 22: player_chronicle_id (Option<crate::db::DbId>) - NEW
+        agent_mode_from_session,          // 23: agent_mode (Option<String>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
 pub struct StreamAiParams {
     pub state: Arc<AppState>,
-    pub session_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub incoming_genai_messages: Vec<GenAiChatMessage>, // MODIFIED: Changed type and name
     pub system_prompt: Option<String>,
-    pub temperature: Option<crate::DbBigDecimal>,
+    pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub frequency_penalty: Option<crate::DbBigDecimal>, // Mark as unused for now
-    pub presence_penalty: Option<crate::DbBigDecimal>,  // Mark as unused for now
-    pub top_k: Option<i32>,                    // Mark as unused for now
-    pub top_p: Option<crate::DbBigDecimal>,
+    pub frequency_penalty: Option<crate::db::DbDecimal>, // Mark as unused for now
+    pub presence_penalty: Option<crate::db::DbDecimal>,  // Mark as unused for now
+    pub top_k: Option<i32>,                              // Mark as unused for now
+    pub top_p: Option<crate::db::DbDecimal>,
     pub stop_sequences: Option<Vec<String>>, // New parameter
     pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
     pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    pub request_thinking: bool,            // New parameter
+    pub request_thinking: bool,                       // New parameter
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub character_name: Option<String>,    // For prefill generation
-    pub player_chronicle_id: Option<crate::DbUuid>, // For narrative processing
-    pub variant_of: Option<crate::DbUuid>, // If provided, create a variant of this message instead of new message
-    pub charge_credits: bool,     // Whether credits should be charged for this message
+    pub player_chronicle_id: Option<crate::db::DbId>, // For narrative processing
+    pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
+    pub charge_credits: bool,                // Whether credits should be charged for this message
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1191,9 +1198,9 @@ pub struct ExecChatWithRetryParams {
     pub model_provider: Option<String>,
     pub chat_request: genai::chat::ChatRequest,
     pub chat_options: Option<genai::chat::ChatOptions>,
-    pub session_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,                     // Added for per-user AI client selection
-    pub character_name: Option<String>,    // For prefill generation
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId, // Added for per-user AI client selection
+    pub character_name: Option<String>, // For prefill generation
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
 }
 
@@ -2094,7 +2101,7 @@ fn build_raw_prompt_debug(
 async fn get_message_content_with_variant(
     message: &DbChatMessage,
     pool: &crate::db::DbPool,
-    user_id: crate::DbUuid,
+    user_id: crate::db::DbId,
     dek: &secrecy::SecretBox<Vec<u8>>,
 ) -> Result<String, AppError> {
     if message.current_variant_index == 0 {

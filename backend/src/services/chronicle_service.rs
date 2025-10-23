@@ -7,7 +7,6 @@ use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::errors::AppError;
-use crate::models::OptionalStringArray;
 use crate::models::chronicle::{
     CreateChronicleRequest, NewPlayerChronicle, PlayerChronicle, PlayerChronicleWithCounts,
     UpdateChronicleRequest, UpdatePlayerChronicle,
@@ -15,6 +14,7 @@ use crate::models::chronicle::{
 use crate::models::chronicle_event::{
     ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, NewChronicleEvent,
 };
+use crate::models::OptionalStringArray;
 use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
 use crate::services::ChronicleDeduplicationService;
 
@@ -36,7 +36,7 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, name = %request.name))]
     pub async fn create_chronicle(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         request: CreateChronicleRequest,
     ) -> Result<PlayerChronicle, AppError> {
         let mut new_chronicle: NewPlayerChronicle = request.into();
@@ -53,16 +53,21 @@ impl ChronicleService {
                         error!("Diesel error when creating chronicle: {}", e);
                         match e {
                             DieselError::DatabaseError(_, ref info) => {
-                                if info.message().contains("duplicate") || info.message().contains("unique")
+                                if info.message().contains("duplicate")
+                                    || info.message().contains("unique")
                                 {
                                     AppError::Conflict(
                                         "A chronicle with this name already exists".to_string(),
                                     )
                                 } else {
-                                    AppError::DatabaseQueryError(format!("Failed to create chronicle: {e}"))
+                                    AppError::DatabaseQueryError(format!(
+                                        "Failed to create chronicle: {e}"
+                                    ))
                                 }
                             }
-                            _ => AppError::DatabaseQueryError(format!("Failed to create chronicle: {e}")),
+                            _ => AppError::DatabaseQueryError(format!(
+                                "Failed to create chronicle: {e}"
+                            )),
                         }
                     })
             })
@@ -72,7 +77,9 @@ impl ChronicleService {
         #[cfg(feature = "sqlite-backend")]
         let chronicle = {
             // Clone the ID for querying back after insert
-            let chronicle_id = new_chronicle.id.expect("Chronicle ID must be set before insert");
+            let chronicle_id = new_chronicle
+                .id
+                .expect("Chronicle ID must be set before insert");
 
             crate::db::with_conn(&self.db_pool, move |conn| {
                 diesel::insert_into(player_chronicles::table)
@@ -82,16 +89,21 @@ impl ChronicleService {
                         error!("Diesel error when creating chronicle: {}", e);
                         match e {
                             DieselError::DatabaseError(_, ref info) => {
-                                if info.message().contains("duplicate") || info.message().contains("unique")
+                                if info.message().contains("duplicate")
+                                    || info.message().contains("unique")
                                 {
                                     AppError::Conflict(
                                         "A chronicle with this name already exists".to_string(),
                                     )
                                 } else {
-                                    AppError::DatabaseQueryError(format!("Failed to create chronicle: {e}"))
+                                    AppError::DatabaseQueryError(format!(
+                                        "Failed to create chronicle: {e}"
+                                    ))
                                 }
                             }
-                            _ => AppError::DatabaseQueryError(format!("Failed to create chronicle: {e}")),
+                            _ => AppError::DatabaseQueryError(format!(
+                                "Failed to create chronicle: {e}"
+                            )),
                         }
                     })?;
 
@@ -115,7 +127,7 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id))]
     pub async fn get_user_chronicles(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Vec<PlayerChronicle>, AppError> {
         let chronicles = crate::db::with_conn(&self.db_pool, move |conn| {
             player_chronicles::table
@@ -141,7 +153,7 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id))]
     pub async fn get_user_chronicles_with_counts(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Vec<PlayerChronicleWithCounts>, AppError> {
         let results = crate::db::with_conn(&self.db_pool, move |conn| {
             // Note: This query might need optimization with proper joins
@@ -150,7 +162,9 @@ impl ChronicleService {
                 .filter(player_chronicles::user_id.eq(user_id))
                 .order(player_chronicles::updated_at.desc())
                 .load(conn)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load chronicles: {e}")))?;
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to load chronicles: {e}"))
+                })?;
 
             let mut chronicles_with_counts = Vec::new();
 
@@ -160,14 +174,18 @@ impl ChronicleService {
                     .filter(chronicle_events::chronicle_id.eq(chronicle.id))
                     .count()
                     .get_result(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to count events: {e}")))?;
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to count events: {e}"))
+                    })?;
 
                 // Count linked chat sessions
                 let chat_session_count: i64 = chat_sessions::table
                     .filter(chat_sessions::player_chronicle_id.eq(chronicle.id))
                     .count()
                     .get_result(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to count sessions: {e}")))?;
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to count sessions: {e}"))
+                    })?;
 
                 chronicles_with_counts.push(PlayerChronicleWithCounts {
                     chronicle,
@@ -192,8 +210,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
     pub async fn get_chronicle(
         &self,
-        user_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
     ) -> Result<PlayerChronicle, AppError> {
         let chronicle = crate::db::with_conn(&self.db_pool, move |conn| {
             player_chronicles::table
@@ -206,7 +224,9 @@ impl ChronicleService {
                 .map_err(|e| {
                     error!("Diesel error when getting chronicle: {}", e);
                     match e {
-                        DieselError::NotFound => AppError::NotFound("Chronicle not found".to_string()),
+                        DieselError::NotFound => {
+                            AppError::NotFound("Chronicle not found".to_string())
+                        }
                         _ => AppError::DatabaseQueryError(format!("Failed to get chronicle: {e}")),
                     }
                 })
@@ -221,8 +241,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
     pub async fn update_chronicle(
         &self,
-        user_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
         request: UpdateChronicleRequest,
     ) -> Result<PlayerChronicle, AppError> {
         let update: UpdatePlayerChronicle = request.into();
@@ -272,8 +292,12 @@ impl ChronicleService {
                 result.map_err(|e| {
                     error!("Diesel error when updating chronicle: {}", e);
                     match e {
-                        DieselError::NotFound => AppError::NotFound("Chronicle not found".to_string()),
-                        _ => AppError::DatabaseQueryError(format!("Failed to update chronicle: {e}")),
+                        DieselError::NotFound => {
+                            AppError::NotFound("Chronicle not found".to_string())
+                        }
+                        _ => {
+                            AppError::DatabaseQueryError(format!("Failed to update chronicle: {e}"))
+                        }
                     }
                 })
             })
@@ -333,8 +357,12 @@ impl ChronicleService {
                     .map_err(|e| {
                         error!("Failed to query chronicle after update: {}", e);
                         match e {
-                            DieselError::NotFound => AppError::NotFound("Chronicle not found".to_string()),
-                            _ => AppError::DatabaseQueryError(format!("Failed to query chronicle: {e}")),
+                            DieselError::NotFound => {
+                                AppError::NotFound("Chronicle not found".to_string())
+                            }
+                            _ => AppError::DatabaseQueryError(format!(
+                                "Failed to query chronicle: {e}"
+                            )),
                         }
                     })
             })
@@ -349,8 +377,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
     pub async fn delete_chronicle(
         &self,
-        user_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let deleted_count = crate::db::with_conn(&self.db_pool, move |conn| {
             // Note: chronicle_events will be deleted by CASCADE
@@ -383,8 +411,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id, event_type = %request.event_type))]
     pub async fn create_event(
         &self,
-        user_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
         request: CreateEventRequest,
         session_dek: Option<&crate::auth::session_dek::SessionDek>,
     ) -> Result<ChronicleEvent, AppError> {
@@ -432,7 +460,8 @@ impl ChronicleService {
                             new_event.keywords_encrypted = Some(ciphertext);
                             new_event.keywords_nonce = Some(nonce);
                             // Clear plaintext keywords - we MUST NOT store plaintext in the database
-                            new_event.keywords = OptionalStringArray(Some(vec![Some("[ENCRYPTED]".to_string())]));
+                            new_event.keywords =
+                                OptionalStringArray(Some(vec![Some("[ENCRYPTED]".to_string())]));
                             tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event keywords");
                         }
                         Err(e) => {
@@ -447,7 +476,7 @@ impl ChronicleService {
 
         // Create temporary event for deduplication check
         let temp_event = ChronicleEvent {
-            id: Uuid::new_v4().into(), // Temporary ID
+            id: DbId::new().into(), // Temporary ID
             chronicle_id: new_event.chronicle_id,
             user_id: new_event.user_id,
             event_type: new_event.event_type.clone(),
@@ -549,8 +578,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
     pub async fn get_chronicle_events(
         &self,
-        user_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
         filter: EventFilter,
     ) -> Result<Vec<ChronicleEvent>, AppError> {
         // First verify chronicle ownership
@@ -600,11 +629,10 @@ impl ChronicleService {
             if let Some(limit) = filter.limit {
                 query = query.limit(limit);
             }
-
-                .map_err(|e| {
-                    error!("Diesel error when getting events: {}", e);
-                    AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
-                })
+            .map_err(|e| {
+                error!("Diesel error when getting events: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
+            })
         })
         .await?;
 
@@ -621,8 +649,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, event_id = %event_id))]
     pub async fn get_event(
         &self,
-        user_id: crate::DbUuid,
-        event_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        event_id: crate::db::DbId,
     ) -> Result<ChronicleEvent, AppError> {
         let event = crate::db::with_conn(&self.db_pool, move |conn| {
             chronicle_events::table
@@ -648,7 +676,11 @@ impl ChronicleService {
 
     /// Delete an event
     #[instrument(skip(self), fields(user_id = %user_id, event_id = %event_id))]
-    pub async fn delete_event(&self, user_id: crate::DbUuid, event_id: crate::DbUuid) -> Result<(), AppError> {
+    pub async fn delete_event(
+        &self,
+        user_id: crate::db::DbId,
+        event_id: crate::db::DbId,
+    ) -> Result<(), AppError> {
         let deleted_count = crate::db::with_conn(&self.db_pool, move |conn| {
             diesel::delete(
                 chronicle_events::table.filter(
@@ -677,8 +709,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, session_id = %session_id))]
     pub async fn get_events_for_chat_session(
         &self,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
     ) -> Result<Vec<ChronicleEvent>, AppError> {
         let events = crate::db::with_conn(&self.db_pool, move |conn| {
             chronicle_events::table
@@ -690,7 +722,9 @@ impl ChronicleService {
                 .load(conn)
                 .map_err(|e| {
                     error!("Diesel error when getting events for chat session: {}", e);
-                    AppError::DatabaseQueryError(format!("Failed to get events for chat session: {e}"))
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to get events for chat session: {e}"
+                    ))
                 })
         })
         .await?;
@@ -708,8 +742,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, session_id = %session_id))]
     pub async fn delete_events_for_chat_session(
         &self,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
     ) -> Result<usize, AppError> {
         let deleted_count = crate::db::with_conn(&self.db_pool, move |conn| {
             diesel::delete(
@@ -740,9 +774,9 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, session_id = %session_id, chronicle_id = %chronicle_id))]
     pub async fn link_chat_session(
         &self,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         // First verify chronicle ownership
         self.get_chronicle(user_id, chronicle_id).await?;
@@ -779,22 +813,23 @@ impl ChronicleService {
     #[instrument(skip(self), fields(session_id = %session_id))]
     pub async fn get_chat_session_character_name(
         &self,
-        session_id: crate::DbUuid,
+        session_id: crate::db::DbId,
     ) -> Result<Option<String>, AppError> {
         // First get the character_id from the chat session
-        let character_id: Option<crate::DbUuid> = crate::db::with_conn(&self.db_pool, move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(session_id))
-                .select(chat_sessions::character_id)
-                .first::<Option<crate::DbUuid>>(conn)
-                .optional()
-                .map_err(|e| {
-                    error!("Diesel error when getting character_id: {}", e);
-                    AppError::DatabaseQueryError(format!("Failed to get character_id: {e}"))
-                })
-        })
-        .await?
-        .flatten();
+        let character_id: Option<crate::db::DbId> =
+            crate::db::with_conn(&self.db_pool, move |conn| {
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .select(chat_sessions::character_id)
+                    .first::<Option<crate::db::DbId>>(conn)
+                    .optional()
+                    .map_err(|e| {
+                        error!("Diesel error when getting character_id: {}", e);
+                        AppError::DatabaseQueryError(format!("Failed to get character_id: {e}"))
+                    })
+            })
+            .await?
+            .flatten();
 
         // If we have a character_id, get the character name
         let character_name = if let Some(char_id) = character_id {
@@ -827,17 +862,19 @@ impl ChronicleService {
     #[instrument(skip(self), fields(session_id = %session_id))]
     pub async fn get_chat_session_chronicle(
         &self,
-        session_id: crate::DbUuid,
-    ) -> Result<Option<crate::DbUuid>, AppError> {
+        session_id: crate::db::DbId,
+    ) -> Result<Option<crate::db::DbId>, AppError> {
         let chronicle_id = crate::db::with_conn(&self.db_pool, move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::player_chronicle_id)
-                .first::<Option<crate::DbUuid>>(conn)
+                .first::<Option<crate::db::DbId>>(conn)
                 .optional()
                 .map_err(|e| {
                     error!("Diesel error when getting chat session chronicle: {}", e);
-                    AppError::DatabaseQueryError(format!("Failed to get chat session chronicle: {e}"))
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to get chat session chronicle: {e}"
+                    ))
                 })
         })
         .await?
@@ -854,8 +891,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, session_id = %session_id))]
     pub async fn unlink_chat_session(
         &self,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let updated_count = crate::db::with_conn(&self.db_pool, move |conn| {
             diesel::update(
@@ -865,7 +902,7 @@ impl ChronicleService {
                         .and(chat_sessions::user_id.eq(user_id)),
                 ),
             )
-            .set(chat_sessions::player_chronicle_id.eq(None::<crate::DbUuid>))
+            .set(chat_sessions::player_chronicle_id.eq(None::<crate::db::DbId>))
             .execute(conn)
             .map_err(|e| {
                 error!("Diesel error when unlinking chat session: {}", e);
@@ -890,86 +927,83 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chat_session_id = %chat_session_id))]
     pub async fn get_chat_deletion_analysis(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
     ) -> Result<Option<ChronicleAnalysisInfo>, AppError> {
-        let analysis = crate::db::with_conn(&self.db_pool, move |conn| -> Result<Option<ChronicleAnalysisInfo>, AppError> {
-            use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
+        let analysis = crate::db::with_conn(
+            &self.db_pool,
+            move |conn| -> Result<Option<ChronicleAnalysisInfo>, AppError> {
+                use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
 
-            // First, get the chronicle ID from the chat session
-            let chronicle_id_opt: Option<crate::DbUuid> = chat_sessions::table
-                .filter(
-                    chat_sessions::id
-                        .eq(chat_session_id)
-                        .and(chat_sessions::user_id.eq(user_id)),
-                )
-                .select(chat_sessions::player_chronicle_id)
-                .first(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to get chat session: {e}"))
-                })?;
+                // First, get the chronicle ID from the chat session
+                let chronicle_id_opt: Option<crate::db::DbId> = chat_sessions::table
+                    .filter(
+                        chat_sessions::id
+                            .eq(chat_session_id)
+                            .and(chat_sessions::user_id.eq(user_id)),
+                    )
+                    .select(chat_sessions::player_chronicle_id)
+                    .first(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to get chat session: {e}"))
+                    })?;
 
-            let chronicle_id = match chronicle_id_opt {
-                Some(id) => id,
-                None => return Ok(None), // Chat has no chronicle
-            };
+                let chronicle_id = match chronicle_id_opt {
+                    Some(id) => id,
+                    None => return Ok(None), // Chat has no chronicle
+                };
 
-            // Get chronicle basic info
-            let chronicle: PlayerChronicle = player_chronicles::table
-                .filter(player_chronicles::id.eq(chronicle_id))
-                .filter(player_chronicles::user_id.eq(user_id))
-                .first(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to get chronicle: {e}"))
-                })?;
+                // Get chronicle basic info
+                let chronicle: PlayerChronicle = player_chronicles::table
+                    .filter(player_chronicles::id.eq(chronicle_id))
+                    .filter(player_chronicles::user_id.eq(user_id))
+                    .first(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to get chronicle: {e}"))
+                    })?;
 
-            // Count total events in chronicle
-            let total_events: i64 = chronicle_events::table
-                .filter(chronicle_events::chronicle_id.eq(chronicle_id))
-                .count()
-                .get_result(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to count total events: {e}"
-                    ))
-                })?;
+                // Count total events in chronicle
+                let total_events: i64 = chronicle_events::table
+                    .filter(chronicle_events::chronicle_id.eq(chronicle_id))
+                    .count()
+                    .get_result(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to count total events: {e}"))
+                    })?;
 
-            // Count events created by this specific chat
-            let events_from_this_chat: i64 = chronicle_events::table
-                .filter(chronicle_events::chronicle_id.eq(chronicle_id))
-                .filter(chronicle_events::chat_session_id.eq(chat_session_id))
-                .count()
-                .get_result(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to count chat events: {e}"
-                    ))
-                })?;
+                // Count events created by this specific chat
+                let events_from_this_chat: i64 = chronicle_events::table
+                    .filter(chronicle_events::chronicle_id.eq(chronicle_id))
+                    .filter(chronicle_events::chat_session_id.eq(chat_session_id))
+                    .count()
+                    .get_result(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to count chat events: {e}"))
+                    })?;
 
-            // Count other chats using this chronicle
-            let other_chats_using_chronicle: i64 = chat_sessions::table
-                .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
-                .filter(chat_sessions::user_id.eq(user_id))
-                .filter(chat_sessions::id.ne(chat_session_id)) // Exclude the current chat
-                .count()
-                .get_result(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to count other chats: {e}"
-                    ))
-                })?;
+                // Count other chats using this chronicle
+                let other_chats_using_chronicle: i64 = chat_sessions::table
+                    .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
+                    .filter(chat_sessions::user_id.eq(user_id))
+                    .filter(chat_sessions::id.ne(chat_session_id)) // Exclude the current chat
+                    .count()
+                    .get_result(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to count other chats: {e}"))
+                    })?;
 
-            let can_delete_chronicle = other_chats_using_chronicle == 0;
+                let can_delete_chronicle = other_chats_using_chronicle == 0;
 
-            Ok(Some(ChronicleAnalysisInfo {
-                id: chronicle.id,
-                name: chronicle.name,
-                total_events: total_events as i32,
-                events_from_this_chat: events_from_this_chat as i32,
-                other_chats_using_chronicle: other_chats_using_chronicle as i32,
-                can_delete_chronicle,
-            }))
-        })
+                Ok(Some(ChronicleAnalysisInfo {
+                    id: chronicle.id,
+                    name: chronicle.name,
+                    total_events: total_events as i32,
+                    events_from_this_chat: events_from_this_chat as i32,
+                    other_chats_using_chronicle: other_chats_using_chronicle as i32,
+                    can_delete_chronicle,
+                }))
+            },
+        )
         .await?;
 
         Ok(analysis)
@@ -980,8 +1014,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chat_session_id = %chat_session_id))]
     pub async fn disassociate_events_from_chat(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
     ) -> Result<i32, AppError> {
         let updated_count = crate::db::with_conn(&self.db_pool, move |conn| {
             // TODO: Add ownership verification once the Chat Queryable issue is resolved
@@ -990,7 +1024,7 @@ impl ChronicleService {
             // Disassociate the events by setting chat_session_id to NULL
             diesel::update(chronicle_events::table)
                 .filter(chronicle_events::chat_session_id.eq(chat_session_id))
-                .set(chronicle_events::chat_session_id.eq(None::<crate::DbUuid>))
+                .set(chronicle_events::chat_session_id.eq(None::<crate::db::DbId>))
                 .execute(conn)
                 .map_err(|e| {
                     error!("Diesel error when disassociating events: {}", e);
@@ -1011,8 +1045,8 @@ impl ChronicleService {
     #[instrument(skip(self), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
     pub async fn delete_chronicle_completely(
         &self,
-        user_id: crate::DbUuid,
-        chronicle_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         // First verify user owns the chronicle
         let _chronicle = self.get_chronicle(user_id, chronicle_id).await?;
@@ -1041,7 +1075,7 @@ impl ChronicleService {
 /// Information about a chronicle for deletion analysis
 #[derive(Debug, Clone)]
 pub struct ChronicleAnalysisInfo {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub name: String,
     pub total_events: i32,
     pub events_from_this_chat: i32,

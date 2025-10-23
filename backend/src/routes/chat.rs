@@ -1,9 +1,9 @@
 // backend/src/routes/chat.rs
 
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::auth::session_dek::SessionDek;
 use crate::auth::user_store::Backend as AuthBackend;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::errors::AppError;
 use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};
 use crate::models::characters::{Character, CharacterMetadata}; // Added Character
@@ -93,9 +93,9 @@ pub struct ChatGenerateQueryParams {
 #[derive(Serialize, Debug)] // Added derive Debug
 pub struct ChatSessionWithDekResponse {
     // Made pub
-    pub id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
-    pub character_id: Option<crate::DbUuid>,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
     pub title: Option<String>,
     pub dek_present: bool, // Simpler representation of DEK presence
 }
@@ -123,8 +123,8 @@ pub struct TokenCountResponse {
 /// Response DTO for agent context analysis data
 #[derive(Serialize, Debug)]
 pub struct AgentAnalysisResponse {
-    pub id: crate::DbUuid,
-    pub chat_session_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub chat_session_id: crate::db::DbId,
     pub analysis_type: String,
     pub agent_reasoning: Option<String>,
     pub planned_searches: Option<crate::DbJson>,
@@ -134,9 +134,9 @@ pub struct AgentAnalysisResponse {
     pub total_tokens_used: Option<i32>,
     pub execution_time_ms: Option<i32>,
     pub model_used: Option<String>,
-    pub created_at: Option<crate::DbDateTime>,
-    pub updated_at: Option<crate::DbDateTime>,
-    pub message_id: Option<crate::DbUuid>, // Link to specific message this analysis is for
+    pub created_at: Option<crate::DbTimestamp>,
+    pub updated_at: Option<crate::DbTimestamp>,
+    pub message_id: Option<crate::db::DbId>, // Link to specific message this analysis is for
     pub status: String,
     pub error_message: Option<String>,
     pub retry_count: i32,
@@ -214,7 +214,7 @@ pub async fn generate_chat_response(
 
     debug!(%user_id_value, "Using SessionDek from extractor (now in Arc) for chat generation.");
 
-    let session_id = Uuid::parse_str(&session_id_str)
+    let session_id = DbId::parse_str(&session_id_str)
         .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?
         .into();
     debug!(%session_id, "Parsed session ID");
@@ -226,7 +226,7 @@ pub async fn generate_chat_response(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .map_err(Into::into)
             // .map_err(AppError::from) // Let the outer error handling manage this
         })
@@ -273,15 +273,15 @@ pub async fn generate_chat_response(
     let (
         managed_db_history,               // 0: Vec<DbChatMessage>
         system_prompt_from_service,       // 1: Option<String> (persona/override only)
-        _active_lorebook_ids_for_search,  // 2: Option<Vec<crate::DbUuid>> - Now handled by prompt_builder
-        session_character_id,             // 3: crate::DbUuid
+        _active_lorebook_ids_for_search, // 2: Option<Vec<crate::db::DbId>> - Now handled by prompt_builder
+        session_character_id,            // 3: crate::db::DbId
         raw_character_system_prompt, // 4: Option<String> (NEW - from character_db.system_prompt)
-        gen_temperature,             // 5: Option<crate::DbBigDecimal> (was 4)
+        gen_temperature,             // 5: Option<crate::db::DbDecimal> (was 4)
         gen_max_output_tokens,       // 6: Option<i32> (was 5)
-        gen_frequency_penalty,       // 7: Option<crate::DbBigDecimal> (was 6)
-        gen_presence_penalty,        // 8: Option<crate::DbBigDecimal> (was 7)
+        gen_frequency_penalty,       // 7: Option<crate::db::DbDecimal> (was 6)
+        gen_presence_penalty,        // 8: Option<crate::db::DbDecimal> (was 7)
         gen_top_k,                   // 9: Option<i32> (was 8)
-        gen_top_p,                   // 10: Option<crate::DbBigDecimal> (was 9)
+        gen_top_p,                   // 10: Option<crate::db::DbDecimal> (was 9)
         gen_seed,                    // 11: Option<i32> (was 13)
         gen_model_name_from_service, // 12: String (was 15)
         gen_model_provider_from_service, // 13: Option<String> (NEW)
@@ -295,7 +295,7 @@ pub async fn generate_chat_response(
         _hist_management_strategy, // 19: String (was 21)
         _hist_management_limit,    // 20: i32 (was 22)
         user_persona_name,         // 21: Option<String> (NEW)
-        player_chronicle_id,       // 22: Option<crate::DbUuid> (NEW) - Add this field
+        player_chronicle_id,       // 22: Option<crate::db::DbId> (NEW) - Add this field
         agent_mode,                // 23: Option<String> (NEW) - Agent mode for context enrichment
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
@@ -331,9 +331,8 @@ pub async fn generate_chat_response(
                 .to_string(),
         )
     })?;
-    let character_db_model =
-    crate::db::get_conn(&state_arc.pool)
-            .await?
+    let character_db_model = crate::db::get_conn(&state_arc.pool)
+        .await?
         .interact(move |conn| {
             app_schema::characters::table
                 .filter(app_schema::characters::id.eq(char_id))
@@ -393,7 +392,11 @@ pub async fn generate_chat_response(
     // CREDIT SYSTEM INTEGRATION - Check credits and subscription limits
     // Define credit reservation variable outside feature gate for use in confirmation/refund
     #[cfg(feature = "payment")]
-    let mut credit_reservation: Option<(crate::services::payment::CreditService, crate::DbUuid, i32)> = None;
+    let mut credit_reservation: Option<(
+        crate::services::payment::CreditService,
+        crate::db::DbId,
+        i32,
+    )> = None;
     #[cfg(not(feature = "payment"))]
     let _credit_reservation: Option<((), (), i32)> = None;
 
@@ -413,8 +416,7 @@ pub async fn generate_chat_response(
         use crate::services::encryption_service::EncryptionService;
         use crate::services::payment::{CreditService, SubscriptionService};
 
-        let conn = crate::db::get_conn(&state_arc.pool)
-            .await?;
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
 
         // Get user's subscription tier
         let subscription_service =
@@ -439,12 +441,11 @@ pub async fn generate_chat_response(
                 "Failed to load subscription tiers config".to_string(),
             )
         })?;
-        let tiers_config: crate::DbJson =
-            serde_json::from_str(&config_content).map_err(|_| {
-                AppError::InternalServerErrorGeneric(
-                    "Failed to parse subscription tiers config".to_string(),
-                )
-            })?;
+        let tiers_config: crate::DbJson = serde_json::from_str(&config_content).map_err(|_| {
+            AppError::InternalServerErrorGeneric(
+                "Failed to parse subscription tiers config".to_string(),
+            )
+        })?;
 
         let tier_config = tiers_config["tiers"][user_tier].clone();
         if tier_config.is_null() {
@@ -711,7 +712,7 @@ pub async fn generate_chat_response(
         // In the future, we might want to find the actual user message that prompted the variant
         use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
         ChatMessage {
-            id: crate::DbUuid::new_v4(), // Temporary ID
+            id: crate::db::DbId::new_v4(), // Temporary ID
             session_id,
             user_id: user_id_value,
             message_type: DbMessageRole::User,
@@ -729,12 +730,12 @@ pub async fn generate_chat_response(
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: crate::DbBigDecimal::from(0),
+            credits_cost: crate::db::DbDecimal::from(0),
             // New cost tracking fields
-            actual_cost: crate::DbBigDecimal::from(0),
-            modified_cost: crate::DbBigDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: crate::DbBigDecimal::from(0),
+            actual_charge: crate::db::DbDecimal::from(0),
         }
     } else {
         // Normal flow: save new user message
@@ -746,7 +747,10 @@ pub async fn generate_chat_response(
             content: &current_user_content_text,
             role_str: user_message_struct_to_save.role.clone(),
             parts: user_message_struct_to_save.parts.clone().map(Into::into),
-            attachments: user_message_struct_to_save.attachments.clone().map(Into::into),
+            attachments: user_message_struct_to_save
+                .attachments
+                .clone()
+                .map(Into::into),
             user_dek_secret_box: Some(session_dek_arc.clone()),
             model_name: model_to_use.clone(),
             raw_prompt_debug: None, // User messages don't need raw prompt debug
@@ -827,8 +831,7 @@ pub async fn generate_chat_response(
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
-                let conn = crate::db::get_conn(&state_arc.pool)
-                    .await?;
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
 
                 let _ = conn
                     .interact(move |conn| {
@@ -847,8 +850,7 @@ pub async fn generate_chat_response(
 
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
-                    let conn = crate::db::get_conn(&state_arc.pool)
-                        .await?;
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
 
                 conn.interact(move |conn| {
                     AgentContextAnalysis::get_for_session(
@@ -985,7 +987,6 @@ pub async fn generate_chat_response(
         conn.interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
-                .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .optional()
                 .map_err(AppError::from)
@@ -1152,7 +1153,7 @@ pub async fn generate_chat_response(
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
                         let mut error_from_service_stream = false;
-                        let mut _assistant_message_id: Option<crate::DbUuid> = None;
+                        let mut _assistant_message_id: Option<crate::db::DbId> = None;
                         futures::pin_mut!(service_stream);
 
                         while let Some(event_result) = service_stream.next().await {
@@ -1180,7 +1181,7 @@ pub async fn generate_chat_response(
                                         }
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
-                                            if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
+                                            if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid.into());
 
                                                 // Update pre-processing analysis with assistant message ID if we have one
@@ -1541,18 +1542,20 @@ pub async fn generate_chat_response(
                         };
 
                         // Parse rates to BigDecimal for precise arithmetic
-                        let input_rate: crate::DbBigDecimal = input_rate_str.parse().map_err(|e| {
-                            error!("Failed to parse input rate '{}': {}", input_rate_str, e);
-                            AppError::InternalServerErrorGeneric(
-                                "Invalid pricing configuration".to_string(),
-                            )
-                        })?;
-                        let output_rate: crate::DbBigDecimal = output_rate_str.parse().map_err(|e| {
-                            error!("Failed to parse output rate '{}': {}", output_rate_str, e);
-                            AppError::InternalServerErrorGeneric(
-                                "Invalid pricing configuration".to_string(),
-                            )
-                        })?;
+                        let input_rate: crate::db::DbDecimal =
+                            input_rate_str.parse().map_err(|e| {
+                                error!("Failed to parse input rate '{}': {}", input_rate_str, e);
+                                AppError::InternalServerErrorGeneric(
+                                    "Invalid pricing configuration".to_string(),
+                                )
+                            })?;
+                        let output_rate: crate::db::DbDecimal =
+                            output_rate_str.parse().map_err(|e| {
+                                error!("Failed to parse output rate '{}': {}", output_rate_str, e);
+                                AppError::InternalServerErrorGeneric(
+                                    "Invalid pricing configuration".to_string(),
+                                )
+                            })?;
 
                         // Convert token counts to BigDecimal
                         let one_million = BigDecimal::from_i64(1_000_000).unwrap();
@@ -1617,15 +1620,16 @@ pub async fn generate_chat_response(
                         if cost_info.credits_charged < *reserved_credits {
                             let adjust_clone = credit_service.clone();
                             let credits_to_charge = cost_info.credits_charged;
-                            let adjust_result = crate::db::with_conn(&state_arc.pool, move |conn| {
-                                adjust_clone.adjust_reservation_to_actual_cost(
-                                    conn,
-                                    user_id_value,
-                                    reservation_id_clone,
-                                    credits_to_charge,
-                                )
-                            })
-                            .await;
+                            let adjust_result =
+                                crate::db::with_conn(&state_arc.pool, move |conn| {
+                                    adjust_clone.adjust_reservation_to_actual_cost(
+                                        conn,
+                                        user_id_value,
+                                        reservation_id_clone,
+                                        credits_to_charge,
+                                    )
+                                })
+                                .await;
 
                             match adjust_result {
                                 Ok(_balance) => {
@@ -1721,10 +1725,10 @@ pub async fn generate_chat_response(
                                 #[cfg(feature = "payment")]
                                 credits_cost_override: Some({
                                     use std::str::FromStr;
-                                    crate::DbBigDecimal::from_str(
+                                    crate::db::DbDecimal::from_str(
                                         &cost_info.api_cost_dollars.to_string(),
                                     )
-                                    .unwrap_or_else(|_| crate::DbBigDecimal::from(0))
+                                    .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
                                 }), // Use pre-calculated base API cost in dollars
                                 #[cfg(not(feature = "payment"))]
                                 credits_cost_override: None,
@@ -1744,14 +1748,15 @@ pub async fn generate_chat_response(
                                            "Updating pre-processing analysis with assistant message ID");
 
                                     let assistant_msg_id = saved_message.id;
-                                    let update_result = crate::db::with_conn(&state_arc.pool, move |conn| {
-                                        AgentContextAnalysis::update_assistant_message_id(
-                                            conn,
-                                            analysis_id,
-                                            assistant_msg_id,
-                                        )
-                                    })
-                                    .await;
+                                    let update_result =
+                                        crate::db::with_conn(&state_arc.pool, move |conn| {
+                                            AgentContextAnalysis::update_assistant_message_id(
+                                                conn,
+                                                analysis_id,
+                                                assistant_msg_id,
+                                            )
+                                        })
+                                        .await;
 
                                     match update_result {
                                         Ok(()) => {
@@ -1871,7 +1876,7 @@ pub async fn generate_chat_response(
                     }
 
                     let response_payload = json!({
-                        "message_id": Uuid::new_v4(), // This is a response ID, not related to DB message ID
+                        "message_id": DbId::new(), // This is a response ID, not related to DB message ID
                         "content": response_content
                     });
                     trace!(%session_id, response_payload = ?response_payload, "Sending non-streaming JSON response");
@@ -1994,7 +1999,7 @@ pub async fn generate_chat_response(
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
                         let mut error_from_service_stream = false;
-                        let mut _assistant_message_id: Option<crate::DbUuid> = None;
+                        let mut _assistant_message_id: Option<crate::db::DbId> = None;
                         futures::pin_mut!(service_stream);
 
                         while let Some(event_result) = service_stream.next().await {
@@ -2022,7 +2027,7 @@ pub async fn generate_chat_response(
                                         }
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
-                                            if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
+                                            if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid.into());
                                             }
                                             let message_data = serde_json::json!({
@@ -2078,7 +2083,7 @@ pub async fn generate_chat_response(
 #[instrument]
 pub async fn get_chat_session_handler(
     State(state): State<AppState>,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     auth_session: CurrentAuthSession,
 ) -> Result<Json<Chat>, AppError> {
     let user = auth_session.user.ok_or_else(|| {
@@ -2109,7 +2114,7 @@ pub async fn get_chat_session_handler(
 #[instrument(skip(state, auth_session, session_dek))]
 pub async fn update_session_narrative_style_handler(
     State(state): State<AppState>,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Json(payload): Json<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
@@ -2135,7 +2140,6 @@ pub async fn update_session_narrative_style_handler(
             let mut chat_session = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user.id))
-                .select(Chat::as_select())
                 .first::<Chat>(transaction_conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
@@ -2159,7 +2163,8 @@ pub async fn update_session_narrative_style_handler(
         })
     })
     .await
-    .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}"))).and_then(|r| r)?;
+    .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))
+    .and_then(|r| r)?;
 
     // Fetch and return the effective preferences (with override applied)
     // This requires fetching character ID and applying the cascade
@@ -2173,13 +2178,14 @@ pub async fn update_session_narrative_style_handler(
                     chat_sessions::narrative_style_override_ciphertext,
                     chat_sessions::narrative_style_override_nonce,
                 ))
-                .first::<(Option<crate::DbUuid>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
+                .first::<(Option<crate::db::DbId>, Option<Vec<u8>>, Option<Vec<u8>>)>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             Ok::<_, AppError>(session_data)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}"))).and_then(|r| r)?;
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))
+        .and_then(|r| r)?;
 
     // Get base template preferences (character or global)
     let mut effective_prefs =
@@ -2351,7 +2357,7 @@ pub async fn get_agent_analysis_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     session_dek: SessionDek,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<AgentAnalysisResponse>>, AppError> {
     // Ensure user is authenticated
@@ -2371,7 +2377,6 @@ pub async fn get_agent_analysis_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
-                .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .optional()
                 .map_err(Into::into)
@@ -2393,7 +2398,7 @@ pub async fn get_agent_analysis_handler(
     // Parse message_id from query params if provided
     let message_id_filter = params
         .get("message_id")
-        .and_then(|s| s.parse::<crate::DbUuid>().ok());
+        .and_then(|s| s.parse::<crate::db::DbId>().ok());
 
     // Get all analysis records for the session
     let conn = crate::db::get_conn(&state.pool).await?;
@@ -2479,7 +2484,7 @@ async fn get_message_variants_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     session_dek: SessionDek,
-    Path(message_id): Path<crate::DbUuid>,
+    Path(message_id): Path<crate::db::DbId>,
 ) -> Result<Json<Vec<MessageVariantDto>>, AppError> {
     let user = auth_session
         .user
@@ -2502,7 +2507,7 @@ async fn create_message_variant_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     session_dek: SessionDek,
-    Path(message_id): Path<crate::DbUuid>,
+    Path(message_id): Path<crate::db::DbId>,
     Json(payload): Json<CreateMessageVariantPayload>,
 ) -> Result<(StatusCode, Json<crate::models::chats::MessageResponse>), AppError> {
     let user = auth_session
@@ -2527,7 +2532,7 @@ async fn get_message_variant_by_index_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     session_dek: SessionDek,
-    Path((message_id, variant_index)): Path<(crate::DbUuid, i32)>,
+    Path((message_id, variant_index)): Path<(crate::db::DbId, i32)>,
 ) -> Result<Json<Option<MessageVariantDto>>, AppError> {
     let user = auth_session
         .user
@@ -2550,7 +2555,7 @@ async fn get_message_variant_by_index_handler(
 async fn delete_message_variant_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path((message_id, variant_index)): Path<(crate::DbUuid, i32)>,
+    Path((message_id, variant_index)): Path<(crate::db::DbId, i32)>,
 ) -> Result<Json<bool>, AppError> {
     let user = auth_session
         .user
@@ -2572,7 +2577,7 @@ async fn delete_message_variant_handler(
 async fn get_variant_count_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(message_id): Path<crate::DbUuid>,
+    Path(message_id): Path<crate::db::DbId>,
 ) -> Result<Json<i64>, AppError> {
     let user = auth_session
         .user
@@ -2593,7 +2598,7 @@ async fn get_variant_count_handler(
 pub async fn generate_suggested_actions(
     State(state): State<AppState>,
     auth_session: AuthSession<AuthBackend>,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     session_dek: SessionDek,
     Json(_payload): Json<SuggestedActionsRequest>, // _payload as it's an empty struct now
 ) -> Result<Json<SuggestedActionsResponse>, AppError> {
@@ -2616,13 +2621,13 @@ pub async fn generate_suggested_actions(
     debug!(user_id = %user_id, session_id = %session_id, "User and session_id extracted");
 
     // Fetch chat session owner ID for authorization check
-        let chat_session_owner_id = crate::db::get_conn(&state_arc.pool)
-            .await?
+    let chat_session_owner_id = crate::db::get_conn(&state_arc.pool)
+        .await?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .map_err(Into::into)
         })
         .await
@@ -2704,8 +2709,7 @@ pub async fn generate_suggested_actions(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
-        ?; // Unwrap the Result from the query
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??; // Unwrap the Result from the query
 
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
@@ -2950,7 +2954,7 @@ pub async fn generate_suggested_actions(
 #[instrument(skip_all, err)]
 pub async fn get_chat_session_with_dek(
     State(state): State<AppState>,
-    Path(chat_id): Path<crate::DbUuid>,
+    Path(chat_id): Path<crate::db::DbId>,
     auth_session: CurrentAuthSession, // Use CurrentAuthSession
 ) -> Result<Json<ChatSessionWithDekResponse>, AppError> {
     let pool = state.pool.clone();
@@ -2965,7 +2969,6 @@ pub async fn get_chat_session_with_dek(
             crate::schema::chat_sessions::table
                 .filter(crate::schema::chat_sessions::id.eq(chat_id))
                 .filter(crate::schema::chat_sessions::user_id.eq(user.id))
-                .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .optional()
         })
@@ -3013,7 +3016,7 @@ pub async fn create_or_update_chat_character_override_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     session_dek: SessionDek,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     Json(payload): Json<CharacterOverrideDto>,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Attempting to create or update chat character override via handler");
@@ -3033,7 +3036,7 @@ pub async fn create_or_update_chat_character_override_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((chat_sessions::user_id, chat_sessions::character_id))
-                .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn)
+                .first::<(crate::db::DbId, Option<crate::db::DbId>)>(conn)
                 .optional()
         })
         .await
@@ -3082,7 +3085,7 @@ pub async fn create_or_update_chat_character_override_handler(
 pub async fn expand_text_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     _session_dek: SessionDek,
     Json(payload): Json<ExpandTextRequest>,
 ) -> Result<Json<ExpandTextResponse>, AppError> {
@@ -3116,7 +3119,7 @@ pub async fn expand_text_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
         })
         .await
@@ -3143,12 +3146,11 @@ pub async fn expand_text_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::active_custom_persona_id)
-                .first::<Option<crate::DbUuid>>(conn)
+                .first::<Option<crate::db::DbId>>(conn)
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
-        ?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
     };
 
     // Use the full generation pipeline for text expansion - same as impersonate but with different system prompt
@@ -3162,13 +3164,11 @@ pub async fn expand_text_handler(
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
-                .select(crate::models::chats::ChatMessage::as_select())
                 .load(conn)
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
-        ?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
     };
 
     // Build the chat history in the format expected by the generation service
@@ -3242,18 +3242,19 @@ pub async fn expand_text_handler(
                     i32,
                     String,
                     Option<String>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<crate::models::OptionalStringArray>,
                     Option<i32>,
-                    Option<crate::DbUuid>,
+                    Option<crate::db::DbId>,
                 )>(conn)
         })
-        .await.and_then(|r| r)?
+        .await
+        .and_then(|r| r)?
     };
 
     // Build the special system prompt for text expansion with full context awareness
@@ -3388,7 +3389,6 @@ pub async fn expand_text_handler(
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
                 .order(chat_messages::created_at.desc())
-                .select(crate::models::chats::ChatMessage::as_select())
                 .first(conn)
             {
                 let _ = diesel::delete(
@@ -3425,7 +3425,7 @@ pub async fn expand_text_handler(
 pub async fn impersonate_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(session_id): Path<crate::DbUuid>,
+    Path(session_id): Path<crate::db::DbId>,
     session_dek: SessionDek,
     Json(payload): Json<ImpersonateRequest>,
 ) -> Result<Json<ImpersonateResponse>, AppError> {
@@ -3459,10 +3459,11 @@ pub async fn impersonate_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
         })
-        .await.and_then(|r| r)?
+        .await
+        .and_then(|r| r)?
         .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?
     };
 
@@ -3488,13 +3489,11 @@ pub async fn impersonate_handler(
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
-                .select(crate::models::chats::ChatMessage::as_select())
                 .load(conn)
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
-        ?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
     };
 
     // Build the chat history in the format expected by the generation service
@@ -3580,18 +3579,19 @@ pub async fn impersonate_handler(
                     i32,
                     String,
                     Option<String>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::DbBigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<crate::models::OptionalStringArray>,
                     Option<i32>,
-                    Option<crate::DbUuid>,
+                    Option<crate::db::DbId>,
                 )>(conn)
         })
-        .await.and_then(|r| r)?
+        .await
+        .and_then(|r| r)?
     };
 
     // Build the special system prompt for impersonation
@@ -3717,7 +3717,6 @@ pub async fn impersonate_handler(
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
                 .order(chat_messages::created_at.desc())
-                .select(crate::models::chats::ChatMessage::as_select())
                 .first(conn)
             {
                 let _ = diesel::delete(
@@ -3757,7 +3756,7 @@ pub async fn impersonate_handler(
 async fn select_message_variant_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(message_id): Path<crate::DbUuid>,
+    Path(message_id): Path<crate::db::DbId>,
     session_dek: SessionDek,
     Json(payload): Json<crate::models::chats::SelectVariantRequest>,
 ) -> Result<Json<crate::models::chats::MessageResponse>, AppError> {

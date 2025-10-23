@@ -115,7 +115,7 @@ async fn rotate_session_if_needed(
 /// Get the last rotation time from the session
 async fn get_last_rotation_time(
     session: &Session,
-) -> Result<Option<crate::DbDateTime>, tower_sessions::session::Error> {
+) -> Result<Option<crate::DbTimestamp>, tower_sessions::session::Error> {
     match session.get::<String>(LAST_ROTATION_KEY).await? {
         Some(time_str) => match DateTime::parse_from_rfc3339(&time_str) {
             Ok(dt) => Ok(Some(dt.with_timezone(&Utc).into())),
@@ -131,7 +131,7 @@ async fn get_last_rotation_time(
 /// Set the last rotation time in the session
 async fn set_last_rotation_time(
     session: &Session,
-    time: crate::DbDateTime,
+    time: crate::DbTimestamp,
 ) -> Result<(), tower_sessions::session::Error> {
     let time_str = time.to_rfc3339();
     session.insert(LAST_ROTATION_KEY, time_str).await
@@ -140,7 +140,7 @@ async fn set_last_rotation_time(
 /// Set the last save time in the session
 async fn set_last_save_time(
     session: &Session,
-    time: crate::DbDateTime,
+    time: crate::DbTimestamp,
 ) -> Result<(), tower_sessions::session::Error> {
     let time_str = time.to_rfc3339();
     session.insert(LAST_SAVE_KEY, time_str).await

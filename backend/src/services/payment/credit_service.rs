@@ -64,7 +64,7 @@ impl CreditService {
     pub fn get_balance(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         use crate::schema::user_credits::dsl;
 
@@ -89,7 +89,7 @@ impl CreditService {
     pub fn get_available_balance(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<i32, AppError> {
         use diesel::dsl::sum;
         use diesel::sql_types::{Integer, Nullable};
@@ -117,7 +117,7 @@ impl CreditService {
     pub fn get_expired_balance(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<i32, AppError> {
         use diesel::dsl::sum;
 
@@ -150,7 +150,7 @@ impl CreditService {
     pub fn cleanup_expired_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: Option<crate::DbUuid>,
+        user_id: Option<crate::db::DbId>,
     ) -> Result<CleanupStats, AppError> {
         use crate::schema::user_credits::dsl;
 
@@ -158,7 +158,7 @@ impl CreditService {
         let mut total_credits_expired = 0;
 
         // Get list of users to process
-        let user_ids: Vec<crate::DbUuid> = if let Some(uid) = user_id {
+        let user_ids: Vec<crate::db::DbId> = if let Some(uid) = user_id {
             vec![uid]
         } else {
             dsl::user_credits
@@ -219,7 +219,7 @@ impl CreditService {
     pub fn initialize_user_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         use crate::schema::user_credits;
 
@@ -256,7 +256,7 @@ impl CreditService {
     pub fn add_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         amount: i32,
         transaction_type: &str,
         description: &str,
@@ -318,7 +318,7 @@ impl CreditService {
             };
 
             let transaction = NewCreditTransaction {
-                id: Uuid::new_v4(),
+                id: DbId::new(),
                 user_id,
                 amount: amount_to_add,
                 balance_after: new_balance,
@@ -420,7 +420,7 @@ impl CreditService {
     pub fn deduct_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         amount: i32,
         description: &str,
         metadata: Option<crate::DbJson>,
@@ -467,7 +467,7 @@ impl CreditService {
 
             // Create transaction record (negative amount for deduction)
             let transaction = NewCreditTransaction {
-                id: Uuid::new_v4(),
+                id: DbId::new(),
                 user_id,
                 amount: -amount, // Negative for deductions
                 balance_after: new_balance,
@@ -560,11 +560,11 @@ impl CreditService {
     pub fn reserve_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         amount: i32,
         description: &str,
         metadata: Option<crate::DbJson>,
-    ) -> Result<(CreditBalance, crate::DbUuid), AppError> {
+    ) -> Result<(CreditBalance, crate::db::DbId), AppError> {
         if !self.is_enabled() {
             return Err(AppError::BadRequest(
                 "Credit system is not enabled".to_string(),
@@ -576,7 +576,7 @@ impl CreditService {
         }
 
         const MAX_RETRIES: u32 = 3;
-        let reservation_id = Uuid::new_v4();
+        let reservation_id = DbId::new();
 
         for attempt in 0..MAX_RETRIES {
             // Get current balance WITHOUT row lock (optimistic locking approach)
@@ -734,8 +734,8 @@ impl CreditService {
     pub fn confirm_reservation(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
-        reservation_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        reservation_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         use crate::schema::credit_transactions::dsl;
 
@@ -806,8 +806,8 @@ impl CreditService {
     pub fn refund_reservation(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
-        reservation_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        reservation_id: crate::db::DbId,
         reason: &str,
     ) -> Result<CreditBalance, AppError> {
         use crate::schema::credit_transactions::dsl;
@@ -882,7 +882,7 @@ impl CreditService {
         };
 
         let refund_transaction = NewCreditTransaction {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id,
             amount: refund_amount as i32, // Positive for refunds
             balance_after: updated_balance.balance,
@@ -917,8 +917,8 @@ impl CreditService {
     pub fn adjust_reservation_to_actual_cost(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
-        reservation_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        reservation_id: crate::db::DbId,
         actual_cost: i32,
     ) -> Result<CreditBalance, AppError> {
         use crate::schema::credit_transactions::dsl;
@@ -1003,7 +1003,7 @@ impl CreditService {
     pub fn grant_monthly_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         tier: &str,
     ) -> Result<CreditBalance, AppError> {
         if !self.is_enabled() {
@@ -1072,7 +1072,7 @@ impl CreditService {
     pub fn get_transaction_history(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         limit: Option<i64>,
         offset: Option<i64>,
     ) -> Result<Vec<CreditTransaction>, AppError> {
@@ -1091,7 +1091,7 @@ impl CreditService {
             query = query.offset(o);
         }
 
-        .select(CreditTransaction::as_select())
+        query = query.select(CreditTransaction::as_select());
         let transactions = query.load::<CreditTransaction>(conn).map_err(|e| {
             error!("Failed to get transaction history: {}", e);
             AppError::DatabaseQueryError(e.to_string())
@@ -1106,7 +1106,7 @@ impl CreditService {
     pub fn has_sufficient_credits(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         required_credits: i32,
     ) -> Result<bool, AppError> {
         let balance = self.get_balance(conn, user_id)?;
@@ -1117,7 +1117,7 @@ impl CreditService {
     pub fn process_credit_purchase(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         package_id: &str,
         paddle_transaction_id: &str,
     ) -> Result<CreditBalance, AppError> {
@@ -1181,7 +1181,7 @@ impl CreditService {
     fn encrypt_transaction_data(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         description: &str,
         metadata: Option<crate::DbJson>,
     ) -> Result<EncryptedTransactionData, AppError> {
@@ -1260,7 +1260,7 @@ impl CreditService {
     pub fn decrypt_transaction_data(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         transaction: &CreditTransaction,
         session_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<(String, Option<crate::DbJson>), AppError> {

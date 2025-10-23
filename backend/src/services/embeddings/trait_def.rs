@@ -38,42 +38,42 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
     async fn delete_message_chunks(
         &self,
         state: Arc<AppState>,
-        message_ids: Vec<crate::DbUuid>,
-        user_id: crate::DbUuid,
+        message_ids: Vec<crate::db::DbId>,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError>;
 
     /// Deletes all chunks associated with a specific lorebook entry.
     async fn delete_lorebook_entry_chunks(
         &self,
         state: Arc<AppState>,
-        original_lorebook_entry_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        original_lorebook_entry_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError>;
 
     /// Deletes all chunks associated with a specific chronicle event.
     async fn delete_chronicle_event_chunks(
         &self,
         state: Arc<AppState>,
-        event_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        event_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError>;
 
     /// Deletes all chronicle event chunks associated with a specific chronicle.
     async fn delete_chronicle_events_by_chronicle_id(
         &self,
         state: Arc<AppState>,
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError>;
 
     /// Retrieves relevant chunks based on a query.
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,
-        user_id: crate::DbUuid, // To scope searches to the current user
-        session_id_for_chat_history: Option<crate::DbUuid>, // If Some, search chat history for this session
-        active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>>, // If Some, search these lorebooks
-        chronicle_id_for_search: Option<crate::DbUuid>, // If Some, search chronicle events for this chronicle
+        user_id: crate::db::DbId, // To scope searches to the current user
+        session_id_for_chat_history: Option<crate::db::DbId>, // If Some, search chat history for this session
+        active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>>, // If Some, search these lorebooks
+        chronicle_id_for_search: Option<crate::db::DbId>, // If Some, search chronicle events for this chronicle
         query_text: &str,
         limit_per_source: u64, // e.g., retrieve top N from chat, top M from lorebooks, top K from chronicles
         session_dek: Option<&crate::auth::SessionDek>, // DEK for decrypting retrieved content

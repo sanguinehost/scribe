@@ -1,8 +1,8 @@
-use crate::DbDateTime;
+use crate::db::DbId;
+use crate::db::DbTimestamp;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::DbUuid as Uuid;
 use validator::Validate;
 
 // --- Lorebook DTOs ---
@@ -26,14 +26,14 @@ pub struct UpdateLorebookPayload {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LorebookResponse {
-    pub id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub name: String,
     pub description: Option<String>,
     pub source_format: String, // e.g., "sillytavern_v1", "scribe_v1"
     pub is_public: bool,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 // --- Lorebook Entry DTOs ---
@@ -74,9 +74,9 @@ pub struct UpdateLorebookEntryPayload {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LorebookEntryResponse {
-    pub id: crate::DbUuid,
-    pub lorebook_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub lorebook_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub entry_title: String,
     pub keys_text: Option<String>,
     pub content: String, // Decrypted content
@@ -85,8 +85,8 @@ pub struct LorebookEntryResponse {
     pub is_constant: bool,
     pub insertion_order: i32,
     pub placement_hint: String,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 // --- Chat Session Lorebook Association DTOs ---
@@ -94,16 +94,16 @@ pub struct LorebookEntryResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)] // Removed Validate from derive
 pub struct AssociateLorebookToChatPayload {
     // #[validate] // Removed validation from Uuid field
-    pub lorebook_id: crate::DbUuid,
+    pub lorebook_id: crate::db::DbId,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatSessionLorebookAssociationResponse {
-    pub chat_session_id: crate::DbUuid,
-    pub lorebook_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub chat_session_id: crate::db::DbId,
+    pub lorebook_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub lorebook_name: String, // For better UX, requires join or extra query
-    pub created_at: DbDateTime, // Assuming this comes from the association table
+    pub created_at: DbTimestamp, // Assuming this comes from the association table
 }
 
 // Enhanced version with source information
@@ -115,14 +115,14 @@ pub enum LorebookAssociationSource {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EnhancedChatSessionLorebookAssociationResponse {
-    pub chat_session_id: crate::DbUuid,
-    pub lorebook_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub chat_session_id: crate::db::DbId,
+    pub lorebook_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub lorebook_name: String,
     pub source: LorebookAssociationSource,
     pub is_overridden: bool, // Whether this character lorebook has been disabled/enabled via override
     pub override_action: Option<String>, // "disable" or "enable" if overridden
-    pub created_at: DbDateTime, // Association creation time (chat or character association)
+    pub created_at: DbTimestamp, // Association creation time (chat or character association)
 }
 
 // Union type for responses
@@ -135,19 +135,19 @@ pub enum ChatLorebookAssociationsResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatSessionBasicInfo {
-    pub chat_session_id: crate::DbUuid,
+    pub chat_session_id: crate::db::DbId,
     pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LorebookEntrySummaryResponse {
-    pub id: crate::DbUuid,
-    pub lorebook_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub lorebook_id: crate::db::DbId,
     pub entry_title: String, // Decrypted title
     pub is_enabled: bool,
     pub is_constant: bool,
     pub insertion_order: i32,
-    pub updated_at: DbDateTime,
+    pub updated_at: DbTimestamp,
 }
 
 // --- Import/Export DTOs ---
@@ -371,7 +371,7 @@ where
     use serde::de::{Error, Unexpected};
 
     let db_json = crate::DbJson::deserialize(deserializer)?;
-    let value = &db_json.0;
+    let value = &*db_json;
 
     match value {
         serde_json::Value::Null => Ok(None),
@@ -432,13 +432,13 @@ impl SetCharacterLorebookOverridePayload {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CharacterLorebookOverrideResponse {
-    pub id: crate::DbUuid,
-    pub chat_session_id: crate::DbUuid,
-    pub lorebook_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub chat_session_id: crate::db::DbId,
+    pub lorebook_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub action: String,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 // --- AI-Powered Lorebook DTOs ---
@@ -472,7 +472,7 @@ pub struct GenerateLorebookEntriesResponse {
 /// Preview information for a generated lorebook entry
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GeneratedEntryPreview {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub entry_title: String,
     pub keys_text: Option<String>,
 }
@@ -507,7 +507,7 @@ pub struct LorebookAnalysis {
 #[derive(Debug, Serialize, Deserialize, Validate, Clone)]
 pub struct ExtractLorebookEntriesFromChatPayload {
     /// Chat session ID to extract messages from
-    pub chat_session_id: crate::DbUuid,
+    pub chat_session_id: crate::db::DbId,
 
     /// Optional starting message index (inclusive)
     pub start_message_index: Option<usize>,

@@ -66,7 +66,7 @@ pub struct ModelMetadata {
     pub download_url: String,
     pub trusted_source: bool,
     pub signature: Option<String>,
-    pub verification_timestamp: Option<crate::DbDateTime>,
+    pub verification_timestamp: Option<crate::DbTimestamp>,
     pub quarantine_status: QuarantineStatus,
     pub verification_history: Vec<VerificationRecord>,
 }
@@ -83,7 +83,7 @@ pub enum QuarantineStatus {
 /// Verification record for audit trail
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationRecord {
-    pub timestamp: crate::DbDateTime,
+    pub timestamp: crate::DbTimestamp,
     pub verification_type: VerificationType,
     pub result: VerificationResult,
     pub details: String,

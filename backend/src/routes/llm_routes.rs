@@ -33,8 +33,8 @@ use tracing::{debug, error};
 #[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]
 pub struct LlmInfoResponse {
-    pub local_llm_enabled: bool,     // Feature is available
-    pub server_running: bool,        // Server is actually running
+    pub local_llm_enabled: bool, // Feature is available
+    pub server_running: bool,    // Server is actually running
     pub hardware: crate::DbJson, // Hardware capabilities as JSON
     pub models: Vec<ModelInfo>,
     pub download_progress: Option<DownloadProgressInfo>,

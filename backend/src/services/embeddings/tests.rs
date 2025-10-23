@@ -14,7 +14,9 @@ mod tests {
         models::chats::MessageRole,
         services::lorebook::LorebookService, // Added for LorebookService
         state::AppStateServices,
-        test_helpers::{db::create_test_pool, MockAiClient, MockEmbeddingClient, MockQdrantClientService},
+        test_helpers::{
+            db::create_test_pool, MockAiClient, MockEmbeddingClient, MockQdrantClientService,
+        },
         text_processing::chunking::ChunkingMetric,
     };
     use chrono::Utc;
@@ -59,15 +61,15 @@ mod tests {
         let mut payload = HashMap::new();
         payload.insert(
             "message_id".to_string(),
-            string_value(&Uuid::new_v4().to_string()),
+            string_value(&DbId::new().to_string()),
         );
         payload.insert(
             "session_id".to_string(),
-            string_value(&Uuid::new_v4().to_string()),
+            string_value(&DbId::new().to_string()),
         );
         payload.insert(
             "user_id".to_string(),
-            string_value(&Uuid::new_v4().to_string()),
+            string_value(&DbId::new().to_string()),
         );
         payload.insert("speaker".to_string(), string_value("user"));
         payload.insert(
@@ -107,15 +109,15 @@ mod tests {
         let mut payload = HashMap::new();
         payload.insert(
             "message_id".to_string(),
-            string_value(&Uuid::new_v4().to_string()),
+            string_value(&DbId::new().to_string()),
         );
         payload.insert(
             "session_id".to_string(),
-            string_value(&Uuid::new_v4().to_string()),
+            string_value(&DbId::new().to_string()),
         );
         payload.insert(
             "user_id".to_string(),
-            string_value(&Uuid::new_v4().to_string()),
+            string_value(&DbId::new().to_string()),
         );
         payload.insert("speaker".to_string(), string_value("user"));
         payload.insert(
@@ -307,8 +309,8 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_method_success() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
         let message_content = "This is a test message for embedding.";
 
         let test_message = ChatMessage {
@@ -318,7 +320,7 @@ mod tests {
             content: message_content.as_bytes().to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -351,8 +353,8 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_method_uses_service_config() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
         // Content designed to be chunked by the service's default config (max_size 100)
         let long_content = "a".repeat(150);
 
@@ -363,7 +365,7 @@ mod tests {
             content: long_content.as_bytes().to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -399,8 +401,8 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_method_empty_content() {
         let (state, _mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
 
         let test_message = ChatMessage {
             id: message_id,
@@ -409,7 +411,7 @@ mod tests {
             content: b"   ".to_vec(), // Empty after trim
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -440,8 +442,8 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_method_embedding_error() {
         let (state, _mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
 
         let test_message = ChatMessage {
             id: message_id,
@@ -450,7 +452,7 @@ mod tests {
             content: b"Some content".to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -489,8 +491,8 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_message_method_qdrant_error() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
 
         let test_message = ChatMessage {
             id: message_id,
@@ -499,7 +501,7 @@ mod tests {
             content: b"Some content".to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -530,13 +532,13 @@ mod tests {
 
     // Helper struct for creating mock ScoredPoint
     struct MockScoredPointParams<'a> {
-        id_uuid: crate::DbUuid,
+        id_uuid: crate::db::DbId,
         score: f32,
-        session_id: crate::DbUuid,
-        message_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        session_id: crate::db::DbId,
+        message_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         speaker: &'a str,
-        timestamp: chrono::crate::DbDateTime,
+        timestamp: chrono::crate::DbTimestamp,
         text: &'a str,
         source_type: &'a str,
     }
@@ -642,16 +644,16 @@ mod tests {
     async fn test_retrieve_relevant_chunks_method_success() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
         let query_text = "Tell me about cats";
 
         mock_embed_client.set_response(Ok(vec![0.5, 0.6]));
 
-        let mock_point_id_1 = Uuid::new_v4();
-        let mock_point_id_2 = Uuid::new_v4();
-        let message_id_1 = Uuid::new_v4();
-        let message_id_2 = Uuid::new_v4();
+        let mock_point_id_1 = DbId::new();
+        let mock_point_id_2 = DbId::new();
+        let message_id_1 = DbId::new();
+        let message_id_2 = DbId::new();
 
         let mock_qdrant_results = vec![
             create_encrypted_mock_scored_point(
@@ -730,8 +732,8 @@ mod tests {
     #[tokio::test]
     async fn test_full_pipeline_new_message_no_docs_no_similar_messages() {
         let (state, mock_qdrant, _mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
 
         let test_message = ChatMessage {
             id: message_id,
@@ -742,7 +744,7 @@ mod tests {
                 .to_vec(),
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -770,8 +772,8 @@ mod tests {
     #[tokio::test]
     async fn test_full_pipeline_with_similar_messages_retrieved() {
         let (state, mock_qdrant, _mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
 
         let test_message = ChatMessage {
             id: message_id,
@@ -782,7 +784,7 @@ mod tests {
                 .to_vec(),
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -809,8 +811,8 @@ mod tests {
     #[tokio::test]
     async fn test_full_pipeline_uses_original_message_if_no_expansion_needed() {
         let (state, mock_qdrant, _mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
         let test_message = ChatMessage {
             id: message_id,
             session_id,
@@ -818,7 +820,7 @@ mod tests {
             content: b"Short and sweet.".to_vec(),
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -845,8 +847,8 @@ mod tests {
     #[tokio::test]
     async fn test_full_pipeline_handles_embedding_client_error_gracefully() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
         let test_message = ChatMessage {
             id: message_id,
             session_id,
@@ -856,7 +858,7 @@ mod tests {
                 .to_vec(),
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -887,8 +889,8 @@ mod tests {
     #[tokio::test]
     async fn test_full_pipeline_handles_qdrant_upsert_error_gracefully() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let message_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let message_id = DbId::new();
+        let session_id = DbId::new();
         let test_message = ChatMessage {
             id: message_id,
             session_id,
@@ -898,7 +900,7 @@ mod tests {
                 .to_vec(),
             content_nonce: None, // ENSURED
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -942,13 +944,13 @@ mod tests {
         let (encrypted_content, nonce) = encrypt_gcm(original_content.as_bytes(), &dek.0).unwrap();
 
         let test_message = ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: encrypted_content,
             content_nonce: Some(nonce),
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -999,13 +1001,13 @@ mod tests {
                 .expect("Encryption failed in test");
 
         let test_message = ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: encrypted_content.clone(), // This will be used for lossy conversion
             content_nonce: Some(nonce),
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -1064,13 +1066,13 @@ mod tests {
             encrypt_gcm(original_content_text.as_bytes(), &user_dek.0).unwrap();
 
         let test_message = ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: encrypted_content.clone(), // This will be used for lossy conversion
             content_nonce: Some(nonce),
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -1123,13 +1125,13 @@ mod tests {
             encrypt_gcm(original_content_text.as_bytes(), &dek.0).unwrap();
 
         let test_message = ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: encrypted_content_bytes.clone(), // This is ciphertext
             content_nonce: None,                      // Crucially, nonce is None
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -1178,13 +1180,13 @@ mod tests {
         let plaintext_content = "This is a normal plaintext message.";
 
         let test_message = ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: plaintext_content.as_bytes().to_vec(), // Plaintext
             content_nonce: None,                            // No nonce, so it's plaintext
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -1226,17 +1228,17 @@ mod tests {
     #[derive(Clone)]
     struct TestLorebookParams {
         params: LorebookEntryParams,
-        original_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        original_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         content: String,
     }
 
     // Helper function to create test lorebook entry parameters
     fn create_test_lorebook_params() -> TestLorebookParams {
-        let original_lorebook_entry_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let original_lorebook_entry_id = DbId::new();
+        let lorebook_id = DbId::new();
+        let user_id = DbId::new();
         let decrypted_content =
             "This is a lorebook entry about dragons. They breathe fire.".to_string();
 
@@ -1559,9 +1561,9 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_lorebook_entry_empty_content() {
         let (state, _mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let original_lorebook_entry_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let original_lorebook_entry_id = DbId::new();
+        let lorebook_id = DbId::new();
+        let user_id = DbId::new();
 
         let params = LorebookEntryParams {
             original_lorebook_entry_id,
@@ -1593,9 +1595,9 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_lorebook_entry_embedding_error() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let original_lorebook_entry_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let original_lorebook_entry_id = DbId::new();
+        let lorebook_id = DbId::new();
+        let user_id = DbId::new();
 
         mock_embed_client.set_response(Err(AppError::AiServiceError(
             "Embedding failed".to_string(),
@@ -1634,9 +1636,9 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_lorebook_entry_qdrant_error() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let original_lorebook_entry_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let original_lorebook_entry_id = DbId::new();
+        let lorebook_id = DbId::new();
+        let user_id = DbId::new();
 
         mock_embed_client.set_response(Ok(vec![0.5, 0.5]));
         mock_qdrant.set_upsert_response(Err(AppError::VectorDbError("Qdrant down".to_string())));
@@ -1669,9 +1671,9 @@ mod tests {
     #[tokio::test]
     async fn test_process_and_embed_lorebook_entry_multiple_chunks() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let original_lorebook_entry_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let original_lorebook_entry_id = DbId::new();
+        let lorebook_id = DbId::new();
+        let user_id = DbId::new();
         // Content designed to be chunked by the service's default config (max_size 100, overlap 20)
         let long_content = "a".repeat(150);
         let decrypted_title = Some("Long Lore".to_string());
@@ -1763,11 +1765,11 @@ mod tests {
     // Helper to create a mock ScoredPoint for Lorebook entries
     // Helper struct for creating mock lorebook ScoredPoint
     struct MockLorebookScoredPointParams<'a> {
-        point_uuid: crate::DbUuid,
+        point_uuid: crate::db::DbId,
         score: f32,
-        original_lorebook_entry_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        original_lorebook_entry_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         chunk_text: &'a str,
         entry_title: Option<String>,
         keywords: Option<Vec<String>>,
@@ -1878,20 +1880,20 @@ mod tests {
     async fn test_retrieve_chunks_chat_history_only() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
         let query_text = "relevant query";
         let limit: u64 = 3;
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3])); // Mock query embedding
 
-        let chat_point_id = Uuid::new_v4();
+        let chat_point_id = DbId::new();
         let mock_chat_results = vec![create_encrypted_mock_scored_point(
             &MockScoredPointParams {
                 id_uuid: chat_point_id,
                 score: 0.9,
                 session_id,
-                message_id: Uuid::new_v4(),
+                message_id: DbId::new(),
                 user_id,
                 speaker: "User",
                 timestamp: Utc::now(),
@@ -1984,9 +1986,9 @@ mod tests {
 
     fn verify_lorebook_filter_conditions(
         filter: &Filter,
-        user_id: crate::DbUuid,
-        lorebook_id1: crate::DbUuid,
-        lorebook_id2: crate::DbUuid,
+        user_id: crate::db::DbId,
+        lorebook_id1: crate::db::DbId,
+        lorebook_id2: crate::db::DbId,
     ) {
         assert_eq!(filter.must.len(), 3); // user_id, source_type, is_enabled
         assert_eq!(filter.should.len(), 2); // lorebook_id1, lorebook_id2
@@ -2057,21 +2059,21 @@ mod tests {
     async fn test_retrieve_chunks_lorebook_entries_only() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let lorebook_id1 = Uuid::new_v4();
-        let lorebook_id2 = Uuid::new_v4();
+        let user_id = DbId::new();
+        let lorebook_id1 = DbId::new();
+        let lorebook_id2 = DbId::new();
         let active_lorebook_ids = vec![lorebook_id1, lorebook_id2];
         let query_text = "relevant query for lore";
         let limit: u64 = 2;
 
         mock_embed_client.set_response(Ok(vec![0.4, 0.5, 0.6]));
 
-        let lore_point_id = Uuid::new_v4();
+        let lore_point_id = DbId::new();
         let mock_lore_results = vec![create_encrypted_mock_lorebook_scored_point(
             MockLorebookScoredPointParams {
                 point_uuid: lore_point_id,
                 score: 0.85,
-                original_lorebook_entry_id: Uuid::new_v4(),
+                original_lorebook_entry_id: DbId::new(),
                 lorebook_id: lorebook_id1,
                 user_id,
                 chunk_text: "Test lorebook entry content",
@@ -2113,24 +2115,24 @@ mod tests {
     async fn test_retrieve_chunks_chat_and_lorebook() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
+        let lorebook_id = DbId::new();
         let active_lorebook_ids = vec![lorebook_id];
         let query_text = "relevant query for both";
         let limit: u64 = 1; // Limit to 1 per source to test combining and sorting
 
         mock_embed_client.set_response(Ok(vec![0.7, 0.8, 0.9]));
 
-        let chat_point_id = Uuid::new_v4();
-        let lore_point_id = Uuid::new_v4();
+        let chat_point_id = DbId::new();
+        let lore_point_id = DbId::new();
 
         let mock_chat_results = vec![create_encrypted_mock_scored_point(
             &MockScoredPointParams {
                 id_uuid: chat_point_id,
                 score: 0.95,
                 session_id,
-                message_id: Uuid::new_v4(),
+                message_id: DbId::new(),
                 user_id,
                 speaker: "User",
                 timestamp: Utc::now(),
@@ -2143,7 +2145,7 @@ mod tests {
             MockLorebookScoredPointParams {
                 point_uuid: lore_point_id,
                 score: 0.90,
-                original_lorebook_entry_id: Uuid::new_v4(),
+                original_lorebook_entry_id: DbId::new(),
                 lorebook_id,
                 user_id,
                 chunk_text: "Lore content about topic",
@@ -2217,7 +2219,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_no_specific_sources() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let query_text = "query with no sources";
         let limit: u64 = 5;
 
@@ -2258,7 +2260,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_empty_lorebook_id_list() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let query_text = "query with empty lorebook list";
         let limit: u64 = 5;
 
@@ -2301,20 +2303,20 @@ mod tests {
     async fn test_retrieve_chunks_empty_lorebook_id_list_with_chat() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4(); // Chat session IS provided
+        let user_id = DbId::new();
+        let session_id = DbId::new(); // Chat session IS provided
         let query_text = "query with empty lorebook list but with chat";
         let limit: u64 = 3;
 
         mock_embed_client.set_response(Ok(vec![0.1, 0.2, 0.3]));
 
-        let chat_point_id = Uuid::new_v4();
+        let chat_point_id = DbId::new();
         let mock_chat_results = vec![create_encrypted_mock_scored_point(
             &MockScoredPointParams {
                 id_uuid: chat_point_id,
                 score: 0.9,
                 session_id,
-                message_id: Uuid::new_v4(),
+                message_id: DbId::new(),
                 user_id,
                 speaker: "User",
                 timestamp: Utc::now(),
@@ -2369,12 +2371,12 @@ mod tests {
     }
 
     fn create_mock_chat_results_for_limit_test(
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
         dek: &SessionDek,
     ) -> Vec<ScoredPoint> {
-        let chat_point1 = Uuid::new_v4();
-        let chat_point2 = Uuid::new_v4();
+        let chat_point1 = DbId::new();
+        let chat_point2 = DbId::new();
 
         vec![
             create_encrypted_mock_scored_point(
@@ -2382,7 +2384,7 @@ mod tests {
                     id_uuid: chat_point1,
                     score: 0.99,
                     session_id,
-                    message_id: Uuid::new_v4(),
+                    message_id: DbId::new(),
                     user_id,
                     speaker: "U1",
                     timestamp: Utc::now(),
@@ -2396,7 +2398,7 @@ mod tests {
                     id_uuid: chat_point2,
                     score: 0.98,
                     session_id,
-                    message_id: Uuid::new_v4(),
+                    message_id: DbId::new(),
                     user_id,
                     speaker: "U2",
                     timestamp: Utc::now(),
@@ -2409,19 +2411,19 @@ mod tests {
     }
 
     fn create_mock_lore_results_for_limit_test(
-        user_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         dek: &SessionDek,
     ) -> Vec<ScoredPoint> {
-        let lore_point1 = Uuid::new_v4();
-        let lore_point2 = Uuid::new_v4();
+        let lore_point1 = DbId::new();
+        let lore_point2 = DbId::new();
 
         vec![
             create_encrypted_mock_lorebook_scored_point(
                 MockLorebookScoredPointParams {
                     point_uuid: lore_point1,
                     score: 0.97,
-                    original_lorebook_entry_id: Uuid::new_v4(),
+                    original_lorebook_entry_id: DbId::new(),
                     lorebook_id,
                     user_id,
                     chunk_text: "Lore1",
@@ -2437,7 +2439,7 @@ mod tests {
                 MockLorebookScoredPointParams {
                     point_uuid: lore_point2,
                     score: 0.96,
-                    original_lorebook_entry_id: Uuid::new_v4(),
+                    original_lorebook_entry_id: DbId::new(),
                     lorebook_id,
                     user_id,
                     chunk_text: "Lore2",
@@ -2456,9 +2458,9 @@ mod tests {
     async fn test_retrieve_chunks_limit_per_source_respected() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
+        let lorebook_id = DbId::new();
         let query_text = "query for limit test";
         let limit_per_source: u64 = 1; // Crucial: limit to 1 per source
 
@@ -2534,20 +2536,20 @@ mod tests {
     async fn test_retrieve_chunks_error_handling_one_source_fails() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
         let dek = create_test_dek();
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let lorebook_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
+        let lorebook_id = DbId::new();
         let query_text = "query for error test";
         let limit: u64 = 2;
 
         mock_embed_client.set_response(Ok(vec![0.6, 0.6, 0.6]));
 
-        let lore_point_id = Uuid::new_v4();
+        let lore_point_id = DbId::new();
         let mock_lore_results = vec![create_encrypted_mock_lorebook_scored_point(
             MockLorebookScoredPointParams {
                 point_uuid: lore_point_id,
                 score: 0.8,
-                original_lorebook_entry_id: Uuid::new_v4(),
+                original_lorebook_entry_id: DbId::new(),
                 lorebook_id,
                 user_id,
                 chunk_text: "Successful lore content",
@@ -2666,8 +2668,8 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_chat_history_only_filter_check() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
         let query_text = "relevant query";
         let limit: u64 = 3;
 
@@ -2716,9 +2718,9 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_chunks_lorebook_entries_only_filter_check() {
         let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
-        let user_id = Uuid::new_v4();
-        let lorebook_id1 = Uuid::new_v4();
-        let lorebook_id2 = Uuid::new_v4();
+        let user_id = DbId::new();
+        let lorebook_id1 = DbId::new();
+        let lorebook_id2 = DbId::new();
         let active_lorebook_ids = vec![lorebook_id1, lorebook_id2];
         let query_text = "relevant query for lore";
         let limit: u64 = 2;

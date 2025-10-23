@@ -35,19 +35,17 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
                         // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::state::AppState;
-use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 // ExposeSecret already imported above
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
 use uuid::Uuid;
 use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -119,24 +117,24 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 pub async fn set_chat_character_override_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    dek: SessionDek,              // Added SessionDek extractor
-    Path(session_id): Path<crate::DbUuid>, // Renamed id to session_id for clarity
+    dek: SessionDek,                         // Added SessionDek extractor
+    Path(session_id): Path<crate::db::DbId>, // Renamed id to session_id for clarity
     Json(payload): Json<CharacterOverrideDto>,
 ) -> Result<impl IntoResponse, AppError> {
     #[derive(Serialize)]
     struct OverrideResponse {
         message: String,
-        session_id: crate::DbUuid,
+        session_id: crate::db::DbId,
         field_name: String,
         new_value: String,
         // Include original fields for compatibility with existing tests
-        id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
-        original_character_id: crate::DbUuid,
+        id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        original_character_id: crate::db::DbId,
         overridden_value: Vec<u8>,
         overridden_value_nonce: Option<Vec<u8>>,
-        created_at: crate::DbDateTime,
-        updated_at: crate::DbDateTime,
+        created_at: crate::DbTimestamp,
+        updated_at: crate::DbTimestamp,
     }
 
     // Validate the payload first
@@ -193,7 +191,7 @@ pub async fn get_chats_by_character_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek,
-    Path(character_id): Path<crate::DbUuid>,
+    Path(character_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -359,7 +357,7 @@ pub async fn create_chat_handler(
 pub async fn get_chat_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -398,7 +396,7 @@ pub async fn get_chat_by_id_handler(
 pub async fn get_chat_deletion_analysis_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -451,7 +449,7 @@ pub async fn get_chat_deletion_analysis_handler(
 pub async fn delete_chat_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
     Query(params): Query<DeleteChatQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
@@ -594,7 +592,7 @@ pub async fn delete_chat_handler(
 pub struct GetMessagesQueryParams {
     #[serde(default = "default_message_limit")]
     pub limit: i64,
-    pub cursor: Option<crate::DbDateTime>, // Timestamp of the last message from previous batch
+    pub cursor: Option<crate::DbTimestamp>, // Timestamp of the last message from previous batch
 }
 
 fn default_message_limit() -> i64 {
@@ -606,7 +604,7 @@ fn default_message_limit() -> i64 {
 pub struct PaginatedMessagesResponse {
     pub messages: Vec<MessageResponse>,
     #[serde(rename = "nextCursor")]
-    pub next_cursor: Option<crate::DbDateTime>,
+    pub next_cursor: Option<crate::DbTimestamp>,
 }
 
 /// Helper function to validate and parse the chat ID
@@ -614,8 +612,8 @@ pub struct PaginatedMessagesResponse {
 /// # Errors
 ///
 /// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
-fn parse_chat_id(id: &str) -> Result<crate::DbUuid, AppError> {
-    Uuid::parse_str(id)
+fn parse_chat_id(id: &str) -> Result<crate::db::DbId, AppError> {
+    DbId::parse_str(id)
         .map(Into::into)
         .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
 }
@@ -630,22 +628,24 @@ fn get_authenticated_user(auth_session: CurrentAuthSession) -> Result<User, AppE
 /// Helper function to fetch chat session and verify ownership
 async fn fetch_and_verify_chat_ownership(
     pool: DbPool,
-    chat_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    chat_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Chat, AppError> {
-    crate::db::with_conn(&pool, move |conn| fetch_chat_with_ownership_check(conn, chat_id, user_id))
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to verify chat ownership: {}", e);
-            AppError::DbInteractError(e.to_string())
-        })
+    crate::db::with_conn(&pool, move |conn| {
+        fetch_chat_with_ownership_check(conn, chat_id, user_id)
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to verify chat ownership: {}", e);
+        AppError::DbInteractError(e.to_string())
+    })
 }
 
 /// Database operation to fetch chat and check ownership
 fn fetch_chat_with_ownership_check(
     conn: &mut crate::DbConnection,
-    chat_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    chat_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Chat, AppError> {
     tracing::debug!("Fetching chat for id={}", chat_id);
 
@@ -685,9 +685,9 @@ fn fetch_chat_with_ownership_check(
 /// Helper function to fetch messages for a chat session with pagination
 async fn fetch_paginated_chat_messages(
     pool: DbPool,
-    chat_id: crate::DbUuid,
+    chat_id: crate::db::DbId,
     limit: i64,
-    cursor: Option<crate::DbDateTime>,
+    cursor: Option<crate::DbTimestamp>,
 ) -> Result<Vec<Message>, AppError> {
     crate::db::with_conn(&pool, move |conn| {
             tracing::debug!(
@@ -744,8 +744,8 @@ async fn fetch_paginated_chat_messages(
 #[allow(dead_code)]
 async fn get_default_variant_content(
     pool: DbPool,
-    message_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    message_id: crate::db::DbId,
+    user_id: crate::db::DbId,
     dek: &crate::auth::session_dek::SessionDek,
 ) -> Result<Option<String>, AppError> {
     use crate::models::chats::MessageVariant;
@@ -778,7 +778,7 @@ async fn process_messages_for_response(
     messages_db: Vec<Message>,
     dek: &crate::auth::session_dek::SessionDek,
     pool: DbPool,
-    user_id: crate::DbUuid,
+    user_id: crate::db::DbId,
 ) -> Result<Vec<MessageResponse>, AppError> {
     tracing::info!("🔄 Processing {} messages for response", messages_db.len());
     let mut responses = Vec::new();
@@ -959,7 +959,7 @@ pub async fn create_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
-    Path(chat_id): Path<crate::DbUuid>,
+    Path(chat_id): Path<crate::db::DbId>,
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
@@ -999,12 +999,7 @@ pub async fn create_message_handler(
         let user_id_for_daily_tracking = user_id;
 
         let _daily_usage_result = crate::db::with_conn(&pool, move |conn| {
-            soft_limit_service.record_usage(
-                conn,
-                user_id_for_daily_tracking,
-                "manual_message",
-                0,
-            )
+            soft_limit_service.record_usage(conn, user_id_for_daily_tracking, "manual_message", 0)
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
@@ -1207,7 +1202,7 @@ pub async fn get_message_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -1364,7 +1359,7 @@ pub async fn get_message_by_id_handler(
 pub async fn vote_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
     Json(payload): Json<VoteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
@@ -1403,8 +1398,8 @@ pub async fn vote_message_handler(
         diesel::insert_into(crate::schema::old_votes::table) // Use old_votes
             .values((
                 crate::schema::old_votes::dsl::chat_id.eq(message.session_id), // Use old_votes::dsl
-                crate::schema::old_votes::dsl::message_id.eq(id), // Use old_votes::dsl
-                crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted), // Use old_votes::dsl
+                crate::schema::old_votes::dsl::message_id.eq(id),              // Use old_votes::dsl
+                crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted),      // Use old_votes::dsl
             ))
             .on_conflict((
                 crate::schema::old_votes::dsl::chat_id,
@@ -1434,7 +1429,7 @@ pub async fn vote_message_handler(
 pub async fn get_votes_by_chat_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -1459,7 +1454,7 @@ pub async fn get_votes_by_chat_id_handler(
     let votes = crate::db::with_conn(&pool, move |conn| {
         crate::schema::old_votes::table // Use old_votes
             .filter(crate::schema::old_votes::dsl::chat_id.eq(id)) // Use old_votes::dsl
-            .load::<(crate::DbUuid, crate::DbUuid, bool)>(conn)
+            .load::<(crate::db::DbId, crate::db::DbId, bool)>(conn)
             .map(|rows| {
                 rows.into_iter()
                     .map(|(chat_id, message_id, is_upvoted)| Vote {
@@ -1489,7 +1484,7 @@ pub async fn get_votes_by_chat_id_handler(
 pub async fn delete_trailing_messages_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -1531,7 +1526,7 @@ pub async fn delete_trailing_messages_handler(
             .filter(chat_messages::session_id.eq(chat_id))
             .filter(chat_messages::created_at.ge(timestamp))
             .select(chat_messages::id)
-            .load::<crate::DbUuid>(conn)
+            .load::<crate::db::DbId>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1602,7 +1597,7 @@ pub async fn delete_trailing_messages_handler(
 pub async fn delete_message_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -1693,7 +1688,7 @@ pub async fn delete_message_handler(
 pub async fn update_chat_visibility_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateChatVisibilityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
@@ -1748,8 +1743,8 @@ pub async fn update_chat_visibility_handler(
 pub async fn get_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    dek: SessionDek,      // Added SessionDek extractor
-    Path(id): Path<crate::DbUuid>, // This is session_id
+    dek: SessionDek,                 // Added SessionDek extractor
+    Path(id): Path<crate::db::DbId>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -1787,7 +1782,7 @@ pub async fn update_chat_settings_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateChatSettingsRequest>, // Use standard Json extractor
 ) -> Result<impl IntoResponse, AppError> {
     // Manually validate the payload
@@ -1814,7 +1809,7 @@ pub async fn update_chat_settings_handler(
 // DTOs for deletion analysis
 #[derive(Debug, Serialize)]
 pub struct ChronicleAnalysisDto {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub name: String,
     pub total_events: i32,
     pub events_from_this_chat: i32,
@@ -1843,7 +1838,7 @@ fn default_chronicle_action() -> String {
 async fn get_chat_token_usage_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<crate::DbUuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(chat_id = %id, "Getting chat token usage statistics");
 
@@ -1875,7 +1870,8 @@ async fn get_chat_token_usage_handler(
                 })
         })
         .await
-        .map_err(|e| AppError::DbInteractError(e.to_string())).and_then(|r| r)?;
+        .map_err(|e| AppError::DbInteractError(e.to_string()))
+        .and_then(|r| r)?;
 
     let total_tokens = chat.total_prompt_tokens + chat.total_completion_tokens;
     let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
@@ -1897,7 +1893,8 @@ async fn get_chat_token_usage_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DbInteractError(e.to_string())).and_then(|r| r)?
+        .map_err(|e| AppError::DbInteractError(e.to_string()))
+        .and_then(|r| r)?
         .flatten()
         .unwrap_or_else(|| "unknown".to_string());
 
@@ -1920,7 +1917,7 @@ async fn get_chat_token_usage_handler(
 pub async fn select_message_variant_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(message_id): Path<crate::DbUuid>,
+    Path(message_id): Path<crate::db::DbId>,
     dek: SessionDek, // Added SessionDek extractor
     Json(payload): Json<SelectVariantRequest>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -1956,20 +1953,21 @@ pub async fn select_message_variant_handler(
 
     // Update the current_variant_index in the database
     let pool_clone = pool.clone();
-    let updated_message = crate::db::with_conn(&pool_clone, move |conn| -> Result<Message, AppError> {
-        diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))
-            .set(chat_messages::current_variant_index.eq(payload.variant_index))
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    let updated_message =
+        crate::db::with_conn(&pool_clone, move |conn| -> Result<Message, AppError> {
+            diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))
+                .set(chat_messages::current_variant_index.eq(payload.variant_index))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-        // Get the updated message
-        chat_messages::table
-            .filter(chat_messages::id.eq(message_id))
-            .first::<Message>(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-    })
-    .await
-    .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+            // Get the updated message
+            chat_messages::table
+                .filter(chat_messages::id.eq(message_id))
+                .first::<Message>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?;
 
     // Get the content for the selected variant
     let content = if payload.variant_index == 0 {
@@ -2001,7 +1999,9 @@ pub async fn select_message_variant_handler(
             .unwrap_or_else(|| updated_message.message_type.to_string()),
         content,
         parts: updated_message.parts.unwrap_or_else(|| json!([]).into()),
-        attachments: updated_message.attachments.unwrap_or_else(|| json!([]).into()),
+        attachments: updated_message
+            .attachments
+            .unwrap_or_else(|| json!([]).into()),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
@@ -2022,9 +2022,9 @@ pub async fn select_message_variant_handler(
 /// Helper function to get variant content by index
 async fn get_variant_content_by_index(
     pool: DbPool,
-    message_id: crate::DbUuid,
+    message_id: crate::db::DbId,
     variant_index: i32,
-    user_id: crate::DbUuid,
+    user_id: crate::db::DbId,
     dek: &SessionDek,
 ) -> Result<Option<String>, AppError> {
     use crate::schema::message_variants;

@@ -1,15 +1,15 @@
 use super::get_user_from_session;
 use super::*;
-use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn create_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
         payload: CreateLorebookEntryPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         state: Arc<AppState>, // Added AppState
@@ -90,7 +90,7 @@ AppError::InternalServerErrorGeneric(format!(
         };
 
         let current_time = Utc::now();
-        let new_entry_id = Uuid::new_v4();
+        let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
             id: new_entry_id.into(),
@@ -121,26 +121,25 @@ AppError::InternalServerErrorGeneric(format!(
 
         #[cfg(feature = "postgres-backend")]
         let inserted_entry = {
-            conn
-                .interact(move |conn_sync| {
-                    diesel::insert_into(lorebook_entries::table)
-                        .values(&inserted_entry_db)
-                        .returning(LorebookEntry::as_returning())
-                        .get_result::<LorebookEntry>(conn_sync)
-                })
-                .await
-                .map_err(|e| {
-                    error!("Interaction error while inserting lorebook entry: {:?}", e);
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Database interaction failed while creating lorebook entry: {e}"
-                    ))
-                })?
-                .map_err(|e| {
-                    error!("Failed to insert lorebook entry into DB: {:?}", e);
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Failed to create lorebook entry in DB: {e}"
-                    ))
-                })?
+            conn.interact(move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&inserted_entry_db)
+                    .returning(LorebookEntry::as_returning())
+                    .get_result::<LorebookEntry>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                error!("Interaction error while inserting lorebook entry: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while creating lorebook entry: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to insert lorebook entry into DB: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to create lorebook entry in DB: {e}"
+                ))
+            })?
         };
 
         #[cfg(feature = "sqlite-backend")]
@@ -374,7 +373,7 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn list_lorebook_entries(
         &self,
         auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
     ) -> Result<Vec<LorebookEntrySummaryResponse>, AppError> {
         debug!("Attempting to list lorebook entries");
@@ -493,7 +492,7 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn list_lorebook_entries_with_content(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<LorebookEntryResponse>, AppError> {
         debug!("Attempting to list lorebook entries with content");
@@ -692,8 +691,8 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn get_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
-        lorebook_id: crate::DbUuid,
-        entry_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
+        entry_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!("Attempting to get lorebook entry");
@@ -839,8 +838,8 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn update_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id_param: crate::DbUuid,
-        entry_id: crate::DbUuid,
+        lorebook_id_param: crate::db::DbId,
+        entry_id: crate::db::DbId,
         payload: UpdateLorebookEntryPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         state: Arc<AppState>,
@@ -1121,8 +1120,8 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn delete_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: crate::DbUuid,
-        entry_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
+        entry_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook entry");
 
@@ -1138,7 +1137,7 @@ AppError::InternalServerErrorGeneric(format!(
                 .filter(id.eq(entry_id))
                 .filter(lorebook_id.eq(lorebook_id))
                 .select(user_id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -1175,8 +1174,8 @@ AppError::InternalServerErrorGeneric(format!(
     #[instrument(skip(self, user_dek_bytes), fields(user_id = %user_id, entry_title = %entry_title))]
     pub async fn create_entry_for_narrative_intelligence(
         &self,
-        user_id: crate::DbUuid,
-        lorebook_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        lorebook_id: Option<crate::db::DbId>,
         entry_title: String,
         content: String,
         keys_text: Option<String>,
@@ -1198,7 +1197,7 @@ AppError::InternalServerErrorGeneric(format!(
                         .filter(lorebooks::id.eq(lb_id))
                         .filter(lorebooks::user_id.eq(user_id_clone))
                         .select(lorebooks::id)
-                        .first::<crate::DbUuid>(conn_sync)
+                        .first::<crate::db::DbId>(conn_sync)
                         .optional()
                 })
                 .await
@@ -1246,7 +1245,7 @@ AppError::InternalServerErrorGeneric(format!(
         let (comment_ciphertext, comment_nonce) = (None, None);
 
         let current_time = Utc::now();
-        let new_entry_id = Uuid::new_v4();
+        let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
             id: new_entry_id.into(),
@@ -1277,29 +1276,28 @@ AppError::InternalServerErrorGeneric(format!(
 
         #[cfg(feature = "postgres-backend")]
         let inserted_entry = {
-            conn
-                .interact(move |conn_sync| {
-                    diesel::insert_into(lorebook_entries::table)
-                        .values(&inserted_entry_db)
-                        .returning(LorebookEntry::as_returning())
-                        .get_result::<LorebookEntry>(conn_sync)
-                })
-                .await
-                .map_err(|e| {
-                    error!(
-                        "Interaction error while inserting AI lorebook entry: {:?}",
-                        e
-                    );
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Database interaction failed while creating AI lorebook entry: {e}"
-                    ))
-                })?
-                .map_err(|e| {
-                    error!("Failed to insert AI lorebook entry into DB: {:?}", e);
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Failed to create AI lorebook entry: {e}"
-                    ))
-                })?
+            conn.interact(move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&inserted_entry_db)
+                    .returning(LorebookEntry::as_returning())
+                    .get_result::<LorebookEntry>(conn_sync)
+            })
+            .await
+            .map_err(|e| {
+                error!(
+                    "Interaction error while inserting AI lorebook entry: {:?}",
+                    e
+                );
+                AppError::InternalServerErrorGeneric(format!(
+                    "Database interaction failed while creating AI lorebook entry: {e}"
+                ))
+            })?
+            .map_err(|e| {
+                error!("Failed to insert AI lorebook entry into DB: {:?}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to create AI lorebook entry: {e}"
+                ))
+            })?
         };
 
         #[cfg(feature = "sqlite-backend")]
@@ -1408,7 +1406,10 @@ AppError::InternalServerErrorGeneric(format!(
     }
 
     /// Find or create a default "AI Extracted" lorebook for the user
-    async fn find_or_create_ai_extracted_lorebook(&self, user_id: crate::DbUuid) -> Result<crate::DbUuid, AppError> {
+    async fn find_or_create_ai_extracted_lorebook(
+        &self,
+        user_id: crate::db::DbId,
+    ) -> Result<crate::db::DbId, AppError> {
         let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -1423,7 +1424,7 @@ AppError::InternalServerErrorGeneric(format!(
                     .filter(lorebooks::user_id.eq(user_id_clone))
                     .filter(lorebooks::name.eq(ai_lorebook_name))
                     .select(lorebooks::id)
-                    .first::<crate::DbUuid>(conn_sync)
+                    .first::<crate::db::DbId>(conn_sync)
                     .optional()
             })
             .await
@@ -1444,7 +1445,7 @@ AppError::InternalServerErrorGeneric(format!(
         }
 
         // Create new AI lorebook
-        let new_lorebook_id = Uuid::new_v4();
+        let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
 
         let new_lorebook = crate::models::NewLorebook {

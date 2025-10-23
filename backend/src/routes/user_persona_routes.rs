@@ -85,7 +85,7 @@ async fn get_user_persona_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek,
-    Path(persona_id): Path<crate::DbUuid>,
+    Path(persona_id): Path<crate::db::DbId>,
 ) -> Result<Json<UserPersonaDataForClient>, AppError> {
     let user = auth_session
         .user
@@ -106,7 +106,7 @@ async fn update_user_persona_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     dek: SessionDek,
-    Path(persona_id): Path<crate::DbUuid>,
+    Path(persona_id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateUserPersonaDto>,
 ) -> Result<Json<UserPersonaDataForClient>, AppError> {
     let user = auth_session
@@ -127,7 +127,7 @@ async fn update_user_persona_handler(
 async fn delete_user_persona_handler(
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
-    Path(persona_id): Path<crate::DbUuid>,
+    Path(persona_id): Path<crate::db::DbId>,
 ) -> Result<StatusCode, AppError> {
     let user = auth_session
         .user

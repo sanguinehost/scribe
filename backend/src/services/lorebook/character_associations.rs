@@ -7,8 +7,8 @@ impl LorebookService {
     pub async fn associate_lorebook_to_character(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        character_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        character_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
 
@@ -79,7 +79,7 @@ impl LorebookService {
             diesel::insert_into(character_lorebooks::table)
                 .values(&new_association)
                 .execute(conn_sync)
-                    .map_err(Into::into)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -99,7 +99,7 @@ impl LorebookService {
     pub async fn list_character_lorebooks(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        character_id: crate::DbUuid,
+        character_id: crate::db::DbId,
     ) -> Result<Vec<LorebookResponse>, AppError> {
         let user = get_user_from_session(auth_session)?;
 
@@ -145,8 +145,8 @@ impl LorebookService {
     pub async fn set_character_lorebook_override(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        chat_session_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         action: String, // "disable" or "enable"
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
@@ -206,8 +206,8 @@ impl LorebookService {
     pub async fn remove_character_lorebook_override(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        chat_session_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
@@ -227,7 +227,7 @@ impl LorebookService {
                         .filter(dsl::user_id.eq(user_id)),
                 )
                 .execute(conn_sync)
-                    .map_err(Into::into)
+                .map_err(Into::into)
             })
             .await
             .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -250,7 +250,7 @@ impl LorebookService {
     pub async fn get_character_lorebook_overrides(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: crate::DbUuid,
+        chat_session_id: crate::db::DbId,
     ) -> Result<Vec<crate::models::lorebooks::ChatCharacterLorebookOverride>, AppError> {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;

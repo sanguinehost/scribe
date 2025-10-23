@@ -29,15 +29,15 @@ use crate::{
 #[instrument(skip(pool), err)]
 pub async fn get_messages_for_session(
     pool: &DbPool, // Already correct
-    user_id: crate::DbUuid,
-    session_id: crate::DbUuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
 ) -> Result<Vec<ChatMessage>, AppError> {
     // Changed DbChatMessage to ChatMessage
     crate::db::with_conn(pool, move |conn| {
         let session_owner_id = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select(chat_sessions::user_id)
-            .first::<crate::DbUuid>(conn)
+            .first::<crate::db::DbId>(conn)
             .optional()?;
 
         session_owner_id.map_or_else(
@@ -98,7 +98,7 @@ pub fn save_chat_message_internal(
     {
         use diesel::prelude::*;
         // SQLite doesn't support RETURNING, so we generate ID first then query back
-        let new_id = crate::DbUuid::new_v4();
+        let new_id = crate::db::DbId::new_v4();
 
         match diesel::insert_into(chat_messages::table)
             .values(&message)
@@ -138,8 +138,8 @@ pub fn save_chat_message_internal(
 /// Parameters for saving a chat message.
 pub struct SaveMessageParams<'a> {
     pub state: Arc<AppState>,
-    pub session_id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub message_type_enum: MessageRole, // Renamed for clarity (this is the enum)
     pub content: &'a str,               // This is the primary textual content
     pub role_str: Option<String>,       // ADDED: The string role ("user", "model", "assistant")
@@ -150,9 +150,9 @@ pub struct SaveMessageParams<'a> {
     pub raw_prompt_debug: Option<&'a str>, // Raw prompt for debugging (only for AI responses)
     pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
     pub error_message: Option<String>,               // Error message if status is failed
-    pub variant_of: Option<crate::DbUuid>, // If provided, create a variant of this message instead of new message
+    pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
-    pub credits_cost_override: Option<crate::DbBigDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
+    pub credits_cost_override: Option<crate::db::DbDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -398,14 +398,14 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // Convert to BigDecimal for database storage
     use std::str::FromStr;
     let actual_cost_bd = credits_cost_override.clone().unwrap_or_else(|| {
-        crate::DbBigDecimal::from_str(&actual_cost_dollars.to_string())
-            .unwrap_or_else(|_| crate::DbBigDecimal::from(0))
+        crate::db::DbDecimal::from_str(&actual_cost_dollars.to_string())
+            .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
     });
 
-    let modified_cost_bd = crate::DbBigDecimal::from_str(&modified_cost_dollars.to_string())
-        .unwrap_or_else(|_| crate::DbBigDecimal::from(0));
+    let modified_cost_bd = crate::db::DbDecimal::from_str(&modified_cost_dollars.to_string())
+        .unwrap_or_else(|_| crate::db::DbDecimal::from(0));
 
-    let actual_charge_bd = crate::DbBigDecimal::from(0); // TODO: Implement actual charge tracking
+    let actual_charge_bd = crate::db::DbDecimal::from(0); // TODO: Implement actual charge tracking
 
     // For backwards compatibility with old code
     #[cfg(feature = "payment")]
@@ -608,15 +608,22 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                             last_activity: chrono::Utc::now(),
                         };
 
-                        usage_service.track_usage_sync(
-                            conn,
-                            user_id_for_tokens,
-                            None, // subscription_id will be looked up by the service
-                            total_tokens,
-                            Some(metadata),
-                        )
-                        .map_err(|e| crate::errors::AppError::DatabaseQueryError(format!("Failed to track usage: {}", e)))
-                    }).await;
+                        usage_service
+                            .track_usage_sync(
+                                conn,
+                                user_id_for_tokens,
+                                None, // subscription_id will be looked up by the service
+                                total_tokens,
+                                Some(metadata),
+                            )
+                            .map_err(|e| {
+                                crate::errors::AppError::DatabaseQueryError(format!(
+                                    "Failed to track usage: {}",
+                                    e
+                                ))
+                            })
+                    })
+                    .await;
 
                     match track_result {
                         Ok(_) => {
@@ -724,15 +731,15 @@ fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_
 
 async fn update_cumulative_token_counts(
     pool: &crate::db::DbPool,
-    session_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
     prompt_tokens: i32,
     completion_tokens: i32,
     estimated_cost_cents: i32,
-    #[cfg(feature = "payment")] actual_cost: crate::DbBigDecimal,
-    #[cfg(feature = "payment")] modified_cost: crate::DbBigDecimal,
+    #[cfg(feature = "payment")] actual_cost: crate::db::DbDecimal,
+    #[cfg(feature = "payment")] modified_cost: crate::db::DbDecimal,
     #[cfg(feature = "payment")] credit_cost: i32,
-    #[cfg(feature = "payment")] actual_charge: crate::DbBigDecimal,
+    #[cfg(feature = "payment")] actual_charge: crate::db::DbDecimal,
     #[cfg(feature = "payment")] credits_charged: i32,
 ) -> Result<(), AppError> {
     use crate::schema::{chat_sessions, users};
@@ -799,7 +806,7 @@ async fn update_cumulative_token_counts(
 
             Ok(())
         })
-            .map_err(Into::into)
+        .map_err(Into::into)
     })
     .await
     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;

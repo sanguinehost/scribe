@@ -708,7 +708,7 @@ impl QdrantClientService {
 ///
 /// Returns an error if the payload is not a valid JSON object or if serialization fails
 pub fn create_qdrant_point(
-    id: crate::DbUuid,
+    id: crate::db::DbId,
     vector: Vec<f32>,
     payload: Option<crate::DbJson>,
 ) -> Result<PointStruct, AppError> {
@@ -723,7 +723,7 @@ pub fn create_qdrant_point(
                 ));
             }
             // Convert serde_json::Value to the target HashMap type
-            serde_json::from_value(json_value.0).map_err(|e| {
+            serde_json::from_value(json_value.clone()).map_err(|e| {
                 error!(error = %e, "Failed to deserialize JSON payload into Qdrant Value map");
                 AppError::SerializationError(format!(
                     "Failed to deserialize payload for Qdrant: {e}"
@@ -745,7 +745,7 @@ pub fn create_qdrant_point(
 
 // Add a helper function to create a filter for message_id
 #[must_use]
-pub fn create_message_id_filter(message_id: crate::DbUuid) -> Filter {
+pub fn create_message_id_filter(message_id: crate::db::DbId) -> Filter {
     Filter {
         must: vec![Condition {
             condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -980,7 +980,7 @@ mod tests {
         let unique_collection_name = collection_name.unwrap_or_else(|| {
             format!(
                 "test_collection_{}",
-                Uuid::new_v4().to_string().replace('-', "_")
+                DbId::new().to_string().replace('-', "_")
             )
         });
         config.qdrant_collection_name = unique_collection_name.clone();
@@ -1029,7 +1029,7 @@ mod tests {
 
     #[test]
     fn test_create_qdrant_point_with_payload() {
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.1, 0.2, 0.3];
         let payload = json!({
             "key": "value",
@@ -1071,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_create_qdrant_point_without_payload() {
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.4, 0.5];
 
         let result = create_qdrant_point(id, vector.clone(), None);
@@ -1085,7 +1085,7 @@ mod tests {
 
     #[test]
     fn test_create_qdrant_point_payload_not_object() {
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.6];
         let payload = json!("this is just a string"); // Not a JSON object
 
@@ -1106,7 +1106,7 @@ mod tests {
         // if we were using a specific struct type here. Since we deserialize to HashMap<String, Value>,
         // most valid JSON objects should work unless they contain types Value can't represent directly.
         // Let's use a nested structure.
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.7, 0.8];
         let payload = json!({
             "nested": { "a": 1 },
@@ -1188,7 +1188,7 @@ mod tests {
         let embedding_dim = usize::try_from(service.embedding_dimension)
             .expect("embedding dimension should fit in usize");
 
-        let point_id_1 = Uuid::new_v4();
+        let point_id_1 = DbId::new();
         // Use slightly more distinct vectors for testing
         let mut rng1 = StdRng::seed_from_u64(42); // Seeded RNG for reproducibility
                                                   // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
@@ -1198,7 +1198,7 @@ mod tests {
         let point_1 = create_qdrant_point(point_id_1, vector_1.clone(), Some(payload_1.clone()))
             .expect("Failed to create point 1");
 
-        let point_id_2 = Uuid::new_v4();
+        let point_id_2 = DbId::new();
         // Use a different seed or different generation logic for vector_2
         let mut rng2 = StdRng::seed_from_u64(99);
         let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.random::<f32>()).collect();
@@ -1276,7 +1276,7 @@ mod tests {
         let embedding_dim = usize::try_from(service.embedding_dimension)
             .expect("embedding dimension should fit in usize");
 
-        let point_id_filter = Uuid::new_v4();
+        let point_id_filter = DbId::new();
         let mut rng3 = StdRng::seed_from_u64(123);
         let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.random::<f32>()).collect();
 
@@ -1288,7 +1288,7 @@ mod tests {
         )
         .expect("Failed to create filter point");
 
-        let point_id_other = Uuid::new_v4();
+        let point_id_other = DbId::new();
         let mut rng4 = StdRng::seed_from_u64(456);
         let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.random::<f32>()).collect();
 

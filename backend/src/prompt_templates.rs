@@ -297,7 +297,7 @@ impl TemplateManager {
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
     fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
-        match &value.0 {
+        match &*value {
             serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s
@@ -326,7 +326,7 @@ impl TemplateManager {
                     arr.iter()
                         .take(100) // Limit array size
                         .map(|v| self.sanitize_context(v.clone().into(), skip_keys))
-                        .map(|v| v.0)
+                        .map(|v| v.clone())
                         .collect(),
                 )
             }
@@ -339,7 +339,8 @@ impl TemplateManager {
                                 // Don't sanitize template sections - they need Jinja2 syntax
                                 (k.clone(), v.clone())
                             } else {
-                                (k.clone(), self.sanitize_context(v.clone().into(), skip_keys).0)
+                                let sanitized = self.sanitize_context(v.clone().into(), skip_keys);
+                                (k.clone(), sanitized.clone())
                             }
                         })
                         .collect(),
@@ -362,11 +363,7 @@ impl TemplateManager {
     /// * `template_id` - The ID of the template to render
     /// * `context` - The context data for rendering
     /// * `style` - Optional narrative style variables (tense, narration, perspective, length)
-    pub fn render(
-        &self,
-        template_id: &str,
-        context: crate::DbJson,
-    ) -> Result<String, AppError> {
+    pub fn render(&self, template_id: &str, context: crate::DbJson) -> Result<String, AppError> {
         self.render_with_style(template_id, context, None)
     }
 
@@ -404,7 +401,7 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let mut context_map: serde_json::Map<String, serde_json::Value> = match &context.0 {
+        let mut context_map: serde_json::Map<String, serde_json::Value> = match &*context {
             serde_json::Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
         };

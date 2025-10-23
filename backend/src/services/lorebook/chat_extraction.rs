@@ -23,8 +23,8 @@ impl LorebookService {
     #[instrument(skip(self, user_dek, payload))]
     pub async fn extract_entries_from_chat(
         &self,
-        user_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         payload: ExtractLorebookEntriesFromChatPayload,
         user_dek: &SecretBox<Vec<u8>>,
     ) -> Result<ExtractLorebookEntriesFromChatResponse, AppError> {
@@ -92,8 +92,8 @@ impl LorebookService {
     /// Verify that the user owns the lorebook
     async fn verify_lorebook_ownership(
         &self,
-        user_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         use crate::schema::lorebooks;
 
@@ -135,8 +135,8 @@ impl LorebookService {
     /// Verify that the user owns the chat session
     async fn verify_chat_ownership(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         use crate::schema::chat_sessions;
 
@@ -175,7 +175,7 @@ impl LorebookService {
     /// Fetch messages from the chat session for extraction
     async fn fetch_messages_for_extraction(
         &self,
-        chat_session_id: crate::DbUuid,
+        chat_session_id: crate::db::DbId,
         start_index: Option<usize>,
         end_index: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {

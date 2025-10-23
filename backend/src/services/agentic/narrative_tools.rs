@@ -151,10 +151,10 @@ impl ScribeTool for CreateChronicleEventTool {
         let timestamp_str = params.get("timestamp_iso8601").and_then(|v| v.as_str());
 
         // Parse UUIDs
-        let user_uuid = Uuid::parse_str(user_id_str)
+        let user_uuid = DbId::parse_str(user_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
 
-        let chronicle_uuid = Uuid::parse_str(chronicle_id_str)
+        let chronicle_uuid = DbId::parse_str(chronicle_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid chronicle_id format".to_string()))?;
 
         // Parse timestamp if provided
@@ -515,7 +515,7 @@ impl ScribeTool for CreateLorebookEntryTool {
             .flatten();
 
         // Parse user UUID
-        let user_uuid = Uuid::parse_str(user_id_str)
+        let user_uuid = DbId::parse_str(user_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
 
         // Extract session DEK (for encryption)
@@ -533,7 +533,7 @@ impl ScribeTool for CreateLorebookEntryTool {
         let lorebook_id = params
             .get("lorebook_id")
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok());
+            .and_then(|s| DbId::parse_str(s).ok());
 
         info!(
             "Creating lorebook entry '{}' for user {} with {} characters of content",
@@ -600,9 +600,9 @@ impl SearchKnowledgeBaseTool {
     /// This includes direct chat-lorebook associations, character-inherited lorebooks, and overrides
     async fn get_session_lorebook_ids(
         &self,
-        session_id: crate::DbUuid,
-        user_id: crate::DbUuid,
-    ) -> Result<Vec<crate::DbUuid>, ToolError> {
+        session_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    ) -> Result<Vec<crate::db::DbId>, ToolError> {
         use crate::schema::{
             character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks,
             chat_sessions,
@@ -611,47 +611,45 @@ impl SearchKnowledgeBaseTool {
 
         let associations_data = crate::db::with_conn(&self.app_state.pool, move |conn| {
             // 1. Get chat session and character ID
-            let (_session_found, character_id): (crate::DbUuid, Option<crate::DbUuid>) = chat_sessions::table
-                .filter(chat_sessions::id.eq(session_id))
-                .filter(chat_sessions::user_id.eq(user_id))
-                .select((chat_sessions::id, chat_sessions::character_id))
-                .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn)
-                .optional()?
-                .ok_or_else(|| diesel::result::Error::NotFound)?;
+            let (_session_found, character_id): (crate::db::DbId, Option<crate::db::DbId>) =
+                chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .filter(chat_sessions::user_id.eq(user_id))
+                    .select((chat_sessions::id, chat_sessions::character_id))
+                    .first::<(crate::db::DbId, Option<crate::db::DbId>)>(conn)
+                    .optional()?
+                    .ok_or_else(|| diesel::result::Error::NotFound)?;
 
             // 2. Get direct chat-lorebook associations
-            let chat_associations: Vec<crate::DbUuid> = chat_session_lorebooks::table
+            let chat_associations: Vec<crate::db::DbId> = chat_session_lorebooks::table
                 .filter(chat_session_lorebooks::chat_session_id.eq(session_id))
                 .filter(chat_session_lorebooks::user_id.eq(user_id))
                 .select(chat_session_lorebooks::lorebook_id)
-                .get_results::<crate::DbUuid>(conn)?;
+                .get_results::<crate::db::DbId>(conn)?;
 
             // 3. Get character-lorebook associations (if character exists)
-            let character_associations: Vec<crate::DbUuid> = if let Some(char_id) = character_id {
+            let character_associations: Vec<crate::db::DbId> = if let Some(char_id) = character_id {
                 character_lorebooks::table
                     .filter(character_lorebooks::character_id.eq(char_id))
                     .filter(character_lorebooks::user_id.eq(user_id))
                     .select(character_lorebooks::lorebook_id)
-                    .get_results::<crate::DbUuid>(conn)?
+                    .get_results::<crate::db::DbId>(conn)?
             } else {
                 Vec::new()
             };
 
             // 4. Get overrides for this chat session
-            let overrides: Vec<(crate::DbUuid, String)> = chat_character_lorebook_overrides::table
-                .filter(chat_character_lorebook_overrides::chat_session_id.eq(session_id))
-                .filter(chat_character_lorebook_overrides::user_id.eq(user_id))
-                .select((
-                    chat_character_lorebook_overrides::lorebook_id,
-                    chat_character_lorebook_overrides::action,
-                ))
-                .get_results::<(crate::DbUuid, String)>(conn)?;
+            let overrides: Vec<(crate::db::DbId, String)> =
+                chat_character_lorebook_overrides::table
+                    .filter(chat_character_lorebook_overrides::chat_session_id.eq(session_id))
+                    .filter(chat_character_lorebook_overrides::user_id.eq(user_id))
+                    .select((
+                        chat_character_lorebook_overrides::lorebook_id,
+                        chat_character_lorebook_overrides::action,
+                    ))
+                    .get_results::<(crate::db::DbId, String)>(conn)?;
 
-            Ok::<_, AppError>((
-                chat_associations,
-                character_associations,
-                overrides,
-            ))
+            Ok::<_, AppError>((chat_associations, character_associations, overrides))
         })
         .await
         .map_err(|e| {
@@ -661,7 +659,8 @@ impl SearchKnowledgeBaseTool {
         let (chat_associations, character_associations, overrides) = associations_data;
 
         // 5. Build final effective lorebook list
-        let override_map: std::collections::HashMap<crate::DbUuid, String> = overrides.into_iter().collect();
+        let override_map: std::collections::HashMap<crate::db::DbId, String> =
+            overrides.into_iter().collect();
         let mut effective_lorebooks = std::collections::HashSet::new();
 
         // Add direct chat associations (these always take precedence)
@@ -686,7 +685,7 @@ impl SearchKnowledgeBaseTool {
             }
         }
 
-        let final_lorebook_ids: Vec<crate::DbUuid> = effective_lorebooks.into_iter().collect();
+        let final_lorebook_ids: Vec<crate::db::DbId> = effective_lorebooks.into_iter().collect();
 
         debug!(
             "Lorebook associations for session {}: {} direct, {} character, {} effective (after overrides)",
@@ -700,7 +699,10 @@ impl SearchKnowledgeBaseTool {
     }
 
     /// Fetch all chat session IDs in a chronicle
-    async fn get_chronicle_session_ids(&self, chronicle_id: crate::DbUuid) -> Result<Vec<crate::DbUuid>, ToolError> {
+    async fn get_chronicle_session_ids(
+        &self,
+        chronicle_id: crate::db::DbId,
+    ) -> Result<Vec<crate::db::DbId>, ToolError> {
         use crate::schema::chat_sessions;
         use diesel::prelude::*;
 
@@ -708,7 +710,7 @@ impl SearchKnowledgeBaseTool {
             chat_sessions::table
                 .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
                 .select(chat_sessions::id)
-                .get_results::<crate::DbUuid>(conn)
+                .get_results::<crate::db::DbId>(conn)
                 .map_err(Into::into)
         })
         .await
@@ -728,9 +730,9 @@ impl SearchKnowledgeBaseTool {
     /// This fetches all sessions in the chronicle, then all lorebooks for those sessions including character-inherited ones
     async fn get_chronicle_lorebook_ids(
         &self,
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
-    ) -> Result<Vec<crate::DbUuid>, ToolError> {
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    ) -> Result<Vec<crate::db::DbId>, ToolError> {
         // First get all sessions in this chronicle
         let session_ids = self.get_chronicle_session_ids(chronicle_id).await?;
 
@@ -753,7 +755,7 @@ impl SearchKnowledgeBaseTool {
             }
         }
 
-        let final_lorebook_ids: Vec<crate::DbUuid> = all_lorebook_ids.into_iter().collect();
+        let final_lorebook_ids: Vec<crate::db::DbId> = all_lorebook_ids.into_iter().collect();
 
         info!(
             "Chronicle {} has {} sessions with {} unique lorebooks (comprehensive associations)",
@@ -843,7 +845,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 ToolError::InvalidParams("user_id is required for security".to_string())
             })?;
 
-        let user_id = Uuid::parse_str(user_id_str)
+        let user_id = DbId::parse_str(user_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
 
         let search_type = params
@@ -857,13 +859,13 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         let chronicle_id_opt = params
             .get("chronicle_id")
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok());
+            .and_then(|s| DbId::parse_str(s).ok());
 
         // Optional session_id for even tighter filtering
         let session_id_opt = params
             .get("session_id")
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok());
+            .and_then(|s| DbId::parse_str(s).ok());
 
         // Extract session_dek for decryption (optional for backward compatibility)
         let session_dek_opt = params
@@ -948,7 +950,9 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
             if includes_lorebooks {
                 // Fetch lorebook IDs associated with this session
-                let lorebook_ids = self.get_session_lorebook_ids(session_id.into(), user_id.into()).await?;
+                let lorebook_ids = self
+                    .get_session_lorebook_ids(session_id.into(), user_id.into())
+                    .await?;
                 info!(
                     "Session {} has {} associated lorebooks: {:?}",
                     session_id,
@@ -1086,14 +1090,16 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             );
 
             // Get all lorebook IDs from all sessions in this chronicle
-            let chronicle_lorebook_ids =
-                match self.get_chronicle_lorebook_ids(chronicle_id.into(), user_id.into()).await {
-                    Ok(ids) => ids,
-                    Err(e) => {
-                        warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
-                        vec![]
-                    }
-                };
+            let chronicle_lorebook_ids = match self
+                .get_chronicle_lorebook_ids(chronicle_id.into(), user_id.into())
+                .await
+            {
+                Ok(ids) => ids,
+                Err(e) => {
+                    warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
+                    vec![]
+                }
+            };
 
             debug!(
                 "Found {} lorebooks in chronicle {}",
@@ -1629,7 +1635,7 @@ impl ScribeTool for AnalyzeLorebookTool {
         let lorebook_id = params
             .get("lorebook_id")
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
+            .and_then(|s| DbId::parse_str(s).ok())
             .ok_or_else(|| {
                 ToolError::InvalidParams("lorebook_id must be a valid UUID string".to_string())
             })?;
@@ -1637,7 +1643,7 @@ impl ScribeTool for AnalyzeLorebookTool {
         let user_id = params
             .get("user_id")
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
+            .and_then(|s| DbId::parse_str(s).ok())
             .ok_or_else(|| {
                 ToolError::InvalidParams("user_id must be a valid UUID string".to_string())
             })?;
@@ -1674,7 +1680,7 @@ impl ScribeTool for AnalyzeLorebookTool {
                 .filter(lorebooks_dsl::id.eq(lorebook_id_for_check.into()))
                 .filter(lorebooks_dsl::user_id.eq(user_id_for_check.into()))
                 .select(lorebooks_dsl::id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
         })
         .await
@@ -1691,7 +1697,7 @@ impl ScribeTool for AnalyzeLorebookTool {
 
         // Fetch all lorebook entries for this lorebook and user
         let entries: Vec<(
-            crate::DbUuid,
+            crate::db::DbId,
             Vec<u8>,
             Vec<u8>,
             Vec<u8>,
@@ -1714,7 +1720,7 @@ impl ScribeTool for AnalyzeLorebookTool {
                     lorebook_entries_dsl::is_enabled,
                 ))
                 .load::<(
-                    crate::DbUuid,
+                    crate::db::DbId,
                     Vec<u8>,
                     Vec<u8>,
                     Vec<u8>,
@@ -1998,7 +2004,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
             .ok_or_else(|| ToolError::InvalidParams("theme is required".to_string()))?;
 
         // Parse user UUID
-        let user_uuid = Uuid::parse_str(user_id_str)
+        let user_uuid = DbId::parse_str(user_id_str)
             .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
 
         // Extract session DEK (for encryption)
@@ -2016,7 +2022,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
         let lorebook_id = params
             .get("lorebook_id")
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok());
+            .and_then(|s| DbId::parse_str(s).ok());
 
         info!(
             "Batch generating {} lorebook entries for user {} with theme: {}",
@@ -2312,7 +2318,7 @@ impl ScribeTool for UpdateLorebookEntryTool {
             .unwrap_or(false);
 
         // Parse entry_id as UUID
-        let entry_uuid = Uuid::parse_str(entry_id)
+        let entry_uuid = DbId::parse_str(entry_id)
             .map_err(|_| ToolError::InvalidParams("Invalid entry_id format".to_string()))?;
 
         info!(

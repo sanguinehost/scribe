@@ -271,12 +271,9 @@ impl PaymentScheduler {
                     SubscriptionStatus::Active.to_string(),
                     SubscriptionStatus::Trialing.to_string(),
                 ]))
-                .filter(
-                    subscriptions::last_credit_grant
-                        .is_null()
-                        .or(subscriptions::last_credit_grant
-                            .lt(Utc::now() - chrono::Duration::days(25))),
-                )
+                .filter(subscriptions::last_credit_grant.is_null().or(
+                    subscriptions::last_credit_grant.lt(Utc::now() - chrono::Duration::days(25)),
+                ))
                 .select(Subscription::as_select())
                 .load::<Subscription>(conn)
                 .map_err(|e| {
@@ -595,8 +592,7 @@ impl PaymentScheduler {
                     .set((
                         subscriptions::plan_type.eq(&new_plan),
                         subscriptions::scheduled_plan_change.eq::<Option<String>>(None),
-                        subscriptions::scheduled_change_date
-                            .eq::<Option<crate::DbDateTime>>(None),
+                        subscriptions::scheduled_change_date.eq::<Option<crate::DbTimestamp>>(None),
                         subscriptions::updated_at.eq(Utc::now()),
                     ))
                     .execute(conn)

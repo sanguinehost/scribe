@@ -48,7 +48,7 @@ impl AiClientFactory {
     /// For local LLMs, wraps with SecureLlmService if session_dek is provided
     pub async fn get_secure_client_for_provider(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         provider: Option<&str>,
         model_name: Option<&str>,
         session_dek: Option<&SessionDek>,
@@ -105,7 +105,7 @@ impl AiClientFactory {
     /// Returns the correct client for the specified provider (local, gemini, etc.)
     pub async fn get_client_for_provider(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         provider: Option<&str>,
         model_name: Option<&str>,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
@@ -155,7 +155,7 @@ impl AiClientFactory {
     /// Returns fallback client if user settings can't be loaded or local LLM is disabled
     pub async fn get_client_for_user(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get user settings
         let user_settings = match UserSettingsService::get_user_settings(
@@ -213,7 +213,7 @@ impl AiClientFactory {
     #[cfg(feature = "local-llm")]
     async fn create_local_llm_client_for_model(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         model_name: Option<&str>,
     ) -> Result<Arc<dyn AiClient + Send + Sync>, AppError> {
         // Get user settings for preferences
@@ -254,7 +254,7 @@ impl AiClientFactory {
     #[cfg(feature = "local-llm")]
     async fn create_secure_local_llm_client_for_model(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         model_name: Option<&str>,
         session_dek: Option<&SessionDek>,
         app_state: &Arc<AppState>,

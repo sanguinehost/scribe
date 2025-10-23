@@ -10,7 +10,7 @@
 //! handle thousands/millions of events via batch processing and event queues.
 
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
@@ -209,9 +209,9 @@ impl NarrativeIntelligenceService {
     ))]
     pub async fn process_conversation_context(
         &self,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         recent_messages: &[ChatMessage],
         existing_rag_context: &[RetrievedChunk],
         session_dek: &SessionDek,
@@ -297,9 +297,9 @@ impl NarrativeIntelligenceService {
     /// It's designed specifically for the re-chronicle feature.
     pub async fn process_chat_history_batch(
         &self,
-        user_id: crate::DbUuid,
-        session_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: Vec<ChatMessage>,
         session_dek: &SessionDek,
     ) -> Result<NarrativeProcessingResult, AppError> {
@@ -396,9 +396,9 @@ impl NarrativeIntelligenceService {
     #[allow(dead_code)]
     pub fn should_process_session(
         &self,
-        _user_id: crate::DbUuid,
-        _session_id: crate::DbUuid,
-        _chronicle_id: Option<crate::DbUuid>,
+        _user_id: crate::db::DbId,
+        _session_id: crate::db::DbId,
+        _chronicle_id: Option<crate::db::DbId>,
     ) -> bool {
         // TODO: Add per-user/session configuration
         // For now, just use global config
@@ -546,7 +546,7 @@ impl NarrativeIntelligenceService {
     /// Retrieve the user's current persona context for narrative intelligence
     async fn get_user_persona_context(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         session_dek: &SessionDek,
     ) -> Result<UserPersonaContext, AppError> {
         // Get the user from the database to access their default_persona_id

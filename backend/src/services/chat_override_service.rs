@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::auth::session_dek::SessionDek;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::chat_override::{ChatCharacterOverride, NewChatCharacterOverride};
@@ -31,9 +31,9 @@ impl ChatOverrideService {
     #[tracing::instrument(skip_all, fields(chat_session_id, user_id, field_name))]
     pub async fn create_or_update_chat_override(
         &self,
-        chat_session_id: crate::DbUuid,
-        original_character_id: crate::DbUuid, // Added original_character_id, must be fetched by handler
-        _user_id: crate::DbUuid, // For logging and potential future checks, though immediate ownership check is in handler
+        chat_session_id: crate::db::DbId,
+        original_character_id: crate::db::DbId, // Added original_character_id, must be fetched by handler
+        _user_id: crate::db::DbId, // For logging and potential future checks, though immediate ownership check is in handler
         field_name: String,
         value: String, // Plaintext value from DTO
         session_dek: &SessionDek,
@@ -48,7 +48,7 @@ impl ChatOverrideService {
             })?;
 
         // 2. Prepare NewChatCharacterOverride
-        let override_id_for_insert = Uuid::new_v4(); // Generate new ID for insert
+        let override_id_for_insert = DbId::new(); // Generate new ID for insert
 
         let new_override_for_db = NewChatCharacterOverride {
             id: override_id_for_insert.into(),
@@ -65,11 +65,9 @@ impl ChatOverrideService {
 
         // 3. Perform DB upsert using db_pool.interact
         let pool = self.db_pool.clone();
-        let conn = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| {
-                AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
-            })?;
+        let conn = crate::db::get_conn(&pool).await.map_err(|e| {
+            AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
+        })?;
         let upserted_override = conn
             .interact(move |conn| {
                 // Define what happens on conflict (update existing row)
@@ -130,7 +128,8 @@ impl ChatOverrideService {
                 AppError::DbInteractError(format!(
                     "Database interaction error during override upsert: {e}"
                 ))
-            }).and_then(|r| r)?; // Handle pool.interact error and then the Result from the closure
+            })
+            .and_then(|r| r)?; // Handle pool.interact error and then the Result from the closure
 
         tracing::info!(override_id = %upserted_override.id, "Chat character override created/updated successfully via service");
         Ok(upserted_override)

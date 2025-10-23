@@ -59,7 +59,7 @@ impl SoftLimitService {
     pub fn get_or_create_daily_usage(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<DailyUsage, AppError> {
         let today = Utc::now().naive_utc().date();
 
@@ -105,7 +105,7 @@ impl SoftLimitService {
     pub fn record_usage(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         model: &str,
         token_count: i64,
     ) -> Result<DailyUsage, AppError> {
@@ -168,7 +168,7 @@ impl SoftLimitService {
     pub fn should_throttle(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Option<Duration>, AppError> {
         if !self.is_enabled() {
             return Ok(None);
@@ -218,7 +218,7 @@ impl SoftLimitService {
     fn get_user_subscription(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Option<Subscription>, AppError> {
         use crate::schema::subscriptions::dsl;
 
@@ -235,7 +235,7 @@ impl SoftLimitService {
     }
 
     /// Check if usage should be reset (new day)
-    pub fn should_reset_usage(&self, last_reset: Option<crate::DbDateTime>) -> bool {
+    pub fn should_reset_usage(&self, last_reset: Option<crate::DbTimestamp>) -> bool {
         let now = Utc::now();
         let reset_hour = self.config.payment.usage_reset_hour_utc as u32;
 
@@ -266,7 +266,7 @@ impl SoftLimitService {
     pub fn get_usage_stats(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         days: Option<i64>,
     ) -> Result<Vec<DailyUsage>, AppError> {
         use crate::schema::daily_usage_tracking::dsl;
@@ -281,7 +281,7 @@ impl SoftLimitService {
             query = query.filter(dsl::date.ge(start_date));
         }
 
-        .select(DailyUsage::as_select())
+        query = query.select(DailyUsage::as_select());
         query.load::<DailyUsage>(conn).map_err(|e| {
             error!("Failed to get usage stats: {}", e);
             AppError::DatabaseQueryError(e.to_string())
@@ -292,7 +292,7 @@ impl SoftLimitService {
     pub fn get_remaining_messages(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Option<i32>, AppError> {
         if !self.is_enabled() {
             return Ok(None); // No limit when disabled
@@ -323,7 +323,7 @@ impl SoftLimitService {
     pub fn set_soft_limit_override(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         override_limit: Option<i32>,
     ) -> Result<(), AppError> {
         use crate::schema::subscriptions::dsl;

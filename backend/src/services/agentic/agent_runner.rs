@@ -129,7 +129,8 @@ fn get_chronicle_naming_schema() -> crate::DbJson {
             }
         },
         "required": ["name"]
-    }).into()
+    })
+    .into()
 }
 
 /// Result of the triage analysis step
@@ -191,9 +192,9 @@ impl NarrativeAgentRunner {
     /// Deterministically create a chronicle event for every message exchange
     pub async fn process_narrative_event(
         &self,
-        user_id: crate::DbUuid,
-        chat_session_id: crate::DbUuid,
-        mut chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        mut chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<super::UserPersonaContext>,
@@ -435,8 +436,8 @@ RULES:
     /// Step 1: Always mark conversations as significant for chronicle generation
     async fn perform_triage(
         &self,
-        _user_id: crate::DbUuid,
-        _chronicle_id: Option<crate::DbUuid>,
+        _user_id: crate::db::DbId,
+        _chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<&super::UserPersonaContext>,
@@ -582,7 +583,7 @@ CONVERSATION:
         &self,
         triage_result: &TriageResult,
         _knowledge_context: &Value,
-        chronicle_id: Option<crate::DbUuid>,
+        chronicle_id: Option<crate::db::DbId>,
         _chronicle_was_just_created: bool,
         persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<ActionPlan, AppError> {
@@ -714,8 +715,8 @@ IMPORTANT RULES:
     async fn execute_action_plan(
         &self,
         plan: &ActionPlan,
-        user_id: crate::DbUuid,
-        chronicle_id: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         session_dek: &SessionDek,
         _persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<Vec<ToolResult>, AppError> {
@@ -1138,7 +1139,7 @@ RULES:
     /// Get the character name for a chat session
     async fn get_character_name_for_session(
         &self,
-        chat_session_id: crate::DbUuid,
+        chat_session_id: crate::db::DbId,
     ) -> Result<Option<String>, AppError> {
         self.chronicle_service
             .get_chat_session_character_name(chat_session_id)
@@ -1148,7 +1149,7 @@ RULES:
     /// Get the last 3-5 chronicle events in a simple format for deduplication
     async fn get_recent_chronicle_events_simple(
         &self,
-        chronicle_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
     ) -> Result<String, AppError> {
         use crate::models::chronicle_event::{EventFilter, EventOrderBy};
 
@@ -1692,10 +1693,7 @@ mod tests {
     }
 
     // Helper function to create test messages with proper encryption
-    fn create_test_message(
-        created_at: crate::DbDateTime,
-        content: &str,
-    ) -> ChatMessage {
+    fn create_test_message(created_at: crate::DbTimestamp, content: &str) -> ChatMessage {
         // Generate a test DEK for encryption
         let test_dek = generate_dek().expect("Failed to generate test DEK");
 
@@ -1704,9 +1702,9 @@ mod tests {
             encrypt_gcm(content.as_bytes(), &test_dek).expect("Failed to encrypt test content");
 
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
+            user_id: DbId::new(),
             message_type: MessageRole::User,
             content: encrypted_content,
             content_nonce: Some(content_nonce),

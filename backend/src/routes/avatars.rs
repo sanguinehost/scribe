@@ -40,7 +40,7 @@ pub fn avatar_routes() -> Router<AppState> {
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_user_avatar(
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
 ) -> Result<Response<Body>, AppError> {
@@ -62,10 +62,11 @@ pub async fn get_user_avatar(
             .filter(crate::schema::user_assets::user_id.eq(user_id))
             .filter(crate::schema::user_assets::persona_id.is_null())
             .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-            .select(UserAsset::as_select())
             .first::<UserAsset>(conn_block)
             .optional()
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}"))
+            })
     })
     .await?;
 
@@ -99,7 +100,7 @@ pub async fn get_user_avatar(
 #[debug_handler]
 #[instrument(skip(state, auth_session, multipart), err)]
 pub async fn upload_user_avatar(
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     mut multipart: Multipart,
@@ -162,7 +163,7 @@ pub async fn upload_user_avatar(
     let new_asset = NewUserAsset::new_user_avatar(
         user_id,
         &format!("{}_avatar", current_user.username),
-        image_bytes.to_vec(),
+        crate::db::DbBlob::from(image_bytes.to_vec()),
         content_type, // Pass the extracted content_type
     );
 
@@ -205,16 +206,19 @@ pub async fn upload_user_avatar(
         }
     })
     .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
+    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
 
     info!(user_id = %user_id, asset_id = asset_result.id, "User avatar uploaded successfully");
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "message": "Avatar uploaded successfully",
-            "asset_id": asset_result.id
-        }).into()),
+        Json(
+            serde_json::json!({
+                "message": "Avatar uploaded successfully",
+                "asset_id": asset_result.id
+            })
+            .into(),
+        ),
     ))
 }
 
@@ -222,7 +226,7 @@ pub async fn upload_user_avatar(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn delete_user_avatar(
-    Path(user_id): Path<crate::DbUuid>,
+    Path(user_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
 ) -> Result<StatusCode, AppError> {
@@ -262,7 +266,7 @@ pub async fn delete_user_avatar(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_persona_avatar(
-    Path(persona_id): Path<crate::DbUuid>,
+    Path(persona_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
 ) -> Result<Response<Body>, AppError> {
@@ -277,10 +281,11 @@ pub async fn get_persona_avatar(
             .filter(crate::schema::user_assets::user_id.eq(current_user.id))
             .filter(crate::schema::user_assets::persona_id.eq(persona_id))
             .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-            .select(UserAsset::as_select())
             .first::<UserAsset>(conn_block)
             .optional()
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}"))
+            })
     })
     .await?;
 
@@ -314,7 +319,7 @@ pub async fn get_persona_avatar(
 #[debug_handler]
 #[instrument(skip(state, auth_session, multipart), err)]
 pub async fn upload_persona_avatar(
-    Path(persona_id): Path<crate::DbUuid>,
+    Path(persona_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
     mut multipart: Multipart,
@@ -374,7 +379,7 @@ pub async fn upload_persona_avatar(
         current_user.id,
         persona_id,
         &format!("persona_{}_avatar", persona_id),
-        image_bytes.to_vec(),
+        crate::db::DbBlob::from(image_bytes.to_vec()),
         content_type, // Pass the extracted content_type
     );
 
@@ -396,7 +401,9 @@ pub async fn upload_persona_avatar(
                 .values(new_asset)
                 .returning(UserAsset::as_returning())
                 .get_result::<UserAsset>(conn_block)
-                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}"))
+                })
         }
 
         #[cfg(feature = "sqlite-backend")]
@@ -406,7 +413,9 @@ pub async fn upload_persona_avatar(
             diesel::insert_into(user_assets)
                 .values(&new_asset)
                 .execute(conn_block)
-                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}"))
+                })?;
 
             // Query back the just-inserted avatar using unique filters
             user_assets
@@ -414,7 +423,9 @@ pub async fn upload_persona_avatar(
                 .filter(crate::schema::user_assets::persona_id.eq(persona_id))
                 .filter(crate::schema::user_assets::asset_type.eq("avatar"))
                 .first::<UserAsset>(conn_block)
-                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset query DB error: {e}")))
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset query DB error: {e}"))
+                })
         }
     })
     .await?;
@@ -423,10 +434,13 @@ pub async fn upload_persona_avatar(
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "message": "Persona avatar uploaded successfully",
-            "asset_id": asset_result.id
-        }).into()),
+        Json(
+            serde_json::json!({
+                "message": "Persona avatar uploaded successfully",
+                "asset_id": asset_result.id
+            })
+            .into(),
+        ),
     ))
 }
 
@@ -434,7 +448,7 @@ pub async fn upload_persona_avatar(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn delete_persona_avatar(
-    Path(persona_id): Path<crate::DbUuid>,
+    Path(persona_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
 ) -> Result<StatusCode, AppError> {

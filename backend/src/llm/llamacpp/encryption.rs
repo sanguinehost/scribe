@@ -48,8 +48,8 @@ pub struct EncryptedLlmData {
     pub encrypted_content: Vec<u8>,
     pub nonce: Vec<u8>,
     pub data_type: LlmDataType,
-    pub user_id: crate::DbUuid,
-    pub created_at: crate::DbDateTime,
+    pub user_id: crate::db::DbId,
+    pub created_at: crate::DbTimestamp,
 }
 
 /// Types of LLM data that can be encrypted
@@ -66,13 +66,13 @@ pub enum LlmDataType {
 /// Service for encrypting and decrypting LLM data with user DEK
 #[derive(Debug)]
 pub struct LlmEncryptionService {
-    user_id: crate::DbUuid,
+    user_id: crate::db::DbId,
     session_dek: SessionDek,
 }
 
 impl LlmEncryptionService {
     /// Create new encryption service with user's DEK
-    pub fn new(user_id: crate::DbUuid, session_dek: SessionDek) -> Self {
+    pub fn new(user_id: crate::db::DbId, session_dek: SessionDek) -> Self {
         debug!("Creating LLM encryption service for user: {}", user_id);
         Self {
             user_id,
@@ -365,7 +365,7 @@ impl LlmEncryptionService {
     }
 
     /// Get user ID for this encryption service
-    pub fn user_id(&self) -> crate::DbUuid {
+    pub fn user_id(&self) -> crate::db::DbId {
         self.user_id
     }
 }
@@ -433,7 +433,7 @@ mod tests {
             encrypted_content: vec![1, 2, 3, 4],
             nonce: vec![5, 6, 7, 8],
             data_type: LlmDataType::ChatRequest,
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             created_at: chrono::Utc::now(),
         };
 

@@ -1,7 +1,7 @@
 use super::get_user_from_session;
 use super::*;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 impl LorebookService {
     /// Creates a new lorebook for the authenticated user.
@@ -20,7 +20,7 @@ impl LorebookService {
         debug!(?payload, "Attempting to create lorebook");
         let user = get_user_from_session(auth_session)?;
 
-        let new_lorebook_id = Uuid::new_v4();
+        let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
@@ -144,7 +144,7 @@ impl LorebookService {
     pub async fn get_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<LorebookResponse, AppError> {
         debug!(%lorebook_id, "Attempting to get lorebook");
         let user = get_user_from_session(auth_session)?;
@@ -209,7 +209,7 @@ impl LorebookService {
     pub async fn update_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
         payload: UpdateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!(?payload, "Attempting to update lorebook");
@@ -266,7 +266,7 @@ impl LorebookService {
                 let exists = lorebooks
                     .filter(id.eq(lorebook_id))
                     .select(id)
-                    .first::<crate::DbUuid>(conn)
+                    .first::<crate::db::DbId>(conn)
                     .optional()
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -276,7 +276,8 @@ impl LorebookService {
                     Err(AppError::NotFound("Lorebook not found".to_string()))
                 }
             }
-        }).await?;
+        })
+        .await?;
 
         // 6. Map to LorebookResponse
         Ok(LorebookResponse {
@@ -295,7 +296,7 @@ impl LorebookService {
     pub async fn delete_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: crate::DbUuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook");
 
@@ -310,7 +311,7 @@ impl LorebookService {
             let lorebook_owner = lorebooks
                 .filter(id.eq(lorebook_id))
                 .select(user_id)
-                .first::<crate::DbUuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

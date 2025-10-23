@@ -22,7 +22,16 @@ use diesel::sqlite::Sqlite;
 ///
 /// PostgreSQL: Uses native ARRAY<TEXT> type
 /// SQLite: Serializes to/from JSON TEXT
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    diesel::expression::AsExpression,
+    diesel::deserialize::FromSqlRow,
+)]
 #[diesel(sql_type = Nullable<Text>)]
 #[serde(transparent)]
 pub struct OptionalStringArray(pub Option<Vec<Option<String>>>);
@@ -67,7 +76,8 @@ impl From<OptionalStringArray> for Option<Vec<Option<String>>> {
 #[cfg(feature = "postgres-backend")]
 impl FromSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
     fn from_sql(bytes: diesel::pg::PgValue) -> deserialize::Result<Self> {
-        let value = <Option<Vec<Option<String>>> as FromSql<Array<Nullable<Text>>, Pg>>::from_sql(bytes)?;
+        let value =
+            <Option<Vec<Option<String>>> as FromSql<Array<Nullable<Text>>, Pg>>::from_sql(bytes)?;
         Ok(Self(value))
     }
 }

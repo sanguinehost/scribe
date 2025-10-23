@@ -27,7 +27,7 @@ use diesel::{
 };
 
 #[cfg(feature = "sqlite-backend")]
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[cfg(feature = "sqlite-backend")]
 use std::ops::{Deref, DerefMut};
@@ -55,10 +55,23 @@ use std::ops::{Deref, DerefMut};
 /// let field_value = &json_data.field;
 /// ```
 #[cfg(feature = "sqlite-backend")]
-#[derive(Debug, Clone, PartialEq, Eq, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)]
+#[derive(
+    Clone, PartialEq, Eq, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow,
+)]
 #[diesel(sql_type = Text)]
 #[repr(transparent)]
 pub struct Json<T>(pub T);
+
+// Manual Debug implementation to allow T that don't implement Debug
+#[cfg(feature = "sqlite-backend")]
+impl<T> std::fmt::Debug for Json<T>
+where
+    T: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Json").field(&self.0).finish()
+    }
+}
 
 #[cfg(feature = "sqlite-backend")]
 impl<T> Json<T> {

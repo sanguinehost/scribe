@@ -43,8 +43,8 @@ pub mod payment_test_helpers {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let username = format!("testuser_{}", Uuid::new_v4());
-        let email = format!("test_{}@example.com", Uuid::new_v4());
+        let username = format!("testuser_{}", DbId::new());
+        let email = format!("test_{}@example.com", DbId::new());
         let password = "test_password_123";
 
         // Generate password hash synchronously
@@ -212,7 +212,7 @@ pub mod payment_test_helpers {
     /// Adds credits to a user using the credit service with proper connection handling
     pub async fn add_credits_to_user(
         app: &TestApp,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         amount: i32,
         description: &str,
     ) -> Result<CreditBalance, AppError> {
@@ -241,7 +241,7 @@ pub mod payment_test_helpers {
     /// Gets the credit balance for a user
     pub async fn get_user_credit_balance(
         app: &TestApp,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -257,7 +257,7 @@ pub mod payment_test_helpers {
     /// Gets transaction history for a user
     pub async fn get_user_transaction_history(
         app: &TestApp,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<Vec<CreditTransaction>, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -273,7 +273,7 @@ pub mod payment_test_helpers {
     /// Initializes user credits account
     pub async fn initialize_user_credits(
         app: &TestApp,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -481,10 +481,10 @@ pub mod payment_test_helpers {
     /// Generate unique test IDs for various entities
     pub fn generate_test_ids() -> TestIds {
         TestIds {
-            event_id: format!("evt_test_{}", crate::DbUuid::new_v4()),
-            customer_id: format!("cus_test_{}", crate::DbUuid::new_v4()),
-            subscription_id: format!("sub_test_{}", crate::DbUuid::new_v4()),
-            transaction_id: format!("txn_test_{}", crate::DbUuid::new_v4()),
+            event_id: format!("evt_test_{}", crate::db::DbId::new_v4()),
+            customer_id: format!("cus_test_{}", crate::db::DbId::new_v4()),
+            subscription_id: format!("sub_test_{}", crate::db::DbId::new_v4()),
+            transaction_id: format!("txn_test_{}", crate::db::DbId::new_v4()),
         }
     }
 

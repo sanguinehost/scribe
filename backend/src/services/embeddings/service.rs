@@ -231,7 +231,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             };
 
             // 2c. Create Qdrant point
-            let point_id = Uuid::new_v4(); // Unique ID per chunk point
+            let point_id = DbId::new(); // Unique ID per chunk point
             let point = match create_qdrant_point(
                 point_id.into(),
                 embedding_vector,
@@ -427,7 +427,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             title_nonce,
         };
 
-        let point_id = Uuid::new_v4(); // Unique ID for the atomic lorebook entry
+        let point_id = DbId::new(); // Unique ID for the atomic lorebook entry
         let point = match create_qdrant_point(
             point_id.into(),
             embedding_vector,
@@ -468,10 +468,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,
-        user_id: crate::DbUuid,
-        session_id_for_chat_history: Option<crate::DbUuid>,
-        active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>>,
-        chronicle_id_for_search: Option<crate::DbUuid>,
+        user_id: crate::db::DbId,
+        session_id_for_chat_history: Option<crate::db::DbId>,
+        active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>>,
+        chronicle_id_for_search: Option<crate::db::DbId>,
         query_text: &str,
         limit_per_source: u64,
         session_dek: Option<&crate::auth::SessionDek>,
@@ -915,8 +915,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_message_chunks(
         &self,
         state: Arc<AppState>,
-        message_ids: Vec<crate::DbUuid>,
-        user_id: crate::DbUuid,
+        message_ids: Vec<crate::db::DbId>,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         if message_ids.is_empty() {
             return Ok(());
@@ -1014,8 +1014,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_lorebook_entry_chunks(
         &self,
         state: Arc<AppState>,
-        original_lorebook_entry_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        original_lorebook_entry_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         info!("Attempting to delete chunks for lorebook entry");
         let qdrant_service = state.qdrant_service.clone();
@@ -1172,7 +1172,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         if let Some(chat_session_id) = event.chat_session_id {
-            event_json["chat_session_id"] = crate::DbJson::String(chat_session_id.to_string()).into();
+            event_json["chat_session_id"] =
+                crate::DbJson::String(chat_session_id.to_string()).into();
         }
 
         // Encrypt content if SessionDek is available
@@ -1231,7 +1232,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         };
 
         // 2c. Create Qdrant point with proper metadata structure
-        let point_id = Uuid::new_v4(); // Unique ID for the atomic chronicle event
+        let point_id = DbId::new(); // Unique ID for the atomic chronicle event
 
         // Build the metadata JSON
         let mut metadata_json = serde_json::json!({
@@ -1254,7 +1255,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             metadata_json["chunk_text_nonce"] = serde_json::json!(nonce);
         }
 
-        let point = match create_qdrant_point(point_id.into(), embedding_vector, Some(metadata_json.into())) {
+        let point = match create_qdrant_point(
+            point_id.into(),
+            embedding_vector,
+            Some(metadata_json.into()),
+        ) {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
@@ -1288,8 +1293,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_chronicle_event_chunks(
         &self,
         state: Arc<AppState>,
-        event_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        event_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         info!(
             "Attempting to delete chunks for chronicle event {}",
@@ -1362,8 +1367,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_chronicle_events_by_chronicle_id(
         &self,
         state: Arc<AppState>,
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         info!(
             "Attempting to delete all chronicle event chunks for chronicle {}",

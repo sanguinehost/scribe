@@ -20,12 +20,16 @@ pub trait SqlitePoolExt {
     type Connection;
     async fn get(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>, diesel::r2d2::Error>;
+    ) -> Result<
+        diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>,
+        diesel::r2d2::Error,
+    >;
 }
 
 #[cfg(feature = "sqlite-backend")]
 impl SqlitePoolExt for DbPool {
-    type Connection = diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
+    type Connection =
+        diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
 
     async fn get(&self) -> Result<Self::Connection, diesel::r2d2::Error> {
         let pool = self.clone();
@@ -35,12 +39,12 @@ impl SqlitePoolExt for DbPool {
                 // They're the same type, just accessed via different paths
                 match e {
                     _ => diesel::r2d2::Error::ConnectionError(
-                        diesel::ConnectionError::BadConnection(format!("r2d2 error: {}", e))
+                        diesel::ConnectionError::BadConnection(format!("r2d2 error: {}", e)),
                     ),
                 }
             }),
             Err(_) => Err(diesel::r2d2::Error::ConnectionError(
-                diesel::ConnectionError::BadConnection("spawn_blocking panicked".to_string())
+                diesel::ConnectionError::BadConnection("spawn_blocking panicked".to_string()),
             )),
         }
     }

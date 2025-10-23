@@ -38,7 +38,9 @@
 //! - `DefaultBackend`: Resolves to `PostgresBackend` or `SqliteBackend`
 
 pub mod backend_trait;
+pub mod backend_traits; // NEW: Unified type system trait definitions
 pub mod pool_helpers;
+pub mod unified_types; // NEW: Backend-agnostic unified types
 
 #[cfg(feature = "postgres-backend")]
 pub mod postgres_backend;
@@ -94,17 +96,7 @@ pub type DbManager = deadpool_diesel::postgres::Manager;
 pub type DbRuntime = deadpool_diesel::Runtime;
 
 // Database type aliases - PostgreSQL uses native types, SQLite uses newtype wrappers
-#[cfg(feature = "postgres-backend")]
-pub type DbUuid = uuid::Uuid;
-
-#[cfg(feature = "sqlite-backend")]
-pub type DbUuid = sqlite_types::SqliteUuid;
-
-#[cfg(feature = "postgres-backend")]
-pub type DbDateTime = chrono::DateTime<chrono::Utc>;
-
-#[cfg(feature = "sqlite-backend")]
-pub type DbDateTime = sqlite_types::SqliteDateTime;
+// Note: DbUuid and DbTimestamp are now provided by unified_types module
 
 // Integer type - i64 for PostgreSQL (Int8), i32 for SQLite (Integer)
 #[cfg(feature = "postgres-backend")]
@@ -134,3 +126,13 @@ compile_error!("Must enable either postgres-backend or sqlite-backend feature");
 
 // Export backend-agnostic Json<T> wrapper
 pub use json_wrapper::Json;
+
+// ============================================================================
+// Export Unified Type System
+// ============================================================================
+
+/// Re-export the core DbType trait
+pub use backend_traits::DbType;
+
+/// Re-export all unified types
+pub use unified_types::{DbBlob, DbDecimal, DbId, DbStringArray, DbTimestamp};

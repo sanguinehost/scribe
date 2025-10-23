@@ -1,7 +1,8 @@
 // backend/src/routes/chronicles.rs
 
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::models::OptionalStringArray;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -14,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
-use crate::models::OptionalStringArray;
 use validator::Validate;
 
 use crate::{
@@ -48,7 +48,7 @@ pub struct EventQuery {
 #[derive(Debug, Deserialize, Validate)]
 pub struct ReChronicleRequest {
     /// The chat session ID to re-chronicle
-    pub chat_session_id: crate::DbUuid,
+    pub chat_session_id: crate::db::DbId,
     /// Whether to purge existing chronicle events before re-chronicling
     #[serde(default)]
     pub purge_existing: bool,
@@ -84,7 +84,7 @@ pub struct ReChronicleResponse {
 #[derive(Debug, Deserialize, Validate)]
 pub struct GenerateChronicleNameRequest {
     /// The chat session ID to analyze for name generation
-    pub chat_session_id: crate::DbUuid,
+    pub chat_session_id: crate::db::DbId,
 }
 
 /// Response with the generated chronicle name
@@ -189,7 +189,7 @@ async fn list_chronicles(
 async fn get_chronicle(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<crate::DbUuid>,
+    Path(chronicle_id): Path<crate::db::DbId>,
 ) -> Result<Json<PlayerChronicle>, AppError> {
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
@@ -212,7 +212,7 @@ async fn get_chronicle(
 async fn update_chronicle(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<crate::DbUuid>,
+    Path(chronicle_id): Path<crate::db::DbId>,
     Json(request): Json<UpdateChronicleRequest>,
 ) -> Result<Json<PlayerChronicle>, AppError> {
     // Validate the request
@@ -239,7 +239,7 @@ async fn update_chronicle(
 async fn delete_chronicle(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<crate::DbUuid>,
+    Path(chronicle_id): Path<crate::db::DbId>,
 ) -> Result<StatusCode, AppError> {
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
@@ -288,7 +288,7 @@ async fn create_event(
     auth_session: AuthSession<AuthBackend>,
     session_dek: crate::auth::session_dek::SessionDek,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<crate::DbUuid>,
+    Path(chronicle_id): Path<crate::db::DbId>,
     Json(request): Json<CreateEventRequest>,
 ) -> Result<(StatusCode, Json<ChronicleEvent>), AppError> {
     // Validate the request
@@ -332,7 +332,8 @@ async fn create_event(
     // Also decrypt keywords if encrypted
     if event.has_encrypted_keywords() {
         let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-        event.keywords = OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
+        event.keywords =
+            OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
     }
 
     info!("Successfully created event {}", event.id);
@@ -345,7 +346,7 @@ async fn list_events(
     auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<crate::DbUuid>,
+    Path(chronicle_id): Path<crate::db::DbId>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Vec<ChronicleEvent>>, AppError> {
     let user = auth_session.user.ok_or_else(|| {
@@ -372,7 +373,8 @@ async fn list_events(
         // Also decrypt keywords if encrypted
         if event.has_encrypted_keywords() {
             let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-            event.keywords = OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
+            event.keywords =
+                OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
         }
     }
 
@@ -389,7 +391,7 @@ async fn list_events(
 async fn delete_event(
     auth_session: AuthSession<AuthBackend>,
     State(state): State<AppState>,
-    Path((chronicle_id, event_id)): Path<(crate::DbUuid, crate::DbUuid)>,
+    Path((chronicle_id, event_id)): Path<(crate::db::DbId, crate::db::DbId)>,
 ) -> Result<StatusCode, AppError> {
     let user = auth_session.user.ok_or_else(|| {
         error!("No authenticated user found in session");
@@ -429,7 +431,7 @@ async fn re_chronicle_from_chat(
     auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     State(state): State<AppState>,
-    Path(chronicle_id): Path<crate::DbUuid>,
+    Path(chronicle_id): Path<crate::db::DbId>,
     Json(request): Json<ReChronicleRequest>,
 ) -> Result<Json<ReChronicleResponse>, AppError> {
     // Validate the request
@@ -582,12 +584,12 @@ async fn re_chronicle_from_chat(
 /// Helper function to get the character name for a chat session
 async fn get_character_name_for_session(
     state: &AppState,
-    chat_session_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    chat_session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Option<String>, AppError> {
+    #[cfg(feature = "sqlite-backend")]
+    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
     use crate::schema::{characters, chat_sessions};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
 
     let conn = crate::db::get_conn(&state.pool).await?;
@@ -616,12 +618,12 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 /// Helper function to get the character data for a chat session
 async fn get_character_for_session(
     state: &AppState,
-    chat_session_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    chat_session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Option<crate::models::characters::Character>, AppError> {
+    #[cfg(feature = "sqlite-backend")]
+    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
     use crate::schema::{characters, chat_sessions};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::{
         ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl,
         RunQueryDsl, SelectableHelper,
@@ -651,12 +653,12 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 /// Helper function to get chat messages for a session
 async fn get_chat_messages(
     state: &AppState,
-    chat_session_id: crate::DbUuid,
-    user_id: crate::DbUuid,
+    chat_session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Vec<ChatMessage>, AppError> {
+    #[cfg(feature = "sqlite-backend")]
+    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
     use crate::schema::{chat_messages, chat_sessions};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::{
         BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl,
         SelectableHelper,
@@ -673,9 +675,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                         .and(chat_sessions::user_id.eq(user_id))),
                 )
                 .filter(chat_messages::session_id.eq(chat_session_id))
-                .select(ChatMessage::as_select())
                 .order(chat_messages::created_at.asc())
-                .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
                 .map_err(Into::into)
         })
@@ -728,9 +728,9 @@ async fn generate_chronicle_name(
     State(state): State<AppState>,
     Json(request): Json<GenerateChronicleNameRequest>,
 ) -> Result<Json<GenerateChronicleNameResponse>, AppError> {
+    #[cfg(feature = "sqlite-backend")]
+    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
     use crate::schema::{chat_messages, chat_sessions};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use crate::services::agentic::AgenticNarrativeFactory;
     use diesel::prelude::*;
 
@@ -748,8 +748,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     );
 
     // Fetch chat messages for the session
-        let messages: Vec<ChatMessage> = crate::db::get_conn(&state.pool)
-            .await?
+    let messages: Vec<ChatMessage> = crate::db::get_conn(&state.pool)
+        .await?
         .interact(move |conn| {
             chat_messages::table
                 .inner_join(
@@ -758,9 +758,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                         .and(chat_sessions::user_id.eq(user.id))),
                 )
                 .filter(chat_messages::session_id.eq(request.chat_session_id))
-                .select(ChatMessage::as_select())
                 .order(chat_messages::created_at.asc())
-                .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
                 .map_err(Into::into)
         })

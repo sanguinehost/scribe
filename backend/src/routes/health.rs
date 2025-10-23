@@ -40,7 +40,7 @@ pub struct HealthCheckResponse {
     pub status: ComponentStatus,
     pub version: String,
     pub components: HashMap<String, ComponentHealthInfo>,
-    pub timestamp: crate::DbDateTime,
+    pub timestamp: crate::DbTimestamp,
 }
 
 impl HealthCheckResponse {
@@ -176,7 +176,12 @@ async fn check_database_health(
         sql_query("SELECT 1 as _result")
             .get_result::<HealthCheck>(conn)
             .map(|_| ())
-            .map_err(|e| crate::errors::AppError::DatabaseQueryError(format!("Database health check failed: {}", e)))
+            .map_err(|e| {
+                crate::errors::AppError::DatabaseQueryError(format!(
+                    "Database health check failed: {}",
+                    e
+                ))
+            })
     })
     .await
     .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)

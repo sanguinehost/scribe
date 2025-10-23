@@ -6,7 +6,7 @@
 pub mod payment_test_helpers;
 
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use std::fmt;
 use std::net::SocketAddr;
 
@@ -94,6 +94,7 @@ use std::collections::VecDeque; // Added for MockQdrantClientService response qu
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
+use crate::db::{DbPool, DbUuid};
 use hex; // Added for hex::decode
 use http_body_util::BodyExt; // For collect() on Body
 use reqwest;
@@ -109,8 +110,7 @@ use tower_sessions::{
     cookie::Key as TowerSessionKey, cookie::SameSite, Expiry, SessionManagerLayer,
 }; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
-use uuid::Uuid; // Added for CryptoProvider
-use crate::db::{DbUuid, DbPool}; // Added for backend-agnostic database types
+use uuid::Uuid; // Added for CryptoProvider // Added for backend-agnostic database types
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
@@ -510,21 +510,21 @@ impl EmbeddingClient for MockEmbeddingClient {
 #[derive(Clone, Debug)] // Added Clone, Debug
 pub enum PipelineCall {
     RetrieveRelevantChunks {
-        user_id: crate::DbUuid,                                     // Renamed from chat_id
-        session_id_for_chat_history: Option<crate::DbUuid>,         // New field - Updated to Option<crate::DbUuid>
-        active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>>, // New field
-        chronicle_id_for_search: Option<crate::DbUuid>,             // New field for chronicle search
+        user_id: crate::db::DbId,                             // Renamed from chat_id
+        session_id_for_chat_history: Option<crate::db::DbId>, // New field - Updated to Option<crate::db::DbId>
+        active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>>, // New field
+        chronicle_id_for_search: Option<crate::db::DbId>,     // New field for chronicle search
         query_text: String,
         limit: u64,
     },
     ProcessAndEmbedMessage {
-        message_id: crate::DbUuid,
-        session_id: crate::DbUuid,
+        message_id: crate::db::DbId,
+        session_id: crate::db::DbId,
     },
     ProcessAndEmbedLorebookEntry {
-        original_lorebook_entry_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        original_lorebook_entry_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         decrypted_content: String,
         decrypted_title: Option<String>,
         decrypted_keywords: Option<Vec<String>>,
@@ -532,15 +532,15 @@ pub enum PipelineCall {
         is_constant: bool,
     },
     ProcessAndEmbedChronicleEvent {
-        event_id: crate::DbUuid,
+        event_id: crate::db::DbId,
     },
     DeleteChronicleEventChunks {
-        event_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        event_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     },
     DeleteChronicleEventsByChronicleId {
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     },
 }
 
@@ -670,10 +670,10 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
         _state: Arc<AppState>,
-        user_id: crate::DbUuid,                                     // New parameter
-        session_id_for_chat_history: Option<crate::DbUuid>, // New parameter - Updated to Option<crate::DbUuid>
-        active_lorebook_ids_for_search: Option<Vec<crate::DbUuid>>, // New parameter
-        chronicle_id_for_search: Option<crate::DbUuid>,     // New parameter for chronicle search
+        user_id: crate::db::DbId, // New parameter
+        session_id_for_chat_history: Option<crate::db::DbId>, // New parameter - Updated to Option<crate::db::DbId>
+        active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>>, // New parameter
+        chronicle_id_for_search: Option<crate::db::DbId>,     // New parameter for chronicle search
         query_text: &str,
         limit: u64,
         _session_dek: Option<&crate::auth::SessionDek>, // DEK for decryption
@@ -684,7 +684,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             .unwrap()
             .push(PipelineCall::RetrieveRelevantChunks {
                 user_id,
-                session_id_for_chat_history,    // This is Option<crate::DbUuid>
+                session_id_for_chat_history, // This is Option<crate::db::DbId>
                 active_lorebook_ids_for_search, // Corrected order
                 chronicle_id_for_search,
                 query_text: query_text.to_string(), // Corrected order
@@ -705,8 +705,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_message_chunks(
         &self,
         _state: Arc<AppState>,
-        message_ids: Vec<crate::DbUuid>,
-        user_id: crate::DbUuid,
+        message_ids: Vec<crate::db::DbId>,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -722,8 +722,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_lorebook_entry_chunks(
         &self,
         _state: Arc<AppState>,
-        original_lorebook_entry_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        original_lorebook_entry_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -758,8 +758,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_chronicle_event_chunks(
         &self,
         _state: Arc<AppState>,
-        event_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        event_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -777,8 +777,8 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
     async fn delete_chronicle_events_by_chronicle_id(
         &self,
         _state: Arc<AppState>,
-        chronicle_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         tracing::info!(
             target: "mock_embedding_pipeline",
@@ -1600,7 +1600,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     #[cfg(feature = "postgres-backend")]
     let (pool, test_db_name) = {
         let test_db_name_suffix = if multi_thread {
-            Some(DbUuid::new_v4().to_string()) // Ensure it's String for suffix
+            Some(DbDbId::new().to_string()) // Ensure it's String for suffix
         } else {
             None
         };
@@ -1615,7 +1615,7 @@ pub async fn spawn_app_with_rate_limiting_options(
 
         let database_url = if multi_thread {
             // Each test gets a unique in-memory database
-            format!(":memory:?cache=private&uuid={}", DbUuid::new_v4())
+            format!(":memory:?cache=private&uuid={}", DbDbId::new())
         } else {
             ":memory:".to_string()
         };
@@ -1815,8 +1815,9 @@ pub async fn spawn_app_with_rate_limiting_options(
     // Conditionally add documents routes (PostgreSQL only)
     #[cfg(feature = "postgres-backend")]
     {
-        protected_api_routes_for_test = protected_api_routes_for_test
-            .nest("/documents", document_routes()); // Assuming this returns Router<AppState> or is already stateful
+        protected_api_routes_for_test =
+            protected_api_routes_for_test.nest("/documents", document_routes());
+        // Assuming this returns Router<AppState> or is already stateful
     }
 
     let protected_api_routes_for_test = protected_api_routes_for_test
@@ -1959,11 +1960,11 @@ pub mod db {
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::r2d2::{ConnectionManager, Pool};
             use super::DbUuid;
+            use diesel::r2d2::{ConnectionManager, Pool};
 
             let database_url = if db_name_suffix.is_some() {
-                format!(":memory:?cache=private&uuid={}", DbUuid::new_v4())
+                format!(":memory:?cache=private&uuid={}", DbDbId::new())
             } else {
                 ":memory:".to_string()
             };
@@ -2001,7 +2002,7 @@ pub mod db {
         let db_name = format!(
             "test_db_{}_{}",
             db_name_suffix.unwrap_or("default"),
-            Uuid::new_v4()
+            DbId::new()
         );
         let base_db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for testing");
         let (main_db_url, _) = base_db_url.rsplit_once('/').expect("Invalid DATABASE_URL");
@@ -2043,7 +2044,8 @@ pub mod db {
             .expect("Failed to create test DB pool");
 
         // Run migrations on the test database
-        let conn = crate::db::get_conn(&pool).await
+        let conn = crate::db::get_conn(&pool)
+            .await
             .expect("Failed to get test DB connection for migration");
         conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
             .await
@@ -2065,7 +2067,8 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = crate::db::get_conn(pool).await
+        let conn = crate::db::get_conn(pool)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
@@ -2095,8 +2098,8 @@ pub mod db {
             password_hash,
             email,
             kek_salt,
-            encrypted_dek: encrypted_dek_bytes,
-            dek_nonce: dek_nonce_bytes,
+            encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
+            dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
@@ -2114,17 +2117,16 @@ pub mod db {
 
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
-            conn
-                .interact(move |conn_actual| {
-                    diesel::insert_into(crate::schema::users::table)
-                        .values(new_user_payload)
-                        .returning(UserDbQuery::as_returning())
-                        .get_result(conn_actual)
-                })
-                .await
-                .map_err(|interact_err| {
-                    anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err)
-                })??
+            conn.interact(move |conn_actual| {
+                diesel::insert_into(crate::schema::users::table)
+                    .values(new_user_payload)
+                    .returning(UserDbQuery::as_returning())
+                    .get_result(conn_actual)
+            })
+            .await
+            .map_err(|interact_err| {
+                anyhow::anyhow!("DB interact error for create_test_user: {}", interact_err)
+            })??
         };
 
         #[cfg(feature = "sqlite-backend")]
@@ -2170,7 +2172,8 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = crate::db::get_conn(pool).await
+        let conn = crate::db::get_conn(pool)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
@@ -2200,8 +2203,8 @@ pub mod db {
             password_hash,
             email,
             kek_salt,
-            encrypted_dek: encrypted_dek_bytes,
-            dek_nonce: dek_nonce_bytes,
+            encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
+            dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
@@ -2219,20 +2222,19 @@ pub mod db {
 
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
-            conn
-                .interact(move |conn_actual| {
-                    diesel::insert_into(crate::schema::users::table)
-                        .values(new_user_payload)
-                        .returning(UserDbQuery::as_returning())
-                        .get_result(conn_actual)
-                })
-                .await
-                .map_err(|interact_err| {
-                    anyhow::anyhow!(
-                        "DB interact error for create_pending_test_user: {}",
-                        interact_err
-                    )
-                })??
+            conn.interact(move |conn_actual| {
+                diesel::insert_into(crate::schema::users::table)
+                    .values(new_user_payload)
+                    .returning(UserDbQuery::as_returning())
+                    .get_result(conn_actual)
+            })
+            .await
+            .map_err(|interact_err| {
+                anyhow::anyhow!(
+                    "DB interact error for create_pending_test_user: {}",
+                    interact_err
+                )
+            })??
         };
 
         #[cfg(feature = "sqlite-backend")]
@@ -2249,7 +2251,9 @@ pub mod db {
                 crate::schema::users::table
                     .filter(crate::schema::users::username.eq(username_for_query))
                     .first::<UserDbQuery>(conn_actual)
-                    .map_err(|e| anyhow::anyhow!("Failed to query pending user after insert: {}", e))
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to query pending user after insert: {}", e)
+                    })
             })
             .await?
         };
@@ -2276,7 +2280,7 @@ pub mod db {
     /// Returns an error if the database operation fails
     pub async fn create_test_character(
         pool: &DbPool,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         name: String,
     ) -> Result<crate::models::characters::Character, anyhow::Error> {
         use crate::models::character_card::NewCharacter;
@@ -2408,7 +2412,8 @@ pub mod db {
                     name_clone_for_error,
                     interact_err
                 )
-            }).and_then(|r| r)?;
+            })
+            .and_then(|r| r)?;
 
         Ok(character)
     }
@@ -2462,11 +2467,11 @@ pub mod db {
 pub struct TestDataGuard {
     pool: DbPool,
     test_db_name: Option<String>,
-    user_ids: Vec<crate::DbUuid>,
-    character_ids: Vec<crate::DbUuid>,
-    chat_ids: Vec<crate::DbUuid>,
-    user_persona_ids: Vec<crate::DbUuid>,
-    lorebook_ids: Vec<crate::DbUuid>,
+    user_ids: Vec<crate::db::DbId>,
+    character_ids: Vec<crate::db::DbId>,
+    chat_ids: Vec<crate::db::DbId>,
+    user_persona_ids: Vec<crate::db::DbId>,
+    lorebook_ids: Vec<crate::db::DbId>,
 }
 
 // Manual implementation of Debug for TestDataGuard
@@ -2499,23 +2504,23 @@ impl TestDataGuard {
         }
     }
 
-    pub fn add_user(&mut self, user_id: crate::DbUuid) {
+    pub fn add_user(&mut self, user_id: crate::db::DbId) {
         self.user_ids.push(user_id);
     }
 
-    pub fn add_character(&mut self, character_id: crate::DbUuid) {
+    pub fn add_character(&mut self, character_id: crate::db::DbId) {
         self.character_ids.push(character_id);
     }
 
-    pub fn add_chat(&mut self, chat_id: crate::DbUuid) {
+    pub fn add_chat(&mut self, chat_id: crate::db::DbId) {
         self.chat_ids.push(chat_id);
     }
 
-    pub fn add_user_persona(&mut self, user_persona_id: crate::DbUuid) {
+    pub fn add_user_persona(&mut self, user_persona_id: crate::db::DbId) {
         self.user_persona_ids.push(user_persona_id);
     }
 
-    pub fn add_lorebook(&mut self, lorebook_id: crate::DbUuid) {
+    pub fn add_lorebook(&mut self, lorebook_id: crate::db::DbId) {
         self.lorebook_ids.push(lorebook_id);
     }
 
@@ -2527,7 +2532,8 @@ impl TestDataGuard {
     /// - Database connection cannot be obtained
     /// - Any of the database deletion operations fail
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
-        let conn = crate::db::get_conn(&self.pool).await
+        let conn = crate::db::get_conn(&self.pool)
+            .await
             .context("Failed to get DB connection for cleanup")?;
 
         if !self.chat_ids.is_empty() {
@@ -3115,7 +3121,7 @@ pub fn assert_ai_history(
 /// Panics if the API response status is not OK
 pub async fn set_history_settings(
     test_app: &TestApp,
-    session_id: crate::DbUuid,
+    session_id: crate::db::DbId,
     auth_cookie: &str,
     strategy: Option<String>,
     limit: Option<i32>,

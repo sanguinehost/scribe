@@ -24,17 +24,17 @@ use secrecy::{ExposeSecret, SecretBox, SecretString};
 
 pub struct UserCryptoFields {
     pub password_hash: Option<String>,
-    pub dek_ciphertext: Option<Vec<u8>>,
-    pub dek_nonce: Option<Vec<u8>>,
+    pub dek_ciphertext: Option<crate::db::DbBlob>,
+    pub dek_nonce: Option<crate::db::DbBlob>,
     pub kek_salt: Option<String>,
-    pub recovery_dek_ciphertext: Option<Vec<u8>>,
-    pub recovery_dek_nonce: Option<Vec<u8>>,
+    pub recovery_dek_ciphertext: Option<crate::db::DbBlob>,
+    pub recovery_dek_nonce: Option<crate::db::DbBlob>,
 }
 
 // Manually implement Debug because DbPool doesn't implement it.
 pub struct Backend {
     pool: DbPool,
-    pub dek_cache: Arc<RwLock<HashMap<crate::DbUuid, SerializableSecretDek>>>,
+    pub dek_cache: Arc<RwLock<HashMap<crate::db::DbId, SerializableSecretDek>>>,
 }
 
 // Manual Clone implementation to ensure dek_cache is properly shared
@@ -132,7 +132,7 @@ impl AuthnBackend for Backend {
     #[instrument(skip(self), err)]
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
         let pool = self.pool.clone();
-        let id: crate::DbUuid = *user_id;
+        let id: crate::db::DbId = crate::db::DbId::from_uuid(*user_id);
 
         // Added detailed logging for test_get_unauthorized debugging
         tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {}", loggable_user_id(*user_id));
@@ -181,7 +181,7 @@ impl Backend {
     #[instrument(skip(self, crypto_fields), err)]
     pub async fn update_user_crypto_fields(
         &self,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         crypto_fields: UserCryptoFields,
     ) -> Result<(), AuthError> {
         use crate::schema::users::dsl::{
@@ -217,7 +217,7 @@ impl Backend {
                     encrypted_dek_by_recovery.eq(crypto_fields.recovery_dek_ciphertext), // This is nullable
                     crate::schema::users::dsl::recovery_dek_nonce
                         .eq(crypto_fields.recovery_dek_nonce), // This is nullable
-                    updated_at.eq(chrono::Utc::now().into()), // Use Rust timestamp instead of diesel::dsl::now for cross-DB compatibility
+                    updated_at.eq(crate::db::DbTimestamp::now()), // Use Rust timestamp instead of diesel::dsl::now for cross-DB compatibility
                 ))
                 .execute(conn)
                 .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
@@ -241,7 +241,7 @@ impl Backend {
     /// This should be called when a user logs out to ensure their DEK
     /// is not kept in memory after their session ends.
     #[instrument(skip(self))]
-    pub async fn remove_dek_from_cache(&self, user_id: &crate::DbUuid) {
+    pub async fn remove_dek_from_cache(&self, user_id: &crate::db::DbId) {
         let mut cache = self.dek_cache.write().await;
         if cache.remove(user_id).is_some() {
             warn!(target: "dek_cache_debug", user_id = %user_id, "AuthBackend::remove_dek_from_cache - DEK REMOVED from cache (key: {})", user_id);
@@ -305,8 +305,8 @@ pub async fn create_user_in_db(
         password_hash,
         email: email.to_string(),
         kek_salt,
-        encrypted_dek: encrypted_dek_bytes,
-        dek_nonce: dek_nonce_bytes,
+        encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
+        dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
         encrypted_dek_by_recovery: None,
         recovery_kek_salt: None,
         recovery_dek_nonce: None,
@@ -316,7 +316,7 @@ pub async fn create_user_in_db(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: chrono::Utc::now().into(),
+        token_usage_updated_at: crate::db::DbTimestamp::now(),
     };
 
     let user_from_db: UserDbQuery = crate::db::with_conn(pool, move |conn| {
@@ -351,7 +351,6 @@ pub async fn create_user_in_db(
 
             schema::users::table
                 .filter(schema::users::username.eq(username_clone))
-                .select(UserDbQuery::as_select())
                 .first::<UserDbQuery>(conn)
                 .map_err(|e| {
                     crate::errors::AppError::DatabaseQueryError(format!(

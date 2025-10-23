@@ -29,10 +29,10 @@ use axum_login::AuthSession; // Correct import for AuthSession
 
 #[derive(Serialize, Debug)]
 pub struct DefaultPersonaResponse {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub username: String,
     pub email: String,
-    pub default_persona_id: Option<crate::DbUuid>,
+    pub default_persona_id: Option<crate::db::DbId>,
 }
 
 impl From<User> for DefaultPersonaResponse {
@@ -133,7 +133,7 @@ async fn delete_user_settings_handler(
 async fn set_default_persona_handler(
     auth_session: AuthSession<AuthBackend>,
     State(app_state): State<AppState>,
-    Path(persona_id): Path<crate::DbUuid>, // Changed from Json(payload)
+    Path(persona_id): Path<crate::db::DbId>, // Changed from Json(payload)
 ) -> Result<Response, AppError> {
     let user = auth_session
         .user

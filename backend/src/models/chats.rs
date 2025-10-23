@@ -1,12 +1,12 @@
+use crate::db::DbId;
+use crate::db::DbTimestamp;
 use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::{BigDecimal, ToPrimitive};
-use crate::DbDateTime;
 use chrono::Utc;
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
-use crate::DbUuid as Uuid;
 use validator::{Validate, ValidationError};
 
 // Import necessary Diesel traits for manual enum mapping
@@ -29,7 +29,10 @@ mod bigdecimal_serde {
     use std::str::FromStr;
 
     /// Serialize BigDecimal as f64 for JSON compatibility
-    pub fn serialize_as_f64<S>(value: &crate::DbBigDecimal, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize_as_f64<S>(
+        value: &crate::db::DbDecimal,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -39,7 +42,7 @@ mod bigdecimal_serde {
             Ok(f) => serializer.serialize_f64(f),
             Err(e) => {
                 tracing::error!(
-                    "Failed to serialize crate::DbBigDecimal '{}' to f64: {}. Falling back to 0.0",
+                    "Failed to serialize crate::db::DbDecimal '{}' to f64: {}. Falling back to 0.0",
                     s,
                     e
                 );
@@ -105,47 +108,53 @@ impl MessageStatus {
 // Main Chat model (similar to the frontend Chat type)
 // Type alias for the tuple returned when selecting/returning chat settings
 pub type SettingsTuple = (
-    Option<Vec<u8>>,             // system_prompt_ciphertext
-    Option<Vec<u8>>,             // system_prompt_nonce
-    Option<crate::DbBigDecimal>,          // temperature
-    Option<i32>,                 // max_output_tokens
-    Option<crate::DbBigDecimal>,          // frequency_penalty
-    Option<crate::DbBigDecimal>,          // presence_penalty
-    Option<i32>,                 // top_k
-    Option<crate::DbBigDecimal>,          // top_p
-    Option<i32>,                 // seed
+    Option<Vec<u8>>,                            // system_prompt_ciphertext
+    Option<Vec<u8>>,                            // system_prompt_nonce
+    Option<crate::db::DbDecimal>,               // temperature
+    Option<i32>,                                // max_output_tokens
+    Option<crate::db::DbDecimal>,               // frequency_penalty
+    Option<crate::db::DbDecimal>,               // presence_penalty
+    Option<i32>,                                // top_k
+    Option<crate::db::DbDecimal>,               // top_p
+    Option<i32>,                                // seed
     Option<crate::models::OptionalStringArray>, // stop_sequences
-    String,                      // history_management_strategy
-    i32,                         // history_management_limit
-    String,                      // model_name
+    String,                                     // history_management_strategy
+    i32,                                        // history_management_limit
+    String,                                     // model_name
     // -- Gemini Specific Options --
     Option<i32>,  // gemini_thinking_budget
     Option<bool>, // gemini_enable_code_execution
     // -- Chronicle Support --
-    Option<crate::DbUuid>, // player_chronicle_id
+    Option<crate::db::DbId>, // player_chronicle_id
     // -- Agent Mode --
     Option<String>, // agent_mode
     // -- Active Persona --
-    Option<crate::DbUuid>, // active_custom_persona_id
+    Option<crate::db::DbId>, // active_custom_persona_id
     // -- Prompt Template --
     String, // prompt_template_id
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct Chat {
-    pub id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
-    pub character_id: Option<crate::DbUuid>,
-    pub temperature: Option<crate::DbBigDecimal>,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
+    pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
-    pub frequency_penalty: Option<crate::DbBigDecimal>,
-    pub presence_penalty: Option<crate::DbBigDecimal>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
-    pub top_p: Option<crate::DbBigDecimal>,
+    pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
@@ -153,31 +162,31 @@ pub struct Chat {
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
-    pub active_custom_persona_id: Option<crate::DbUuid>,
-    pub active_impersonated_character_id: Option<crate::DbUuid>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
+    pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub title_ciphertext: Option<Vec<u8>>,
     pub title_nonce: Option<Vec<u8>>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub chat_mode: ChatMode,
-    pub player_chronicle_id: Option<crate::DbUuid>,
+    pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
-    pub tokens_counted_at: DbDateTime,
+    pub tokens_counted_at: DbTimestamp,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_credits_used: crate::DbBigDecimal,
+    pub total_credits_used: crate::db::DbDecimal,
     pub prompt_template_id: String,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_actual_cost: crate::DbBigDecimal,
+    pub total_actual_cost: crate::db::DbDecimal,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_modified_cost: crate::DbBigDecimal,
+    pub total_modified_cost: crate::db::DbDecimal,
     pub total_credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_actual_charge: crate::DbBigDecimal,
+    pub total_actual_charge: crate::db::DbDecimal,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
 }
@@ -264,43 +273,49 @@ impl std::fmt::Debug for Chat {
 // New Chat for insertion
 #[derive(Insertable, Clone)]
 #[diesel(table_name = chat_sessions)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewChat {
-    pub id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
-    pub character_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: crate::db::DbId,
     pub title_ciphertext: Option<Vec<u8>>,
     pub title_nonce: Option<Vec<u8>>,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
     pub visibility: Option<String>,
     // Added to match schema and Chat struct
-    pub active_custom_persona_id: Option<crate::DbUuid>,
-    pub active_impersonated_character_id: Option<crate::DbUuid>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
+    pub active_impersonated_character_id: Option<crate::db::DbId>,
     // Additional optional fields that can be set during insertion
-    pub temperature: Option<crate::DbBigDecimal>,
+    pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub frequency_penalty: Option<crate::DbBigDecimal>,
-    pub presence_penalty: Option<crate::DbBigDecimal>,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
-    pub top_p: Option<crate::DbBigDecimal>,
+    pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
-    pub player_chronicle_id: Option<crate::DbUuid>,
+    pub player_chronicle_id: Option<crate::db::DbId>,
     // Token tracking fields with default values
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
-    pub tokens_counted_at: DbDateTime,
-    pub total_credits_used: crate::DbBigDecimal,
+    pub tokens_counted_at: DbTimestamp,
+    pub total_credits_used: crate::db::DbDecimal,
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
@@ -439,8 +454,11 @@ impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for MessageRole {
 
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for MessageRole {
-    fn from_sql(bytes: <diesel::sqlite::Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        let text = <String as FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>>::from_sql(bytes)?;
+    fn from_sql(
+        bytes: <diesel::sqlite::Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let text =
+            <String as FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>>::from_sql(bytes)?;
         match text.as_str() {
             "User" => Ok(Self::User),
             "Assistant" => Ok(Self::Assistant),
@@ -527,8 +545,11 @@ impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for ChatMode {
 
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for ChatMode {
-    fn from_sql(bytes: <diesel::sqlite::Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        let text = <String as FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>>::from_sql(bytes)?;
+    fn from_sql(
+        bytes: <diesel::sqlite::Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let text =
+            <String as FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>>::from_sql(bytes)?;
         match text.as_str() {
             "Character" => Ok(Self::Character),
             "ScribeAssistant" => Ok(Self::ScribeAssistant),
@@ -560,15 +581,15 @@ impl std::fmt::Display for ChatMode {
 #[diesel(belongs_to(Chat, foreign_key = session_id))]
 #[diesel(table_name = chat_messages)]
 pub struct ChatMessage {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     #[diesel(column_name = session_id)]
-    pub session_id: crate::DbUuid,
+    pub session_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
     pub message_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
-    pub created_at: DbDateTime,
-    pub user_id: crate::DbUuid,
+    pub created_at: DbTimestamp,
+    pub user_id: crate::db::DbId,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
@@ -576,27 +597,27 @@ pub struct ChatMessage {
     pub model_name: String,
     pub status: String,
     pub error_message: Option<String>,
-    pub superseded_at: Option<DbDateTime>,
+    pub superseded_at: Option<DbTimestamp>,
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: crate::DbBigDecimal,
+    pub credits_cost: crate::db::DbDecimal,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub actual_cost: crate::DbBigDecimal,
+    pub actual_cost: crate::db::DbDecimal,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub modified_cost: crate::DbBigDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub actual_charge: crate::DbBigDecimal,
+    pub actual_charge: crate::db::DbDecimal,
 }
 
 impl Default for ChatMessage {
     fn default() -> Self {
         Self {
-            id: crate::DbUuid::nil(),
-            session_id: crate::DbUuid::nil(),
-            user_id: crate::DbUuid::nil(),
+            id: crate::db::DbId::nil(),
+            session_id: crate::db::DbId::nil(),
+            user_id: crate::db::DbId::nil(),
             message_type: MessageRole::User,
             content: vec![],
             content_nonce: None,
@@ -612,12 +633,12 @@ impl Default for ChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: crate::DbBigDecimal::from(0),
+            credits_cost: crate::db::DbDecimal::from(0),
             // New cost tracking fields
-            actual_cost: crate::DbBigDecimal::from(0),
-            modified_cost: crate::DbBigDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: crate::DbBigDecimal::from(0),
+            actual_charge: crate::db::DbDecimal::from(0),
         }
     }
 }
@@ -813,7 +834,7 @@ impl ChatMessage {
     /// Update the status and error message of this message in the database
     pub fn update_status(
         conn: &mut crate::DbConnection,
-        message_id: crate::DbUuid,
+        message_id: crate::db::DbId,
         new_status: MessageStatus,
         error_msg: Option<String>,
     ) -> Result<(), AppError> {
@@ -836,8 +857,8 @@ impl ChatMessage {
     /// Mark messages as superseded when retrying
     pub fn supersede_failed_messages(
         conn: &mut crate::DbConnection,
-        session_id_val: crate::DbUuid,
-        after_timestamp: DbDateTime,
+        session_id_val: crate::db::DbId,
+        after_timestamp: DbTimestamp,
     ) -> Result<usize, AppError> {
         use crate::schema::chat_messages::dsl::*;
 
@@ -963,17 +984,23 @@ impl ChatMessage {
 // Chat Message model
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_messages)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct Message {
-    pub id: crate::DbUuid,
-    pub session_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub session_id: crate::db::DbId,
     pub message_type: MessageRole,
     pub content: Vec<u8>,
-    pub rag_embedding_id: Option<crate::DbUuid>,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
-    pub user_id: crate::DbUuid,
+    pub rag_embedding_id: Option<crate::db::DbId>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
+    pub user_id: crate::db::DbId,
     pub content_nonce: Option<Vec<u8>>,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
@@ -985,16 +1012,16 @@ pub struct Message {
     pub model_name: String,
     pub status: String,
     pub error_message: Option<String>,
-    pub superseded_at: Option<DbDateTime>,
+    pub superseded_at: Option<DbTimestamp>,
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: crate::DbBigDecimal,
+    pub credits_cost: crate::db::DbDecimal,
     // Cost tracking fields (same as ChatMessage)
-    pub actual_cost: crate::DbBigDecimal,
-    pub modified_cost: crate::DbBigDecimal,
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
-    pub actual_charge: crate::DbBigDecimal,
+    pub actual_charge: crate::db::DbDecimal,
 }
 
 impl std::fmt::Debug for Message {
@@ -1271,13 +1298,13 @@ impl Message {
 /// JSON-friendly structure for client responses
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ClientChatMessage {
-    pub id: crate::DbUuid,
-    pub chat_id: crate::DbUuid,
-    pub character_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub chat_id: crate::db::DbId,
+    pub character_id: crate::db::DbId,
     pub content: String,
     pub role: Option<String>,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for ClientChatMessage {
@@ -1297,12 +1324,12 @@ impl std::fmt::Debug for ClientChatMessage {
 /// Structure for sending `ChatMessage` data to the client, with decrypted content.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatMessageForClient {
-    pub id: crate::DbUuid,
-    pub session_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub session_id: crate::db::DbId,
     pub message_type: MessageRole,
     pub content: String,
-    pub created_at: DbDateTime,
-    pub user_id: crate::DbUuid,
+    pub created_at: DbTimestamp,
+    pub user_id: crate::db::DbId,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub raw_prompt: Option<String>,
@@ -1343,17 +1370,23 @@ impl std::fmt::Debug for ChatMessageForClient {
 // For inserting a new chat message
 #[derive(Insertable, Default, Clone)]
 #[diesel(table_name = chat_messages)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewChatMessage {
-    pub id: crate::DbUuid,
-    pub session_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub session_id: crate::db::DbId,
     pub message_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
-    pub user_id: crate::DbUuid,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub user_id: crate::db::DbId,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
@@ -1405,16 +1438,22 @@ impl std::fmt::Debug for NewChatMessage {
 // For inserting a new chat message with better naming clarity
 #[derive(Insertable, Clone)]
 #[diesel(table_name = chat_messages)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
-    pub chat_id: crate::DbUuid,
+    pub chat_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
     pub msg_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
-    pub user_id: crate::DbUuid,
+    pub user_id: crate::db::DbId,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
@@ -1428,12 +1467,12 @@ pub struct DbInsertableChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: crate::DbBigDecimal,
+    pub credits_cost: crate::db::DbDecimal,
     // New cost tracking fields
-    pub actual_cost: crate::DbBigDecimal,
-    pub modified_cost: crate::DbBigDecimal,
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
-    pub actual_charge: crate::DbBigDecimal,
+    pub actual_charge: crate::db::DbDecimal,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1475,8 +1514,8 @@ impl DbInsertableChatMessage {
     /// Create a new chat message with required fields only
     #[must_use]
     pub fn new(
-        chat_id: crate::DbUuid,
-        user_id: crate::DbUuid,
+        chat_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         msg_type: MessageRole,
         content: Vec<u8>,
         content_nonce: Option<Vec<u8>>,
@@ -1501,12 +1540,12 @@ impl DbInsertableChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: crate::DbBigDecimal::from(0),
+            credits_cost: crate::db::DbDecimal::from(0),
             // Initialize new cost tracking fields
-            actual_cost: crate::DbBigDecimal::from(0),
-            modified_cost: crate::DbBigDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: crate::DbBigDecimal::from(0),
+            actual_charge: crate::db::DbDecimal::from(0),
         }
     }
 
@@ -1569,7 +1608,7 @@ impl DbInsertableChatMessage {
     pub fn with_credits(
         mut self,
         credits_charged: i32,
-        credits_cost: crate::DbBigDecimal,
+        credits_cost: crate::db::DbDecimal,
     ) -> Self {
         self.credits_charged = credits_charged;
         self.credits_cost = credits_cost;
@@ -1580,10 +1619,10 @@ impl DbInsertableChatMessage {
     #[must_use]
     pub fn with_cost_tracking(
         mut self,
-        actual_cost: crate::DbBigDecimal,
-        modified_cost: crate::DbBigDecimal,
+        actual_cost: crate::db::DbDecimal,
+        modified_cost: crate::db::DbDecimal,
         credit_cost: i32,
-        actual_charge: crate::DbBigDecimal,
+        actual_charge: crate::db::DbDecimal,
         credits_charged: i32,
     ) -> Self {
         // Clone actual_cost for backwards compatibility before moving
@@ -1619,8 +1658,8 @@ impl std::fmt::Debug for NewChatMessageRequest {
 
 #[derive(Deserialize, Serialize)]
 pub struct CreateChatSessionPayload {
-    pub character_id: Option<crate::DbUuid>,
-    pub active_custom_persona_id: Option<crate::DbUuid>,
+    pub character_id: Option<crate::db::DbId>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
     pub chat_mode: Option<ChatMode>, // Default to Character if not provided
 }
 
@@ -1719,7 +1758,7 @@ pub struct GenerateChatRequest {
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
     pub guidance: Option<String>,      // Optional guidance text for regeneration steering
-    pub variant_of: Option<crate::DbUuid>, // If provided, create a variant of this message instead of new message
+    pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -1749,19 +1788,19 @@ impl std::fmt::Debug for GenerateChatRequest {
 /// Chat struct for client responses with decrypted fields
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ChatForClient {
-    pub id: crate::DbUuid,
-    pub user_id: crate::DbUuid,
-    pub character_id: Option<crate::DbUuid>,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
     pub title: Option<String>,
     pub system_prompt: Option<String>,
-    pub temperature: Option<crate::DbBigDecimal>,
+    pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
-    pub frequency_penalty: Option<crate::DbBigDecimal>,
-    pub presence_penalty: Option<crate::DbBigDecimal>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
-    pub top_p: Option<crate::DbBigDecimal>,
+    pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub history_management_strategy: String,
@@ -1770,13 +1809,13 @@ pub struct ChatForClient {
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
-    pub active_custom_persona_id: Option<crate::DbUuid>,
-    pub active_impersonated_character_id: Option<crate::DbUuid>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
+    pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub chat_mode: ChatMode,
-    pub chronicle_id: Option<crate::DbUuid>, // Chronicle association (maps to player_chronicle_id in database)
+    pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    pub total_credits_used: crate::DbBigDecimal,
+    pub total_credits_used: crate::db::DbDecimal,
 }
 
 impl Chat {
@@ -2016,12 +2055,12 @@ impl Chat {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ChatSettingsResponse {
     pub system_prompt: Option<String>,
-    pub temperature: Option<crate::DbBigDecimal>,
+    pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub frequency_penalty: Option<crate::DbBigDecimal>,
-    pub presence_penalty: Option<crate::DbBigDecimal>,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
-    pub top_p: Option<crate::DbBigDecimal>,
+    pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub stop_sequences: crate::models::OptionalStringArray,
     // History Management Fields
@@ -2033,11 +2072,11 @@ pub struct ChatSettingsResponse {
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     // Chronicle association
-    pub chronicle_id: Option<crate::DbUuid>,
+    pub chronicle_id: Option<crate::db::DbId>,
     // Agent mode for context enrichment
     pub agent_mode: Option<String>,
     // Active custom persona for this chat session
-    pub active_custom_persona_id: Option<crate::DbUuid>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
     // Prompt template to use for this chat session
     pub prompt_template_id: Option<String>,
 }
@@ -2107,17 +2146,17 @@ impl From<Chat> for ChatSettingsResponse {
 pub struct UpdateChatSettingsRequest {
     pub system_prompt: Option<String>,
     #[validate(custom(function = "validate_optional_temperature"))]
-    pub temperature: Option<crate::DbBigDecimal>,
+    pub temperature: Option<crate::db::DbDecimal>,
     #[validate(range(min = 1))]
     pub max_output_tokens: Option<i32>,
     #[validate(custom(function = "validate_optional_frequency_penalty"))]
-    pub frequency_penalty: Option<crate::DbBigDecimal>,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
     #[validate(custom(function = "validate_optional_presence_penalty"))]
-    pub presence_penalty: Option<crate::DbBigDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
     #[validate(range(min = 0))]
     pub top_k: Option<i32>,
     #[validate(custom(function = "validate_optional_top_p"))]
-    pub top_p: Option<crate::DbBigDecimal>,
+    pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub stop_sequences: Option<crate::models::OptionalStringArray>,
     // History Management Fields
@@ -2133,12 +2172,12 @@ pub struct UpdateChatSettingsRequest {
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     // Chronicle association
-    pub chronicle_id: Option<crate::DbUuid>,
+    pub chronicle_id: Option<crate::db::DbId>,
     // Agent mode for context enrichment
     #[validate(custom(function = "validate_optional_agent_mode"))]
     pub agent_mode: Option<String>,
     // Active custom persona for this chat session
-    pub active_custom_persona_id: Option<crate::DbUuid>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
     // Prompt template to use for this chat session
     #[validate(custom(function = "validate_optional_template_id"))]
     pub prompt_template_id: Option<String>,
@@ -2218,7 +2257,7 @@ fn validate_optional_history_strategy(strategy: &String) -> Result<(), Validatio
 ///
 /// # Errors
 /// Returns `ValidationError` if temperature is not between 0.0 and 2.0
-fn validate_optional_temperature(temp: &crate::DbBigDecimal) -> Result<(), ValidationError> {
+fn validate_optional_temperature(temp: &crate::db::DbDecimal) -> Result<(), ValidationError> {
     let zero = BigDecimal::from(0).into();
     let two = BigDecimal::from(2).into();
     if *temp < zero || *temp > two {
@@ -2234,7 +2273,9 @@ fn validate_optional_temperature(temp: &crate::DbBigDecimal) -> Result<(), Valid
 ///
 /// # Errors
 /// Returns `ValidationError` if frequency penalty is not between -2.0 and 2.0
-fn validate_optional_frequency_penalty(penalty: &crate::DbBigDecimal) -> Result<(), ValidationError> {
+fn validate_optional_frequency_penalty(
+    penalty: &crate::db::DbDecimal,
+) -> Result<(), ValidationError> {
     let neg_two = BigDecimal::from(-2).into();
     let two = BigDecimal::from(2).into();
     if *penalty < neg_two || *penalty > two {
@@ -2250,7 +2291,9 @@ fn validate_optional_frequency_penalty(penalty: &crate::DbBigDecimal) -> Result<
 ///
 /// # Errors
 /// Returns `ValidationError` if presence penalty is not between -2.0 and 2.0
-fn validate_optional_presence_penalty(penalty: &crate::DbBigDecimal) -> Result<(), ValidationError> {
+fn validate_optional_presence_penalty(
+    penalty: &crate::db::DbDecimal,
+) -> Result<(), ValidationError> {
     let neg_two = BigDecimal::from(-2).into();
     let two = BigDecimal::from(2).into();
     if *penalty < neg_two || *penalty > two {
@@ -2266,7 +2309,7 @@ fn validate_optional_presence_penalty(penalty: &crate::DbBigDecimal) -> Result<(
 ///
 /// # Errors
 /// Returns `ValidationError` if top-p value is not between 0.0 and 1.0
-fn validate_optional_top_p(value: &crate::DbBigDecimal) -> Result<(), ValidationError> {
+fn validate_optional_top_p(value: &crate::db::DbDecimal) -> Result<(), ValidationError> {
     let zero = BigDecimal::from(0).into();
     let one = BigDecimal::from(1).into();
     if *value < zero || *value > one {
@@ -2337,7 +2380,7 @@ impl std::fmt::Debug for SuggestedActionsResponse {
 pub struct MessageVariantResponse {
     pub index: i32,
     pub content: String,
-    pub created_at: DbDateTime,
+    pub created_at: DbTimestamp,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
@@ -2346,14 +2389,14 @@ pub struct MessageVariantResponse {
 // MessageResponse struct for API responses
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MessageResponse {
-    pub id: crate::DbUuid,
-    pub session_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub session_id: crate::db::DbId,
     pub message_type: MessageRole,
     pub role: String,
     pub content: String,
     pub parts: crate::DbJson,
     pub attachments: crate::DbJson,
-    pub created_at: DbDateTime,
+    pub created_at: DbTimestamp,
     pub raw_prompt: Option<String>, // Debug field containing the full prompt sent to AI
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
@@ -2365,7 +2408,7 @@ pub struct MessageResponse {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub is_variant: bool,
-    pub parent_message_id: Option<crate::DbUuid>,
+    pub parent_message_id: Option<crate::db::DbId>,
 
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
@@ -2405,8 +2448,8 @@ impl std::fmt::Debug for MessageResponse {
 // Vote struct for message voting
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Vote {
-    pub chat_id: crate::DbUuid,
-    pub message_id: crate::DbUuid,
+    pub chat_id: crate::db::DbId,
+    pub message_id: crate::db::DbId,
     pub is_upvoted: bool,
 }
 
@@ -2423,7 +2466,7 @@ impl std::fmt::Debug for Vote {
 // VoteRequest struct for API requests
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VoteRequest {
-    pub message_id: crate::DbUuid,
+    pub message_id: crate::db::DbId,
     pub type_: String, // "up" or "down"
 }
 
@@ -2453,10 +2496,10 @@ impl std::fmt::Debug for UpdateChatVisibilityRequest {
 // CreateChatRequest struct for API requests
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CreateChatRequest {
-    pub character_id: crate::DbUuid,
+    pub character_id: crate::db::DbId,
     pub title: Option<String>,
-    pub active_custom_persona_id: Option<crate::DbUuid>,
-    pub lorebook_ids: Option<Vec<crate::DbUuid>>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
+    pub lorebook_ids: Option<Vec<crate::db::DbId>>,
 }
 
 impl std::fmt::Debug for CreateChatRequest {
@@ -2588,12 +2631,12 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use bigdecimal::BigDecimal;
     use chrono::Utc;
     use ring::rand::{SecureRandom, SystemRandom};
     use secrecy::SecretBox;
     use std::str::FromStr;
-    use crate::DbUuid as Uuid;
     use validator::Validate;
 
     // Helper function to generate a dummy DEK for testing
@@ -2605,16 +2648,16 @@ mod tests {
     }
 
     // Helper function to create BigDecimal from a string for tests
-    fn bd(s: &str) -> crate::DbBigDecimal {
+    fn bd(s: &str) -> crate::db::DbDecimal {
         BigDecimal::from_str(s).expect("Invalid decimal string")
     }
 
     // Helper function to create a sample chat session
     fn create_sample_chat_session() -> Chat {
         Chat {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            character_id: Some(Uuid::new_v4()),
+            id: DbId::new(),
+            user_id: DbId::new(),
+            character_id: Some(DbId::new()),
             chat_mode: ChatMode::Character,
             title_ciphertext: None,
             title_nonce: None,
@@ -2640,16 +2683,16 @@ mod tests {
             tokens_counted_at: Utc::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_credits_used: crate::DbBigDecimal::from(0),
+            total_credits_used: crate::db::DbDecimal::from(0),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
             player_chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
-            total_actual_cost: crate::DbBigDecimal::from(0),
-            total_modified_cost: crate::DbBigDecimal::from(0),
+            total_actual_cost: crate::db::DbDecimal::from(0),
+            total_modified_cost: crate::db::DbDecimal::from(0),
             total_credit_cost: 0,
-            total_actual_charge: crate::DbBigDecimal::from(0),
+            total_actual_charge: crate::db::DbDecimal::from(0),
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
         }
@@ -2699,13 +2742,13 @@ mod tests {
     // Helper function to create a sample chat message
     fn create_sample_chat_message_db() -> ChatMessage {
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: b"Hello, how are you?".to_vec(),
             content_nonce: None,
             created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -2717,11 +2760,11 @@ mod tests {
             error_message: None,
             superseded_at: None,
             credits_charged: 0,
-            credits_cost: crate::DbBigDecimal::from(0),
-            actual_cost: crate::DbBigDecimal::from(0),
-            modified_cost: crate::DbBigDecimal::from(0),
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: crate::DbBigDecimal::from(0),
+            actual_charge: crate::db::DbDecimal::from(0),
         }
     }
 
@@ -2831,12 +2874,12 @@ mod tests {
     // Helper function to create a sample new chat message
     fn create_sample_new_chat_message_db() -> NewChatMessage {
         NewChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: DbId::new(),
+            session_id: DbId::new(),
             message_type: MessageRole::User,
             content: b"Hello!".to_vec(),
             content_nonce: None,
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
             role: Some("user".to_string()),
@@ -2873,8 +2916,8 @@ mod tests {
 
     #[test]
     fn test_db_insertable_chat_message() {
-        let chat_id = Uuid::new_v4();
-        let user_id = Uuid::new_v4();
+        let chat_id = DbId::new();
+        let user_id = DbId::new();
         let role = MessageRole::User;
         let content_str = "Test message";
         let content_vec = content_str.as_bytes().to_vec();
@@ -3202,30 +3245,42 @@ mod tests {
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone, Associations)]
 #[diesel(belongs_to(ChatMessage, foreign_key = parent_message_id))]
 #[diesel(table_name = message_variants)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct MessageVariant {
-    pub id: crate::DbUuid,
-    pub parent_message_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
     pub content: Vec<u8>, // Encrypted content
     pub content_nonce: Option<Vec<u8>>,
-    pub user_id: crate::DbUuid,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub user_id: crate::db::DbId,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 /// Insertable model for creating new message variants
 #[derive(Insertable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = message_variants)]
-#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
-#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewMessageVariant {
-    pub parent_message_id: crate::DbUuid,
+    pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
     pub content: Vec<u8>, // Encrypted content
     pub content_nonce: Option<Vec<u8>>,
-    pub user_id: crate::DbUuid,
+    pub user_id: crate::db::DbId,
 }
 
 impl MessageVariant {
@@ -3274,10 +3329,10 @@ impl MessageVariant {
 impl NewMessageVariant {
     /// Create a new message variant with encrypted content
     pub fn new(
-        parent_message_id: crate::DbUuid,
+        parent_message_id: crate::db::DbId,
         variant_index: i32,
         content: &str,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         dek: &SecretBox<Vec<u8>>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
@@ -3296,13 +3351,13 @@ impl NewMessageVariant {
 /// DTO for API responses containing decrypted variant data
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MessageVariantDto {
-    pub id: crate::DbUuid,
-    pub parent_message_id: crate::DbUuid,
+    pub id: crate::db::DbId,
+    pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
     pub content: String, // Decrypted content
-    pub user_id: crate::DbUuid,
-    pub created_at: DbDateTime,
-    pub updated_at: DbDateTime,
+    pub user_id: crate::db::DbId,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl MessageVariantDto {

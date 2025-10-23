@@ -70,8 +70,8 @@ pub struct SubscriptionResponse {
 #[derive(Serialize, Clone)]
 pub struct UsageLimitsResponse {
     pub tokens_used_total: i32,
-    pub period_start: crate::DbDateTime,
-    pub period_end: crate::DbDateTime,
+    pub period_start: crate::DbTimestamp,
+    pub period_end: crate::DbTimestamp,
     pub is_unlimited: bool,
     // Daily usage fields
     pub daily_message_count: Option<i32>,
@@ -173,20 +173,20 @@ pub struct CreditBalanceResponse {
     pub balance: i32,
     pub lifetime_earned: i32,
     pub lifetime_spent: i32,
-    pub last_monthly_grant: Option<crate::DbDateTime>,
+    pub last_monthly_grant: Option<crate::DbTimestamp>,
 }
 
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct CreditTransactionResponse {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
-    pub description: String,                 // Decrypted
+    pub description: String,             // Decrypted
     pub metadata: Option<crate::DbJson>, // Decrypted
     pub reference_id: Option<String>,
-    pub created_at: crate::DbDateTime,
+    pub created_at: crate::DbTimestamp,
 }
 
 #[cfg(feature = "payment")]
@@ -218,16 +218,16 @@ pub struct TransactionListQuery {
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct PaymentTransactionResponse {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub paddle_transaction_id: String,
     pub status: String,
     pub total_cents: i32,
     pub currency_code: Option<String>,
     pub customer_data: crate::models::payment::CustomerData, // DECRYPTED
     pub items: crate::DbJson,
-    pub billed_at: Option<crate::DbDateTime>,
-    pub completed_at: Option<crate::DbDateTime>,
-    pub created_at: Option<crate::DbDateTime>,
+    pub billed_at: Option<crate::DbTimestamp>,
+    pub completed_at: Option<crate::DbTimestamp>,
+    pub created_at: Option<crate::DbTimestamp>,
 }
 
 /// Helper function to decrypt and convert PaymentTransaction to response DTO
@@ -1954,7 +1954,7 @@ async fn process_transaction_completed(
         .get("custom_data")
         .and_then(|cd| cd.get("user_id"))
         .and_then(|v| v.as_str())
-        .and_then(|s| crate::DbUuid::parse_str(s).ok());
+        .and_then(|s| crate::db::DbId::parse_str(s).ok());
     if let Some(ref uid) = custom_data_user_id {
         tracing::debug!(
             custom_data_user_id = %uid,
@@ -1983,53 +1983,55 @@ async fn process_transaction_completed(
     use diesel::prelude::*;
 
     let user_id = conn
-        .interact(move |conn| -> Result<crate::DbUuid, diesel::result::Error> {
-            // Try to find user from existing subscriptions
-            if let Ok(subscription) = subscriptions::table
-                .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(subscriptions::user_id)
-                .first::<crate::DbUuid>(conn)
-            {
-                tracing::debug!("Found user from existing subscription");
-                return Ok(subscription);
-            }
-
-            // Try to find user from payment transactions
-            if let Ok(transaction) = payment_transactions::table
-                .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(payment_transactions::user_id)
-                .first::<crate::DbUuid>(conn)
-            {
-                tracing::debug!("Found user from payment transaction");
-                return Ok(transaction);
-            }
-
-            // Fallback: Try to find user by email
-            if let Some(ref email) = customer_email_for_closure {
-                if let Ok(user) = users::table
-                    .filter(users::email.eq(email))
-                    .select(users::id)
-                    .first::<crate::DbUuid>(conn)
+        .interact(
+            move |conn| -> Result<crate::db::DbId, diesel::result::Error> {
+                // Try to find user from existing subscriptions
+                if let Ok(subscription) = subscriptions::table
+                    .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(subscriptions::user_id)
+                    .first::<crate::db::DbId>(conn)
                 {
-                    tracing::debug!("Found user by email fallback");
-                    return Ok(user);
+                    tracing::debug!("Found user from existing subscription");
+                    return Ok(subscription);
                 }
-            }
 
-            // Fallback: Try to find user by custom_data.user_id
-            if let Some(user_id) = custom_data_user_id_for_closure {
-                if let Ok(user) = users::table
-                    .filter(users::id.eq(user_id))
-                    .select(users::id)
-                    .first::<crate::DbUuid>(conn)
+                // Try to find user from payment transactions
+                if let Ok(transaction) = payment_transactions::table
+                    .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(payment_transactions::user_id)
+                    .first::<crate::db::DbId>(conn)
                 {
-                    tracing::debug!("Found user by custom_data.user_id fallback");
-                    return Ok(user);
+                    tracing::debug!("Found user from payment transaction");
+                    return Ok(transaction);
                 }
-            }
 
-            Err(diesel::result::Error::NotFound)
-        })
+                // Fallback: Try to find user by email
+                if let Some(ref email) = customer_email_for_closure {
+                    if let Ok(user) = users::table
+                        .filter(users::email.eq(email))
+                        .select(users::id)
+                        .first::<crate::db::DbId>(conn)
+                    {
+                        tracing::debug!("Found user by email fallback");
+                        return Ok(user);
+                    }
+                }
+
+                // Fallback: Try to find user by custom_data.user_id
+                if let Some(user_id) = custom_data_user_id_for_closure {
+                    if let Ok(user) = users::table
+                        .filter(users::id.eq(user_id))
+                        .select(users::id)
+                        .first::<crate::db::DbId>(conn)
+                    {
+                        tracing::debug!("Found user by custom_data.user_id fallback");
+                        return Ok(user);
+                    }
+                }
+
+                Err(diesel::result::Error::NotFound)
+            },
+        )
         .await
         .map_err(|e| {
             tracing::error!("Step 2 FAILED: Database interaction error: {}", e);
@@ -2950,41 +2952,43 @@ async fn process_subscription_created(
     use diesel::prelude::*;
 
     let user_id = conn
-        .interact(move |conn| -> Result<crate::DbUuid, diesel::result::Error> {
-            // Try to find user from existing subscriptions
-            if let Ok(subscription) = subscriptions::table
-                .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(subscriptions::user_id)
-                .first::<crate::DbUuid>(conn)
-            {
-                tracing::debug!("Found user from existing subscription");
-                return Ok(subscription);
-            }
-
-            // Try to find user from payment transactions
-            if let Ok(transaction) = payment_transactions::table
-                .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(payment_transactions::user_id)
-                .first::<crate::DbUuid>(conn)
-            {
-                tracing::debug!("Found user from payment transaction");
-                return Ok(transaction);
-            }
-
-            // Fallback: Try to find user by email
-            if let Some(ref email) = customer_email_for_closure {
-                if let Ok(user) = users::table
-                    .filter(users::email.eq(email))
-                    .select(users::id)
-                    .first::<crate::DbUuid>(conn)
+        .interact(
+            move |conn| -> Result<crate::db::DbId, diesel::result::Error> {
+                // Try to find user from existing subscriptions
+                if let Ok(subscription) = subscriptions::table
+                    .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(subscriptions::user_id)
+                    .first::<crate::db::DbId>(conn)
                 {
-                    tracing::debug!("Found user by email fallback");
-                    return Ok(user);
+                    tracing::debug!("Found user from existing subscription");
+                    return Ok(subscription);
                 }
-            }
 
-            Err(diesel::result::Error::NotFound)
-        })
+                // Try to find user from payment transactions
+                if let Ok(transaction) = payment_transactions::table
+                    .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(payment_transactions::user_id)
+                    .first::<crate::db::DbId>(conn)
+                {
+                    tracing::debug!("Found user from payment transaction");
+                    return Ok(transaction);
+                }
+
+                // Fallback: Try to find user by email
+                if let Some(ref email) = customer_email_for_closure {
+                    if let Ok(user) = users::table
+                        .filter(users::email.eq(email))
+                        .select(users::id)
+                        .first::<crate::db::DbId>(conn)
+                    {
+                        tracing::debug!("Found user by email fallback");
+                        return Ok(user);
+                    }
+                }
+
+                Err(diesel::result::Error::NotFound)
+            },
+        )
         .await
         .map_err(|e| {
             tracing::error!("Step 8 FAILED: Database interaction error: {}", e);
@@ -3403,17 +3407,16 @@ async fn process_subscription_updated(
         let status_for_update = status.clone();
 
         // Calculate grace_period_end if status is past_due
-        let grace_period_end_for_update: Option<crate::DbDateTime> =
-            if status == "past_due" {
-                let grace_period_days = app_state.config.payment.grace_period_days as i64;
-                Some(chrono::Utc::now() + chrono::Duration::days(grace_period_days))
-            } else if status == "active" {
-                // Clear grace_period_end when subscription becomes active again
-                None
-            } else {
-                // Keep existing value - we'll handle this by not updating the field
-                subscription.grace_period_end
-            };
+        let grace_period_end_for_update: Option<crate::DbTimestamp> = if status == "past_due" {
+            let grace_period_days = app_state.config.payment.grace_period_days as i64;
+            Some(chrono::Utc::now() + chrono::Duration::days(grace_period_days))
+        } else if status == "active" {
+            // Clear grace_period_end when subscription becomes active again
+            None
+        } else {
+            // Keep existing value - we'll handle this by not updating the field
+            subscription.grace_period_end
+        };
 
         let updated_subscription = conn
             .interact(move |conn| {
@@ -3785,7 +3788,7 @@ fn handle_plan_upgrade(
         .set((
             plan_type.eq(new_plan),
             scheduled_plan_change.eq::<Option<String>>(None),
-            scheduled_change_date.eq::<Option<crate::DbDateTime>>(None),
+            scheduled_change_date.eq::<Option<crate::DbTimestamp>>(None),
             updated_at.eq(chrono::Utc::now()),
         ))
         .execute(conn)
@@ -4272,7 +4275,7 @@ pub async fn get_payment_transactions(
 /// Get a single payment transaction by ID
 #[cfg(feature = "payment")]
 pub async fn get_payment_transaction(
-    Path(transaction_id): Path<crate::DbUuid>,
+    Path(transaction_id): Path<crate::db::DbId>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
 ) -> Result<Json<PaymentTransactionResponse>, AppError> {

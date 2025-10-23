@@ -200,7 +200,7 @@ impl FieldGenerator {
     pub async fn generate_field(
         &self,
         request: FieldGenerationRequest,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<FieldGenerationResult, AppError> {
         let start_time = Instant::now();
@@ -237,8 +237,8 @@ impl FieldGenerator {
             .await?;
 
         // Parse the structured output
-        let mut field_output: CharacterFieldOutput = serde_json::from_value(generated_output.0)
-            .map_err(|e| {
+        let mut field_output: CharacterFieldOutput =
+            serde_json::from_value(generated_output.clone()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse field generation output: {}",
                     e
@@ -432,7 +432,7 @@ Show different scenarios, moods, or personality aspects."#
     async fn build_field_generation_user_message(
         &self,
         request: &FieldGenerationRequest,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<String, AppError> {
         let mut message = String::new();
@@ -621,7 +621,7 @@ Show different scenarios, moods, or personality aspects."#
     async fn build_field_generation_user_message_with_debug(
         &self,
         request: &FieldGenerationRequest,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<(String, DebugInfo), AppError> {
         let mut message = String::new();
@@ -778,8 +778,8 @@ Show different scenarios, moods, or personality aspects."#
     /// Query lorebook for relevant context based on the character generation request (with debug info)
     async fn query_lorebook_context_with_debug(
         &self,
-        user_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         request: &FieldGenerationRequest,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<LorebookQueryResult, AppError> {
@@ -887,8 +887,8 @@ Show different scenarios, moods, or personality aspects."#
     /// Query lorebook for relevant context based on the character generation request
     async fn query_lorebook_context(
         &self,
-        user_id: crate::DbUuid,
-        lorebook_id: crate::DbUuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         request: &FieldGenerationRequest,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<Option<String>, AppError> {
@@ -1238,7 +1238,8 @@ Show different scenarios, moods, or personality aspects."#
                     "reasoning": "Generated as plain text response due to JSON parsing failure",
                     "style_applied": "auto",
                     "quality_score": 7
-                }).into())
+                })
+                .into())
             }
         }
     }
@@ -1375,7 +1376,7 @@ Provide a detailed analysis including:
             .await?;
 
         // Parse the structured output
-        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output.0)
+        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output.clone())
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse style analysis output: {}",

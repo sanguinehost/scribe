@@ -80,7 +80,7 @@ impl AuditEventType {
 #[derive(Queryable, Insertable)]
 #[diesel(table_name = crate::schema::payment_audit_logs)]
 pub struct PaymentAuditLog {
-    pub id: crate::DbUuid,
+    pub id: crate::db::DbId,
     pub user_id_hash: String,
     pub event_type: String,
     pub amount: Option<i32>,
@@ -88,7 +88,7 @@ pub struct PaymentAuditLog {
     pub success: bool,
     pub error_code: Option<String>,
     pub external_reference_hash: Option<String>,
-    pub created_at: crate::DbDateTime,
+    pub created_at: crate::DbTimestamp,
 }
 
 impl PaymentAuditService {
@@ -105,7 +105,7 @@ impl PaymentAuditService {
     }
 
     /// Hash a user ID for privacy (one-way, non-reversible)
-    fn hash_user_id(user_id: &crate::DbUuid) -> String {
+    fn hash_user_id(user_id: &crate::db::DbId) -> String {
         let mut hasher = Sha256::new();
         hasher.update(user_id.as_bytes());
         format!("{:x}", hasher.finalize())
@@ -122,14 +122,14 @@ impl PaymentAuditService {
     pub fn log_credit_operation(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         event_type: AuditEventType,
         amount: i32,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: Some(amount),
@@ -160,14 +160,14 @@ impl PaymentAuditService {
     pub fn log_subscription_event(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         event_type: AuditEventType,
         external_ref: Option<&str>,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: None,
@@ -194,7 +194,7 @@ impl PaymentAuditService {
     pub fn log_plan_change(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         event_type: AuditEventType,
         old_plan: &str,
         new_plan: &str,
@@ -203,7 +203,7 @@ impl PaymentAuditService {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: None,
@@ -235,16 +235,16 @@ impl PaymentAuditService {
     pub fn log_plan_change_scheduled(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         current_plan: &str,
         scheduled_plan: &str,
-        scheduled_date: crate::DbDateTime,
+        scheduled_date: crate::DbTimestamp,
         external_ref: Option<&str>,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: AuditEventType::PlanChangeScheduled.as_str().to_string(),
             amount: None,
@@ -274,7 +274,7 @@ impl PaymentAuditService {
     pub fn log_payment_event(
         &self,
         conn: &mut PgConnection,
-        user_id: crate::DbUuid,
+        user_id: crate::db::DbId,
         amount_cents: i32,
         success: bool,
         error_code: Option<&str>,
@@ -289,7 +289,7 @@ impl PaymentAuditService {
         };
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: Some(amount_cents),
@@ -327,7 +327,7 @@ impl PaymentAuditService {
 
         // For webhooks, we don't have a user_id, so we use a static hash
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_reference("webhook_system"),
             event_type: format!("webhook_{}", event_type),
             amount: None,
@@ -436,8 +436,8 @@ mod tests {
 
     #[test]
     fn test_user_id_hashing() {
-        let user_id1 = Uuid::new_v4();
-        let user_id2 = Uuid::new_v4();
+        let user_id1 = DbId::new();
+        let user_id2 = DbId::new();
 
         let hash1a = PaymentAuditService::hash_user_id(&user_id1);
         let hash1b = PaymentAuditService::hash_user_id(&user_id1);

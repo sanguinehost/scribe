@@ -9,7 +9,7 @@ pub enum SecurityEvent {
     /// Webhook signature verification failure (potential attack)
     #[serde(rename = "webhook_signature_failure")]
     WebhookSignatureFailure {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         ip_address: String, // Anonymized IP (last octet masked)
         endpoint: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -19,7 +19,7 @@ pub enum SecurityEvent {
     /// Authentication failure (credential stuffing, brute force)
     #[serde(rename = "auth_failure")]
     AuthFailure {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         user_hash: String,  // Hashed user ID (SHA-256 + salt)
         ip_address: String, // Anonymized IP
         failure_reason: String,
@@ -29,7 +29,7 @@ pub enum SecurityEvent {
     /// Credit operation anomaly (fraud detection)
     #[serde(rename = "credit_operation_anomaly")]
     CreditOperationAnomaly {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         user_hash: String,      // Hashed user ID
         operation_type: String, // "add", "deduct", "expire"
         amount: f64,
@@ -40,7 +40,7 @@ pub enum SecurityEvent {
     /// Encryption/decryption error (key compromise indicator)
     #[serde(rename = "encryption_error")]
     EncryptionError {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         error_type: String, // "decryption_failed", "invalid_key", "corrupted_data"
         context: String,    // Operation context (NO PII)
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,7 +50,7 @@ pub enum SecurityEvent {
     /// Suspicious data access pattern (exfiltration attempt)
     #[serde(rename = "suspicious_data_access")]
     SuspiciousDataAccess {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         user_hash: String, // Hashed user ID
         endpoint: String,
         record_count: usize,
@@ -61,7 +61,7 @@ pub enum SecurityEvent {
     /// DEK cache bulk access (key scraping attempt)
     #[serde(rename = "dek_cache_bulk_access")]
     DekCacheBulkAccess {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         user_hash: String, // Hashed user ID
         access_count: usize,
         time_window_seconds: u64,
@@ -71,17 +71,17 @@ pub enum SecurityEvent {
     /// Payment webhook replay attack detected
     #[serde(rename = "webhook_replay_attack")]
     WebhookReplayAttack {
-        timestamp: crate::DbDateTime,
+        timestamp: crate::DbTimestamp,
         ip_address: String, // Anonymized IP
         event_id: String,   // Paddle event ID
-        original_timestamp: crate::DbDateTime,
+        original_timestamp: crate::DbTimestamp,
         replay_delay_seconds: i64,
     },
 }
 
 impl SecurityEvent {
     /// Get the timestamp of the security event
-    pub fn timestamp(&self) -> crate::DbDateTime {
+    pub fn timestamp(&self) -> crate::DbTimestamp {
         match self {
             SecurityEvent::WebhookSignatureFailure { timestamp, .. } => *timestamp,
             SecurityEvent::AuthFailure { timestamp, .. } => *timestamp,
