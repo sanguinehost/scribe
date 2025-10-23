@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::db::DbId;
 
 use crate::db::DbPool; // Changed from sqlx::PgPool
 use chrono::{DateTime, Utc}; // For timestamps

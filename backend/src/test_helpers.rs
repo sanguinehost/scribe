@@ -7,6 +7,7 @@ pub mod payment_test_helpers;
 
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 use std::fmt;
 use std::net::SocketAddr;
 
@@ -94,7 +95,7 @@ use std::collections::VecDeque; // Added for MockQdrantClientService response qu
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
-use crate::db::{DbPool, DbUuid};
+use crate::db::{DbId, DbPool};
 use hex; // Added for hex::decode
 use http_body_util::BodyExt; // For collect() on Body
 use reqwest;

@@ -1,5 +1,6 @@
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;

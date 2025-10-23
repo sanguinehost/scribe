@@ -29,7 +29,7 @@ pub use db::DbPool;
 
 // Re-export database type aliases for use in models
 // These resolve to native types for PostgreSQL or newtype wrappers for SQLite
-pub use db::{DbBigDecimal, DbConnection, DbInt, DbJson, DbTimestamp, DbUuid};
+pub use db::{DbBigDecimal, DbBlob, DbConnection, DbDecimal, DbId, DbInt, DbJson, DbTimestamp};
 
 // Maintain backward compatibility with existing code that uses PgPool
 // TODO: Gradually migrate all code to use DbPool directly

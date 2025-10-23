@@ -20,10 +20,7 @@
 //! - `DbStringArray`: String array wrapper (Postgres: TEXT[], SQLite: JSON array as TEXT)
 
 use super::backend_traits::DbType;
-
-#[cfg(feature = "sqlite-backend")]
 use super::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteUuid};
-
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::deserialize::{self, FromSql, FromSqlRow};

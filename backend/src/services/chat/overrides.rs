@@ -1,4 +1,5 @@
 use diesel::{prelude::*, result::Error as DieselError};
+use crate::db::DbId;
 use tracing::{error, instrument};
 use uuid::Uuid;
 

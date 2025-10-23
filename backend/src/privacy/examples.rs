@@ -3,6 +3,7 @@
 /// This file demonstrates the before/after of updating logging statements
 /// to protect user privacy while maintaining debuggability.
 use crate::privacy::logging::{
+use crate::db::DbId;
     loggable_session_id, loggable_user_id, sanitize_content, sanitize_system_prompt,
 };
 use crate::{privacy_debug, privacy_error, privacy_info, privacy_warn};

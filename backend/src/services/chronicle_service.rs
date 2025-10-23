@@ -1,4 +1,5 @@
 use crate::db::DbPool;
+use crate::db::DbId;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
     QueryDsl, RunQueryDsl, SelectableHelper,

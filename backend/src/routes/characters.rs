@@ -4,6 +4,7 @@
 #![allow(clippy::unused_async)]
 
 use crate::auth::session_dek::SessionDek;
+use crate::db::DbId;
 use crate::crypto;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};

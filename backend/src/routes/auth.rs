@@ -1,4 +1,5 @@
 use crate::auth::{self, recover_user_password_with_phrase, AuthError}; // Added recover_user_password_with_phrase
+use crate::db::DbId;
 use crate::errors::AppError;
 use crate::logging::security_events::SecurityEvent;
 use crate::metrics::SECURITY_METRICS;

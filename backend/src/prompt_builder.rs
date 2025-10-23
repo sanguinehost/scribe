@@ -1,4 +1,5 @@
 use crate::{
+use crate::db::DbId;
     config::Config,
     errors::AppError,
     models::characters::CharacterMetadata,

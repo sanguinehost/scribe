@@ -1,4 +1,5 @@
 use crate::auth::session_dek::SessionDek; // Added SessionDek
+use crate::db::DbId;
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
 use crate::db::DbPool; // Added PgPool import

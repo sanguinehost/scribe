@@ -6,6 +6,7 @@
 //! storage of the agent's reasoning and execution log.
 
 use chrono::{DateTime, Utc};
+use crate::db::DbId;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
     JsonSchemaSpec, MessageContent,

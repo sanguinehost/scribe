@@ -1,6 +1,7 @@
 // backend/src/routes/chat.rs
 
 use crate::auth::session_dek::SessionDek;
+use crate::db::DbId;
 use crate::auth::user_store::Backend as AuthBackend;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};

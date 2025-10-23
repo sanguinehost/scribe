@@ -1,6 +1,7 @@
 //! Narrative tool implementations for the agentic framework.
 
 use async_trait::async_trait;
+use crate::db::DbId;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};

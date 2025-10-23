@@ -1,5 +1,6 @@
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 
 use crate::db::DbPool;
 use crate::{

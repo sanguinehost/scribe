@@ -48,7 +48,7 @@ pub mod postgres_backend;
 #[cfg(feature = "sqlite-backend")]
 pub mod sqlite_backend;
 
-#[cfg(feature = "sqlite-backend")]
+// Always available since unified types need SQLite wrapper types
 pub mod sqlite_types;
 
 pub mod json_wrapper;

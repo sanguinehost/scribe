@@ -6,6 +6,7 @@
 #![cfg(feature = "postgres-backend")]
 
 use crate::auth::user_store::Backend as AuthBackend;
+use crate::db::DbId;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::errors::AppError;

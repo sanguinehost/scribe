@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::db::DbId;
 
 use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};

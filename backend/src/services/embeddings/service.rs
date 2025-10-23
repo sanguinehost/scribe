@@ -1,4 +1,5 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
+use crate::db::DbId;
 use super::retrieval::{
     decrypt_chat_content, decrypt_lorebook_content, RetrievedChunk, RetrievedMetadata,
 };

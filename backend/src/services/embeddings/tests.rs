@@ -538,7 +538,7 @@ mod tests {
         message_id: crate::db::DbId,
         user_id: crate::db::DbId,
         speaker: &'a str,
-        timestamp: chrono::crate::DbTimestamp,
+        timestamp: crate::DbTimestamp,
         text: &'a str,
         source_type: &'a str,
     }

@@ -1,4 +1,5 @@
 use crate::errors::AppError;
+use crate::db::DbId;
 use qdrant_client::qdrant::Value as QdrantValue;
 use std::collections::HashMap;
 use uuid::Uuid;
