@@ -32,7 +32,8 @@ use diesel::sqlite::Sqlite;
     diesel::expression::AsExpression,
     diesel::deserialize::FromSqlRow,
 )]
-#[diesel(sql_type = Nullable<Text>)]
+#[cfg_attr(feature = "postgres-backend", diesel(sql_type = Array<Nullable<Text>>))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Nullable<Text>))]
 #[serde(transparent)]
 pub struct OptionalStringArray(pub Option<Vec<Option<String>>>);
 
