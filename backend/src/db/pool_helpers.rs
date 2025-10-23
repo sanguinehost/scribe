@@ -14,27 +14,35 @@
 use crate::db::DbPool;
 use crate::errors::AppError;
 
-#[cfg(feature = "sqlite-backend")]
-use diesel::r2d2;
-
 // Extension trait to provide async .get() for SQLite pools (compatibility with PostgreSQL async pools)
 #[cfg(feature = "sqlite-backend")]
 pub trait SqlitePoolExt {
     type Connection;
     async fn get(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>, r2d2::Error>;
+    ) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>, diesel::r2d2::Error>;
 }
 
 #[cfg(feature = "sqlite-backend")]
 impl SqlitePoolExt for DbPool {
     type Connection = diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
 
-    async fn get(&self) -> Result<Self::Connection, r2d2::Error> {
+    async fn get(&self) -> Result<Self::Connection, diesel::r2d2::Error> {
         let pool = self.clone();
-        tokio::task::spawn_blocking(move || pool.get())
-            .await
-            .unwrap_or_else(|_| Err(r2d2::Error::ConnectionError(anyhow::anyhow!("spawn_blocking panicked"))))?
+        match tokio::task::spawn_blocking(move || pool.get()).await {
+            Ok(result) => result.map_err(|e| {
+                // Convert r2d2::Error to diesel::r2d2::Error
+                // They're the same type, just accessed via different paths
+                match e {
+                    _ => diesel::r2d2::Error::ConnectionError(
+                        diesel::ConnectionError::BadConnection(format!("r2d2 error: {}", e))
+                    ),
+                }
+            }),
+            Err(_) => Err(diesel::r2d2::Error::ConnectionError(
+                diesel::ConnectionError::BadConnection("spawn_blocking panicked".to_string())
+            )),
+        }
     }
 }
 
@@ -106,7 +114,6 @@ pub async fn get_conn(
 ///
 /// let result = with_conn(&pool, |conn| {
 ///     // Your database operation here
-.select(User::as_select())
 ///     users::table.load::<User>(conn)
 ///         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
 /// }).await?;

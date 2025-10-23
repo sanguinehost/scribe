@@ -4,13 +4,14 @@ use bigdecimal::BigDecimal;
 use crate::DbDateTime;
 use chrono::Utc;
 use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel_json::Json;
+use crate::db::Json;
 use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
 use serde::{Deserialize, Serialize};
 use crate::DbJson as JsonValue;
 use crate::DbUuid as Uuid; // For error handling
 
 use crate::models::users::User;
+use crate::models::OptionalStringArray;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
 // For encryption/decryption
@@ -33,6 +34,8 @@ use crate::services::encryption_service::EncryptionService; // Added
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
 #[diesel(treat_none_as_null = true)] // Added for AsChangeset with Option fields
+#[cfg_attr(feature = "postgres-backend", diesel(check_for_backend(diesel::pg::Pg)))]
+#[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct Character {
     pub id: crate::DbUuid,
     pub user_id: crate::DbUuid,
@@ -47,14 +50,14 @@ pub struct Character {
     pub creator_notes: Option<Vec<u8>>,
     pub system_prompt: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub alternate_greetings: crate::models::OptionalStringArray,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<crate::DbJson>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub source: crate::models::OptionalStringArray,
+    pub group_only_greetings: crate::models::OptionalStringArray,
     pub creation_date: Option<DbDateTime>,
     pub modification_date: Option<DbDateTime>,
     pub created_at: DbDateTime,
@@ -80,14 +83,14 @@ pub struct Character {
     pub model_prompt: Option<Vec<u8>>,
     pub model_prompt_visibility: Option<String>,
     pub model_temperature: Option<crate::DbBigDecimal>,
-    pub num_interactions: Option<i64>,
+    pub num_interactions: Option<crate::DbInt>,
     pub permanence: Option<crate::DbBigDecimal>,
     pub persona_visibility: Option<String>,
     pub revision: Option<i32>,
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
+    pub system_tags: crate::models::OptionalStringArray,
     pub token_budget: Option<i32>,
     pub usage_hints: Option<crate::DbJson>,
     pub user_persona: Option<Vec<u8>>,
@@ -768,7 +771,7 @@ impl Character {
             creator_notes: decrypted_fields.creator_notes,
             system_prompt: decrypted_fields.system_prompt,
             post_history_instructions: decrypted_fields.post_history_instructions,
-            tags: self.tags.or_else(|| Some(Vec::new())),
+            tags: OptionalStringArray(self.tags.0.or_else(|| Some(Vec::new()))),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
             alternate_greetings: self
@@ -785,8 +788,8 @@ impl Character {
                 .creator_notes_multilingual
                 .map(Json)
                 .or_else(|| Some(serde_json::json!({}).into())),
-            source: self.source.or_else(|| Some(Vec::new())),
-            group_only_greetings: self.group_only_greetings.or_else(|| Some(Vec::new())),
+            source: OptionalStringArray(self.source.0.or_else(|| Some(Vec::new()))),
+            group_only_greetings: OptionalStringArray(self.group_only_greetings.0.or_else(|| Some(Vec::new()))),
             creation_date: self.creation_date,
             modification_date: self.modification_date,
             created_at: self.created_at,
@@ -827,7 +830,7 @@ impl Character {
             sharing_visibility: default_empty_string_if_none(self.sharing_visibility),
             status: default_empty_string_if_none(self.status),
             system_prompt_visibility: default_empty_string_if_none(self.system_prompt_visibility),
-            system_tags: self.system_tags.or_else(|| Some(Vec::new())),
+            system_tags: OptionalStringArray(self.system_tags.0.or_else(|| Some(Vec::new()))),
             token_budget: self.token_budget,
             usage_hints: self
                 .usage_hints
@@ -868,14 +871,14 @@ pub struct CharacterDataForClient {
     pub creator_notes: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
     pub alternate_greetings: Option<Vec<String>>,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<Json<JsonValue>>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub source: crate::models::OptionalStringArray,
+    pub group_only_greetings: crate::models::OptionalStringArray,
     pub creation_date: Option<DbDateTime>,
     pub modification_date: Option<DbDateTime>,
     pub created_at: DbDateTime,
@@ -901,14 +904,14 @@ pub struct CharacterDataForClient {
     pub model_prompt: Option<String>,
     pub model_prompt_visibility: Option<String>,
     pub model_temperature: Option<crate::DbBigDecimal>,
-    pub num_interactions: Option<i64>,
+    pub num_interactions: Option<crate::DbInt>,
     pub permanence: Option<crate::DbBigDecimal>,
     pub persona_visibility: Option<String>,
     pub revision: Option<i32>,
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
+    pub system_tags: crate::models::OptionalStringArray,
     pub token_budget: Option<i32>,
     pub usage_hints: Option<Json<JsonValue>>,
     pub user_persona: Option<String>,
@@ -1268,14 +1271,14 @@ pub fn create_dummy_character() -> Character {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: None.into(),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: None.into(),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: None.into(),
+        group_only_greetings: None.into(),
         creation_date: None,
         modification_date: None,
         created_at: now.into(),
@@ -1308,7 +1311,7 @@ pub fn create_dummy_character() -> Character {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: None.into(),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1579,7 +1582,7 @@ mod tests {
                 assets: None,
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
+                source: None.into(),
                 group_only_greetings: Vec::default(),
                 creation_date: None,
                 modification_date: None,

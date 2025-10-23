@@ -114,7 +114,7 @@ pub type SettingsTuple = (
     Option<i32>,                 // top_k
     Option<crate::DbBigDecimal>,          // top_p
     Option<i32>,                 // seed
-    Option<Vec<Option<String>>>, // stop_sequences
+    Option<crate::models::OptionalStringArray>, // stop_sequences
     String,                      // history_management_strategy
     i32,                         // history_management_limit
     String,                      // model_name
@@ -159,7 +159,7 @@ pub struct Chat {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub title_ciphertext: Option<Vec<u8>>,
     pub title_nonce: Option<Vec<u8>>,
-    pub stop_sequences: Option<Vec<Option<String>>>,
+    pub stop_sequences: crate::models::OptionalStringArray,
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<crate::DbUuid>,
     pub agent_mode: Option<String>,
@@ -289,7 +289,7 @@ pub struct NewChat {
     pub top_k: Option<i32>,
     pub top_p: Option<crate::DbBigDecimal>,
     pub seed: Option<i32>,
-    pub stop_sequences: Option<Vec<Option<String>>>,
+    pub stop_sequences: crate::models::OptionalStringArray,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
@@ -853,7 +853,7 @@ impl ChatMessage {
                         .or(status.eq("streaming")),
                 ),
         )
-        .set(superseded_at.eq(Some(chrono::Utc::now())))
+        .set(superseded_at.eq(Some(chrono::Utc::now().into())))
         .execute(conn)
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to supersede messages: {e}")))?;
 
@@ -1763,7 +1763,7 @@ pub struct ChatForClient {
     pub top_k: Option<i32>,
     pub top_p: Option<crate::DbBigDecimal>,
     pub seed: Option<i32>,
-    pub stop_sequences: Option<Vec<Option<String>>>,
+    pub stop_sequences: crate::models::OptionalStringArray,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
@@ -2023,7 +2023,7 @@ pub struct ChatSettingsResponse {
     pub top_k: Option<i32>,
     pub top_p: Option<crate::DbBigDecimal>,
     pub seed: Option<i32>,
-    pub stop_sequences: Option<Vec<Option<String>>>,
+    pub stop_sequences: crate::models::OptionalStringArray,
     // History Management Fields
     pub history_management_strategy: String,
     pub history_management_limit: i32,
@@ -2119,7 +2119,7 @@ pub struct UpdateChatSettingsRequest {
     #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<crate::DbBigDecimal>,
     pub seed: Option<i32>,
-    pub stop_sequences: Option<Vec<Option<String>>>,
+    pub stop_sequences: Option<crate::models::OptionalStringArray>,
     // History Management Fields
     #[validate(custom(function = "validate_optional_history_strategy"))]
     pub history_management_strategy: Option<String>,

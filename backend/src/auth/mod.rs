@@ -342,7 +342,7 @@ pub fn create_user_sync(
         diesel::insert_into(users::table)
             .values(&new_user)
             .returning(UserDbQuery::as_returning())
-            .get_result::<UserDbQuery>(conn)
+            .get_result(conn)
     };
 
     #[cfg(feature = "sqlite-backend")]
@@ -356,8 +356,7 @@ pub fn create_user_sync(
 
         users::table
             .filter(users::username.eq(username_clone))
-            .select(UserDbQuery::as_select())
-            .first::<UserDbQuery>(conn)
+            .first(conn)
     };
 
     match insert_result {
@@ -389,8 +388,7 @@ pub fn get_user_by_username(conn: &mut crate::db::DbConn, username: &str) -> Res
     info!("Attempting to find user by username"); // Removed PII: username
     users::table
         .filter(users::username.eq(username))
-        .select(UserDbQuery::as_select())
-        .first::<UserDbQuery>(conn)
+        .first(conn)
         .map(User::from)
         .map_err(AuthError::from)
 }
@@ -408,8 +406,7 @@ pub fn get_user(conn: &mut crate::db::DbConn, user_id: crate::DbUuid) -> Result<
     info!(%user_id, "Attempting to find user by ID");
     users::table
         .find(user_id)
-        .select(UserDbQuery::as_select())
-        .first::<UserDbQuery>(conn)
+        .first(conn)
         .map(User::from)
         .map_err(AuthError::from)
 }
@@ -421,8 +418,7 @@ pub fn find_user_by_email(conn: &mut crate::db::DbConn, email: &str) -> Result<U
 
     let user_db_query = users::table
         .filter(users::email.eq(email))
-        .select(UserDbQuery::as_select())
-        .first::<UserDbQuery>(conn)
+        .first(conn)
         .map_err(AuthError::from)?;
 
     Ok(User::from(user_db_query))
@@ -433,8 +429,7 @@ pub fn find_user_by_id(conn: &mut crate::db::DbConn, user_id: crate::DbUuid) -> 
 
     let user_db_query = users::table
         .filter(users::id.eq(user_id))
-        .select(UserDbQuery::as_select())
-        .first::<UserDbQuery>(conn)
+        .first(conn)
         .map_err(AuthError::from)?;
 
     Ok(User::from(user_db_query))
@@ -457,8 +452,7 @@ pub fn verify_credentials(
                 .eq(identifier)
                 .or(users::email.eq(identifier)),
         ) // Query by username OR email
-        .select(UserDbQuery::as_select())
-        .first::<UserDbQuery>(conn)
+        .first(conn)
         .map_err(AuthError::from)?;
 
     // Convert UserDbQuery to User. This User object already contains encrypted_dek, kek_salt, dek_nonce
@@ -680,8 +674,7 @@ pub async fn recover_user_password_with_phrase(
                     .eq(&identifier)
                     .or(users::email.eq(&identifier)),
             )
-            .select(UserDbQuery::as_select())
-            .first::<UserDbQuery>(conn)
+            .first(conn)
             .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -906,7 +899,7 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
         diesel::update(users::table.find(verification_token.user_id))
             .set(users::account_status.eq(AccountStatus::Active))
             .returning(UserDbQuery::as_returning())
-            .get_result::<UserDbQuery>(conn)
+            .get_result(conn)
             .map_err(|e| {
                 error!(user_id = %verification_token.user_id, error = ?e, "Failed to update user status to active");
                 AuthError::from(e)
@@ -927,8 +920,7 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
 
         users::table
             .find(verification_token.user_id)
-            .select(UserDbQuery::as_select())
-            .first::<UserDbQuery>(conn)
+            .first(conn)
             .map_err(|e| {
                 error!(user_id = %verification_token.user_id, error = ?e, "Failed to query user after update");
                 AuthError::from(e)

@@ -184,6 +184,7 @@ pub async fn upload_user_avatar(
                 .values(new_asset)
                 .returning(UserAsset::as_returning())
                 .get_result::<UserAsset>(conn_block)
+                .map_err(Into::into)
         }
 
         #[cfg(feature = "sqlite-backend")]
@@ -199,8 +200,8 @@ pub async fn upload_user_avatar(
                 .filter(crate::schema::user_assets::user_id.eq(user_id))
                 .filter(crate::schema::user_assets::persona_id.is_null())
                 .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-                .select(UserAsset::as_select())
                 .first::<UserAsset>(conn_block)
+                .map_err(Into::into)
         }
     })
     .await
@@ -412,7 +413,6 @@ pub async fn upload_persona_avatar(
                 .filter(crate::schema::user_assets::user_id.eq(current_user.id))
                 .filter(crate::schema::user_assets::persona_id.eq(persona_id))
                 .filter(crate::schema::user_assets::asset_type.eq("avatar"))
-                .select(UserAsset::as_select())
                 .first::<UserAsset>(conn_block)
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset query DB error: {e}")))
         }

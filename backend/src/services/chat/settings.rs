@@ -10,7 +10,10 @@ use uuid::Uuid;
 use crate::{
     crypto::{decrypt_gcm, encrypt_gcm},
     errors::AppError,
-    models::chats::{ChatSettingsResponse, SettingsTuple, UpdateChatSettingsRequest},
+    models::{
+        chats::{ChatSettingsResponse, SettingsTuple, UpdateChatSettingsRequest},
+        OptionalStringArray,
+    },
     schema::chat_sessions,
     state::DbPool, // Corrected DbPool import
 };
@@ -125,7 +128,7 @@ impl ChatSessionUpdateBuilder {
                 _ => None,
             },
             stop_sequences: match self.stop_sequences {
-                DatabaseUpdate::SetValue(v) => Some(v),
+                DatabaseUpdate::SetValue(v) => Some(crate::models::OptionalStringArray::from_vec_string(v)),
                 _ => None,
             },
             history_management_strategy: match self.history_management_strategy {
@@ -221,7 +224,7 @@ struct ChatSessionUpdateChangeset {
     top_k: Option<i32>,
     top_p: Option<crate::DbBigDecimal>,
     seed: Option<i32>,
-    stop_sequences: Option<Vec<String>>,
+    stop_sequences: Option<crate::models::OptionalStringArray>,
     history_management_strategy: Option<String>,
     history_management_limit: Option<i32>,
     model_name: Option<String>,
@@ -404,7 +407,7 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences,
+            stop_sequences: OptionalStringArray(stop_sequences),
             history_management_strategy,
             history_management_limit,
             model_name,
@@ -483,8 +486,14 @@ fn apply_payload_to_builder(
         update_builder.seed = DatabaseUpdate::SetValue(s);
     }
     if let Some(ss_option_vec) = payload.stop_sequences {
-        update_builder.stop_sequences =
-            DatabaseUpdate::SetValue(ss_option_vec.into_iter().flatten().collect());
+        update_builder.stop_sequences = DatabaseUpdate::SetValue(
+            ss_option_vec
+                .0
+                .unwrap_or_default()
+                .into_iter()
+                .flatten()
+                .collect(),
+        );
     }
     if let Some(hist_strat) = payload.history_management_strategy {
         update_builder.history_management_strategy = DatabaseUpdate::SetValue(hist_strat);

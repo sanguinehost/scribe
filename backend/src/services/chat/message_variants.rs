@@ -31,7 +31,7 @@ pub async fn get_message_variants(
 
     // Decrypt all variants
     let mut decrypted_variants = Vec::new();
-    for variant in variants? {
+    for variant in variants {
         let dto = MessageVariantDto::from_model(variant, dek)?;
         decrypted_variants.push(dto);
     }
@@ -284,10 +284,10 @@ pub async fn create_message_variant(
         content: current_content,
         parts: updated_message
             .parts
-            .unwrap_or_else(|| serde_json::json!([])),
+            .unwrap_or_else(|| serde_json::json!([]).into()),
         attachments: updated_message
             .attachments
-            .unwrap_or_else(|| serde_json::json!([])),
+            .unwrap_or_else(|| serde_json::json!([]).into()),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant creation
         prompt_tokens: updated_message.prompt_tokens,
@@ -327,7 +327,7 @@ pub async fn get_message_variant_by_index(
     })
     .await?;
 
-    match variant? {
+    match variant {
         Some(v) => Ok(Some(MessageVariantDto::from_model(v, dek)?)),
         None => Ok(None),
     }
@@ -354,7 +354,7 @@ pub async fn delete_message_variant(
     })
     .await?;
 
-    Ok(deleted_count? > 0)
+    Ok(deleted_count > 0)
 }
 
 /// Get the count of variants for a message
@@ -375,7 +375,7 @@ pub async fn get_variant_count(
     })
     .await?;
 
-    Ok(count?)
+    Ok(count)
 }
 
 /// Helper function to get the next variant index for a message
@@ -600,10 +600,10 @@ pub async fn select_message_variant(
         content: variant_content, // Use the selected variant's content
         parts: updated_message
             .parts
-            .unwrap_or_else(|| serde_json::json!([])),
+            .unwrap_or_else(|| serde_json::json!([]).into()),
         attachments: updated_message
             .attachments
-            .unwrap_or_else(|| serde_json::json!([])),
+            .unwrap_or_else(|| serde_json::json!([]).into()),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,

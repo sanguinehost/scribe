@@ -467,13 +467,13 @@ pub async fn upload_character_handler(
         crate::db::with_conn(&state.pool, move |conn_asset_block| {
             diesel::insert_into(character_assets)
                 .values(&new_asset_clone)
-                .execute(conn_asset_block)
-                .map_err(|e| e)?;
+                .execute(conn_asset_block)?;
 
             // Fetch the inserted asset
             character_assets
                 .find(asset_id)
                 .first(conn_asset_block)
+                .map_err(Into::into)
         }).await
     };
 
@@ -986,14 +986,14 @@ pub async fn generate_character_handler(
         system_prompt_nonce: None,
         post_history_instructions: None,
         post_history_instructions_nonce: None,
-        tags: None,
+        tags: Default::default(),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: Default::default(),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: Default::default(),
+        group_only_greetings: Default::default(),
         creation_date: None,
         modification_date: None,
         created_at: chrono::Utc::now().into(),
@@ -1032,7 +1032,7 @@ pub async fn generate_character_handler(
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: Default::default(),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1106,7 +1106,7 @@ pub async fn delete_character_handler(
         exists.map(|opt| opt.is_some())
     }).await?;
 
-    if !character_exists? {
+    if !character_exists {
         info!(target: "test_log", %character_id, "Character does not exist at all");
         return Err(AppError::NotFound(format!(
             "Character {character_id} not found"
@@ -1182,7 +1182,7 @@ pub async fn update_character_handler(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_character_asset_handler(
-    Path((character_id, asset_id)): Path<(crate::DbUuid, i32)>,
+    Path((character_id, asset_id)): Path<(crate::DbUuid, crate::DbUuid)>,
     Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
@@ -1214,6 +1214,7 @@ pub async fn get_character_asset_handler(
         character_assets
             .find(asset_id)
             .filter(crate::schema::character_assets::character_id.eq(character_id))
+            .select(CharacterAsset::as_select())
             .first::<CharacterAsset>(conn_asset_block)
             .optional()
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}")))

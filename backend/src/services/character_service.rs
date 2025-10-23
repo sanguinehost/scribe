@@ -11,6 +11,7 @@ use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
 use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added CharacterUpdateDto
 use crate::models::characters::{Character, CharacterDataForClient};
+use crate::models::OptionalStringArray;
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
@@ -18,7 +19,7 @@ use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl,
     SelectableHelper,
 }; // For .values(), .returning(), .get_result(), etc.
-use diesel_json; // For Json<Value> type in Diesel models
+use crate::db::Json; // Backend-agnostic Json<T> wrapper for Diesel models
 use serde_json; // For json!({}) macro
 
 /// Type alias for the complex return type of encrypted field operations
@@ -166,11 +167,11 @@ impl CharacterService {
             system_prompt_nonce: system_prompt_nonce_enc,
             post_history_instructions: post_history_instructions_enc,
             post_history_instructions_nonce: post_history_instructions_nonce_enc,
-            tags: if create_dto.tags.is_empty() {
+            tags: OptionalStringArray(if create_dto.tags.is_empty() {
                 None
             } else {
                 Some(create_dto.tags.into_iter().map(Some).collect())
-            },
+            }),
             creator: if create_dto.creator.is_empty() {
                 None
             } else {
@@ -181,7 +182,7 @@ impl CharacterService {
             } else {
                 Some(create_dto.character_version)
             },
-            alternate_greetings: if create_dto.alternate_greetings.is_empty() {
+            alternate_greetings: OptionalStringArray(if create_dto.alternate_greetings.is_empty() {
                 None
             } else {
                 Some(
@@ -191,19 +192,19 @@ impl CharacterService {
                         .map(Some)
                         .collect(),
                 )
-            },
+            }),
             creator_notes_multilingual: create_dto
                 .creator_notes_multilingual
-                .map(|j| diesel_json::Json(j.0)),
+                .map(|j| Json(j.0)),
             nickname: create_dto.nickname,
-            source: create_dto.source.and_then(|s_vec| {
+            source: OptionalStringArray(create_dto.source.and_then(|s_vec| {
                 if s_vec.is_empty() {
                     None
                 } else {
                     Some(s_vec.into_iter().map(Some).collect())
                 }
-            }),
-            group_only_greetings: if create_dto.group_only_greetings.is_empty() {
+            })),
+            group_only_greetings: OptionalStringArray(if create_dto.group_only_greetings.is_empty() {
                 None
             } else {
                 Some(
@@ -213,7 +214,7 @@ impl CharacterService {
                         .map(Some)
                         .collect(),
                 )
-            },
+            }),
             creation_date: create_dto
                 .creation_date
                 .and_then(|ts| DateTime::from_timestamp(ts, 0))
@@ -223,7 +224,7 @@ impl CharacterService {
                 .and_then(|ts| DateTime::from_timestamp(ts, 0))
                 .map(|dt| dt.into()),
             extensions: Some(create_dto.extensions.map_or_else(
-                || diesel_json::Json(serde_json::json!({}).into()),
+                || Json(serde_json::json!({}).into()),
                 |j| j,
             )),
             persona: None,
@@ -251,7 +252,7 @@ impl CharacterService {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: OptionalStringArray(None),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -362,7 +363,7 @@ impl CharacterService {
 
                     let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
                         lorebooks::table
-                            .filter(lorebooks::id.eq(lorebook_uuid))
+                            .filter(lorebooks::id.eq(lorebook_uuid.into()))
                             .filter(lorebooks::user_id.eq(user_id_val))
                             .count()
                             .get_result::<i64>(conn_sync)
@@ -499,11 +500,11 @@ impl CharacterService {
 
         // Non-encrypted fields
         if let Some(tags_val) = update_dto.tags {
-            existing_character.tags = if tags_val.is_empty() {
+            existing_character.tags = OptionalStringArray(if tags_val.is_empty() {
                 None
             } else {
                 Some(tags_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(creator_val) = update_dto.creator {
             existing_character.creator = if creator_val.is_empty() {
@@ -520,11 +521,11 @@ impl CharacterService {
             };
         }
         if let Some(ag_val) = update_dto.alternate_greetings {
-            existing_character.alternate_greetings = if ag_val.is_empty() {
+            existing_character.alternate_greetings = OptionalStringArray(if ag_val.is_empty() {
                 None
             } else {
                 Some(ag_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(cnm_val) = update_dto.creator_notes_multilingual {
             existing_character.creator_notes_multilingual = Some(cnm_val.0);
@@ -533,18 +534,18 @@ impl CharacterService {
             existing_character.nickname = Some(nick_val);
         }
         if let Some(source_val) = update_dto.source {
-            existing_character.source = if source_val.is_empty() {
+            existing_character.source = OptionalStringArray(if source_val.is_empty() {
                 None
             } else {
                 Some(source_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(gog_val) = update_dto.group_only_greetings {
-            existing_character.group_only_greetings = if gog_val.is_empty() {
+            existing_character.group_only_greetings = OptionalStringArray(if gog_val.is_empty() {
                 None
             } else {
                 Some(gog_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(cd_ts) = update_dto.creation_date {
             existing_character.creation_date = DateTime::from_timestamp(cd_ts, 0).map(|dt| dt.into());
@@ -614,11 +615,29 @@ impl CharacterService {
 
         // Save the updated character
         let updated_character_db: Character = crate::db::with_conn(&self.db_pool, move |conn_update_block| {
-            diesel::update(characters::table.find(character_id_to_update))
-                .set(&existing_character) // Pass the modified existing_character by reference
-                .returning(Character::as_select())
-                .get_result::<Character>(conn_update_block)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))
+            #[cfg(feature = "postgres-backend")]
+            {
+                diesel::update(characters::table.find(character_id_to_update))
+                    .set(&existing_character)
+                    .returning(Character::as_select())
+                    .get_result::<Character>(conn_update_block)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))
+            }
+
+            #[cfg(feature = "sqlite-backend")]
+            {
+                use diesel::prelude::*;
+                diesel::update(characters::table.find(character_id_to_update))
+                    .set(&existing_character)
+                    .execute(conn_update_block)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))?;
+
+                // Query back the updated row
+                characters::table
+                    .find(character_id_to_update)
+                    .first::<Character>(conn_update_block)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Query after update error: {e}")))
+            }
         })
         .await?;
 
@@ -665,7 +684,7 @@ impl CharacterService {
 
                     let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
                         lorebooks::table
-                            .filter(lorebooks::id.eq(lorebook_uuid))
+                            .filter(lorebooks::id.eq(lorebook_uuid.into()))
                             .filter(lorebooks::user_id.eq(user_id_val))
                             .count()
                             .get_result::<i64>(conn_sync)

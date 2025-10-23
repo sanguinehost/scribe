@@ -437,27 +437,55 @@ fn insert_chat_session(
     params: ChatSessionInsertParams,
     transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
-    diesel::insert_into(chat_sessions::table)
-        .values((
-            chat_sessions::id.eq(params.new_session_id),
-            chat_sessions::user_id.eq(params.user_id),
-            chat_sessions::character_id.eq(params.character_id),
-            chat_sessions::chat_mode.eq(params.chat_mode),
-            chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
-            chat_sessions::title_nonce.eq(params.title_nonce_bytes),
-            chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
-            chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
-            chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
-            chat_sessions::model_name.eq(params.default_model_name),
-            chat_sessions::history_management_strategy
-                .eq(params.default_history_management_strategy),
-            chat_sessions::history_management_limit.eq(params.default_history_management_limit),
-            chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
-            chat_sessions::prompt_template_id.eq(params.prompt_template_id),
-        ))
-        .returning(Chat::as_returning())
-        .get_result(transaction_conn)
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    #[cfg(feature = "postgres-backend")]
+    {
+        diesel::insert_into(chat_sessions::table)
+            .values((
+                chat_sessions::id.eq(params.new_session_id),
+                chat_sessions::user_id.eq(params.user_id),
+                chat_sessions::character_id.eq(params.character_id),
+                chat_sessions::chat_mode.eq(params.chat_mode),
+                chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
+                chat_sessions::title_nonce.eq(params.title_nonce_bytes),
+                chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
+                chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
+                chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
+                chat_sessions::model_name.eq(params.default_model_name),
+                chat_sessions::history_management_strategy
+                    .eq(params.default_history_management_strategy),
+                chat_sessions::history_management_limit.eq(params.default_history_management_limit),
+                chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
+                chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+            ))
+            .returning(Chat::as_returning())
+            .get_result(transaction_conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    }
+
+    #[cfg(feature = "sqlite-backend")]
+    {
+        use diesel::prelude::*;
+        diesel::insert_into(chat_sessions::table)
+            .values((
+                chat_sessions::id.eq(params.new_session_id),
+                chat_sessions::user_id.eq(params.user_id),
+                chat_sessions::character_id.eq(params.character_id),
+                chat_sessions::chat_mode.eq(params.chat_mode),
+                chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
+                chat_sessions::title_nonce.eq(params.title_nonce_bytes),
+                chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
+                chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
+                chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
+                chat_sessions::model_name.eq(params.default_model_name),
+                chat_sessions::history_management_strategy
+                    .eq(params.default_history_management_strategy),
+                chat_sessions::history_management_limit.eq(params.default_history_management_limit),
+                chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
+                chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+            ))
+            .execute(transaction_conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    }
 
     Ok(())
 }

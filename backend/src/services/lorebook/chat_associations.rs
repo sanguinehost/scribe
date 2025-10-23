@@ -1,5 +1,7 @@
 use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]
@@ -34,6 +36,7 @@ impl LorebookService {
                 .select(Chat::as_select()) // Changed ChatSession to Chat
                 .first::<Chat>(conn_sync) // Changed ChatSession to Chat
                 .optional()
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -69,6 +72,7 @@ impl LorebookService {
                     .select(lb_dsl::name)
                     .first::<String>(conn_sync)
                     .optional()
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| {
@@ -105,6 +109,7 @@ impl LorebookService {
                     .filter(cl_dsl::user_id.eq(current_user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
+                    .map_err(Into::into)
                     .map(|count| count > 0)
             })
             .await
@@ -145,6 +150,7 @@ impl LorebookService {
                         .filter(cclo_dsl::action.eq("disable"));
 
                     diesel::delete(target).execute(conn_sync)
+                        .map_err(Into::into)
                 })
                 .await;
 
@@ -199,6 +205,7 @@ impl LorebookService {
                     // However, explicitly setting it ensures the value is current if the trigger isn't comprehensive.
                     .set(csl_dsl::updated_at.eq(diesel::dsl::now))
                     .execute(conn_sync)
+                        .map_err(Into::into)
             })
             .await
             .map_err(|e| {
@@ -247,6 +254,7 @@ impl LorebookService {
                         .filter(lorebook_entries::user_id.eq(user_id_for_fetch))
                         .select(LorebookEntry::as_select())
                         .load::<LorebookEntry>(conn_sync)
+                        .map_err(Into::into)
                 }
             })
             .await;
@@ -443,6 +451,7 @@ impl LorebookService {
                 .select(cs_dsl::id)
                 .first::<crate::DbUuid>(conn_sync)
                 .optional()
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -486,6 +495,7 @@ impl LorebookService {
                         csl_dsl::created_at, // association creation time
                     ))
                     .load::<(crate::DbUuid, crate::DbUuid, crate::DbUuid, String, crate::DbDateTime)>(conn_sync)
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| {
@@ -551,6 +561,7 @@ impl LorebookService {
                     .select((cs_dsl::id, cs_dsl::character_id))
                     .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn_sync)
                     .optional()
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| {
@@ -591,7 +602,8 @@ impl LorebookService {
                     .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .select((csl_dsl::lorebook_id, l_dsl::name, csl_dsl::created_at))
-                    .load::<(crate::DbUuid, String, crate::DbDateTime)>(conn_sync)?;
+                    .load::<(crate::DbUuid, String, crate::DbDateTime)>(conn_sync)
+                    .map_err(Into::into)?;
 
                 // Get character-linked associations (only for character-based chats)
                 let character_associations = if let Some(char_id) = character_id {
@@ -600,7 +612,8 @@ impl LorebookService {
                         .filter(cl_dsl::character_id.eq(char_id))
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
-                        .load::<(crate::DbUuid, String, crate::DbDateTime)>(conn_sync)?
+                        .load::<(crate::DbUuid, String, crate::DbDateTime)>(conn_sync)
+                        .map_err(Into::into)?
                 } else {
                     Vec::new()
                 };
@@ -610,9 +623,10 @@ impl LorebookService {
                     .filter(cclo_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(cclo_dsl::user_id.eq(current_user_id))
                     .select((cclo_dsl::lorebook_id, cclo_dsl::action))
-                    .load::<(crate::DbUuid, String)>(conn_sync)?;
+                    .load::<(crate::DbUuid, String)>(conn_sync)
+                    .map_err(Into::into)?;
 
-                Ok::<_, diesel::result::Error>((
+                Ok::<_, AppError>((
                     chat_associations,
                     character_associations,
                     overrides,
@@ -762,6 +776,7 @@ impl LorebookService {
                     .select((cs_dsl::id, cs_dsl::character_id))
                     .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn_sync)
                     .optional()
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -785,7 +800,8 @@ impl LorebookService {
                     .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .count()
-                    .get_result::<i64>(conn_sync)?
+                    .get_result::<i64>(conn_sync)
+                    .map_err(Into::into)?
                     > 0;
 
                 // Check if it's a character-level association (only for character-based chats)
@@ -795,13 +811,14 @@ impl LorebookService {
                         .filter(cl_dsl::lorebook_id.eq(lorebook_id_param))
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .count()
-                        .get_result::<i64>(conn_sync)?
+                        .get_result::<i64>(conn_sync)
+                        .map_err(Into::into)?
                         > 0
                 } else {
                     false
                 };
 
-                Ok::<_, diesel::result::Error>((
+                Ok::<_, AppError>((
                     chat_association_exists,
                     character_association_exists,
                 ))
@@ -829,6 +846,7 @@ impl LorebookService {
                             .filter(csl_dsl::user_id.eq(current_user_id)),
                     )
                     .execute(conn_sync)
+                        .map_err(Into::into)
                 })
                 .await
                 .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -866,6 +884,7 @@ impl LorebookService {
                             .filter(csl_dsl::user_id.eq(current_user_id)),
                     )
                     .execute(conn_sync)
+                        .map_err(Into::into)
                 })
                 .await
                 .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -935,6 +954,7 @@ impl LorebookService {
                 .select(l_dsl::id)
                 .first::<crate::DbUuid>(conn_sync)
                 .optional()
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -973,6 +993,7 @@ impl LorebookService {
                         cs_dsl::title_nonce,      // chat_session title nonce
                     ))
                     .load::<(crate::DbUuid, Option<Vec<u8>>, Option<Vec<u8>>)>(conn_sync)
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| {

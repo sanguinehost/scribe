@@ -21,7 +21,7 @@ use crate::DbUuid as Uuid;
 )]
 #[cfg_attr(
     feature = "sqlite-backend",
-    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+    derive(diesel::expression::AsExpression)
 )]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum UserRole {
@@ -52,7 +52,7 @@ impl std::fmt::Display for UserRole {
 )]
 #[cfg_attr(
     feature = "sqlite-backend",
-    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+    derive(diesel::expression::AsExpression)
 )]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum AccountStatus {
@@ -207,9 +207,9 @@ pub struct UserDbQuery {
     pub role: UserRole,
     pub account_status: AccountStatus,
     pub default_persona_id: Option<crate::DbUuid>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
-    pub total_token_cost_cents: i64,
+    pub total_prompt_tokens: crate::DbInt,
+    pub total_completion_tokens: crate::DbInt,
+    pub total_token_cost_cents: crate::DbInt,
     pub tokens_last_reset_at: Option<DbDateTime>,
     pub token_usage_updated_at: DbDateTime,
     pub cached_credit_balance: Option<i32>,
@@ -290,9 +290,9 @@ pub struct User {
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
     pub default_persona_id: Option<crate::DbUuid>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
-    pub total_token_cost_cents: i64,
+    pub total_prompt_tokens: crate::DbInt,
+    pub total_completion_tokens: crate::DbInt,
+    pub total_token_cost_cents: crate::DbInt,
     pub tokens_last_reset_at: Option<DbDateTime>,
     pub token_usage_updated_at: DbDateTime,
 }
@@ -437,9 +437,9 @@ pub struct NewUser {
     pub recovery_dek_nonce: Option<Vec<u8>>,
     pub role: UserRole,
     pub account_status: AccountStatus,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
-    pub total_token_cost_cents: i64,
+    pub total_prompt_tokens: crate::DbInt,
+    pub total_completion_tokens: crate::DbInt,
+    pub total_token_cost_cents: crate::DbInt,
     pub tokens_last_reset_at: Option<DbDateTime>,
     pub token_usage_updated_at: DbDateTime,
 }

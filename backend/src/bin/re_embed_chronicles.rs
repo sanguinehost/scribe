@@ -318,8 +318,7 @@ async fn authenticate_user(
             move |conn| {
                 users::table
                     .filter(users::username.eq(&username))
-                    .select(UserDbQuery::as_select())
-                    .first(conn)
+                    .first::<UserDbQuery>(conn)
                     .optional()
             }
         })

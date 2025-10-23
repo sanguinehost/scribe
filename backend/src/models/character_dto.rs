@@ -1,6 +1,6 @@
 // backend/src/models/character_dto.rs
 
-use diesel_json::Json;
+use crate::db::Json;
 use serde::{Deserialize, Serialize};
 use crate::DbJson as JsonValue;
 

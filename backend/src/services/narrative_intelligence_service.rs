@@ -9,14 +9,14 @@
 //! Design for scale: Currently handles 1:1 chat processing but architected to eventually
 //! handle thousands/millions of events via batch processing and event queues.
 
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     auth::session_dek::SessionDek,
     errors::AppError,
     llm::{AiClient, EmbeddingClient},
@@ -550,17 +550,12 @@ impl NarrativeIntelligenceService {
         session_dek: &SessionDek,
     ) -> Result<UserPersonaContext, AppError> {
         // Get the user from the database to access their default_persona_id
-        let pool = self.app_state.pool.clone();
-        let conn = pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = crate::db::get_conn(&self.app_state.pool).await?;
 
         let user_db = conn
             .interact(move |db_conn| {
                 users_dsl::users
                     .filter(users_dsl::id.eq(user_id))
-                    .select(UserDbQuery::as_select())
                     .first::<UserDbQuery>(db_conn)
                     .optional()
             })

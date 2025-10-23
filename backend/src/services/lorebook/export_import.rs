@@ -1,5 +1,7 @@
 use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 impl LorebookService {
     pub async fn export_lorebook(
@@ -186,10 +188,25 @@ impl LorebookService {
 
         let lorebook = conn
             .interact(move |conn_sync| {
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook_db)
-                    .returning(Lorebook::as_returning())
-                    .get_result::<Lorebook>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .returning(Lorebook::as_returning())
+                        .get_result::<Lorebook>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .execute(conn_sync)?;
+
+                    lorebooks::table
+                        .find(new_lorebook_db.id)
+                        .first::<Lorebook>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {

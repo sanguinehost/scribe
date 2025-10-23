@@ -5,6 +5,7 @@ use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use crate::DbUuid as Uuid;
+use crate::models::OptionalStringArray;
 use validator::Validate;
 
 /// EventSource represents where a chronicle event originated from
@@ -65,7 +66,7 @@ pub struct ChronicleEvent {
     #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
     pub timestamp_iso8601: DbDateTime,
-    pub keywords: Option<Vec<Option<String>>>, // For search optimization
+    pub keywords: crate::models::OptionalStringArray, // For search optimization
     #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
@@ -185,7 +186,7 @@ pub struct NewChronicleEvent {
     pub summary_encrypted: Option<Vec<u8>>,
     pub summary_nonce: Option<Vec<u8>>,
     pub timestamp_iso8601: DbDateTime,
-    pub keywords: Option<Vec<Option<String>>>,
+    pub keywords: crate::models::OptionalStringArray,
     pub keywords_encrypted: Option<Vec<u8>>,
     pub keywords_nonce: Option<Vec<u8>>,
     pub chat_session_id: Option<crate::DbUuid>,
@@ -212,7 +213,7 @@ impl NewChronicleEvent {
             summary_encrypted: None, // Will be set by service if encryption is available
             summary_nonce: None,     // Will be set by service if encryption is available
             timestamp_iso8601: Utc::now().into(),
-            keywords: keywords.map(|k| k.into_iter().map(Some).collect()),
+            keywords: OptionalStringArray(keywords.map(|k| k.into_iter().map(Some).collect())),
             keywords_encrypted: None, // Will be set by service if encryption is available
             keywords_nonce: None,     // Will be set by service if encryption is available
             chat_session_id,
@@ -356,7 +357,7 @@ impl Default for EventFilter {
     fn default() -> Self {
         Self {
             event_type: None,
-            source: None,
+            source: None.into(),
             keywords: None,
             after_timestamp: None,
             before_timestamp: None,
@@ -382,7 +383,7 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             summary_encrypted: None, // Will be set by service if encryption is available
             summary_nonce: None,     // Will be set by service if encryption is available
             timestamp_iso8601: timestamp,
-            keywords: request.keywords.map(|k| k.into_iter().map(Some).collect()),
+            keywords: OptionalStringArray(request.keywords.map(|k| k.into_iter().map(Some).collect())),
             keywords_encrypted: None, // Will be set by service if encryption is available
             keywords_nonce: None,     // Will be set by service if encryption is available
             chat_session_id: request.chat_session_id,

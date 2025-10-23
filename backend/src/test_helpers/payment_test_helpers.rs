@@ -94,7 +94,7 @@ pub mod payment_test_helpers {
         let user_from_db: UserDbQuery = diesel::insert_into(users::table)
             .values(&new_user)
             .returning(UserDbQuery::as_returning())
-            .get_result::<UserDbQuery>(conn)
+            .get_result(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         // Convert UserDbQuery to User

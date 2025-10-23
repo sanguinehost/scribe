@@ -51,7 +51,7 @@ impl ChatOverrideService {
         let override_id_for_insert = Uuid::new_v4(); // Generate new ID for insert
 
         let new_override_for_db = NewChatCharacterOverride {
-            id: override_id_for_insert,
+            id: override_id_for_insert.into(),
             chat_session_id,
             original_character_id,
             field_name: field_name.clone(),
@@ -65,12 +65,12 @@ impl ChatOverrideService {
 
         // 3. Perform DB upsert using db_pool.interact
         let pool = self.db_pool.clone();
-        let upserted_override = pool
-            .get()
+        let conn = crate::db::get_conn(&pool)
             .await
             .map_err(|e| {
                 AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
-            })?
+            })?;
+        let upserted_override = conn
             .interact(move |conn| {
                 // Define what happens on conflict (update existing row)
                 let changes_to_apply = (
@@ -130,7 +130,7 @@ impl ChatOverrideService {
                 AppError::DbInteractError(format!(
                     "Database interaction error during override upsert: {e}"
                 ))
-            })??; // Handle pool.interact error and then the Result from the closure
+            }).and_then(|r| r)?; // Handle pool.interact error and then the Result from the closure
 
         tracing::info!(override_id = %upserted_override.id, "Chat character override created/updated successfully via service");
         Ok(upserted_override)
@@ -142,9 +142,7 @@ impl ChatOverrideService {
 mod tests {
     // use super::*;
     // use crate::test_helpers::db::create_test_db_pool;
-#[cfg(feature = "sqlite-backend")]
     // use crate::services::encryption_service::EncryptionService;
-#[cfg(feature = "sqlite-backend")]
     // use std::sync::Arc;
 
     // TODO: Add unit tests for ChatOverrideService

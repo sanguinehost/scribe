@@ -1,5 +1,7 @@
 // backend/src/routes/chronicles.rs
 
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -12,11 +14,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
+use crate::models::OptionalStringArray;
 use validator::Validate;
 
 use crate::{
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     auth::{session_dek::SessionDek, user_store::Backend as AuthBackend},
     errors::AppError,
     models::{
@@ -331,7 +332,7 @@ async fn create_event(
     // Also decrypt keywords if encrypted
     if event.has_encrypted_keywords() {
         let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-        event.keywords = Some(decrypted_keywords.into_iter().map(Some).collect());
+        event.keywords = OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
     }
 
     info!("Successfully created event {}", event.id);
@@ -371,7 +372,7 @@ async fn list_events(
         // Also decrypt keywords if encrypted
         if event.has_encrypted_keywords() {
             let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-            event.keywords = Some(decrypted_keywords.into_iter().map(Some).collect());
+            event.keywords = OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
         }
     }
 
@@ -601,6 +602,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(characters::name.nullable())
                 .first::<Option<String>>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -636,6 +638,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .filter(chat_sessions::id.eq(chat_session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .first::<crate::models::characters::Character>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -674,6 +677,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .order(chat_messages::created_at.asc())
                 .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -692,7 +696,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             {
                 if let Some(character) = character {
                     let variant_index = (first_assistant_msg.current_variant_index - 1) as usize;
-                    if let Some(alternate_greetings) = &character.alternate_greetings {
+                    if let Some(alternate_greetings) = &character.alternate_greetings.0 {
                         if let Some(Some(alternate_greeting)) =
                             alternate_greetings.get(variant_index)
                         {
@@ -728,8 +732,6 @@ async fn generate_chronicle_name(
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use crate::services::agentic::AgenticNarrativeFactory;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::prelude::*;
 
     // Validate the request
@@ -746,13 +748,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     );
 
     // Fetch chat messages for the session
-    let messages: Vec<ChatMessage> = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
-        })?
+        let messages: Vec<ChatMessage> = crate::db::get_conn(&state.pool)
+            .await?
         .interact(move |conn| {
             chat_messages::table
                 .inner_join(
@@ -765,6 +762,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .order(chat_messages::created_at.asc())
                 .select(ChatMessage::as_select())
                 .load::<ChatMessage>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?

@@ -52,7 +52,7 @@ pub struct UserPersona {
     pub mes_example: Option<Vec<u8>>,               // In schema.rs: Nullable<Bytea>
     pub system_prompt: Option<Vec<u8>>,             // In schema.rs: Nullable<Bytea>
     pub post_history_instructions: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea>
-    pub tags: Option<Vec<Option<String>>>,          // In schema.rs: Nullable<Array<Nullable<Text>>>
+    pub tags: crate::models::OptionalStringArray,          // In schema.rs: Nullable<Array<Nullable<Text>>>
     pub avatar: Option<String>,                     // In schema.rs: Nullable<Varchar>
 
     // Nonces
@@ -163,7 +163,7 @@ pub struct UserPersonaDataForClient {
     pub mes_example: Option<String>,               // Decrypted
     pub system_prompt: Option<String>,             // Decrypted
     pub post_history_instructions: Option<String>, // Decrypted
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub avatar: Option<String>,
     pub created_at: DbDateTime,
     pub updated_at: DbDateTime,
@@ -408,7 +408,7 @@ pub struct CreateUserPersonaDto {
     pub mes_example: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub avatar: Option<String>,
 }
 
@@ -424,7 +424,7 @@ pub struct UpdateUserPersonaDto {
     pub mes_example: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub avatar: Option<String>,
 }
 
@@ -543,7 +543,7 @@ mod tests {
             system_prompt_nonce: None,
             post_history_instructions: None,
             post_history_instructions_nonce: None,
-            tags: None,
+            tags: None.into(),
             avatar: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

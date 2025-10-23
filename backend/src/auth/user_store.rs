@@ -325,7 +325,7 @@ pub async fn create_user_in_db(
             diesel::insert_into(schema::users::table)
                 .values(new_user_payload)
                 .returning(UserDbQuery::as_returning())
-                .get_result::<UserDbQuery>(conn)
+                .get_result(conn)
                 .map_err(|e| {
                     crate::errors::AppError::DatabaseQueryError(format!(
                         "Diesel query failed for create_user_in_db: {}",

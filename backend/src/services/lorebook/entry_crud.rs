@@ -958,10 +958,25 @@ AppError::InternalServerErrorGeneric(format!(
         let updated_db_entry_struct = entry_to_update.clone(); // Clone for interact closure
         let updated_db_entry = conn
             .interact(move |conn_sync| {
-                diesel::update(lorebook_entries::table.find(entry_id))
-                    .set(&updated_db_entry_struct)
-                    .returning(LorebookEntry::as_returning())
-                    .get_result::<LorebookEntry>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::update(lorebook_entries::table.find(entry_id))
+                        .set(&updated_db_entry_struct)
+                        .returning(LorebookEntry::as_returning())
+                        .get_result::<LorebookEntry>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::update(lorebook_entries::table.find(entry_id))
+                        .set(&updated_db_entry_struct)
+                        .execute(conn_sync)?;
+
+                    lorebook_entries::table
+                        .find(entry_id)
+                        .first::<LorebookEntry>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {
@@ -1443,12 +1458,28 @@ AppError::InternalServerErrorGeneric(format!(
             updated_at: Some(current_time.into()),
         };
 
+        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let created_lorebook = conn
             .interact(move |conn_sync| {
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook)
-                    .returning(Lorebook::as_returning())
-                    .get_result::<Lorebook>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook)
+                        .returning(Lorebook::as_returning())
+                        .get_result::<Lorebook>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook)
+                        .execute(conn_sync)?;
+
+                    lorebooks::table
+                        .find(lorebook_id.into())
+                        .first::<Lorebook>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {

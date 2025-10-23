@@ -132,7 +132,7 @@ impl UserSettingsService {
                     use diesel::sql_query;
 
                     // First, insert with raw SQL without returning
-                    sql_query(
+                    let query = sql_query(
                         r#"
                         INSERT INTO user_settings (
                             user_id, default_model_name, default_context_total_token_limit,
@@ -143,11 +143,18 @@ impl UserSettingsService {
                             $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
                         )
                         "#,
-                    )
-                    .bind::<diesel::sql_types::Uuid, _>(user_id)
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
-                        default_model.clone(),
-                    ))
+                    );
+
+                    #[cfg(feature = "postgres-backend")]
+                    let query = query.bind::<diesel::sql_types::Uuid, _>(user_id);
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let query = query.bind::<diesel::sql_types::Text, _>(user_id);
+
+                    query
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
+                            default_model.clone(),
+                        ))
                     .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
                         context_total_limit,
                     ))
@@ -253,7 +260,7 @@ impl UserSettingsService {
                 None => {
                     // Create default settings first using raw SQL
                     use diesel::sql_query;
-                    sql_query(
+                    let query = sql_query(
                         r#"
                         INSERT INTO user_settings (
                             user_id, default_model_name, default_context_total_token_limit,
@@ -264,11 +271,18 @@ impl UserSettingsService {
                             $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
                         )
                         "#,
-                    )
-                    .bind::<diesel::sql_types::Uuid, _>(user_id)
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
-                        default_model.clone(),
-                    ))
+                    );
+
+                    #[cfg(feature = "postgres-backend")]
+                    let query = query.bind::<diesel::sql_types::Uuid, _>(user_id);
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let query = query.bind::<diesel::sql_types::Text, _>(user_id);
+
+                    query
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
+                            default_model.clone(),
+                        ))
                     .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
                         context_total_limit,
                     ))

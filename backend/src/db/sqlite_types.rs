@@ -74,6 +74,14 @@ impl std::fmt::Display for SqliteUuid {
     }
 }
 
+impl std::str::FromStr for SqliteUuid {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uuid::parse_str(s).map(SqliteUuid)
+    }
+}
+
 impl FromSql<Text, Sqlite> for SqliteUuid {
     fn from_sql(bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;

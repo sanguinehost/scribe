@@ -980,7 +980,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         agent_context_analysis::retry_count.eq(0),
                         agent_context_analysis::model_used.eq(Some("gemini-2.5-flash-lite")),
                         agent_context_analysis::created_at.eq(chrono::Utc::now().into()),
-                        agent_context_analysis::updated_at.eq(chrono::Utc::now()),
+                        agent_context_analysis::updated_at.eq(chrono::Utc::now().into()),
                     ))
                     .execute(conn)
                     .map(|_| generated_id)
@@ -1017,8 +1017,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         // Convert session_dek to SecretBox
         let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
 
-        // Convert planned searches to JSON value
-        let planned_searches_json = serde_json::to_value(planned_searches)?;
+        // Convert planned searches to JSON string
+        let planned_searches_json = serde_json::to_string(&planned_searches)?;
 
         // Encrypt fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {
@@ -1083,6 +1083,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     agent_context_analysis::updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update analysis: {}", e)))?;

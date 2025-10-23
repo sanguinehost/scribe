@@ -69,25 +69,69 @@ pub fn save_chat_message_internal(
     conn: &mut crate::DbConnection,
     message: DbInsertableChatMessage,
 ) -> Result<ChatMessage, AppError> {
-    // Changed DbChatMessage to ChatMessage
-    match diesel::insert_into(chat_messages::table)
-        .values(&message)
-        .returning(ChatMessage::as_select()) // Changed DbChatMessage
-        .get_result::<ChatMessage>(conn) // Changed DbChatMessage
+    #[cfg(feature = "postgres-backend")]
     {
-        Ok(inserted_message) => {
-            info!(message_id = %inserted_message.id, session_id = %inserted_message.session_id, "Chat message successfully inserted");
-            Ok(inserted_message)
+        use diesel::prelude::*;
+        match diesel::insert_into(chat_messages::table)
+            .values(&message)
+            .returning(ChatMessage::as_select())
+            .get_result::<ChatMessage>(conn)
+        {
+            Ok(inserted_message) => {
+                info!(message_id = %inserted_message.id, session_id = %inserted_message.session_id, "Chat message successfully inserted");
+                Ok(inserted_message)
+            }
+            Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+                warn!(session_id = %message.chat_id, role=?message.role, "Attempted to insert duplicate chat message (UniqueViolation), ignoring.");
+                Err(AppError::Conflict(
+                    "Potential duplicate message detected".to_string(),
+                ))
+            }
+            Err(e) => {
+                error!(session_id = %message.chat_id, error = ?e, "Error inserting chat message into database");
+                Err(AppError::DatabaseQueryError(e.to_string()))
+            }
         }
-        Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
-            warn!(session_id = %message.chat_id, role=?message.role, "Attempted to insert duplicate chat message (UniqueViolation), ignoring.");
-            Err(AppError::Conflict(
-                "Potential duplicate message detected".to_string(),
-            ))
-        }
-        Err(e) => {
-            error!(session_id = %message.chat_id, error = ?e, "Error inserting chat message into database");
-            Err(AppError::DatabaseQueryError(e.to_string()))
+    }
+
+    #[cfg(feature = "sqlite-backend")]
+    {
+        use diesel::prelude::*;
+        // SQLite doesn't support RETURNING, so we generate ID first then query back
+        let new_id = crate::DbUuid::new_v4();
+
+        match diesel::insert_into(chat_messages::table)
+            .values(&message)
+            .execute(conn)
+        {
+            Ok(_) => {
+                // Query back the inserted message - use the session_id and timestamp as a proxy
+                // since we don't have the generated ID
+                match chat_messages::table
+                    .filter(chat_messages::session_id.eq(message.chat_id))
+                    .order(chat_messages::created_at.desc())
+                    .first::<ChatMessage>(conn)
+                {
+                    Ok(inserted_message) => {
+                        info!(message_id = %inserted_message.id, session_id = %inserted_message.session_id, "Chat message successfully inserted");
+                        Ok(inserted_message)
+                    }
+                    Err(e) => {
+                        error!(session_id = %message.chat_id, error = ?e, "Error querying inserted chat message");
+                        Err(AppError::DatabaseQueryError(e.to_string()))
+                    }
+                }
+            }
+            Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+                warn!(session_id = %message.chat_id, role=?message.role, "Attempted to insert duplicate chat message (UniqueViolation), ignoring.");
+                Err(AppError::Conflict(
+                    "Potential duplicate message detected".to_string(),
+                ))
+            }
+            Err(e) => {
+                error!(session_id = %message.chat_id, error = ?e, "Error inserting chat message into database");
+                Err(AppError::DatabaseQueryError(e.to_string()))
+            }
         }
     }
 }
@@ -744,17 +788,18 @@ async fn update_cumulative_token_counts(
             diesel::update(users::table.find(user_id))
                 .set((
                     users::total_prompt_tokens
-                        .eq(users::total_prompt_tokens + (prompt_tokens as i64)),
+                        .eq(users::total_prompt_tokens + prompt_tokens as i32),
                     users::total_completion_tokens
-                        .eq(users::total_completion_tokens + (completion_tokens as i64)),
+                        .eq(users::total_completion_tokens + completion_tokens as i32),
                     users::total_token_cost_cents
-                        .eq(users::total_token_cost_cents + (estimated_cost_cents as i64)),
+                        .eq(users::total_token_cost_cents + estimated_cost_cents as i32),
                     users::token_usage_updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;
 
             Ok(())
         })
+            .map_err(Into::into)
     })
     .await
     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;

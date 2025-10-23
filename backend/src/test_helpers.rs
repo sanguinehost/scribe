@@ -5,38 +5,24 @@
 #[cfg(feature = "payment")]
 pub mod payment_test_helpers;
 
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use std::fmt;
 use std::net::SocketAddr;
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::embeddings::{
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use genai::chat::Usage; // Added ChunkConfig
                         // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::{
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
     // Ensure build_gemini_client is removed if present
@@ -72,14 +58,10 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 // Conditionally import documents module (PostgreSQL only)
 #[cfg(feature = "postgres-backend")]
 use crate::routes::documents::document_routes;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
 // Conditionally import pool type (PostgreSQL only - test_helpers currently PostgreSQL-only)
 #[cfg(feature = "postgres-backend")]
 use crate::PgPool;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
@@ -129,13 +111,9 @@ use tower_sessions::{
 use tracing::{debug, instrument, warn}; // Added debug
 use uuid::Uuid; // Added for CryptoProvider
 use crate::db::{DbUuid, DbPool}; // Added for backend-agnostic database types
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 #[cfg(feature = "local-llm")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "local-llm")]
@@ -1938,28 +1916,20 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use diesel::prelude::*;
     use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
                                              // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     use uuid::Uuid;
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
     use crate::PgPool;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
     // For logging macros
     use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
     use crate::auth::{self};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     #[cfg(feature = "postgres-backend")]
     use deadpool_diesel::postgres::{
         Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
@@ -1973,8 +1943,6 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     };
     // Keep if CryptoError is used directly, else it comes via crate::crypto
     use crate::models::users::NewUser; // Removed User as DbUser from here, already aliased DbUser at top
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                        // and UserDbQuery is imported above
 
     /// Creates a test database pool (backend-agnostic).
@@ -2075,9 +2043,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             .expect("Failed to create test DB pool");
 
         // Run migrations on the test database
-        let conn = pool
-            .get()
-            .await
+        let conn = crate::db::get_conn(&pool).await
             .expect("Failed to get test DB connection for migration");
         conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
             .await
@@ -2099,7 +2065,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = pool.get().await?;
+        let conn = crate::db::get_conn(pool).await
+            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
@@ -2152,7 +2119,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     diesel::insert_into(crate::schema::users::table)
                         .values(new_user_payload)
                         .returning(UserDbQuery::as_returning())
-                        .get_result::<UserDbQuery>(conn_actual)
+                        .get_result(conn_actual)
                 })
                 .await
                 .map_err(|interact_err| {
@@ -2173,7 +2140,6 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 // Query back using username (unique key)
                 crate::schema::users::table
                     .filter(crate::schema::users::username.eq(username_for_query))
-                    .select(UserDbQuery::as_select())
                     .first::<UserDbQuery>(conn_actual)
                     .map_err(|e| anyhow::anyhow!("Failed to query user after insert: {}", e))
             })
@@ -2204,7 +2170,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = pool.get().await?;
+        let conn = crate::db::get_conn(pool).await
+            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
@@ -2257,7 +2224,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     diesel::insert_into(crate::schema::users::table)
                         .values(new_user_payload)
                         .returning(UserDbQuery::as_returning())
-                        .get_result::<UserDbQuery>(conn_actual)
+                        .get_result(conn_actual)
                 })
                 .await
                 .map_err(|interact_err| {
@@ -2281,7 +2248,6 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 // Query back using username (unique key)
                 crate::schema::users::table
                     .filter(crate::schema::users::username.eq(username_for_query))
-                    .select(UserDbQuery::as_select())
                     .first::<UserDbQuery>(conn_actual)
                     .map_err(|e| anyhow::anyhow!("Failed to query pending user after insert: {}", e))
             })
@@ -2314,14 +2280,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         name: String,
     ) -> Result<crate::models::characters::Character, anyhow::Error> {
         use crate::models::character_card::NewCharacter;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         use crate::models::characters::Character; // Already imported at top of file usually
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                                   // use crate::schema::characters; // Already imported at top of file usually
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         use chrono::Utc;
 
         let conn = crate::db::get_conn(&pool).await?;
@@ -2418,10 +2378,28 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
         let character: Character = conn
             .interact(move |conn_actual| {
-                diesel::insert_into(crate::schema::characters::table)
-                    .values(new_character_payload) // new_character_payload is moved here
-                    .returning(Character::as_returning())
-                    .get_result::<Character>(conn_actual)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(crate::schema::characters::table)
+                        .values(new_character_payload)
+                        .returning(Character::as_returning())
+                        .get_result::<Character>(conn_actual)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    let name_for_query = new_character_payload.name.clone();
+                    diesel::insert_into(crate::schema::characters::table)
+                        .values(new_character_payload)
+                        .execute(conn_actual)?;
+
+                    // Query back the inserted row by name (unique for test data)
+                    crate::schema::characters::table
+                        .filter(crate::schema::characters::name.eq(name_for_query))
+                        .order_by(crate::schema::characters::created_at.desc())
+                        .first::<Character>(conn_actual)
+                }
             })
             .await
             .map_err(move |interact_err| {
@@ -2430,7 +2408,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     name_clone_for_error,
                     interact_err
                 )
-            })??;
+            }).and_then(|r| r)?;
 
         Ok(character)
     }
@@ -2549,10 +2527,7 @@ impl TestDataGuard {
     /// - Database connection cannot be obtained
     /// - Any of the database deletion operations fail
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
-        let conn = self
-            .pool
-            .get()
-            .await
+        let conn = crate::db::get_conn(&self.pool).await
             .context("Failed to get DB connection for cleanup")?;
 
         if !self.chat_ids.is_empty() {

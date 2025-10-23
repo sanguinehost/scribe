@@ -1,29 +1,15 @@
 // backend/src/routes/chat.rs
 
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::auth::session_dek::SessionDek;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::auth::user_store::Backend as AuthBackend;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::errors::AppError;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::characters::{Character, CharacterMetadata}; // Added Character
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::chats::CreateChatSessionPayload;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::models::chats::{
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     Chat,
     ChatMode,
     CreateMessageVariantPayload,
@@ -40,53 +26,25 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     SuggestedActionsResponse, // Corrected DbChatMessage to ChatMessage
 };
 use crate::privacy::logging::loggable_user_id;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::prompt_builder;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::prompt_templates::{Narration, NarrativeStyle, Perspective, ResponseLength, Tense};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::routes::chats::{get_chat_settings_handler, update_chat_settings_handler};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::schema::{self as app_schema, chat_sessions}; // Added app_schema for characters table
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::agentic::{
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
     narrative_tools::SearchKnowledgeBaseTool,
 };
 use crate::services::chat;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::chat::types::ScribeSseEvent;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::hybrid_token_counter::CountingMode;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::template_preference_service::TemplatePreferenceService;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::services::ChronicleService;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use secrecy::ExposeSecret; // Added for ExposeSecret
                            // RetrievedMetadata is no longer directly used in this file for RAG string construction
                            // use crate::services::embedding_pipeline::RetrievedMetadata;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                            // RetrievedChunk is used by prompt_builder, not directly here.
                            // use crate::services::embedding_pipeline::RetrievedChunk;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use crate::state::AppState;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -262,16 +220,14 @@ pub async fn generate_chat_response(
     debug!(%session_id, "Parsed session ID");
 
     // Fetch chat session owner ID for authorization check
-    let chat_session_owner_id = state_arc
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+    let chat_session_owner_id = crate::db::get_conn(&state_arc.pool)
+        .await?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<crate::DbUuid>(conn)
+                .map_err(Into::into)
             // .map_err(AppError::from) // Let the outer error handling manage this
         })
         .await
@@ -375,17 +331,15 @@ pub async fn generate_chat_response(
                 .to_string(),
         )
     })?;
-    let character_db_model = state_arc
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+    let character_db_model =
+    crate::db::get_conn(&state_arc.pool)
+            .await?
         .interact(move |conn| {
             app_schema::characters::table
                 .filter(app_schema::characters::id.eq(char_id))
                 .filter(app_schema::characters::user_id.eq(user_id_value))
-                .select(Character::as_select())
                 .first::<Character>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -457,17 +411,10 @@ pub async fn generate_chat_response(
     #[cfg(feature = "payment")]
     {
         use crate::services::encryption_service::EncryptionService;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         use crate::services::payment::{CreditService, SubscriptionService};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
-        let conn = state_arc
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let conn = crate::db::get_conn(&state_arc.pool)
+            .await?;
 
         // Get user's subscription tier
         let subscription_service =
@@ -763,8 +710,6 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         // For now, we'll create a placeholder since the agent analysis expects a user message
         // In the future, we might want to find the actual user message that prompted the variant
         use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
         ChatMessage {
             id: crate::DbUuid::new_v4(), // Temporary ID
             session_id,
@@ -800,8 +745,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             message_type_enum: MessageRole::User,
             content: &current_user_content_text,
             role_str: user_message_struct_to_save.role.clone(),
-            parts: user_message_struct_to_save.parts.clone(),
-            attachments: user_message_struct_to_save.attachments.clone(),
+            parts: user_message_struct_to_save.parts.clone().map(Into::into),
+            attachments: user_message_struct_to_save.attachments.clone().map(Into::into),
             user_dek_secret_box: Some(session_dek_arc.clone()),
             model_name: model_to_use.clone(),
             raw_prompt_debug: None, // User messages don't need raw prompt debug
@@ -882,11 +827,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
-                let conn = state_arc
-                    .pool
-                    .get()
-                    .await
-                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                let conn = crate::db::get_conn(&state_arc.pool)
+                    .await?;
 
                 let _ = conn
                     .interact(move |conn| {
@@ -905,11 +847,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
-                let conn = state_arc
-                    .pool
-                    .get()
-                    .await
-                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                    let conn = crate::db::get_conn(&state_arc.pool)
+                        .await?;
 
                 conn.interact(move |conn| {
                     AgentContextAnalysis::get_for_session(
@@ -920,8 +859,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     )
                 })
                 .await
-                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??
-            // Double ? to unwrap both Results
+                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+            // Single ? to unwrap the Result, keeping the Option
             } else {
                 None
             };
@@ -1041,7 +980,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     let session_override_opt = {
         use diesel::prelude::*;
         let pool_clone = state_arc.pool.clone();
-        let conn = pool_clone.get().await?;
+        let conn = crate::db::get_conn(&pool_clone).await?;
 
         conn.interact(move |conn| {
             chat_sessions::table
@@ -1049,10 +988,10 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .optional()
+                .map_err(AppError::from)
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
-        .map_err(|e| AppError::DatabaseQueryError(format!("Query error: {e}")))?
         .and_then(|chat| {
             chat.get_narrative_style_override(&*session_dek_arc)
                 .ok()
@@ -1242,7 +1181,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
-                                                _assistant_message_id = Some(msg_uuid);
+                                                _assistant_message_id = Some(msg_uuid.into());
 
                                                 // Update pre-processing analysis with assistant message ID if we have one
                                                 if let Some(analysis_id) = pre_processing_analysis_id_clone {
@@ -1260,7 +1199,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                                             AgentContextAnalysis::update_assistant_message_id(
                                                                 conn,
                                                                 analysis_id,
-                                                                msg_uuid,
+                                                                msg_uuid.into(),
                                                             )
                                                         })
                                                         .await;
@@ -1523,11 +1462,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     #[cfg(feature = "payment")]
                     if should_track_usage && total_tokens > 0 {
                         use crate::services::encryption_service::EncryptionService;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                         use crate::services::payment::UsageTrackingService;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
 
                         let usage_service = UsageTrackingService::new(
                             state_arc.config.as_ref().clone(),
@@ -2088,7 +2023,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = Uuid::parse_str(&message_id) {
-                                                _assistant_message_id = Some(msg_uuid);
+                                                _assistant_message_id = Some(msg_uuid.into());
                                             }
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,
@@ -2192,7 +2127,7 @@ pub async fn update_session_narrative_style_handler(
 
     // Load session, verify ownership, set override, and save in a transaction
     let pool_clone = state.pool.clone();
-    let conn = pool_clone.get().await?;
+    let conn = crate::db::get_conn(&pool_clone).await?;
 
     conn.interact(move |conn| {
         conn.transaction::<_, AppError, _>(|transaction_conn| {
@@ -2224,7 +2159,7 @@ pub async fn update_session_narrative_style_handler(
         })
     })
     .await
-    .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
+    .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}"))).and_then(|r| r)?;
 
     // Fetch and return the effective preferences (with override applied)
     // This requires fetching character ID and applying the cascade
@@ -2244,7 +2179,7 @@ pub async fn update_session_narrative_style_handler(
             Ok::<_, AppError>(session_data)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??;
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}"))).and_then(|r| r)?;
 
     // Get base template preferences (character or global)
     let mut effective_prefs =
@@ -2431,8 +2366,6 @@ pub async fn get_agent_analysis_handler(
     let session_exists = conn
         .interact(move |conn| {
             use crate::schema::chat_sessions;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             use diesel::prelude::*;
 
             chat_sessions::table
@@ -2441,6 +2374,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
                 .optional()
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
@@ -2466,8 +2400,6 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     let analysis_records = conn
         .interact(move |conn| {
             use crate::schema::agent_context_analysis::dsl::*;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             use diesel::prelude::*;
 
             let mut query = agent_context_analysis
@@ -2489,6 +2421,7 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 .order(created_at.desc())
                 .select(AgentContextAnalysis::as_select())
                 .load::<AgentContextAnalysis>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
@@ -2683,16 +2616,14 @@ pub async fn generate_suggested_actions(
     debug!(user_id = %user_id, session_id = %session_id, "User and session_id extracted");
 
     // Fetch chat session owner ID for authorization check
-    let chat_session_owner_id = state_arc
-        .pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
+        let chat_session_owner_id = crate::db::get_conn(&state_arc.pool)
+            .await?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<crate::DbUuid>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -2763,18 +2694,18 @@ pub async fn generate_suggested_actions(
             "Suggested actions not supported for non-character chat modes".to_string(),
         )
     })?;
-    let character_db_model = state_arc
-        .pool
-        .get()
-        .await?
+    let conn = crate::db::get_conn(&state_arc.pool).await?;
+    let character_db_model = conn
         .interact(move |conn| {
             app_schema::characters::table
                 .filter(app_schema::characters::id.eq(char_id))
                 .filter(app_schema::characters::user_id.eq(user_id)) // Ensure user owns character
-                .select(Character::as_select())
                 .first::<Character>(conn)
+                .map_err(AppError::from)
         })
-        .await??; // Double question mark for interact and then DB result
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        ?; // Unwrap the Result from the query
 
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
@@ -3028,9 +2959,8 @@ pub async fn get_chat_session_with_dek(
         AppError::Unauthorized("User not found in session".to_string())
     })?;
 
-    let chat_session_db = pool
-        .get()
-        .await?
+    let conn = crate::db::get_conn(&pool).await?;
+    let chat_session_db = conn
         .interact(move |conn| {
             crate::schema::chat_sessions::table
                 .filter(crate::schema::chat_sessions::id.eq(chat_id))
@@ -3039,7 +2969,9 @@ pub async fn get_chat_session_with_dek(
                 .first::<Chat>(conn)
                 .optional()
         })
-        .await??;
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        .map_err(AppError::from)?;
 
     if let Some(session_db) = chat_session_db {
         let dek_present = user.dek.is_some();
@@ -3095,10 +3027,8 @@ pub async fn create_or_update_chat_character_override_handler(
     tracing::Span::current().record("user_id", tracing::field::display(user_id));
 
     // 1. Verify ownership of the chat_session and get original_character_id
-    let chat_session_details = state
-        .pool
-        .get()
-        .await?
+    let conn = crate::db::get_conn(&state.pool).await?;
+    let chat_session_details = conn
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
@@ -3106,7 +3036,9 @@ pub async fn create_or_update_chat_character_override_handler(
                 .first::<(crate::DbUuid, Option<crate::DbUuid>)>(conn)
                 .optional()
         })
-        .await??
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        .map_err(AppError::from)?
         .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?;
 
     if chat_session_details.0 != user_id {
@@ -3177,19 +3109,21 @@ pub async fn expand_text_handler(
     tracing::Span::current().record("session_id", tracing::field::display(session_id));
 
     // Verify chat session ownership
-    let chat_session_owner_id = state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let chat_session_owner_id = {
+        let conn = crate::db::get_conn(&state.pool).await?;
+
+        conn.interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<crate::DbUuid>(conn)
                 .optional()
         })
-        .await??
-        .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?;
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?
+    };
 
     if chat_session_owner_id != user_id {
         error!(
@@ -3202,36 +3136,40 @@ pub async fn expand_text_handler(
     }
 
     // Get the active persona for this chat session
-    let _chat_settings = state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let _chat_settings = {
+        let conn = crate::db::get_conn(&state.pool).await?;
+
+        conn.interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::active_custom_persona_id)
                 .first::<Option<crate::DbUuid>>(conn)
+                .map_err(AppError::from)
         })
-        .await??;
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        ?
+    };
 
     // Use the full generation pipeline for text expansion - same as impersonate but with different system prompt
 
     // Get the existing chat messages to build proper context
-    let messages_result = state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let messages_result = {
+        let conn = crate::db::get_conn(&state.pool).await?;
+
+        conn.interact(move |conn| {
             use crate::schema::chat_messages;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
                 .select(crate::models::chats::ChatMessage::as_select())
                 .load(conn)
+                .map_err(AppError::from)
         })
-        .await??;
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        ?
+    };
 
     // Build the chat history in the format expected by the generation service
     let mut chat_history = Vec::new();
@@ -3277,14 +3215,11 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     let delete_state = state_arc.clone();
 
     // Get session data and model configuration like the normal chat flow does
-    let session_data = state_arc
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let session_data = {
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+
+        conn.interact(move |conn| {
             use crate::schema::chat_sessions;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((
@@ -3313,12 +3248,13 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     Option<crate::DbBigDecimal>,
                     Option<i32>,
                     Option<crate::DbBigDecimal>,
-                    Option<Vec<Option<String>>>,
+                    Option<crate::models::OptionalStringArray>,
                     Option<i32>,
                     Option<crate::DbUuid>,
                 )>(conn)
         })
-        .await??;
+        .await.and_then(|r| r)?
+    };
 
     // Build the special system prompt for text expansion with full context awareness
     let mut expansion_system_prompt = "You are a text expansion assistant helping the USER (not the character) expand their brief input text. ".to_string();
@@ -3443,14 +3379,11 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     // Delete the most recent message since we don't want it saved for expansion
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
-    let _ = delete_state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let _ = {
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+
+        conn.interact(move |conn| {
             use crate::schema::chat_messages;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             // Find the most recent message for this session and delete it (it will be the AI response we just generated)
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
@@ -3465,7 +3398,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 debug!("Deleted expansion message with ID: {}", recent_message.id);
             }
         })
-        .await;
+        .await
+    };
 
     if expanded_text.trim().is_empty() {
         warn!("AI returned empty text expansion");
@@ -3518,19 +3452,19 @@ pub async fn impersonate_handler(
     tracing::Span::current().record("session_id", tracing::field::display(session_id));
 
     // Verify chat session ownership
-    let chat_session_owner_id = state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let chat_session_owner_id = {
+        let conn = crate::db::get_conn(&state.pool).await?;
+
+        conn.interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<crate::DbUuid>(conn)
                 .optional()
         })
-        .await??
-        .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?;
+        .await.and_then(|r| r)?
+        .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?
+    };
 
     if chat_session_owner_id != user_id {
         error!(
@@ -3546,21 +3480,22 @@ pub async fn impersonate_handler(
     // This will include RAG, persona context, and all the same features as regular chat
 
     // Get the existing chat messages to build proper context
-    let messages_result = state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let messages_result = {
+        let conn = crate::db::get_conn(&state.pool).await?;
+
+        conn.interact(move |conn| {
             use crate::schema::chat_messages;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
                 .select(crate::models::chats::ChatMessage::as_select())
                 .load(conn)
+                .map_err(AppError::from)
         })
-        .await??;
+        .await
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        ?
+    };
 
     // Build the chat history in the format expected by the generation service
     let mut chat_history = Vec::new();
@@ -3618,14 +3553,11 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     let delete_state = state_arc.clone();
 
     // Get session data and model configuration like the normal chat flow does
-    let session_data = state_arc
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let session_data = {
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+
+        conn.interact(move |conn| {
             use crate::schema::chat_sessions;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select((
@@ -3654,12 +3586,13 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                     Option<crate::DbBigDecimal>,
                     Option<i32>,
                     Option<crate::DbBigDecimal>,
-                    Option<Vec<Option<String>>>,
+                    Option<crate::models::OptionalStringArray>,
                     Option<i32>,
                     Option<crate::DbUuid>,
                 )>(conn)
         })
-        .await??;
+        .await.and_then(|r| r)?
+    };
 
     // Build the special system prompt for impersonation
     let mut impersonation_system_prompt =
@@ -3775,14 +3708,11 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
     // Delete the most recent message since we don't want it saved for impersonation
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
-    let _ = delete_state
-        .pool
-        .get()
-        .await?
-        .interact(move |conn| {
+    let _ = {
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+
+        conn.interact(move |conn| {
             use crate::schema::chat_messages;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
             // Find the most recent message for this session and delete it (it will be the AI response we just generated)
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
@@ -3800,7 +3730,8 @@ use crate::db::pool_helpers::{SqlitePoolExt, SqliteInteractExt};
                 );
             }
         })
-        .await;
+        .await
+    };
 
     if generated_response.trim().is_empty() {
         warn!("AI returned empty impersonation response");

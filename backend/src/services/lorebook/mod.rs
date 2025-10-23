@@ -1,3 +1,6 @@
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+
 use crate::db::DbPool;
 use crate::{
     auth::user_store::Backend as AuthBackend,
@@ -196,13 +199,29 @@ impl LorebookService {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
+        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let lorebook = conn
             .interact(move |conn_sync| {
                 use diesel::RunQueryDsl;
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook_db)
-                    .returning(Lorebook::as_returning())
-                    .get_result(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .returning(Lorebook::as_returning())
+                        .get_result(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .execute(conn_sync)?;
+
+                    lorebooks::table
+                        .find(lorebook_id.into())
+                        .first::<Lorebook>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {

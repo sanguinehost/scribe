@@ -7,6 +7,7 @@ use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::errors::AppError;
+use crate::models::OptionalStringArray;
 use crate::models::chronicle::{
     CreateChronicleRequest, NewPlayerChronicle, PlayerChronicle, PlayerChronicleWithCounts,
     UpdateChronicleRequest, UpdatePlayerChronicle,
@@ -71,7 +72,7 @@ impl ChronicleService {
         #[cfg(feature = "sqlite-backend")]
         let chronicle = {
             // Clone the ID for querying back after insert
-            let chronicle_id = new_chronicle.id;
+            let chronicle_id = new_chronicle.id.expect("Chronicle ID must be set before insert");
 
             crate::db::with_conn(&self.db_pool, move |conn| {
                 diesel::insert_into(player_chronicles::table)
@@ -302,17 +303,17 @@ impl ChronicleService {
                     (Some(name), None) => diesel::update(target)
                         .set((
                             player_chronicles::name.eq(name),
-                            player_chronicles::updated_at.eq(Utc::now()),
+                            player_chronicles::updated_at.eq(Utc::now().into()),
                         ))
                         .execute(conn),
                     (None, Some(description)) => diesel::update(target)
                         .set((
                             player_chronicles::description.eq(description),
-                            player_chronicles::updated_at.eq(Utc::now()),
+                            player_chronicles::updated_at.eq(Utc::now().into()),
                         ))
                         .execute(conn),
                     (None, None) => diesel::update(target)
-                        .set(player_chronicles::updated_at.eq(Utc::now()))
+                        .set(player_chronicles::updated_at.eq(Utc::now().into()))
                         .execute(conn),
                 }
                 .map_err(|e| {
@@ -416,7 +417,7 @@ impl ChronicleService {
             }
 
             // Encrypt keywords if present
-            if let Some(ref keywords_vec) = new_event.keywords {
+            if let Some(ref keywords_vec) = new_event.keywords.0 {
                 // Convert Vec<Option<String>> to Vec<String> for serialization
                 let keywords: Vec<String> =
                     keywords_vec.iter().filter_map(|opt| opt.clone()).collect();
@@ -431,7 +432,7 @@ impl ChronicleService {
                             new_event.keywords_encrypted = Some(ciphertext);
                             new_event.keywords_nonce = Some(nonce);
                             // Clear plaintext keywords - we MUST NOT store plaintext in the database
-                            new_event.keywords = Some(vec![Some("[ENCRYPTED]".to_string())]);
+                            new_event.keywords = OptionalStringArray(Some(vec![Some("[ENCRYPTED]".to_string())]));
                             tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event keywords");
                         }
                         Err(e) => {
@@ -514,7 +515,7 @@ impl ChronicleService {
         #[cfg(feature = "sqlite-backend")]
         let event = {
             // Clone the ID for querying back after insert
-            let event_id = new_event.id;
+            let event_id = new_event.id.expect("Event ID must be set before insert");
 
             crate::db::with_conn(&self.db_pool, move |conn| {
                 diesel::insert_into(chronicle_events::table)

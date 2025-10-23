@@ -273,7 +273,6 @@ impl SessionStore for DieselSessionStore {
             // Move the clone into the closure
             let result = sessions::table
                 .find(&session_id_clone_for_closure) // Use the String clone here
-                .select(SessionRecord::as_select())
                 .first::<SessionRecord>(conn) // Load as SessionRecord (DB representation)
                 .optional() // Handle not found gracefully within Diesel
                 .map_err(|e| Self::map_diesel_error(&e))?;

@@ -260,7 +260,7 @@ pub async fn get_session_data_for_generation(
                     Option<i32>,
                     Option<crate::DbBigDecimal>,
                     Option<i32>,
-                    Option<Vec<Option<String>>>,
+                    Option<crate::models::OptionalStringArray>,
                     String,
                     Option<String>,
                 )>(conn_interaction)
@@ -305,7 +305,6 @@ pub async fn get_session_data_for_generation(
 
             let character_db: Character = characters::table
                 .filter(characters::id.eq(char_id))
-                .select(Character::as_select())
                 .first::<Character>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {

@@ -43,7 +43,7 @@ diesel::table! {
 
 diesel::table! {
     character_assets (id) {
-        id -> Integer,
+        id -> Text,
         character_id -> Text,
         asset_type -> Text,
         uri -> Nullable<Text>,
@@ -629,7 +629,7 @@ diesel::table! {
 
 diesel::table! {
     user_assets (id) {
-        id -> Integer,
+        id -> Text,
         user_id -> Text,
         persona_id -> Nullable<Text>,
         asset_type -> Text,

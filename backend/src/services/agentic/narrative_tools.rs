@@ -7,6 +7,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::{
+    errors::AppError,
     llm::{AiClient, EmbeddingClient},
     services::{
         embeddings::{ChatMessageChunkMetadata, ChronicleEventMetadata, LorebookChunkMetadata},
@@ -646,7 +647,7 @@ impl SearchKnowledgeBaseTool {
                 ))
                 .get_results::<(crate::DbUuid, String)>(conn)?;
 
-            Ok::<_, diesel::result::Error>((
+            Ok::<_, AppError>((
                 chat_associations,
                 character_associations,
                 overrides,
@@ -708,6 +709,7 @@ impl SearchKnowledgeBaseTool {
                 .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
                 .select(chat_sessions::id)
                 .get_results::<crate::DbUuid>(conn)
+                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -1669,8 +1671,8 @@ impl ScribeTool for AnalyzeLorebookTool {
         let user_id_for_check = user_id;
         let lorebook_exists = crate::db::with_conn(&pool, move |conn| {
             lorebooks_dsl::lorebooks
-                .filter(lorebooks_dsl::id.eq(lorebook_id_for_check))
-                .filter(lorebooks_dsl::user_id.eq(user_id_for_check))
+                .filter(lorebooks_dsl::id.eq(lorebook_id_for_check.into()))
+                .filter(lorebooks_dsl::user_id.eq(user_id_for_check.into()))
                 .select(lorebooks_dsl::id)
                 .first::<crate::DbUuid>(conn)
                 .optional()
@@ -1699,8 +1701,8 @@ impl ScribeTool for AnalyzeLorebookTool {
             bool,
         )> = crate::db::with_conn(&pool, move |conn| {
             lorebook_entries_dsl::lorebook_entries
-                .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id))
-                .filter(lorebook_entries_dsl::user_id.eq(user_id))
+                .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id.into()))
+                .filter(lorebook_entries_dsl::user_id.eq(user_id.into()))
                 .select((
                     lorebook_entries_dsl::id,
                     lorebook_entries_dsl::entry_title_ciphertext,

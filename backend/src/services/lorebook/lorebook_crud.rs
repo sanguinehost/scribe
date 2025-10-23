@@ -38,12 +38,28 @@ impl LorebookService {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
+        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let inserted_lorebook = conn
             .interact(move |conn_sync| {
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook_db)
-                    .returning(Lorebook::as_returning()) // Specify returning columns
-                    .get_result::<Lorebook>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .returning(Lorebook::as_returning())
+                        .get_result::<Lorebook>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .execute(conn_sync)?;
+
+                    lorebooks::table
+                        .find(lorebook_id.into())
+                        .first::<Lorebook>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {

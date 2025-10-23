@@ -1,3 +1,6 @@
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+
 use crate::{
     errors::AppError,
     models::{
@@ -105,6 +108,7 @@ impl LorebookService {
                     .filter(lorebooks::user_id.eq(user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| {
@@ -147,6 +151,7 @@ impl LorebookService {
                     .filter(chat_sessions::user_id.eq(user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
+                    .map_err(Into::into)
             })
             .await
             .map_err(|e| {

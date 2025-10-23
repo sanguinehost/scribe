@@ -46,6 +46,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
 use uuid::Uuid;
 use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -636,7 +638,7 @@ async fn fetch_and_verify_chat_ownership(
         .map_err(|e| {
             tracing::error!("Failed to verify chat ownership: {}", e);
             AppError::DbInteractError(e.to_string())
-        })?
+        })
 }
 
 /// Database operation to fetch chat and check ownership
@@ -735,7 +737,7 @@ async fn fetch_paginated_chat_messages(
     .map_err(|e| {
         tracing::error!("Join error in paginated messages query: {}", e);
         AppError::InternalServerErrorGeneric(e.to_string())
-    })?
+    })
 }
 
 /// Helper function to get the default variant content for a message (variant index 0)
@@ -1284,7 +1286,7 @@ pub async fn get_message_by_id_handler(
 
     let response_parts = message_db
         .parts
-        .unwrap_or_else(|| json!([{"text": decrypted_content_string}]));
+        .unwrap_or_else(|| json!([{"text": decrypted_content_string}]).into());
 
     // Decrypt raw prompt if available
     let decrypted_raw_prompt = match (
@@ -1331,7 +1333,7 @@ pub async fn get_message_by_id_handler(
             .unwrap_or_else(|| message_db.message_type.to_string()),
         content: decrypted_content_string,
         parts: response_parts,
-        attachments: message_db.attachments.unwrap_or_else(|| json!([])),
+        attachments: message_db.attachments.unwrap_or_else(|| json!([]).into()),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
         prompt_tokens: message_db.prompt_tokens,
@@ -1873,7 +1875,7 @@ async fn get_chat_token_usage_handler(
                 })
         })
         .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+        .map_err(|e| AppError::DbInteractError(e.to_string())).and_then(|r| r)?;
 
     let total_tokens = chat.total_prompt_tokens + chat.total_completion_tokens;
     let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
@@ -1890,12 +1892,13 @@ async fn get_chat_token_usage_handler(
                 .select(chat_messages::model_name)
                 .filter(chat_messages::session_id.eq(id))
                 .order_by(chat_messages::created_at.desc())
-                .first::<String>(conn)
+                .first::<Option<String>>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))??
+        .map_err(|e| AppError::DbInteractError(e.to_string())).and_then(|r| r)?
+        .flatten()
         .unwrap_or_else(|| "unknown".to_string());
 
     let token_usage = ChatTokenUsage {
@@ -1934,6 +1937,7 @@ pub async fn select_message_variant_handler(
             .filter(chat_messages::user_id.eq(user.id))
             .first::<Message>(conn)
             .optional()
+            .map_err(Into::into)
     })
     .await
     .map_err(|e| AppError::DbInteractError(e.to_string()))?
@@ -1996,8 +2000,8 @@ pub async fn select_message_variant_handler(
             .role
             .unwrap_or_else(|| updated_message.message_type.to_string()),
         content,
-        parts: updated_message.parts.unwrap_or_else(|| json!([])),
-        attachments: updated_message.attachments.unwrap_or_else(|| json!([])),
+        parts: updated_message.parts.unwrap_or_else(|| json!([]).into()),
+        attachments: updated_message.attachments.unwrap_or_else(|| json!([]).into()),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
@@ -2033,6 +2037,7 @@ async fn get_variant_content_by_index(
             .filter(message_variants::variant_index.eq(variant_index))
             .first::<crate::models::chats::MessageVariant>(conn)
             .optional()
+            .map_err(Into::into)
     })
     .await
     .map_err(|e| AppError::DbInteractError(e.to_string()))?

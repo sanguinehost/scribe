@@ -4,7 +4,7 @@ use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use crate::DbDateTime;
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel_json::Json;
+use crate::db::Json;
 use serde::{Deserialize, Serialize}; // Added Deserializer
 use crate::DbJson as Value; // Using Value for flexibility in extensions and mixed types like id
 use crate::DbJson as JsonValue;
@@ -479,14 +479,14 @@ pub struct NewCharacter {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub alternate_greetings: crate::models::OptionalStringArray,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<Json<JsonValue>>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
+    pub source: crate::models::OptionalStringArray,
+    pub group_only_greetings: crate::models::OptionalStringArray,
     pub creation_date: Option<DbDateTime>,
     pub modification_date: Option<DbDateTime>,
     pub extensions: Option<Json<JsonValue>>, // Added extensions field
@@ -524,7 +524,7 @@ pub struct NewCharacter {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
+    pub system_tags: crate::models::OptionalStringArray,
     pub token_budget: Option<i32>,
     pub usage_hints: Option<Json<JsonValue>>,
     pub user_persona: Option<Vec<u8>>,
@@ -687,6 +687,7 @@ impl NewCharacter {
             .extensions // data.extensions is HashMap<String, Value>
             .clone()
             .into_iter()
+            .map(|(k, v)| (k, v.into()))
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let extensions_option_json = if extensions_json.is_empty() {
             None
@@ -700,7 +701,8 @@ impl NewCharacter {
             .get("talkativeness")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<f64>().ok())
-            .and_then(|f| crate::DbBigDecimal::try_from(f).ok());
+            .and_then(|f| bigdecimal::BigDecimal::try_from(f).ok())
+            .map(|bd| bd.into());
 
         let fav = data.extensions.get("fav").and_then(|v| v.as_bool());
 
@@ -798,15 +800,15 @@ impl NewCharacter {
             creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             // Use converted vecs
-            alternate_greetings,
-            tags,
+            alternate_greetings: alternate_greetings.into(),
+            tags: tags.into(),
             spec,         // Use extracted spec
             spec_version, // Use extracted spec_version
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-            source,                  // Already converted to Option<Vec<Option<String>>>>
-            group_only_greetings,    // Already Option<Vec<Option<String>>>
+            source: source.into(),                  // Already converted to Option<Vec<Option<String>>>>
+            group_only_greetings: group_only_greetings.into(),    // Already Option<Vec<Option<String>>>
             creation_date: creation_date_ts, // Already Option<DbDateTime>
             modification_date: modification_date_ts, // Already Option<DbDateTime>
             extensions: extensions_option_json, // Assign the calculated extensions
@@ -835,7 +837,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: None.into(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -914,12 +916,12 @@ impl NewCharacter {
             creator_notes,
             system_prompt,
             post_history_instructions,
-            tags: if data.tags.is_empty() {
+            tags: (if data.tags.is_empty() {
                 None
             } else {
                 Some(data.tags.clone().into_iter().map(Some).collect())
-            },
-            alternate_greetings: if data.alternate_greetings.is_empty() {
+            }).into(),
+            alternate_greetings: (if data.alternate_greetings.is_empty() {
                 None
             } else {
                 Some(
@@ -929,11 +931,11 @@ impl NewCharacter {
                         .map(Some)
                         .collect(),
                 )
-            },
+            }).into(),
             extensions: if data.extensions.is_empty() {
                 None
             } else {
-                Some(diesel_json::Json(crate::DbJson::Object(
+                Some(Json(crate::DbJson::Object(
                     data.extensions.clone().into_iter().collect(),
                 )))
             },
@@ -951,8 +953,8 @@ impl NewCharacter {
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             nickname: None, // V2 doesn't have nickname
             // V2 specific fields, map to V3 equivalents or default
-            source: None,                     // V2 doesn't have a direct source field
-            group_only_greetings: None,       // V2 doesn't have this
+            source: None.into(),                     // V2 doesn't have a direct source field
+            group_only_greetings: None.into(),       // V2 doesn't have this
             creation_date: None,              // V2 doesn't have this
             modification_date: None,          // V2 doesn't have this
             creator_notes_multilingual: None, // V2 doesn't have this
@@ -981,7 +983,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: None.into(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -1020,7 +1022,6 @@ impl NewCharacter {
 #[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
 pub struct CharacterAsset {
     pub id: i32,
-    #[diesel(deserialize_as = crate::DbUuid)]
     pub character_id: crate::DbUuid, // Changed from i32
     #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
     pub asset_type: String, // Renamed from `type_` to match DB column
@@ -1048,7 +1049,6 @@ impl std::fmt::Debug for CharacterAsset {
 #[cfg_attr(feature = "sqlite-backend", diesel(check_for_backend(diesel::sqlite::Sqlite)))]
 pub struct NewCharacterAsset {
     pub id: Option<crate::DbUuid>,
-    #[diesel(serialize_as = crate::DbUuid)]
     pub character_id: crate::DbUuid, // Changed from i32
     pub asset_type: String, // Renamed from `type_`
     pub uri: String,

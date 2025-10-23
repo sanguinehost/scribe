@@ -163,5 +163,5 @@ pub async fn set_character_override(
             Ok(result)
         })
     })
-    .await?
+    .await
 }

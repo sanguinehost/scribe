@@ -449,12 +449,12 @@ impl AppError {
                     let params: serde_json::Map<String, serde_json::Value> = error
                         .params
                         .iter()
-                        .map(|(k, v)| (k.to_string(), json!(v).into()))
+                        .map(|(k, v)| (k.to_string(), json!(v)))
                         .collect();
                     if !params.is_empty() {
                         err_map.insert("params".to_string(), json!(params));
                     }
-                    json!(err_map)
+                    json!(err_map).into()
                 })
                 .collect();
             error_details.insert(field.to_string(), json!(field_errors));

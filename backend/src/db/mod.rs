@@ -49,6 +49,8 @@ pub mod sqlite_backend;
 #[cfg(feature = "sqlite-backend")]
 pub mod sqlite_types;
 
+pub mod json_wrapper;
+
 pub use backend_trait::DbBackend;
 pub use pool_helpers::{get_conn, with_conn};
 
@@ -104,6 +106,13 @@ pub type DbDateTime = chrono::DateTime<chrono::Utc>;
 #[cfg(feature = "sqlite-backend")]
 pub type DbDateTime = sqlite_types::SqliteDateTime;
 
+// Integer type - i64 for PostgreSQL (Int8), i32 for SQLite (Integer)
+#[cfg(feature = "postgres-backend")]
+pub type DbInt = i64;
+
+#[cfg(feature = "sqlite-backend")]
+pub type DbInt = i32;
+
 #[cfg(feature = "postgres-backend")]
 pub type DbJson = serde_json::Value;
 
@@ -122,3 +131,6 @@ compile_error!("Cannot enable both postgres-backend and sqlite-backend features 
 
 #[cfg(not(any(feature = "postgres-backend", feature = "sqlite-backend")))]
 compile_error!("Must enable either postgres-backend or sqlite-backend feature");
+
+// Export backend-agnostic Json<T> wrapper
+pub use json_wrapper::Json;
