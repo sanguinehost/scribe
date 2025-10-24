@@ -782,6 +782,7 @@ impl Character {
             character_version: default_empty_string_if_none(self.character_version),
             alternate_greetings: self
                 .alternate_greetings
+                .0
                 .map(|greetings| {
                     greetings
                         .into_iter()

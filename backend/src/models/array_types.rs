@@ -52,6 +52,11 @@ impl OptionalStringArray {
     pub fn as_ref(&self) -> Option<&Vec<Option<String>>> {
         self.0.as_ref()
     }
+
+    /// Create from a Vec<String> by wrapping each string in Some
+    pub fn from_vec_string(vec: Vec<String>) -> Self {
+        Self(Some(vec.into_iter().map(Some).collect()))
+    }
 }
 
 impl Default for OptionalStringArray {
