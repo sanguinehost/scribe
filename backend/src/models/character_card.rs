@@ -685,8 +685,7 @@ impl NewCharacter {
             .creator_notes_multilingual
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
-            .filter(|v| !v.is_null())
-            .map(|v| Json(v.into())); // Wrap Option<serde_json::Value> in Json<SqliteJson>
+            .filter(|v| !v.is_null()); // DbJson is already serde_json::Value, no wrapping needed
 
         let extensions_json = data
             .extensions // data.extensions is HashMap<String, serde_json::Value>
@@ -697,9 +696,7 @@ impl NewCharacter {
         let extensions_option_json = if extensions_json.is_empty() {
             None
         } else {
-            Some(Json(
-                serde_json::Value::Object(extensions_json.clone()).into(),
-            )) // Wrap Value in Json for Option<Json<Value>>
+            Some(serde_json::Value::Object(extensions_json.clone())) // DbJson is already serde_json::Value
         };
 
         // Extract SillyTavern v3 fields from extensions
@@ -944,9 +941,9 @@ impl NewCharacter {
             extensions: if data.extensions.is_empty() {
                 None
             } else {
-                Some(Json(crate::db::DbJson::Object(
+                Some(crate::db::DbJson::Object(
                     data.extensions.clone().into_iter().collect(),
-                )))
+                ))
             },
             spec: "chara_card_v2".to_string(), // V2 spec identifier
             spec_version: "2.0".to_string(),   // V2 version

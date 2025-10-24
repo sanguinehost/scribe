@@ -11,6 +11,7 @@ use crate::errors::AppError;
 use crate::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient,
 };
+use crate::models::OptionalStringArray;
 use crate::models::users::{User, UserDbQuery};
 use crate::privacy::logging::loggable_user_id;
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
@@ -335,8 +336,9 @@ impl UserPersonaService {
             }
         }
         if let Some(tags_val) = update_dto.tags {
-            if persona.tags.as_ref() != Some(&tags_val) {
-                persona.tags = Some(tags_val);
+            let new_tags = OptionalStringArray(Some(tags_val.into_iter().map(Some).collect()));
+            if persona.tags != new_tags {
+                persona.tags = new_tags;
                 changed = true;
             }
         }
