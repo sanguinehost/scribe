@@ -1,6 +1,6 @@
 #![allow(clippy::items_after_statements)]
 use crate::{
-use crate::db::DbId;
+    db::DbId,
     auth::session_dek::SessionDek,            // Import SessionDek
     auth::user_store::Backend as AuthBackend, // Import AuthBackend
     errors::AppError,

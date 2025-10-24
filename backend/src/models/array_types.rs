@@ -94,13 +94,14 @@ impl FromSql<Nullable<Array<Nullable<Text>>>, Pg> for OptionalStringArray {
 #[cfg(feature = "postgres-backend")]
 impl ToSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        // Serialize the inner vector, using an empty array if None
         match &self.0 {
+            Some(vec) => <&[Option<String>] as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(&vec.as_slice(), out),
             None => {
-                // When None, serialize as empty array
-                out.set_value(Vec::<Option<String>>::new());
-                Ok(serialize::IsNull::No)
+                // Use a static empty slice
+                const EMPTY: &[Option<String>] = &[];
+                <&[Option<String>] as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(&EMPTY, out)
             }
-            Some(vec) => <Vec<Option<String>> as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(vec, out),
         }
     }
 }
