@@ -1,8 +1,8 @@
 // backend/src/middleware/llm_security.rs
 // Security middleware for LLM operations
 
-use crate::{auth::user_store::Backend as AuthBackend, errors::AppError, state::AppState};
 use crate::db::DbId;
+use crate::{auth::user_store::Backend as AuthBackend, errors::AppError, state::AppState};
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::db::DbId;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 

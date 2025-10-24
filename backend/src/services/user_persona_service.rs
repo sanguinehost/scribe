@@ -1,7 +1,7 @@
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbId;
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::debug;
@@ -11,8 +11,8 @@ use crate::errors::AppError;
 use crate::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersona, UserPersonaDataForClient,
 };
-use crate::models::OptionalStringArray;
 use crate::models::users::{User, UserDbQuery};
+use crate::models::OptionalStringArray;
 use crate::privacy::logging::loggable_user_id;
 use crate::schema::{user_personas::dsl as user_personas_dsl, users::dsl as users_dsl};
 use crate::services::encryption_service::EncryptionService;
@@ -126,10 +126,13 @@ impl UserPersonaService {
             system_prompt_nonce: system_prompt_n,
             post_history_instructions: post_history_instructions_ct,
             post_history_instructions_nonce: post_history_instructions_n,
-            tags: create_dto.tags,
+            tags: create_dto
+                .tags
+                .map(OptionalStringArray::from_strings)
+                .unwrap_or_default(),
             avatar: create_dto.avatar,
-            created_at: chrono::DbTimestamp::now(),
-            updated_at: chrono::DbTimestamp::now(),
+            created_at: crate::db::DbTimestamp::now(),
+            updated_at: crate::db::DbTimestamp::now(),
         };
 
         let pool = self.db_pool.clone();
@@ -381,6 +384,8 @@ impl UserPersonaService {
             string_to_encrypt_for_description,
             dek.expose_secret().as_slice(),
         )?;
+        let new_description_ct = new_description_ct.into();
+        let new_description_n = new_description_n.into();
 
         if persona.description != new_description_ct
             || persona.description_nonce != Some(new_description_n.clone())
@@ -405,7 +410,7 @@ impl UserPersonaService {
             return persona.into_data_for_client(Some(dek));
         }
 
-        persona.updated_at = chrono::DbTimestamp::now();
+        persona.updated_at = crate::db::DbTimestamp::now();
 
         // Get a new connection instance from the cloned pool for the update interaction
         // pool was cloned at the start of the function. We need a connection from it.

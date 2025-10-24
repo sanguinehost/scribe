@@ -1,10 +1,10 @@
 // backend/src/routes/chat.rs
 
 use crate::auth::session_dek::SessionDek;
-use crate::db::DbId;
 use crate::auth::user_store::Backend as AuthBackend;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};
 use crate::models::characters::{Character, CharacterMetadata}; // Added Character

@@ -4,10 +4,10 @@
 #![allow(clippy::unused_async)]
 
 use crate::auth::session_dek::SessionDek;
-use crate::db::DbId;
 use crate::crypto;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};
 use crate::models::character_card::NewCharacter;

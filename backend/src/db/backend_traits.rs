@@ -31,6 +31,14 @@ use diesel::deserialize::FromSql;
 use diesel::serialize::ToSql;
 use diesel::sql_types::SqlType;
 
+// Backend type imports - conditionally compiled based on features
+// When a backend isn't enabled, we don't import it, which means trait bounds
+// referencing it will fail to compile. This is intentional - the DbType trait
+// design requires restructuring to avoid this issue.
+//
+// TODO: Refactor DbType trait to use conditional compilation or type parameters
+// instead of hardcoded Pg/Sqlite references in trait bounds.
+
 /// Unified trait for database types that can be stored in both PostgreSQL and SQLite
 ///
 /// This trait provides a clean abstraction over backend-specific type representations.
@@ -57,16 +65,22 @@ pub trait DbType: Sized + Send + std::fmt::Debug {
     /// PostgreSQL representation of this type
     ///
     /// Must implement Diesel's FromSql and ToSql for the PostgreSQL backend.
+    #[cfg(feature = "postgres-backend")]
     type PgType: FromSql<Self::PgSqlType, diesel::pg::Pg>
         + ToSql<Self::PgSqlType, diesel::pg::Pg>
         + Send;
+    #[cfg(not(feature = "postgres-backend"))]
+    type PgType: Send + std::fmt::Debug;
 
     /// SQLite representation of this type
     ///
     /// Must implement Diesel's FromSql and ToSql for the SQLite backend.
+    #[cfg(feature = "sqlite-backend")]
     type SqliteType: FromSql<Self::SqliteSqlType, diesel::sqlite::Sqlite>
         + ToSql<Self::SqliteSqlType, diesel::sqlite::Sqlite>
         + Send;
+    #[cfg(not(feature = "sqlite-backend"))]
+    type SqliteType: Send + std::fmt::Debug;
 
     /// Diesel SQL type used in PostgreSQL
     type PgSqlType: SqlType;

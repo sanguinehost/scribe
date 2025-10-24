@@ -7,7 +7,7 @@ pub mod payment_test_helpers;
 
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
-use crate::db::DbId;
+use crate::db::{DbId, DbTimestamp};
 use std::fmt;
 use std::net::SocketAddr;
 
@@ -22,6 +22,7 @@ use genai::chat::Usage; // Added ChunkConfig
                         // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
+use crate::models::OptionalStringArray;
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
@@ -95,7 +96,7 @@ use std::collections::VecDeque; // Added for MockQdrantClientService response qu
 use std::sync::{Arc, Mutex}; // Add Mutex import
 use tokio::net::TcpListener;
 // use tokio::sync::Mutex as TokioMutex; // Removed unused import
-use crate::db::{DbId, DbPool};
+use crate::db::DbPool;
 use hex; // Added for hex::decode
 use http_body_util::BodyExt; // For collect() on Body
 use reqwest;
@@ -1601,7 +1602,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     #[cfg(feature = "postgres-backend")]
     let (pool, test_db_name) = {
         let test_db_name_suffix = if multi_thread {
-            Some(DbDbId::new().to_string()) // Ensure it's String for suffix
+            Some(DbId::new().to_string()) // Ensure it's String for suffix
         } else {
             None
         };
@@ -2110,7 +2111,7 @@ pub mod db {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::DbTimestamp::now(),
+            token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
 
         // Clone username for SQLite query-back
@@ -2215,7 +2216,7 @@ pub mod db {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::DbTimestamp::now(),
+            token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
 
         // Clone username for SQLite query-back
@@ -2295,6 +2296,7 @@ pub mod db {
         let name_clone_for_error = name.clone();
 
         let new_character_payload = NewCharacter {
+            id: None,
             user_id,
             name: name_clone_for_payload.clone(),
             description: Some(
@@ -2321,7 +2323,7 @@ pub mod db {
             creator_notes_multilingual: None,
             nickname: None,
             personality: None,
-            tags: None,
+            tags: OptionalStringArray::default(),
             greeting_nonce: None,
             definition: None,
             default_voice: None,
@@ -2338,7 +2340,7 @@ pub mod db {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: OptionalStringArray::default(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -2363,10 +2365,10 @@ pub mod db {
             first_mes: None,
             creator_notes: None,
             system_prompt: None,
-            alternate_greetings: None,
+            alternate_greetings: OptionalStringArray::default(),
             creator: None,
-            source: None,
-            group_only_greetings: None,
+            source: OptionalStringArray::default(),
+            group_only_greetings: OptionalStringArray::default(),
             fav: None,
             world: None,
             creator_comment: None,

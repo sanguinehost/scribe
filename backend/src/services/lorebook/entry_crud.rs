@@ -1,8 +1,8 @@
 use super::get_user_from_session;
-use crate::db::DbId;
 use super::*;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 
 impl LorebookService {

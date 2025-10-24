@@ -48,7 +48,7 @@ pub mod postgres_backend;
 #[cfg(feature = "sqlite-backend")]
 pub mod sqlite_backend;
 
-// Always available since unified types need SQLite wrapper types
+// Always available because DbType trait requires both PgType and SqliteType
 pub mod sqlite_types;
 
 pub mod json_wrapper;

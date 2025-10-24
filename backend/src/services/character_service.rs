@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::db::DbId;
+use std::sync::Arc;
 
 use crate::db::DbPool; // Changed from sqlx::PgPool
 use chrono::{DateTime, Utc}; // For timestamps
@@ -196,8 +196,7 @@ impl CharacterService {
                     )
                 },
             ),
-            creator_notes_multilingual: create_dto
-                .creator_notes_multilingual,
+            creator_notes_multilingual: create_dto.creator_notes_multilingual,
             nickname: create_dto.nickname,
             source: OptionalStringArray(create_dto.source.and_then(|s_vec| {
                 if s_vec.is_empty() {

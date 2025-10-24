@@ -1,5 +1,5 @@
-use std::{cmp::min, pin::Pin, sync::Arc};
 use crate::db::DbId;
+use std::{cmp::min, pin::Pin, sync::Arc};
 
 use bigdecimal::{BigDecimal, ToPrimitive};
 use diesel::{

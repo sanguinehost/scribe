@@ -20,7 +20,10 @@
 //! - `DbStringArray`: String array wrapper (Postgres: TEXT[], SQLite: JSON array as TEXT)
 
 use super::backend_traits::DbType;
+
+// sqlite_types is always available for DbType trait implementations
 use super::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteUuid};
+
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::deserialize::{self, FromSql, FromSqlRow};
@@ -57,11 +60,17 @@ use uuid::Uuid;
 /// let id = DbId::new();
 /// let uuid: &Uuid = &id;  // Deref to Uuid
 /// ```
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, AsExpression, FromSqlRow,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = PgUuid)
 )]
-#[cfg_attr(feature = "postgres-backend", diesel(sql_type = PgUuid))]
-#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Text))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Text)
+)]
 #[repr(transparent)]
 pub struct DbId(Uuid);
 
@@ -69,6 +78,11 @@ impl DbId {
     /// Create a new random DbId
     pub fn new() -> Self {
         Self(Uuid::new_v4())
+    }
+
+    /// Create a new random DbId (alias for new())
+    pub fn new_v4() -> Self {
+        Self::new()
     }
 
     /// Create a DbId from a UUID
@@ -197,22 +211,17 @@ impl ToSql<Text, Sqlite> for DbId {
 ///
 /// Stores UTC timestamps in both PostgreSQL (TIMESTAMPTZ) and SQLite (INTEGER as Unix timestamp).
 /// Provides transparent access to the underlying `chrono::DateTime<Utc>` value.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    AsExpression,
-    FromSqlRow,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Timestamptz)
 )]
-#[cfg_attr(feature = "postgres-backend", diesel(sql_type = Timestamptz))]
-#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Timestamp))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Timestamp)
+)]
 #[repr(transparent)]
 pub struct DbTimestamp(DateTime<Utc>);
 
@@ -395,11 +404,17 @@ impl ToSql<Timestamp, Sqlite> for DbTimestamp {
 ///
 /// Stores decimal numbers in both PostgreSQL (NUMERIC) and SQLite (TEXT).
 /// Used for monetary values and other high-precision calculations.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, AsExpression, FromSqlRow,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Numeric)
 )]
-#[cfg_attr(feature = "postgres-backend", diesel(sql_type = Numeric))]
-#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Text))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Text)
+)]
 #[repr(transparent)]
 pub struct DbDecimal(BigDecimal);
 
@@ -529,9 +544,17 @@ impl ToSql<Text, Sqlite> for DbDecimal {
 ///
 /// Stores binary data in both PostgreSQL (BYTEA) and SQLite (BLOB).
 /// Used for encrypted data, hashes, and other binary content.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow)]
-#[cfg_attr(feature = "postgres-backend", diesel(sql_type = Bytea))]
-#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Binary))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Bytea)
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Binary)
+)]
 #[repr(transparent)]
 pub struct DbBlob(Vec<u8>);
 
@@ -656,10 +679,25 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 /// # SQLite Representation
 /// JSON array stored as TEXT: `["string1", "string2", null, "string3"]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Nullable<diesel::sql_types::Array<Nullable<Text>>>)
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(AsExpression, FromSqlRow),
+    diesel(sql_type = Text)
+)]
 #[repr(transparent)]
-pub struct DbStringArray(Option<Vec<Option<String>>>);
+pub struct DbStringArray(pub Option<Vec<Option<String>>>);
 
 impl DbStringArray {
+    /// Create a new DbStringArray from the raw inner value
+    pub fn new(data: Option<Vec<Option<String>>>) -> Self {
+        Self(data)
+    }
+
     /// Create an empty DbStringArray (None)
     pub fn empty() -> Self {
         Self(None)
@@ -675,9 +713,24 @@ impl DbStringArray {
         Self(Some(strings.into_iter().map(Some).collect()))
     }
 
+    /// Create from a vector of strings (backwards compatibility alias for from_strings)
+    pub fn from_vec_string(strings: Vec<String>) -> Self {
+        Self::from_strings(strings)
+    }
+
     /// Get the inner optional vector
     pub fn into_option(self) -> Option<Vec<Option<String>>> {
         self.0
+    }
+
+    /// Get a reference to the inner optional vector (for compatibility with old .as_ref() pattern)
+    pub fn as_ref(&self) -> Option<&Vec<Option<String>>> {
+        self.0.as_ref()
+    }
+
+    /// Get a direct reference to the inner Option (for pattern matching)
+    pub fn inner_ref(&self) -> &Option<Vec<Option<String>>> {
+        &self.0
     }
 
     /// Get as a slice (if present)

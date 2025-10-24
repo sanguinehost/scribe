@@ -255,43 +255,43 @@ impl UserPersona {
             personality: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.personality.clone(),
-                self.personality_nonce.clone(),
+                self.personality.clone().map(|b| b.into()),
+                self.personality_nonce.clone().map(|b| b.into()),
                 "personality",
             )?,
             scenario: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.scenario.clone(),
-                self.scenario_nonce.clone(),
+                self.scenario.clone().map(|b| b.into()),
+                self.scenario_nonce.clone().map(|b| b.into()),
                 "scenario",
             )?,
             first_mes: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.first_mes.clone(),
-                self.first_mes_nonce.clone(),
+                self.first_mes.clone().map(|b| b.into()),
+                self.first_mes_nonce.clone().map(|b| b.into()),
                 "first_mes",
             )?,
             mes_example: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.mes_example.clone(),
-                self.mes_example_nonce.clone(),
+                self.mes_example.clone().map(|b| b.into()),
+                self.mes_example_nonce.clone().map(|b| b.into()),
                 "mes_example",
             )?,
             system_prompt: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.system_prompt.clone(),
-                self.system_prompt_nonce.clone(),
+                self.system_prompt.clone().map(|b| b.into()),
+                self.system_prompt_nonce.clone().map(|b| b.into()),
                 "system_prompt",
             )?,
             post_history_instructions: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.post_history_instructions.clone(),
-                self.post_history_instructions_nonce.clone(),
+                self.post_history_instructions.clone().map(|b| b.into()),
+                self.post_history_instructions_nonce.clone().map(|b| b.into()),
                 "post_history_instructions",
             )?,
         })
@@ -413,7 +413,7 @@ pub struct CreateUserPersonaDto {
     pub mes_example: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<Vec<String>>,
     pub avatar: Option<String>,
 }
 
@@ -429,7 +429,7 @@ pub struct UpdateUserPersonaDto {
     pub mes_example: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<Vec<String>>,
     pub avatar: Option<String>,
 }
 

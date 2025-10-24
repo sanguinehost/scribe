@@ -1,6 +1,6 @@
 use crate::{
-    db::DbId,
     config::Config,
+    db::DbId,
     errors::AppError,
     models::characters::CharacterMetadata,
     prompt_templates::TEMPLATE_MANAGER,

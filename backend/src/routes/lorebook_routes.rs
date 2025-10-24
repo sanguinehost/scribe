@@ -1,8 +1,8 @@
 #![allow(clippy::items_after_statements)]
 use crate::{
-    db::DbId,
     auth::session_dek::SessionDek,            // Import SessionDek
     auth::user_store::Backend as AuthBackend, // Import AuthBackend
+    db::DbId,
     errors::AppError,
     middleware::rate_limit::ai_lorebook_rate_limit_middleware, // Import AI rate limiter
     models::lorebook_dtos::{

@@ -3,31 +3,35 @@
 //! This module provides newtype wrappers for types that don't have built-in
 //! SQLite support in Diesel. The newtype pattern allows us to implement
 //! Diesel's FromSql and ToSql traits without violating the orphan rule.
-
-#![cfg(feature = "sqlite-backend")]
+//!
+//! NOTE: This module is always compiled (not feature-gated) because the DbType trait
+//! in backend_traits.rs requires both PgType and SqliteType to be available even when
+//! only one backend is active. The trait impls within this module ARE feature-gated
+//! to ensure Diesel-specific code only compiles for the SQLite backend.
 
 use chrono::{DateTime, Utc};
-use diesel::deserialize::{self, FromSql};
-use diesel::serialize::{self, IsNull, Output, ToSql};
-use diesel::sql_types::{BigInt, Text, Timestamp};
-use diesel::sqlite::Sqlite;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// Import DbId for helper methods
+use super::unified_types::DbId;
+
+#[cfg(feature = "sqlite-backend")]
+use diesel::deserialize::{self, FromSql};
+#[cfg(feature = "sqlite-backend")]
+use diesel::serialize::{self, IsNull, Output, ToSql};
+#[cfg(feature = "sqlite-backend")]
+use diesel::sql_types::{BigInt, Text, Timestamp};
+#[cfg(feature = "sqlite-backend")]
+use diesel::sqlite::Sqlite;
+
 /// Newtype wrapper for UUID to enable SQLite TEXT mapping
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    diesel::expression::AsExpression,
-    diesel::deserialize::FromSqlRow,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow),
+    diesel(sql_type = diesel::sql_types::Text)
 )]
-#[diesel(sql_type = diesel::sql_types::Text)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct SqliteUuid(pub Uuid);
@@ -38,7 +42,7 @@ impl SqliteUuid {
     }
 
     pub fn new_v4() -> Self {
-        Self(DbId::new())
+        Self(Uuid::new_v4())
     }
 
     pub fn nil() -> Self {
@@ -92,6 +96,7 @@ impl std::str::FromStr for SqliteUuid {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<Text, Sqlite> for SqliteUuid {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -103,6 +108,7 @@ impl FromSql<Text, Sqlite> for SqliteUuid {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<Text, Sqlite> for SqliteUuid {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.to_string());
@@ -110,6 +116,7 @@ impl ToSql<Text, Sqlite> for SqliteUuid {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteUuid {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -128,19 +135,12 @@ impl Default for SqliteUuid {
 }
 
 /// Newtype wrapper for DateTime<Utc> to enable SQLite Timestamp mapping
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    diesel::expression::AsExpression,
-    diesel::deserialize::FromSqlRow,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow),
+    diesel(sql_type = diesel::sql_types::Timestamp)
 )]
-#[diesel(sql_type = diesel::sql_types::Timestamp)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct SqliteDateTime(pub DateTime<Utc>);
@@ -189,6 +189,7 @@ impl std::fmt::Display for SqliteDateTime {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<Timestamp, Sqlite> for SqliteDateTime {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -200,6 +201,7 @@ impl FromSql<Timestamp, Sqlite> for SqliteDateTime {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<Timestamp, Sqlite> for SqliteDateTime {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.timestamp());
@@ -207,6 +209,7 @@ impl ToSql<Timestamp, Sqlite> for SqliteDateTime {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<Timestamp>, Sqlite> for SqliteDateTime {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -219,6 +222,7 @@ impl FromSql<diesel::sql_types::Nullable<Timestamp>, Sqlite> for SqliteDateTime 
 }
 
 // Additional FromSql/ToSql implementations for BigInt (used by unified types)
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<BigInt, Sqlite> for SqliteDateTime {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -230,6 +234,7 @@ impl FromSql<BigInt, Sqlite> for SqliteDateTime {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<BigInt, Sqlite> for SqliteDateTime {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.timestamp());
@@ -237,6 +242,7 @@ impl ToSql<BigInt, Sqlite> for SqliteDateTime {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<BigInt>, Sqlite> for SqliteDateTime {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -300,16 +306,12 @@ impl Default for SqliteDateTime {
 }
 
 /// Newtype wrapper for serde_json::Value to enable SQLite TEXT mapping
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    diesel::expression::AsExpression,
-    diesel::deserialize::FromSqlRow,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow),
+    diesel(sql_type = diesel::sql_types::Text)
 )]
-#[diesel(sql_type = diesel::sql_types::Text)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct SqliteJson(pub serde_json::Value);
@@ -446,6 +448,7 @@ impl std::fmt::Display for SqliteJson {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<Text, Sqlite> for SqliteJson {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -457,6 +460,7 @@ impl FromSql<Text, Sqlite> for SqliteJson {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<Text, Sqlite> for SqliteJson {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         let json_str = serde_json::to_string(&self.0)
@@ -466,6 +470,7 @@ impl ToSql<Text, Sqlite> for SqliteJson {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -478,19 +483,12 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
 }
 
 /// Newtype wrapper for BigDecimal to enable SQLite Double mapping
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    diesel::expression::AsExpression,
-    diesel::deserialize::FromSqlRow,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow),
+    diesel(sql_type = diesel::sql_types::Double)
 )]
-#[diesel(sql_type = diesel::sql_types::Double)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct SqliteBigDecimal(pub bigdecimal::BigDecimal);
@@ -540,6 +538,7 @@ impl std::fmt::Display for SqliteBigDecimal {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -551,6 +550,7 @@ impl FromSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         use std::str::FromStr;
@@ -561,6 +561,7 @@ impl ToSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Double>, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -573,6 +574,7 @@ impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Double>, Sqlite> for
 }
 
 // Additional FromSql implementation for Integer (used for credit/payment fields in SQLite)
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -583,6 +585,7 @@ impl FromSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Integer>, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -593,6 +596,7 @@ impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Integer>, Sqlite> fo
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         use std::str::FromStr;
@@ -604,6 +608,7 @@ impl ToSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
 }
 
 // Additional FromSql/ToSql implementations for Text (used by unified types)
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<Text, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -616,6 +621,7 @@ impl FromSql<Text, Sqlite> for SqliteBigDecimal {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl ToSql<Text, Sqlite> for SqliteBigDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.to_string());
@@ -623,6 +629,7 @@ impl ToSql<Text, Sqlite> for SqliteBigDecimal {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,

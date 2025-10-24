@@ -397,12 +397,15 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // Convert to BigDecimal for database storage
     use std::str::FromStr;
+    use bigdecimal::BigDecimal;
     let actual_cost_bd = credits_cost_override.clone().unwrap_or_else(|| {
-        crate::db::DbDecimal::from_str(&actual_cost_dollars.to_string())
+        BigDecimal::from_str(&actual_cost_dollars.to_string())
+            .map(crate::db::DbDecimal::from)
             .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
     });
 
-    let modified_cost_bd = crate::db::DbDecimal::from_str(&modified_cost_dollars.to_string())
+    let modified_cost_bd = BigDecimal::from_str(&modified_cost_dollars.to_string())
+        .map(crate::db::DbDecimal::from)
         .unwrap_or_else(|_| crate::db::DbDecimal::from(0));
 
     let actual_charge_bd = crate::db::DbDecimal::from(0); // TODO: Implement actual charge tracking
@@ -795,11 +798,11 @@ async fn update_cumulative_token_counts(
             diesel::update(users::table.find(user_id))
                 .set((
                     users::total_prompt_tokens
-                        .eq(users::total_prompt_tokens + prompt_tokens as i32),
+                        .eq(users::total_prompt_tokens + prompt_tokens as i64),
                     users::total_completion_tokens
-                        .eq(users::total_completion_tokens + completion_tokens as i32),
+                        .eq(users::total_completion_tokens + completion_tokens as i64),
                     users::total_token_cost_cents
-                        .eq(users::total_token_cost_cents + estimated_cost_cents as i32),
+                        .eq(users::total_token_cost_cents + estimated_cost_cents as i64),
                     users::token_usage_updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;

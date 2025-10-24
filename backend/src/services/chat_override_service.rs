@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::db::DbId;
+use std::sync::Arc;
 
 use chrono::Utc;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};

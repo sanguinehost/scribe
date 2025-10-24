@@ -13,8 +13,10 @@
 #[cfg(feature = "postgres-backend")]
 pub use diesel_json::Json;
 
-// Add From trait for PostgreSQL backend to enable .into() conversions
+// NOTE: This impl violates the orphan rule (E0117) but is needed for .into() conversions
+// TODO: Replace with proper constructor calls (Json::new()) in calling code
 #[cfg(feature = "postgres-backend")]
+#[allow(clippy::from_over_into)]
 impl From<serde_json::Value> for Json<serde_json::Value> {
     fn from(value: serde_json::Value) -> Self {
         Json(value)

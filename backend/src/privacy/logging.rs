@@ -1,5 +1,5 @@
-use crate::privacy::{
 use crate::db::DbId;
+use crate::privacy::{
     LoggableCharacterId, LoggablePersonaId, LoggableSessionId, LoggableUserId, PrivacyConfig,
     SanitizedString,
 };

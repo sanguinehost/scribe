@@ -1,10 +1,10 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
-use crate::db::DbId;
 use super::retrieval::{
     decrypt_chat_content, decrypt_lorebook_content, RetrievedChunk, RetrievedMetadata,
 };
 use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
+use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::chats::ChatMessage;
 use crate::state::AppState;

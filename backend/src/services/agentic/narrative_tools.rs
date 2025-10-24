@@ -1,7 +1,7 @@
 //! Narrative tool implementations for the agentic framework.
 
-use async_trait::async_trait;
 use crate::db::DbId;
+use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -1678,15 +1678,18 @@ impl ScribeTool for AnalyzeLorebookTool {
         let user_id_for_check = user_id;
         let lorebook_exists = crate::db::with_conn(&pool, move |conn| {
             lorebooks_dsl::lorebooks
-                .filter(lorebooks_dsl::id.eq(lorebook_id_for_check.into()))
-                .filter(lorebooks_dsl::user_id.eq(user_id_for_check.into()))
+                .filter(lorebooks_dsl::id.eq(lorebook_id_for_check))
+                .filter(lorebooks_dsl::user_id.eq(user_id_for_check))
                 .select(lorebooks_dsl::id)
                 .first::<crate::db::DbId>(conn)
                 .optional()
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to verify lorebook ownership: {}", e))
+                })
         })
         .await
         .map_err(|e| {
-            ToolError::ExecutionFailed(format!("Failed to verify lorebook ownership: {}", e))
+            ToolError::ExecutionFailed(format!("{}", e))
         })?;
 
         if lorebook_exists.is_none() {
@@ -1708,8 +1711,8 @@ impl ScribeTool for AnalyzeLorebookTool {
             bool,
         )> = crate::db::with_conn(&pool, move |conn| {
             lorebook_entries_dsl::lorebook_entries
-                .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id.into()))
-                .filter(lorebook_entries_dsl::user_id.eq(user_id.into()))
+                .filter(lorebook_entries_dsl::lorebook_id.eq(lorebook_id))
+                .filter(lorebook_entries_dsl::user_id.eq(user_id))
                 .select((
                     lorebook_entries_dsl::id,
                     lorebook_entries_dsl::entry_title_ciphertext,
@@ -1730,6 +1733,7 @@ impl ScribeTool for AnalyzeLorebookTool {
                     Vec<u8>,
                     bool,
                 )>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load entries: {}", e)))
         })
         .await
         .map_err(|e| {

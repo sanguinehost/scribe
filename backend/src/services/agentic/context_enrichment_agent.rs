@@ -5,8 +5,8 @@
 //! (after LLM response) mode. All operations are fully auditable with encrypted
 //! storage of the agent's reasoning and execution log.
 
-use chrono::{DateTime, Utc};
 use crate::db::DbId;
+use chrono::{DateTime, Utc};
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
     JsonSchemaSpec, MessageContent,
@@ -956,11 +956,9 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     ))
                     .returning(agent_context_analysis::id)
                     .get_result::<crate::db::DbId>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create pending analysis: {}", e)))
             })
-            .await
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to create pending analysis: {}", e))
-            })?
+            .await?
         };
 
         #[cfg(feature = "sqlite-backend")]

@@ -814,9 +814,7 @@ impl Character {
             greeting: decrypted_fields.greeting,
             definition: decrypted_fields.definition,
             default_voice: default_empty_string_if_none(self.default_voice),
-            extensions: self
-                .extensions
-                .or_else(|| Some(serde_json::json!({}))),
+            extensions: self.extensions.or_else(|| Some(serde_json::json!({}))),
             data_id: self.data_id,
             category: default_empty_string_if_none(self.category),
             definition_visibility: default_empty_string_if_none(self.definition_visibility),
@@ -839,9 +837,7 @@ impl Character {
             system_prompt_visibility: default_empty_string_if_none(self.system_prompt_visibility),
             system_tags: OptionalStringArray(self.system_tags.0.or_else(|| Some(Vec::new()))),
             token_budget: self.token_budget,
-            usage_hints: self
-                .usage_hints
-                .or_else(|| Some(serde_json::json!({}))),
+            usage_hints: self.usage_hints.or_else(|| Some(serde_json::json!({}))),
             user_persona: decrypted_fields.user_persona,
             user_persona_visibility: default_empty_string_if_none(self.user_persona_visibility),
             visibility: default_empty_string_if_none(self.visibility),
