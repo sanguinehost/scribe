@@ -371,7 +371,7 @@ where
     use serde::de::{Error, Unexpected};
 
     let db_json = crate::DbJson::deserialize(deserializer)?;
-    let value = &*db_json;
+    let value: &serde_json::Value = &db_json;
 
     match value {
         serde_json::Value::Null => Ok(None),

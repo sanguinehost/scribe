@@ -306,7 +306,7 @@ impl SessionStore for DieselSessionStore {
                 id: *session_id, // Use original Id
                 data: session_data_map
                     .into_iter()
-                    .map(|(k, v)| (k, (*v).clone()))
+                    .map(|(k, v)| (k, v.clone()))
                     .collect(), // Convert DbJson to Value
                 expiry_date: OffsetDateTime::now_utc(), // Placeholder, will be overwritten
             };

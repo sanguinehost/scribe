@@ -13,6 +13,14 @@
 #[cfg(feature = "postgres-backend")]
 pub use diesel_json::Json;
 
+// Add From trait for PostgreSQL backend to enable .into() conversions
+#[cfg(feature = "postgres-backend")]
+impl From<serde_json::Value> for Json<serde_json::Value> {
+    fn from(value: serde_json::Value) -> Self {
+        Json(value)
+    }
+}
+
 // ============================================================================
 // SQLite Backend: Custom Generic JSON Wrapper
 // ============================================================================
