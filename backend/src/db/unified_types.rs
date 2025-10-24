@@ -205,6 +205,7 @@ impl ToSql<Text, Sqlite> for DbId {
     Eq,
     PartialOrd,
     Ord,
+    Hash,
     Serialize,
     Deserialize,
     AsExpression,
