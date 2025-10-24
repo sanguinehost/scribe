@@ -2110,7 +2110,7 @@ pub mod db {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::DbTimestamp::now(),
         };
 
         // Clone username for SQLite query-back
@@ -2215,7 +2215,7 @@ pub mod db {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::DbTimestamp::now(),
         };
 
         // Clone username for SQLite query-back
@@ -2290,7 +2290,7 @@ pub mod db {
         use chrono::Utc;
 
         let conn = crate::db::get_conn(&pool).await?;
-        let now = Utc::now();
+        let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
         let name_clone_for_error = name.clone();
 

@@ -127,8 +127,8 @@ impl UserPersonaService {
             post_history_instructions_nonce: post_history_instructions_n,
             tags: create_dto.tags,
             avatar: create_dto.avatar,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::DbTimestamp::now(),
+            updated_at: chrono::DbTimestamp::now(),
         };
 
         let pool = self.db_pool.clone();
@@ -403,7 +403,7 @@ impl UserPersonaService {
             return persona.into_data_for_client(Some(dek));
         }
 
-        persona.updated_at = chrono::Utc::now();
+        persona.updated_at = chrono::DbTimestamp::now();
 
         // Get a new connection instance from the cloned pool for the update interaction
         // pool was cloned at the start of the function. We need a connection from it.

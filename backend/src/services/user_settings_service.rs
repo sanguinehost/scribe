@@ -100,11 +100,11 @@ impl UserSettingsService {
 
                     let response = UserSettingsResponse {
                         default_model_name: settings.0,
-                        default_temperature: settings.1,
+                        default_temperature: settings.1.map(Into::into),
                         default_max_output_tokens: settings.2,
-                        default_frequency_penalty: settings.3,
-                        default_presence_penalty: settings.4,
-                        default_top_p: settings.5,
+                        default_frequency_penalty: settings.3.map(Into::into),
+                        default_presence_penalty: settings.4.map(Into::into),
+                        default_top_p: settings.5.map(Into::into),
                         default_top_k: settings.6,
                         default_seed: settings.7,
                         default_gemini_thinking_budget: settings.8,
@@ -411,11 +411,11 @@ impl UserSettingsService {
 
             let updated_settings = UserSettingsResponse {
                 default_model_name: settings.0,
-                default_temperature: settings.1,
+                default_temperature: settings.1.map(Into::into),
                 default_max_output_tokens: settings.2,
-                default_frequency_penalty: settings.3,
-                default_presence_penalty: settings.4,
-                default_top_p: settings.5,
+                default_frequency_penalty: settings.3.map(Into::into),
+                default_presence_penalty: settings.4.map(Into::into),
+                default_top_p: settings.5.map(Into::into),
                 default_top_k: settings.6,
                 default_seed: settings.7,
                 default_gemini_thinking_budget: settings.8,

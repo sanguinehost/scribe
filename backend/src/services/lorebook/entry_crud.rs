@@ -90,7 +90,7 @@ AppError::InternalServerErrorGeneric(format!(
             None => (None, None), // For None comment, store None for ciphertext and nonce
         };
 
-        let current_time = Utc::now();
+        let current_time = DbTimestamp::now();
         let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
@@ -952,7 +952,7 @@ AppError::InternalServerErrorGeneric(format!(
         }
 
         // Always update timestamp on PUT to ensure `updated_at` is current
-        entry_to_update.updated_at = Utc::now();
+        entry_to_update.updated_at = DbTimestamp::now();
 
         // 4. Save to DB
         let updated_db_entry_struct = entry_to_update.clone(); // Clone for interact closure
@@ -1245,7 +1245,7 @@ AppError::InternalServerErrorGeneric(format!(
         // No comment for AI-generated entries
         let (comment_ciphertext, comment_nonce) = (None, None);
 
-        let current_time = Utc::now();
+        let current_time = DbTimestamp::now();
         let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
@@ -1447,7 +1447,7 @@ AppError::InternalServerErrorGeneric(format!(
 
         // Create new AI lorebook
         let new_lorebook_id = DbId::new();
-        let current_time = Utc::now();
+        let current_time = DbTimestamp::now();
 
         let new_lorebook = crate::models::NewLorebook {
             id: new_lorebook_id.into(),

@@ -622,7 +622,7 @@ pub async fn create_session_handler(
     let session_response = SessionResponse {
         id: session.0,
         user_id: payload.user_id,
-        expires_at: session.1.unwrap_or_else(chrono::Utc::now),
+        expires_at: session.1.unwrap_or_else(crate::db::DbTimestamp::now),
     };
 
     Ok((StatusCode::CREATED, Json(session_response)))
@@ -764,7 +764,7 @@ pub async fn extend_session_handler(
     let session_response = SessionResponse {
         id: session.0,
         user_id,
-        expires_at: session.1.unwrap_or_else(chrono::Utc::now),
+        expires_at: session.1.unwrap_or_else(crate::db::DbTimestamp::now),
     };
 
     Ok(Json(session_response))
