@@ -1,21 +1,13 @@
 use crate::db::DbId;
-use uuid::Uuid;
 use crate::db::DbTimestamp;
-use uuid::Uuid;
 use crate::models::OptionalStringArray;
-use uuid::Uuid;
 use crate::schema::chronicle_events;
-use uuid::Uuid;
 use chrono::Utc;
-use uuid::Uuid;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
-use uuid::Uuid;
 use secrecy::ExposeSecret;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
-use uuid::Uuid;
 
 /// EventSource represents where a chronicle event originated from
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,17 +1,11 @@
 use crate::db::DbId;
-use uuid::Uuid;
 use crate::db::DbTimestamp;
-use uuid::Uuid;
 use crate::schema::player_chronicles;
-use uuid::Uuid;
 use chrono::Utc;
-use uuid::Uuid;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
-use uuid::Uuid;
 
 /// PlayerChronicle represents a story container that groups related chat sessions and events
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
