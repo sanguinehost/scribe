@@ -78,7 +78,15 @@ impl From<OptionalStringArray> for Option<Vec<Option<String>>> {
 impl FromSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
     fn from_sql(bytes: diesel::pg::PgValue) -> deserialize::Result<Self> {
         let value =
-            <Option<Vec<Option<String>>> as FromSql<Array<Nullable<Text>>, Pg>>::from_sql(bytes)?;
+            <Vec<Option<String>> as FromSql<Array<Nullable<Text>>, Pg>>::from_sql(bytes)?;
+        Ok(Self(Some(value)))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl FromSql<Nullable<Array<Nullable<Text>>>, Pg> for OptionalStringArray {
+    fn from_sql(bytes: diesel::pg::PgValue) -> deserialize::Result<Self> {
+        let value = <Option<Vec<Option<String>>> as FromSql<Nullable<Array<Nullable<Text>>>, Pg>>::from_sql(bytes)?;
         Ok(Self(value))
     }
 }
@@ -86,7 +94,14 @@ impl FromSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
 #[cfg(feature = "postgres-backend")]
 impl ToSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <Option<Vec<Option<String>>> as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(&self.0, out)
+        match &self.0 {
+            None => {
+                // When None, serialize as empty array
+                out.set_value(Vec::<Option<String>>::new());
+                Ok(serialize::IsNull::No)
+            }
+            Some(vec) => <Vec<Option<String>> as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(vec, out),
+        }
     }
 }
 

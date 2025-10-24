@@ -233,6 +233,12 @@ impl DbTimestamp {
     }
 }
 
+impl Default for DbTimestamp {
+    fn default() -> Self {
+        Self::now()
+    }
+}
+
 impl Deref for DbTimestamp {
     type Target = DateTime<Utc>;
 
@@ -262,6 +268,31 @@ impl From<DbTimestamp> for DateTime<Utc> {
 impl std::fmt::Display for DbTimestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.to_rfc3339())
+    }
+}
+
+// Arithmetic operations for DbTimestamp
+impl std::ops::Sub<DbTimestamp> for DbTimestamp {
+    type Output = chrono::TimeDelta;
+
+    fn sub(self, rhs: DbTimestamp) -> Self::Output {
+        self.0 - rhs.0
+    }
+}
+
+impl std::ops::Sub<chrono::TimeDelta> for DbTimestamp {
+    type Output = DbTimestamp;
+
+    fn sub(self, rhs: chrono::TimeDelta) -> Self::Output {
+        DbTimestamp(self.0 - rhs)
+    }
+}
+
+impl std::ops::Sub<DbTimestamp> for DateTime<Utc> {
+    type Output = chrono::TimeDelta;
+
+    fn sub(self, rhs: DbTimestamp) -> Self::Output {
+        self - rhs.0
     }
 }
 
