@@ -198,7 +198,7 @@ impl CharacterService {
             ),
             creator_notes_multilingual: create_dto
                 .creator_notes_multilingual
-                .map(|j| Json(j.clone())),
+                .map(Json),
             nickname: create_dto.nickname,
             source: OptionalStringArray(create_dto.source.and_then(|s_vec| {
                 if s_vec.is_empty() {
@@ -231,7 +231,7 @@ impl CharacterService {
             extensions: Some(
                 create_dto
                     .extensions
-                    .map_or_else(|| Json(serde_json::json!({}).into()), |j| j),
+                    .unwrap_or_else(|| Json(serde_json::json!({}))),
             ),
             persona: None,
             persona_nonce: None,

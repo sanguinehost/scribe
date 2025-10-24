@@ -59,7 +59,7 @@ async fn create_document_handler(
 
     let new_document = NewDocument {
         id: DbId::new(),
-        created_at: Utc::now(),
+        created_at: DbTimestamp::now(),
         title: payload.title,
         content: payload.content,
         kind: payload.kind,
@@ -312,7 +312,7 @@ async fn create_suggestion_handler(
         description: payload.description,
         is_resolved: false,
         user_id: user.id,
-        created_at: Utc::now(),
+        created_at: DbTimestamp::now(),
     };
 
     let suggestion = pool
