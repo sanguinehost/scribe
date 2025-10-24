@@ -132,7 +132,7 @@ impl AuthnBackend for Backend {
     #[instrument(skip(self), err)]
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
         let pool = self.pool.clone();
-        let id: crate::db::DbId = crate::db::DbId::from_uuid(*user_id);
+        let id = *user_id;
 
         // Added detailed logging for test_get_unauthorized debugging
         tracing::warn!(target: "auth_debug", "AuthBackend::get_user called with user_id from session: {}", loggable_user_id(*user_id));

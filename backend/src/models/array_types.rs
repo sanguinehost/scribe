@@ -96,7 +96,7 @@ impl ToSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         // Serialize the inner vector, using an empty array if None
         match &self.0 {
-            Some(vec) => <&[Option<String>] as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(&vec.as_slice(), out),
+            Some(vec) => <Vec<Option<String>> as ToSql<Array<Nullable<Text>>, Pg>>::to_sql(vec, out),
             None => {
                 // Use a static empty slice
                 const EMPTY: &[Option<String>] = &[];

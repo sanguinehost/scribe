@@ -398,8 +398,8 @@ impl From<CreateEventRequest> for NewChronicleEvent {
 
         Self {
             id: None,
-            chronicle_id: Uuid::nil(), // Will be set by the service
-            user_id: Uuid::nil(),      // Will be set by the service
+            chronicle_id: crate::db::DbId::nil(), // Will be set by the service
+            user_id: crate::db::DbId::nil(),      // Will be set by the service
             event_type: request.event_type,
             summary: request.summary,
             source: request.source.to_string(),

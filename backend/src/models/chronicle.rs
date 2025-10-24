@@ -121,7 +121,7 @@ impl From<CreateChronicleRequest> for NewPlayerChronicle {
     fn from(request: CreateChronicleRequest) -> Self {
         Self {
             id: None,
-            user_id: Uuid::nil(), // Will be set by the service
+            user_id: crate::db::DbId::nil(), // Will be set by the service
             name: request.name,
             description: request.description,
         }
