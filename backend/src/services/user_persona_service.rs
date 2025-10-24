@@ -110,8 +110,8 @@ impl UserPersonaService {
             id: DbId::new(),
             user_id: current_user.id,
             name: create_dto.name,
-            description: description_ciphertext,
-            description_nonce: Some(description_nonce_val), // Nonce must be Some if description is encrypted
+            description: description_ciphertext.into(),
+            description_nonce: Some(description_nonce_val.into()), // Nonce must be Some if description is encrypted
             spec: create_dto.spec,
             spec_version: create_dto.spec_version,
             personality: personality_ct,

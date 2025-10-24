@@ -1167,7 +1167,7 @@ AppError::InternalServerErrorGeneric(format!(
                     Err(AppError::NotFound("Lorebook entry not found".to_string()))
                 }
             }
-        }).await?
+        }).await
     }
 
     /// Create a lorebook entry for narrative intelligence processing

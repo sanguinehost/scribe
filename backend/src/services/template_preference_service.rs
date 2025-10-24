@@ -121,7 +121,7 @@ impl TemplatePreferenceService {
                 }
             }
         })
-        .await?
+        .await
     }
 
     /// Updates template preferences for a specific user and optional character.
@@ -291,7 +291,7 @@ impl TemplatePreferenceService {
             );
             Ok(TemplatePreferenceResponse::from(updated))
         })
-        .await?
+        .await
     }
 
     /// Deletes template preferences for a specific user and optional character.
@@ -329,6 +329,6 @@ impl TemplatePreferenceService {
 
             Ok(())
         })
-        .await?
+        .await
     }
 }

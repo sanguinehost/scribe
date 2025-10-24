@@ -229,7 +229,7 @@ impl UserSettingsService {
                 }
             }
         })
-        .await?
+        .await
     }
 
     /// Updates user settings for a specific user
@@ -437,7 +437,7 @@ impl UserSettingsService {
             info!(%user_id, "Updated user settings");
             Ok(updated_settings)
         })
-        .await?
+        .await
     }
 
     /// Deletes user settings for a specific user (resets to system defaults)
@@ -460,6 +460,6 @@ impl UserSettingsService {
 
             Ok(())
         })
-        .await?
+        .await
     }
 }
