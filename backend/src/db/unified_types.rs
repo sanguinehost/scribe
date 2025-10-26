@@ -256,16 +256,17 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbId {
     }
 }
 
-//#[cfg(feature = "sqlite-backend")]
-//impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbId {
-//    fn walk_ast<'b>(
-//        &'b self,
-//        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
-//    ) -> diesel::QueryResult<()> {
-//        pass.push_bind_param::<Text, _>(&self.to_string())?;
-//        Ok(())
-//    }
-//}
+#[cfg(feature = "sqlite-backend")]
+impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbId {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
+    ) -> diesel::QueryResult<()> {
+        let id_string = self.to_string();
+        pass.push_bind_param::<Text, _>(&id_string)?;
+        Ok(())
+    }
+}
 
 // Note: AsExpression<SqlType> is automatically implemented by Diesel via blanket impl
 // However, for Nullable<SqlType>, we need manual implementations since SqlType != Nullable<SqlType>
@@ -787,16 +788,19 @@ impl<'a> AsExpression<Nullable<Numeric>> for &'a DbDecimal {
     }
 }
 
-//#[cfg(feature = "sqlite-backend")]
-//impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbDecimal {
-//    fn walk_ast<'b>(
-//        &'b self,
-//        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
-//    ) -> diesel::QueryResult<()> {
-//        ToSql::<diesel::sql_types::Double, Sqlite>::to_sql(self, &mut pass.to_sql_literal())?;
-//        Ok(())
-//    }
-//}
+#[cfg(feature = "sqlite-backend")]
+impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbDecimal {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
+    ) -> diesel::QueryResult<()> {
+        use bigdecimal::ToPrimitive;
+        use std::str::FromStr;
+        let value = f64::from_str(&self.0.to_string()).unwrap_or(0.0);
+        pass.push_bind_param::<diesel::sql_types::Double, _>(&value)?;
+        Ok(())
+    }
+}
 
 // AsExpression implementations for Nullable<Double> (SQLite)
 #[cfg(feature = "sqlite-backend")]
