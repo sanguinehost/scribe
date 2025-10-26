@@ -229,7 +229,7 @@ impl CharacterService {
             extensions: Some(
                 create_dto
                     .extensions
-                    .unwrap_or_else(|| serde_json::json!({})),
+                    .unwrap_or_else(|| serde_json::json!({}).into()),
             ),
             persona: None,
             persona_nonce: None,

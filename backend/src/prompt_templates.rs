@@ -297,7 +297,8 @@ impl TemplateManager {
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
     fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
-        match &value {
+        let value_inner: serde_json::Value = value.clone().into();
+        match &value_inner {
             serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s

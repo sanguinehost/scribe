@@ -685,7 +685,8 @@ impl NewCharacter {
             .creator_notes_multilingual
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
-            .filter(|v| !v.is_null()); // DbJson is already serde_json::Value, no wrapping needed
+            .filter(|v| !v.is_null())
+            .map(|v| v.into()); // Convert Value to DbJson (SqliteJson on SQLite backend)
 
         let extensions_json = data
             .extensions // data.extensions is HashMap<String, serde_json::Value>
@@ -696,7 +697,7 @@ impl NewCharacter {
         let extensions_option_json = if extensions_json.is_empty() {
             None
         } else {
-            Some(serde_json::Value::Object(extensions_json.clone())) // DbJson is already serde_json::Value
+            Some(serde_json::Value::Object(extensions_json.clone()).into()) // Convert Value to DbJson
         };
 
         // Extract SillyTavern v3 fields from extensions

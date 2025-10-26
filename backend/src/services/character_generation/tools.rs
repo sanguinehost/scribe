@@ -70,7 +70,7 @@ impl CharacterGenerationTool {
         user_id: crate::db::DbId,
     ) -> Result<crate::DbJson, AppError> {
         let request: FieldGenerationRequest =
-            serde_json::from_value(parameters.clone()).map_err(|e| {
+            serde_json::from_value(parameters.clone().into()).map_err(|e| {
                 AppError::InvalidInput(format!("Invalid field generation parameters: {}", e))
             })?;
 
@@ -88,7 +88,7 @@ impl CharacterGenerationTool {
         user_id: crate::db::DbId,
     ) -> Result<crate::DbJson, AppError> {
         let request: FullCharacterRequest =
-            serde_json::from_value(parameters.clone()).map_err(|e| {
+            serde_json::from_value(parameters.clone().into()).map_err(|e| {
                 AppError::InvalidInput(format!("Invalid character creation parameters: {}", e))
             })?;
 
@@ -106,7 +106,7 @@ impl CharacterGenerationTool {
         user_id: crate::db::DbId,
     ) -> Result<crate::DbJson, AppError> {
         let request: EnhancementRequest =
-            serde_json::from_value(parameters.clone()).map_err(|e| {
+            serde_json::from_value(parameters.clone().into()).map_err(|e| {
                 AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e))
             })?;
 
@@ -128,7 +128,7 @@ impl CharacterGenerationTool {
         }
 
         let params: StyleAnalysisParams =
-            serde_json::from_value(parameters.clone()).map_err(|e| {
+            serde_json::from_value(parameters.clone().into()).map_err(|e| {
                 AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e))
             })?;
 
