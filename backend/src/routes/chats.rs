@@ -874,7 +874,10 @@ async fn process_messages_for_response(
             raw_prompt,
             prompt_tokens: msg_db.prompt_tokens,
             completion_tokens: msg_db.completion_tokens,
+            #[cfg(feature = "postgres-backend")]
             model_name: Some(msg_db.model_name),
+            #[cfg(feature = "sqlite-backend")]
+            model_name: msg_db.model_name,
             status: msg_db.status,
             error_message: msg_db.error_message,
             variant_count: msg_db.variant_count,
@@ -1185,7 +1188,10 @@ pub async fn create_message_handler(
         raw_prompt: client_message.raw_prompt,
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
+        #[cfg(feature = "postgres-backend")]
         model_name: Some(saved_db_message.model_name),
+        #[cfg(feature = "sqlite-backend")]
+        model_name: saved_db_message.model_name,
         status: saved_db_message.status,
         error_message: saved_db_message.error_message,
         variant_count: saved_db_message.variant_count,
@@ -1343,7 +1349,10 @@ pub async fn get_message_by_id_handler(
         raw_prompt: decrypted_raw_prompt,
         prompt_tokens: message_db.prompt_tokens,
         completion_tokens: message_db.completion_tokens,
+        #[cfg(feature = "postgres-backend")]
         model_name: Some(message_db.model_name),
+        #[cfg(feature = "sqlite-backend")]
+        model_name: message_db.model_name,
         status: message_db.status,
         error_message: message_db.error_message,
         variant_count: message_db.variant_count,
@@ -2021,7 +2030,10 @@ pub async fn select_message_variant_handler(
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
         completion_tokens: updated_message.completion_tokens,
+        #[cfg(feature = "postgres-backend")]
         model_name: Some(updated_message.model_name),
+        #[cfg(feature = "sqlite-backend")]
+        model_name: updated_message.model_name,
         status: updated_message.status,
         error_message: updated_message.error_message,
         variant_count: updated_message.variant_count,

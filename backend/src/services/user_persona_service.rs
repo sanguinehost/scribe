@@ -169,8 +169,7 @@ impl UserPersonaService {
 
                 #[cfg(feature = "sqlite-backend")]
                 {
-                    Self::insert_user_persona_sync(db_conn, &new_persona_db)
-                        .map_err(AppError::from)
+                    Self::insert_user_persona_sync(db_conn, &new_persona_db).map_err(AppError::from)
                 }
             })
             .await
