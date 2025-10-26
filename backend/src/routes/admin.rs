@@ -34,7 +34,7 @@ pub struct AdminUserListResponse {
 pub struct AdminUserDetailResponse {
     pub id: crate::db::DbId,
     pub username: String,
-    pub email: String,
+    pub email: Option<String>, // Nullable in SQLite, NOT NULL in PostgreSQL
     pub role: UserRole,
     pub account_status: String,
     pub created_at: crate::DbTimestamp,
