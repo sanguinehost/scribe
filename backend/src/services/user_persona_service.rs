@@ -384,8 +384,8 @@ impl UserPersonaService {
             string_to_encrypt_for_description,
             dek.expose_secret().as_slice(),
         )?;
-        let new_description_ct = new_description_ct.into();
-        let new_description_n = new_description_n.into();
+        let new_description_ct: crate::db::DbBlob = new_description_ct.into();
+        let new_description_n: crate::db::DbBlob = new_description_n.into();
 
         if persona.description != new_description_ct
             || persona.description_nonce != Some(new_description_n.clone())

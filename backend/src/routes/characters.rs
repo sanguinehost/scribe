@@ -763,8 +763,7 @@ pub async fn get_character_handler(
     let user_id_for_direct_clone = user_id_val;
     let character_id_for_direct_clone = character_id;
 
-    let directly_owned_character_result: Result<Option<Character>, AppError> =
-        crate::db::with_conn(&state.pool, move |conn| {
+    let directly_owned_character_opt: Option<Character> = match crate::db::with_conn(&state.pool, move |conn| {
             characters
                 .filter(
                     id.eq(character_id_for_direct_clone)
@@ -784,10 +783,13 @@ pub async fn get_character_handler(
                     AppError::DatabaseQueryError(e.to_string())
                 })
         })
-        .await?;
+        .await {
+            Ok(result) => result,
+            Err(e) => return Err(AppError::DbInteractError(format!("DB interaction failed: {e}"))),
+        };
 
-    match directly_owned_character_result {
-        Ok(Some(character)) => {
+    match directly_owned_character_opt {
+        Some(character) => {
             info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Character directly owned, attempting decryption");
 
             // Fetch associated lorebook
@@ -812,13 +814,9 @@ pub async fn get_character_handler(
                 }
             };
         }
-        Ok(None) => {
-            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Not directly owned or not found by combined query. Checking session link...");
+        None => {
+            info!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, "Not directly owned or not found. Checking session link...");
             // Proceed to session link check
-        }
-        Err(app_err) => {
-            error!(target: "test_log", handler = "get_character_handler", %character_id, %user_id_val, error = ?app_err, "Error from direct ownership check, propagating");
-            return Err(app_err); // Propagate DB errors from direct ownership check
         }
     }
 
@@ -1195,7 +1193,7 @@ pub async fn update_character_handler(
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_character_asset_handler(
-    Path((character_id, asset_id)): Path<(crate::db::DbId, crate::db::DbId)>,
+    Path((character_id, asset_id)): Path<(crate::db::DbId, i32)>,
     Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,

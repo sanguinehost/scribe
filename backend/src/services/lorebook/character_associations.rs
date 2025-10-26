@@ -26,12 +26,11 @@ impl LorebookService {
                     .filter(characters::user_id.eq(user.id))
                     .count()
                     .get_result::<i64>(conn_sync)
-                    .map_err(Into::into)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
                     .map(|count| count > 0)
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         if !character_exists {
             return Err(AppError::NotFound(
@@ -49,7 +48,7 @@ impl LorebookService {
                         .filter(lorebooks::user_id.eq(user_id))
                         .count()
                         .get_result::<i64>(conn_sync)
-                        .map_err(Into::into)
+                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
                         .map(|count| count > 0)
                 }
             })
@@ -79,11 +78,10 @@ impl LorebookService {
             diesel::insert_into(character_lorebooks::table)
                 .values(&new_association)
                 .execute(conn_sync)
-                .map_err(Into::into)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         Ok(())
     }
@@ -119,11 +117,10 @@ impl LorebookService {
                     .filter(character_lorebooks::user_id.eq(user.id))
                     .select(Lorebook::as_select())
                     .load::<Lorebook>(conn_sync)
-                    .map_err(Into::into)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         Ok(lorebooks
             .into_iter()
@@ -188,11 +185,10 @@ impl LorebookService {
                     dsl::updated_at.eq(excluded(dsl::updated_at)),
                 ))
                 .execute(conn_sync)
-                .map_err(Into::into)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-        .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         info!(
             "Successfully set character lorebook override for chat [REDACTED_UUID], lorebook [REDACTED_UUID], action: {}",
@@ -227,11 +223,10 @@ impl LorebookService {
                         .filter(dsl::user_id.eq(user_id)),
                 )
                 .execute(conn_sync)
-                .map_err(Into::into)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         if rows_deleted == 0 {
             return Err(AppError::NotFound(
@@ -267,11 +262,10 @@ impl LorebookService {
                     .filter(dsl::chat_session_id.eq(chat_session_id))
                     .filter(dsl::user_id.eq(user_id))
                     .load::<crate::models::lorebooks::ChatCharacterLorebookOverride>(conn_sync)
-                    .map_err(Into::into)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         Ok(overrides)
     }

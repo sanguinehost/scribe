@@ -12,8 +12,6 @@ use validator::{Validate, ValidationError};
 // Import necessary Diesel traits for manual enum mapping
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::expression::AsExpression;
-#[cfg(feature = "postgres-backend")]
-use diesel::pg::{Pg, PgValue};
 use diesel::serialize::{self, IsNull, Output, ToSql};
 use std::io::Write;
 
@@ -135,14 +133,7 @@ pub type SettingsTuple = (
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Chat {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
@@ -178,9 +169,6 @@ pub struct Chat {
     pub tokens_counted_at: DbTimestamp,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_credits_used: crate::db::DbDecimal,
-    #[cfg(feature = "postgres-backend")]
-    pub prompt_template_id: String,
-    #[cfg(feature = "sqlite-backend")]
     pub prompt_template_id: Option<String>,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
@@ -276,14 +264,7 @@ impl std::fmt::Debug for Chat {
 // New Chat for insertion
 #[derive(Insertable, Clone)]
 #[diesel(table_name = chat_sessions)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewChat {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
@@ -410,39 +391,10 @@ pub enum MessageRole {
 }
 
 // Manual ToSql implementation
-#[cfg(feature = "postgres-backend")]
-impl ToSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        match *self {
-            Self::User => out.write_all(b"User")?,
-            Self::Assistant => out.write_all(b"Assistant")?,
-            Self::System => out.write_all(b"System")?,
-        }
-        Ok(IsNull::No)
-    }
-}
 
 // Manual FromSql implementation
-#[cfg(feature = "postgres-backend")]
-impl FromSql<crate::schema::sql_types::MessageType, Pg> for MessageRole {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        match bytes.as_bytes() {
-            b"User" => Ok(Self::User),
-            b"Assistant" => Ok(Self::Assistant),
-            b"System" => Ok(Self::System),
-            unrecognized => {
-                error!(
-                    "Unrecognized message_type enum variant from DB: {:?}",
-                    String::from_utf8_lossy(unrecognized)
-                );
-                Err("Unrecognized enum variant from database".into())
-            }
-        }
-    }
-}
 
 // SQLite implementations for MessageRole (stored as TEXT)
-#[cfg(feature = "sqlite-backend")]
 impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for MessageRole {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::sqlite::Sqlite>) -> serialize::Result {
         let s = match *self {
@@ -455,7 +407,6 @@ impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for MessageRole {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for MessageRole {
     fn from_sql(
         bytes: <diesel::sqlite::Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -501,39 +452,10 @@ pub enum ChatMode {
 }
 
 // Manual ToSql implementation for ChatMode
-#[cfg(feature = "postgres-backend")]
-impl ToSql<diesel::sql_types::Text, Pg> for ChatMode {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        match *self {
-            ChatMode::Character => out.write_all(b"Character")?,
-            ChatMode::ScribeAssistant => out.write_all(b"ScribeAssistant")?,
-            ChatMode::Rpg => out.write_all(b"Rpg")?,
-        }
-        Ok(IsNull::No)
-    }
-}
 
 // Manual FromSql implementation for ChatMode
-#[cfg(feature = "postgres-backend")]
-impl FromSql<diesel::sql_types::Text, Pg> for ChatMode {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        match bytes.as_bytes() {
-            b"Character" => Ok(Self::Character),
-            b"ScribeAssistant" => Ok(Self::ScribeAssistant),
-            b"Rpg" => Ok(Self::Rpg),
-            unrecognized => {
-                error!(
-                    "Unrecognized chat_mode enum variant from DB: {:?}",
-                    String::from_utf8_lossy(unrecognized)
-                );
-                Err("Unrecognized enum variant from database".into())
-            }
-        }
-    }
-}
 
 // SQLite implementations for ChatMode (stored as TEXT)
-#[cfg(feature = "sqlite-backend")]
 impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for ChatMode {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, diesel::sqlite::Sqlite>) -> serialize::Result {
         let s = match *self {
@@ -546,7 +468,6 @@ impl ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for ChatMode {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for ChatMode {
     fn from_sql(
         bytes: <diesel::sqlite::Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -597,9 +518,6 @@ pub struct ChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    #[cfg(feature = "postgres-backend")]
-    pub model_name: String,
-    #[cfg(feature = "sqlite-backend")]
     pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -992,14 +910,7 @@ impl ChatMessage {
 // Chat Message model
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_messages)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Message {
     pub id: crate::db::DbId,
     pub session_id: crate::db::DbId,
@@ -1017,9 +928,6 @@ pub struct Message {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    #[cfg(feature = "postgres-backend")]
-    pub model_name: String,
-    #[cfg(feature = "sqlite-backend")]
     pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -1381,14 +1289,7 @@ impl std::fmt::Debug for ChatMessageForClient {
 // For inserting a new chat message
 #[derive(Insertable, Default, Clone)]
 #[diesel(table_name = chat_messages)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewChatMessage {
     pub id: crate::db::DbId,
     pub session_id: crate::db::DbId,
@@ -1449,14 +1350,7 @@ impl std::fmt::Debug for NewChatMessage {
 // For inserting a new chat message with better naming clarity
 #[derive(Insertable, Clone)]
 #[diesel(table_name = chat_messages)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbInsertableChatMessage {
     #[diesel(column_name = session_id)]
     pub chat_id: crate::db::DbId,
@@ -1472,9 +1366,6 @@ pub struct DbInsertableChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    #[cfg(feature = "postgres-backend")]
-    pub model_name: String,
-    #[cfg(feature = "sqlite-backend")]
     pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -3259,14 +3150,7 @@ mod tests {
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone, Associations)]
 #[diesel(belongs_to(ChatMessage, foreign_key = parent_message_id))]
 #[diesel(table_name = message_variants)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct MessageVariant {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,
@@ -3281,14 +3165,7 @@ pub struct MessageVariant {
 /// Insertable model for creating new message variants
 #[derive(Insertable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = message_variants)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewMessageVariant {
     pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,

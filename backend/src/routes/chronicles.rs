@@ -604,13 +604,10 @@ async fn get_character_name_for_session(
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(characters::name.nullable())
                 .first::<Option<String>>(conn)
-                .map_err(Into::into)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to fetch character name: {}", e))
-        })?;
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))??;
 
     Ok(character_name)
 }
@@ -640,12 +637,11 @@ async fn get_character_for_session(
                 .filter(chat_sessions::id.eq(chat_session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .first::<crate::models::characters::Character>(conn)
-                .map_err(Into::into)
+                .optional()
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
-        .optional()
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to fetch character: {}", e)))?;
+        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))??;
 
     Ok(character)
 }
@@ -677,7 +673,7 @@ async fn get_chat_messages(
                 .filter(chat_messages::session_id.eq(chat_session_id))
                 .order(chat_messages::created_at.asc())
                 .load::<ChatMessage>(conn)
-                .map_err(Into::into)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?
@@ -760,7 +756,7 @@ async fn generate_chronicle_name(
                 .filter(chat_messages::session_id.eq(request.chat_session_id))
                 .order(chat_messages::created_at.asc())
                 .load::<ChatMessage>(conn)
-                .map_err(Into::into)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))?

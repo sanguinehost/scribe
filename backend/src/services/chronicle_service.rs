@@ -630,12 +630,15 @@ impl ChronicleService {
             if let Some(limit) = filter.limit {
                 query = query.limit(limit);
             }
-            .map_err(|e| {
-                error!("Diesel error when getting events: {}", e);
-                AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
-            })
+
+            query
+                .load::<ChronicleEvent>(conn)
+                .map_err(|e| {
+                    error!("Diesel error when getting events: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
+                })
         })
-        .await?;
+        .await??;
 
         info!(
             "Retrieved {} events for chronicle {} for user {}",

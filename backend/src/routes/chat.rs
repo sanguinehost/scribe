@@ -863,10 +863,10 @@ pub async fn generate_chat_response(
                 })
                 .await
                 .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-            // Single ? to unwrap the Result, keeping the Option
+            // Single ? to unwrap the InteractError Result, keeping Result<Option<...>, AppError>
             } else {
-                None
-            };
+                Ok(None)
+            }?;
 
             match existing_analysis {
                 Some(analysis) if !should_refresh_analysis => {
@@ -993,7 +993,7 @@ pub async fn generate_chat_response(
                 .map_err(AppError::from)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
         .and_then(|chat| {
             chat.get_narrative_style_override(&*session_dek_arc)
                 .ok()
@@ -3254,8 +3254,7 @@ pub async fn expand_text_handler(
                     Option<crate::db::DbId>,
                 )>(conn)
         })
-        .await
-        .and_then(|r| r)?
+        .await??
     };
 
     // Build the special system prompt for text expansion with full context awareness
@@ -3321,7 +3320,10 @@ pub async fn expand_text_handler(
         top_p: session_data.9,
         stop_sequences: session_data
             .10
-            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
+            .and_then(|seq| {
+                let vec_opt: Option<Vec<Option<String>>> = seq.into();
+                vec_opt.map(|v| v.into_iter().collect::<Option<Vec<String>>>()).flatten()
+            }),
         seed: session_data.11,
         model_name: session_data.2,
         model_provider: session_data.3,
@@ -3463,8 +3465,7 @@ pub async fn impersonate_handler(
                 .first::<crate::db::DbId>(conn)
                 .optional()
         })
-        .await
-        .and_then(|r| r)?
+        .await??
         .ok_or_else(|| AppError::NotFound(format!("Chat session {session_id} not found")))?
     };
 
@@ -3591,8 +3592,7 @@ pub async fn impersonate_handler(
                     Option<crate::db::DbId>,
                 )>(conn)
         })
-        .await
-        .and_then(|r| r)?
+        .await??
     };
 
     // Build the special system prompt for impersonation
@@ -3645,7 +3645,10 @@ pub async fn impersonate_handler(
         top_p: session_data.9,
         stop_sequences: session_data
             .10
-            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
+            .and_then(|seq| {
+                let vec_opt: Option<Vec<Option<String>>> = seq.into();
+                vec_opt.map(|v| v.into_iter().collect::<Option<Vec<String>>>()).flatten()
+            }),
         seed: session_data.11,
         model_name: session_data.2,
         model_provider: session_data.3,

@@ -471,13 +471,9 @@ pub async fn get_session_data_for_generation(
         })
         .await
         {
-            Ok(Ok(ids)) => ids,
-            Ok(Err(e)) => {
-                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs (DB error).");
-                None
-            }
+            Ok(opt_ids) => opt_ids,
             Err(e) => {
-                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs (InteractError).");
+                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs");
                 None
             }
         }

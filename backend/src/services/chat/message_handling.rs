@@ -396,8 +396,8 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         };
 
     // Convert to BigDecimal for database storage
-    use std::str::FromStr;
     use bigdecimal::BigDecimal;
+    use std::str::FromStr;
     let actual_cost_bd = credits_cost_override.clone().unwrap_or_else(|| {
         BigDecimal::from_str(&actual_cost_dollars.to_string())
             .map(crate::db::DbDecimal::from)

@@ -1684,13 +1684,14 @@ impl ScribeTool for AnalyzeLorebookTool {
                 .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to verify lorebook ownership: {}", e))
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to verify lorebook ownership: {}",
+                        e
+                    ))
                 })
         })
         .await
-        .map_err(|e| {
-            ToolError::ExecutionFailed(format!("{}", e))
-        })?;
+        .map_err(|e| ToolError::ExecutionFailed(format!("{}", e)))?;
 
         if lorebook_exists.is_none() {
             return Err(ToolError::ExecutionFailed(format!(

@@ -1543,13 +1543,11 @@ pub async fn delete_trailing_messages_handler(
         {
             crate::db::with_conn(&pool, move |conn| {
                 // This closure moves the original message_ids
-                diesel::delete(
-                    crate::schema::old_votes::table // Use old_votes
-                        .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
-                        .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_ids)) // Use original message_ids here
-                )
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                diesel::delete(crate::schema::old_votes::table) // Use old_votes
+                    .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
+                    .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_ids)) // Use original message_ids here
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
@@ -1572,13 +1570,11 @@ pub async fn delete_trailing_messages_handler(
         // Now delete the messages from PostgreSQL
         crate::db::with_conn(&pool, move |conn| {
             // This closure moves the clone
-            diesel::delete(
-                chat_messages::table
-                    .filter(chat_messages::session_id.eq(chat_id))
-                    .filter(chat_messages::id.eq_any(message_ids_clone_for_messages)), // Use the clone here
-            )
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            diesel::delete(chat_messages::table)
+                .filter(chat_messages::session_id.eq(chat_id))
+                .filter(chat_messages::id.eq_any(message_ids_clone_for_messages)) // Use the clone here
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
@@ -1889,14 +1885,13 @@ async fn get_chat_token_usage_handler(
                 .select(chat_messages::model_name)
                 .filter(chat_messages::session_id.eq(id))
                 .order_by(chat_messages::created_at.desc())
-                .first::<Option<String>>(conn)
+                .first::<String>(conn) // PostgreSQL: model_name is NOT NULL
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| AppError::DbInteractError(e.to_string()))
         .and_then(|r| r)?
-        .flatten()
         .unwrap_or_else(|| "unknown".to_string());
 
     let token_usage = ChatTokenUsage {
@@ -1937,9 +1932,7 @@ pub async fn select_message_variant_handler(
             .optional()
             .map_err(Into::into)
     })
-    .await
-    .map_err(|e| AppError::DbInteractError(e.to_string()))?
-    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+    .await?
     .ok_or_else(|| AppError::NotFound("Message not found".to_string()))?;
 
     // Validate variant index
@@ -2040,9 +2033,7 @@ async fn get_variant_content_by_index(
             .optional()
             .map_err(Into::into)
     })
-    .await
-    .map_err(|e| AppError::DbInteractError(e.to_string()))?
-    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    .await?;
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;

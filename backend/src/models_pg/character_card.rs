@@ -454,14 +454,7 @@ use crate::schema::character_assets;
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
 #[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewCharacter {
     pub id: Option<crate::db::DbId>,
     pub user_id: crate::db::DbId,
@@ -530,7 +523,7 @@ pub struct NewCharacter {
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
     pub system_tags: crate::models::OptionalStringArray,
-    pub token_budget: Option<i32>,
+    pub token_budget: Option<i64>, // Int8 in PostgreSQL
     pub usage_hints: Option<DbJson>,
     pub user_persona: Option<Vec<u8>>,
     pub user_persona_nonce: Option<Vec<u8>>,
@@ -543,7 +536,7 @@ pub struct NewCharacter {
     pub creator_comment: Option<Vec<u8>>,
     pub creator_comment_nonce: Option<Vec<u8>>,
     pub depth_prompt: Option<Vec<u8>>,
-    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_depth: Option<i64>, // Int8 in PostgreSQL
     pub depth_prompt_role: Option<String>,
     pub talkativeness: Option<crate::db::DbDecimal>,
     pub depth_prompt_ciphertext: Option<Vec<u8>>,
@@ -1026,23 +1019,13 @@ impl NewCharacter {
 #[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
 #[diesel(table_name = character_assets)]
 #[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct CharacterAsset {
-    #[cfg(feature = "postgres-backend")]
     pub id: i32,
-    #[cfg(feature = "sqlite-backend")]
-    pub id: crate::db::DbId,
     pub character_id: crate::db::DbId, // Changed from i32
     #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
     pub asset_type: String, // Renamed from `type_` to match DB column
-    pub uri: String,
+    pub uri: Option<String>, // Nullable in schema
     pub name: String,
     pub ext: String,
 }
@@ -1062,19 +1045,9 @@ impl std::fmt::Debug for CharacterAsset {
 
 #[derive(Insertable)]
 #[diesel(table_name = character_assets)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewCharacterAsset {
-    #[cfg(feature = "postgres-backend")]
     pub id: Option<i32>,
-    #[cfg(feature = "sqlite-backend")]
-    pub id: Option<crate::db::DbId>,
     pub character_id: crate::db::DbId, // Changed from i32
     pub asset_type: String,            // Renamed from `type_`
     pub uri: String,
@@ -1400,6 +1373,7 @@ mod tests {
 
         // NewCharacterAsset (needs character_id)
         let new_char_asset = NewCharacterAsset {
+            id: None,
             character_id: DbId::new(),
             asset_type: "image".to_string(),
             uri: "uri".to_string(),

@@ -269,7 +269,7 @@ impl CharacterService {
             creator_comment: None, // Will be encrypted below
             creator_comment_nonce: None,
             depth_prompt: None, // The raw text, will be used for encryption
-            depth_prompt_depth: create_dto.depth_prompt_depth,
+            depth_prompt_depth: create_dto.depth_prompt_depth.map(|d| d as i64),
             depth_prompt_role: create_dto.depth_prompt_role.clone(),
             talkativeness: None, // Not supported yet (group chat feature)
             depth_prompt_ciphertext: None, // Will be encrypted below
@@ -368,7 +368,7 @@ impl CharacterService {
 
                     let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
                         lorebooks::table
-                            .filter(lorebooks::id.eq(lorebook_uuid.into()))
+                            .filter(lorebooks::id.eq(lorebook_uuid))
                             .filter(lorebooks::user_id.eq(user_id_val))
                             .count()
                             .get_result::<i64>(conn_sync)
@@ -586,7 +586,7 @@ impl CharacterService {
             }
         }
         if let Some(depth_prompt_depth_val) = update_dto.depth_prompt_depth {
-            existing_character.depth_prompt_depth = Some(depth_prompt_depth_val);
+            existing_character.depth_prompt_depth = Some(depth_prompt_depth_val as i64);
         }
         if let Some(depth_prompt_role_val) = update_dto.depth_prompt_role {
             existing_character.depth_prompt_role = Some(depth_prompt_role_val);
@@ -699,7 +699,7 @@ impl CharacterService {
 
                     let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
                         lorebooks::table
-                            .filter(lorebooks::id.eq(lorebook_uuid.into()))
+                            .filter(lorebooks::id.eq(lorebook_uuid))
                             .filter(lorebooks::user_id.eq(user_id_val))
                             .count()
                             .get_result::<i64>(conn_sync)

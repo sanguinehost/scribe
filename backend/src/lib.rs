@@ -1,4 +1,5 @@
 #![allow(clippy::literal_string_with_formatting_args)]
+#![recursion_limit = "1024"]
 pub mod auth;
 pub mod config;
 pub mod crypto;

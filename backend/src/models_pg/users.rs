@@ -14,20 +14,15 @@ use uuid::Uuid;
 
 // User role enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel_derive_enum::DbEnum))]
-#[cfg_attr(
-    feature = "postgres-backend",
-    ExistingTypePath = "crate::schema::sql_types::UserRole"
-)]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
-#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
+#[derive(diesel_derive_enum::DbEnum)]
+#[ExistingTypePath = "crate::schema::sql_types::UserRole"]
 pub enum UserRole {
     #[default]
-    #[cfg_attr(feature = "postgres-backend", db_rename = "User")]
+    #[db_rename = "User"]
     User,
-    #[cfg_attr(feature = "postgres-backend", db_rename = "Moderator")]
+    #[db_rename = "Moderator"]
     Moderator,
-    #[cfg_attr(feature = "postgres-backend", db_rename = "Administrator")]
+    #[db_rename = "Administrator"]
     Administrator,
 }
 
@@ -42,20 +37,15 @@ impl std::fmt::Display for UserRole {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel_derive_enum::DbEnum))]
-#[cfg_attr(
-    feature = "postgres-backend",
-    ExistingTypePath = "crate::schema::sql_types::AccountStatus"
-)]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
-#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
+#[derive(diesel_derive_enum::DbEnum)]
+#[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
 pub enum AccountStatus {
     #[default]
-    #[cfg_attr(feature = "postgres-backend", db_rename = "active")]
+    #[db_rename = "active"]
     Active,
-    #[cfg_attr(feature = "postgres-backend", db_rename = "locked")]
+    #[db_rename = "locked"]
     Locked,
-    #[cfg_attr(feature = "postgres-backend", db_rename = "pending")]
+    #[db_rename = "pending"]
     Pending,
 }
 
@@ -183,24 +173,14 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserDbQuery {
     pub id: DbId,
     pub username: String,
     pub password_hash: String,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    #[cfg(feature = "postgres-backend")]
     pub email: String,
-    #[cfg(feature = "sqlite-backend")]
-    pub email: Option<String>,
     pub kek_salt: String,
     pub encrypted_dek: DbBlob,
     pub encrypted_dek_by_recovery: Option<DbBlob>,
@@ -426,14 +406,7 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewUser {
     pub username: String,
     pub password_hash: String,

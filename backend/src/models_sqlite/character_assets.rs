@@ -1,4 +1,5 @@
-// backend/src/models/character_assets.rs
+// backend/src/models_sqlite/character_assets.rs
+// SQLite-specific version (id: DbId)
 
 use crate::db::DbId;
 use crate::db::DbTimestamp;
@@ -8,18 +9,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::character_assets)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct CharacterAsset {
-    #[cfg(feature = "postgres-backend")]
-    pub id: i32,
-    #[cfg(feature = "sqlite-backend")]
     pub id: crate::db::DbId,
     pub character_id: crate::db::DbId,
     pub asset_type: String,
@@ -34,18 +25,8 @@ pub struct CharacterAsset {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::character_assets)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewCharacterAsset {
-    #[cfg(feature = "postgres-backend")]
-    pub id: Option<i32>,
-    #[cfg(feature = "sqlite-backend")]
     pub id: Option<crate::db::DbId>,
     pub character_id: crate::db::DbId,
     pub asset_type: String,

@@ -50,7 +50,7 @@ impl SqliteUuid {
     }
 
     pub fn parse_str(input: &str) -> Result<Self, uuid::Error> {
-        DbId::parse_str(input).map(Self)
+        DbId::parse_str(input).map(|db_id| Self(db_id.into_uuid()))
     }
 
     pub fn into_inner(self) -> Uuid {
@@ -92,7 +92,7 @@ impl std::str::FromStr for SqliteUuid {
     type Err = uuid::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        DbId::parse_str(s).map(SqliteUuid)
+        DbId::parse_str(s).map(|db_id| SqliteUuid(db_id.into_uuid()))
     }
 }
 
@@ -102,9 +102,9 @@ impl FromSql<Text, Sqlite> for SqliteUuid {
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        let uuid =
+        let db_id =
             DbId::parse_str(&text).map_err(|e| format!("Failed to parse UUID from TEXT: {}", e))?;
-        Ok(SqliteUuid(uuid))
+        Ok(SqliteUuid(db_id.into_uuid()))
     }
 }
 
@@ -122,9 +122,9 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteUuid {
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        let uuid =
+        let db_id =
             DbId::parse_str(&text).map_err(|e| format!("Failed to parse UUID from TEXT: {}", e))?;
-        Ok(SqliteUuid(uuid))
+        Ok(SqliteUuid(db_id.into_uuid()))
     }
 }
 

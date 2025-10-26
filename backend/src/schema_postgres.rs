@@ -129,12 +129,12 @@ diesel::table! {
         definition -> Nullable<Bytea>,
         default_voice -> Nullable<Text>,
         extensions -> Nullable<Jsonb>,
-        data_id -> Nullable<Int4>,
+        data_id -> Nullable<Int8>,
         #[max_length = 255]
         category -> Nullable<Varchar>,
         #[max_length = 50]
         definition_visibility -> Nullable<Varchar>,
-        depth -> Nullable<Int4>,
+        depth -> Nullable<Int8>,
         example_dialogue -> Nullable<Bytea>,
         favorite -> Nullable<Bool>,
         #[max_length = 50]
@@ -151,7 +151,7 @@ diesel::table! {
         permanence -> Nullable<Numeric>,
         #[max_length = 50]
         persona_visibility -> Nullable<Varchar>,
-        revision -> Nullable<Int4>,
+        revision -> Nullable<Int8>,
         #[max_length = 50]
         sharing_visibility -> Nullable<Varchar>,
         #[max_length = 50]
@@ -159,7 +159,7 @@ diesel::table! {
         #[max_length = 50]
         system_prompt_visibility -> Nullable<Varchar>,
         system_tags -> Nullable<Array<Nullable<Text>>>,
-        token_budget -> Nullable<Int4>,
+        token_budget -> Nullable<Int8>,
         usage_hints -> Nullable<Jsonb>,
         user_persona -> Nullable<Bytea>,
         #[max_length = 50]
@@ -189,7 +189,7 @@ diesel::table! {
         creator_comment -> Nullable<Bytea>,
         creator_comment_nonce -> Nullable<Bytea>,
         depth_prompt -> Nullable<Bytea>,
-        depth_prompt_depth -> Nullable<Int4>,
+        depth_prompt_depth -> Nullable<Int8>,
         #[max_length = 255]
         depth_prompt_role -> Nullable<Varchar>,
         talkativeness -> Nullable<Numeric>,

@@ -956,7 +956,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     ))
                     .returning(agent_context_analysis::id)
                     .get_result::<crate::db::DbId>(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create pending analysis: {}", e)))
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create pending analysis: {}",
+                            e
+                        ))
+                    })
             })
             .await?
         };
@@ -1022,7 +1027,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
 
         // Convert planned searches to JSON string
-        let planned_searches_json = serde_json::to_string(&planned_searches)?;
+        let planned_searches_json = serde_json::to_value(&planned_searches)?;
 
         // Encrypt fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {

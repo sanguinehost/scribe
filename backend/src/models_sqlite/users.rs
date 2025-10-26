@@ -183,23 +183,13 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct UserDbQuery {
     pub id: DbId,
     pub username: String,
     pub password_hash: String,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    #[cfg(feature = "postgres-backend")]
-    pub email: String,
-    #[cfg(feature = "sqlite-backend")]
     pub email: Option<String>,
     pub kek_salt: String,
     pub encrypted_dek: DbBlob,
@@ -426,14 +416,7 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewUser {
     pub username: String,
     pub password_hash: String,

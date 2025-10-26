@@ -108,7 +108,7 @@ impl LorebookService {
                     .filter(lorebooks::user_id.eq(user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
-                    .map_err(Into::into)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
@@ -117,11 +117,7 @@ impl LorebookService {
                     e
                 );
                 AppError::InternalServerErrorGeneric(format!("Database interaction failed: {e}"))
-            })?
-            .map_err(|e| {
-                error!("Failed to query lorebook ownership: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to verify lorebook ownership: {e}"))
-            })?;
+            })??;
 
         if lorebook_exists == 0 {
             return Err(AppError::NotFound(format!(
@@ -151,17 +147,13 @@ impl LorebookService {
                     .filter(chat_sessions::user_id.eq(user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
-                    .map_err(Into::into)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
                 error!("Interaction error while verifying chat ownership: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!("Database interaction failed: {e}"))
-            })?
-            .map_err(|e| {
-                error!("Failed to query chat ownership: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to verify chat ownership: {e}"))
-            })?;
+            })??;
 
         if chat_exists == 0 {
             return Err(AppError::NotFound(format!(

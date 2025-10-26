@@ -291,7 +291,9 @@ impl UserPersona {
                 encryption_service,
                 dek,
                 self.post_history_instructions.clone().map(|b| b.into()),
-                self.post_history_instructions_nonce.clone().map(|b| b.into()),
+                self.post_history_instructions_nonce
+                    .clone()
+                    .map(|b| b.into()),
                 "post_history_instructions",
             )?,
         })

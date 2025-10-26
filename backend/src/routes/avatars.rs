@@ -87,7 +87,7 @@ pub async fn get_user_avatar(
         .status(StatusCode::OK)
         .header("Content-Type", &content_type)
         .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
-        .body(Body::from(image_data.clone()))
+        .body(Body::from(image_data.into_bytes()))
         .map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
         })?;
@@ -306,7 +306,7 @@ pub async fn get_persona_avatar(
         .status(StatusCode::OK)
         .header("Content-Type", &content_type)
         .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
-        .body(Body::from(image_data.clone()))
+        .body(Body::from(image_data.into_bytes()))
         .map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
         })?;

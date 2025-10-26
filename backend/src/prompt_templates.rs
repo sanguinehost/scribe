@@ -297,7 +297,7 @@ impl TemplateManager {
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
     fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
-        match value.as_ref() {
+        match &value {
             serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s
@@ -401,7 +401,7 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let mut context_map: serde_json::Map<String, serde_json::Value> = match context.as_ref() {
+        let mut context_map: serde_json::Map<String, serde_json::Value> = match &context {
             serde_json::Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
         };

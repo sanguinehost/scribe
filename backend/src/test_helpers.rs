@@ -1617,7 +1617,7 @@ pub async fn spawn_app_with_rate_limiting_options(
 
         let database_url = if multi_thread {
             // Each test gets a unique in-memory database
-            format!(":memory:?cache=private&uuid={}", DbDbId::new())
+            format!(":memory:?cache=private&uuid={}", DbId::new())
         } else {
             ":memory:".to_string()
         };
@@ -1924,6 +1924,7 @@ pub mod db {
                                              // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
+    use crate::{DbId, DbTimestamp}; // Import unified types from crate root
     use uuid::Uuid;
 
     // PostgreSQL-specific imports
@@ -1962,11 +1963,10 @@ pub mod db {
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use super::DbUuid;
             use diesel::r2d2::{ConnectionManager, Pool};
 
             let database_url = if db_name_suffix.is_some() {
-                format!(":memory:?cache=private&uuid={}", DbDbId::new())
+                format!(":memory:?cache=private&uuid={}", DbId::new())
             } else {
                 ":memory:".to_string()
             };
@@ -2288,6 +2288,7 @@ pub mod db {
         use crate::models::character_card::NewCharacter;
         use crate::models::characters::Character; // Already imported at top of file usually
                                                   // use crate::schema::characters; // Already imported at top of file usually
+        use crate::models::OptionalStringArray;
         use chrono::Utc;
 
         let conn = crate::db::get_conn(&pool).await?;
@@ -2415,8 +2416,8 @@ pub mod db {
                     name_clone_for_error,
                     interact_err
                 )
-            })
-            .and_then(|r| r)?;
+            })?
+            .map_err(|e| anyhow::anyhow!("DB query error for create_test_character '{}': {}", name_clone_for_error, e))?;
 
         Ok(character)
     }
@@ -2724,6 +2725,7 @@ impl Drop for TestDataGuard {
 /// # Errors
 ///
 /// Returns an error if any of the database deletion operations fail
+#[cfg(feature = "postgres-backend")]
 pub fn db_specific_cleanup(
     conn: &mut PgConnection,
     test_data: &TestDataGuard,

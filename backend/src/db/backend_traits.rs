@@ -83,10 +83,16 @@ pub trait DbType: Sized + Send + std::fmt::Debug {
     type SqliteType: Send + std::fmt::Debug;
 
     /// Diesel SQL type used in PostgreSQL
+    #[cfg(feature = "postgres-backend")]
     type PgSqlType: SqlType;
+    #[cfg(not(feature = "postgres-backend"))]
+    type PgSqlType: std::fmt::Debug;
 
     /// Diesel SQL type used in SQLite
+    #[cfg(feature = "sqlite-backend")]
     type SqliteSqlType: SqlType;
+    #[cfg(not(feature = "sqlite-backend"))]
+    type SqliteSqlType: std::fmt::Debug;
 
     /// Convert to PostgreSQL-specific type
     ///

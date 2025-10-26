@@ -242,11 +242,12 @@ impl LorebookService {
                 let new_name = payload.name.unwrap_or(existing.name);
                 let new_description = payload.description.or(existing.description);
 
+                let timestamp: crate::DbTimestamp = Utc::now().into();
                 let _rows_updated = update_query
                     .set((
                         name.eq(new_name),
                         description.eq(new_description),
-                        updated_at.eq(Utc::now().into()),
+                        updated_at.eq(timestamp),
                     ))
                     .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;

@@ -7,18 +7,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::user_assets)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct UserAsset {
-    #[cfg(feature = "postgres-backend")]
-    pub id: i32,
-    #[cfg(feature = "sqlite-backend")]
     pub id: DbId,
     pub user_id: DbId,
     pub persona_id: Option<DbId>,
@@ -34,14 +24,7 @@ pub struct UserAsset {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::user_assets)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    diesel(check_for_backend(diesel::pg::Pg))
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    diesel(check_for_backend(diesel::sqlite::Sqlite))
-)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewUserAsset {
     pub user_id: DbId,
     pub persona_id: Option<DbId>,

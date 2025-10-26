@@ -92,13 +92,12 @@ pub async fn verify_email_handler(
     let pool = state.pool.clone();
     let token = payload.token;
 
-    let verification_result = crate::db::with_conn(&pool, move |conn| {
+    match crate::db::with_conn(&pool, move |conn| {
         auth::verify_email(conn, &token).map_err(AppError::from)
     })
-    .await?;
-
-    match verification_result {
-        Ok(_) => {
+    .await
+    {
+        Ok(_user) => {
             info!("Email verification successful.");
             Ok((
                 StatusCode::OK,
@@ -106,17 +105,15 @@ pub async fn verify_email_handler(
             )
                 .into_response())
         }
-        Err(AuthError::InvalidVerificationToken) => {
+        Err(AppError::BadRequest(_)) => {
             warn!("Email verification failed: Invalid or expired token.");
             Err(AppError::BadRequest(
                 "The verification link is invalid or has expired.".to_string(),
             ))
         }
         Err(e) => {
-            error!(error = ?e, "Email verification failed: Unknown AuthError.");
-            Err(AppError::InternalServerErrorGeneric(
-                "An unexpected error occurred during email verification.".to_string(),
-            ))
+            error!(error = ?e, "Email verification failed");
+            Err(e)
         }
     }
 }
@@ -705,7 +702,7 @@ pub async fn extend_session_handler(
     let pool = state.pool.clone();
 
     // Update the session expiration
-    let new_expiry = chrono::Utc::now().into() + chrono::Duration::days(30);
+    let new_expiry: crate::DbTimestamp = (chrono::Utc::now() + chrono::Duration::days(30)).into();
 
     let session = crate::db::with_conn(&pool, move |conn| {
         #[cfg(feature = "postgres-backend")]

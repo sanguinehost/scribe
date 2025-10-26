@@ -13,8 +13,8 @@
 #[cfg(feature = "postgres-backend")]
 pub use diesel_json::Json;
 
-// NOTE: This impl violates the orphan rule (E0117) but is needed for .into() conversions
-// TODO: Replace with proper constructor calls (Json::new()) in calling code
+// TEMPORARILY allowing orphan rule violation until calling code is fixed
+// TODO: Replace .into() calls with Json::new() in calling code
 #[cfg(feature = "postgres-backend")]
 #[allow(clippy::from_over_into)]
 impl From<serde_json::Value> for Json<serde_json::Value> {
@@ -178,7 +178,7 @@ where
 #[cfg(feature = "sqlite-backend")]
 impl<T> ToSql<Text, Sqlite> for Json<T>
 where
-    T: Serialize,
+    T: Serialize + std::fmt::Debug,
 {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         let json_str = serde_json::to_string(&self.0)
