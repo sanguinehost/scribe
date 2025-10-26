@@ -52,14 +52,7 @@ impl LorebookService {
 
                 #[cfg(feature = "sqlite-backend")]
                 {
-                    use diesel::prelude::*;
-                    diesel::insert_into(lorebooks::table)
-                        .values(&new_lorebook_db)
-                        .execute(conn_sync)?;
-
-                    lorebooks::table
-                        .find(lorebook_id.into())
-                        .first::<Lorebook>(conn_sync)
+                    super::insert_lorebook_sync(conn_sync, &new_lorebook_db)
                 }
             })
             .await

@@ -35,6 +35,24 @@ use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
+
+/// Helper to insert lorebook and query it back (avoids E0275 Sized overflow)
+#[cfg(feature = "sqlite-backend")]
+fn insert_lorebook_sync(
+    conn: &mut crate::db::DbConnection,
+    new_lorebook: &crate::models::NewLorebook,
+) -> Result<Lorebook, diesel::result::Error> {
+    use diesel::prelude::*;
+
+    diesel::insert_into(lorebooks::table)
+        .values(new_lorebook)
+        .execute(conn)?;
+
+    lorebooks::table
+        .find(new_lorebook.id)
+        .first::<Lorebook>(conn)
+}
+
 impl From<crate::models::lorebook_dtos::ScribeMinimalLorebook> for CreateLorebookPayload {
     fn from(val: crate::models::lorebook_dtos::ScribeMinimalLorebook) -> Self {
         Self {
@@ -214,14 +232,7 @@ impl LorebookService {
 
                 #[cfg(feature = "sqlite-backend")]
                 {
-                    use diesel::prelude::*;
-                    diesel::insert_into(lorebooks::table)
-                        .values(&new_lorebook_db)
-                        .execute(conn_sync)?;
-
-                    lorebooks::table
-                        .find(lorebook_id.into())
-                        .first::<Lorebook>(conn_sync)
+                    insert_lorebook_sync(conn_sync, &new_lorebook_db)
                 }
             })
             .await
