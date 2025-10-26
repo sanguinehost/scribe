@@ -214,7 +214,7 @@ pub async fn get_session_data_for_generation(
 
         crate::db::with_conn(&state.pool, move |conn_interaction| {
             // Split into two queries to respect Diesel's tuple size limitation
-            // Query 1: Basic session settings (15 fields)
+            // Query 1: Basic session settings (11 fields)
             let (
                 hist_strat,
                 hist_limit,
@@ -226,11 +226,7 @@ pub async fn get_session_data_for_generation(
                 freq_pen,
                 pres_pen,
                 top_k_val,
-                top_p_val,
-                seed_val,
-                stop_seqs,
                 model_n,
-                model_prov,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -245,11 +241,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::frequency_penalty,
                     chat_sessions::presence_penalty,
                     chat_sessions::top_k,
-                    chat_sessions::top_p,
-                    chat_sessions::seed,
-                    chat_sessions::stop_sequences,
                     chat_sessions::model_name,
-                    chat_sessions::model_provider,
                 ))
                 .first::<(
                     String,
@@ -262,11 +254,7 @@ pub async fn get_session_data_for_generation(
                     Option<crate::db::DbDecimal>,
                     Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<crate::db::DbDecimal>,
-                    Option<i32>,
-                    Option<crate::models::OptionalStringArray>,
                     String,
-                    Option<String>,
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -277,18 +265,20 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
-            // Query 2: Additional session fields (4 fields)
-            let (gem_think_budget, gem_enable_code_exec, player_chronicle_id, agent_mode) =
+            // Query 2: Additional session fields (5 fields)
+            let (model_prov, gem_think_budget, gem_enable_code_exec, player_chronicle_id, agent_mode) =
                 chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
                     .filter(chat_sessions::user_id.eq(user_id))
                     .select((
+                        chat_sessions::model_provider,
                         chat_sessions::gemini_thinking_budget,
                         chat_sessions::gemini_enable_code_execution,
                         chat_sessions::player_chronicle_id,
                         chat_sessions::agent_mode,
                     ))
                     .first::<(
+                        Option<String>,
                         Option<i32>,
                         Option<bool>,
                         Option<crate::db::DbId>,
@@ -302,6 +292,51 @@ pub async fn get_session_data_for_generation(
                             "Failed to query chat session {session_id}: {e}"
                         )),
                     })?;
+
+            // Query 3a: top_p parameter
+            let top_p_val = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::top_p)
+                .first::<Option<crate::db::DbDecimal>>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            // Query 3b: seed parameter
+            let seed_val = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::seed)
+                .first::<Option<i32>>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            // Query 3c: stop_sequences parameter (Array<Nullable<Text>> => Option<Vec<Option<String>>>)
+            let stop_seqs = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::stop_sequences)
+                .first::<Option<Vec<Option<String>>>>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
 
             // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
             let char_id = sess_char_id.ok_or_else(|| {
@@ -333,14 +368,69 @@ pub async fn get_session_data_for_generation(
                 })?;
 
             // Only query database messages if no frontend history is provided
+            // Use ChatMessageQuery (11 fields) to avoid Diesel's CompatibleType limit
             let messages_raw_db: Vec<DbChatMessage> = if frontend_history_for_interact.is_none() {
                 chat_messages::table
                     .filter(chat_messages::session_id.eq(session_id))
-                    .order(chat_messages::created_at.asc()) // Fetch in ascending order for correct processing later
-                    .load::<DbChatMessage>(conn_interaction)
+                    .order(chat_messages::created_at.asc())
+                    .select((
+                        chat_messages::id,
+                        chat_messages::session_id,
+                        chat_messages::message_type,
+                        chat_messages::content,
+                        chat_messages::content_nonce,
+                        chat_messages::created_at,
+                        chat_messages::user_id,
+                        chat_messages::prompt_tokens,
+                        chat_messages::completion_tokens,
+                        chat_messages::model_name,
+                        chat_messages::status,
+                    ))
+                    .load::<(
+                        crate::db::DbId,
+                        crate::db::DbId,
+                        MessageRole,
+                        Vec<u8>,
+                        Option<Vec<u8>>,
+                        crate::db::DbTimestamp,
+                        crate::db::DbId,
+                        Option<i32>,
+                        Option<i32>,
+                        String,
+                        String,
+                    )>(conn_interaction)
                     .map_err(|e| {
                         AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
                     })?
+                    .into_iter()
+                    .map(|(id, session_id, message_type, content, content_nonce, created_at, user_id, prompt_tokens, completion_tokens, model_name, status)| {
+                        DbChatMessage {
+                            id,
+                            session_id,
+                            message_type,
+                            content,
+                            content_nonce,
+                            created_at,
+                            user_id,
+                            prompt_tokens,
+                            completion_tokens,
+                            model_name,
+                            status,
+                            raw_prompt_ciphertext: None,
+                            raw_prompt_nonce: None,
+                            error_message: None,
+                            superseded_at: None,
+                            variant_count: 0,
+                            current_variant_index: 0,
+                            credits_charged: 0,
+                            credits_cost: crate::db::DbDecimal::from(0),
+                            actual_cost: crate::db::DbDecimal::from(0),
+                            modified_cost: crate::db::DbDecimal::from(0),
+                            credit_cost: 0,
+                            actual_charge: crate::db::DbDecimal::from(0),
+                        }
+                    })
+                    .collect()
             } else {
                 // When frontend history is provided, we don't need database messages
                 // The frontend-filtered history will be converted later

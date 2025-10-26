@@ -638,7 +638,7 @@ impl ChronicleService {
                     AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
                 })
         })
-        .await??;
+        .await?;
 
         info!(
             "Retrieved {} events for chronicle {} for user {}",

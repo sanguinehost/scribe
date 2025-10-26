@@ -2384,6 +2384,7 @@ pub mod db {
             world_nonce: None,
         };
 
+        let name_clone_for_second_error = name_clone_for_error.clone();
         let character: Character = conn
             .interact(move |conn_actual| {
                 #[cfg(feature = "postgres-backend")]
@@ -2417,7 +2418,7 @@ pub mod db {
                     interact_err
                 )
             })?
-            .map_err(|e| anyhow::anyhow!("DB query error for create_test_character '{}': {}", name_clone_for_error, e))?;
+            .map_err(|e| anyhow::anyhow!("DB query error for create_test_character '{}': {}", name_clone_for_second_error, e))?;
 
         Ok(character)
     }
@@ -2545,16 +2546,13 @@ impl TestDataGuard {
             let chat_ids_clone = self.chat_ids.clone();
             let diesel_chat_op_result = conn
                 .interact(move |conn_interaction| {
-                    diesel::delete(
-                        schema::chat_messages::table
-                            .filter(schema::chat_messages::session_id.eq_any(&chat_ids_clone)),
-                    )
-                    .execute(conn_interaction)?;
-                    diesel::delete(
-                        schema::chat_sessions::table
-                            .filter(schema::chat_sessions::id.eq_any(chat_ids_clone.clone())),
-                    )
-                    .execute(conn_interaction)
+                    let chat_uuids: Vec<uuid::Uuid> = chat_ids_clone.iter().map(|&id| id.into()).collect();
+                    diesel::delete(schema::chat_messages::table)
+                        .filter(schema::chat_messages::session_id.eq_any(&chat_uuids))
+                        .execute(conn_interaction)?;
+                    diesel::delete(schema::chat_sessions::table)
+                        .filter(schema::chat_sessions::id.eq_any(chat_uuids))
+                        .execute(conn_interaction)
                 })
                 .await
                 .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
@@ -2566,11 +2564,10 @@ impl TestDataGuard {
             let user_persona_ids_clone = self.user_persona_ids.clone();
             let diesel_op_result_personas = conn
                 .interact(move |conn_interaction| {
-                    diesel::delete(
-                        schema::user_personas::table
-                            .filter(schema::user_personas::id.eq_any(user_persona_ids_clone)),
-                    )
-                    .execute(conn_interaction)
+                    let persona_uuids: Vec<uuid::Uuid> = user_persona_ids_clone.iter().map(|&id| id.into()).collect();
+                    diesel::delete(schema::user_personas::table)
+                        .filter(schema::user_personas::id.eq_any(persona_uuids))
+                        .execute(conn_interaction)
                 })
                 .await
                 .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
@@ -2582,11 +2579,10 @@ impl TestDataGuard {
             let character_ids_clone = self.character_ids.clone();
             let diesel_op_result_chars = conn
                 .interact(move |conn_interaction| {
-                    diesel::delete(
-                        schema::characters::table
-                            .filter(schema::characters::id.eq_any(character_ids_clone)),
-                    )
-                    .execute(conn_interaction)
+                    let char_uuids: Vec<uuid::Uuid> = character_ids_clone.iter().map(|&id| id.into()).collect();
+                    diesel::delete(schema::characters::table)
+                        .filter(schema::characters::id.eq_any(char_uuids))
+                        .execute(conn_interaction)
                 })
                 .await
                 .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
@@ -2598,19 +2594,15 @@ impl TestDataGuard {
             let lorebook_ids_clone = self.lorebook_ids.clone();
             let diesel_op_result_lorebooks = conn
                 .interact(move |conn_interaction| {
+                    let lorebook_uuids: Vec<uuid::Uuid> = lorebook_ids_clone.iter().map(|&id| id.into()).collect();
                     // First delete lorebook entries
-                    diesel::delete(
-                        schema::lorebook_entries::table.filter(
-                            schema::lorebook_entries::lorebook_id.eq_any(&lorebook_ids_clone),
-                        ),
-                    )
-                    .execute(conn_interaction)?;
+                    diesel::delete(schema::lorebook_entries::table)
+                        .filter(schema::lorebook_entries::lorebook_id.eq_any(&lorebook_uuids))
+                        .execute(conn_interaction)?;
                     // Then delete lorebooks
-                    diesel::delete(
-                        schema::lorebooks::table
-                            .filter(schema::lorebooks::id.eq_any(lorebook_ids_clone)),
-                    )
-                    .execute(conn_interaction)
+                    diesel::delete(schema::lorebooks::table)
+                        .filter(schema::lorebooks::id.eq_any(lorebook_uuids))
+                        .execute(conn_interaction)
                 })
                 .await
                 .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
@@ -2622,10 +2614,10 @@ impl TestDataGuard {
             let user_ids_clone = self.user_ids.clone();
             let diesel_op_result_users = conn
                 .interact(move |conn_interaction| {
-                    diesel::delete(
-                        schema::users::table.filter(schema::users::id.eq_any(user_ids_clone)),
-                    )
-                    .execute(conn_interaction)
+                    let user_uuids: Vec<uuid::Uuid> = user_ids_clone.iter().map(|&id| id.into()).collect();
+                    diesel::delete(schema::users::table)
+                        .filter(schema::users::id.eq_any(user_uuids))
+                        .execute(conn_interaction)
                 })
                 .await
                 .map_err(|e_interact| anyhow::anyhow!(e_interact.to_string()))?;
@@ -2735,10 +2727,10 @@ pub fn db_specific_cleanup(
 
     if !test_data.chat_ids.is_empty() {
         let chat_ids_clone = test_data.chat_ids.clone();
-        diesel::delete(
-            schema::chat_sessions::table.filter(schema::chat_sessions::id.eq_any(chat_ids_clone)),
-        )
-        .execute(conn)?;
+        let chat_uuids: Vec<uuid::Uuid> = chat_ids_clone.iter().map(|&id| id.into()).collect();
+        diesel::delete(schema::chat_sessions::table)
+            .filter(schema::chat_sessions::id.eq_any(chat_uuids))
+            .execute(conn)?;
     }
     // ... other cleanup like characters, users
     Ok(())

@@ -30,6 +30,18 @@ fn generate_verification_token() -> String {
     format!("{}", crate::db::DbId::new().simple())
 }
 
+/// Helper to insert email verification token (avoids E0275 Sized overflow with complex closures)
+fn insert_verification_token_sync(
+    conn: &mut crate::db::DbConnection,
+    token: &NewEmailVerificationToken,
+) -> Result<usize, crate::errors::AppError> {
+    use crate::schema::email_verification_tokens;
+    diesel::insert_into(email_verification_tokens::table)
+        .values(token)
+        .execute(conn)
+        .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+}
+
 // Make AuthError enum public
 #[derive(Error, Debug)]
 pub enum AuthError {
@@ -187,15 +199,9 @@ pub async fn create_user_with_verification(
     };
 
     // Store verification token in database
-    crate::db::with_conn(pool, move |conn| {
-        use crate::schema::email_verification_tokens;
-        diesel::insert_into(email_verification_tokens::table)
-            .values(&new_token)
-            .execute(conn)
-            .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
-    })
-    .await
-    .map_err(AuthError::from)?;
+    crate::db::with_conn(pool, move |conn| insert_verification_token_sync(conn, &new_token))
+        .await
+        .map_err(AuthError::from)?;
 
     // Send verification email
     if let Err(e) = email_service

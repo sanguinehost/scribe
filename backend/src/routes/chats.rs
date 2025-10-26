@@ -7,6 +7,8 @@ use crate::errors::AppError;
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
     Chat,
+    ChatListQuery, // Added for lightweight list queries
+    ChatSessionQuery, // Added for session queries
     // ChatSettingsResponse, // Not used directly in this file anymore
     CreateChatRequest,    // Now available
     CreateMessageRequest, // Now available
@@ -204,7 +206,8 @@ pub async fn get_chats_by_character_handler(
             .filter(chat_sessions::user_id.eq(user.id))
             .filter(chat_sessions::character_id.eq(character_id))
             .order_by(chat_sessions::created_at.desc())
-            .load::<Chat>(conn)
+            .select(ChatListQuery::as_select())
+            .load::<ChatListQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -243,7 +246,8 @@ pub async fn get_chats_handler(
         chat_sessions::table
             .filter(chat_sessions::user_id.eq(user.id))
             .order_by(chat_sessions::created_at.desc())
-            .load::<Chat>(conn)
+            .select(ChatListQuery::as_select())
+            .load::<ChatListQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
     })
     .await
@@ -368,7 +372,8 @@ pub async fn get_chat_by_id_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(AppError::from) // Use From trait to handle NotFound correctly
     })
     .await
@@ -409,7 +414,8 @@ pub async fn get_chat_deletion_analysis_handler(
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
             .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| {
                 AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
             })
@@ -463,7 +469,8 @@ pub async fn delete_chat_handler(
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
             .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| {
                 AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
             })
@@ -631,7 +638,7 @@ async fn fetch_and_verify_chat_ownership(
     pool: DbPool,
     chat_id: crate::db::DbId,
     user_id: crate::db::DbId,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
     crate::db::with_conn(&pool, move |conn| {
         fetch_chat_with_ownership_check(conn, chat_id, user_id)
     })
@@ -647,12 +654,13 @@ fn fetch_chat_with_ownership_check(
     conn: &mut crate::DbConnection,
     chat_id: crate::db::DbId,
     user_id: crate::db::DbId,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
     tracing::debug!("Fetching chat for id={}", chat_id);
 
     let chat = chat_sessions::table
         .filter(chat_sessions::id.eq(chat_id))
-        .first::<Chat>(conn)
+        .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
         .map_err(|e| {
             if e == diesel::result::Error::NotFound {
                 tracing::warn!("Chat with id {} not found", chat_id);
@@ -1222,7 +1230,8 @@ pub async fn get_message_by_id_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message_db.session_id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1382,7 +1391,8 @@ pub async fn vote_message_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message.session_id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1441,7 +1451,8 @@ pub async fn get_votes_by_chat_id_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1506,7 +1517,8 @@ pub async fn delete_trailing_messages_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message.session_id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1543,9 +1555,10 @@ pub async fn delete_trailing_messages_handler(
         {
             crate::db::with_conn(&pool, move |conn| {
                 // This closure moves the original message_ids
+                let message_uuids: Vec<uuid::Uuid> = message_ids.iter().map(|&id| id.into()).collect();
                 diesel::delete(crate::schema::old_votes::table) // Use old_votes
                     .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
-                    .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_ids)) // Use original message_ids here
+                    .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_uuids)) // Use converted UUIDs
                     .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
@@ -1570,9 +1583,10 @@ pub async fn delete_trailing_messages_handler(
         // Now delete the messages from PostgreSQL
         crate::db::with_conn(&pool, move |conn| {
             // This closure moves the clone
+            let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_messages.iter().map(|&id| id.into()).collect();
             diesel::delete(chat_messages::table)
                 .filter(chat_messages::session_id.eq(chat_id))
-                .filter(chat_messages::id.eq_any(message_ids_clone_for_messages)) // Use the clone here
+                .filter(chat_messages::id.eq_any(message_uuids)) // Use converted UUIDs
                 .execute(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
@@ -1620,7 +1634,8 @@ pub async fn delete_message_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(message.session_id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1697,7 +1712,8 @@ pub async fn update_chat_visibility_handler(
     let chat = crate::db::with_conn(&pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::id.eq(id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await
@@ -1855,7 +1871,8 @@ async fn get_chat_token_usage_handler(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(id))
                 .filter(chat_sessions::user_id.eq(user_id))
-                .first::<Chat>(conn)
+                .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
                 .map_err(|e| match e {
                     diesel::result::Error::NotFound => {
                         AppError::NotFound("Chat not found or access denied".to_string())

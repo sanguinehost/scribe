@@ -13,6 +13,7 @@ use crate::{
         chats::{
             Chat,
             ChatMode,
+            ChatSessionQuery,
             MessageRole,
             // ChatSessionSettings, // Removed, settings are part of Chat struct
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
@@ -26,7 +27,7 @@ use crate::{
 use super::message_handling::{save_message, SaveMessageParams};
 
 /// Type alias for session creation result
-type SessionCreationResult = Result<(Chat, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
+type SessionCreationResult = Result<(ChatSessionQuery, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
 
 /// Type alias for encrypted session data result
 type EncryptedSessionData = ((Vec<u8>, Vec<u8>), (Option<Vec<u8>>, Option<Vec<u8>>));
@@ -581,10 +582,11 @@ fn associate_lorebooks(
 fn fetch_created_session(
     new_session_id: crate::db::DbId,
     transaction_conn: &mut crate::DbConnection,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
     chat_sessions::table
         .filter(chat_sessions::id.eq(new_session_id))
-        .first(transaction_conn)
+        .select(ChatSessionQuery::as_select())
+        .first::<ChatSessionQuery>(transaction_conn)
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
 }
 
@@ -746,7 +748,7 @@ fn create_session_in_transaction(
 /// Processes the first message for a newly created session
 async fn process_first_message(
     state: Arc<AppState>,
-    created_session: &Chat,
+    created_session: &ChatSessionQuery,
     first_mes_ciphertext_opt: Option<Vec<u8>>,
     first_mes_nonce_opt: Option<Vec<u8>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
@@ -808,8 +810,6 @@ async fn process_first_message(
     Ok(())
 }
 
-/// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
-#[instrument(skip(state, user_dek_secret_box), err)]
 pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
     user_id: crate::db::DbId,
@@ -818,7 +818,7 @@ pub async fn create_session_and_maybe_first_message(
     active_custom_persona_id: Option<crate::db::DbId>,
     lorebook_ids: Option<Vec<crate::db::DbId>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
     // Load user settings to get defaults for the new chat session
     // This will auto-create defaults if user has no settings yet
     let user_settings = crate::services::UserSettingsService::get_user_settings(
@@ -901,13 +901,14 @@ pub async fn create_session_and_maybe_first_message(
 pub async fn list_sessions_for_user(
     pool: &DbPool,
     user_id: crate::db::DbId,
-) -> Result<Vec<Chat>, AppError> {
+) -> Result<Vec<ChatSessionQuery>, AppError> {
     // ChatSession is aliased as Chat
     crate::db::with_conn(pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::user_id.eq(user_id))
             .order(chat_sessions::updated_at.desc())
-            .load::<Chat>(conn) // ChatSession is aliased as Chat
+            .select(ChatSessionQuery::as_select())
+            .load::<ChatSessionQuery>(conn) // ChatSession is aliased as Chat
             .map_err(|e| {
                 error!("Failed to load chat sessions for user {}: {}", user_id, e);
                 AppError::DatabaseQueryError(e.to_string())
@@ -917,10 +918,10 @@ pub async fn list_sessions_for_user(
 }
 /// Validates session ownership
 fn validate_session_ownership(
-    session: Chat,
+    session: ChatSessionQuery,
     user_id: crate::db::DbId,
     session_id: crate::db::DbId,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
     if session.user_id == user_id {
         info!(%session_id, %user_id, "Session found and ownership verified");
         Ok(session)
@@ -938,12 +939,13 @@ pub async fn get_chat_session_by_id(
     pool: &DbPool,
     user_id: crate::db::DbId,
     session_id: crate::db::DbId,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
     crate::db::with_conn(pool, move |conn| {
         info!(%session_id, %user_id, "Attempting to fetch chat session details by ID");
         let session_result = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .optional()?;
 
         session_result.map_or_else(
@@ -977,7 +979,8 @@ pub async fn associate_chat_with_chronicle(
         let session = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .filter(chat_sessions::user_id.eq(user_id))
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .optional()?;
 
         match session {

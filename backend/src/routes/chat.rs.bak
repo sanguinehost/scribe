@@ -2384,9 +2384,11 @@ pub async fn get_agent_analysis_handler(
                 .select(ChatSessionQuery::as_select())
             .first::<ChatSessionQuery>(conn)
                 .optional()
+                .map_err(Into::into)
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))??;
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to verify session: {}", e)))?;
 
     if session_exists.is_none() {
         return Err(AppError::NotFound("Chat session not found".to_string()));
@@ -2429,9 +2431,13 @@ pub async fn get_agent_analysis_handler(
                 .order(created_at.desc())
                 .select(AgentContextAnalysis::as_select())
                 .load::<AgentContextAnalysis>(conn)
+                .map_err(Into::into)
         })
         .await
-        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))??;
+        .map_err(|e| AppError::DbInteractError(format!("Database interaction failed: {}", e)))?
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to fetch agent analysis: {}", e))
+        })?;
 
     // Convert to response DTOs with decrypted content
     let mut responses = Vec::new();
@@ -3232,7 +3238,7 @@ pub async fn expand_text_handler(
     let mut expansion_system_prompt = "You are a text expansion assistant helping the USER (not the character) expand their brief input text. ".to_string();
 
     // Add persona context if available
-    if let Some(persona_id) = session_data.active_custom_persona_id {
+    if let Some(persona_id) = session_data.11 {
         expansion_system_prompt.push_str(&format!(
             "The user has an active persona (ID: {}) - expand the text AS THE USER/PERSONA would write it. ", persona_id
         ));
@@ -3283,19 +3289,21 @@ pub async fn expand_text_handler(
         user_id,
         incoming_genai_messages: genai_messages,
         system_prompt: Some(expansion_system_prompt),
-        temperature: session_data.temperature,
-        max_output_tokens: session_data.max_output_tokens,
-        frequency_penalty: session_data.frequency_penalty,
-        presence_penalty: session_data.presence_penalty,
-        top_k: session_data.top_k,
-        top_p: session_data.top_p,
+        temperature: session_data.4,
+        max_output_tokens: session_data.5,
+        frequency_penalty: session_data.6,
+        presence_penalty: session_data.7,
+        top_k: session_data.8,
+        top_p: session_data.9,
         stop_sequences: session_data
-            .stop_sequences
-            .0
-            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
-        seed: session_data.seed,
-        model_name: session_data.model_name,
-        model_provider: None, // ChatSessionQuery doesn't store model_provider
+            .10
+            .and_then(|seq| {
+                let vec_opt: Option<Vec<Option<String>>> = seq.into();
+                vec_opt.map(|v| v.into_iter().collect::<Option<Vec<String>>>()).flatten()
+            }),
+        seed: session_data.11,
+        model_name: session_data.2,
+        model_provider: session_data.3,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
@@ -3541,7 +3549,7 @@ pub async fn impersonate_handler(
         "You are impersonating the user in this conversation. ".to_string();
 
     // Add persona context if available
-    if let Some(persona_id) = session_data.active_custom_persona_id {
+    if let Some(persona_id) = session_data.11 {
         impersonation_system_prompt.push_str(&format!(
             "You are speaking AS the user persona (ID: {}). ",
             persona_id
@@ -3578,19 +3586,21 @@ pub async fn impersonate_handler(
         user_id,
         incoming_genai_messages: genai_messages,
         system_prompt: Some(impersonation_system_prompt),
-        temperature: session_data.temperature,
-        max_output_tokens: session_data.max_output_tokens,
-        frequency_penalty: session_data.frequency_penalty,
-        presence_penalty: session_data.presence_penalty,
-        top_k: session_data.top_k,
-        top_p: session_data.top_p,
+        temperature: session_data.4,
+        max_output_tokens: session_data.5,
+        frequency_penalty: session_data.6,
+        presence_penalty: session_data.7,
+        top_k: session_data.8,
+        top_p: session_data.9,
         stop_sequences: session_data
-            .stop_sequences
-            .0
-            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
-        seed: session_data.seed,
-        model_name: session_data.model_name,
-        model_provider: None, // ChatSessionQuery doesn't store model_provider
+            .10
+            .and_then(|seq| {
+                let vec_opt: Option<Vec<Option<String>>> = seq.into();
+                vec_opt.map(|v| v.into_iter().collect::<Option<Vec<String>>>()).flatten()
+            }),
+        seed: session_data.11,
+        model_name: session_data.2,
+        model_provider: session_data.3,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,

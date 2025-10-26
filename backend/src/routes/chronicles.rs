@@ -636,6 +636,7 @@ async fn get_character_for_session(
                 )
                 .filter(chat_sessions::id.eq(chat_session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
+                .select(crate::models::characters::Character::as_select())
                 .first::<crate::models::characters::Character>(conn)
                 .optional()
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
@@ -671,6 +672,7 @@ async fn get_chat_messages(
                         .and(chat_sessions::user_id.eq(user_id))),
                 )
                 .filter(chat_messages::session_id.eq(chat_session_id))
+                .select(ChatMessage::as_select())
                 .order(chat_messages::created_at.asc())
                 .load::<ChatMessage>(conn)
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
@@ -754,6 +756,7 @@ async fn generate_chronicle_name(
                         .and(chat_sessions::user_id.eq(user.id))),
                 )
                 .filter(chat_messages::session_id.eq(request.chat_session_id))
+                .select(ChatMessage::as_select())
                 .order(chat_messages::created_at.asc())
                 .load::<ChatMessage>(conn)
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))

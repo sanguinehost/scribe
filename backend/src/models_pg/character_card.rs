@@ -847,7 +847,7 @@ impl NewCharacter {
             creator_comment: None, // Not in extensions, could be mapped from creator_notes
             creator_comment_nonce: None,
             depth_prompt: depth_prompt_data,
-            depth_prompt_depth,
+            depth_prompt_depth: depth_prompt_depth.map(|v| v as i64),
             depth_prompt_role,
             talkativeness,
             depth_prompt_ciphertext: depth_prompt_json,

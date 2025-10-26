@@ -44,13 +44,68 @@ pub async fn get_messages_for_session(
             || Err(AppError::NotFound("Chat session not found".into())),
             |owner_id| {
                 if owner_id == user_id {
+                    // Query only 11 fields to avoid Diesel's CompatibleType limit
                     chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
                         .order(chat_messages::created_at.asc())
-                        .load::<ChatMessage>(conn) // Changed DbChatMessage
+                        .select((
+                            chat_messages::id,
+                            chat_messages::session_id,
+                            chat_messages::message_type,
+                            chat_messages::content,
+                            chat_messages::content_nonce,
+                            chat_messages::created_at,
+                            chat_messages::user_id,
+                            chat_messages::prompt_tokens,
+                            chat_messages::completion_tokens,
+                            chat_messages::model_name,
+                            chat_messages::status,
+                        ))
+                        .load::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            MessageRole,
+                            Vec<u8>,
+                            Option<Vec<u8>>,
+                            crate::db::DbTimestamp,
+                            crate::db::DbId,
+                            Option<i32>,
+                            Option<i32>,
+                            String,
+                            String,
+                        )>(conn)
                         .map_err(|e| {
                             error!("Failed to load messages for session {}: {}", session_id, e);
                             AppError::DatabaseQueryError(e.to_string())
+                        })
+                        .map(|tuples| {
+                            tuples.into_iter().map(|(msg_id, msg_session_id, msg_type, msg_content, msg_nonce, msg_created_at, msg_user_id, msg_prompt_tokens, msg_completion_tokens, msg_model_name, msg_status)| {
+                                ChatMessage {
+                                    id: msg_id,
+                                    session_id: msg_session_id,
+                                    message_type: msg_type,
+                                    content: msg_content,
+                                    content_nonce: msg_nonce,
+                                    created_at: msg_created_at,
+                                    user_id: msg_user_id,
+                                    prompt_tokens: msg_prompt_tokens,
+                                    completion_tokens: msg_completion_tokens,
+                                    model_name: msg_model_name,
+                                    status: msg_status,
+                                    raw_prompt_ciphertext: None,
+                                    raw_prompt_nonce: None,
+                                    error_message: None,
+                                    superseded_at: None,
+                                    variant_count: 0,
+                                    current_variant_index: 0,
+                                    credits_charged: 0,
+                                    credits_cost: crate::db::DbDecimal::from(0),
+                                    actual_cost: crate::db::DbDecimal::from(0),
+                                    modified_cost: crate::db::DbDecimal::from(0),
+                                    credit_cost: 0,
+                                    actual_charge: crate::db::DbDecimal::from(0),
+                                }
+                            }).collect()
                         })
                 } else {
                     Err(AppError::Forbidden(
@@ -218,14 +273,67 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                     let pool = state.pool.clone();
                     let updated_parent = crate::db::with_conn(&pool, move |conn| {
                         use crate::schema::chat_messages::dsl::*;
+                        // Query only 11 fields to avoid Diesel's CompatibleType limit
                         chat_messages
                             .filter(id.eq(parent_message_id))
                             .filter(user_id.eq(user_id))
-                            .first::<ChatMessage>(conn)
+                            .select((
+                                id,
+                                session_id,
+                                message_type,
+                                content,
+                                content_nonce,
+                                created_at,
+                                user_id,
+                                prompt_tokens,
+                                completion_tokens,
+                                model_name,
+                                status,
+                            ))
+                            .first::<(
+                                crate::db::DbId,
+                                crate::db::DbId,
+                                MessageRole,
+                                Vec<u8>,
+                                Option<Vec<u8>>,
+                                crate::db::DbTimestamp,
+                                crate::db::DbId,
+                                Option<i32>,
+                                Option<i32>,
+                                String,
+                                String,
+                            )>(conn)
                             .map_err(|e| {
                                 AppError::DatabaseQueryError(format!(
                                     "Parent message not found: {e}"
                                 ))
+                            })
+                            .map(|(msg_id, msg_session_id, msg_type, msg_content, msg_nonce, msg_created_at, msg_user_id, msg_prompt_tokens, msg_completion_tokens, msg_model_name, msg_status)| {
+                                ChatMessage {
+                                    id: msg_id,
+                                    session_id: msg_session_id,
+                                    message_type: msg_type,
+                                    content: msg_content,
+                                    content_nonce: msg_nonce,
+                                    created_at: msg_created_at,
+                                    user_id: msg_user_id,
+                                    prompt_tokens: msg_prompt_tokens,
+                                    completion_tokens: msg_completion_tokens,
+                                    model_name: msg_model_name,
+                                    status: msg_status,
+                                    raw_prompt_ciphertext: None,
+                                    raw_prompt_nonce: None,
+                                    error_message: None,
+                                    superseded_at: None,
+                                    variant_count: 0,
+                                    current_variant_index: 0,
+                                    credits_charged: 0,
+                                    credits_cost: crate::db::DbDecimal::from(0),
+                                    actual_cost: crate::db::DbDecimal::from(0),
+                                    modified_cost: crate::db::DbDecimal::from(0),
+                                    credit_cost: 0,
+                                    actual_charge: crate::db::DbDecimal::from(0),
+                                }
                             })
                     })
                     .await?;

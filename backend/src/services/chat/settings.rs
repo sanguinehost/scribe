@@ -323,8 +323,6 @@ fn decrypt_system_prompt(
     }
 }
 
-/// Gets chat settings for a specific session, verifying ownership.
-#[instrument(skip(pool, user_dek), err)]
 pub async fn get_session_settings(
     pool: &DbPool,
     user_id: crate::db::DbId,
@@ -336,7 +334,11 @@ pub async fn get_session_settings(
     crate::db::with_conn(pool, move |conn| {
         verify_session_ownership(conn, session_id, user_id)?;
         info!(%session_id, %user_id, "Fetching settings for owned session");
-        let settings_tuple: SettingsTuple = chat_sessions::table
+
+        // Split into five queries to avoid Diesel's CompatibleType limit
+        // Complex array types must be queried separately
+        // Query 1: First 9 simple fields
+        let settings_part1 = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
                 chat_sessions::system_prompt_ciphertext,
@@ -348,23 +350,89 @@ pub async fn get_session_settings(
                 chat_sessions::top_k,
                 chat_sessions::top_p,
                 chat_sessions::seed,
-                chat_sessions::stop_sequences,
+            ))
+            .first::<(
+                Option<Vec<u8>>,
+                Option<Vec<u8>>,
+                Option<crate::db::DbDecimal>,
+                Option<i32>,
+                Option<crate::db::DbDecimal>,
+                Option<crate::db::DbDecimal>,
+                Option<i32>,
+                Option<crate::db::DbDecimal>,
+                Option<i32>,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 1 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Query 2: stop_sequences (complex array type)
+        // DbStringArray already wraps Option internally, so don't use Option<DbStringArray>
+        let stop_sequences = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select(chat_sessions::stop_sequences)
+            .first::<crate::db::DbStringArray>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch stop_sequences after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Query 3: 3 simple fields
+        let settings_part3 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
                 chat_sessions::history_management_strategy,
                 chat_sessions::history_management_limit,
                 chat_sessions::model_name,
+            ))
+            .first::<(
+                String,
+                i32,
+                String,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 3 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Query 4: 4 fields
+        let settings_part4 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
                 chat_sessions::gemini_thinking_budget,
                 chat_sessions::gemini_enable_code_execution,
                 chat_sessions::player_chronicle_id,
                 chat_sessions::agent_mode,
-                chat_sessions::active_custom_persona_id,
-                chat_sessions::prompt_template_id,
             ))
-            .first(conn)
+            .first::<(
+                Option<i32>,
+                Option<bool>,
+                Option<crate::db::DbId>,
+                Option<String>,
+            )>(conn)
             .map_err(|e| {
-                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings after ownership check");
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 4 after ownership check");
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
+        // Query 5: Remaining 2 fields
+        let settings_part5 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
+                chat_sessions::active_custom_persona_id,
+                chat_sessions::prompt_template_id,
+            ))
+            .first::<(
+                Option<crate::db::DbId>,
+                String,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 5 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Destructure all query results
         let (
             system_prompt_ciphertext,
             system_prompt_nonce,
@@ -375,17 +443,25 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences,
+        ) = settings_part1;
+
+        let (
             history_management_strategy,
             history_management_limit,
             model_name,
+        ) = settings_part3;
+
+        let (
             gemini_thinking_budget,
             gemini_enable_code_execution,
             player_chronicle_id,
             agent_mode,
+        ) = settings_part4;
+
+        let (
             active_custom_persona_id,
             prompt_template_id,
-        ) = settings_tuple;
+        ) = settings_part5;
 
         let decrypted_system_prompt = decrypt_system_prompt(
             system_prompt_ciphertext.as_ref(),
@@ -409,10 +485,10 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences: stop_sequences.unwrap_or_default(),
+            stop_sequences: stop_sequences.into(),
             history_management_strategy,
             history_management_limit,
-            model_name,
+            model_name: Some(model_name),
             gemini_thinking_budget,
             gemini_enable_code_execution,
             chronicle_id: player_chronicle_id,
@@ -427,7 +503,8 @@ pub async fn get_session_settings(
               "get_session_settings: Response created successfully");
 
         Ok(response)
-    }).await
+    })
+    .await
 }
 /// Handles system prompt encryption for update
 fn handle_system_prompt_update(

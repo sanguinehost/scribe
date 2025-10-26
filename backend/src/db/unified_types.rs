@@ -257,7 +257,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbId {
         &'b self,
         mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
     ) -> diesel::QueryResult<()> {
-        pass.push_bind_param(&self.0)?;
+        pass.push_bind_param::<PgUuid, _>(&self.0)?;
         Ok(())
     }
 }
@@ -268,7 +268,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbId {
 //        &'b self,
 //        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
 //    ) -> diesel::QueryResult<()> {
-//        ToSql::<Text, Sqlite>::to_sql(self, &mut pass.to_sql_literal())?;
+//        pass.push_bind_param::<Text, _>(&self.to_string())?;
 //        Ok(())
 //    }
 //}
@@ -652,6 +652,13 @@ impl ToSql<Numeric, Pg> for DbDecimal {
     }
 }
 
+#[cfg(feature = "postgres-backend")]
+impl ToSql<Nullable<Numeric>, Pg> for DbDecimal {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <BigDecimal as ToSql<Numeric, Pg>>::to_sql(&self.0, out)
+    }
+}
+
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<Text, Sqlite> for DbDecimal {
     fn from_sql(
@@ -749,8 +756,28 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbDecimal {
         &'b self,
         mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
     ) -> diesel::QueryResult<()> {
-        pass.push_bind_param(&self.0)?;
+        pass.push_bind_param::<Numeric, _>(&self.0)?;
         Ok(())
+    }
+}
+
+// Note: AsExpression<Numeric> is automatically implemented by Diesel via blanket impl from diesel(sql_type = Numeric)
+// However, for Nullable<Numeric>, we need manual implementations since Numeric != Nullable<Numeric>
+#[cfg(feature = "postgres-backend")]
+impl AsExpression<Nullable<Numeric>> for DbDecimal {
+    type Expression = <Option<BigDecimal> as AsExpression<Nullable<Numeric>>>::Expression;
+
+    fn as_expression(self) -> Self::Expression {
+        <Option<BigDecimal> as AsExpression<Nullable<Numeric>>>::as_expression(Some(self.0))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<'a> AsExpression<Nullable<Numeric>> for &'a DbDecimal {
+    type Expression = <Option<&'a BigDecimal> as AsExpression<Nullable<Numeric>>>::Expression;
+
+    fn as_expression(self) -> Self::Expression {
+        <Option<&BigDecimal> as AsExpression<Nullable<Numeric>>>::as_expression(Some(&self.0))
     }
 }
 

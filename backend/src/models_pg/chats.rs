@@ -183,6 +183,375 @@ pub struct Chat {
     pub narrative_style_override_nonce: Option<Vec<u8>>,
 }
 
+/// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)
+#[derive(Queryable, Selectable, Clone, Serialize, Deserialize)]
+#[diesel(table_name = chat_sessions)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct ChatListQuery {
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
+    pub title_ciphertext: Option<Vec<u8>>,
+    pub title_nonce: Option<Vec<u8>>,
+    pub system_prompt_ciphertext: Option<Vec<u8>>,
+    pub system_prompt_nonce: Option<Vec<u8>>,
+    pub model_name: String,
+    pub chat_mode: ChatMode,
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
+    pub stop_sequences: crate::models::OptionalStringArray,
+    pub total_prompt_tokens: i32,
+    pub total_completion_tokens: i32,
+    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
+    pub total_credits_used: crate::db::DbDecimal,
+    pub visibility: Option<String>,
+    pub player_chronicle_id: Option<crate::db::DbId>,
+}
+
+impl ChatListQuery {
+    /// Convert to ChatForClient with decrypted title and system_prompt
+    pub fn into_decrypted_for_client(
+        self,
+        dek_opt: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<ChatForClient, AppError> {
+        let encryption_service = crate::services::encryption_service::EncryptionService::new();
+
+        let decrypted_title = match (self.title_ciphertext, self.title_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if let Some(dek) = dek_opt {
+                    if ciphertext.is_empty() && nonce.is_empty() {
+                        Ok(Some(String::new()))
+                    } else if ciphertext.is_empty() || nonce.is_empty() {
+                        Err(AppError::DecryptionError(
+                            "Mismatched ciphertext/nonce for chat title".to_string(),
+                        ))
+                    } else {
+                        let decrypted_bytes = encryption_service.decrypt(
+                            &ciphertext,
+                            &nonce,
+                            dek.expose_secret().as_slice(),
+                        )?;
+                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                            AppError::DecryptionError(format!("Invalid UTF-8 for chat title: {e}"))
+                        })
+                    }
+                } else {
+                    Ok(Some("[Encrypted]".to_string()))
+                }
+            }
+            (None, None) => Ok(None),
+            _ => Err(AppError::DecryptionError(
+                "Mismatched title ciphertext/nonce".to_string(),
+            )),
+        }?;
+
+        let decrypted_system_prompt = match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if let Some(dek) = dek_opt {
+                    if ciphertext.is_empty() && nonce.is_empty() {
+                        Ok(Some(String::new()))
+                    } else if ciphertext.is_empty() || nonce.is_empty() {
+                        Err(AppError::DecryptionError(
+                            "Mismatched ciphertext/nonce for system prompt".to_string(),
+                        ))
+                    } else {
+                        let decrypted_bytes = encryption_service.decrypt(
+                            &ciphertext,
+                            &nonce,
+                            dek.expose_secret().as_slice(),
+                        )?;
+                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                            AppError::DecryptionError(format!("Invalid UTF-8 for system prompt: {e}"))
+                        })
+                    }
+                } else {
+                    Ok(Some("[Encrypted]".to_string()))
+                }
+            }
+            (None, None) => Ok(None),
+            _ => Err(AppError::DecryptionError(
+                "Mismatched system prompt ciphertext/nonce".to_string(),
+            )),
+        }?;
+
+        Ok(ChatForClient {
+            id: self.id,
+            user_id: self.user_id,
+            character_id: self.character_id,
+            title: decrypted_title,
+            system_prompt: decrypted_system_prompt,
+            temperature: None,
+            max_output_tokens: None,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            seed: None,
+            stop_sequences: self.stop_sequences,
+            history_management_strategy: self.history_management_strategy,
+            history_management_limit: self.history_management_limit,
+            model_name: Some(self.model_name),
+            gemini_thinking_budget: None,
+            gemini_enable_code_execution: None,
+            visibility: self.visibility,
+            active_custom_persona_id: None,
+            active_impersonated_character_id: None,
+            chat_mode: self.chat_mode,
+            chronicle_id: self.player_chronicle_id,
+            total_prompt_tokens: self.total_prompt_tokens,
+            total_completion_tokens: self.total_completion_tokens,
+            total_credits_used: self.total_credits_used,
+        })
+    }
+}
+
+/// DTO for active chat session queries (includes generation params, avoids 32-field limit)
+#[derive(Queryable, Selectable, Clone, Serialize, Deserialize)]
+#[diesel(table_name = chat_sessions)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct ChatSessionQuery {
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
+    pub character_id: Option<crate::db::DbId>,
+    pub temperature: Option<crate::db::DbDecimal>,
+    pub max_output_tokens: Option<i32>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<crate::db::DbDecimal>,
+    pub seed: Option<i32>,
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
+    pub model_name: String,
+    pub model_provider: Option<String>,
+    pub gemini_thinking_budget: Option<i32>,
+    pub gemini_enable_code_execution: Option<bool>,
+    pub visibility: Option<String>,
+    pub active_custom_persona_id: Option<crate::db::DbId>,
+    pub active_impersonated_character_id: Option<crate::db::DbId>,
+    pub system_prompt_ciphertext: Option<Vec<u8>>,
+    pub system_prompt_nonce: Option<Vec<u8>>,
+    pub title_ciphertext: Option<Vec<u8>>,
+    pub title_nonce: Option<Vec<u8>>,
+    pub stop_sequences: crate::models::OptionalStringArray,
+    pub chat_mode: ChatMode,
+    pub player_chronicle_id: Option<crate::db::DbId>,
+    pub agent_mode: Option<String>,
+    pub prompt_template_id: String,
+    pub total_prompt_tokens: i32,
+    pub total_completion_tokens: i32,
+    pub estimated_cost_cents: i32,
+    pub tokens_counted_at: DbTimestamp,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
+}
+
+impl ChatSessionQuery {
+    /// Convert to ChatForClient with decrypted title and system_prompt
+    pub fn into_decrypted_for_client(
+        self,
+        dek_opt: Option<&SecretBox<Vec<u8>>>,
+    ) -> Result<ChatForClient, AppError> {
+        let encryption_service = crate::services::encryption_service::EncryptionService::new();
+
+        let decrypted_title = match (self.title_ciphertext, self.title_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if let Some(dek) = dek_opt {
+                    if ciphertext.is_empty() && nonce.is_empty() {
+                        Ok(Some(String::new()))
+                    } else if ciphertext.is_empty() || nonce.is_empty() {
+                        Err(AppError::DecryptionError(
+                            "Mismatched ciphertext/nonce for chat title".to_string(),
+                        ))
+                    } else {
+                        let decrypted_bytes = encryption_service.decrypt(
+                            &ciphertext,
+                            &nonce,
+                            dek.expose_secret().as_slice(),
+                        )?;
+                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                            AppError::DecryptionError(format!("Invalid UTF-8 for chat title: {e}"))
+                        })
+                    }
+                } else {
+                    Ok(Some("[Encrypted]".to_string()))
+                }
+            }
+            (None, None) => Ok(None),
+            _ => Err(AppError::DecryptionError(
+                "Mismatched title ciphertext/nonce".to_string(),
+            )),
+        }?;
+
+        let decrypted_system_prompt = match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
+            (Some(ciphertext), Some(nonce)) => {
+                if let Some(dek) = dek_opt {
+                    if ciphertext.is_empty() && nonce.is_empty() {
+                        Ok(Some(String::new()))
+                    } else if ciphertext.is_empty() || nonce.is_empty() {
+                        Err(AppError::DecryptionError(
+                            "Mismatched ciphertext/nonce for system prompt".to_string(),
+                        ))
+                    } else {
+                        let decrypted_bytes = encryption_service.decrypt(
+                            &ciphertext,
+                            &nonce,
+                            dek.expose_secret().as_slice(),
+                        )?;
+                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                            AppError::DecryptionError(format!("Invalid UTF-8 for system prompt: {e}"))
+                        })
+                    }
+                } else {
+                    Ok(Some("[Encrypted]".to_string()))
+                }
+            }
+            (None, None) => Ok(None),
+            _ => Err(AppError::DecryptionError(
+                "Mismatched system prompt ciphertext/nonce".to_string(),
+            )),
+        }?;
+
+        Ok(ChatForClient {
+            id: self.id,
+            user_id: self.user_id,
+            character_id: self.character_id,
+            title: decrypted_title,
+            system_prompt: decrypted_system_prompt,
+            temperature: self.temperature,
+            max_output_tokens: self.max_output_tokens,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            frequency_penalty: self.frequency_penalty,
+            presence_penalty: self.presence_penalty,
+            top_k: self.top_k,
+            top_p: self.top_p,
+            seed: self.seed,
+            stop_sequences: self.stop_sequences,
+            history_management_strategy: self.history_management_strategy,
+            history_management_limit: self.history_management_limit,
+            model_name: Some(self.model_name),
+            gemini_thinking_budget: self.gemini_thinking_budget,
+            gemini_enable_code_execution: self.gemini_enable_code_execution,
+            visibility: self.visibility,
+            active_custom_persona_id: self.active_custom_persona_id,
+            active_impersonated_character_id: self.active_impersonated_character_id,
+            chat_mode: self.chat_mode,
+            chronicle_id: self.player_chronicle_id,
+            total_prompt_tokens: self.total_prompt_tokens,
+            total_completion_tokens: self.total_completion_tokens,
+            total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
+        })
+    }
+
+    /// Decrypts and returns the session-level narrative style override.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::DecryptionError` if the encrypted data is malformed or cannot be decrypted.
+    pub fn get_narrative_style_override(
+        &self,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<
+        Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+        crate::errors::AppError,
+    > {
+        use crate::models::template_preferences::UpdateTemplatePreferenceRequest;
+
+        match (
+            &self.narrative_style_override_ciphertext,
+            &self.narrative_style_override_nonce,
+        ) {
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() && nonce.is_empty() {
+                    // Convention for empty encrypted field
+                    return Ok(None);
+                }
+
+                if ciphertext.is_empty() || nonce.is_empty() {
+                    return Err(crate::errors::AppError::DecryptionError(
+                        "Mismatched ciphertext/nonce for narrative style override".to_string(),
+                    ));
+                }
+
+                let encryption_service =
+                    crate::services::encryption_service::EncryptionService::new();
+                let decrypted_bytes = encryption_service.decrypt(
+                    ciphertext,
+                    nonce,
+                    dek.expose_secret().as_slice(),
+                )?;
+
+                let json_str = String::from_utf8(decrypted_bytes).map_err(|e| {
+                    crate::errors::AppError::DecryptionError(format!(
+                        "Invalid UTF-8 for decrypted narrative style override: {e}"
+                    ))
+                })?;
+
+                let override_data: UpdateTemplatePreferenceRequest =
+                    serde_json::from_str(&json_str).map_err(|e| {
+                        crate::errors::AppError::DecryptionError(format!(
+                            "Failed to deserialize narrative style override: {e}"
+                        ))
+                    })?;
+
+                Ok(Some(override_data))
+            }
+            (None, None) => Ok(None), // No override set
+            (Some(_), None) => Err(crate::errors::AppError::DecryptionError(
+                "Narrative style override ciphertext present but nonce missing".to_string(),
+            )),
+            (None, Some(_)) => Err(crate::errors::AppError::DecryptionError(
+                "Narrative style override nonce present but ciphertext missing".to_string(),
+            )),
+        }
+    }
+
+    /// Encrypts and sets the session-level narrative style override.
+    ///
+    /// Pass `None` to clear the override.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::EncryptionError` if encryption or JSON serialization fails.
+    pub fn set_narrative_style_override(
+        &mut self,
+        override_data: Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<(), crate::errors::AppError> {
+        match override_data {
+            Some(data) => {
+                let json_str = serde_json::to_string(&data).map_err(|e| {
+                    crate::errors::AppError::EncryptionError(format!(
+                        "Failed to serialize narrative style override: {e}"
+                    ))
+                })?;
+
+                let encryption_service =
+                    crate::services::encryption_service::EncryptionService::new();
+                let (ciphertext, nonce) =
+                    encryption_service.encrypt(&json_str, dek.expose_secret().as_slice())?;
+
+                self.narrative_style_override_ciphertext = Some(ciphertext);
+                self.narrative_style_override_nonce = Some(nonce);
+            }
+            None => {
+                // Clear the override
+                self.narrative_style_override_ciphertext = None;
+                self.narrative_style_override_nonce = None;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl std::fmt::Debug for Chat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Chat")
@@ -491,10 +860,60 @@ impl std::fmt::Display for ChatMode {
     }
 }
 
+// Query-optimized struct for loading chat messages (11 fields to respect Diesel's CompatibleType limit)
+#[derive(Queryable, Clone)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct ChatMessageQuery {
+    pub id: crate::db::DbId,
+    pub session_id: crate::db::DbId,
+    pub message_type: MessageRole,
+    pub content: Vec<u8>,
+    pub content_nonce: Option<Vec<u8>>,
+    pub created_at: DbTimestamp,
+    pub user_id: crate::db::DbId,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub model_name: String,
+    pub status: String,
+}
+
+impl ChatMessageQuery {
+    /// Convert to full ChatMessage with default values for cost tracking fields
+    pub fn to_full_message(self) -> ChatMessage {
+        ChatMessage {
+            id: self.id,
+            session_id: self.session_id,
+            message_type: self.message_type,
+            content: self.content,
+            content_nonce: self.content_nonce,
+            created_at: self.created_at,
+            user_id: self.user_id,
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
+            model_name: self.model_name,
+            status: self.status,
+            // Fields not loaded from query - use defaults
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
+            error_message: None,
+            superseded_at: None,
+            variant_count: 0,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: crate::db::DbDecimal::from(0),
+        }
+    }
+}
+
 // Represents a chat message in the database
 #[derive(Queryable, Selectable, Identifiable, Associations, Clone, Serialize, Deserialize)]
 #[diesel(belongs_to(Chat, foreign_key = session_id))]
 #[diesel(table_name = chat_messages)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct ChatMessage {
     pub id: crate::db::DbId,
     #[diesel(column_name = session_id)]
@@ -886,7 +1305,7 @@ impl ChatMessage {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             raw_prompt,
-            model_name: self.model_name,
+            model_name: Some(self.model_name),
             status: self.status,
             error_message: self.error_message,
             // Convert BigDecimal cost values to f64 for JSON serialization
@@ -1193,7 +1612,7 @@ impl Message {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             raw_prompt,
-            model_name: self.model_name,
+            model_name: Some(self.model_name),
             status: self.status,
             error_message: self.error_message,
             // Convert BigDecimal cost values to f64 for JSON serialization
@@ -1827,7 +2246,7 @@ impl Chat {
             stop_sequences: self.stop_sequences,
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
-            model_name: self.model_name,
+            model_name: Some(self.model_name),
             gemini_thinking_budget: self.gemini_thinking_budget,
             gemini_enable_code_execution: self.gemini_enable_code_execution,
             visibility: self.visibility,
@@ -2025,7 +2444,7 @@ impl From<Chat> for ChatSettingsResponse {
             stop_sequences: chat.stop_sequences,
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
-            model_name: chat.model_name,
+            model_name: Some(chat.model_name),
             gemini_thinking_budget: chat.gemini_thinking_budget,
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
             chronicle_id: chat.player_chronicle_id,
