@@ -103,6 +103,22 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         .with_state(state)
 }
 
+/// Helper to insert character (avoids E0275 Sized overflow with complex closures)
+#[cfg(feature = "sqlite-backend")]
+fn insert_character_sync(
+    conn: &mut crate::db::DbConnection,
+    character: &NewCharacter,
+) -> Result<crate::db::DbId, AppError> {
+    use diesel::prelude::*;
+    use crate::schema::characters::dsl::characters;
+
+    diesel::insert_into(characters)
+        .values(character)
+        .execute(conn)
+        .map(|_| character.id.expect("ID should be set before insert"))
+        .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
+}
+
 // POST /api/characters/upload
 #[instrument(skip(state, multipart, auth_session), err)]
 pub async fn upload_character_handler(
@@ -383,18 +399,13 @@ pub async fn upload_character_handler(
 
     #[cfg(feature = "sqlite-backend")]
     let returned_id: crate::db::DbId = {
-        use diesel::prelude::*;
         // SQLite doesn't support RETURNING, so we generate UUID before insert
         let generated_id = crate::db::DbId::new_v4();
         let mut character_with_id = new_character_for_db;
         character_with_id.id = Some(generated_id.into());
 
-        crate::db::with_conn(&state.pool, move |conn_insert_block| {
-            diesel::insert_into(characters)
-                .values(&character_with_id)
-                .execute(conn_insert_block)
-                .map(|_| generated_id)
-                .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
+        crate::db::with_conn(&state.pool, move |conn| {
+            insert_character_sync(conn, &character_with_id)
         })
         .await?
     };
