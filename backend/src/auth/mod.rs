@@ -199,9 +199,11 @@ pub async fn create_user_with_verification(
     };
 
     // Store verification token in database
-    crate::db::with_conn(pool, move |conn| insert_verification_token_sync(conn, &new_token))
-        .await
-        .map_err(AuthError::from)?;
+    crate::db::with_conn(pool, move |conn| {
+        insert_verification_token_sync(conn, &new_token)
+    })
+    .await
+    .map_err(AuthError::from)?;
 
     // Send verification email
     if let Err(e) = email_service

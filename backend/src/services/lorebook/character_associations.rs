@@ -48,7 +48,9 @@ impl LorebookService {
                         .filter(lorebooks::user_id.eq(user_id))
                         .count()
                         .get_result::<i64>(conn_sync)
-                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                         .map(|count| count > 0)
                 }
             })

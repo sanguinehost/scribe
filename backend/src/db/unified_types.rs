@@ -61,14 +61,8 @@ use uuid::Uuid;
 /// let uuid: &Uuid = &id;  // Deref to Uuid
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    derive(FromSqlRow)
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    derive(FromSqlRow)
-)]
+#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
 #[repr(transparent)]
 pub struct DbId(Uuid);
 
@@ -278,23 +272,33 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbId {
 
 #[cfg(feature = "postgres-backend")]
 impl diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>> for DbId {
-    type Expression = <Option<uuid::Uuid> as diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>>>::Expression;
+    type Expression = <Option<uuid::Uuid> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<PgUuid>,
+    >>::Expression;
     fn as_expression(self) -> Self::Expression {
-        <Option<uuid::Uuid> as diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>>>::as_expression(Some(self.0))
+        <Option<uuid::Uuid> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<PgUuid>,
+        >>::as_expression(Some(self.0))
     }
 }
 
 #[cfg(feature = "postgres-backend")]
 impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>> for &'a DbId {
-    type Expression = <Option<&'a uuid::Uuid> as diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>>>::Expression;
+    type Expression = <Option<&'a uuid::Uuid> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<PgUuid>,
+    >>::Expression;
     fn as_expression(self) -> Self::Expression {
-        <Option<&uuid::Uuid> as diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>>>::as_expression(Some(&self.0))
+        <Option<&uuid::Uuid> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<PgUuid>,
+        >>::as_expression(Some(&self.0))
     }
 }
 
 #[cfg(feature = "sqlite-backend")]
 impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for DbId {
-    type Expression = <Option<String> as diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>>>::Expression;
+    type Expression = <Option<String> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Text>,
+    >>::Expression;
     fn as_expression(self) -> Self::Expression {
         <Option<String> as diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>>>::as_expression(Some(self.to_string()))
     }
@@ -302,7 +306,9 @@ impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for DbI
 
 #[cfg(feature = "sqlite-backend")]
 impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for &'a DbId {
-    type Expression = <Option<String> as diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>>>::Expression;
+    type Expression = <Option<String> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Text>,
+    >>::Expression;
     fn as_expression(self) -> Self::Expression {
         <Option<String> as diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>>>::as_expression(Some(self.to_string()))
     }
@@ -794,31 +800,44 @@ impl<'a> AsExpression<Nullable<Numeric>> for &'a DbDecimal {
 
 // AsExpression implementations for Nullable<Double> (SQLite)
 #[cfg(feature = "sqlite-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>> for DbDecimal {
-    type Expression = <Option<f64> as diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>>::Expression;
+impl diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>
+    for DbDecimal
+{
+    type Expression = <Option<f64> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<diesel::sql_types::Double>,
+    >>::Expression;
     fn as_expression(self) -> Self::Expression {
         use bigdecimal::ToPrimitive;
         use std::str::FromStr;
         let value = f64::from_str(&self.0.to_string()).ok();
-        <Option<f64> as diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>>::as_expression(value)
+        <Option<f64> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<diesel::sql_types::Double>,
+        >>::as_expression(value)
     }
 }
 
 #[cfg(feature = "sqlite-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>> for &'a DbDecimal {
-    type Expression = <Option<f64> as diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>>::Expression;
+impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>
+    for &'a DbDecimal
+{
+    type Expression = <Option<f64> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<diesel::sql_types::Double>,
+    >>::Expression;
     fn as_expression(self) -> Self::Expression {
         use bigdecimal::ToPrimitive;
         use std::str::FromStr;
         let value = f64::from_str(&self.0.to_string()).ok();
-        <Option<f64> as diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>>::as_expression(value)
+        <Option<f64> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<diesel::sql_types::Double>,
+        >>::as_expression(value)
     }
 }
 
 // AsExpression implementations for Integer (SQLite schema compatibility)
 #[cfg(feature = "sqlite-backend")]
 impl diesel::expression::AsExpression<diesel::sql_types::Integer> for DbDecimal {
-    type Expression = <i32 as diesel::expression::AsExpression<diesel::sql_types::Integer>>::Expression;
+    type Expression =
+        <i32 as diesel::expression::AsExpression<diesel::sql_types::Integer>>::Expression;
     fn as_expression(self) -> Self::Expression {
         use std::str::FromStr;
         let value = i32::from_str(&self.0.to_string()).unwrap_or(0);
@@ -828,7 +847,8 @@ impl diesel::expression::AsExpression<diesel::sql_types::Integer> for DbDecimal 
 
 #[cfg(feature = "sqlite-backend")]
 impl<'a> diesel::expression::AsExpression<diesel::sql_types::Integer> for &'a DbDecimal {
-    type Expression = <i32 as diesel::expression::AsExpression<diesel::sql_types::Integer>>::Expression;
+    type Expression =
+        <i32 as diesel::expression::AsExpression<diesel::sql_types::Integer>>::Expression;
     fn as_expression(self) -> Self::Expression {
         use std::str::FromStr;
         let value = i32::from_str(&self.0.to_string()).unwrap_or(0);

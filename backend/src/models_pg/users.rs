@@ -13,8 +13,9 @@ use tracing;
 use uuid::Uuid;
 
 // User role enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[derive(diesel_derive_enum::DbEnum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, diesel_derive_enum::DbEnum,
+)]
 #[ExistingTypePath = "crate::schema::sql_types::UserRole"]
 pub enum UserRole {
     #[default]
@@ -36,8 +37,9 @@ impl std::fmt::Display for UserRole {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[derive(diesel_derive_enum::DbEnum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, diesel_derive_enum::DbEnum,
+)]
 #[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
 pub enum AccountStatus {
     #[default]

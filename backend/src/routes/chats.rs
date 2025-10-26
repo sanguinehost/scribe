@@ -7,7 +7,7 @@ use crate::errors::AppError;
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
     Chat,
-    ChatListQuery, // Added for lightweight list queries
+    ChatListQuery,    // Added for lightweight list queries
     ChatSessionQuery, // Added for session queries
     // ChatSettingsResponse, // Not used directly in this file anymore
     CreateChatRequest,    // Now available
@@ -660,7 +660,7 @@ fn fetch_chat_with_ownership_check(
     let chat = chat_sessions::table
         .filter(chat_sessions::id.eq(chat_id))
         .select(ChatSessionQuery::as_select())
-            .first::<ChatSessionQuery>(conn)
+        .first::<ChatSessionQuery>(conn)
         .map_err(|e| {
             if e == diesel::result::Error::NotFound {
                 tracing::warn!("Chat with id {} not found", chat_id);
@@ -1555,7 +1555,8 @@ pub async fn delete_trailing_messages_handler(
         {
             crate::db::with_conn(&pool, move |conn| {
                 // This closure moves the original message_ids
-                let message_uuids: Vec<uuid::Uuid> = message_ids.iter().map(|&id| id.into()).collect();
+                let message_uuids: Vec<uuid::Uuid> =
+                    message_ids.iter().map(|&id| id.into()).collect();
                 diesel::delete(crate::schema::old_votes::table) // Use old_votes
                     .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
                     .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_uuids)) // Use converted UUIDs
@@ -1583,7 +1584,10 @@ pub async fn delete_trailing_messages_handler(
         // Now delete the messages from PostgreSQL
         crate::db::with_conn(&pool, move |conn| {
             // This closure moves the clone
-            let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_messages.iter().map(|&id| id.into()).collect();
+            let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_messages
+                .iter()
+                .map(|&id| id.into())
+                .collect();
             diesel::delete(chat_messages::table)
                 .filter(chat_messages::session_id.eq(chat_id))
                 .filter(chat_messages::id.eq_any(message_uuids)) // Use converted UUIDs
@@ -1872,7 +1876,7 @@ async fn get_chat_token_usage_handler(
                 .filter(chat_sessions::id.eq(id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(ChatSessionQuery::as_select())
-            .first::<ChatSessionQuery>(conn)
+                .first::<ChatSessionQuery>(conn)
                 .map_err(|e| match e {
                     diesel::result::Error::NotFound => {
                         AppError::NotFound("Chat not found or access denied".to_string())

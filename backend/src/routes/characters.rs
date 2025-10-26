@@ -109,8 +109,8 @@ fn insert_character_sync(
     conn: &mut crate::db::DbConnection,
     character: &NewCharacter,
 ) -> Result<crate::db::DbId, AppError> {
-    use diesel::prelude::*;
     use crate::schema::characters::dsl::characters;
+    use diesel::prelude::*;
 
     diesel::insert_into(characters)
         .values(character)
@@ -774,7 +774,8 @@ pub async fn get_character_handler(
     let user_id_for_direct_clone = user_id_val;
     let character_id_for_direct_clone = character_id;
 
-    let directly_owned_character_opt: Option<Character> = match crate::db::with_conn(&state.pool, move |conn| {
+    let directly_owned_character_opt: Option<Character> =
+        match crate::db::with_conn(&state.pool, move |conn| {
             characters
                 .filter(
                     id.eq(character_id_for_direct_clone)
@@ -794,9 +795,14 @@ pub async fn get_character_handler(
                     AppError::DatabaseQueryError(e.to_string())
                 })
         })
-        .await {
+        .await
+        {
             Ok(result) => result,
-            Err(e) => return Err(AppError::DbInteractError(format!("DB interaction failed: {e}"))),
+            Err(e) => {
+                return Err(AppError::DbInteractError(format!(
+                    "DB interaction failed: {e}"
+                )))
+            }
         };
 
     match directly_owned_character_opt {

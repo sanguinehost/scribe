@@ -1025,7 +1025,7 @@ pub struct CharacterAsset {
     pub character_id: crate::db::DbId, // Changed from i32
     #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
     pub asset_type: String, // Renamed from `type_` to match DB column
-    pub uri: Option<String>, // Nullable in schema
+    pub uri: Option<String>,           // Nullable in schema
     pub name: String,
     pub ext: String,
 }

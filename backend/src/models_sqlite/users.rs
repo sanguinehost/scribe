@@ -19,7 +19,10 @@ use uuid::Uuid;
     feature = "postgres-backend",
     ExistingTypePath = "crate::schema::sql_types::UserRole"
 )]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)
+)]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum UserRole {
     #[default]
@@ -47,7 +50,10 @@ impl std::fmt::Display for UserRole {
     feature = "postgres-backend",
     ExistingTypePath = "crate::schema::sql_types::AccountStatus"
 )]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)
+)]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum AccountStatus {
     #[default]

@@ -607,7 +607,9 @@ async fn get_character_name_for_session(
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))??;
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+        })??;
 
     Ok(character_name)
 }
@@ -642,7 +644,9 @@ async fn get_character_for_session(
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Database interaction failed: {}", e)))??;
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Database interaction failed: {}", e))
+        })??;
 
     Ok(character)
 }

@@ -266,32 +266,37 @@ pub async fn get_session_data_for_generation(
                 })?;
 
             // Query 2: Additional session fields (5 fields)
-            let (model_prov, gem_think_budget, gem_enable_code_exec, player_chronicle_id, agent_mode) =
-                chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id))
-                    .filter(chat_sessions::user_id.eq(user_id))
-                    .select((
-                        chat_sessions::model_provider,
-                        chat_sessions::gemini_thinking_budget,
-                        chat_sessions::gemini_enable_code_execution,
-                        chat_sessions::player_chronicle_id,
-                        chat_sessions::agent_mode,
-                    ))
-                    .first::<(
-                        Option<String>,
-                        Option<i32>,
-                        Option<bool>,
-                        Option<crate::db::DbId>,
-                        Option<String>,
-                    )>(conn_interaction)
-                    .map_err(|e| match e {
-                        DieselError::NotFound => {
-                            AppError::NotFound(format!("Chat session {session_id} not found"))
-                        }
-                        _ => AppError::DatabaseQueryError(format!(
-                            "Failed to query chat session {session_id}: {e}"
-                        )),
-                    })?;
+            let (
+                model_prov,
+                gem_think_budget,
+                gem_enable_code_exec,
+                player_chronicle_id,
+                agent_mode,
+            ) = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select((
+                    chat_sessions::model_provider,
+                    chat_sessions::gemini_thinking_budget,
+                    chat_sessions::gemini_enable_code_execution,
+                    chat_sessions::player_chronicle_id,
+                    chat_sessions::agent_mode,
+                ))
+                .first::<(
+                    Option<String>,
+                    Option<i32>,
+                    Option<bool>,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                )>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
 
             // Query 3a: top_p parameter
             let top_p_val = chat_sessions::table
@@ -403,8 +408,8 @@ pub async fn get_session_data_for_generation(
                         AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
                     })?
                     .into_iter()
-                    .map(|(id, session_id, message_type, content, content_nonce, created_at, user_id, prompt_tokens, completion_tokens, model_name, status)| {
-                        DbChatMessage {
+                    .map(
+                        |(
                             id,
                             session_id,
                             message_type,
@@ -416,20 +421,34 @@ pub async fn get_session_data_for_generation(
                             completion_tokens,
                             model_name,
                             status,
-                            raw_prompt_ciphertext: None,
-                            raw_prompt_nonce: None,
-                            error_message: None,
-                            superseded_at: None,
-                            variant_count: 0,
-                            current_variant_index: 0,
-                            credits_charged: 0,
-                            credits_cost: crate::db::DbDecimal::from(0),
-                            actual_cost: crate::db::DbDecimal::from(0),
-                            modified_cost: crate::db::DbDecimal::from(0),
-                            credit_cost: 0,
-                            actual_charge: crate::db::DbDecimal::from(0),
-                        }
-                    })
+                        )| {
+                            DbChatMessage {
+                                id,
+                                session_id,
+                                message_type,
+                                content,
+                                content_nonce,
+                                created_at,
+                                user_id,
+                                prompt_tokens,
+                                completion_tokens,
+                                model_name,
+                                status,
+                                raw_prompt_ciphertext: None,
+                                raw_prompt_nonce: None,
+                                error_message: None,
+                                superseded_at: None,
+                                variant_count: 0,
+                                current_variant_index: 0,
+                                credits_charged: 0,
+                                credits_cost: crate::db::DbDecimal::from(0),
+                                actual_cost: crate::db::DbDecimal::from(0),
+                                modified_cost: crate::db::DbDecimal::from(0),
+                                credit_cost: 0,
+                                actual_charge: crate::db::DbDecimal::from(0),
+                            }
+                        },
+                    )
                     .collect()
             } else {
                 // When frontend history is provided, we don't need database messages

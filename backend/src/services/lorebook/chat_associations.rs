@@ -144,7 +144,9 @@ impl LorebookService {
 
                     diesel::delete(target)
                         .execute(conn_sync)
-                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 })
                 .await;
 
@@ -239,7 +241,9 @@ impl LorebookService {
                         .filter(lorebook_entries::user_id.eq(user_id_for_fetch))
                         .select(LorebookEntry::as_select())
                         .load::<LorebookEntry>(conn_sync)
-                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 }
             })
             .await;
@@ -574,7 +578,9 @@ impl LorebookService {
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .select((csl_dsl::lorebook_id, l_dsl::name, csl_dsl::created_at))
                     .load::<(crate::db::DbId, String, crate::DbTimestamp)>(conn_sync)
-                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))?;
+                    .map_err(|e: diesel::result::Error| {
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
 
                 // Get character-linked associations (only for character-based chats)
                 let character_associations = if let Some(char_id) = character_id {
@@ -584,7 +590,9 @@ impl LorebookService {
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
                         .load::<(crate::db::DbId, String, crate::DbTimestamp)>(conn_sync)
-                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))?
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?
                 } else {
                     Vec::new()
                 };
@@ -595,7 +603,9 @@ impl LorebookService {
                     .filter(cclo_dsl::user_id.eq(current_user_id))
                     .select((cclo_dsl::lorebook_id, cclo_dsl::action))
                     .load::<(crate::db::DbId, String)>(conn_sync)
-                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))?;
+                    .map_err(|e: diesel::result::Error| {
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
 
                 Ok::<_, AppError>((chat_associations, character_associations, overrides))
             })
@@ -769,7 +779,9 @@ impl LorebookService {
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
-                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))?
+                    .map_err(|e: diesel::result::Error| {
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
                     > 0;
 
                 // Check if it's a character-level association (only for character-based chats)
@@ -780,7 +792,9 @@ impl LorebookService {
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .count()
                         .get_result::<i64>(conn_sync)
-                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))?
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?
                         > 0
                 } else {
                     false

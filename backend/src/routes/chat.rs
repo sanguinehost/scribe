@@ -990,7 +990,7 @@ pub async fn generate_chat_response(
             chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .select(ChatSessionQuery::as_select())
-            .first::<ChatSessionQuery>(conn)
+                .first::<ChatSessionQuery>(conn)
                 .optional()
                 .map_err(AppError::from)
         })
@@ -2382,7 +2382,7 @@ pub async fn get_agent_analysis_handler(
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(ChatSessionQuery::as_select())
-            .first::<ChatSessionQuery>(conn)
+                .first::<ChatSessionQuery>(conn)
                 .optional()
         })
         .await
@@ -2969,7 +2969,7 @@ pub async fn get_chat_session_with_dek(
                 .filter(crate::schema::chat_sessions::id.eq(chat_id))
                 .filter(crate::schema::chat_sessions::user_id.eq(user.id))
                 .select(ChatSessionQuery::as_select())
-            .first::<ChatSessionQuery>(conn)
+                .first::<ChatSessionQuery>(conn)
                 .optional()
         })
         .await

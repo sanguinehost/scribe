@@ -3332,34 +3332,37 @@ impl ChatListQuery {
             )),
         }?;
 
-        let decrypted_system_prompt = match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
-            (Some(ciphertext), Some(nonce)) => {
-                if let Some(dek) = dek_opt {
-                    if ciphertext.is_empty() && nonce.is_empty() {
-                        Ok(Some(String::new()))
-                    } else if ciphertext.is_empty() || nonce.is_empty() {
-                        Err(AppError::DecryptionError(
-                            "Mismatched ciphertext/nonce for system prompt".to_string(),
-                        ))
+        let decrypted_system_prompt =
+            match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
+                (Some(ciphertext), Some(nonce)) => {
+                    if let Some(dek) = dek_opt {
+                        if ciphertext.is_empty() && nonce.is_empty() {
+                            Ok(Some(String::new()))
+                        } else if ciphertext.is_empty() || nonce.is_empty() {
+                            Err(AppError::DecryptionError(
+                                "Mismatched ciphertext/nonce for system prompt".to_string(),
+                            ))
+                        } else {
+                            let decrypted_bytes = encryption_service.decrypt(
+                                &ciphertext,
+                                &nonce,
+                                dek.expose_secret().as_slice(),
+                            )?;
+                            String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                                AppError::DecryptionError(format!(
+                                    "Invalid UTF-8 for system prompt: {e}"
+                                ))
+                            })
+                        }
                     } else {
-                        let decrypted_bytes = encryption_service.decrypt(
-                            &ciphertext,
-                            &nonce,
-                            dek.expose_secret().as_slice(),
-                        )?;
-                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
-                            AppError::DecryptionError(format!("Invalid UTF-8 for system prompt: {e}"))
-                        })
+                        Ok(Some("[Encrypted]".to_string()))
                     }
-                } else {
-                    Ok(Some("[Encrypted]".to_string()))
                 }
-            }
-            (None, None) => Ok(None),
-            _ => Err(AppError::DecryptionError(
-                "Mismatched system prompt ciphertext/nonce".to_string(),
-            )),
-        }?;
+                (None, None) => Ok(None),
+                _ => Err(AppError::DecryptionError(
+                    "Mismatched system prompt ciphertext/nonce".to_string(),
+                )),
+            }?;
 
         Ok(ChatForClient {
             id: self.id,
@@ -3474,34 +3477,37 @@ impl ChatSessionQuery {
             )),
         }?;
 
-        let decrypted_system_prompt = match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
-            (Some(ciphertext), Some(nonce)) => {
-                if let Some(dek) = dek_opt {
-                    if ciphertext.is_empty() && nonce.is_empty() {
-                        Ok(Some(String::new()))
-                    } else if ciphertext.is_empty() || nonce.is_empty() {
-                        Err(AppError::DecryptionError(
-                            "Mismatched ciphertext/nonce for system prompt".to_string(),
-                        ))
+        let decrypted_system_prompt =
+            match (self.system_prompt_ciphertext, self.system_prompt_nonce) {
+                (Some(ciphertext), Some(nonce)) => {
+                    if let Some(dek) = dek_opt {
+                        if ciphertext.is_empty() && nonce.is_empty() {
+                            Ok(Some(String::new()))
+                        } else if ciphertext.is_empty() || nonce.is_empty() {
+                            Err(AppError::DecryptionError(
+                                "Mismatched ciphertext/nonce for system prompt".to_string(),
+                            ))
+                        } else {
+                            let decrypted_bytes = encryption_service.decrypt(
+                                &ciphertext,
+                                &nonce,
+                                dek.expose_secret().as_slice(),
+                            )?;
+                            String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
+                                AppError::DecryptionError(format!(
+                                    "Invalid UTF-8 for system prompt: {e}"
+                                ))
+                            })
+                        }
                     } else {
-                        let decrypted_bytes = encryption_service.decrypt(
-                            &ciphertext,
-                            &nonce,
-                            dek.expose_secret().as_slice(),
-                        )?;
-                        String::from_utf8(decrypted_bytes).map(Some).map_err(|e| {
-                            AppError::DecryptionError(format!("Invalid UTF-8 for system prompt: {e}"))
-                        })
+                        Ok(Some("[Encrypted]".to_string()))
                     }
-                } else {
-                    Ok(Some("[Encrypted]".to_string()))
                 }
-            }
-            (None, None) => Ok(None),
-            _ => Err(AppError::DecryptionError(
-                "Mismatched system prompt ciphertext/nonce".to_string(),
-            )),
-        }?;
+                (None, None) => Ok(None),
+                _ => Err(AppError::DecryptionError(
+                    "Mismatched system prompt ciphertext/nonce".to_string(),
+                )),
+            }?;
 
         Ok(ChatForClient {
             id: self.id,

@@ -79,33 +79,50 @@ pub async fn get_messages_for_session(
                             AppError::DatabaseQueryError(e.to_string())
                         })
                         .map(|tuples| {
-                            tuples.into_iter().map(|(msg_id, msg_session_id, msg_type, msg_content, msg_nonce, msg_created_at, msg_user_id, msg_prompt_tokens, msg_completion_tokens, msg_model_name, msg_status)| {
-                                ChatMessage {
-                                    id: msg_id,
-                                    session_id: msg_session_id,
-                                    message_type: msg_type,
-                                    content: msg_content,
-                                    content_nonce: msg_nonce,
-                                    created_at: msg_created_at,
-                                    user_id: msg_user_id,
-                                    prompt_tokens: msg_prompt_tokens,
-                                    completion_tokens: msg_completion_tokens,
-                                    model_name: msg_model_name,
-                                    status: msg_status,
-                                    raw_prompt_ciphertext: None,
-                                    raw_prompt_nonce: None,
-                                    error_message: None,
-                                    superseded_at: None,
-                                    variant_count: 0,
-                                    current_variant_index: 0,
-                                    credits_charged: 0,
-                                    credits_cost: crate::db::DbDecimal::from(0),
-                                    actual_cost: crate::db::DbDecimal::from(0),
-                                    modified_cost: crate::db::DbDecimal::from(0),
-                                    credit_cost: 0,
-                                    actual_charge: crate::db::DbDecimal::from(0),
-                                }
-                            }).collect()
+                            tuples
+                                .into_iter()
+                                .map(
+                                    |(
+                                        msg_id,
+                                        msg_session_id,
+                                        msg_type,
+                                        msg_content,
+                                        msg_nonce,
+                                        msg_created_at,
+                                        msg_user_id,
+                                        msg_prompt_tokens,
+                                        msg_completion_tokens,
+                                        msg_model_name,
+                                        msg_status,
+                                    )| {
+                                        ChatMessage {
+                                            id: msg_id,
+                                            session_id: msg_session_id,
+                                            message_type: msg_type,
+                                            content: msg_content,
+                                            content_nonce: msg_nonce,
+                                            created_at: msg_created_at,
+                                            user_id: msg_user_id,
+                                            prompt_tokens: msg_prompt_tokens,
+                                            completion_tokens: msg_completion_tokens,
+                                            model_name: msg_model_name,
+                                            status: msg_status,
+                                            raw_prompt_ciphertext: None,
+                                            raw_prompt_nonce: None,
+                                            error_message: None,
+                                            superseded_at: None,
+                                            variant_count: 0,
+                                            current_variant_index: 0,
+                                            credits_charged: 0,
+                                            credits_cost: crate::db::DbDecimal::from(0),
+                                            actual_cost: crate::db::DbDecimal::from(0),
+                                            modified_cost: crate::db::DbDecimal::from(0),
+                                            credit_cost: 0,
+                                            actual_charge: crate::db::DbDecimal::from(0),
+                                        }
+                                    },
+                                )
+                                .collect()
                         })
                 } else {
                     Err(AppError::Forbidden(
@@ -308,33 +325,47 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                                     "Parent message not found: {e}"
                                 ))
                             })
-                            .map(|(msg_id, msg_session_id, msg_type, msg_content, msg_nonce, msg_created_at, msg_user_id, msg_prompt_tokens, msg_completion_tokens, msg_model_name, msg_status)| {
-                                ChatMessage {
-                                    id: msg_id,
-                                    session_id: msg_session_id,
-                                    message_type: msg_type,
-                                    content: msg_content,
-                                    content_nonce: msg_nonce,
-                                    created_at: msg_created_at,
-                                    user_id: msg_user_id,
-                                    prompt_tokens: msg_prompt_tokens,
-                                    completion_tokens: msg_completion_tokens,
-                                    model_name: msg_model_name,
-                                    status: msg_status,
-                                    raw_prompt_ciphertext: None,
-                                    raw_prompt_nonce: None,
-                                    error_message: None,
-                                    superseded_at: None,
-                                    variant_count: 0,
-                                    current_variant_index: 0,
-                                    credits_charged: 0,
-                                    credits_cost: crate::db::DbDecimal::from(0),
-                                    actual_cost: crate::db::DbDecimal::from(0),
-                                    modified_cost: crate::db::DbDecimal::from(0),
-                                    credit_cost: 0,
-                                    actual_charge: crate::db::DbDecimal::from(0),
-                                }
-                            })
+                            .map(
+                                |(
+                                    msg_id,
+                                    msg_session_id,
+                                    msg_type,
+                                    msg_content,
+                                    msg_nonce,
+                                    msg_created_at,
+                                    msg_user_id,
+                                    msg_prompt_tokens,
+                                    msg_completion_tokens,
+                                    msg_model_name,
+                                    msg_status,
+                                )| {
+                                    ChatMessage {
+                                        id: msg_id,
+                                        session_id: msg_session_id,
+                                        message_type: msg_type,
+                                        content: msg_content,
+                                        content_nonce: msg_nonce,
+                                        created_at: msg_created_at,
+                                        user_id: msg_user_id,
+                                        prompt_tokens: msg_prompt_tokens,
+                                        completion_tokens: msg_completion_tokens,
+                                        model_name: msg_model_name,
+                                        status: msg_status,
+                                        raw_prompt_ciphertext: None,
+                                        raw_prompt_nonce: None,
+                                        error_message: None,
+                                        superseded_at: None,
+                                        variant_count: 0,
+                                        current_variant_index: 0,
+                                        credits_charged: 0,
+                                        credits_cost: crate::db::DbDecimal::from(0),
+                                        actual_cost: crate::db::DbDecimal::from(0),
+                                        modified_cost: crate::db::DbDecimal::from(0),
+                                        credit_cost: 0,
+                                        actual_charge: crate::db::DbDecimal::from(0),
+                                    }
+                                },
+                            )
                     })
                     .await?;
 
