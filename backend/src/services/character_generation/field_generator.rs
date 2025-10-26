@@ -1376,8 +1376,8 @@ Provide a detailed analysis including:
             .await?;
 
         // Parse the structured output
-        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output.clone().into())
-            .map_err(|e| {
+        let style_analysis: StyleAnalysisOutput =
+            serde_json::from_value(generated_output.clone().into()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse style analysis output: {}",
                     e
