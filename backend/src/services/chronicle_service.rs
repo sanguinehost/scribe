@@ -31,6 +31,84 @@ impl ChronicleService {
         Self { db_pool }
     }
 
+    /// Helper to insert chronicle event and query it back (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn insert_event_sync(
+        conn: &mut crate::db::DbConnection,
+        event: &NewChronicleEvent,
+        event_id: DbId,
+    ) -> Result<ChronicleEvent, AppError> {
+        use diesel::prelude::*;
+
+        diesel::insert_into(chronicle_events::table)
+            .values(event)
+            .execute(conn)
+            .map_err(|e| {
+                error!("Diesel error when creating event: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to create event: {e}"))
+            })?;
+
+        chronicle_events::table
+            .find(event_id)
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to query event after insert: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to query event: {e}"))
+            })
+    }
+
+    /// Helper to get chronicle by ID with ownership check (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn get_chronicle_sync(
+        conn: &mut crate::db::DbConnection,
+        user_id: DbId,
+        chronicle_id: DbId,
+    ) -> Result<PlayerChronicle, AppError> {
+        use diesel::prelude::*;
+
+        player_chronicles::table
+            .filter(
+                player_chronicles::id
+                    .eq(chronicle_id)
+                    .and(player_chronicles::user_id.eq(user_id)),
+            )
+            .first(conn)
+            .map_err(|e| {
+                error!("Diesel error when getting chronicle: {}", e);
+                match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound("Chronicle not found".to_string())
+                    }
+                    _ => AppError::DatabaseQueryError(format!("Failed to get chronicle: {e}")),
+                }
+            })
+    }
+
+    /// Helper to get event by ID with ownership check (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn get_event_sync(
+        conn: &mut crate::db::DbConnection,
+        user_id: DbId,
+        event_id: DbId,
+    ) -> Result<ChronicleEvent, AppError> {
+        use diesel::prelude::*;
+
+        chronicle_events::table
+            .filter(
+                chronicle_events::id
+                    .eq(event_id)
+                    .and(chronicle_events::user_id.eq(user_id)),
+            )
+            .first(conn)
+            .map_err(|e| {
+                error!("Diesel error when getting event: {}", e);
+                match e {
+                    DieselError::NotFound => AppError::NotFound("Event not found".to_string()),
+                    _ => AppError::DatabaseQueryError(format!("Failed to get event: {e}")),
+                }
+            })
+    }
+
     // --- Chronicle CRUD Operations ---
 
     /// Create a new chronicle for a user
@@ -214,6 +292,7 @@ impl ChronicleService {
         user_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
     ) -> Result<PlayerChronicle, AppError> {
+        #[cfg(feature = "postgres-backend")]
         let chronicle = crate::db::with_conn(&self.db_pool, move |conn| {
             player_chronicles::table
                 .filter(
@@ -231,6 +310,12 @@ impl ChronicleService {
                         _ => AppError::DatabaseQueryError(format!("Failed to get chronicle: {e}")),
                     }
                 })
+        })
+        .await?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let chronicle = crate::db::with_conn(&self.db_pool, move |conn| {
+            Self::get_chronicle_sync(conn, user_id, chronicle_id)
         })
         .await?;
 
@@ -544,26 +629,9 @@ impl ChronicleService {
 
         #[cfg(feature = "sqlite-backend")]
         let event = {
-            // Clone the ID for querying back after insert
             let event_id = new_event.id.expect("Event ID must be set before insert");
-
             crate::db::with_conn(&self.db_pool, move |conn| {
-                diesel::insert_into(chronicle_events::table)
-                    .values(&new_event)
-                    .execute(conn)
-                    .map_err(|e| {
-                        error!("Diesel error when creating event: {}", e);
-                        AppError::DatabaseQueryError(format!("Failed to create event: {e}"))
-                    })?;
-
-                // Query back the inserted event
-                chronicle_events::table
-                    .find(event_id)
-                    .first(conn)
-                    .map_err(|e| {
-                        error!("Failed to query event after insert: {}", e);
-                        AppError::DatabaseQueryError(format!("Failed to query event: {e}"))
-                    })
+                Self::insert_event_sync(conn, &new_event, event_id)
             })
             .await?
         };
@@ -656,6 +724,7 @@ impl ChronicleService {
         user_id: crate::db::DbId,
         event_id: crate::db::DbId,
     ) -> Result<ChronicleEvent, AppError> {
+        #[cfg(feature = "postgres-backend")]
         let event = crate::db::with_conn(&self.db_pool, move |conn| {
             chronicle_events::table
                 .filter(
@@ -671,6 +740,12 @@ impl ChronicleService {
                         _ => AppError::DatabaseQueryError(format!("Failed to get event: {e}")),
                     }
                 })
+        })
+        .await?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let event = crate::db::with_conn(&self.db_pool, move |conn| {
+            Self::get_event_sync(conn, user_id, event_id)
         })
         .await?;
 
