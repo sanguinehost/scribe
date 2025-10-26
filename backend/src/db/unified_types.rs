@@ -262,8 +262,10 @@ impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbId {
         &'b self,
         mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
     ) -> diesel::QueryResult<()> {
-        let id_string = self.to_string();
-        pass.push_bind_param::<Text, _>(&id_string)?;
+        pass.unsafe_to_cache_prepared();
+        pass.push_sql("'");
+        pass.push_sql(&self.to_string());
+        pass.push_sql("'");
         Ok(())
     }
 }
@@ -797,7 +799,8 @@ impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbDecimal 
         use bigdecimal::ToPrimitive;
         use std::str::FromStr;
         let value = f64::from_str(&self.0.to_string()).unwrap_or(0.0);
-        pass.push_bind_param::<diesel::sql_types::Double, _>(&value)?;
+        pass.unsafe_to_cache_prepared();
+        pass.push_sql(&value.to_string());
         Ok(())
     }
 }
