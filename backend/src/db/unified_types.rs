@@ -621,6 +621,14 @@ impl std::fmt::Display for DbDecimal {
     }
 }
 
+// Conversion from DbDecimal to SqliteBigDecimal for .into() usage
+#[cfg(feature = "sqlite-backend")]
+impl From<DbDecimal> for SqliteBigDecimal {
+    fn from(db_decimal: DbDecimal) -> Self {
+        SqliteBigDecimal(db_decimal.0)
+    }
+}
+
 impl DbType for DbDecimal {
     type PgType = BigDecimal;
     type SqliteType = SqliteBigDecimal;
