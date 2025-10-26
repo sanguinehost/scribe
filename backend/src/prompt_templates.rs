@@ -316,22 +316,24 @@ impl TemplateManager {
 
                 // Limit length to prevent memory exhaustion
                 if sanitized.len() > 10000 {
-                    crate::DbJson::String(format!("{}...[truncated]", &sanitized[..10000]))
+                    serde_json::Value::String(format!("{}...[truncated]", &sanitized[..10000]))
+                        .into()
                 } else {
-                    crate::DbJson::String(sanitized)
+                    serde_json::Value::String(sanitized).into()
                 }
             }
             serde_json::Value::Array(arr) => {
-                crate::DbJson::Array(
+                serde_json::Value::Array(
                     arr.iter()
                         .take(100) // Limit array size
                         .map(|v| self.sanitize_context(v.clone().into(), skip_keys))
-                        .map(|v| v.clone())
+                        .map(|v| v.into())
                         .collect(),
                 )
+                .into()
             }
             serde_json::Value::Object(obj) => {
-                crate::DbJson::Object(
+                serde_json::Value::Object(
                     obj.iter()
                         .take(100) // Limit object size
                         .map(|(k, v)| {
@@ -340,11 +342,12 @@ impl TemplateManager {
                                 (k.clone(), v.clone())
                             } else {
                                 let sanitized = self.sanitize_context(v.clone().into(), skip_keys);
-                                (k.clone(), sanitized.clone())
+                                (k.clone(), sanitized.into())
                             }
                         })
                         .collect(),
                 )
+                .into()
             }
             // Numbers, booleans, and null are safe
             _ => value,
@@ -401,7 +404,8 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let mut context_map: serde_json::Map<String, serde_json::Value> = match &context {
+        let context_value: &serde_json::Value = &context.clone().into();
+        let mut context_map: serde_json::Map<String, serde_json::Value> = match context_value {
             serde_json::Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
         };
