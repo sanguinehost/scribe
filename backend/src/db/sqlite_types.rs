@@ -306,7 +306,7 @@ impl Default for SqliteDateTime {
 }
 
 /// Newtype wrapper for serde_json::Value to enable SQLite TEXT mapping
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "sqlite-backend",
     derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow),
@@ -421,15 +421,6 @@ impl SqliteJson {
         self.0.get_mut(key)
     }
 }
-
-// Implement PartialEq and Eq by delegating to the inner serde_json::Value
-impl PartialEq for SqliteJson {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for SqliteJson {}
 
 impl From<serde_json::Value> for SqliteJson {
     fn from(value: serde_json::Value) -> Self {
