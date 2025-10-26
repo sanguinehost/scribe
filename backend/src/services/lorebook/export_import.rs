@@ -5,6 +5,23 @@ use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbId;
 
 impl LorebookService {
+    /// Helper to insert lorebook and query it back (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn insert_lorebook_sync(
+        conn: &mut crate::db::DbConnection,
+        new_lorebook: &crate::models::NewLorebook,
+    ) -> Result<Lorebook, diesel::result::Error> {
+        use diesel::prelude::*;
+
+        diesel::insert_into(lorebooks::table)
+            .values(new_lorebook)
+            .execute(conn)?;
+
+        lorebooks::table
+            .find(new_lorebook.id)
+            .first::<Lorebook>(conn)
+    }
+
     pub async fn export_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
@@ -199,14 +216,7 @@ impl LorebookService {
 
                 #[cfg(feature = "sqlite-backend")]
                 {
-                    use diesel::prelude::*;
-                    diesel::insert_into(lorebooks::table)
-                        .values(&new_lorebook_db)
-                        .execute(conn_sync)?;
-
-                    lorebooks::table
-                        .find(new_lorebook_db.id)
-                        .first::<Lorebook>(conn_sync)
+                    Self::insert_lorebook_sync(conn_sync, &new_lorebook_db)
                 }
             })
             .await
