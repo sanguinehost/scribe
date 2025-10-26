@@ -109,6 +109,67 @@ impl ChronicleService {
             })
     }
 
+    /// Helper to insert chronicle and query it back (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn insert_chronicle_sync(
+        conn: &mut crate::db::DbConnection,
+        chronicle: &NewChronicle,
+        chronicle_id: DbId,
+    ) -> Result<PlayerChronicle, AppError> {
+        use diesel::prelude::*;
+
+        diesel::insert_into(player_chronicles::table)
+            .values(chronicle)
+            .execute(conn)
+            .map_err(|e| {
+                error!("Diesel error when creating chronicle: {}", e);
+                match e {
+                    DieselError::DatabaseError(_, ref info) => {
+                        if info.message().contains("duplicate")
+                            || info.message().contains("unique")
+                        {
+                            AppError::Conflict(
+                                "A chronicle with this name already exists".to_string(),
+                            )
+                        } else {
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to create chronicle: {e}"
+                            ))
+                        }
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to create chronicle: {e}"
+                    )),
+                }
+            })?;
+
+        player_chronicles::table
+            .find(chronicle_id)
+            .first(conn)
+            .map_err(|e| {
+                error!("Failed to query chronicle after insert: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to query chronicle: {e}"))
+            })
+    }
+
+    /// Helper to list user chronicles (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn list_user_chronicles_sync(
+        conn: &mut crate::db::DbConnection,
+        user_id: DbId,
+    ) -> Result<Vec<PlayerChronicle>, AppError> {
+        use diesel::prelude::*;
+
+        player_chronicles::table
+            .filter(player_chronicles::user_id.eq(user_id))
+            .order(player_chronicles::updated_at.desc())
+            .load(conn)
+            .map_err(|e| {
+                error!("Diesel error when getting user chronicles: {}", e);
+                AppError::DatabaseQueryError(format!("Failed to get chronicles: {e}"))
+            })
+    }
+
     // --- Chronicle CRUD Operations ---
 
     /// Create a new chronicle for a user
@@ -155,45 +216,12 @@ impl ChronicleService {
 
         #[cfg(feature = "sqlite-backend")]
         let chronicle = {
-            // Clone the ID for querying back after insert
             let chronicle_id = new_chronicle
                 .id
                 .expect("Chronicle ID must be set before insert");
 
             crate::db::with_conn(&self.db_pool, move |conn| {
-                diesel::insert_into(player_chronicles::table)
-                    .values(&new_chronicle)
-                    .execute(conn)
-                    .map_err(|e| {
-                        error!("Diesel error when creating chronicle: {}", e);
-                        match e {
-                            DieselError::DatabaseError(_, ref info) => {
-                                if info.message().contains("duplicate")
-                                    || info.message().contains("unique")
-                                {
-                                    AppError::Conflict(
-                                        "A chronicle with this name already exists".to_string(),
-                                    )
-                                } else {
-                                    AppError::DatabaseQueryError(format!(
-                                        "Failed to create chronicle: {e}"
-                                    ))
-                                }
-                            }
-                            _ => AppError::DatabaseQueryError(format!(
-                                "Failed to create chronicle: {e}"
-                            )),
-                        }
-                    })?;
-
-                // Query back the inserted chronicle
-                player_chronicles::table
-                    .find(chronicle_id)
-                    .first(conn)
-                    .map_err(|e| {
-                        error!("Failed to query chronicle after insert: {}", e);
-                        AppError::DatabaseQueryError(format!("Failed to query chronicle: {e}"))
-                    })
+                Self::insert_chronicle_sync(conn, &new_chronicle, chronicle_id)
             })
             .await?
         };
@@ -208,6 +236,7 @@ impl ChronicleService {
         &self,
         user_id: crate::db::DbId,
     ) -> Result<Vec<PlayerChronicle>, AppError> {
+        #[cfg(feature = "postgres-backend")]
         let chronicles = crate::db::with_conn(&self.db_pool, move |conn| {
             player_chronicles::table
                 .filter(player_chronicles::user_id.eq(user_id))
@@ -217,6 +246,12 @@ impl ChronicleService {
                     error!("Diesel error when getting user chronicles: {}", e);
                     AppError::DatabaseQueryError(format!("Failed to get chronicles: {e}"))
                 })
+        })
+        .await?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let chronicles = crate::db::with_conn(&self.db_pool, move |conn| {
+            Self::list_user_chronicles_sync(conn, user_id)
         })
         .await?;
 

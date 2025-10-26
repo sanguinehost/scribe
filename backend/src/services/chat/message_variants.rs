@@ -9,6 +9,21 @@ use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// Helper to insert message variant (avoids E0275 Sized overflow with SQLite)
+#[cfg(feature = "sqlite-backend")]
+fn insert_variant_sync(
+    conn: &mut crate::db::DbConnection,
+    variant: &NewMessageVariant,
+) -> Result<(), AppError> {
+    diesel::insert_into(message_variants::table)
+        .values(variant)
+        .execute(conn)
+        .map(|_| ())
+        .map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
+        })
+}
+
 /// Get all variants for a specific message
 pub async fn get_message_variants(
     state: Arc<AppState>,
@@ -468,6 +483,7 @@ pub async fn ensure_original_variant_exists(
             dek,
         )?;
 
+        #[cfg(feature = "postgres-backend")]
         crate::db::with_conn(&state.pool, move |conn| {
             diesel::insert_into(message_variants::table)
                 .values(&original_variant)
@@ -475,6 +491,12 @@ pub async fn ensure_original_variant_exists(
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
                 })
+        })
+        .await?;
+
+        #[cfg(feature = "sqlite-backend")]
+        crate::db::with_conn(&state.pool, move |conn| {
+            insert_variant_sync(conn, &original_variant)
         })
         .await?;
     }
