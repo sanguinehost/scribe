@@ -56,6 +56,24 @@ impl UserPersonaService {
         }
     }
 
+    /// Helper to insert user persona and query it back (avoids E0275 Sized overflow)
+    #[cfg(feature = "sqlite-backend")]
+    fn insert_user_persona_sync(
+        conn: &mut crate::db::DbConnection,
+        new_persona: &crate::models::user_personas::NewUserPersona,
+    ) -> Result<UserPersona, diesel::result::Error> {
+        use diesel::prelude::*;
+
+        let persona_id = new_persona.id;
+        diesel::insert_into(user_personas_dsl::user_personas)
+            .values(new_persona)
+            .execute(conn)?;
+
+        user_personas_dsl::user_personas
+            .filter(user_personas_dsl::id.eq(persona_id))
+            .first::<UserPersona>(conn)
+    }
+
     /// Creates a new user persona with encrypted sensitive fields.
     ///
     /// # Errors
@@ -151,17 +169,7 @@ impl UserPersonaService {
 
                 #[cfg(feature = "sqlite-backend")]
                 {
-                    use diesel::prelude::*;
-                    let persona_id = new_persona_db.id;
-                    diesel::insert_into(user_personas_dsl::user_personas)
-                        .values(&new_persona_db)
-                        .execute(db_conn)
-                        .map_err(AppError::from)?;
-
-                    // Query back the inserted row
-                    user_personas_dsl::user_personas
-                        .filter(user_personas_dsl::id.eq(persona_id))
-                        .first::<UserPersona>(db_conn)
+                    Self::insert_user_persona_sync(db_conn, &new_persona_db)
                         .map_err(AppError::from)
                 }
             })
