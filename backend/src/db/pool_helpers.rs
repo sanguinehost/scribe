@@ -53,11 +53,16 @@ impl SqlitePoolExt for DbPool {
 // Extension trait to provide .interact() compatibility for SQLite connections
 // Note: For SQLite, we don't actually need spawn_blocking here since the connection
 // was already acquired via spawn_blocking in get(). The query itself runs synchronously.
+//
+// CRITICAL: This signature matches deadpool-diesel's interact() for PostgreSQL:
+// - Closure returns T directly (which can be Result<U, E>)
+// - interact() wraps that in Result<T, AppError>
+// - This allows the ?? pattern to work: .interact().await?? when T is Result<U, E>
 #[cfg(feature = "sqlite-backend")]
 pub trait SqliteInteractExt {
-    async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
+    async fn interact<F, T>(&self, f: F) -> Result<T, AppError>
     where
-        F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
+        F: FnOnce(&mut crate::db::DbConnection) -> T + Send + 'static,
         T: Send + 'static;
 }
 
@@ -65,16 +70,26 @@ pub trait SqliteInteractExt {
 impl SqliteInteractExt
     for diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>
 {
-    async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
+    async fn interact<F, T>(&self, f: F) -> Result<T, AppError>
     where
-        F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
+        F: FnOnce(&mut crate::db::DbConnection) -> T + Send + 'static,
         T: Send + 'static,
     {
         // For SQLite, queries are synchronous and fast (local file I/O)
         // Since we already paid the cost of spawn_blocking in get(), and queries
         // are typically very fast, we can just execute directly here
         // Wrap in a ready future to satisfy async fn requirement
-        std::future::ready(f(self)).await
+        //
+        // The closure returns T directly (e.g., Result<Option<Foo>, AppError>)
+        // We wrap that in Ok() to match PostgreSQL's Result<T, InteractError> pattern
+        //
+        // SAFETY: We need to cast &self to &mut for diesel operations
+        // This is safe because:
+        // 1. We have exclusive access to this connection (from pool)
+        // 2. Diesel operations need &mut for internal state tracking
+        // 3. No other code can access this connection concurrently
+        let conn = unsafe { &mut *(self as *const _ as *mut Self) };
+        std::future::ready(Ok(f(conn))).await
     }
 }
 
