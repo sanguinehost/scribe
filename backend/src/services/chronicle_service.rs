@@ -50,7 +50,7 @@ impl ChronicleService {
 
         chronicle_events::table
             .find(event_id)
-            .first(conn)
+            .first::<ChronicleEvent>(conn)
             .map_err(|e| {
                 error!("Failed to query event after insert: {}", e);
                 AppError::DatabaseQueryError(format!("Failed to query event: {e}"))
@@ -97,7 +97,7 @@ impl ChronicleService {
                     .eq(event_id)
                     .and(chronicle_events::user_id.eq(user_id)),
             )
-            .first(conn)
+            .first::<ChronicleEvent>(conn)
             .map_err(|e| {
                 error!("Diesel error when getting event: {}", e);
                 match e {
@@ -224,7 +224,7 @@ impl ChronicleService {
                     .eq(user_id)
                     .and(chronicle_events::chat_session_id.eq(Some(session_id))),
             )
-            .load(conn)
+            .load::<ChronicleEvent>(conn)
             .map_err(|e| {
                 error!("Diesel error when getting events for chat session: {}", e);
                 AppError::DatabaseQueryError(format!("Failed to get events for chat session: {e}"))
