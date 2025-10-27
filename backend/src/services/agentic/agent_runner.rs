@@ -1,5 +1,6 @@
 //! Agent runner for executing the multi-step agentic narrative workflow.
 
+use crate::db::DbId;
 use hex;
 use secrecy::ExposeSecret;
 use serde_json::{json, Value};

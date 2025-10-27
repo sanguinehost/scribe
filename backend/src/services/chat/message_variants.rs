@@ -316,7 +316,10 @@ pub async fn create_message_variant(
         raw_prompt: None, // Don't expose raw prompts in variant creation
         prompt_tokens: updated_message.prompt_tokens,
         completion_tokens: updated_message.completion_tokens,
-        model_name: Some(updated_message.model_name),
+        #[cfg(feature = "postgres-backend")]
+        model_name: Some(updated_message.model_name), // String → Option<String>
+        #[cfg(feature = "sqlite-backend")]
+        model_name: updated_message.model_name, // Already Option<String>
         status: updated_message.status,
         error_message: updated_message.error_message,
         variant_count: updated_message.variant_count,
@@ -636,7 +639,10 @@ pub async fn select_message_variant(
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
         completion_tokens: updated_message.completion_tokens,
-        model_name: Some(updated_message.model_name),
+        #[cfg(feature = "postgres-backend")]
+        model_name: Some(updated_message.model_name), // String → Option<String>
+        #[cfg(feature = "sqlite-backend")]
+        model_name: updated_message.model_name, // Already Option<String>
         status: updated_message.status,
         error_message: updated_message.error_message,
         variant_count: updated_message.variant_count,

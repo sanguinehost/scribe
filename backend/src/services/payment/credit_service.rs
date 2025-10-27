@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::crypto::{decrypt_gcm, encrypt_gcm};
+use crate::db::DbId;
 use crate::errors::AppError;
 use crate::metrics::SECURITY_METRICS;
 use crate::models::credit::{

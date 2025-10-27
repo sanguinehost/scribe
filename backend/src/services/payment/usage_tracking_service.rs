@@ -5,6 +5,7 @@
 //! to protect sensitive usage metadata.
 
 #[cfg(feature = "payment")]
+use crate::db::DbId;
 use crate::{
     config::Config,
     crypto::encrypt_gcm,

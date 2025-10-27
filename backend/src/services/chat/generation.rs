@@ -645,7 +645,7 @@ pub async fn get_session_data_for_generation(
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
-                    model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
+                    model_name: Some(session_model_name_db.to_string()), // Use session model for frontend-provided history
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
                     superseded_at: None,
@@ -1163,7 +1163,7 @@ pub async fn get_session_data_for_generation(
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
-                model_name: session_model_name_db.to_string(), // Use session model for character first message
+                model_name: Some(session_model_name_db.to_string()), // Use session model for character first message
                 status: "completed".to_string(), // First message is considered completed
                 error_message: None,
                 superseded_at: None,

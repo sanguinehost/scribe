@@ -6,6 +6,7 @@
 //! - Automatic purging of old records (30 days by default)
 //! - Only essential financial events are tracked
 
+use crate::db::DbId;
 use crate::errors::AppError;
 use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;

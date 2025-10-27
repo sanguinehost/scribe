@@ -725,7 +725,7 @@ pub async fn generate_chat_response(
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
-            model_name: model_to_use.clone(),
+            model_name: Some(model_to_use.clone()),
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,

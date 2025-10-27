@@ -943,19 +943,17 @@ async fn update_cumulative_token_counts(
             );
             #[cfg(feature = "sqlite-backend")]
             let (prompt_db, completion_db, cost_db) = (
-                prompt_tokens,      // Already i32, matches SQLite Integer
-                completion_tokens,  // Already i32, matches SQLite Integer
+                prompt_tokens,        // Already i32, matches SQLite Integer
+                completion_tokens,    // Already i32, matches SQLite Integer
                 estimated_cost_cents, // Already i32, matches SQLite Integer
             );
 
             diesel::update(users::table.find(user_id))
                 .set((
-                    users::total_prompt_tokens
-                        .eq(users::total_prompt_tokens + prompt_db),
+                    users::total_prompt_tokens.eq(users::total_prompt_tokens + prompt_db),
                     users::total_completion_tokens
                         .eq(users::total_completion_tokens + completion_db),
-                    users::total_token_cost_cents
-                        .eq(users::total_token_cost_cents + cost_db),
+                    users::total_token_cost_cents.eq(users::total_token_cost_cents + cost_db),
                     users::token_usage_updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;

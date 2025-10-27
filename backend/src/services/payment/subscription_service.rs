@@ -5,6 +5,7 @@
 //! processing while maintaining local subscription state.
 
 #[cfg(feature = "payment")]
+use crate::db::DbId;
 use crate::{
     config::Config,
     errors::AppError,
