@@ -63,7 +63,28 @@ pub trait SqliteInteractExt {
     async fn interact<F, T>(&self, f: F) -> Result<T, AppError>
     where
         F: FnOnce(&mut crate::db::DbConnection) -> T + Send + 'static,
-        T: Send + 'static;
+        T: Send + 'static,
+    {
+        // For SQLite, queries are synchronous and fast (local file I/O)
+        // Since we already paid the cost of spawn_blocking in get(), and queries
+        // are typically very fast, we can just execute directly here
+        // Wrap in a ready future to satisfy async fn requirement
+        //
+        // The closure returns T directly (e.g., Result<Option<Foo>, AppError>)
+        // We wrap that in Ok() to match PostgreSQL's Result<T, InteractError> pattern
+        //
+        // SAFETY: We need to cast &self to &mut for diesel operations
+        // This is safe because:
+        // 1. We have exclusive access to this connection (from pool)
+        // 2. Diesel operations need &mut for internal state tracking
+        // 3. No other code can access this connection concurrently
+        //
+        // We explicitly use DerefMut to get &mut DbConnection from &mut PooledConnection
+        use std::ops::DerefMut;
+        let conn_mut = unsafe { &mut *(self as *const _ as *mut Self) };
+        let inner_conn: &mut crate::db::DbConnection = conn_mut.deref_mut();
+        std::future::ready(Ok(f(inner_conn))).await
+    }
 }
 
 #[cfg(feature = "sqlite-backend")]
