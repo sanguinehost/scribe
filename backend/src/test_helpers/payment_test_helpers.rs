@@ -18,6 +18,7 @@ pub mod payment_test_helpers {
         },
         services::payment::CreditService,
         test_helpers::TestApp,
+        DbId,
     };
     use chrono::Utc;
     use diesel::{PgConnection, RunQueryDsl, SelectableHelper};

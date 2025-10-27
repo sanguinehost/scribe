@@ -1590,18 +1590,34 @@ pub async fn delete_trailing_messages_handler(
             tracing::warn!("Failed to delete message embeddings from Qdrant: {}", e);
         }
 
-        // Now delete the messages from PostgreSQL
+        // Now delete the messages from the database
         crate::db::with_conn(&pool, move |conn| {
             // This closure moves the clone
-            let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_messages
-                .iter()
-                .map(|&id| id.into())
-                .collect();
-            diesel::delete(chat_messages::table)
-                .filter(chat_messages::session_id.eq(chat_id))
-                .filter(chat_messages::id.eq_any(message_uuids)) // Use converted UUIDs
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            #[cfg(feature = "postgres-backend")]
+            {
+                let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_messages
+                    .iter()
+                    .map(|&id| id.into())
+                    .collect();
+                diesel::delete(chat_messages::table)
+                    .filter(chat_messages::session_id.eq(chat_id))
+                    .filter(chat_messages::id.eq_any(message_uuids))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            }
+
+            #[cfg(feature = "sqlite-backend")]
+            {
+                let message_strings: Vec<String> = message_ids_clone_for_messages
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect();
+                diesel::delete(chat_messages::table)
+                    .filter(chat_messages::session_id.eq(chat_id))
+                    .filter(chat_messages::id.eq_any(message_strings))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            }
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
@@ -1874,54 +1890,58 @@ async fn get_chat_token_usage_handler(
 
     // Fetch the chat session to verify ownership and get token statistics
     let user_id = user.id;
-    let conn = crate::db::get_conn(&state.pool).await.map_err(|e| {
-        tracing::error!("Failed to get database connection: {}", e);
-        AppError::DbPoolError(e.to_string())
-    })?;
-
-    let chat = conn
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .filter(chat_sessions::user_id.eq(user_id))
-                .select(ChatSessionQuery::as_select())
-                .first::<ChatSessionQuery>(conn)
-                .map_err(|e| match e {
-                    diesel::result::Error::NotFound => {
-                        AppError::NotFound("Chat not found or access denied".to_string())
-                    }
-                    _ => {
-                        tracing::error!("Database error querying chat: {}", e);
-                        AppError::DatabaseQueryError("Failed to query chat".to_string())
-                    }
-                })
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))
-        .and_then(|r| r)?;
+    let chat = crate::db::with_conn(&state.pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .filter(chat_sessions::user_id.eq(user_id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| match e {
+                diesel::result::Error::NotFound => {
+                    AppError::NotFound("Chat not found or access denied".to_string())
+                }
+                _ => {
+                    tracing::error!("Database error querying chat: {}", e);
+                    AppError::DatabaseQueryError("Failed to query chat".to_string())
+                }
+            })
+    })
+    .await?;
 
     let total_tokens = chat.total_prompt_tokens + chat.total_completion_tokens;
     let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
 
-    // Get the last used model from the most recent message in this chat
-    let conn_clone = crate::db::get_conn(&state.pool).await.map_err(|e| {
-        tracing::error!("Failed to get second database connection: {}", e);
-        AppError::DbPoolError(e.to_string())
-    })?;
+    // Get model_name from most recent message (schema differs between backends)
+    #[cfg(feature = "postgres-backend")]
+    let model_name_query = crate::db::with_conn(&state.pool, move |conn| {
+        chat_messages::table
+            .select(chat_messages::model_name)
+            .filter(chat_messages::session_id.eq(id))
+            .order_by(chat_messages::created_at.desc())
+            .first::<String>(conn) // PostgreSQL: model_name is Varchar (NOT NULL)
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await?;
 
-    let model_name = conn_clone
-        .interact(move |conn| {
-            chat_messages::table
-                .select(chat_messages::model_name)
-                .filter(chat_messages::session_id.eq(id))
-                .order_by(chat_messages::created_at.desc())
-                .first::<String>(conn) // PostgreSQL: model_name is NOT NULL
-                .optional()
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))
-        .and_then(|r| r)?
+    #[cfg(feature = "sqlite-backend")]
+    let model_name_query = crate::db::with_conn(&state.pool, move |conn| {
+        chat_messages::table
+            .select(chat_messages::model_name)
+            .filter(chat_messages::session_id.eq(id))
+            .order_by(chat_messages::created_at.desc())
+            .first::<Option<String>>(conn) // SQLite: model_name is Nullable<Text>
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await?;
+
+    #[cfg(feature = "postgres-backend")]
+    let model_name = model_name_query.unwrap_or_else(|| "unknown".to_string());
+
+    #[cfg(feature = "sqlite-backend")]
+    let model_name = model_name_query
+        .flatten()
         .unwrap_or_else(|| "unknown".to_string());
 
     let token_usage = ChatTokenUsage {

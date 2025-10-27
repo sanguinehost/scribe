@@ -154,7 +154,7 @@ impl UserPersonaService {
         };
 
         let pool = self.db_pool.clone();
-        let conn = crate::db::get_conn(&pool)
+        let mut conn = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let inserted_persona = conn
@@ -191,23 +191,19 @@ impl UserPersonaService {
         persona_id: crate::db::DbId,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let conn = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        let found_persona_db = conn
-            .interact(move |db_conn| {
-                user_personas_dsl::user_personas
-                    .filter(user_personas_dsl::id.eq(persona_id))
-                    .select(UserPersona::as_select())
-                    .first::<UserPersona>(db_conn)
-                    .optional()
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for get_user_persona: {e}"
-                ))
-            })??;
+        let found_persona_db = crate::db::with_conn(&pool, move |db_conn| {
+            user_personas_dsl::user_personas
+                .filter(user_personas_dsl::id.eq(persona_id))
+                .select(UserPersona::as_select())
+                .first::<UserPersona>(db_conn)
+                .optional()
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!(
+                        "DB query error for get_user_persona: {e}"
+                    ))
+                })
+        })
+        .await?;
 
         match found_persona_db {
             Some(persona_db) => {
@@ -239,7 +235,7 @@ impl UserPersonaService {
     ) -> Result<Vec<UserPersonaDataForClient>, AppError> {
         let pool = self.db_pool.clone();
         let user_id_for_query = current_user.id;
-        let conn = crate::db::get_conn(&pool)
+        let mut conn = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
@@ -288,7 +284,7 @@ impl UserPersonaService {
         update_dto: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let conn_fetch = crate::db::get_conn(&pool)
+        let mut conn_fetch = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_to_update_db = conn_fetch
@@ -419,25 +415,30 @@ impl UserPersonaService {
 
         persona.updated_at = crate::db::DbTimestamp::now();
 
-        // Get a new connection instance from the cloned pool for the update interaction
-        // pool was cloned at the start of the function. We need a connection from it.
-        let conn_update = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        let updated_persona_db = conn_update
-            .interact(move |db_conn| {
-                // Changed conn to db_conn
+        // Update persona with conditional RETURNING support
+        let updated_persona_db = crate::db::with_conn(&pool, move |db_conn| {
+            #[cfg(feature = "postgres-backend")]
+            {
                 diesel::update(user_personas_dsl::user_personas.find(persona_id))
-                    .set(&persona) // UserPersona derives AsChangeset
-                    .get_result::<UserPersona>(db_conn) // Changed conn to db_conn
+                    .set(&persona)
+                    .get_result::<UserPersona>(db_conn)
                     .map_err(AppError::from)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for update_user_persona (update): {e}"
-                ))
-            })??;
+            }
+
+            #[cfg(feature = "sqlite-backend")]
+            {
+                diesel::update(user_personas_dsl::user_personas.find(persona_id))
+                    .set(&persona)
+                    .execute(db_conn)
+                    .map_err(AppError::from)?;
+
+                user_personas_dsl::user_personas
+                    .find(persona_id)
+                    .first::<UserPersona>(db_conn)
+                    .map_err(AppError::from)
+            }
+        })
+        .await?;
 
         tracing::info!(user_id = %loggable_user_id(current_user.id), persona_id = %updated_persona_db.id, "Successfully updated user persona");
         updated_persona_db.into_data_for_client(Some(dek))
@@ -452,7 +453,7 @@ impl UserPersonaService {
         let pool = self.db_pool.clone();
 
         // First, fetch to verify ownership before deleting
-        let conn_fetch = crate::db::get_conn(&pool)
+        let mut conn_fetch = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_to_delete_opt = conn_fetch
@@ -488,7 +489,7 @@ impl UserPersonaService {
                 // Proceed with deletion
                 // Get a new connection instance from the cloned pool for the delete interaction
                 // pool was cloned at the start of the function.
-                let conn_delete = crate::db::get_conn(&pool)
+                let mut conn_delete = crate::db::get_conn(&pool)
                     .await
                     .map_err(|e| AppError::DbPoolError(e.to_string()))?;
                 let num_deleted = conn_delete
@@ -534,7 +535,7 @@ impl UserPersonaService {
         persona_id_val: Option<crate::db::DbId>,
     ) -> Result<User, AppError> {
         // Return the updated User
-        let conn = crate::db::get_conn(&pool)
+        let mut conn = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
@@ -590,7 +591,7 @@ impl UserPersonaService {
         user_id_val: crate::db::DbId,
     ) -> Result<Option<UserPersona>, AppError> {
         debug!(%persona_id_val, %user_id_val, "Attempting to get user persona by ID and user ID");
-        let conn = crate::db::get_conn(&pool)
+        let mut conn = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let persona_result = conn

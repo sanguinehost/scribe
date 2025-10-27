@@ -35,7 +35,7 @@ impl LorebookService {
             updated_at: Some(current_time.into()),
         };
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -91,7 +91,7 @@ impl LorebookService {
         debug!("Attempting to list lorebooks");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -143,7 +143,7 @@ impl LorebookService {
         debug!(%lorebook_id, "Attempting to get lorebook");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 

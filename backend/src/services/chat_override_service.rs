@@ -64,73 +64,64 @@ impl ChatOverrideService {
         let update_encrypted_value = encrypted_value;
         let update_nonce = nonce;
 
-        // 3. Perform DB upsert using db_pool.interact
+        // 3. Perform DB upsert using with_conn helper
         let pool = self.db_pool.clone();
-        let conn = crate::db::get_conn(&pool).await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
-        })?;
-        let upserted_override = conn
-            .interact(move |conn| {
-                // Define what happens on conflict (update existing row)
-                let changes_to_apply = (
-                    chat_character_overrides::overridden_value.eq(&update_encrypted_value),
-                    chat_character_overrides::overridden_value_nonce.eq(&update_nonce),
-                    chat_character_overrides::updated_at.eq(Utc::now().into()), // Explicitly set updated_at
-                );
+        let upserted_override = crate::db::with_conn(&pool, move |conn| {
+            // Define what happens on conflict (update existing row)
+            let changes_to_apply = (
+                chat_character_overrides::overridden_value.eq::<&Vec<u8>>(&update_encrypted_value),
+                chat_character_overrides::overridden_value_nonce.eq::<&Vec<u8>>(&update_nonce),
+                chat_character_overrides::updated_at
+                    .eq::<crate::db::DbTimestamp>(Utc::now().into()), // Explicitly set updated_at
+            );
 
-                #[cfg(feature = "postgres-backend")]
-                {
-                    diesel::insert_into(chat_character_overrides::table)
-                        .values(&new_override_for_db)
-                        .on_conflict((
-                            chat_character_overrides::chat_session_id,
-                            chat_character_overrides::original_character_id,
-                            chat_character_overrides::field_name,
-                        ))
-                        .do_update()
-                        .set(changes_to_apply)
-                        .returning(ChatCharacterOverride::as_returning())
-                        .get_result::<ChatCharacterOverride>(conn)
-                        .map_err(AppError::from)
-                }
+            #[cfg(feature = "postgres-backend")]
+            {
+                diesel::insert_into(chat_character_overrides::table)
+                    .values(&new_override_for_db)
+                    .on_conflict((
+                        chat_character_overrides::chat_session_id,
+                        chat_character_overrides::original_character_id,
+                        chat_character_overrides::field_name,
+                    ))
+                    .do_update()
+                    .set(changes_to_apply)
+                    .returning(ChatCharacterOverride::as_returning())
+                    .get_result::<ChatCharacterOverride>(conn)
+                    .map_err(AppError::from)
+            }
 
-                #[cfg(feature = "sqlite-backend")]
-                {
-                    use diesel::prelude::*;
-                    // SQLite doesn't support RETURNING on UPSERT, so we upsert and query back
-                    let session_id_clone = new_override_for_db.chat_session_id;
-                    let char_id_clone = new_override_for_db.original_character_id;
-                    let field_name_clone = new_override_for_db.field_name.clone();
+            #[cfg(feature = "sqlite-backend")]
+            {
+                use diesel::prelude::*;
+                // SQLite doesn't support RETURNING on UPSERT, so we upsert and query back
+                let session_id_clone = new_override_for_db.chat_session_id;
+                let char_id_clone = new_override_for_db.original_character_id;
+                let field_name_clone = new_override_for_db.field_name.clone();
 
-                    diesel::insert_into(chat_character_overrides::table)
-                        .values(&new_override_for_db)
-                        .on_conflict((
-                            chat_character_overrides::chat_session_id,
-                            chat_character_overrides::original_character_id,
-                            chat_character_overrides::field_name,
-                        ))
-                        .do_update()
-                        .set(changes_to_apply)
-                        .execute(conn)
-                        .map_err(AppError::from)?;
+                diesel::insert_into(chat_character_overrides::table)
+                    .values(&new_override_for_db)
+                    .on_conflict((
+                        chat_character_overrides::chat_session_id,
+                        chat_character_overrides::original_character_id,
+                        chat_character_overrides::field_name,
+                    ))
+                    .do_update()
+                    .set(changes_to_apply)
+                    .execute(conn)
+                    .map_err(AppError::from)?;
 
-                    // Query back using the unique constraint
-                    chat_character_overrides::table
-                        .filter(chat_character_overrides::chat_session_id.eq(session_id_clone))
-                        .filter(chat_character_overrides::original_character_id.eq(char_id_clone))
-                        .filter(chat_character_overrides::field_name.eq(field_name_clone))
-                        .select(ChatCharacterOverride::as_select())
-                        .first::<ChatCharacterOverride>(conn)
-                        .map_err(AppError::from)
-                }
-            })
-            .await
-            .map_err(|e| {
-                AppError::DbInteractError(format!(
-                    "Database interaction error during override upsert: {e}"
-                ))
-            })
-            .and_then(|r| r)?; // Handle pool.interact error and then the Result from the closure
+                // Query back using the unique constraint
+                chat_character_overrides::table
+                    .filter(chat_character_overrides::chat_session_id.eq(session_id_clone))
+                    .filter(chat_character_overrides::original_character_id.eq(char_id_clone))
+                    .filter(chat_character_overrides::field_name.eq(field_name_clone))
+                    .select(ChatCharacterOverride::as_select())
+                    .first::<ChatCharacterOverride>(conn)
+                    .map_err(AppError::from)
+            }
+        })
+        .await?;
 
         tracing::info!(override_id = %upserted_override.id, "Chat character override created/updated successfully via service");
         Ok(upserted_override)

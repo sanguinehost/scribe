@@ -13,16 +13,6 @@
 #[cfg(feature = "postgres-backend")]
 pub use diesel_json::Json;
 
-// TEMPORARILY allowing orphan rule violation until calling code is fixed
-// TODO: Replace .into() calls with Json::new() in calling code
-#[cfg(feature = "postgres-backend")]
-#[allow(clippy::from_over_into)]
-impl From<serde_json::Value> for Json<serde_json::Value> {
-    fn from(value: serde_json::Value) -> Self {
-        Json(value)
-    }
-}
-
 // ============================================================================
 // SQLite Backend: Custom Generic JSON Wrapper
 // ============================================================================

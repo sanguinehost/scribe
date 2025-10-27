@@ -1,7 +1,9 @@
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
+#[cfg(feature = "postgres-backend")]
 use deadpool_diesel::postgres::{
     Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
 };
+#[cfg(feature = "postgres-backend")]
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -19,6 +21,8 @@ use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
+#[cfg(feature = "postgres-backend")]
+use scribe_backend::routes::documents::document_routes;
 use scribe_backend::routes::health::health_check;
 #[cfg(feature = "payment")]
 use scribe_backend::routes::payment::{payment_routes, payment_webhook_routes};
@@ -28,7 +32,6 @@ use scribe_backend::routes::{
     chat::chat_routes,
     chats,
     chronicles,
-    documents::document_routes,
     generation_routes,                // Added for generation routes
     llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
@@ -190,6 +193,7 @@ fn initialize_runtime() {
 }
 
 // Setup database pool
+#[cfg(feature = "postgres-backend")]
 fn setup_database_pool(config: &Config) -> DbPool {
     let db_url = config
         .database_url
@@ -199,7 +203,7 @@ fn setup_database_pool(config: &Config) -> DbPool {
     let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
 
     // Configure pool size based on environment
-    let mut pool_config = PoolConfig::default();
+    let mut pool_config = deadpool_diesel::postgres::PoolConfig::default();
     let max_size = match config.environment.as_deref() {
         Some("development") => 50, // Local docker has max_connections = 200
         Some("staging") | Some("production") => 20, // Cloud RDS has ~90 total connections
@@ -213,6 +217,39 @@ fn setup_database_pool(config: &Config) -> DbPool {
         .runtime(DeadpoolRuntime::Tokio1)
         .build()
         .expect("Failed to create DB pool.");
+    tracing::info!(
+        "Database connection pool established with max_size: {}",
+        max_size
+    );
+    pool
+}
+
+#[cfg(feature = "sqlite-backend")]
+fn setup_database_pool(config: &Config) -> DbPool {
+    use diesel::r2d2::{ConnectionManager, Pool};
+    use diesel::SqliteConnection;
+
+    let db_url = config
+        .database_url
+        .as_ref()
+        .expect("DATABASE_URL not set in config");
+    tracing::info!("Connecting to database...");
+
+    let manager = ConnectionManager::<SqliteConnection>::new(db_url);
+
+    // Configure pool size based on environment
+    let max_size = match config.environment.as_deref() {
+        Some("development") => 50,
+        Some("staging") | Some("production") => 20,
+        _ => 20,
+    };
+
+    let pool = Pool::builder()
+        .max_size(max_size)
+        .connection_timeout(std::time::Duration::from_secs(30))
+        .build(manager)
+        .expect("Failed to create DB pool.");
+
     tracing::info!(
         "Database connection pool established with max_size: {}",
         max_size
@@ -574,8 +611,12 @@ fn build_router(
         .nest(
             "/chronicles",
             chronicles::create_chronicles_router(app_state.clone()),
-        )
-        .nest("/documents", document_routes())
+        );
+
+    #[cfg(feature = "postgres-backend")]
+    let protected_api_routes = protected_api_routes.nest("/documents", document_routes());
+
+    let protected_api_routes = protected_api_routes
         .nest("/generation", generation_routes::router()) // AI generation routes
         .nest("/llm", llm_router()); // LLM management routes
 
@@ -779,6 +820,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
 }
 
 // Extracted migration logic
+#[cfg(feature = "postgres-backend")]
 async fn run_migrations(pool: &DbPool) -> Result<()> {
     tracing::info!("Attempting to run database migrations...");
     let conn = pool
@@ -802,6 +844,28 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
     .await
     .map_err(|e| anyhow::anyhow!("Migration interact task failed: {}", e))??; // Propagate InteractError then inner Result
     Ok(())
+}
+
+#[cfg(feature = "sqlite-backend")]
+async fn run_migrations(pool: &DbPool) -> Result<()> {
+    tracing::info!("Attempting to run database migrations...");
+    let mut conn = pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Failed to get connection for migration: {}", e))?;
+    match conn.run_pending_migrations(MIGRATIONS) {
+        Ok(versions) => {
+            if versions.is_empty() {
+                tracing::info!("No pending migrations found.");
+            } else {
+                tracing::info!("Successfully ran migrations: {:?}", versions);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("Failed to run database migrations: {:?}", e);
+            Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
+        }
+    }
 }
 
 // --- Test module remains unchanged ---

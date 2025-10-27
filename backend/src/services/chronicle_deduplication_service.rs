@@ -341,6 +341,7 @@ impl ChronicleDeduplicationService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DbId;
     use chrono::Utc;
 
     #[tokio::test]

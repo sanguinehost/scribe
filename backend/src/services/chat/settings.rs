@@ -417,6 +417,7 @@ pub async fn get_session_settings(
             })?;
 
         // Query 5: Remaining 2 fields
+        #[cfg(feature = "postgres-backend")]
         let settings_part5 = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
@@ -426,6 +427,22 @@ pub async fn get_session_settings(
             .first::<(
                 Option<crate::db::DbId>,
                 String,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 5 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let settings_part5 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
+                chat_sessions::active_custom_persona_id,
+                chat_sessions::prompt_template_id,
+            ))
+            .first::<(
+                Option<crate::db::DbId>,
+                Option<String>,
             )>(conn)
             .map_err(|e| {
                 error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 5 after ownership check");
@@ -494,7 +511,10 @@ pub async fn get_session_settings(
             chronicle_id: player_chronicle_id,
             agent_mode,
             active_custom_persona_id,
+            #[cfg(feature = "postgres-backend")]
             prompt_template_id: Some(prompt_template_id),
+            #[cfg(feature = "sqlite-backend")]
+            prompt_template_id,
         };
 
         info!(%session_id, %user_id,

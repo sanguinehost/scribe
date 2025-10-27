@@ -3603,4 +3603,42 @@ impl ChatSessionQuery {
             )),
         }
     }
+
+    /// Encrypts and sets the session-level narrative style override for ChatSessionQuery.
+    ///
+    /// Pass `None` to clear the override.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::EncryptionError` if encryption or JSON serialization fails.
+    pub fn set_narrative_style_override(
+        &mut self,
+        override_data: Option<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
+        dek: &secrecy::SecretBox<Vec<u8>>,
+    ) -> Result<(), crate::errors::AppError> {
+        match override_data {
+            Some(data) => {
+                let json_str = serde_json::to_string(&data).map_err(|e| {
+                    crate::errors::AppError::EncryptionError(format!(
+                        "Failed to serialize narrative style override: {e}"
+                    ))
+                })?;
+
+                let encryption_service =
+                    crate::services::encryption_service::EncryptionService::new();
+                let (ciphertext, nonce) =
+                    encryption_service.encrypt(&json_str, dek.expose_secret().as_slice())?;
+
+                self.narrative_style_override_ciphertext = Some(ciphertext);
+                self.narrative_style_override_nonce = Some(nonce);
+            }
+            None => {
+                // Clear the override
+                self.narrative_style_override_ciphertext = None;
+                self.narrative_style_override_nonce = None;
+            }
+        }
+
+        Ok(())
+    }
 }

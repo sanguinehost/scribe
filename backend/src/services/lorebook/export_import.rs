@@ -183,7 +183,7 @@ impl LorebookService {
             updated_at: Some(current_time.into()),
         };
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -378,7 +378,7 @@ impl LorebookService {
             );
 
             info!("Getting database connection for batch insert...");
-            let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
                 error!("Failed to get DB connection for batch insert: {e}");
                 AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
             })?;
@@ -414,8 +414,8 @@ impl LorebookService {
             let inserted_entries: Vec<LorebookEntry> = {
                 use diesel::prelude::*;
                 // Collect IDs before insert for querying back
-                let entry_ids: Vec<crate::db::DbId> =
-                    new_entries_batch.iter().map(|e| e.id).collect();
+                let entry_id_strings: Vec<String> =
+                    new_entries_batch.iter().map(|e| e.id.to_string()).collect();
 
                 crate::db::with_conn(&self.pool, move |conn_sync| {
                     info!("Inside database interaction, executing batch insert SQL...");
@@ -430,7 +430,7 @@ impl LorebookService {
 
                     // Query back all inserted entries
                     lorebook_entries::table
-                        .filter(lorebook_entries::id.eq_any(&entry_ids))
+                        .filter(lorebook_entries::id.eq_any(&entry_id_strings))
                         .select(LorebookEntry::as_select())
                         .load::<LorebookEntry>(conn_sync)
                         .map_err(|e| {

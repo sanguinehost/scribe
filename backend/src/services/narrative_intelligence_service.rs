@@ -550,7 +550,7 @@ impl NarrativeIntelligenceService {
         session_dek: &SessionDek,
     ) -> Result<UserPersonaContext, AppError> {
         // Get the user from the database to access their default_persona_id
-        let conn = crate::db::get_conn(&self.app_state.pool).await?;
+        let mut conn = crate::db::get_conn(&self.app_state.pool).await?;
 
         let user_db = conn
             .interact(move |db_conn| {

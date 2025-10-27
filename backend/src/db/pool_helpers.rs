@@ -51,66 +51,35 @@ impl SqlitePoolExt for DbPool {
 }
 
 // Extension trait to provide .interact() compatibility for SQLite connections
-// Note: For SQLite, we don't actually need spawn_blocking here since the connection
-// was already acquired via spawn_blocking in get(). The query itself runs synchronously.
+// Note: For SQLite with r2d2, the connection is synchronous and not Send-safe.
+// We require &mut self because r2d2::PooledConnection needs mutable access for Diesel queries.
 //
-// CRITICAL: This signature matches deadpool-diesel's interact() for PostgreSQL:
-// - Closure returns T directly (which can be Result<U, E>)
-// - interact() wraps that in Result<T, AppError>
-// - This allows the ?? pattern to work: .interact().await?? when T is Result<U, E>
+// This differs from PostgreSQL's deadpool which takes &self and uses spawn_blocking internally,
+// but r2d2::PooledConnection cannot be moved across thread boundaries (contains NonNull pointers).
+//
+// IMPORTANT: This means SQLite code must use `let mut conn` while PostgreSQL uses `let conn`.
+// The trait signature matches the closure return type: T can be Result<U, E> to support ?? pattern.
 #[cfg(feature = "sqlite-backend")]
 pub trait SqliteInteractExt {
-    async fn interact<F, T>(&self, f: F) -> Result<T, AppError>
+    async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
     where
         F: FnOnce(&mut crate::db::DbConnection) -> T + Send + 'static,
-        T: Send + 'static,
-    {
-        // For SQLite, queries are synchronous and fast (local file I/O)
-        // Since we already paid the cost of spawn_blocking in get(), and queries
-        // are typically very fast, we can just execute directly here
-        // Wrap in a ready future to satisfy async fn requirement
-        //
-        // The closure returns T directly (e.g., Result<Option<Foo>, AppError>)
-        // We wrap that in Ok() to match PostgreSQL's Result<T, InteractError> pattern
-        //
-        // SAFETY: We need to cast &self to &mut for diesel operations
-        // This is safe because:
-        // 1. We have exclusive access to this connection (from pool)
-        // 2. Diesel operations need &mut for internal state tracking
-        // 3. No other code can access this connection concurrently
-        //
-        // We explicitly use DerefMut to get &mut DbConnection from &mut PooledConnection
-        use std::ops::DerefMut;
-        let conn_mut = unsafe { &mut *(self as *const _ as *mut Self) };
-        let inner_conn: &mut crate::db::DbConnection = conn_mut.deref_mut();
-        std::future::ready(Ok(f(inner_conn))).await
-    }
+        T: Send + 'static;
 }
 
 #[cfg(feature = "sqlite-backend")]
 impl SqliteInteractExt
     for diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>
 {
-    async fn interact<F, T>(&self, f: F) -> Result<T, AppError>
+    async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
     where
         F: FnOnce(&mut crate::db::DbConnection) -> T + Send + 'static,
         T: Send + 'static,
     {
-        // For SQLite, queries are synchronous and fast (local file I/O)
-        // Since we already paid the cost of spawn_blocking in get(), and queries
-        // are typically very fast, we can just execute directly here
-        // Wrap in a ready future to satisfy async fn requirement
-        //
-        // The closure returns T directly (e.g., Result<Option<Foo>, AppError>)
-        // We wrap that in Ok() to match PostgreSQL's Result<T, InteractError> pattern
-        //
-        // SAFETY: We need to cast &self to &mut for diesel operations
-        // This is safe because:
-        // 1. We have exclusive access to this connection (from pool)
-        // 2. Diesel operations need &mut for internal state tracking
-        // 3. No other code can access this connection concurrently
-        let conn = unsafe { &mut *(self as *const _ as *mut Self) };
-        std::future::ready(Ok(f(conn))).await
+        // For SQLite, the connection was already obtained via spawn_blocking in get().
+        // Since we have mutable access, we can directly execute the query synchronously.
+        // The connection implements DerefMut to get &mut SqliteConnection for Diesel.
+        Ok(f(&mut **self))
     }
 }
 

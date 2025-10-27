@@ -83,6 +83,7 @@ pub async fn get_user_avatar(
         .unwrap_or_else(|| "image/png".to_string());
 
     // Return the image with appropriate headers
+    let image_data_len = image_data.len();
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", &content_type)
@@ -92,7 +93,7 @@ pub async fn get_user_avatar(
             AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
         })?;
 
-    debug!(user_id = %user_id, content_type = %content_type, image_data_len = image_data.len(), "User avatar served successfully");
+    debug!(user_id = %user_id, content_type = %content_type, image_data_len = image_data_len, "User avatar served successfully");
     Ok(response)
 }
 
@@ -208,7 +209,7 @@ pub async fn upload_user_avatar(
     .await
     .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
 
-    info!(user_id = %user_id, asset_id = asset_result.id, "User avatar uploaded successfully");
+    info!(user_id = %user_id, asset_id = %asset_result.id, "User avatar uploaded successfully");
 
     Ok((
         StatusCode::CREATED,
@@ -302,6 +303,7 @@ pub async fn get_persona_avatar(
         .unwrap_or_else(|| "image/png".to_string());
 
     // Return the image with appropriate headers
+    let image_data_len = image_data.len();
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", &content_type)
@@ -311,7 +313,7 @@ pub async fn get_persona_avatar(
             AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
         })?;
 
-    debug!(persona_id = %persona_id, content_type = %content_type, image_data_len = image_data.len(), "Persona avatar served successfully");
+    debug!(persona_id = %persona_id, content_type = %content_type, image_data_len = image_data_len, "Persona avatar served successfully");
     Ok(response)
 }
 
@@ -430,7 +432,7 @@ pub async fn upload_persona_avatar(
     })
     .await?;
 
-    info!(persona_id = %persona_id, asset_id = asset_result.id, "Persona avatar uploaded successfully");
+    info!(persona_id = %persona_id, asset_id = %asset_result.id, "Persona avatar uploaded successfully");
 
     Ok((
         StatusCode::CREATED,

@@ -352,7 +352,7 @@ impl From<UserDbQuery> for User {
             id: user_from_db.id,
             username: user_from_db.username,
             password_hash: user_from_db.password_hash,
-            email: user_from_db.email,
+            email: user_from_db.email.unwrap_or_default(),
             kek_salt: user_from_db.kek_salt,
             encrypted_dek: user_from_db.encrypted_dek,
             encrypted_dek_by_recovery: user_from_db.encrypted_dek_by_recovery,

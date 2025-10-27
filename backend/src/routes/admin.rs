@@ -137,7 +137,10 @@ async fn get_user_handler(
     let user_detail = AdminUserDetailResponse {
         id: user.id,
         username: user.username,
+        #[cfg(feature = "sqlite-backend")]
         email: user.email,
+        #[cfg(feature = "postgres-backend")]
+        email: Some(user.email),
         role: user.role,
         account_status: format!("{:?}", user.account_status).to_lowercase(),
         created_at: user.created_at,
@@ -354,7 +357,10 @@ async fn update_user_role_handler(
     let user_detail = AdminUserDetailResponse {
         id: updated_user.id,
         username: updated_user.username,
+        #[cfg(feature = "sqlite-backend")]
         email: updated_user.email,
+        #[cfg(feature = "postgres-backend")]
+        email: Some(updated_user.email),
         role: updated_user.role,
         account_status: format!("{:?}", updated_user.account_status).to_lowercase(),
         created_at: updated_user.created_at,

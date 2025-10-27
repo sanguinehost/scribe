@@ -329,6 +329,7 @@ pub async fn get_session_data_for_generation(
                 })?;
 
             // Query 3c: stop_sequences parameter (Array<Nullable<Text>> => Option<Vec<Option<String>>>)
+            #[cfg(feature = "postgres-backend")]
             let stop_seqs = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -342,6 +343,24 @@ pub async fn get_session_data_for_generation(
                         "Failed to query chat session {session_id}: {e}"
                     )),
                 })?;
+
+            #[cfg(feature = "sqlite-backend")]
+            let stop_seqs = {
+                let optional_array = chat_sessions::table
+                    .filter(chat_sessions::id.eq(session_id))
+                    .filter(chat_sessions::user_id.eq(user_id))
+                    .select(chat_sessions::stop_sequences)
+                    .first::<crate::models::OptionalStringArray>(conn_interaction)
+                    .map_err(|e| match e {
+                        DieselError::NotFound => {
+                            AppError::NotFound(format!("Chat session {session_id} not found"))
+                        }
+                        _ => AppError::DatabaseQueryError(format!(
+                            "Failed to query chat session {session_id}: {e}"
+                        )),
+                    })?;
+                optional_array.0
+            };
 
             // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
             let char_id = sess_char_id.ok_or_else(|| {
@@ -375,41 +394,78 @@ pub async fn get_session_data_for_generation(
             // Only query database messages if no frontend history is provided
             // Use ChatMessageQuery (11 fields) to avoid Diesel's CompatibleType limit
             let messages_raw_db: Vec<DbChatMessage> = if frontend_history_for_interact.is_none() {
-                chat_messages::table
-                    .filter(chat_messages::session_id.eq(session_id))
-                    .order(chat_messages::created_at.asc())
-                    .select((
-                        chat_messages::id,
-                        chat_messages::session_id,
-                        chat_messages::message_type,
-                        chat_messages::content,
-                        chat_messages::content_nonce,
-                        chat_messages::created_at,
-                        chat_messages::user_id,
-                        chat_messages::prompt_tokens,
-                        chat_messages::completion_tokens,
-                        chat_messages::model_name,
-                        chat_messages::status,
-                    ))
-                    .load::<(
-                        crate::db::DbId,
-                        crate::db::DbId,
-                        MessageRole,
-                        Vec<u8>,
-                        Option<Vec<u8>>,
-                        crate::db::DbTimestamp,
-                        crate::db::DbId,
-                        Option<i32>,
-                        Option<i32>,
-                        Option<String>,
-                        String,
-                    )>(conn_interaction)
-                    .map_err(|e| {
-                        AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
-                    })?
-                    .into_iter()
-                    .map(
-                        |(
+                // Split query execution into backend-conditional blocks
+                let query_result = {
+                    let query_base = chat_messages::table
+                        .filter(chat_messages::session_id.eq(session_id))
+                        .order(chat_messages::created_at.asc())
+                        .select((
+                            chat_messages::id,
+                            chat_messages::session_id,
+                            chat_messages::message_type,
+                            chat_messages::content,
+                            chat_messages::content_nonce,
+                            chat_messages::created_at,
+                            chat_messages::user_id,
+                            chat_messages::prompt_tokens,
+                            chat_messages::completion_tokens,
+                            chat_messages::model_name,
+                            chat_messages::status,
+                        ));
+
+                    #[cfg(feature = "postgres-backend")]
+                    {
+                        query_base.load::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            MessageRole,
+                            Vec<u8>,
+                            Option<Vec<u8>>,
+                            crate::db::DbTimestamp,
+                            crate::db::DbId,
+                            Option<i32>,
+                            Option<i32>,
+                            String,
+                            String,
+                        )>(conn_interaction)
+                    }
+
+                    #[cfg(feature = "sqlite-backend")]
+                    {
+                        query_base.load::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            MessageRole,
+                            Vec<u8>,
+                            Option<Vec<u8>>,
+                            crate::db::DbTimestamp,
+                            crate::db::DbId,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<String>,
+                            String,
+                        )>(conn_interaction)
+                    }
+                }
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
+                })?
+                .into_iter()
+                .map(
+                    |(
+                        id,
+                        session_id,
+                        message_type,
+                        content,
+                        content_nonce,
+                        created_at,
+                        user_id,
+                        prompt_tokens,
+                        completion_tokens,
+                        model_name,
+                        status,
+                    )| {
+                        DbChatMessage {
                             id,
                             session_id,
                             message_type,
@@ -421,38 +477,25 @@ pub async fn get_session_data_for_generation(
                             completion_tokens,
                             model_name,
                             status,
-                        )| {
-                            DbChatMessage {
-                                id,
-                                session_id,
-                                message_type,
-                                content,
-                                content_nonce,
-                                created_at,
-                                user_id,
-                                prompt_tokens,
-                                completion_tokens,
-                                model_name,
-                                status,
-                                raw_prompt_ciphertext: None,
-                                raw_prompt_nonce: None,
-                                error_message: None,
-                                superseded_at: None,
-                                variant_count: 0,
-                                current_variant_index: 0,
-                                credits_charged: 0,
-                                credits_cost: crate::db::DbDecimal::from(0),
-                                actual_cost: crate::db::DbDecimal::from(0),
-                                modified_cost: crate::db::DbDecimal::from(0),
-                                credit_cost: 0,
-                                actual_charge: crate::db::DbDecimal::from(0),
-                            }
-                        },
-                    )
-                    .collect()
+                            raw_prompt_ciphertext: None,
+                            raw_prompt_nonce: None,
+                            error_message: None,
+                            superseded_at: None,
+                            variant_count: 0,
+                            current_variant_index: 0,
+                            credits_charged: 0,
+                            credits_cost: crate::db::DbDecimal::from(0),
+                            actual_cost: crate::db::DbDecimal::from(0),
+                            modified_cost: crate::db::DbDecimal::from(0),
+                            credit_cost: 0,
+                            actual_charge: crate::db::DbDecimal::from(0),
+                        }
+                    },
+                )
+                .collect();
+
+                query_result
             } else {
-                // When frontend history is provided, we don't need database messages
-                // The frontend-filtered history will be converted later
                 Vec::new()
             };
 
@@ -645,6 +688,9 @@ pub async fn get_session_data_for_generation(
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
+                    #[cfg(feature = "postgres-backend")]
+                    model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
+                    #[cfg(feature = "sqlite-backend")]
                     model_name: Some(session_model_name_db.to_string()), // Use session model for frontend-provided history
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
@@ -1163,6 +1209,9 @@ pub async fn get_session_data_for_generation(
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                #[cfg(feature = "postgres-backend")]
+                model_name: session_model_name_db.to_string(), // Use session model for character first message
+                #[cfg(feature = "sqlite-backend")]
                 model_name: Some(session_model_name_db.to_string()), // Use session model for character first message
                 status: "completed".to_string(), // First message is considered completed
                 error_message: None,

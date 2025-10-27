@@ -1366,6 +1366,7 @@ pub async fn build_final_llm_prompt(
 mod tests {
 
     use crate::models::characters::CharacterMetadata;
+    use crate::DbId;
     use chrono::Utc;
     use uuid::Uuid;
 

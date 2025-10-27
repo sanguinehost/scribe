@@ -50,6 +50,7 @@ impl ChronicleService {
 
         chronicle_events::table
             .find(event_id)
+            .select(ChronicleEvent::as_select())
             .first::<ChronicleEvent>(conn)
             .map_err(|e| {
                 error!("Failed to query event after insert: {}", e);
@@ -97,6 +98,7 @@ impl ChronicleService {
                     .eq(event_id)
                     .and(chronicle_events::user_id.eq(user_id)),
             )
+            .select(ChronicleEvent::as_select())
             .first::<ChronicleEvent>(conn)
             .map_err(|e| {
                 error!("Diesel error when getting event: {}", e);
@@ -224,6 +226,7 @@ impl ChronicleService {
                     .eq(user_id)
                     .and(chronicle_events::chat_session_id.eq(Some(session_id))),
             )
+            .select(ChronicleEvent::as_select())
             .load::<ChronicleEvent>(conn)
             .map_err(|e| {
                 error!("Diesel error when getting events for chat session: {}", e);
@@ -587,23 +590,23 @@ impl ChronicleService {
                         .set((
                             player_chronicles::name.eq(name),
                             player_chronicles::description.eq(description),
-                            player_chronicles::updated_at.eq(Utc::now().into()),
+                            player_chronicles::updated_at.eq(crate::db::DbTimestamp::now()),
                         ))
                         .execute(conn),
                     (Some(name), None) => diesel::update(target)
                         .set((
                             player_chronicles::name.eq(name),
-                            player_chronicles::updated_at.eq(Utc::now().into()),
+                            player_chronicles::updated_at.eq(crate::db::DbTimestamp::now()),
                         ))
                         .execute(conn),
                     (None, Some(description)) => diesel::update(target)
                         .set((
                             player_chronicles::description.eq(description),
-                            player_chronicles::updated_at.eq(Utc::now().into()),
+                            player_chronicles::updated_at.eq(crate::db::DbTimestamp::now()),
                         ))
                         .execute(conn),
                     (None, None) => diesel::update(target)
-                        .set(player_chronicles::updated_at.eq(Utc::now().into()))
+                        .set(player_chronicles::updated_at.eq(crate::db::DbTimestamp::now()))
                         .execute(conn),
                 }
                 .map_err(|e| {
@@ -879,10 +882,13 @@ impl ChronicleService {
                 query = query.limit(limit);
             }
 
-            query.load::<ChronicleEvent>(conn).map_err(|e| {
-                error!("Diesel error when getting events: {}", e);
-                AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
-            })
+            query
+                .select(ChronicleEvent::as_select())
+                .load::<ChronicleEvent>(conn)
+                .map_err(|e| {
+                    error!("Diesel error when getting events: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to get events: {e}"))
+                })
         })
         .await?;
 

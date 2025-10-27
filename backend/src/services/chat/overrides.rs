@@ -139,9 +139,10 @@ pub async fn set_character_override(
                     ))
                     .do_update()
                     .set((
-                        chat_character_overrides::overridden_value.eq(encrypted_value),
-                        chat_character_overrides::overridden_value_nonce.eq(nonce),
-                        chat_character_overrides::updated_at.eq(chrono::Utc::now().into()),
+                        chat_character_overrides::overridden_value.eq::<Vec<u8>>(encrypted_value),
+                        chat_character_overrides::overridden_value_nonce.eq::<Vec<u8>>(nonce),
+                        chat_character_overrides::updated_at
+                            .eq::<crate::db::DbTimestamp>(chrono::Utc::now().into()),
                     ))
                     .execute(transaction_conn)
                     .map_err(|e| {

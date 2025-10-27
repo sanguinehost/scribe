@@ -8,6 +8,7 @@ mod tests {
     };
     use crate::state::AppState;
     use crate::text_processing::chunking::ChunkConfig;
+    use crate::DbId;
     use crate::{
         config::Config,
         crypto::encrypt_gcm, // Updated for encryption tests

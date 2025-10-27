@@ -592,7 +592,7 @@ async fn get_character_name_for_session(
     use crate::schema::{characters, chat_sessions};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
 
-    let conn = crate::db::get_conn(&state.pool).await?;
+    let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let character_name = conn
         .interact(move |conn| {
@@ -628,7 +628,7 @@ async fn get_character_for_session(
         RunQueryDsl, SelectableHelper,
     };
 
-    let conn = crate::db::get_conn(&state.pool).await?;
+    let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let character = conn
         .interact(move |conn| {
@@ -665,7 +665,7 @@ async fn get_chat_messages(
         SelectableHelper,
     };
 
-    let conn = crate::db::get_conn(&state.pool).await?;
+    let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let mut messages = conn
         .interact(move |conn| {

@@ -473,7 +473,7 @@ pub async fn upload_character_handler(
         })?;
 
     #[cfg(feature = "sqlite-backend")]
-    let asset_result: Result<CharacterAsset, diesel::result::Error> = {
+    let asset_result: Result<CharacterAsset, AppError> = {
         use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
         let asset_id = new_asset
@@ -496,7 +496,7 @@ pub async fn upload_character_handler(
 
     match asset_result {
         Ok(asset) => {
-            info!(character_id = %inserted_character.id, asset_id = asset.id, "Character avatar stored in database successfully");
+            info!(character_id = %inserted_character.id, asset_id = %asset.id, "Character avatar stored in database successfully");
 
             // Update character record with asset reference (asset ID as string)
             let character_id_for_update = inserted_character.id;
@@ -524,16 +524,15 @@ pub async fn upload_character_handler(
                 })?;
 
             #[cfg(feature = "sqlite-backend")]
-            let update_result = crate::db::with_conn(&state.pool, move |conn_update_block| {
+            let _update_result = crate::db::with_conn(&state.pool, move |conn_update_block| {
                 diesel::update(characters.find(character_id_for_update))
                     .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
                     .execute(conn_update_block)
-                    .map_err(|e| {
-                        AppError::InternalServerErrorGeneric(format!("Avatar update error: {e}"))
-                    })
+                    .map_err(AppError::from)
             })
             .await?;
 
+            #[cfg(feature = "postgres-backend")]
             match update_result {
                 Ok(_) => {
                     info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
@@ -541,6 +540,11 @@ pub async fn upload_character_handler(
                 Err(e) => {
                     warn!(character_id = %inserted_character.id, error = %e, "Failed to update character avatar field");
                 }
+            }
+
+            #[cfg(feature = "sqlite-backend")]
+            {
+                info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
             }
         }
         Err(e) => {
@@ -1207,10 +1211,19 @@ pub async fn update_character_handler(
     Ok(Json(client_data))
 }
 
+// Backend-conditional type alias for character asset IDs
+// PostgreSQL: character_assets.id is Int4 (i32)
+// SQLite: character_assets.id is Text (DbId)
+#[cfg(feature = "postgres-backend")]
+type CharacterAssetIdType = i32;
+
+#[cfg(feature = "sqlite-backend")]
+type CharacterAssetIdType = crate::db::DbId;
+
 #[debug_handler]
 #[instrument(skip(state, auth_session), err)]
 pub async fn get_character_asset_handler(
-    Path((character_id, asset_id)): Path<(crate::db::DbId, i32)>,
+    Path((character_id, asset_id)): Path<(crate::db::DbId, CharacterAssetIdType)>,
     Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
     auth_session: CurrentAuthSession,
@@ -1243,7 +1256,7 @@ pub async fn get_character_asset_handler(
     // Load the asset from database
     let asset = crate::db::with_conn(&state.pool, move |conn_asset_block| {
         character_assets
-            .find(asset_id)
+            .filter(crate::schema::character_assets::id.eq(asset_id))
             .filter(crate::schema::character_assets::character_id.eq(character_id))
             .first::<CharacterAsset>(conn_asset_block)
             .optional()

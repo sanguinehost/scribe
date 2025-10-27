@@ -983,8 +983,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         agent_context_analysis::status.eq(AnalysisStatus::Pending.to_string()),
                         agent_context_analysis::retry_count.eq(0),
                         agent_context_analysis::model_used.eq(Some("gemini-2.5-flash-lite")),
-                        agent_context_analysis::created_at.eq(chrono::Utc::now().into()),
-                        agent_context_analysis::updated_at.eq(chrono::Utc::now().into()),
+                        agent_context_analysis::created_at.eq(crate::db::DbTimestamp::now()),
+                        agent_context_analysis::updated_at.eq(crate::db::DbTimestamp::now()),
                     ))
                     .execute(conn)
                     .map(|_| generated_id)
@@ -1026,8 +1026,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         // Convert session_dek to SecretBox
         let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
 
-        // Convert planned searches to JSON string
+        // Convert planned searches to JSON (Value for PostgreSQL, String for SQLite)
+        #[cfg(feature = "postgres-backend")]
         let planned_searches_json = serde_json::to_value(&planned_searches)?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let planned_searches_json = serde_json::to_string(&planned_searches)?;
 
         // Encrypt fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {

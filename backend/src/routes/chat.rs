@@ -333,37 +333,28 @@ pub async fn generate_chat_response(
                 .to_string(),
         )
     })?;
-    let character_db_model = crate::db::get_conn(&state_arc.pool)
-        .await?
-        .interact(move |conn| {
-            app_schema::characters::table
-                .filter(app_schema::characters::id.eq(char_id))
-                .filter(app_schema::characters::user_id.eq(user_id_value))
-                .first::<Character>(conn)
-                .map_err(Into::into)
-        })
-        .await
-        .map_err(|e| {
-            error!(error = %e, "Interact dispatch error fetching character model");
-            AppError::InternalServerErrorGeneric(format!(
-                "Interact dispatch error fetching character: {e}"
-            ))
-        })?
-        .map_err(|e_db| {
-            if e_db == diesel::result::Error::NotFound {
-                error!(character_id = %char_id, %user_id_value, "Character not found for user");
-                AppError::NotFound(format!(
-                    "Character {} not found for user {}",
-                    char_id, user_id_value
-                ))
-            } else {
-                error!(error = %e_db, character_id = %char_id, "Failed to query character");
-                AppError::DatabaseQueryError(format!(
-                    "Failed to query character {}: {}",
-                    char_id, e_db
-                ))
-            }
-        })?;
+    let character_db_model = crate::db::with_conn(&state_arc.pool, move |conn| {
+        app_schema::characters::table
+            .filter(app_schema::characters::id.eq(char_id))
+            .filter(app_schema::characters::user_id.eq(user_id_value))
+            .first::<Character>(conn)
+            .map_err(|e_db| {
+                if e_db == diesel::result::Error::NotFound {
+                    error!(character_id = %char_id, %user_id_value, "Character not found for user");
+                    AppError::NotFound(format!(
+                        "Character {} not found for user {}",
+                        char_id, user_id_value
+                    ))
+                } else {
+                    error!(error = %e_db, character_id = %char_id, "Failed to query character");
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to query character {}: {}",
+                        char_id, e_db
+                    ))
+                }
+            })
+    })
+    .await?;
 
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
@@ -418,7 +409,7 @@ pub async fn generate_chat_response(
         use crate::services::encryption_service::EncryptionService;
         use crate::services::payment::{CreditService, SubscriptionService};
 
-        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
         // Get user's subscription tier
         let subscription_service =
@@ -689,7 +680,8 @@ pub async fn generate_chat_response(
         if let Err(e) = crate::db::with_conn(&pool, move |conn| {
             // Supersede messages that are failed or partial in this session
             // We use a timestamp from 1 minute ago to avoid superseding very recent messages
-            let cutoff_time = chrono::Utc::now().into() - chrono::Duration::seconds(60);
+            let cutoff_time: crate::db::DbTimestamp =
+                (chrono::Utc::now() - chrono::Duration::seconds(60)).into();
             crate::models::chats::ChatMessage::supersede_failed_messages(
                 conn,
                 session_id_for_cleanup,
@@ -725,6 +717,9 @@ pub async fn generate_chat_response(
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
+            #[cfg(feature = "postgres-backend")]
+            model_name: model_to_use.clone(),
+            #[cfg(feature = "sqlite-backend")]
             model_name: Some(model_to_use.clone()),
             status: "completed".to_string(),
             error_message: None,
@@ -833,7 +828,7 @@ pub async fn generate_chat_response(
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
                 let _ = conn
                     .interact(move |conn| {
@@ -852,7 +847,7 @@ pub async fn generate_chat_response(
 
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
                 conn.interact(move |conn| {
                     AgentContextAnalysis::get_for_session(
@@ -984,7 +979,7 @@ pub async fn generate_chat_response(
     let session_override_opt = {
         use diesel::prelude::*;
         let pool_clone = state_arc.pool.clone();
-        let conn = crate::db::get_conn(&pool_clone).await?;
+        let mut conn = crate::db::get_conn(&pool_clone).await?;
 
         conn.interact(move |conn| {
             chat_sessions::table
@@ -2135,7 +2130,7 @@ pub async fn update_session_narrative_style_handler(
 
     // Load session, verify ownership, set override, and save in a transaction
     let pool_clone = state.pool.clone();
-    let conn = crate::db::get_conn(&pool_clone).await?;
+    let mut conn = crate::db::get_conn(&pool_clone).await?;
 
     conn.interact(move |conn| {
         conn.transaction::<_, AppError, _>(|transaction_conn| {
@@ -2172,7 +2167,7 @@ pub async fn update_session_narrative_style_handler(
 
     // Fetch and return the effective preferences (with override applied)
     // This requires fetching character ID and applying the cascade
-    let conn2 = crate::db::get_conn(&state.pool).await?;
+    let mut conn2 = crate::db::get_conn(&state.pool).await?;
     let (character_id_opt, override_ciphertext, override_nonce) = conn2
         .interact(move |conn| {
             let session_data = chat_sessions::table
@@ -2372,7 +2367,7 @@ pub async fn get_agent_analysis_handler(
     let user_id = user.id;
 
     // Verify the chat session belongs to the user
-    let conn = crate::db::get_conn(&state.pool).await?;
+    let mut conn = crate::db::get_conn(&state.pool).await?;
     let session_exists = conn
         .interact(move |conn| {
             use crate::schema::chat_sessions;
@@ -2404,7 +2399,7 @@ pub async fn get_agent_analysis_handler(
         .and_then(|s| s.parse::<crate::db::DbId>().ok());
 
     // Get all analysis records for the session
-    let conn = crate::db::get_conn(&state.pool).await?;
+    let mut conn = crate::db::get_conn(&state.pool).await?;
     let analysis_records = conn
         .interact(move |conn| {
             use crate::schema::agent_context_analysis::dsl::*;
@@ -2698,7 +2693,7 @@ pub async fn generate_suggested_actions(
             "Suggested actions not supported for non-character chat modes".to_string(),
         )
     })?;
-    let conn = crate::db::get_conn(&state_arc.pool).await?;
+    let mut conn = crate::db::get_conn(&state_arc.pool).await?;
     let character_db_model = conn
         .interact(move |conn| {
             app_schema::characters::table
@@ -2962,7 +2957,7 @@ pub async fn get_chat_session_with_dek(
         AppError::Unauthorized("User not found in session".to_string())
     })?;
 
-    let conn = crate::db::get_conn(&pool).await?;
+    let mut conn = crate::db::get_conn(&pool).await?;
     let chat_session_db = conn
         .interact(move |conn| {
             crate::schema::chat_sessions::table
@@ -3030,7 +3025,7 @@ pub async fn create_or_update_chat_character_override_handler(
     tracing::Span::current().record("user_id", tracing::field::display(user_id));
 
     // 1. Verify ownership of the chat_session and get original_character_id
-    let conn = crate::db::get_conn(&state.pool).await?;
+    let mut conn = crate::db::get_conn(&state.pool).await?;
     let chat_session_details = conn
         .interact(move |conn| {
             chat_sessions::table
@@ -3113,7 +3108,7 @@ pub async fn expand_text_handler(
 
     // Verify chat session ownership
     let chat_session_owner_id = {
-        let conn = crate::db::get_conn(&state.pool).await?;
+        let mut conn = crate::db::get_conn(&state.pool).await?;
 
         conn.interact(move |conn| {
             chat_sessions::table
@@ -3140,7 +3135,7 @@ pub async fn expand_text_handler(
 
     // Get the active persona for this chat session
     let _chat_settings = {
-        let conn = crate::db::get_conn(&state.pool).await?;
+        let mut conn = crate::db::get_conn(&state.pool).await?;
 
         conn.interact(move |conn| {
             chat_sessions::table
@@ -3156,20 +3151,17 @@ pub async fn expand_text_handler(
     // Use the full generation pipeline for text expansion - same as impersonate but with different system prompt
 
     // Get the existing chat messages to build proper context
-    let messages_result = {
-        let conn = crate::db::get_conn(&state.pool).await?;
-
-        conn.interact(move |conn| {
+    let messages_result: Vec<crate::models::chats::ChatMessage> =
+        crate::db::with_conn(&state.pool, move |conn| {
             use crate::schema::chat_messages;
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
-                .load(conn)
+                .select(crate::models::chats::ChatMessage::as_select())
+                .load::<crate::models::chats::ChatMessage>(conn)
                 .map_err(AppError::from)
         })
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
-    };
+        .await?;
 
     // Build the chat history in the format expected by the generation service
     let mut chat_history = Vec::new();
@@ -3216,7 +3208,7 @@ pub async fn expand_text_handler(
 
     // Get session data and model configuration like the normal chat flow does
     let session_data = {
-        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
         conn.interact(move |conn| {
             use crate::schema::chat_sessions;
@@ -3353,7 +3345,7 @@ pub async fn expand_text_handler(
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
     let _ = {
-        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        let mut conn = crate::db::get_conn(&delete_state.pool).await?;
 
         conn.interact(move |conn| {
             use crate::schema::chat_messages;
@@ -3361,6 +3353,7 @@ pub async fn expand_text_handler(
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
                 .order(chat_messages::created_at.desc())
+                .select(crate::models::chats::ChatMessage::as_select())
                 .first(conn)
             {
                 let _ = diesel::delete(
@@ -3425,7 +3418,7 @@ pub async fn impersonate_handler(
 
     // Verify chat session ownership
     let chat_session_owner_id = {
-        let conn = crate::db::get_conn(&state.pool).await?;
+        let mut conn = crate::db::get_conn(&state.pool).await?;
 
         conn.interact(move |conn| {
             chat_sessions::table
@@ -3452,20 +3445,17 @@ pub async fn impersonate_handler(
     // This will include RAG, persona context, and all the same features as regular chat
 
     // Get the existing chat messages to build proper context
-    let messages_result = {
-        let conn = crate::db::get_conn(&state.pool).await?;
-
-        conn.interact(move |conn| {
+    let messages_result: Vec<crate::models::chats::ChatMessage> =
+        crate::db::with_conn(&state.pool, move |conn| {
             use crate::schema::chat_messages;
             chat_messages::table
                 .filter(chat_messages::session_id.eq(session_id))
                 .order(chat_messages::created_at.asc())
-                .load(conn)
+                .select(crate::models::chats::ChatMessage::as_select())
+                .load::<crate::models::chats::ChatMessage>(conn)
                 .map_err(AppError::from)
         })
-        .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
-    };
+        .await?;
 
     // Build the chat history in the format expected by the generation service
     let mut chat_history = Vec::new();
@@ -3524,7 +3514,7 @@ pub async fn impersonate_handler(
 
     // Get session data and model configuration like the normal chat flow does
     let session_data = {
-        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
         conn.interact(move |conn| {
             use crate::schema::chat_sessions;
@@ -3652,7 +3642,7 @@ pub async fn impersonate_handler(
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
     let _ = {
-        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        let mut conn = crate::db::get_conn(&delete_state.pool).await?;
 
         conn.interact(move |conn| {
             use crate::schema::chat_messages;
@@ -3660,6 +3650,7 @@ pub async fn impersonate_handler(
             if let Ok(recent_message) = chat_messages::table
                 .filter(chat_messages::session_id.eq(delete_session_id))
                 .order(chat_messages::created_at.desc())
+                .select(crate::models::chats::ChatMessage::as_select())
                 .first(conn)
             {
                 let _ = diesel::delete(

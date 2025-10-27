@@ -1449,6 +1449,14 @@ impl TestAppGuard {
         tracing::debug!(db_name = %db_name, "Test database dropped successfully from TestAppGuard");
         Ok(())
     }
+
+    /// Cleanup the test database (SQLite version - no-op for in-memory databases)
+    #[cfg(feature = "sqlite-backend")]
+    async fn cleanup_database(_db_name: &str) -> Result<(), anyhow::Error> {
+        tracing::debug!(db_name = %_db_name, "SQLite in-memory database cleanup (no-op)");
+        // SQLite in-memory databases are automatically cleaned up when connections are dropped
+        Ok(())
+    }
 }
 
 impl std::ops::Deref for TestAppGuard {
@@ -1931,6 +1939,10 @@ pub mod db {
     #[cfg(feature = "postgres-backend")]
     use crate::PgPool;
 
+    // SQLite-specific imports
+    #[cfg(feature = "sqlite-backend")]
+    use crate::db::pool_helpers::SqliteInteractExt;
+
     // For logging macros
     use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
     use crate::auth::{self};
@@ -2046,7 +2058,7 @@ pub mod db {
             .expect("Failed to create test DB pool");
 
         // Run migrations on the test database
-        let conn = crate::db::get_conn(&pool)
+        let mut conn = crate::db::get_conn(&pool)
             .await
             .expect("Failed to get test DB connection for migration");
         conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
@@ -2069,7 +2081,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = crate::db::get_conn(pool)
+        let mut conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2139,13 +2151,23 @@ pub mod db {
                 diesel::insert_into(crate::schema::users::table)
                     .values(&new_user_payload)
                     .execute(conn_actual)
-                    .map_err(|e| anyhow::anyhow!("Failed to insert user: {}", e))?;
+                    .map_err(|e| {
+                        crate::errors::AppError::DatabaseQueryError(format!(
+                            "Failed to insert user: {}",
+                            e
+                        ))
+                    })?;
 
                 // Query back using username (unique key)
                 crate::schema::users::table
                     .filter(crate::schema::users::username.eq(username_for_query))
                     .first::<UserDbQuery>(conn_actual)
-                    .map_err(|e| anyhow::anyhow!("Failed to query user after insert: {}", e))
+                    .map_err(|e| {
+                        crate::errors::AppError::DatabaseQueryError(format!(
+                            "Failed to query user after insert: {}",
+                            e
+                        ))
+                    })
             })
             .await?
         };
@@ -2174,7 +2196,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = crate::db::get_conn(pool)
+        let mut conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2247,14 +2269,22 @@ pub mod db {
                 diesel::insert_into(crate::schema::users::table)
                     .values(&new_user_payload)
                     .execute(conn_actual)
-                    .map_err(|e| anyhow::anyhow!("Failed to insert pending user: {}", e))?;
+                    .map_err(|e| {
+                        crate::errors::AppError::DatabaseQueryError(format!(
+                            "Failed to insert pending user: {}",
+                            e
+                        ))
+                    })?;
 
                 // Query back using username (unique key)
                 crate::schema::users::table
                     .filter(crate::schema::users::username.eq(username_for_query))
                     .first::<UserDbQuery>(conn_actual)
                     .map_err(|e| {
-                        anyhow::anyhow!("Failed to query pending user after insert: {}", e)
+                        crate::errors::AppError::DatabaseQueryError(format!(
+                            "Failed to query pending user after insert: {}",
+                            e
+                        ))
                     })
             })
             .await?
@@ -2291,7 +2321,7 @@ pub mod db {
         use crate::models::OptionalStringArray;
         use chrono::Utc;
 
-        let conn = crate::db::get_conn(&pool).await?;
+        let mut conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
         let name_clone_for_error = name.clone();
@@ -2543,7 +2573,7 @@ impl TestDataGuard {
     /// - Database connection cannot be obtained
     /// - Any of the database deletion operations fail
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
-        let conn = crate::db::get_conn(&self.pool)
+        let mut conn = crate::db::get_conn(&self.pool)
             .await
             .context("Failed to get DB connection for cleanup")?;
 
@@ -2552,13 +2582,18 @@ impl TestDataGuard {
             let chat_ids_clone = self.chat_ids.clone();
             let diesel_chat_op_result = conn
                 .interact(move |conn_interaction| {
-                    let chat_uuids: Vec<uuid::Uuid> =
-                        chat_ids_clone.iter().map(|&id| id.into()).collect();
+                    #[cfg(feature = "postgres-backend")]
+                    let id_values: Vec<uuid::Uuid> =
+                        chat_ids_clone.iter().map(|id| id.into_uuid()).collect();
+                    #[cfg(feature = "sqlite-backend")]
+                    let id_values: Vec<String> =
+                        chat_ids_clone.iter().map(|id| id.to_string()).collect();
+
                     diesel::delete(schema::chat_messages::table)
-                        .filter(schema::chat_messages::session_id.eq_any(&chat_uuids))
+                        .filter(schema::chat_messages::session_id.eq_any(&id_values))
                         .execute(conn_interaction)?;
                     diesel::delete(schema::chat_sessions::table)
-                        .filter(schema::chat_sessions::id.eq_any(chat_uuids))
+                        .filter(schema::chat_sessions::id.eq_any(&id_values))
                         .execute(conn_interaction)
                 })
                 .await
@@ -2571,10 +2606,19 @@ impl TestDataGuard {
             let user_persona_ids_clone = self.user_persona_ids.clone();
             let diesel_op_result_personas = conn
                 .interact(move |conn_interaction| {
-                    let persona_uuids: Vec<uuid::Uuid> =
-                        user_persona_ids_clone.iter().map(|&id| id.into()).collect();
+                    #[cfg(feature = "postgres-backend")]
+                    let id_values: Vec<uuid::Uuid> = user_persona_ids_clone
+                        .iter()
+                        .map(|id| id.into_uuid())
+                        .collect();
+                    #[cfg(feature = "sqlite-backend")]
+                    let id_values: Vec<String> = user_persona_ids_clone
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect();
+
                     diesel::delete(schema::user_personas::table)
-                        .filter(schema::user_personas::id.eq_any(persona_uuids))
+                        .filter(schema::user_personas::id.eq_any(&id_values))
                         .execute(conn_interaction)
                 })
                 .await
@@ -2587,10 +2631,19 @@ impl TestDataGuard {
             let character_ids_clone = self.character_ids.clone();
             let diesel_op_result_chars = conn
                 .interact(move |conn_interaction| {
-                    let char_uuids: Vec<uuid::Uuid> =
-                        character_ids_clone.iter().map(|&id| id.into()).collect();
+                    #[cfg(feature = "postgres-backend")]
+                    let id_values: Vec<uuid::Uuid> = character_ids_clone
+                        .iter()
+                        .map(|id| id.into_uuid())
+                        .collect();
+                    #[cfg(feature = "sqlite-backend")]
+                    let id_values: Vec<String> = character_ids_clone
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect();
+
                     diesel::delete(schema::characters::table)
-                        .filter(schema::characters::id.eq_any(char_uuids))
+                        .filter(schema::characters::id.eq_any(&id_values))
                         .execute(conn_interaction)
                 })
                 .await
@@ -2603,15 +2656,20 @@ impl TestDataGuard {
             let lorebook_ids_clone = self.lorebook_ids.clone();
             let diesel_op_result_lorebooks = conn
                 .interact(move |conn_interaction| {
-                    let lorebook_uuids: Vec<uuid::Uuid> =
-                        lorebook_ids_clone.iter().map(|&id| id.into()).collect();
+                    #[cfg(feature = "postgres-backend")]
+                    let id_values: Vec<uuid::Uuid> =
+                        lorebook_ids_clone.iter().map(|id| id.into_uuid()).collect();
+                    #[cfg(feature = "sqlite-backend")]
+                    let id_values: Vec<String> =
+                        lorebook_ids_clone.iter().map(|id| id.to_string()).collect();
+
                     // First delete lorebook entries
                     diesel::delete(schema::lorebook_entries::table)
-                        .filter(schema::lorebook_entries::lorebook_id.eq_any(&lorebook_uuids))
+                        .filter(schema::lorebook_entries::lorebook_id.eq_any(&id_values))
                         .execute(conn_interaction)?;
                     // Then delete lorebooks
                     diesel::delete(schema::lorebooks::table)
-                        .filter(schema::lorebooks::id.eq_any(lorebook_uuids))
+                        .filter(schema::lorebooks::id.eq_any(&id_values))
                         .execute(conn_interaction)
                 })
                 .await
@@ -2624,10 +2682,15 @@ impl TestDataGuard {
             let user_ids_clone = self.user_ids.clone();
             let diesel_op_result_users = conn
                 .interact(move |conn_interaction| {
-                    let user_uuids: Vec<uuid::Uuid> =
-                        user_ids_clone.iter().map(|&id| id.into()).collect();
+                    #[cfg(feature = "postgres-backend")]
+                    let id_values: Vec<uuid::Uuid> =
+                        user_ids_clone.iter().map(|id| id.into_uuid()).collect();
+                    #[cfg(feature = "sqlite-backend")]
+                    let id_values: Vec<String> =
+                        user_ids_clone.iter().map(|id| id.to_string()).collect();
+
                     diesel::delete(schema::users::table)
-                        .filter(schema::users::id.eq_any(user_uuids))
+                        .filter(schema::users::id.eq_any(&id_values))
                         .execute(conn_interaction)
                 })
                 .await
@@ -2692,6 +2755,14 @@ impl TestDataGuard {
         tracing::debug!(db_name = %db_name, "Test database dropped successfully");
         Ok(())
     }
+
+    /// Cleanup the test database (SQLite version - no-op for in-memory databases)
+    #[cfg(feature = "sqlite-backend")]
+    async fn cleanup_database(&self, _db_name: &str) -> Result<(), anyhow::Error> {
+        tracing::debug!(db_name = %_db_name, "SQLite in-memory database cleanup (no-op)");
+        // SQLite in-memory databases are automatically cleaned up when connections are dropped
+        Ok(())
+    }
 }
 
 impl Drop for TestDataGuard {
@@ -2738,9 +2809,13 @@ pub fn db_specific_cleanup(
 
     if !test_data.chat_ids.is_empty() {
         let chat_ids_clone = test_data.chat_ids.clone();
-        let chat_uuids: Vec<uuid::Uuid> = chat_ids_clone.iter().map(|&id| id.into()).collect();
+        #[cfg(feature = "postgres-backend")]
+        let id_values: Vec<uuid::Uuid> = chat_ids_clone.iter().map(|id| id.into_uuid()).collect();
+        #[cfg(feature = "sqlite-backend")]
+        let id_values: Vec<String> = chat_ids_clone.iter().map(|id| id.to_string()).collect();
+
         diesel::delete(schema::chat_sessions::table)
-            .filter(schema::chat_sessions::id.eq_any(chat_uuids))
+            .filter(schema::chat_sessions::id.eq_any(&id_values))
             .execute(conn)?;
     }
     // ... other cleanup like characters, users

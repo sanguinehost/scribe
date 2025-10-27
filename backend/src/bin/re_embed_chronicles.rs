@@ -72,13 +72,26 @@ async fn main() -> Result<()> {
         .database_url
         .as_ref()
         .context("DATABASE_URL is required")?;
-    let pool = scribe_backend::db::DbPool::builder(deadpool_diesel::postgres::Manager::new(
-        database_url.clone(),
-        deadpool_diesel::postgres::Runtime::Tokio1,
-    ))
-    .max_size(20)
-    .build()
-    .context("Failed to create database pool")?;
+
+    #[cfg(feature = "postgres-backend")]
+    let pool = {
+        use deadpool_diesel::postgres::{Manager, Runtime};
+        scribe_backend::db::DbPool::builder(Manager::new(database_url.clone(), Runtime::Tokio1))
+            .max_size(20)
+            .build()
+            .context("Failed to create database pool")?
+    };
+
+    #[cfg(feature = "sqlite-backend")]
+    let pool = {
+        use diesel::r2d2::{ConnectionManager, Pool};
+        use diesel::SqliteConnection;
+        let manager = ConnectionManager::<SqliteConnection>::new(database_url);
+        Pool::builder()
+            .max_size(20)
+            .build(manager)
+            .context("Failed to create database pool")?
+    };
 
     // Initialize required services for embedding
     let api_key = config
@@ -114,36 +127,26 @@ async fn main() -> Result<()> {
     let events: Vec<ChronicleEvent> = if args.all_users {
         warn!("Processing ALL users' chronicle events - this may take a long time!");
         // Get all events (admin mode)
-        state
-            .pool
-            .get()
-            .await
-            .context("Failed to get database connection")?
-            .interact(|conn| {
-                chronicle_events::table
-                    .select(ChronicleEvent::as_select())
-                    .load(conn)
-                    .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))??
+        scribe_backend::db::with_conn(&state.pool, |conn| {
+            chronicle_events::table
+                .select(ChronicleEvent::as_select())
+                .load(conn)
+                .map_err(scribe_backend::errors::AppError::from)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?
     } else {
         // Get events only for this user
         let user_id = user.id;
-        state
-            .pool
-            .get()
-            .await
-            .context("Failed to get database connection")?
-            .interact(move |conn| {
-                chronicle_events::table
-                    .filter(chronicle_events::user_id.eq(user_id))
-                    .select(ChronicleEvent::as_select())
-                    .load(conn)
-                    .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))
-            })
-            .await
-            .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))??
+        scribe_backend::db::with_conn(&state.pool, move |conn| {
+            chronicle_events::table
+                .filter(chronicle_events::user_id.eq(user_id))
+                .select(ChronicleEvent::as_select())
+                .load(conn)
+                .map_err(scribe_backend::errors::AppError::from)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?
     };
 
     info!("Found {} chronicle events to re-embed", events.len());
@@ -308,24 +311,19 @@ async fn authenticate_user(
     use scribe_backend::crypto;
 
     // Find user by username
-    let user_db_query: UserDbQuery = state
-        .pool
-        .get()
-        .await
-        .context("Failed to get database connection")?
-        .interact({
-            let username = username.to_string();
-            move |conn| {
-                users::table
-                    .filter(users::username.eq(&username))
-                    .first::<UserDbQuery>(conn)
-                    .optional()
-            }
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Database interaction failed: {}", e))?
-        .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?
-        .ok_or_else(|| anyhow::anyhow!("User '{}' not found", username))?;
+    let user_db_query: UserDbQuery = scribe_backend::db::with_conn(&state.pool, {
+        let username = username.to_string();
+        move |conn| {
+            users::table
+                .filter(users::username.eq(&username))
+                .first::<UserDbQuery>(conn)
+                .optional()
+                .map_err(scribe_backend::errors::AppError::from)
+        }
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("Database query failed: {}", e))?
+    .ok_or_else(|| anyhow::anyhow!("User '{}' not found", username))?;
 
     let user = User::from(user_db_query);
 

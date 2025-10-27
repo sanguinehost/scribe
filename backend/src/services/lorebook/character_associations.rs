@@ -12,25 +12,18 @@ impl LorebookService {
     ) -> Result<(), AppError> {
         let user = get_user_from_session(auth_session)?;
 
-        // Verify both character and lorebook belong to the user
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
-        })?;
-
         // Check character ownership
         use crate::schema::characters;
-        let character_exists = conn
-            .interact(move |conn_sync| {
-                characters::table
-                    .filter(characters::id.eq(character_id))
-                    .filter(characters::user_id.eq(user.id))
-                    .count()
-                    .get_result::<i64>(conn_sync)
-                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
-                    .map(|count| count > 0)
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
+        let character_exists = crate::db::with_conn(&self.pool, move |conn_sync| {
+            characters::table
+                .filter(characters::id.eq(character_id))
+                .filter(characters::user_id.eq(user.id))
+                .count()
+                .get_result::<i64>(conn_sync)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+                .map(|count| count > 0)
+        })
+        .await?;
 
         if !character_exists {
             return Err(AppError::NotFound(
@@ -39,24 +32,19 @@ impl LorebookService {
         }
 
         // Check lorebook ownership
-        let lorebook_exists = conn
-            .interact({
-                let user_id = user.id;
-                move |conn_sync| {
-                    lorebooks::table
-                        .filter(lorebooks::id.eq(lorebook_id))
-                        .filter(lorebooks::user_id.eq(user_id))
-                        .count()
-                        .get_result::<i64>(conn_sync)
-                        .map_err(|e: diesel::result::Error| {
-                            AppError::DatabaseQueryError(e.to_string())
-                        })
-                        .map(|count| count > 0)
-                }
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let lorebook_exists = crate::db::with_conn(&self.pool, {
+            let user_id = user.id;
+            move |conn_sync| {
+                lorebooks::table
+                    .filter(lorebooks::id.eq(lorebook_id))
+                    .filter(lorebooks::user_id.eq(user_id))
+                    .count()
+                    .get_result::<i64>(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+                    .map(|count| count > 0)
+            }
+        })
+        .await?;
 
         if !lorebook_exists {
             return Err(AppError::NotFound(
@@ -76,14 +64,13 @@ impl LorebookService {
             updated_at: Some(Utc::now().into()),
         };
 
-        conn.interact(move |conn_sync| {
+        crate::db::with_conn(&self.pool, move |conn_sync| {
             diesel::insert_into(character_lorebooks::table)
                 .values(&new_association)
                 .execute(conn_sync)
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
-        .await
-        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
+        .await?;
 
         Ok(())
     }
@@ -103,26 +90,18 @@ impl LorebookService {
     ) -> Result<Vec<LorebookResponse>, AppError> {
         let user = get_user_from_session(auth_session)?;
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
-        })?;
+        let lorebooks = crate::db::with_conn(&self.pool, move |conn_sync| {
+            use crate::schema::character_lorebooks;
 
-        let lorebooks = conn
-            .interact(move |conn_sync| {
-                use crate::schema::character_lorebooks;
-
-                character_lorebooks::table
-                    .inner_join(
-                        lorebooks::table.on(lorebooks::id.eq(character_lorebooks::lorebook_id)),
-                    )
-                    .filter(character_lorebooks::character_id.eq(character_id))
-                    .filter(character_lorebooks::user_id.eq(user.id))
-                    .select(Lorebook::as_select())
-                    .load::<Lorebook>(conn_sync)
-                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
+            character_lorebooks::table
+                .inner_join(lorebooks::table.on(lorebooks::id.eq(character_lorebooks::lorebook_id)))
+                .filter(character_lorebooks::character_id.eq(character_id))
+                .filter(character_lorebooks::user_id.eq(user.id))
+                .select(Lorebook::as_select())
+                .load::<Lorebook>(conn_sync)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
 
         Ok(lorebooks
             .into_iter()
@@ -158,13 +137,8 @@ impl LorebookService {
             ));
         }
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
-            error!("Failed to get DB connection: {}", e);
-            AppError::DbPoolError(e.to_string())
-        })?;
-
         let action_clone = action.clone();
-        conn.interact(move |conn_sync| {
+        crate::db::with_conn(&self.pool, move |conn_sync| {
             use crate::schema::chat_character_lorebook_overrides::dsl;
             use diesel::upsert::excluded;
 
@@ -189,8 +163,7 @@ impl LorebookService {
                 .execute(conn_sync)
                 .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
-        .await
-        .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
+        .await?;
 
         info!(
             "Successfully set character lorebook override for chat [REDACTED_UUID], lorebook [REDACTED_UUID], action: {}",
@@ -210,25 +183,18 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
-            error!("Failed to get DB connection: {}", e);
-            AppError::DbPoolError(e.to_string())
-        })?;
-
-        let rows_deleted = conn
-            .interact(move |conn_sync| {
-                use crate::schema::chat_character_lorebook_overrides::dsl;
-                diesel::delete(
-                    dsl::chat_character_lorebook_overrides
-                        .filter(dsl::chat_session_id.eq(chat_session_id))
-                        .filter(dsl::lorebook_id.eq(lorebook_id))
-                        .filter(dsl::user_id.eq(user_id)),
-                )
-                .execute(conn_sync)
-                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
+        let rows_deleted = crate::db::with_conn(&self.pool, move |conn_sync| {
+            use crate::schema::chat_character_lorebook_overrides::dsl;
+            diesel::delete(
+                dsl::chat_character_lorebook_overrides
+                    .filter(dsl::chat_session_id.eq(chat_session_id))
+                    .filter(dsl::lorebook_id.eq(lorebook_id))
+                    .filter(dsl::user_id.eq(user_id)),
+            )
+            .execute(conn_sync)
+            .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
 
         if rows_deleted == 0 {
             return Err(AppError::NotFound(
@@ -252,22 +218,15 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
-        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
-            error!("Failed to get DB connection: {}", e);
-            AppError::DbPoolError(e.to_string())
-        })?;
-
-        let overrides = conn
-            .interact(move |conn_sync| {
-                use crate::schema::chat_character_lorebook_overrides::dsl;
-                dsl::chat_character_lorebook_overrides
-                    .filter(dsl::chat_session_id.eq(chat_session_id))
-                    .filter(dsl::user_id.eq(user_id))
-                    .load::<crate::models::lorebooks::ChatCharacterLorebookOverride>(conn_sync)
-                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
+        let overrides = crate::db::with_conn(&self.pool, move |conn_sync| {
+            use crate::schema::chat_character_lorebook_overrides::dsl;
+            dsl::chat_character_lorebook_overrides
+                .filter(dsl::chat_session_id.eq(chat_session_id))
+                .filter(dsl::user_id.eq(user_id))
+                .load::<crate::models::lorebooks::ChatCharacterLorebookOverride>(conn_sync)
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
 
         Ok(overrides)
     }
