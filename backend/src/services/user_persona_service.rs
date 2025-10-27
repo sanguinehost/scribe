@@ -60,7 +60,7 @@ impl UserPersonaService {
     #[cfg(feature = "sqlite-backend")]
     fn insert_user_persona_sync(
         conn: &mut crate::db::DbConnection,
-        new_persona: &crate::models::user_personas::NewUserPersona,
+        new_persona: &UserPersona,
     ) -> Result<UserPersona, diesel::result::Error> {
         use diesel::prelude::*;
 

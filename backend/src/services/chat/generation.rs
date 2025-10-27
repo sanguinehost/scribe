@@ -401,7 +401,7 @@ pub async fn get_session_data_for_generation(
                         crate::db::DbId,
                         Option<i32>,
                         Option<i32>,
-                        String,
+                        Option<String>,
                         String,
                     )>(conn_interaction)
                     .map_err(|e| {

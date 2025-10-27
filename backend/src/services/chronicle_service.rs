@@ -111,7 +111,7 @@ impl ChronicleService {
     #[cfg(feature = "sqlite-backend")]
     fn insert_chronicle_sync(
         conn: &mut crate::db::DbConnection,
-        chronicle: &NewChronicle,
+        chronicle: &NewPlayerChronicle,
         chronicle_id: DbId,
     ) -> Result<PlayerChronicle, AppError> {
         use diesel::prelude::*;
