@@ -22,5 +22,13 @@ log = "0.4"
 tauri = { version = "2.8.5", features = [] }
 tauri-plugin-log = "2"
 
+# Async runtime for embedded backend
+tokio = { version = "1", features = ["full"] }
+
+# Server dependencies
+axum-server = { version = "0.6", features = ["tls-rustls"] }
+anyhow = "1"
+tracing = "0.1"
+
 # Workspace dependencies
 scribe-backend = { path = "../backend", default-features = false, features = ["desktop"] }

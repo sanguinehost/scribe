@@ -5,7 +5,7 @@
   "identifier": "com.sanguine.scribe",
   "build": {
     "frontendDist": "../frontend/build",
-    "beforeBuildCommand": "(cd ../frontend && pnpm run build:desktop)"
+    "beforeBuildCommand": "(cd frontend && pnpm run build:desktop)"
   },
   "app": {
     "windows": [
