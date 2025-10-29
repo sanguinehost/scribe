@@ -1,8 +1,23 @@
 import type { ScribeChatSession } from '$lib/types.js';
 import { apiClient as _apiClient } from '$lib/api';
+import { SelectedModel } from '$lib/hooks/selected-model.svelte.js';
+import { chatModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 
-export async function load({ data, fetch }) {
-	const { user } = data;
+export async function load({ data, fetch }: { data: unknown; fetch: typeof globalThis.fetch }) {
+	// In desktop mode with ssr:false, parent data may be undefined
+	const user = data?.user ?? null;
+
+	// For desktop mode, provide default values for missing server-side data
+	// In cloud mode, these would come from +layout.server.ts
+	const sidebarCollapsed = data?.sidebarCollapsed ?? false;
+
+	// Select a default chat model (in cloud mode, this comes from cookies)
+	const modelId = DEFAULT_CHAT_MODEL;
+	if (chatModels.find((model) => model.id === modelId)) {
+		// Model exists, use it
+	}
+	const selectedChatModel = new SelectedModel(modelId);
+
 	let chats: ScribeChatSession[] = []; // Initialize as empty array
 	let chatsError = false; // Flag to indicate fetch failure
 	if (user) {
@@ -37,6 +52,11 @@ export async function load({ data, fetch }) {
 		// Returning the array directly is simpler if streaming isn't strictly needed here
 		chats,
 		chatsError, // Return the flag
-		...data
+		// Required properties for (chat)/+layout.svelte
+		user,
+		sidebarCollapsed,
+		selectedChatModel,
+		// In desktop mode, parent data may be undefined, so spread it safely
+		...(data ?? {})
 	};
 }

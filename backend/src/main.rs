@@ -71,6 +71,9 @@ use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 use scribe_backend::vector_db::QdrantClientService;
+
+#[cfg(feature = "embedded-vector")]
+use scribe_backend::vector_db::NoOpQdrantService;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::Duration;
@@ -81,8 +84,12 @@ use tower_governor::{
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
 
-// Define the embedded migrations macro
+// Define the embedded migrations macro - use different directories based on backend
+#[cfg(feature = "postgres-backend")]
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+#[cfg(feature = "sqlite-backend")]
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations_sqlite");
 
 // Generate or load certificate for cloud environments
 async fn load_cloud_certificate() -> Result<RustlsConfig> {
@@ -301,10 +308,32 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
         as Arc<dyn EmbeddingPipelineServiceTrait>;
 
-    // --- Initialize Qdrant Client Service ---
-    tracing::info!("Initializing Qdrant client service...");
-    let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
-    tracing::info!("Qdrant client service initialized.");
+    // --- Initialize Vector DB Service (Qdrant or No-Op) ---
+    #[cfg(feature = "remote-vector")]
+    let qdrant_service = {
+        tracing::info!("Initializing Qdrant client service (remote-vector mode)...");
+        let service = Arc::new(QdrantClientService::new(config.clone()).await?);
+        tracing::info!("Qdrant client service initialized.");
+        service
+            as Arc<
+                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
+                    + Send
+                    + Sync,
+            >
+    };
+
+    #[cfg(feature = "embedded-vector")]
+    let qdrant_service = {
+        tracing::info!("Initializing no-op vector service (embedded-vector mode)...");
+        let service = Arc::new(NoOpQdrantService::new(config.clone()).await?);
+        tracing::info!("No-op vector service initialized.");
+        service
+            as Arc<
+                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
+                    + Send
+                    + Sync,
+            >
+    };
 
     // --- Initialize Lorebook Service (needs qdrant_service) ---
     let lorebook_service = Arc::new(LorebookService::new(
@@ -667,31 +696,70 @@ fn build_router(
     tracing::info!("🎯 Webhook routes configured");
 
     // Configure CORS for the frontend
-    // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
-    // via Vercel's edge proxy, but they'll have the correct origin headers
-    let cors = CorsLayer::new()
-        .allow_origin([
-            "https://staging.scribe.sanguinehost.com".parse().unwrap(),
-            "https://scribe-frontend.vercel.app".parse().unwrap(),
-            "https://localhost:5173".parse().unwrap(),
-            "http://localhost:5173".parse().unwrap(),
-            "http://localhost:3000".parse().unwrap(),
-        ])
-        .allow_methods([
-            axum::http::Method::GET,
-            axum::http::Method::POST,
-            axum::http::Method::PUT,
-            axum::http::Method::DELETE,
-            axum::http::Method::OPTIONS,
-        ])
-        .allow_headers([
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::AUTHORIZATION,
-            axum::http::header::ACCEPT,
-            axum::http::header::CACHE_CONTROL,
-            axum::http::header::PRAGMA,
-        ])
-        .allow_credentials(true);
+    let cors = if app_state.config.environment.as_deref() == Some("desktop") {
+        // Desktop mode - allow any localhost/127.0.0.1 origin (safe for local-only desktop app)
+        // Tauri WebView uses random ports (e.g., http://127.0.0.1:1430), so we can't use static origins
+        use tower_http::cors::AllowOrigin;
+        tracing::info!("Configuring CORS for desktop mode with permissive localhost origins");
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::predicate(
+                |origin: &axum::http::HeaderValue, _parts| {
+                    let origin_str = origin.to_str().unwrap_or("");
+                    let is_allowed = origin_str.starts_with("http://localhost")
+                        || origin_str.starts_with("https://localhost")
+                        || origin_str.starts_with("http://127.0.0.1")
+                        || origin_str.starts_with("https://127.0.0.1")
+                        || origin_str.starts_with("tauri://localhost");
+                    if !is_allowed {
+                        tracing::debug!("CORS rejected origin: {}", origin_str);
+                    }
+                    is_allowed
+                },
+            ))
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+                axum::http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::ACCEPT,
+                axum::http::header::CACHE_CONTROL,
+                axum::http::header::PRAGMA,
+            ])
+            .allow_credentials(true)
+    } else {
+        // Cloud mode - strict origins
+        // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
+        // via Vercel's edge proxy, but they'll have the correct origin headers
+        CorsLayer::new()
+            .allow_origin([
+                "https://staging.scribe.sanguinehost.com".parse().unwrap(),
+                "https://scribe-frontend.vercel.app".parse().unwrap(),
+                "https://localhost:5173".parse().unwrap(),
+                "http://localhost:5173".parse().unwrap(),
+                "http://localhost:3000".parse().unwrap(),
+                "tauri://localhost".parse().unwrap(), // Tauri desktop app origin (fallback)
+            ])
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+                axum::http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::ACCEPT,
+                axum::http::header::CACHE_CONTROL,
+                axum::http::header::PRAGMA,
+            ])
+            .allow_credentials(true)
+    };
 
     // Build authenticated API routes with auth layer
     let authenticated_api = Router::new()
@@ -768,6 +836,26 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                     .await
                     .context("Failed to load TLS certificates from container files. Ensure certificates are mounted to /app/certs/")?
             }
+        }
+        "desktop" => {
+            // For desktop mode, generate self-signed certificates in-memory
+            tracing::info!(
+                "Desktop environment detected, generating in-memory self-signed certificates"
+            );
+
+            let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+
+            let cert_key = generate_simple_self_signed(subject_alt_names)
+                .context("Failed to generate self-signed certificate for desktop mode")?;
+
+            let cert_pem = cert_key.cert.pem();
+            let key_pem = cert_key.key_pair.serialize_pem();
+
+            tracing::info!("Desktop self-signed certificate generated successfully");
+
+            RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
+                .await
+                .context("Failed to create RustlsConfig from desktop certificate")?
         }
         "local" | _ => {
             // For local development, support environment variable override for certificate paths

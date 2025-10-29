@@ -447,9 +447,7 @@ pub async fn get_session_data_for_generation(
                         )>(conn_interaction)
                     }
                 }
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
-                })?
+                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to load messages: {e}")))?
                 .into_iter()
                 .map(
                     |(

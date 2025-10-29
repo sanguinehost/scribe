@@ -5,7 +5,8 @@
   "identifier": "com.sanguine.scribe",
   "build": {
     "frontendDist": "../frontend/build",
-    "beforeBuildCommand": "(cd frontend && pnpm run build:desktop)"
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
   },
   "app": {
     "windows": [
@@ -21,7 +22,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": ["'self'", "scribe:", "tauri:"],
+        "connect-src": ["'self'", "scribe:", "tauri:", "ipc:", "ws:", "wss:"],
+        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:", "blob:", "asset:"],
+        "font-src": ["'self'", "data:"]
+      }
     }
   },
   "bundle": {
@@ -33,6 +41,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/scribe-backend"
     ]
   }
 }

@@ -3,7 +3,10 @@
 	import { browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
 	import { apiClient as _apiClient } from '$lib/api';
-	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
+
+	// Use dynamic import to avoid build-time requirement for Paddle token
+	const PUBLIC_PADDLE_CLIENT_SIDE_TOKEN = env.PUBLIC_PADDLE_CLIENT_SIDE_TOKEN;
 	import {
 		Dialog,
 		DialogContent,

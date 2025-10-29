@@ -1390,3 +1390,104 @@ mod tests {
         drop(service);
     }
 }
+
+// ============================================================================
+// No-Op Implementation for Embedded Vector Mode (Desktop)
+// ============================================================================
+
+#[cfg(feature = "embedded-vector")]
+#[derive(Clone)]
+pub struct NoOpQdrantService;
+
+#[cfg(feature = "embedded-vector")]
+impl NoOpQdrantService {
+    pub async fn new(_config: Arc<Config>) -> Result<Self, AppError> {
+        tracing::info!("Using no-op Qdrant service for desktop/embedded-vector mode");
+        Ok(NoOpQdrantService)
+    }
+}
+
+#[cfg(feature = "embedded-vector")]
+#[async_trait]
+impl QdrantClientServiceTrait for NoOpQdrantService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: ensure_collection_exists (no-op)");
+        Ok(())
+    }
+
+    async fn store_points(&self, _points: Vec<PointStruct>) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: store_points (no-op)");
+        Ok(())
+    }
+
+    async fn search_points(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points (no-op)");
+        Ok(vec![])
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points_with_threshold (no-op)");
+        Ok(vec![])
+    }
+
+    async fn hybrid_search(
+        &self,
+        _vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        _limit: u64,
+        _filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: hybrid_search (no-op)");
+        Ok(vec![])
+    }
+
+    async fn retrieve_points(
+        &self,
+        _filter: Option<Filter>,
+        _limit: u64,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: retrieve_points (no-op)");
+        Ok(vec![])
+    }
+
+    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points (no-op)");
+        Ok(())
+    }
+
+    async fn delete_points_by_filter(&self, _filter: Filter) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points_by_filter (no-op)");
+        Ok(())
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: update_collection_settings (no-op)");
+        Ok(())
+    }
+
+    async fn get_point_by_id(
+        &self,
+        _point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: get_point_by_id (no-op)");
+        Ok(None)
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: health_check (no-op)");
+        Ok(())
+    }
+}

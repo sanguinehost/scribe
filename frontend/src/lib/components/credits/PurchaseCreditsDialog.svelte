@@ -15,7 +15,10 @@
 	import CreditPackageSelector from './CreditPackageSelector.svelte';
 	import { AlertCircle, ExternalLink, Loader } from 'lucide-svelte';
 	import { ENABLE_PAYMENT_CREDITS } from '$lib/utils/features';
-	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
+
+	// Use dynamic import to avoid build-time requirement for Paddle token
+	const PUBLIC_PADDLE_CLIENT_SIDE_TOKEN = env.PUBLIC_PADDLE_CLIENT_SIDE_TOKEN;
 	import type { CreditPackage } from '$lib/types/payment';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();

@@ -13,11 +13,15 @@
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 
-	let { data, children } = $props();
+	// Desktop mode: data may be undefined initially with ssr:false
+	let { data = {} as Record<string, unknown>, children } = $props();
 
-	const chatHistory = new ChatHistory(data.chats);
+	// Safely initialize with empty array if chats not available
+	const chatHistory = new ChatHistory(data?.chats ?? []);
 	chatHistory.setContext();
-	data.selectedChatModel.setContext();
+
+	// Safely call setContext if selectedChatModel exists
+	data?.selectedChatModel?.setContext();
 
 	const selectedCharacterStore = new SelectedCharacterStore();
 	selectedCharacterStore.setContext();
@@ -48,7 +52,8 @@
 			console.warn('Failed to fetch models in chat layout:', error);
 		});
 
-		if (data.chatsError) {
+		// Safely check for chatsError
+		if (data?.chatsError) {
 			toast.error('Could not load chat history.', {
 				description: 'The server might be restarting. Please try refreshing the page.',
 				duration: 10000 // Show for 10 seconds
@@ -57,7 +62,7 @@
 	});
 </script>
 
-<SidebarProvider open={!data.sidebarCollapsed}>
+<SidebarProvider open={!data?.sidebarCollapsed}>
 	<AppSidebar />
 	<SidebarInset>{@render children?.()}</SidebarInset>
 </SidebarProvider>
