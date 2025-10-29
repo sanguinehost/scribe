@@ -3,10 +3,11 @@
 # Scribe Desktop - Development Build Script
 #
 # This script orchestrates the complete desktop build pipeline:
-# 1. Frontend build (SvelteKit static adapter with desktop config)
-# 2. Backend binary (Rust with desktop features: SQLite + LanceDB)
-# 3. Binary placement for Tauri sidecar
-# 4. Validation and Tauri dev server startup
+# 1. Clean stale build artifacts (frontend/backend/binaries)
+# 2. Frontend build (SvelteKit static adapter with desktop config)
+# 3. Backend binary (Rust with desktop features: SQLite + LanceDB)
+# 4. Binary placement for Tauri sidecar
+# 5. Validation and Tauri dev server startup
 #
 # Usage: ./scripts/build-desktop-dev.sh
 #
@@ -72,8 +73,41 @@ log_success "Platform detected: $RUST_TARGET"
 
 echo ""
 
-# Step 2: Build frontend for desktop
-log_info "Step 2/6: Building frontend with desktop configuration..."
+# Step 2: Clean stale build artifacts
+log_info "Step 2/7: Cleaning stale build artifacts..."
+
+# Clean frontend build artifacts
+if [ -d "$PROJECT_ROOT/frontend/build" ]; then
+    log_info "Removing frontend build directory..."
+    rm -rf "$PROJECT_ROOT/frontend/build"
+    log_success "Cleaned: frontend/build/"
+fi
+
+if [ -d "$PROJECT_ROOT/frontend/.svelte-kit" ]; then
+    log_info "Removing frontend .svelte-kit directory..."
+    rm -rf "$PROJECT_ROOT/frontend/.svelte-kit"
+    log_success "Cleaned: frontend/.svelte-kit/"
+fi
+
+# Clean backend build artifacts (scribe-backend binary only)
+if [ -f "$PROJECT_ROOT/target/debug/scribe-backend" ]; then
+    log_info "Removing backend binary..."
+    rm -f "$PROJECT_ROOT/target/debug/scribe-backend"
+    log_success "Cleaned: target/debug/scribe-backend"
+fi
+
+# Clean desktop binaries directory
+if [ -d "$PROJECT_ROOT/desktop/binaries" ]; then
+    log_info "Removing desktop binaries directory..."
+    rm -rf "$PROJECT_ROOT/desktop/binaries"
+    log_success "Cleaned: desktop/binaries/"
+fi
+
+log_success "All stale artifacts cleaned successfully"
+echo ""
+
+# Step 3: Build frontend for desktop
+log_info "Step 3/7: Building frontend with desktop configuration..."
 
 cd "$PROJECT_ROOT/frontend"
 
@@ -100,8 +134,8 @@ fi
 log_success "Frontend build successful → frontend/build/"
 echo ""
 
-# Step 3: Build backend binary with desktop features
-log_info "Step 3/6: Building backend binary with desktop features (SQLite + LanceDB)..."
+# Step 4: Build backend binary with desktop features
+log_info "Step 4/7: Building backend binary with desktop features (SQLite + LanceDB)..."
 
 cd "$PROJECT_ROOT"
 
@@ -122,8 +156,8 @@ BINARY_SIZE=$(du -h "$PROJECT_ROOT/target/debug/scribe-backend" | cut -f1)
 log_success "Backend build successful → target/debug/scribe-backend ($BINARY_SIZE)"
 echo ""
 
-# Step 4: Copy backend binary to Tauri binaries directory
-log_info "Step 4/6: Copying backend binary to Tauri binaries directory..."
+# Step 5: Copy backend binary to Tauri binaries directory
+log_info "Step 5/7: Copying backend binary to Tauri binaries directory..."
 
 mkdir -p "$PROJECT_ROOT/desktop/binaries"
 
@@ -138,8 +172,8 @@ ln -sf "scribe-backend-${RUST_TARGET}" "$GENERIC_BINARY"
 log_success "Symlink created: desktop/binaries/scribe-backend → scribe-backend-${RUST_TARGET}"
 echo ""
 
-# Step 5: Verify all prerequisites
-log_info "Step 5/6: Verifying build artifacts..."
+# Step 6: Verify all prerequisites
+log_info "Step 6/7: Verifying build artifacts..."
 
 # Check frontend build
 if [ ! -d "$PROJECT_ROOT/frontend/build" ]; then
@@ -171,8 +205,8 @@ fi
 
 echo ""
 
-# Step 6: Start Tauri dev server
-log_info "Step 6/6: Starting Tauri desktop app..."
+# Step 7: Start Tauri dev server
+log_info "Step 7/7: Starting Tauri desktop app..."
 
 cd "$PROJECT_ROOT/desktop"
 
