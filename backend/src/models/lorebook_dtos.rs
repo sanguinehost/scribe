@@ -1,6 +1,4 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use validator::Validate;

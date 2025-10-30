@@ -1,8 +1,6 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
 use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::{BigDecimal, ToPrimitive};
-use chrono::Utc;
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
@@ -23,7 +21,7 @@ use secrecy::SecretBox;
 
 /// Custom serializers for BigDecimal types
 mod bigdecimal_serde {
-    use bigdecimal::BigDecimal;
+
     use serde::Serializer;
     use std::str::FromStr;
 

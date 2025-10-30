@@ -1,6 +1,4 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
-use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 

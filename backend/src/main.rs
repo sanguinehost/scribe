@@ -1,8 +1,6 @@
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 #[cfg(feature = "postgres-backend")]
-use deadpool_diesel::postgres::{
-    Manager as DeadpoolManager, Runtime as DeadpoolRuntime,
-};
+use deadpool_diesel::postgres::{Manager as DeadpoolManager, Runtime as DeadpoolRuntime};
 #[cfg(feature = "postgres-backend")]
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
@@ -16,9 +14,9 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
+use scribe_backend::db::DbPool;
 #[cfg(feature = "desktop")]
 use scribe_backend::desktop; // Desktop mode initialization
-use scribe_backend::db::DbPool;
 use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::routes::admin::admin_routes;
@@ -73,10 +71,10 @@ use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 
-#[cfg(feature = "remote-vector")]
-use scribe_backend::vector_db::QdrantClientService;
 #[cfg(feature = "embedded-vector")]
 use scribe_backend::vector_db::NoOpQdrantService;
+#[cfg(feature = "remote-vector")]
+use scribe_backend::vector_db::QdrantClientService;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::Duration;
@@ -359,7 +357,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     let token_service = if let Some(cookie_key) = config.cookie_signing_key.as_ref() {
         // Use the cookie key directly as a string for JWT signing
         info!("Initializing token service for JWT authentication");
-        Some(Arc::new(scribe_backend::auth::TokenService::new(cookie_key)))
+        Some(Arc::new(scribe_backend::auth::TokenService::new(
+            cookie_key,
+        )))
     } else {
         warn!("No cookie signing key available, token authentication will be disabled");
         None
@@ -802,8 +802,7 @@ fn build_router(
         .nest("/api", public_auth_routes) // Public auth routes - NO auth required
         .nest(
             "/api",
-            protected_rate_limited_routes
-                .layer(auth_layer.clone()), // Auth layer ONLY on protected routes
+            protected_rate_limited_routes.layer(auth_layer.clone()), // Auth layer ONLY on protected routes
         )
         .with_state(app_state.clone());
 

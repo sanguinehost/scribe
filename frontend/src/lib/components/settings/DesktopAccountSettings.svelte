@@ -177,8 +177,8 @@
 				<div class="space-y-3">
 					<h3 class="text-sm font-semibold">Upgrade to Protected Account</h3>
 					<p class="text-sm text-muted-foreground">
-						Add username and password protection to secure your data. This is recommended for
-						shared computers.
+						Add username and password protection to secure your data. This is recommended for shared
+						computers.
 					</p>
 					<ul class="space-y-1 text-sm text-muted-foreground">
 						<li class="flex items-start gap-2">
@@ -254,9 +254,7 @@
 					</div>
 
 					<div class="flex justify-end gap-2">
-						<Button variant="outline" onclick={cancelUpgrade} disabled={isUpgrading}>
-							Cancel
-						</Button>
+						<Button variant="outline" onclick={cancelUpgrade} disabled={isUpgrading}>Cancel</Button>
 						<Button onclick={handleUpgrade} disabled={isUpgrading}>
 							{#if isUpgrading}
 								Upgrading...

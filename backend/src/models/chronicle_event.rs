@@ -1,4 +1,3 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
 use crate::models::OptionalStringArray;
 use crate::schema::chronicle_events;
@@ -6,7 +5,6 @@ use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 /// EventSource represents where a chronicle event originated from

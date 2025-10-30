@@ -6,7 +6,6 @@ use crate::db::DbPool; // Added PgPool import
 use crate::errors::AppError;
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
-    Chat,
     ChatListQuery,    // Added for lightweight list queries
     ChatSessionQuery, // Added for session queries
     // ChatSettingsResponse, // Not used directly in this file anymore
@@ -41,13 +40,11 @@ use crate::state::AppState;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 // ExposeSecret already imported above
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // Added Deserialize
-use uuid::Uuid;
 use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
 
 // Shorthand for auth session
@@ -1013,8 +1010,7 @@ pub async fn create_message_handler(
         let _daily_usage_result = crate::db::with_conn(&pool, move |conn| {
             soft_limit_service.record_usage(conn, user_id_for_daily_tracking, "manual_message", 0)
         })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        .await;
 
         match _daily_usage_result {
             Ok(_) => {
@@ -1084,7 +1080,7 @@ pub async fn create_message_handler(
                         model_usage,
                         feature_usage: std::collections::HashMap::new(),
                         request_count: 1,
-                        last_activity: chrono::Utc::now(),
+                        last_activity: crate::DbTimestamp::now(),
                     },
                 );
 

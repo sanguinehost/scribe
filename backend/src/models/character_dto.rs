@@ -1,7 +1,6 @@
 // backend/src/models/character_dto.rs
 
 use crate::db::DbJson;
-use crate::db::Json;
 use serde::{Deserialize, Serialize};
 
 /// DTO for character creation requests

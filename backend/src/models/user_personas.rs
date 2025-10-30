@@ -1,5 +1,4 @@
 use crate::db::{DbBlob, DbId, DbTimestamp};
-use chrono::Utc;
 use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 

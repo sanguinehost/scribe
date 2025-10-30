@@ -19,7 +19,6 @@ use axum::{
 use axum_login::AuthSession;
 use std::sync::Arc;
 use tracing::instrument;
-use uuid::Uuid;
 
 // Type alias for the auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;

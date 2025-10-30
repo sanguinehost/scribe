@@ -1,4 +1,3 @@
-use crate::db::DbId;
 use crate::schema::template_preferences;
 use chrono::{DateTime, NaiveDateTime};
 use diesel::{Identifiable, Insertable, Queryable, Selectable};

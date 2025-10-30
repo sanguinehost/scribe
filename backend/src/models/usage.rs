@@ -1,6 +1,4 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 /// Token usage tracking for a specific chat session

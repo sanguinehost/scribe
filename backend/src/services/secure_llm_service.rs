@@ -12,7 +12,6 @@ use futures_util::StreamExt;
 use genai::chat::{ChatOptions, ChatRequest, ChatResponse};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{

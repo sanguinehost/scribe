@@ -37,7 +37,6 @@ use diesel::{
 }; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, trace, warn}; // Use needed tracing macros
-use uuid::Uuid;
 // use anyhow::anyhow; // Unused import
 use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
 use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto};

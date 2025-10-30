@@ -1,9 +1,7 @@
 // backend/src/services/agentic/persona_context.rs
 
-use crate::db::DbId;
 use crate::models::user_personas::UserPersonaDataForClient;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Context information about a user's persona for narrative intelligence processing
 #[derive(Debug, Clone, Serialize, Deserialize)]

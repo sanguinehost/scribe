@@ -41,14 +41,15 @@ use tracing::{debug, info};
 /// # Ok(())
 /// # }
 /// ```
-pub async fn ensure_default_user_exists(
-    conn: &mut crate::db::DbConn,
-) -> Result<User, AppError> {
+pub async fn ensure_default_user_exists(conn: &mut crate::db::DbConn) -> Result<User, AppError> {
     info!("Checking for default desktop user");
 
     // Check if default user already exists in config
     if let Some(user_id) = get_default_user_id()? {
-        debug!(?user_id, "Default user ID found in config, attempting lookup");
+        debug!(
+            ?user_id,
+            "Default user ID found in config, attempting lookup"
+        );
 
         // Try to fetch the user from database
         match get_user(conn, user_id) {
@@ -130,8 +131,7 @@ pub async fn ensure_default_user_exists(
 fn generate_secure_password() -> String {
     // Use the crypto module's salt generation which provides secure randomness
     // The salt is base64url encoded and suitable as a password
-    crate::crypto::generate_salt()
-        .expect("Failed to generate secure password")
+    crate::crypto::generate_salt().expect("Failed to generate secure password")
 }
 
 #[cfg(test)]

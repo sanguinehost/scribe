@@ -1,7 +1,6 @@
 // backend/src/models/user_assets.rs
 
 use crate::db::{DbBlob, DbId, DbTimestamp};
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 

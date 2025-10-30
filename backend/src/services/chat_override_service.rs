@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
-use uuid::Uuid;
 
 use crate::auth::session_dek::SessionDek;
 #[cfg(feature = "sqlite-backend")]

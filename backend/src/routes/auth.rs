@@ -13,11 +13,11 @@ use crate::state::{AppState, DbPool}; // Added DbPool import
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::routing::{delete, get, post};
 use axum::Json;
+use axum::Router;
 use axum_login::{AuthSession, AuthUser, AuthnBackend};
 use secrecy::SecretString;
-use axum::routing::{delete, get, post};
-use axum::Router;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
@@ -69,7 +69,7 @@ pub struct LoginSuccessResponse {
 #[derive(Debug, Serialize)]
 pub struct DesktopConfigResponse {
     pub setup_complete: bool,
-    pub auth_mode: String, // "quick_start" | "account"
+    pub auth_mode: String,       // "quick_start" | "account"
     pub deployment_mode: String, // "local" | "remote"
 }
 
@@ -1187,7 +1187,10 @@ pub async fn desktop_setup_handler(
         info!("🏭 Creating/loading default user...");
         let user = match crate::desktop::ensure_default_user_exists(&mut conn).await {
             Ok(u) => {
-                info!("✅ Default user ready: id={}, username={}", u.id, u.username);
+                info!(
+                    "✅ Default user ready: id={}, username={}",
+                    u.id, u.username
+                );
                 u
             }
             Err(e) => {
@@ -1201,33 +1204,37 @@ pub async fn desktop_setup_handler(
         // Log the user in
         if let Err(e) = auth_session.login(&user).await {
             error!("❌ Failed to log in default user {}: {:?}", user.id, e);
-            return Err(AppError::InternalServerErrorGeneric(
-                format!("Failed to establish session for default user: {}", e),
-            ));
+            return Err(AppError::InternalServerErrorGeneric(format!(
+                "Failed to establish session for default user: {}",
+                e
+            )));
         }
         info!("✅ Session established successfully");
 
         // Rotate session ID to prevent session fixation
         info!("🔄 Rotating session ID...");
         if let Err(e) = session.cycle_id().await {
-            error!("❌ Failed to rotate session ID for user {}: {:?}", user.id, e);
-            return Err(AppError::InternalServerErrorGeneric(
-                format!("Failed to rotate session ID: {}", e),
-            ));
+            error!(
+                "❌ Failed to rotate session ID for user {}: {:?}",
+                user.id, e
+            );
+            return Err(AppError::InternalServerErrorGeneric(format!(
+                "Failed to rotate session ID: {}",
+                e
+            )));
         }
         info!("✅ Session ID rotated");
 
         info!("🎉 Default user auto-login successful for user {}", user.id);
 
         // Get session details for response
-        let session_id_str = session
-            .id()
-            .map_or_else(|| "error_retrieving_session_id".to_string(), |id| id.0.to_string());
+        let session_id_str = session.id().map_or_else(
+            || "error_retrieving_session_id".to_string(),
+            |id| id.0.to_string(),
+        );
 
         let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
-            AppError::InternalServerErrorGeneric(
-                "Failed to process session expiry".to_string(),
-            )
+            AppError::InternalServerErrorGeneric("Failed to process session expiry".to_string())
         })?;
 
         let response = LoginSuccessResponse {
@@ -1287,8 +1294,7 @@ pub async fn desktop_auto_login_handler(
             // First try to find existing user by username
             let pool_clone = pool.clone();
             let existing_user_result = crate::db::with_conn(&pool_clone, move |conn| {
-                crate::auth::get_user_by_username(conn, "quickstart_user")
-                    .map_err(AppError::from)
+                crate::auth::get_user_by_username(conn, "quickstart_user").map_err(AppError::from)
             })
             .await;
 
@@ -1318,7 +1324,10 @@ pub async fn desktop_auto_login_handler(
                 // Save user ID to config
                 let user_id = user_db.id;
                 crate::desktop::set_default_user_id(user_id)?;
-                info!(?user_id, "Created and saved default user for Quick Start mode");
+                info!(
+                    ?user_id,
+                    "Created and saved default user for Quick Start mode"
+                );
                 user_id
             };
 
@@ -1353,9 +1362,10 @@ pub async fn desktop_auto_login_handler(
     info!(user_id = %user.id, "Auto-login successful");
 
     // Get session details for response
-    let session_id_str = session
-        .id()
-        .map_or_else(|| "error_retrieving_session_id".to_string(), |id| id.0.to_string());
+    let session_id_str = session.id().map_or_else(
+        || "error_retrieving_session_id".to_string(),
+        |id| id.0.to_string(),
+    );
 
     let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
         AppError::InternalServerErrorGeneric("Failed to process session expiry".to_string())
@@ -1453,7 +1463,7 @@ pub async fn desktop_upgrade_account_handler(
 /// Request payload for token-based login
 #[derive(Debug, Deserialize)]
 pub struct TokenLoginRequest {
-    pub identifier: String,  // Username or email
+    pub identifier: String, // Username or email
     pub password: SecretString,
 }
 
@@ -1462,7 +1472,7 @@ pub struct TokenLoginRequest {
 pub struct TokenLoginResponse {
     pub access_token: String,
     pub refresh_token: String,
-    pub expires_in: i64,  // seconds until access token expires
+    pub expires_in: i64, // seconds until access token expires
     pub user: AuthResponse,
 }
 
@@ -1476,7 +1486,7 @@ pub struct TokenRefreshRequest {
 #[derive(Debug, Serialize)]
 pub struct TokenRefreshResponse {
     pub access_token: String,
-    pub expires_in: i64,  // seconds until access token expires
+    pub expires_in: i64, // seconds until access token expires
 }
 
 /// Token-based login handler for desktop application
@@ -1491,12 +1501,10 @@ pub async fn token_login_handler(
     info!(client_ip = %client_ip, "Attempting token-based login");
 
     // Get the token service
-    let token_service = state.token_service
-        .as_ref()
-        .ok_or_else(|| {
-            error!("Token service not available");
-            AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
-        })?;
+    let token_service = state.token_service.as_ref().ok_or_else(|| {
+        error!("Token service not available");
+        AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
+    })?;
 
     // Convert TokenLoginRequest to LoginPayload for authentication
     let login_payload = LoginPayload {
@@ -1505,9 +1513,9 @@ pub async fn token_login_handler(
     };
 
     // Authenticate the user using the existing auth backend
-    let pool = state.pool.clone();
+    let _pool = state.pool.clone();
     let auth_backend = state.auth_backend.clone();
-    
+
     // Use the authenticate method from AuthBackend
     match auth_backend.authenticate(login_payload).await {
         Ok(Some(user)) => {
@@ -1515,15 +1523,13 @@ pub async fn token_login_handler(
             info!(%user_id, "Token authentication successful");
 
             // Generate a session ID for this token session
-            let session_id = Uuid::new_v4().to_string();
+            let _session_id = Uuid::new_v4().to_string();
 
             // Generate token pair
-            let token_pair = token_service
-                .generate_token_pair(user_id)
-                .map_err(|e| {
-                    error!(%user_id, error = ?e, "Failed to generate token pair");
-                    AppError::InternalServerErrorGeneric("Token generation failed".to_string())
-                })?;
+            let token_pair = token_service.generate_token_pair(user_id).map_err(|e| {
+                error!(%user_id, error = ?e, "Failed to generate token pair");
+                AppError::InternalServerErrorGeneric("Token generation failed".to_string())
+            })?;
 
             // Record successful authentication
             let user_hash = loggable_user_id(user_id);
@@ -1548,7 +1554,9 @@ pub async fn token_login_handler(
         Ok(None) => {
             warn!(client_ip = %client_ip, "Token login failed: Wrong credentials");
             SECURITY_METRICS.record_auth_failure("unknown", &client_ip);
-            Err(AppError::Unauthorized("Invalid identifier or password".to_string()))
+            Err(AppError::Unauthorized(
+                "Invalid identifier or password".to_string(),
+            ))
         }
         Err(auth_err) => {
             error!(error = ?auth_err, "Token login failed due to authentication error");
@@ -1557,15 +1565,19 @@ pub async fn token_login_handler(
                 AuthError::WrongCredentials | AuthError::UserNotFound => {
                     warn!(client_ip = %client_ip, "Token login failed: Wrong credentials");
                     SECURITY_METRICS.record_auth_failure("unknown", &client_ip);
-                    Err(AppError::Unauthorized("Invalid identifier or password".to_string()))
+                    Err(AppError::Unauthorized(
+                        "Invalid identifier or password".to_string(),
+                    ))
                 }
-                AuthError::AccountLocked => {
-                    Err(AppError::Unauthorized("Your account is locked. Please contact an administrator.".to_string()))
-                }
-                AuthError::AccountPendingVerification => {
-                    Err(AppError::Forbidden("Your account is pending email verification.".to_string()))
-                }
-                _ => Err(AppError::InternalServerErrorGeneric("Authentication error".to_string()))
+                AuthError::AccountLocked => Err(AppError::Unauthorized(
+                    "Your account is locked. Please contact an administrator.".to_string(),
+                )),
+                AuthError::AccountPendingVerification => Err(AppError::Forbidden(
+                    "Your account is pending email verification.".to_string(),
+                )),
+                _ => Err(AppError::InternalServerErrorGeneric(
+                    "Authentication error".to_string(),
+                )),
             }
         }
     }
@@ -1581,12 +1593,10 @@ pub async fn token_refresh_handler(
     info!("Attempting token refresh");
 
     // Get the token service
-    let token_service = state.token_service
-        .as_ref()
-        .ok_or_else(|| {
-            error!("Token service not available");
-            AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
-        })?;
+    let token_service = state.token_service.as_ref().ok_or_else(|| {
+        error!("Token service not available");
+        AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
+    })?;
 
     // Refresh the access token
     let new_access_token = token_service
@@ -1611,14 +1621,16 @@ pub async fn token_refresh_handler(
 /// Since JWTs are stateless, this endpoint simply confirms logout
 /// The client should discard the tokens locally
 #[instrument(skip(_state), err)]
-pub async fn token_logout_handler(
-    State(_state): State<AppState>,
-) -> Result<Response, AppError> {
+pub async fn token_logout_handler(State(_state): State<AppState>) -> Result<Response, AppError> {
     info!("Token logout requested");
-    
+
     // For stateless JWT tokens, logout is handled client-side
     // This endpoint exists for API completeness and logging
-    Ok((StatusCode::OK, Json(json!({
-        "message": "Logout successful. Please discard your tokens."
-    }))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Logout successful. Please discard your tokens."
+        })),
+    )
+        .into_response())
 }

@@ -25,7 +25,6 @@ use axum::{
 use axum_login::AuthSession; // Removed AuthUser
 use chrono::Utc;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper}; // Specific diesel imports
-use uuid::Uuid;
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;

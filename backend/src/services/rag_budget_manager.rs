@@ -1,6 +1,6 @@
 // backend/src/services/rag_budget_manager.rs
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::cmp::Ordering;
 use tracing::{debug, info, warn};
 

@@ -14,7 +14,6 @@ use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,

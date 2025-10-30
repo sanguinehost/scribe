@@ -1,10 +1,7 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
 use crate::schema::player_chronicles;
-use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 /// PlayerChronicle represents a story container that groups related chat sessions and events

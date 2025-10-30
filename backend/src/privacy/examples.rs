@@ -7,7 +7,6 @@ use crate::privacy::logging::{
     loggable_session_id, loggable_user_id, sanitize_content, sanitize_system_prompt,
 };
 use crate::{privacy_debug, privacy_error, privacy_info, privacy_warn};
-use uuid::Uuid;
 
 /// Example 1: AI Client Factory logging transformation
 pub mod ai_client_factory_example {

@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,

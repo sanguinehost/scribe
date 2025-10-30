@@ -4,12 +4,10 @@ use crate::auth::SessionDek;
 use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
-use chrono::{DateTime, Utc};
 use qdrant_client::qdrant::Value as QdrantValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
-use uuid::Uuid;
 
 /// Helper function to decrypt lorebook content (encryption required)
 #[allow(deprecated)]

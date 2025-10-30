@@ -1,7 +1,7 @@
 use crate::db::DbId;
 use std::{cmp::min, pin::Pin, sync::Arc};
 
-use bigdecimal::{BigDecimal, ToPrimitive};
+use bigdecimal::ToPrimitive;
 use diesel::{
     result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
 };
@@ -15,7 +15,6 @@ use genai::chat::{
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
 use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,
@@ -760,7 +759,7 @@ pub async fn get_session_data_for_generation(
     debug!(%session_id, %user_id, "Retrieved user settings for context management");
 
     // Use user-configured values or fall back to config defaults
-    let mut context_total_token_limit = user_settings
+    let context_total_token_limit = user_settings
         .default_context_total_token_limit
         .map(|v| v as usize)
         .unwrap_or(state.config.context_total_token_limit);

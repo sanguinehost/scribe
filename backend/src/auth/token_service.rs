@@ -9,9 +9,9 @@ use crate::errors::AppError;
 /// JWT token claims structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TokenClaims {
-    pub sub: DbId,        // Subject (user ID)
-    pub exp: i64,         // Expiration time (Unix timestamp)
-    pub iat: i64,         // Issued at (Unix timestamp)
+    pub sub: DbId,          // Subject (user ID)
+    pub exp: i64,           // Expiration time (Unix timestamp)
+    pub iat: i64,           // Issued at (Unix timestamp)
     pub token_type: String, // "access" or "refresh"
 }
 
@@ -54,8 +54,8 @@ impl TokenService {
         Self {
             encoding_key: Arc::new(EncodingKey::from_secret(secret.as_bytes())),
             decoding_key: Arc::new(DecodingKey::from_secret(secret.as_bytes())),
-            access_token_duration: Duration::minutes(15),  // 15 minutes for access token
-            refresh_token_duration: Duration::days(30),    // 30 days for refresh token
+            access_token_duration: Duration::minutes(15), // 15 minutes for access token
+            refresh_token_duration: Duration::days(30),   // 30 days for refresh token
         }
     }
 
@@ -71,8 +71,13 @@ impl TokenService {
             token_type: TokenType::Access.as_str().to_string(),
         };
 
-        let access_token = encode(&Header::default(), &access_claims, &self.encoding_key)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to generate access token: {}", e)))?;
+        let access_token =
+            encode(&Header::default(), &access_claims, &self.encoding_key).map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to generate access token: {}",
+                    e
+                ))
+            })?;
 
         // Generate refresh token
         let refresh_claims = TokenClaims {
@@ -83,7 +88,12 @@ impl TokenService {
         };
 
         let refresh_token = encode(&Header::default(), &refresh_claims, &self.encoding_key)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to generate refresh token: {}", e)))?;
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to generate refresh token: {}",
+                    e
+                ))
+            })?;
 
         Ok(TokenPair {
             access_token,
@@ -121,8 +131,13 @@ impl TokenService {
             token_type: TokenType::Access.as_str().to_string(),
         };
 
-        let access_token = encode(&Header::default(), &access_claims, &self.encoding_key)
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to generate access token: {}", e)))?;
+        let access_token =
+            encode(&Header::default(), &access_claims, &self.encoding_key).map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to generate access token: {}",
+                    e
+                ))
+            })?;
 
         Ok(access_token)
     }

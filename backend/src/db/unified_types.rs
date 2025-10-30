@@ -24,12 +24,16 @@ use super::backend_traits::DbType;
 // sqlite_types is always available for DbType trait implementations
 use super::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteUuid};
 
+// Diesel SQL types and serialization imports
+use diesel::serialize::IsNull;
+use diesel::sql_types::{Binary, Timestamp};
+
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::expression::AsExpression;
-use diesel::serialize::{self, IsNull, Output, ToSql};
-use diesel::sql_types::{BigInt, Binary, Nullable, Numeric, Text, Timestamp};
+use diesel::serialize::{self, Output, ToSql};
+use diesel::sql_types::{BigInt, Nullable, Numeric, Text};
 
 #[cfg(feature = "postgres-backend")]
 use diesel::pg::Pg;
@@ -622,6 +626,14 @@ impl From<DbDecimal> for BigDecimal {
 impl From<i64> for DbDecimal {
     fn from(value: i64) -> Self {
         Self(BigDecimal::from(value))
+    }
+}
+
+impl std::str::FromStr for DbDecimal {
+    type Err = bigdecimal::ParseBigDecimalError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse_str(s)
     }
 }
 

@@ -1,7 +1,5 @@
 use crate::db::{DbBigDecimal, DbId, DbJson, DbTimestamp};
 use crate::schema::user_settings;
-use bigdecimal::BigDecimal;
-use chrono::Utc;
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 

@@ -6,7 +6,6 @@
 use chrono::Duration;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use tracing::{debug, info, instrument};
-use uuid::Uuid;
 
 use crate::{
     errors::AppError, models::chronicle_event::ChronicleEvent,

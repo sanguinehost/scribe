@@ -1,6 +1,5 @@
 use diesel::{prelude::*, OptionalExtension};
 use tracing::{info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     config::Config,
@@ -9,7 +8,6 @@ use crate::{
     schema::user_settings,
     state::DbPool,
 };
-use bigdecimal::BigDecimal;
 
 pub struct UserSettingsService;
 

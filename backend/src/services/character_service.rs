@@ -5,10 +5,10 @@ use crate::db::DbPool; // Changed from sqlx::PgPool
 use chrono::{DateTime, Utc}; // For timestamps
 use secrecy::ExposeSecret; // For DEK
 use tracing::{info, instrument, warn};
-use uuid::Uuid; // For logging
+ // For logging
 
 use crate::auth::session_dek::SessionDek;
-use crate::db::Json; // Backend-agnostic Json<T> wrapper for Diesel models
+ // Backend-agnostic Json<T> wrapper for Diesel models
 use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
 use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added CharacterUpdateDto

@@ -14,7 +14,6 @@ use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 use validator::Validate;
 
 use crate::{

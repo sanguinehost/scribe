@@ -1,7 +1,6 @@
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use tracing::{info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,

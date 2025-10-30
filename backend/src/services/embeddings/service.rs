@@ -18,7 +18,6 @@ use secrecy::ExposeSecret;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 pub struct EmbeddingPipelineService {
     chunk_config: ChunkConfig, // Store chunking configuration

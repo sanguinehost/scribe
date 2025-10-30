@@ -12,16 +12,15 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::services::character_generation::{
     structured_output::*, ApiGenerationChunk, ApiGenerationMetadata, ApiGenerationRequest,
-    ApiGenerationResponse, AssistantMessage, BatchLorebookGenerationRequest,
-    BatchLorebookGenerationResponse, EnhancementRequest, EnhancementResult, FieldGenerationRequest,
-    FieldGenerationResult, FieldGenerator, FullCharacterGenerator, FullCharacterRequest,
+    ApiGenerationResponse, BatchLorebookGenerationRequest,
+    BatchLorebookGenerationResponse, EnhancementRequest, EnhancementResult, FieldGenerationRequest, FieldGenerator, FullCharacterGenerator, FullCharacterRequest,
     FullCharacterResult, LorebookGenerationRequest, LorebookGenerationResponse,
     ScribeAssistantRequest, ScribeAssistantResponse,
 };
 use crate::state::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
-    extract::State, http::StatusCode, response::IntoResponse, response::Json, routing::post, Router,
+    extract::State, response::IntoResponse, response::Json, routing::post, Router,
 };
 use axum_login::AuthSession;
 use futures::StreamExt;
@@ -180,8 +179,8 @@ pub async fn generate_character_field_stream_handler(
         match state_arc.ai_client.stream_chat(model_name, chat_request, Some(chat_options)).await {
             Ok(mut chat_stream) => {
                 let mut _full_content = String::new();
-                let mut prompt_tokens_count = 0;
-                let mut completion_tokens_count = 0;
+                let prompt_tokens_count = 0;
+                let completion_tokens_count = 0;
 
                 // Stream the content chunks
                 while let Some(event_result) = chat_stream.next().await {

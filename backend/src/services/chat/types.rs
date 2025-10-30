@@ -1,7 +1,5 @@
 // backend/src/services/chat/types.rs
-use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 // Imports needed for the types defined in this file, based on original chat_service.rs
 pub use crate::models::chats::{ChatMessage, DbInsertableChatMessage, MessageRole};

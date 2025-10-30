@@ -7,7 +7,6 @@ use std::sync::Arc; // Keep Arc
 use tokio::sync::RwLock; // Change to tokio::sync::RwLock
                          // Assuming User ID is Uuid
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::auth::AuthError;
 use crate::models::auth::LoginPayload; // Import LoginPayload

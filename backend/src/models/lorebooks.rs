@@ -1,4 +1,3 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
 use crate::models::characters::Character;
 use crate::models::chats::Chat;
@@ -7,7 +6,6 @@ use crate::schema::{
     character_lorebooks, chat_character_lorebook_overrides, chat_session_lorebooks,
     lorebook_entries, lorebooks,
 };
-use chrono::Utc;
 use diesel::{
     AsChangeset, Associations, ExpressionMethods, Identifiable, Insertable, JoinOnDsl, QueryDsl,
     QueryResult, Queryable, RunQueryDsl, Selectable,

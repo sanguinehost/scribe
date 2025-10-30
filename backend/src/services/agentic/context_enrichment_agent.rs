@@ -6,7 +6,7 @@
 //! storage of the agent's reasoning and execution log.
 
 use crate::db::DbId;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
     JsonSchemaSpec, MessageContent,
@@ -16,7 +16,6 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 use crate::{
     crypto,

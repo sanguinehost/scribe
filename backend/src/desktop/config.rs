@@ -100,9 +100,8 @@ pub fn load_desktop_config() -> Result<DesktopConfig, AppError> {
         return Ok(DesktopConfig::default());
     }
 
-    let contents = fs::read_to_string(&config_path).map_err(|e| {
-        AppError::ConfigError(format!("Failed to read desktop config file: {}", e))
-    })?;
+    let contents = fs::read_to_string(&config_path)
+        .map_err(|e| AppError::ConfigError(format!("Failed to read desktop config file: {}", e)))?;
 
     let config: DesktopConfig = serde_json::from_str(&contents).map_err(|e| {
         error!("Failed to parse desktop config: {}", e);
@@ -119,9 +118,8 @@ pub fn save_desktop_config(config: &DesktopConfig) -> Result<(), AppError> {
 
     debug!("Saving desktop config to: {}", config_path.display());
 
-    let contents = serde_json::to_string_pretty(config).map_err(|e| {
-        AppError::ConfigError(format!("Failed to serialize desktop config: {}", e))
-    })?;
+    let contents = serde_json::to_string_pretty(config)
+        .map_err(|e| AppError::ConfigError(format!("Failed to serialize desktop config: {}", e)))?;
 
     fs::write(&config_path, contents).map_err(|e| {
         AppError::ConfigError(format!("Failed to write desktop config file: {}", e))

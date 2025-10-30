@@ -14,7 +14,6 @@ use crate::{
 use diesel::{prelude::*, QueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{debug, error, info, instrument};
-use uuid::Uuid;
 
 use super::LorebookService;
 

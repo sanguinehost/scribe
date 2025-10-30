@@ -1,7 +1,6 @@
 // backend/src/middleware/llm_security.rs
 // Security middleware for LLM operations
 
-use crate::db::DbId;
 use crate::{auth::user_store::Backend as AuthBackend, errors::AppError, state::AppState};
 use axum::{
     extract::{Request, State},
@@ -15,7 +14,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, warn};
-use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{SecurityAuditLogger, SecurityEventType};

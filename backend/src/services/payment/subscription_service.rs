@@ -93,10 +93,10 @@ impl SubscriptionService {
             paddle_subscription_id,
             plan_type: plan_type.to_string(),
             status,
-            current_period_start: period_start,
-            current_period_end: period_end,
+            current_period_start: crate::DbTimestamp::from_datetime(period_start),
+            current_period_end: crate::DbTimestamp::from_datetime(period_end),
             cancel_at_period_end: Some(false),
-            trial_end,
+            trial_end: trial_end.map(crate::DbTimestamp::from_datetime),
             credits_allocated_this_period: Some(false),
             soft_limit_override: None,
             last_credit_grant: None,
@@ -104,7 +104,7 @@ impl SubscriptionService {
             first_payment_date: None,
             has_ever_paid: Some(false),
             cancellation_date: None,
-            trial_start_date: trial_end.map(|_| now),
+            trial_start_date: trial_end.map(|_| crate::DbTimestamp::from_datetime(now)),
             last_payment_date: None,
             grace_period_end: None,
             scheduled_plan_change: None,
@@ -171,8 +171,8 @@ impl SubscriptionService {
             }
 
             // Check if subscription is past its current period end
-            if sub.current_period_end < now {
-                let days_overdue = (now.signed_duration_since(sub.current_period_end)).num_days();
+            if sub.current_period_end < crate::DbTimestamp::from_datetime(now) {
+                let days_overdue = (now.signed_duration_since(*sub.current_period_end)).num_days();
 
                 // If past grace period, treat as cancelled
                 if days_overdue > grace_period_days {
@@ -195,7 +195,9 @@ impl SubscriptionService {
             }
 
             // Check if subscription is marked to cancel at period end and period has ended
-            if sub.cancel_at_period_end.unwrap_or(false) && sub.current_period_end < now {
+            if sub.cancel_at_period_end.unwrap_or(false)
+                && sub.current_period_end < crate::DbTimestamp::from_datetime(now)
+            {
                 tracing::info!(
                     "Subscription {} for user {} was marked to cancel at period end and period has ended",
                     sub.id,
@@ -330,7 +332,7 @@ impl SubscriptionService {
     /// Check if subscription is in trial period
     pub fn is_trial_active(&self, subscription: &Subscription) -> bool {
         if let Some(trial_end) = subscription.trial_end {
-            trial_end > Utc::now()
+            trial_end > crate::DbTimestamp::now()
         } else {
             false
         }
@@ -345,7 +347,7 @@ impl SubscriptionService {
 
         // If there's no trial_end, it's not a trial
         if let Some(trial_end) = subscription.trial_end {
-            trial_end < Utc::now()
+            trial_end < crate::DbTimestamp::now()
         } else {
             false
         }

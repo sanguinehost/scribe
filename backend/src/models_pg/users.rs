@@ -2,7 +2,6 @@ use crate::db::{DbBlob, DbId, DbInt, DbTimestamp};
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::Utc;
 use diesel::Insertable;
 use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
@@ -10,7 +9,6 @@ use secrecy::{SecretBox, SecretString};
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use tracing;
-use uuid::Uuid;
 
 // User role enum
 #[derive(

@@ -1,9 +1,7 @@
 // backend/src/models_pg/character_assets.rs
 // PostgreSQL-specific version (id: i32)
 
-use crate::db::DbId;
 use crate::db::DbTimestamp;
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 

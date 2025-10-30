@@ -151,7 +151,7 @@ impl SoftLimitService {
             }
         }
 
-        usage.updated_at = Some(Utc::now());
+        usage.updated_at = Some(crate::DbTimestamp::now());
 
         // Save updated usage
         use crate::schema::daily_usage_tracking::dsl;
@@ -274,14 +274,13 @@ impl SoftLimitService {
         let mut query = dsl::daily_usage_tracking
             .filter(dsl::user_id.eq(user_id))
             .order(dsl::date.desc())
+            .select(DailyUsage::as_select())
             .into_boxed();
 
         if let Some(d) = days {
             let start_date = Utc::now().naive_utc().date() - chrono::Duration::days(d);
             query = query.filter(dsl::date.ge(start_date));
         }
-
-        query = query.select(DailyUsage::as_select());
         query.load::<DailyUsage>(conn).map_err(|e| {
             error!("Failed to get usage stats: {}", e);
             AppError::DatabaseQueryError(e.to_string())

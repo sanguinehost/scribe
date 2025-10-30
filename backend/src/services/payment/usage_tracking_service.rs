@@ -83,7 +83,7 @@ impl UsageTrackingService {
         metadata: Option<UsageMetadata>,
     ) -> Result<PaymentUsageTracking, AppError> {
         let now = Utc::now();
-        let period_start = self.get_period_start(now);
+        let period_start = self.get_period_start(crate::DbTimestamp::from_datetime(now));
         let period_end = self.get_period_end(period_start);
 
         // Try to find existing usage record for this period
@@ -167,7 +167,7 @@ impl UsageTrackingService {
         subscription_id: Option<crate::db::DbId>,
     ) -> Result<Option<PaymentUsageTracking>, AppError> {
         let now = Utc::now();
-        let period_start = self.get_period_start(now);
+        let period_start = self.get_period_start(crate::DbTimestamp::from_datetime(now));
         let period_end = self.get_period_end(period_start);
 
         let mut query = payment_usage_tracking::table
@@ -207,7 +207,7 @@ impl UsageTrackingService {
         user_id: crate::db::DbId,
     ) -> Result<UsageLimit, AppError> {
         let now = Utc::now();
-        let period_start = self.get_period_start(now);
+        let period_start = self.get_period_start(crate::DbTimestamp::from_datetime(now));
         let period_end = self.get_period_end(period_start);
 
         // Get current usage
@@ -368,7 +368,7 @@ impl UsageTrackingService {
         // Monthly billing periods starting from the first of the month
         let naive_date = date.date_naive();
         let first_of_month = naive_date.with_day(1).unwrap();
-        first_of_month.and_hms_opt(0, 0, 0).unwrap().and_utc()
+        crate::DbTimestamp::from_datetime(first_of_month.and_hms_opt(0, 0, 0).unwrap().and_utc())
     }
 
     /// Get the end of the billing period
@@ -384,7 +384,7 @@ impl UsageTrackingService {
             period_start.with_month(period_start.month() + 1).unwrap()
         };
 
-        next_month - Duration::seconds(1)
+        crate::DbTimestamp::from_datetime(next_month - Duration::seconds(1))
     }
 
     /// Encrypt usage metadata with user's DEK

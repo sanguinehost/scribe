@@ -78,8 +78,8 @@ pub mod payment_test_helpers {
             password_hash,
             email,
             kek_salt,
-            encrypted_dek: encrypted_dek_bytes,
-            dek_nonce: dek_nonce_bytes,
+            encrypted_dek: crate::DbBlob::from_bytes(encrypted_dek_bytes),
+            dek_nonce: crate::DbBlob::from_bytes(dek_nonce_bytes),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
@@ -89,7 +89,7 @@ pub mod payment_test_helpers {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: crate::DbTimestamp::now(),
         };
 
         let user_from_db: UserDbQuery = diesel::insert_into(users::table)

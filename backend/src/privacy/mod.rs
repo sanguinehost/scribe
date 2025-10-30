@@ -1,7 +1,5 @@
-use crate::db::DbId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use uuid::Uuid;
 
 pub mod examples;
 pub mod ip_anonymization;

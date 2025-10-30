@@ -215,7 +215,7 @@
 								<p class="text-sm text-muted-foreground">Jump right in with no account needed</p>
 							</div>
 							{#if selectedAuthMode === 'quick_start'}
-								<div class="h-5 w-5 rounded-full bg-purple-600 flex items-center justify-center">
+								<div class="flex h-5 w-5 items-center justify-center rounded-full bg-purple-600">
 									<span class="text-xs text-white">✓</span>
 								</div>
 							{/if}
@@ -245,7 +245,7 @@
 								</p>
 							</div>
 							{#if selectedAuthMode === 'account'}
-								<div class="h-5 w-5 rounded-full bg-purple-600 flex items-center justify-center">
+								<div class="flex h-5 w-5 items-center justify-center rounded-full bg-purple-600">
 									<span class="text-xs text-white">✓</span>
 								</div>
 							{/if}

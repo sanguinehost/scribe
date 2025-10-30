@@ -10,11 +10,9 @@ use axum::{
     Json, Router,
 };
 use axum_login::AuthSession;
-use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;

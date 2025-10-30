@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 /// Security event types for structured logging to CloudWatch

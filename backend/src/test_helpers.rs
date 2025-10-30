@@ -7,7 +7,7 @@ pub mod payment_test_helpers;
 
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
-use crate::db::{DbId, DbTimestamp};
+use crate::db::DbId;
 use std::fmt;
 use std::net::SocketAddr;
 
@@ -22,7 +22,6 @@ use genai::chat::Usage; // Added ChunkConfig
                         // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
-use crate::models::OptionalStringArray;
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
 use crate::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
@@ -62,8 +61,6 @@ use crate::{
 use crate::routes::documents::document_routes;
 
 // Conditionally import pool type (PostgreSQL only - test_helpers currently PostgreSQL-only)
-#[cfg(feature = "postgres-backend")]
-use crate::PgPool;
 use anyhow::Context; // Added for TestDataGuard cleanup
 use async_trait::async_trait;
 use axum::{
@@ -112,7 +109,7 @@ use tower_sessions::{
     cookie::Key as TowerSessionKey, cookie::SameSite, Expiry, SessionManagerLayer,
 }; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
-use uuid::Uuid; // Added for CryptoProvider // Added for backend-agnostic database types
+ // Added for CryptoProvider // Added for backend-agnostic database types
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
@@ -1284,7 +1281,7 @@ impl TestAppStateBuilder {
             security_audit_logger: None, // Not used in tests
             #[cfg(feature = "local-llm")]
             model_integrity_verifier: None, // Not used in tests
-                                            // narrative_intelligence_service will be added after AppState is built
+                                                // narrative_intelligence_service will be added after AppState is built
         };
 
         let mut app_state = AppState::new(self.db_pool, self.config, services);
@@ -1943,7 +1940,7 @@ pub mod db {
 
     use crate::db::DbPool; // Backend-agnostic pool type
     use crate::{DbId, DbTimestamp}; // Import unified types from crate root
-    use uuid::Uuid;
+
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
@@ -2339,7 +2336,7 @@ pub mod db {
         use crate::models::characters::Character; // Already imported at top of file usually
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
-        use chrono::Utc;
+
 
         let mut conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();

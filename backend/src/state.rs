@@ -1,8 +1,6 @@
 // Use deadpool-diesel types for async pooling (PostgreSQL only)
 // Import auth module
 // Import AuthError enum
-#[cfg(feature = "postgres-backend")]
-use deadpool_diesel::postgres::Pool as DeadpoolPool;
 // Removed AppError import as it's not directly used here
 use crate::config::Config; // Use Config instead
                            // use genai::Client as GeminiApiClient; // Remove Gemini client for now
@@ -33,7 +31,7 @@ use crate::services::narrative_intelligence_service::NarrativeIntelligenceServic
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::EmailService; // For email service
 use std::fmt;
-use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
+ // For embedding_call_tracker // For manual Debug impl
 
 // --- DB Connection Pool Type ---
 // Use the backend-agnostic pool type from the db module
@@ -52,7 +50,7 @@ pub struct AppStateServices {
     pub encryption_service: Arc<EncryptionService>,
     pub lorebook_service: Arc<LorebookService>,
     pub auth_backend: Arc<AuthBackend>,
-    pub token_service: Option<Arc<TokenService>>,  // Added for token-based authentication
+    pub token_service: Option<Arc<TokenService>>, // Added for token-based authentication
     pub email_service: Arc<dyn EmailService + Send + Sync>,
     pub ai_client_factory: Arc<AiClientFactory>,
     pub rate_limiter: Arc<LlmRateLimiter>,

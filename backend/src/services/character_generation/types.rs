@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Supported character field types for generation
 #[derive(Debug, Clone, Serialize, Deserialize)]

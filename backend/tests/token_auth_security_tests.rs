@@ -20,8 +20,7 @@ async fn extract_token_from_response(body: Body) -> Result<serde_json::Value, St
         .await
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
-    serde_json::from_slice(&bytes)
-        .map_err(|e| format!("Failed to parse token response: {}", e))
+    serde_json::from_slice(&bytes).map_err(|e| format!("Failed to parse token response: {}", e))
 }
 
 // ==================== TOKEN GENERATION & VALIDATION TESTS ====================
@@ -46,34 +45,61 @@ async fn test_token_generation_creates_valid_jwt() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": "test_token_gen_user",
-            "password": "pass123"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": "test_token_gen_user",
+                "password": "pass123"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let response_data = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let response_data = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
 
     // Verify tokens are present and non-empty
-    assert!(response_data.get("access_token").is_some(), "Access token should be present");
-    assert!(response_data.get("refresh_token").is_some(), "Refresh token should be present");
+    assert!(
+        response_data.get("access_token").is_some(),
+        "Access token should be present"
+    );
+    assert!(
+        response_data.get("refresh_token").is_some(),
+        "Refresh token should be present"
+    );
 
     let access_token = response_data["access_token"].as_str().unwrap();
     let refresh_token = response_data["refresh_token"].as_str().unwrap();
 
     assert!(!access_token.is_empty(), "Access token should not be empty");
-    assert!(!refresh_token.is_empty(), "Refresh token should not be empty");
+    assert!(
+        !refresh_token.is_empty(),
+        "Refresh token should not be empty"
+    );
     assert_ne!(access_token, refresh_token, "Tokens should be different");
 
     // Verify JWT structure (3 parts)
     let access_parts: Vec<&str> = access_token.split('.').collect();
-    assert_eq!(access_parts.len(), 3, "Access token should have 3 JWT parts");
+    assert_eq!(
+        access_parts.len(),
+        3,
+        "Access token should have 3 JWT parts"
+    );
 
     let refresh_parts: Vec<&str> = refresh_token.split('.').collect();
-    assert_eq!(refresh_parts.len(), 3, "Refresh token should have 3 JWT parts");
+    assert_eq!(
+        refresh_parts.len(),
+        3,
+        "Refresh token should have 3 JWT parts"
+    );
 }
 
 #[tokio::test]
@@ -96,16 +122,26 @@ async fn test_bearer_token_extraction_from_header() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": "bearer_user",
-            "password": "pass123"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": "bearer_user",
+                "password": "pass123"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let token_data = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let token_data = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
     let access_token = token_data["access_token"].as_str().unwrap();
 
     // Make authenticated request with Bearer token
@@ -117,7 +153,11 @@ async fn test_bearer_token_extraction_from_header() {
         .unwrap();
 
     let auth_response = test_app.router.clone().oneshot(auth_request).await.unwrap();
-    assert_eq!(auth_response.status(), StatusCode::OK, "Should accept valid Bearer token");
+    assert_eq!(
+        auth_response.status(),
+        StatusCode::OK,
+        "Should accept valid Bearer token"
+    );
 }
 
 #[tokio::test]
@@ -174,14 +214,24 @@ async fn test_refresh_token_generates_new_access_token() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": "refresh_user",
-            "password": "pass123"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": "refresh_user",
+                "password": "pass123"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let initial_tokens = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let initial_tokens = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
     let initial_access = initial_tokens["access_token"].as_str().unwrap();
     let refresh_token = initial_tokens["refresh_token"].as_str().unwrap();
 
@@ -193,29 +243,53 @@ async fn test_refresh_token_generates_new_access_token() {
         .method(Method::POST)
         .uri("/api/auth/token/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "refresh_token": refresh_token
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "refresh_token": refresh_token
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let refresh_response = test_app.router.clone().oneshot(refresh_request).await.unwrap();
-    assert_eq!(refresh_response.status(), StatusCode::OK, "Refresh should succeed");
+    let refresh_response = test_app
+        .router
+        .clone()
+        .oneshot(refresh_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        refresh_response.status(),
+        StatusCode::OK,
+        "Refresh should succeed"
+    );
 
-    let refresh_data = extract_token_from_response(refresh_response.into_body()).await.unwrap();
+    let refresh_data = extract_token_from_response(refresh_response.into_body())
+        .await
+        .unwrap();
     let new_access_token = refresh_data["access_token"].as_str().unwrap();
 
-    assert_ne!(new_access_token, initial_access, "Should generate new access token");
+    assert_ne!(
+        new_access_token, initial_access,
+        "Should generate new access token"
+    );
 
     // Verify new token is valid by using it
     let me_request = Request::builder()
         .method(Method::GET)
         .uri("/auth/me")
-        .header(header::AUTHORIZATION, format!("Bearer {}", new_access_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", new_access_token),
+        )
         .body(Body::empty())
         .unwrap();
 
     let me_response = test_app.router.clone().oneshot(me_request).await.unwrap();
-    assert_eq!(me_response.status(), StatusCode::OK, "New access token should be valid");
+    assert_eq!(
+        me_response.status(),
+        StatusCode::OK,
+        "New access token should be valid"
+    );
 }
 
 #[tokio::test]
@@ -238,14 +312,24 @@ async fn test_access_token_cannot_be_used_as_refresh_token() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": "wrong_refresh_user",
-            "password": "pass123"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": "wrong_refresh_user",
+                "password": "pass123"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let token_data = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let token_data = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
     let access_token = token_data["access_token"].as_str().unwrap();
 
     // Try to use access token as refresh token
@@ -253,12 +337,20 @@ async fn test_access_token_cannot_be_used_as_refresh_token() {
         .method(Method::POST)
         .uri("/api/auth/token/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "refresh_token": access_token
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "refresh_token": access_token
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let response = test_app.router.clone().oneshot(wrong_refresh).await.unwrap();
+    let response = test_app
+        .router
+        .clone()
+        .oneshot(wrong_refresh)
+        .await
+        .unwrap();
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
@@ -288,10 +380,13 @@ async fn test_token_payload_injection_prevention() {
             .method(Method::POST)
             .uri("/api/auth/token/login")
             .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "identifier": payload,
-                "password": "any_password"
-            }).to_string()))
+            .body(Body::from(
+                json!({
+                    "identifier": payload,
+                    "password": "any_password"
+                })
+                .to_string(),
+            ))
             .unwrap();
 
         let response = test_app.router.clone().oneshot(request).await.unwrap();
@@ -335,16 +430,26 @@ async fn test_dek_access_with_token_authentication() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": username,
-            "password": password
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": username,
+                "password": password
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
     assert_eq!(login_response.status(), StatusCode::OK);
 
-    let token_data = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let token_data = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
     let access_token = token_data["access_token"].as_str().unwrap();
 
     // Access protected endpoint that requires DEK
@@ -355,11 +460,18 @@ async fn test_dek_access_with_token_authentication() {
         .body(Body::empty())
         .unwrap();
 
-    let protected_response = test_app.router.clone().oneshot(protected_request).await.unwrap();
+    let protected_response = test_app
+        .router
+        .clone()
+        .oneshot(protected_request)
+        .await
+        .unwrap();
     assert_eq!(protected_response.status(), StatusCode::OK);
 
     // Verify user data doesn't expose DEK
-    let body = axum::body::to_bytes(protected_response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(protected_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let user_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(
@@ -382,7 +494,9 @@ async fn test_dek_isolation_between_token_sessions() {
         &user1_name,
         "password1",
         &format!("{}@test.com", user1_name),
-        Some(secrecy::SecretString::from("user1_dek_material_unique123456")),
+        Some(secrecy::SecretString::from(
+            "user1_dek_material_unique123456",
+        )),
     )
     .await
     .unwrap();
@@ -392,7 +506,9 @@ async fn test_dek_isolation_between_token_sessions() {
         &user2_name,
         "password2",
         &format!("{}@test.com", user2_name),
-        Some(secrecy::SecretString::from("user2_dek_material_different456")),
+        Some(secrecy::SecretString::from(
+            "user2_dek_material_different456",
+        )),
     )
     .await
     .unwrap();
@@ -405,28 +521,38 @@ async fn test_dek_isolation_between_token_sessions() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": user1_name,
-            "password": "password1"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": user1_name,
+                "password": "password1"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let user1_response = test_app.router.clone().oneshot(user1_login).await.unwrap();
-    let user1_tokens = extract_token_from_response(user1_response.into_body()).await.unwrap();
+    let user1_tokens = extract_token_from_response(user1_response.into_body())
+        .await
+        .unwrap();
     let user1_access = user1_tokens["access_token"].as_str().unwrap();
 
     let user2_login = Request::builder()
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": user2_name,
-            "password": "password2"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": user2_name,
+                "password": "password2"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
     let user2_response = test_app.router.clone().oneshot(user2_login).await.unwrap();
-    let user2_tokens = extract_token_from_response(user2_response.into_body()).await.unwrap();
+    let user2_tokens = extract_token_from_response(user2_response.into_body())
+        .await
+        .unwrap();
     let user2_access = user2_tokens["access_token"].as_str().unwrap();
 
     // Verify each token can only access its own user's data
@@ -438,7 +564,9 @@ async fn test_dek_isolation_between_token_sessions() {
         .unwrap();
 
     let response1 = test_app.router.clone().oneshot(user1_me).await.unwrap();
-    let body1 = axum::body::to_bytes(response1.into_body(), usize::MAX).await.unwrap();
+    let body1 = axum::body::to_bytes(response1.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let data1: serde_json::Value = serde_json::from_slice(&body1).unwrap();
 
     assert_eq!(data1["id"].as_str().unwrap(), user1.id.to_string());
@@ -451,7 +579,9 @@ async fn test_dek_isolation_between_token_sessions() {
         .unwrap();
 
     let response2 = test_app.router.clone().oneshot(user2_me).await.unwrap();
-    let body2 = axum::body::to_bytes(response2.into_body(), usize::MAX).await.unwrap();
+    let body2 = axum::body::to_bytes(response2.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let data2: serde_json::Value = serde_json::from_slice(&body2).unwrap();
 
     assert_eq!(data2["id"].as_str().unwrap(), user2.id.to_string());
@@ -482,14 +612,24 @@ async fn test_token_refresh_endpoint_security() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": "refresh_sec_user",
-            "password": "pass123"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": "refresh_sec_user",
+                "password": "pass123"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    let token_data = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    let token_data = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
     let access_token = token_data["access_token"].as_str().unwrap();
     let refresh_token = token_data["refresh_token"].as_str().unwrap();
 
@@ -498,12 +638,20 @@ async fn test_token_refresh_endpoint_security() {
         .method(Method::POST)
         .uri("/api/auth/token/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "refresh_token": access_token
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "refresh_token": access_token
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let response = test_app.router.clone().oneshot(wrong_refresh).await.unwrap();
+    let response = test_app
+        .router
+        .clone()
+        .oneshot(wrong_refresh)
+        .await
+        .unwrap();
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
@@ -515,12 +663,20 @@ async fn test_token_refresh_endpoint_security() {
         .method(Method::POST)
         .uri("/api/auth/token/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "refresh_token": "malformed.token.here"
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "refresh_token": "malformed.token.here"
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let response = test_app.router.clone().oneshot(malformed_refresh).await.unwrap();
+    let response = test_app
+        .router
+        .clone()
+        .oneshot(malformed_refresh)
+        .await
+        .unwrap();
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
@@ -532,12 +688,20 @@ async fn test_token_refresh_endpoint_security() {
         .method(Method::POST)
         .uri("/api/auth/token/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "refresh_token": refresh_token
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "refresh_token": refresh_token
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let response = test_app.router.clone().oneshot(valid_refresh).await.unwrap();
+    let response = test_app
+        .router
+        .clone()
+        .oneshot(valid_refresh)
+        .await
+        .unwrap();
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -545,7 +709,9 @@ async fn test_token_refresh_endpoint_security() {
     );
 
     // Verify response contains new access token
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let refresh_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert!(
@@ -589,16 +755,30 @@ async fn test_complete_token_authentication_flow() {
         .method(Method::POST)
         .uri("/api/auth/token/login")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "identifier": username,
-            "password": password
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "identifier": username,
+                "password": password
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let login_response = test_app.router.clone().oneshot(login_request).await.unwrap();
-    assert_eq!(login_response.status(), StatusCode::OK, "Login should succeed");
+    let login_response = test_app
+        .router
+        .clone()
+        .oneshot(login_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        login_response.status(),
+        StatusCode::OK,
+        "Login should succeed"
+    );
 
-    let initial_tokens = extract_token_from_response(login_response.into_body()).await.unwrap();
+    let initial_tokens = extract_token_from_response(login_response.into_body())
+        .await
+        .unwrap();
     let initial_access = initial_tokens["access_token"].as_str().unwrap();
     let initial_refresh = initial_tokens["refresh_token"].as_str().unwrap();
     info!("Received initial tokens");
@@ -612,9 +792,15 @@ async fn test_complete_token_authentication_flow() {
         .unwrap();
 
     let me_response = test_app.router.clone().oneshot(me_request).await.unwrap();
-    assert_eq!(me_response.status(), StatusCode::OK, "Should access protected endpoint");
+    assert_eq!(
+        me_response.status(),
+        StatusCode::OK,
+        "Should access protected endpoint"
+    );
 
-    let body = axum::body::to_bytes(me_response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(me_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let user_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(user_data["username"].as_str().unwrap(), username);
     info!("Successfully accessed protected endpoint");
@@ -624,31 +810,60 @@ async fn test_complete_token_authentication_flow() {
         .method(Method::POST)
         .uri("/api/auth/token/refresh")
         .header("content-type", "application/json")
-        .body(Body::from(json!({
-            "refresh_token": initial_refresh
-        }).to_string()))
+        .body(Body::from(
+            json!({
+                "refresh_token": initial_refresh
+            })
+            .to_string(),
+        ))
         .unwrap();
 
-    let refresh_response = test_app.router.clone().oneshot(refresh_request).await.unwrap();
-    assert_eq!(refresh_response.status(), StatusCode::OK, "Refresh should succeed");
+    let refresh_response = test_app
+        .router
+        .clone()
+        .oneshot(refresh_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        refresh_response.status(),
+        StatusCode::OK,
+        "Refresh should succeed"
+    );
 
-    let body = axum::body::to_bytes(refresh_response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(refresh_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let refresh_data: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let new_access_token = refresh_data["access_token"].as_str().unwrap();
 
-    assert_ne!(new_access_token, initial_access, "Should get new access token");
+    assert_ne!(
+        new_access_token, initial_access,
+        "Should get new access token"
+    );
     info!("Successfully refreshed access token");
 
     // Step 5: Use new access token
     let new_me_request = Request::builder()
         .method(Method::GET)
         .uri("/auth/me")
-        .header(header::AUTHORIZATION, format!("Bearer {}", new_access_token))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", new_access_token),
+        )
         .body(Body::empty())
         .unwrap();
 
-    let new_me_response = test_app.router.clone().oneshot(new_me_request).await.unwrap();
-    assert_eq!(new_me_response.status(), StatusCode::OK, "New token should work");
+    let new_me_response = test_app
+        .router
+        .clone()
+        .oneshot(new_me_request)
+        .await
+        .unwrap();
+    assert_eq!(
+        new_me_response.status(),
+        StatusCode::OK,
+        "New token should work"
+    );
     info!("Complete flow successful");
 
     // Step 6: Verify old access token still works (if not expired)
@@ -659,7 +874,12 @@ async fn test_complete_token_authentication_flow() {
         .body(Body::empty())
         .unwrap();
 
-    let old_token_response = test_app.router.clone().oneshot(old_token_request).await.unwrap();
+    let old_token_response = test_app
+        .router
+        .clone()
+        .oneshot(old_token_request)
+        .await
+        .unwrap();
     // Old token should still work if not expired
     assert_eq!(
         old_token_response.status(),

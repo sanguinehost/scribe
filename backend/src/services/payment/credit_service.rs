@@ -774,7 +774,7 @@ impl CreditService {
             })?;
 
         balance.lifetime_spent += transaction.amount.abs();
-        balance.updated_at = Some(Utc::now());
+        balance.updated_at = Some(crate::DbTimestamp::now());
 
         let updated_balance: CreditBalance =
             diesel::update(user_credits::dsl::user_credits.find(user_id))
@@ -852,7 +852,7 @@ impl CreditService {
             })?;
 
         balance.balance += refund_amount;
-        balance.updated_at = Some(Utc::now());
+        balance.updated_at = Some(crate::DbTimestamp::now());
 
         let updated_balance: CreditBalance =
             diesel::update(user_credits::dsl::user_credits.find(user_id))
@@ -893,8 +893,8 @@ impl CreditService {
             metadata_encrypted: encrypted_data.metadata_encrypted,
             metadata_nonce: encrypted_data.metadata_nonce,
             reference_id: Some(reservation_id.to_string()),
-            created_at: Some(created_at),
-            expires_at,
+            created_at: Some(crate::DbTimestamp::from_datetime(created_at)),
+            expires_at: expires_at.map(crate::DbTimestamp::from_datetime),
         };
 
         diesel::insert_into(credit_transactions::table)
@@ -976,7 +976,7 @@ impl CreditService {
             })?;
 
         balance.balance += refund_amount;
-        balance.updated_at = Some(Utc::now());
+        balance.updated_at = Some(crate::DbTimestamp::now());
 
         let updated_balance: CreditBalance =
             diesel::update(user_credits::dsl::user_credits.find(user_id))
@@ -1092,7 +1092,6 @@ impl CreditService {
             query = query.offset(o);
         }
 
-        query = query.select(CreditTransaction::as_select());
         let transactions = query.load::<CreditTransaction>(conn).map_err(|e| {
             error!("Failed to get transaction history: {}", e);
             AppError::DatabaseQueryError(e.to_string())

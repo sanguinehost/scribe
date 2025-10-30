@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,

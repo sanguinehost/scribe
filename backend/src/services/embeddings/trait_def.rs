@@ -7,7 +7,6 @@ use crate::models::chronicle_event::ChronicleEvent;
 use crate::state::AppState;
 use async_trait::async_trait;
 use std::sync::Arc;
-use uuid::Uuid;
 
 #[async_trait]
 pub trait EmbeddingPipelineServiceTrait: Send + Sync {

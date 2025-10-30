@@ -4,14 +4,13 @@ use axum::{
     http::{header::AUTHORIZATION, request::Parts, StatusCode},
     response::{IntoResponse, Response},
 };
-use axum_login::{AuthSession, AuthnBackend, AuthzBackend};
-use tower_sessions::Session;
+use axum_login::{AuthSession, AuthnBackend};
 use tracing::{debug, error, instrument, warn};
 
-use crate::auth::{AuthError, TokenService, UserCryptoFields};
+use crate::auth::AuthError;
 use crate::db::unified_types::DbId;
 use crate::errors::AppError;
-use crate::models::users::{UserRole as Role, User};
+use crate::models::users::{User, UserRole as Role};
 use crate::state::AppState;
 
 /// Type alias for our specific authentication session using either cookies or tokens
@@ -46,7 +45,10 @@ impl UnifiedAuth {
     }
 
     /// Login a user (only works for cookie-based auth)
-    pub async fn login(&mut self, user: &User) -> Result<(), axum_login::Error<crate::auth::AuthBackend>>
+    pub async fn login(
+        &mut self,
+        user: &User,
+    ) -> Result<(), axum_login::Error<crate::auth::AuthBackend>>
     where
         crate::auth::AuthBackend: AuthnBackend<User = User>,
     {
@@ -94,7 +96,10 @@ where
                         Some(service) => service,
                         None => {
                             error!("Token service not initialized");
-                            return Err((StatusCode::INTERNAL_SERVER_ERROR, "Token service unavailable")
+                            return Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Token service unavailable",
+                            )
                                 .into_response());
                         }
                     };
@@ -109,25 +114,31 @@ where
                             let user_id = claims.sub.clone();
 
                             let user = match crate::db::with_conn(&pool, move |conn| {
-                                crate::auth::get_user(conn, user_id)
-                                    .map_err(AppError::from)
-                            }).await {
+                                crate::auth::get_user(conn, user_id).map_err(AppError::from)
+                            })
+                            .await
+                            {
                                 Ok(user) => user,
                                 Err(e) => {
                                     error!(?e, "Failed to load user for token auth");
-                                    return Err((StatusCode::UNAUTHORIZED, "Invalid token")
-                                        .into_response());
+                                    return Err(
+                                        (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+                                    );
                                 }
                             };
 
                             // Create a minimal session for token auth
                             // Note: This bypasses the normal session flow but maintains compatibility
-                            let mut auth_session = UnifiedAuthSession::from_request_parts(parts, state)
-                                .await
-                                .map_err(|_| {
-                                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create auth session")
-                                        .into_response()
-                                })?;
+                            let mut auth_session =
+                                UnifiedAuthSession::from_request_parts(parts, state)
+                                    .await
+                                    .map_err(|_| {
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            "Failed to create auth session",
+                                        )
+                                            .into_response()
+                                    })?;
 
                             // Set the user in the session (in-memory only, not persisted)
                             auth_session.user = Some(user);

@@ -29,12 +29,11 @@ use crate::{
 };
 use axum_login::AuthSession;
 use chrono::Utc;
-use diesel::result::{DatabaseErrorKind, Error as DieselError}; // Added for specific error handling
+ // Added for specific error handling
 use diesel::{prelude::*, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
-use uuid::Uuid;
 
 /// Helper to insert lorebook and query it back (avoids E0275 Sized overflow)
 #[cfg(feature = "sqlite-backend")]

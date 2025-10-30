@@ -1,5 +1,4 @@
 use crate::db::{DbId, DbTimestamp};
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 

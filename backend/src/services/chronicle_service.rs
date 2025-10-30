@@ -5,7 +5,6 @@ use diesel::{
     QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use tracing::{error, info, instrument};
-use uuid::Uuid;
 
 use crate::errors::AppError;
 use crate::models::chronicle::{

@@ -9,7 +9,6 @@ use axum::{
 use axum_login::AuthSession;
 use serde::Deserialize;
 use tracing::debug;
-use uuid::Uuid;
 
 use crate::{
     auth::AuthBackend, errors::AppError,

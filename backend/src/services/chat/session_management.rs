@@ -4,7 +4,6 @@ use std::sync::Arc;
 use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,

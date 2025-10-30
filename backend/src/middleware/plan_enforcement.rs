@@ -156,7 +156,7 @@ async fn check_plan_limits(
             if let Some(ref sub) = subscription {
                 if sub.status == "past_due" {
                     if let Some(grace_period_end) = sub.grace_period_end {
-                        if chrono::Utc::now() > grace_period_end {
+                        if crate::DbTimestamp::now() > grace_period_end {
                             // Grace period expired, deny access
                             return Ok::<EnforcementResult, AppError>(EnforcementResult::Block(
                                 AppError::BadRequest(

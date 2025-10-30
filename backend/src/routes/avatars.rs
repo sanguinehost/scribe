@@ -19,7 +19,6 @@ use axum_login::AuthSession;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use image::ImageFormat;
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 type CurrentAuthSession = AuthSession<AuthBackend>;
 

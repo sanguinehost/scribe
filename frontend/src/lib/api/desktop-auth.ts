@@ -72,7 +72,10 @@ class DesktopAuthService {
 	/**
 	 * Login with credentials and store tokens
 	 */
-	async login(identifier: string, password: string): Promise<Result<TokenLoginResponse['user'], ApiError>> {
+	async login(
+		identifier: string,
+		password: string
+	): Promise<Result<TokenLoginResponse['user'], ApiError>> {
 		try {
 			// Call the token login endpoint
 			const response = await fetch('/api/auth/token/login', {
@@ -144,7 +147,7 @@ class DesktopAuthService {
 			return {};
 		}
 		return {
-			'Authorization': `Bearer ${this.accessToken}`
+			Authorization: `Bearer ${this.accessToken}`
 		};
 	}
 
@@ -158,7 +161,8 @@ class DesktopAuthService {
 		}
 
 		// If token is still valid, no refresh needed
-		if (this.tokenExpiresAt && Date.now() < this.tokenExpiresAt - 60000) { // 1 minute buffer
+		if (this.tokenExpiresAt && Date.now() < this.tokenExpiresAt - 60000) {
+			// 1 minute buffer
 			return ok(undefined);
 		}
 

@@ -6,7 +6,6 @@ use crate::db::DbId;
 use crate::errors::AppError;
 use qdrant_client::qdrant::Value as QdrantValue;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 // Metadata for chat message chunks
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

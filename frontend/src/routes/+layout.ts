@@ -53,11 +53,7 @@ export const load: LayoutLoad = async ({ url, fetch }) => {
 
 			// For Quick Start mode, attempt auto-login once per app session
 			// This restores the session on app restart without requiring credentials
-			if (
-				config.setup_complete &&
-				config.auth_mode === 'quick_start' &&
-				!autoLoginAttempted
-			) {
+			if (config.setup_complete && config.auth_mode === 'quick_start' && !autoLoginAttempted) {
 				console.log('[+layout.ts] Quick Start mode detected, attempting auto-login...');
 				autoLoginAttempted = true;
 				// Auto-login sets session cookie - the auth store will pick it up

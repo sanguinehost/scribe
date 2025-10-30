@@ -15,7 +15,6 @@ use qdrant_client::Qdrant;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 // Constants
 pub const DEFAULT_COLLECTION_NAME: &str = "scribe_embeddings";

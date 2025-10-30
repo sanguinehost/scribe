@@ -7,7 +7,7 @@ use diesel::{
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::Value; // Added Value
 use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
-use uuid::Uuid; // Added SecretBox, ExposeSecret
+ // Added SecretBox, ExposeSecret
 
 use crate::{
     crypto, // Added crypto

@@ -1,11 +1,9 @@
-use crate::db::DbId;
 use crate::db::DbJson; // Using DbJson for flexibility in extensions and mixed types like id
 use crate::db::DbTimestamp;
-use crate::db::Json;
 use crate::models::characters::Character;
 use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
-use chrono::{DateTime, Utc}; // Add DateTime and Utc
+use chrono::DateTime; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize}; // Added Deserializer
 use std::collections::HashMap; // <-- Add Uuid import // Alias serde_json::Value // Add use statement for canonical Character struct

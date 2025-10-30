@@ -29,7 +29,6 @@ use secrecy::ExposeSecret; // For exposing SessionDek secret
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::instrument; // Keep instrument
-use uuid::Uuid;
 use validator::Validate; // For validating payloads
 
 pub fn lorebook_routes() -> Router<AppState> {

@@ -1,4 +1,3 @@
-use crate::db::DbId;
 use crate::privacy::{
     LoggableCharacterId, LoggablePersonaId, LoggableSessionId, LoggableUserId, PrivacyConfig,
     SanitizedString,
@@ -8,7 +7,6 @@ use std::collections::HashMap;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
-use uuid::Uuid;
 
 /// Global privacy configuration (loaded from environment or defaults)
 static PRIVACY_CONFIG: std::sync::LazyLock<PrivacyConfig> =

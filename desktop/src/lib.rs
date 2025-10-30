@@ -184,13 +184,13 @@ async fn save_tokens(
     store
         .set(ACCESS_TOKEN_KEY.to_string(), access_token.into())
         .map_err(|e| format!("Failed to save access token: {}", e))?;
-    
+
     store
         .set(REFRESH_TOKEN_KEY.to_string(), refresh_token.into())
         .map_err(|e| format!("Failed to save refresh token: {}", e))?;
 
     store.save().map_err(|e| format!("Failed to persist tokens: {}", e))?;
-    
+
     log::info!("Tokens saved to secure storage");
     Ok(())
 }
@@ -229,12 +229,12 @@ async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
 
     store.delete(ACCESS_TOKEN_KEY)
         .map_err(|e| format!("Failed to delete access token: {}", e))?;
-    
+
     store.delete(REFRESH_TOKEN_KEY)
         .map_err(|e| format!("Failed to delete refresh token: {}", e))?;
 
     store.save().map_err(|e| format!("Failed to persist changes: {}", e))?;
-    
+
     log::info!("Tokens cleared from secure storage");
     Ok(())
 }

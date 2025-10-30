@@ -5,7 +5,7 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, Select
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::debug;
-use uuid::Uuid; // Added for logging
+ // Added for logging
 
 use crate::errors::AppError;
 use crate::models::user_personas::{

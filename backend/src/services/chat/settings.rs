@@ -1,19 +1,14 @@
-use bigdecimal::BigDecimal;
 // use chrono::Utc; // Likely unused after removing updated_at from changeset directly
 use diesel::{
     AsChangeset, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
 };
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     crypto::{decrypt_gcm, encrypt_gcm},
     errors::AppError,
-    models::{
-        chats::{ChatSettingsResponse, SettingsTuple, UpdateChatSettingsRequest},
-        OptionalStringArray,
-    },
+    models::chats::{ChatSettingsResponse, UpdateChatSettingsRequest},
     schema::chat_sessions,
     state::DbPool, // Corrected DbPool import
 };

@@ -7,7 +7,6 @@ use crate::state::AppState;
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
-use uuid::Uuid;
 
 /// Helper to insert message variant (avoids E0275 Sized overflow with SQLite)
 #[cfg(feature = "sqlite-backend")]
