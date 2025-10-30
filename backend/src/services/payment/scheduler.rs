@@ -357,8 +357,9 @@ impl PaymentScheduler {
             let grace_period_days = self.config.payment.grace_period_days as i64;
 
             // Check if subscription is past grace period
-            let days_overdue =
-                (Utc::now().signed_duration_since(subscription.current_period_end)).num_days();
+            let days_overdue = (Utc::now()
+                .signed_duration_since(subscription.current_period_end.into_datetime()))
+            .num_days();
 
             if days_overdue > grace_period_days {
                 // Expire the subscription
@@ -403,8 +404,10 @@ impl PaymentScheduler {
             } else {
                 // Mark as past due during grace period
                 // Calculate grace_period_end based on current_period_end + grace_period_days
-                let grace_period_end =
-                    subscription.current_period_end + chrono::Duration::days(grace_period_days);
+                let grace_period_end = crate::DbTimestamp::from_datetime(
+                    subscription.current_period_end.into_datetime()
+                        + chrono::Duration::days(grace_period_days),
+                );
 
                 crate::db::with_conn(&self.pool, move |conn| {
                     diesel::update(subscriptions::table.find(subscription_id))

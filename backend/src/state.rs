@@ -31,7 +31,7 @@ use crate::services::narrative_intelligence_service::NarrativeIntelligenceServic
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::EmailService; // For email service
 use std::fmt;
- // For embedding_call_tracker // For manual Debug impl
+// For embedding_call_tracker // For manual Debug impl
 
 // --- DB Connection Pool Type ---
 // Use the backend-agnostic pool type from the db module

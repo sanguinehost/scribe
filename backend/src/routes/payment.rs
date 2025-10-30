@@ -431,7 +431,9 @@ pub async fn get_subscription(
                 Some(UsageLimitsResponse {
                     tokens_used_total: 0, // Unknown usage, default to 0
                     period_start: crate::DbTimestamp::now(),
-                    period_end: crate::DbTimestamp::from_datetime(chrono::Utc::now() + chrono::Duration::days(30)),
+                    period_end: crate::DbTimestamp::from_datetime(
+                        chrono::Utc::now() + chrono::Duration::days(30),
+                    ),
                     is_unlimited: features.monthly_token_limit.is_none(),
                     daily_message_count: Some(daily_message_count),
                     is_throttled: Some(is_throttled),
@@ -590,7 +592,9 @@ pub async fn get_usage(
             Ok(Json(UsageLimitsResponse {
                 tokens_used_total: 0,
                 period_start: crate::DbTimestamp::now(),
-                period_end: crate::DbTimestamp::from_datetime(chrono::Utc::now() + chrono::Duration::days(30)),
+                period_end: crate::DbTimestamp::from_datetime(
+                    chrono::Utc::now() + chrono::Duration::days(30),
+                ),
                 is_unlimited: false,
                 daily_message_count: Some(daily_message_count),
                 is_throttled: Some(is_throttled),
@@ -1556,7 +1560,7 @@ pub async fn paddle_webhook(
 
         // Log security event for attack detection
         let security_event = SecurityEvent::WebhookSignatureFailure {
-            timestamp: chrono::Utc::now(),
+            timestamp: crate::DbTimestamp::now(),
             ip_address: client_ip.clone(),
             endpoint: "/webhook/paddle".to_string(),
             user_agent: headers
@@ -2201,13 +2205,13 @@ async fn process_transaction_completed(
             .get("billed_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
+            .map(|dt| crate::DbTimestamp::from_datetime(dt.with_timezone(&chrono::Utc)));
 
         let completed_at = transaction_data
             .get("created_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
+            .map(|dt| crate::DbTimestamp::from_datetime(dt.with_timezone(&chrono::Utc)));
 
         let new_transaction = NewPaymentTransaction {
             paddle_transaction_id: transaction_id.clone(),
@@ -2574,7 +2578,7 @@ async fn process_transaction_completed(
             existing.has_ever_paid.or(Some(false))
         };
         let first_payment_date_for_update = if is_trial_to_paid {
-            Some(chrono::Utc::now())
+            Some(crate::DbTimestamp::now())
         } else {
             existing.first_payment_date
         };
@@ -3348,7 +3352,8 @@ async fn process_subscription_updated(
                 .filter(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
-                .first::<crate::models::payment::Subscription>(conn)
+                .select(crate::models::payment::Subscription::as_select())
+                .first(conn)
                 .optional()
         })
         .await
@@ -3376,10 +3381,15 @@ async fn process_subscription_updated(
 
         // Prepare date fields for the closure
         // Keep existing values if not provided in webhook
-        let trial_end_for_update = trial_end.or(subscription.trial_end);
-        let period_start_for_update =
-            current_period_start.unwrap_or(subscription.current_period_start);
-        let period_end_for_update = current_period_end.unwrap_or(subscription.current_period_end);
+        let trial_end_for_update = trial_end
+            .map(crate::DbTimestamp::from_datetime)
+            .or(subscription.trial_end);
+        let period_start_for_update = current_period_start
+            .map(crate::DbTimestamp::from_datetime)
+            .unwrap_or(subscription.current_period_start);
+        let period_end_for_update = current_period_end
+            .map(crate::DbTimestamp::from_datetime)
+            .unwrap_or(subscription.current_period_end);
 
         // Detect trial-to-paid conversion and set payment tracking fields
         // When status transitions from "trialing" to "active", this is the first payment
@@ -3409,7 +3419,9 @@ async fn process_subscription_updated(
         // Calculate grace_period_end if status is past_due
         let grace_period_end_for_update: Option<crate::DbTimestamp> = if status == "past_due" {
             let grace_period_days = app_state.config.payment.grace_period_days as i64;
-            Some(chrono::Utc::now() + chrono::Duration::days(grace_period_days))
+            Some(crate::DbTimestamp::from_datetime(
+                chrono::Utc::now() + chrono::Duration::days(grace_period_days),
+            ))
         } else if status == "active" {
             // Clear grace_period_end when subscription becomes active again
             None
@@ -3475,9 +3487,10 @@ async fn process_subscription_updated(
                                 // Determine upgrade or downgrade
                                 match is_higher_tier(&new_plan, old_plan) {
                                     Ok(is_upgrade) => {
-                                        let mut conn = crate::db::get_conn(&app_state.pool)
-                                            .await
-                                            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+                                        let mut conn =
+                                            crate::db::get_conn(&app_state.pool).await.map_err(
+                                                |e| AppError::DbPoolError(e.to_string()),
+                                            )?;
 
                                         let credit_service =
                                             Arc::new(CreditService::new(app_state.config.clone()));
@@ -3907,7 +3920,8 @@ async fn process_subscription_cancelled(
                 .filter(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
-                .first::<crate::models::payment::Subscription>(conn)
+                .select(crate::models::payment::Subscription::as_select())
+                .first(conn)
                 .optional()
         })
         .await
@@ -4196,7 +4210,9 @@ pub async fn get_credit_transactions(
             description,
             metadata,
             reference_id: transaction.reference_id,
-            created_at: transaction.created_at.unwrap_or_else(chrono::Utc::now),
+            created_at: transaction
+                .created_at
+                .unwrap_or_else(crate::DbTimestamp::now),
         });
     }
 

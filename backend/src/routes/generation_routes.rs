@@ -12,16 +12,14 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::services::character_generation::{
     structured_output::*, ApiGenerationChunk, ApiGenerationMetadata, ApiGenerationRequest,
-    ApiGenerationResponse, BatchLorebookGenerationRequest,
-    BatchLorebookGenerationResponse, EnhancementRequest, EnhancementResult, FieldGenerationRequest, FieldGenerator, FullCharacterGenerator, FullCharacterRequest,
-    FullCharacterResult, LorebookGenerationRequest, LorebookGenerationResponse,
-    ScribeAssistantRequest, ScribeAssistantResponse,
+    ApiGenerationResponse, BatchLorebookGenerationRequest, BatchLorebookGenerationResponse,
+    EnhancementRequest, EnhancementResult, FieldGenerationRequest, FieldGenerator,
+    FullCharacterGenerator, FullCharacterRequest, FullCharacterResult, LorebookGenerationRequest,
+    LorebookGenerationResponse, ScribeAssistantRequest, ScribeAssistantResponse,
 };
 use crate::state::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::{
-    extract::State, response::IntoResponse, response::Json, routing::post, Router,
-};
+use axum::{extract::State, response::IntoResponse, response::Json, routing::post, Router};
 use axum_login::AuthSession;
 use futures::StreamExt;
 use std::sync::Arc;

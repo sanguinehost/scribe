@@ -7,7 +7,7 @@ use diesel::{
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::Value; // Added Value
 use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
- // Added SecretBox, ExposeSecret
+                                                            // Added SecretBox, ExposeSecret
 
 use crate::{
     crypto, // Added crypto
@@ -613,7 +613,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                             model_usage,
                             feature_usage,
                             request_count: 1,
-                            last_activity: chrono::Utc::now(),
+                            last_activity: crate::DbTimestamp::now(),
                         };
 
                         usage_service

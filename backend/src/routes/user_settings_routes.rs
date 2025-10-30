@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::Serialize; // Removed Deserialize as SetDefaultPersonaRequest is removed
 use tracing::debug;
- // Added for logging
+// Added for logging
 
 use crate::{
     // auth::AuthSession, // Replaced by axum_login::AuthSession

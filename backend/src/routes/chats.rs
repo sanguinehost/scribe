@@ -40,6 +40,7 @@ use crate::state::AppState;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
 use std::sync::Arc;
+use tracing::{debug, warn}; // Added for logging
 use tracing::{error, info};
 // ExposeSecret already imported above
 #[cfg(feature = "sqlite-backend")]

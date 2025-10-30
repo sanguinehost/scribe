@@ -109,7 +109,7 @@ use tower_sessions::{
     cookie::Key as TowerSessionKey, cookie::SameSite, Expiry, SessionManagerLayer,
 }; // Added SameSite
 use tracing::{debug, instrument, warn}; // Added debug
- // Added for CryptoProvider // Added for backend-agnostic database types
+                                        // Added for CryptoProvider // Added for backend-agnostic database types
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
@@ -1941,7 +1941,6 @@ pub mod db {
     use crate::db::DbPool; // Backend-agnostic pool type
     use crate::{DbId, DbTimestamp}; // Import unified types from crate root
 
-
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
     use crate::PgPool;
@@ -2336,7 +2335,6 @@ pub mod db {
         use crate::models::characters::Character; // Already imported at top of file usually
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
-
 
         let mut conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();

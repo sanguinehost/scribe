@@ -329,8 +329,8 @@ impl CreditService {
                 metadata_encrypted: encrypted_data.metadata_encrypted,
                 metadata_nonce: encrypted_data.metadata_nonce,
                 reference_id: reference_id.clone(),
-                created_at: Some(created_at),
-                expires_at,
+                created_at: Some(crate::DbTimestamp::from_datetime(created_at)),
+                expires_at: expires_at.map(crate::DbTimestamp::from_datetime),
             };
 
             diesel::insert_into(crate::schema::credit_transactions::table)
@@ -405,7 +405,7 @@ impl CreditService {
             balance.lifetime_earned += amount_to_add;
             balance.version += 1;
             if transaction_type == "monthly_grant" {
-                balance.last_monthly_grant = Some(Utc::now());
+                balance.last_monthly_grant = Some(crate::DbTimestamp::now());
             }
 
             debug!(
@@ -478,7 +478,7 @@ impl CreditService {
                 metadata_encrypted: encrypted_data.metadata_encrypted,
                 metadata_nonce: encrypted_data.metadata_nonce,
                 reference_id: None,
-                created_at: Some(Utc::now()),
+                created_at: Some(crate::DbTimestamp::now()),
                 expires_at: None, // Deductions don't have expiry
             };
 
@@ -650,7 +650,7 @@ impl CreditService {
                 metadata_encrypted: encrypted_data.metadata_encrypted,
                 metadata_nonce: encrypted_data.metadata_nonce,
                 reference_id: Some(reservation_id.to_string()),
-                created_at: Some(Utc::now()),
+                created_at: Some(crate::DbTimestamp::now()),
                 expires_at: None, // Reservations don't have expiry
             };
 

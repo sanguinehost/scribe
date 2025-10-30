@@ -232,7 +232,7 @@ pub struct UpdatePaymentUsageTracking {
 }
 
 /// Payment transaction record from Paddle
-#[derive(Debug, Clone, Queryable, Identifiable, Serialize, Deserialize)]
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = payment_transactions)]
 pub struct PaymentTransaction {
     pub id: crate::db::DbId,

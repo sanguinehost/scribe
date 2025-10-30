@@ -138,7 +138,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: None,
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -176,7 +176,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -212,7 +212,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -253,7 +253,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -298,7 +298,7 @@ impl PaymentAuditService {
             success,
             error_code: error_code.map(|s| s.to_string()),
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -336,7 +336,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -355,7 +355,8 @@ impl PaymentAuditService {
     pub fn purge_old_logs(&self, conn: &mut PgConnection) -> Result<usize, AppError> {
         use crate::schema::payment_audit_logs::dsl::*;
 
-        let cutoff_date = Utc::now() - Duration::days(self.retention_days);
+        let cutoff_date =
+            crate::DbTimestamp::from_datetime(Utc::now() - Duration::days(self.retention_days));
 
         let deleted = diesel::delete(payment_audit_logs)
             .filter(created_at.lt(cutoff_date))
@@ -383,7 +384,7 @@ impl PaymentAuditService {
     ) -> Result<AggregateStats, AppError> {
         use crate::schema::payment_audit_logs::dsl::*;
 
-        let since = Utc::now() - Duration::hours(hours);
+        let since = crate::DbTimestamp::from_datetime(Utc::now() - Duration::hours(hours));
 
         // Count events by type
         let total_events: i64 = payment_audit_logs

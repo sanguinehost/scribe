@@ -1394,11 +1394,18 @@ mod tests {
 // No-Op Implementation for Embedded Vector Mode (Desktop)
 // ============================================================================
 
-#[cfg(feature = "embedded-vector")]
+// Make NoOpQdrantService available when embedded-vector is enabled OR when neither vector feature is enabled
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
 #[derive(Clone)]
 pub struct NoOpQdrantService;
 
-#[cfg(feature = "embedded-vector")]
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
 impl NoOpQdrantService {
     pub async fn new(_config: Arc<Config>) -> Result<Self, AppError> {
         tracing::info!("Using no-op Qdrant service for desktop/embedded-vector mode");
@@ -1406,7 +1413,10 @@ impl NoOpQdrantService {
     }
 }
 
-#[cfg(feature = "embedded-vector")]
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
 #[async_trait]
 impl QdrantClientServiceTrait for NoOpQdrantService {
     async fn ensure_collection_exists(&self) -> Result<(), AppError> {

@@ -29,7 +29,7 @@ use crate::{
 };
 use axum_login::AuthSession;
 use chrono::Utc;
- // Added for specific error handling
+// Added for specific error handling
 use diesel::{prelude::*, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;

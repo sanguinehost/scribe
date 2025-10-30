@@ -1555,30 +1555,39 @@ pub async fn generate_chat_response(
 
                         // Convert token counts to DbDecimal
                         use bigdecimal::BigDecimal;
-                        let one_million = crate::DbDecimal::from_bigdecimal(BigDecimal::from(1_000_000i64));
-                        let prompt_tokens_bd = crate::DbDecimal::from_bigdecimal(BigDecimal::from(prompt_tokens));
-                        let completion_tokens_bd = crate::DbDecimal::from_bigdecimal(BigDecimal::from(completion_tokens));
+                        let one_million =
+                            crate::DbDecimal::from_bigdecimal(BigDecimal::from(1_000_000i64));
+                        let prompt_tokens_bd =
+                            crate::DbDecimal::from_bigdecimal(BigDecimal::from(prompt_tokens));
+                        let completion_tokens_bd =
+                            crate::DbDecimal::from_bigdecimal(BigDecimal::from(completion_tokens));
 
                         // Calculate BASE API cost in dollars (NO markup) using BigDecimal
-                        let input_cost =
-                            (prompt_tokens_bd.into_bigdecimal() / one_million.into_bigdecimal()) * input_rate.into_bigdecimal();
-                        let output_cost =
-                            (completion_tokens_bd.into_bigdecimal() / one_million.into_bigdecimal()) * output_rate.into_bigdecimal();
+                        let input_cost = (prompt_tokens_bd.into_bigdecimal()
+                            / one_million.clone().into_bigdecimal())
+                            * input_rate.into_bigdecimal();
+                        let output_cost = (completion_tokens_bd.into_bigdecimal()
+                            / one_million.into_bigdecimal())
+                            * output_rate.into_bigdecimal();
                         let total_cost = input_cost + output_cost;
 
                         // Get markup percentage and convert to DbDecimal
                         let markup_pct = token_pricing["markup_percentage"].as_i64().unwrap_or(20);
-                        let markup_pct_bd = crate::DbDecimal::from_bigdecimal(BigDecimal::from(markup_pct));
+                        let markup_pct_bd =
+                            crate::DbDecimal::from_bigdecimal(BigDecimal::from(markup_pct));
                         let hundred = crate::DbDecimal::from_bigdecimal(BigDecimal::from(100i64));
                         let one = crate::DbDecimal::from_bigdecimal(BigDecimal::from(1i64));
 
                         // Calculate credits for user balance (derived from marked-up cost)
-                        let markup_multiplier = one.into_bigdecimal() + (markup_pct_bd.into_bigdecimal() / hundred.into_bigdecimal());
-                        let marked_up_cost = total_cost * markup_multiplier;
+                        let markup_multiplier = one.into_bigdecimal()
+                            + (markup_pct_bd.into_bigdecimal() / hundred.into_bigdecimal());
+                        let marked_up_cost = total_cost.clone() * markup_multiplier;
 
                         // Convert credit value to DbDecimal and calculate credits
                         use bigdecimal::FromPrimitive;
-                        let credit_value_bd = crate::DbDecimal::from_bigdecimal(BigDecimal::from_f64(CREDIT_VALUE_DOLLARS).unwrap());
+                        let credit_value_bd = crate::DbDecimal::from_bigdecimal(
+                            BigDecimal::from_f64(CREDIT_VALUE_DOLLARS).unwrap(),
+                        );
                         let credits_bd = marked_up_cost / credit_value_bd.into_bigdecimal();
                         // Convert to f64, apply ceiling, then to i32
                         use bigdecimal::ToPrimitive;

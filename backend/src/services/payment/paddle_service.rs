@@ -512,8 +512,8 @@ impl PaddleService {
                         id: customer_id,
                         email: Some(email.to_string()),
                         name: name.map(|s| s.to_string()),
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
+                        created_at: crate::DbTimestamp::now(),
+                        updated_at: crate::DbTimestamp::now(),
                     });
                 }
             }
