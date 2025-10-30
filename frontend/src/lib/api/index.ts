@@ -101,7 +101,11 @@ import type {
 	CancelSubscriptionRequest,
 	// Template Preferences types
 	TemplatePreferenceResponse,
-	UpdateTemplatePreferenceRequest
+	UpdateTemplatePreferenceRequest,
+	// Desktop Authentication types
+	DesktopConfigResponse,
+	DesktopSetupPayload,
+	DesktopUpgradeAccountPayload
 } from '$lib/types';
 import type {
 	// Credit system types
@@ -462,6 +466,47 @@ class ApiClient {
 			{
 				method: 'POST',
 				body: JSON.stringify({ token })
+			},
+			fetchFn
+		);
+	}
+
+	// Desktop Authentication methods
+	async getDesktopConfig(
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<DesktopConfigResponse, ApiError>> {
+		return this.fetch<DesktopConfigResponse>('/api/auth/desktop/config', {}, fetchFn);
+	}
+
+	async desktopSetup(
+		data: DesktopSetupPayload,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<LoginSuccessData, ApiError>> {
+		return this.fetch<LoginSuccessData>(
+			'/api/auth/desktop/setup',
+			{
+				method: 'POST',
+				body: JSON.stringify(data)
+			},
+			fetchFn
+		);
+	}
+
+	async desktopAutoLogin(
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<LoginSuccessData, ApiError>> {
+		return this.fetch<LoginSuccessData>('/api/auth/desktop/auto-login', {}, fetchFn);
+	}
+
+	async desktopUpgradeAccount(
+		data: DesktopUpgradeAccountPayload,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<LoginSuccessData, ApiError>> {
+		return this.fetch<LoginSuccessData>(
+			'/api/auth/desktop/upgrade-account',
+			{
+				method: 'POST',
+				body: JSON.stringify(data)
 			},
 			fetchFn
 		);

@@ -4,6 +4,8 @@ pub mod auth;
 pub mod config;
 pub mod crypto;
 pub mod db;
+#[cfg(feature = "desktop")]
+pub mod desktop;
 pub mod errors;
 pub mod features;
 pub mod llm;

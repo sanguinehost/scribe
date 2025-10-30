@@ -26,12 +26,16 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { Snippet } from 'svelte'; // Keep this import
 	import { toast } from 'svelte-sonner';
+	import { isDesktopMode } from '$lib/utils/features';
 
 	// Correctly destructure props using Svelte 5 syntax
 	let { authType, form, submitButton, children }: AuthFormProps = $props();
 
 	// Correctly declare state using Svelte 5 syntax
 	let pending = $state(false);
+
+	// Check if running in desktop mode
+	const inDesktopMode = isDesktopMode();
 
 	const enhanceCallback: SubmitFunction<FormSuccessData, FormFailureData> = () => {
 		pending = true;
@@ -77,25 +81,28 @@
 </script>
 
 <form method="POST" class="flex flex-col gap-4 px-4 sm:px-16" use:enhance={enhanceCallback}>
-	<div class="flex flex-col gap-2">
-		<label
-			for={identifierName}
-			class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
-			>{identifierLabel}</label
-		>
+	<!-- Email/Identifier field: Hidden in desktop mode for registration -->
+	{#if !inDesktopMode || authType === 'login'}
+		<div class="flex flex-col gap-2">
+			<label
+				for={identifierName}
+				class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+				>{identifierLabel}</label
+			>
 
-		<Input
-			id={identifierName}
-			name={identifierName}
-			class="text-md bg-muted md:text-sm"
-			type={identifierType}
-			placeholder={identifierPlaceholder}
-			autocomplete={identifierAutocomplete}
-			required
-			autofocus
-			value={identifierDefaultValue}
-		/>
-	</div>
+			<Input
+				id={identifierName}
+				name={identifierName}
+				class="text-md bg-muted md:text-sm"
+				type={identifierType}
+				placeholder={identifierPlaceholder}
+				autocomplete={identifierAutocomplete}
+				required
+				autofocus={!inDesktopMode || authType === 'login'}
+				value={identifierDefaultValue}
+			/>
+		</div>
+	{/if}
 
 	{#if authType === 'register'}
 		<div class="flex flex-col gap-2">
@@ -112,6 +119,7 @@
 				placeholder="your_username"
 				autocomplete="username"
 				required
+				autofocus={inDesktopMode}
 				value={usernameDefaultValue}
 			/>
 		</div>

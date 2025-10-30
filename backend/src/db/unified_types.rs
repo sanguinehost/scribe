@@ -502,6 +502,11 @@ impl FromSql<Timestamp, Sqlite> for DbTimestamp {
             }
         }
 
+        // Try parsing SQLite DATETIME format: "YYYY-MM-DD HH:MM:SS"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
         Err(format!("Invalid timestamp string: {}", text).into())
     }
 }
@@ -533,6 +538,11 @@ impl FromSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
             if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
                 return Ok(Self(dt));
             }
+        }
+
+        // Try parsing SQLite DATETIME format: "YYYY-MM-DD HH:MM:SS"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
         }
 
         Err(format!("Invalid timestamp string: {}", text).into())

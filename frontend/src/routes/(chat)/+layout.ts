@@ -1,11 +1,17 @@
-import type { ScribeChatSession } from '$lib/types.js';
+import type { ScribeChatSession, User } from '$lib/types.js';
 import { apiClient as _apiClient } from '$lib/api';
 import { SelectedModel } from '$lib/hooks/selected-model.svelte.js';
 import { chatModels, DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 
-export async function load({ data, fetch }: { data: unknown; fetch: typeof globalThis.fetch }) {
+// Define the parent data type (from root +layout.server.ts in cloud mode)
+interface ParentData {
+	user?: User;
+	sidebarCollapsed?: boolean;
+}
+
+export async function load({ data, fetch }: { data: ParentData; fetch: typeof globalThis.fetch }) {
 	// In desktop mode with ssr:false, parent data may be undefined
-	const user = data?.user ?? null;
+	const user = data?.user ?? undefined;
 
 	// For desktop mode, provide default values for missing server-side data
 	// In cloud mode, these would come from +layout.server.ts
@@ -53,7 +59,7 @@ export async function load({ data, fetch }: { data: unknown; fetch: typeof globa
 		chats,
 		chatsError, // Return the flag
 		// Required properties for (chat)/+layout.svelte
-		user,
+		user: user as User | undefined,
 		sidebarCollapsed,
 		selectedChatModel,
 		// In desktop mode, parent data may be undefined, so spread it safely

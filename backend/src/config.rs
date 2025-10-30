@@ -608,8 +608,9 @@ impl Config {
         }
 
         // Set environment-specific cookie security defaults
-        if environment == "local" && self.session_cookie_secure {
-            // For local development, default to non-secure cookies for easier testing
+        if (environment == "local" || environment == "desktop") && self.session_cookie_secure {
+            // For local development and desktop, default to non-secure cookies
+            // Desktop uses custom protocol (scribe://) which doesn't support Secure flag
             self.session_cookie_secure = false;
         }
     }

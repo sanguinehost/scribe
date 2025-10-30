@@ -1443,3 +1443,46 @@ export interface UpdateTemplatePreferenceRequest {
 	enable_stats_tracker?: boolean;
 	enable_thinking?: boolean;
 }
+
+// ============================================================================
+// Desktop Authentication Types
+// ============================================================================
+
+/**
+ * Desktop authentication mode options
+ */
+export type DesktopAuthMode = 'quick_start' | 'account' | 'not_set';
+
+/**
+ * Desktop deployment mode options
+ */
+export type DesktopDeploymentMode = 'local' | 'remote';
+
+/**
+ * Desktop configuration response from backend
+ * Returned by GET /api/auth/desktop/config
+ */
+export interface DesktopConfigResponse {
+	setup_complete: boolean;
+	auth_mode: DesktopAuthMode;
+	deployment_mode: DesktopDeploymentMode;
+}
+
+/**
+ * Desktop setup payload for initial wizard
+ * Sent to POST /api/auth/desktop/setup
+ */
+export interface DesktopSetupPayload {
+	auth_mode: DesktopAuthMode;
+	username?: string; // Required when auth_mode is 'account'
+	password?: string; // Required when auth_mode is 'account'
+}
+
+/**
+ * Payload for upgrading Quick Start to Account mode
+ * Sent to POST /api/auth/desktop/upgrade-account
+ */
+export interface DesktopUpgradeAccountPayload {
+	username: string;
+	password: string;
+}

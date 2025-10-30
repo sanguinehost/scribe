@@ -256,6 +256,7 @@ impl AppStateServicesBuilder {
             email_service,
             ai_client_factory,
             rate_limiter,
+            token_service: None, // Will be set in main.rs if configured
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
             #[cfg(feature = "local-llm")]

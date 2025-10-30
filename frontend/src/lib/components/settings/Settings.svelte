@@ -9,7 +9,7 @@
 	import { Checkbox as _CheckboxComponent } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS } from '$lib/utils/features';
+	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS, isDesktopMode } from '$lib/utils/features';
 	import { chatModels, DEFAULT_CHAT_MODEL as _DEFAULT_CHAT_MODEL } from '$lib/ai/models';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ApiKeysManager from '$lib/components/settings/ApiKeysManager.svelte';
@@ -22,6 +22,7 @@
 	} from '$lib/types';
 	import { MembershipSettings } from '$lib/components/membership';
 	import NarrativeStyleConfigurator from '$lib/components/settings/NarrativeStyleConfigurator.svelte';
+	import DesktopAccountSettings from '$lib/components/settings/DesktopAccountSettings.svelte';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -41,6 +42,9 @@
 
 	// Make llmStore reactive
 	const llmStoreReactive = $derived(llmStore);
+
+	// Check if running in desktop mode
+	const inDesktopMode = isDesktopMode();
 
 	// Tab state - Default to membership if payments enabled, otherwise generation
 	let activeTab = $state(ENABLE_PAYMENTS ? 'membership' : 'generation');
@@ -225,6 +229,7 @@
 	// Dynamic tabs based on feature flags and runtime availability
 	const tabs = $derived([
 		...(ENABLE_PAYMENTS ? [{ id: 'membership', label: 'Membership', icon: '💳' }] : []),
+		...(inDesktopMode ? [{ id: 'desktop', label: 'Desktop Account', icon: '🖥️' }] : []),
 		{ id: 'generation', label: 'Generation', icon: '🎛️' },
 		{ id: 'context', label: 'Context', icon: '🧠' },
 		{ id: 'writingstyle', label: 'Writing Style', icon: '✍️' },
@@ -302,6 +307,18 @@
 							</CardContent>
 						</Card>
 					</div>
+				{/if}
+
+				<!-- Desktop Account Tab -->
+				{#if activeTab === 'desktop' && inDesktopMode}
+					<Card>
+						<CardHeader>
+							<CardTitle class="text-lg">Desktop Account Settings</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<DesktopAccountSettings />
+						</CardContent>
+					</Card>
 				{/if}
 
 				<!-- Generation Tab -->

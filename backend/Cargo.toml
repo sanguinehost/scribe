@@ -34,6 +34,7 @@ base64 = "0.22.1"
 thiserror = "2.0.12"
 diesel = { version = "2.3", default-features = false, features = ["chrono", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
 diesel_migrations = { version = "2.3", default-features = false }
+dirs = "5.0"  # Platform-specific directories for desktop config
 dotenvy = "0.15.7"
 chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", default-features = false }
@@ -157,6 +158,7 @@ lazy_static = "1.4"  # For global metrics registry
 
 # Vector database (optional - only with embedded-vector feature)
 lancedb = { version = "0.22.2", optional = true }
+jsonwebtoken = "9.3.1"
 
 # Platform-specific dependencies
 [target.'cfg(windows)'.dependencies]

@@ -12,9 +12,21 @@
 	import { ModelLifecycleStore } from '$lib/stores/modelLifecycle.svelte';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
+	import type { ScribeChatSession, User } from '$lib/types.js';
+	import type { SelectedModel } from '$lib/hooks/selected-model.svelte.js';
+
+	// Define the expected data shape from +layout.ts
+	// All properties are required since the load function always returns them
+	interface LayoutData {
+		chats: ScribeChatSession[];
+		chatsError: boolean;
+		user: User | undefined;
+		sidebarCollapsed: boolean;
+		selectedChatModel: SelectedModel;
+	}
 
 	// Desktop mode: data may be undefined initially with ssr:false
-	let { data = {} as Record<string, unknown>, children } = $props();
+	let { data = {} as LayoutData, children } = $props();
 
 	// Safely initialize with empty array if chats not available
 	const chatHistory = new ChatHistory(data?.chats ?? []);

@@ -301,6 +301,8 @@ pub async fn create_user_in_db(
             .context("DEK encryption failed")?;
 
     let new_user_payload = NewUser {
+        #[cfg(feature = "sqlite-backend")]
+        id: crate::db::DbId::new(),
         username: username.to_string(),
         password_hash,
         email: email.to_string(),

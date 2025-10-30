@@ -10,7 +10,8 @@ import {
 	PUBLIC_ENABLE_LOCAL_LLM,
 	PUBLIC_ENABLE_PAYMENTS,
 	PUBLIC_ENABLE_CREDITS,
-	PUBLIC_ENABLE_SOFT_LIMITS
+	PUBLIC_ENABLE_SOFT_LIMITS,
+	PUBLIC_API_URL
 } from '$env/static/public';
 
 /**
@@ -70,4 +71,42 @@ export const PAYMENT_FEATURES = {
  */
 export function isFeatureEnabled(feature: keyof typeof FEATURES): boolean {
 	return FEATURES[feature];
+}
+
+/**
+ * Runtime check for desktop mode (Tauri)
+ *
+ * Desktop mode is detected by checking if the API URL uses the custom scribe:// protocol
+ * which is only configured for desktop builds (see .env.production.desktop)
+ *
+ * @returns true if running in Tauri desktop app, false if running in browser
+ */
+export function isDesktopMode(): boolean {
+	// Check if we're in a browser environment first
+	if (typeof window === 'undefined') {
+		console.log('[isDesktopMode] window is undefined, returning false');
+		return false;
+	}
+
+	// Primary check: Desktop builds use scribe://localhost as API URL
+	// Cloud builds use https://... or relative URLs
+	const usesCustomProtocol = PUBLIC_API_URL?.startsWith('scribe://');
+	console.log('[isDesktopMode] PUBLIC_API_URL:', PUBLIC_API_URL);
+	console.log('[isDesktopMode] usesCustomProtocol check:', usesCustomProtocol);
+
+	// Fallback checks for additional validation
+	// @ts-expect-error - __TAURI__ is injected by Tauri at runtime
+	const hasTauriApi = typeof window.__TAURI__ !== 'undefined';
+	console.log('[isDesktopMode] window.__TAURI__ check:', hasTauriApi);
+
+	// Check for scribe:// custom protocol in window location
+	const hasCustomProtocolInLocation =
+		typeof window.location !== 'undefined' && window.location.protocol === 'scribe:';
+	console.log('[isDesktopMode] window.location.protocol:', window.location?.protocol);
+	console.log('[isDesktopMode] hasCustomProtocolInLocation check:', hasCustomProtocolInLocation);
+
+	// Desktop mode is true if any desktop indicator is present
+	const result = usesCustomProtocol || hasTauriApi || hasCustomProtocolInLocation;
+	console.log('[isDesktopMode] Final result:', result);
+	return result;
 }

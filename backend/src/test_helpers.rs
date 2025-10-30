@@ -1112,6 +1112,7 @@ pub struct TestAppStateBuilder {
     token_counter: Option<Arc<HybridTokenCounter>>,
     lorebook_service: Option<Arc<crate::services::lorebook::LorebookService>>, // Fully qualify
     auth_backend: Arc<AuthBackend>, // Add auth_backend to builder
+    token_service: Option<Arc<crate::auth::TokenService>>, // Add token_service field
 }
 
 impl TestAppStateBuilder {
@@ -1136,6 +1137,7 @@ impl TestAppStateBuilder {
             token_counter: None,
             lorebook_service: None,
             auth_backend,
+            token_service: None, // Initialize token_service field
         }
     }
 
@@ -1247,6 +1249,13 @@ impl TestAppStateBuilder {
             self.ai_client.clone(), // Use test AI client as fallback
         ));
 
+        // Initialize token service for JWT authentication tests
+        let token_service = self.token_service.unwrap_or_else(|| {
+            // Use a hardcoded test JWT secret for tests
+            let jwt_secret = "test_jwt_secret_for_tests_only_not_production_use".to_string();
+            Arc::new(crate::auth::TokenService::new(&jwt_secret))
+        });
+
         let services = AppStateServices {
             ai_client: self.ai_client,
             embedding_client: self.embedding_client,
@@ -1268,6 +1277,7 @@ impl TestAppStateBuilder {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            token_service: Some(token_service), // Use initialized token service for JWT tests
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
             #[cfg(feature = "local-llm")]
@@ -2107,7 +2117,12 @@ pub mod db {
             crate::crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek) // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
                 .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
 
+        // Generate UUID for both backends (required for SQLite, overrides DEFAULT for PostgreSQL)
+        let user_id = crate::db::DbId::new();
+
         let new_user_payload = NewUser {
+            #[cfg(feature = "sqlite-backend")]
+            id: user_id,
             username: username_clone_for_payload,
             password_hash,
             email,
@@ -2222,7 +2237,12 @@ pub mod db {
             crate::crypto::encrypt_gcm(plaintext_dek_box.expose_secret(), &kek) // expose_secret() on SecretBox<Vec<u8>> gives &Vec<u8>
                 .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
 
+        // Generate UUID for both backends (required for SQLite, overrides DEFAULT for PostgreSQL)
+        let user_id = crate::db::DbId::new();
+
         let new_user_payload = NewUser {
+            #[cfg(feature = "sqlite-backend")]
+            id: user_id,
             username: username_clone_for_payload,
             password_hash,
             email,
@@ -3325,6 +3345,7 @@ impl TestApp {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            token_service: None, // Not available in this test context
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
             #[cfg(feature = "local-llm")]

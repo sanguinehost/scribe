@@ -17,6 +17,7 @@ use crate::services::embeddings::EmbeddingPipelineServiceTrait;
 // use crate::vector_db::QdrantClientService;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
+use crate::auth::token_service::TokenService; // Added for token-based authentication
 use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
@@ -51,6 +52,7 @@ pub struct AppStateServices {
     pub encryption_service: Arc<EncryptionService>,
     pub lorebook_service: Arc<LorebookService>,
     pub auth_backend: Arc<AuthBackend>,
+    pub token_service: Option<Arc<TokenService>>,  // Added for token-based authentication
     pub email_service: Arc<dyn EmailService + Send + Sync>,
     pub ai_client_factory: Arc<AiClientFactory>,
     pub rate_limiter: Arc<LlmRateLimiter>,
@@ -86,6 +88,7 @@ pub struct AppState {
     pub encryption_service: Arc<EncryptionService>, // Added for lorebook and other encryption needs
     pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
+    pub token_service: Option<Arc<TokenService>>,   // Added for token-based authentication
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub ai_client_factory: Arc<AiClientFactory>,    // Added for dynamic AI client selection
     pub rate_limiter: Arc<LlmRateLimiter>,          // Added for rate limiting
@@ -122,6 +125,7 @@ impl fmt::Debug for AppState {
             .field("encryption_service", &"<Arc<EncryptionService>>") // Added
             .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
+            .field("token_service", &"<Option<Arc<TokenService>>>") // Added for token auth
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
             .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
@@ -169,6 +173,7 @@ impl AppState {
             encryption_service: services.encryption_service,
             lorebook_service: services.lorebook_service,
             auth_backend: services.auth_backend,
+            token_service: services.token_service,
             email_service: services.email_service,
             ai_client_factory: services.ai_client_factory,
             rate_limiter: services.rate_limiter,

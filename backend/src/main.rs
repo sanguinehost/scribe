@@ -1,7 +1,7 @@
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 #[cfg(feature = "postgres-backend")]
 use deadpool_diesel::postgres::{
-    Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
+    Manager as DeadpoolManager, Runtime as DeadpoolRuntime,
 };
 #[cfg(feature = "postgres-backend")]
 // Use the r2d2 Pool directly from deadpool_diesel
@@ -16,6 +16,8 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
+#[cfg(feature = "desktop")]
+use scribe_backend::desktop; // Desktop mode initialization
 use scribe_backend::db::DbPool;
 use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
@@ -70,8 +72,9 @@ use scribe_backend::services::narrative_intelligence_service::NarrativeIntellige
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
-use scribe_backend::vector_db::QdrantClientService;
 
+#[cfg(feature = "remote-vector")]
+use scribe_backend::vector_db::QdrantClientService;
 #[cfg(feature = "embedded-vector")]
 use scribe_backend::vector_db::NoOpQdrantService;
 use std::path::PathBuf;
@@ -83,6 +86,7 @@ use tower_governor::{
 };
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
+use tracing::{info, warn};
 
 // Define the embedded migrations macro - use different directories based on backend
 #[cfg(feature = "postgres-backend")]
@@ -160,6 +164,10 @@ async fn main() -> Result<()> {
 
     let pool = setup_database_pool(&config);
     run_migrations(&pool).await?;
+
+    // Initialize desktop mode if enabled (create default user for Quick Start)
+    #[cfg(feature = "desktop")]
+    initialize_desktop_mode(&pool).await?;
 
     let services = initialize_services(&config, &pool).await?;
 
@@ -347,6 +355,16 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
+    // --- Initialize Token Service ---
+    let token_service = if let Some(cookie_key) = config.cookie_signing_key.as_ref() {
+        // Use the cookie key directly as a string for JWT signing
+        info!("Initializing token service for JWT authentication");
+        Some(Arc::new(scribe_backend::auth::TokenService::new(cookie_key)))
+    } else {
+        warn!("No cookie signing key available, token authentication will be disabled");
+        None
+    };
+
     // --- Initialize AI Client Factory ---
     let ai_client_factory = Arc::new(AiClientFactory::new(
         pool.clone(),
@@ -428,6 +446,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         encryption_service,
         lorebook_service,
         auth_backend,
+        token_service,
         email_service: {
             // Create email service based on environment
             let app_env = config.environment.as_deref().unwrap_or("development");
@@ -670,9 +689,25 @@ fn build_router(
         .route("/api/health", get(health_check))
         .with_state(app_state.clone());
 
-    // Rate-limited API routes (both public and protected, but excluding webhooks)
-    let rate_limited_api_routes = Router::new()
-        .nest("/auth", auth_routes()) // Auth routes under /api/auth
+    // Public auth routes (no authentication required) - rate limited
+    // NOTE: Auth layer provides session/auth_session extractors but doesn't enforce authentication
+    // The actual authentication requirement is enforced by protected routes or handler logic
+    let public_auth_routes = Router::new()
+        .nest("/auth", auth_routes()) // Auth routes under /api/auth (login, register, desktop config, auto-login, etc.)
+        .layer(auth_layer.clone()) // Auth layer for session/auth_session extractors
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(5000) // Very high rate for development - 1ms per request
+                    .burst_size(5000) // High burst capacity for rapid development requests
+                    .key_extractor(SmartIpKeyExtractor)
+                    .finish()
+                    .unwrap(),
+            ),
+        });
+
+    // Protected API routes - require authentication AND rate limited
+    let protected_rate_limited_routes = Router::new()
         .merge(protected_api_routes) // Protected routes under /api
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
@@ -761,10 +796,15 @@ fn build_router(
             .allow_credentials(true)
     };
 
-    // Build authenticated API routes with auth layer
-    let authenticated_api = Router::new()
-        .nest("/api", rate_limited_api_routes) // All authenticated API routes are rate limited
-        .layer(auth_layer) // Auth layer only on authenticated routes
+    // Build API routes with proper auth layering
+    // Public auth routes (no auth layer) + Protected routes (with auth layer)
+    let api_routes = Router::new()
+        .nest("/api", public_auth_routes) // Public auth routes - NO auth required
+        .nest(
+            "/api",
+            protected_rate_limited_routes
+                .layer(auth_layer.clone()), // Auth layer ONLY on protected routes
+        )
         .with_state(app_state.clone());
 
     // Combine all routes
@@ -772,14 +812,14 @@ fn build_router(
     let final_router = {
         let base_router = Router::new()
             .merge(health_routes) // Health endpoint not rate limited
-            .merge(authenticated_api); // All authenticated API routes
+            .merge(api_routes); // All API routes (public + protected)
         base_router.merge(webhook_routes) // Webhook routes without auth
     };
 
     #[cfg(not(feature = "payment"))]
     let final_router = Router::new()
         .merge(health_routes) // Health endpoint not rate limited
-        .merge(authenticated_api); // All authenticated API routes
+        .merge(api_routes); // All API routes (public + protected)
 
     final_router
         .layer(cors)
@@ -954,6 +994,28 @@ async fn run_migrations(pool: &DbPool) -> Result<()> {
             Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
         }
     }
+}
+
+// Desktop mode initialization - verify desktop configuration
+#[cfg(feature = "desktop")]
+async fn initialize_desktop_mode(_pool: &DbPool) -> Result<()> {
+    tracing::info!("Initializing desktop mode...");
+
+    // Load and log desktop configuration status
+    let config = desktop::load_desktop_config()?;
+
+    tracing::info!(
+        "Desktop configuration loaded: setup_complete={}, auth_mode={:?}",
+        config.setup_complete,
+        config.auth_mode
+    );
+
+    // Note: User creation is handled by the /api/auth/desktop/setup endpoint
+    // on first run. This allows the setup flow to properly establish sessions
+    // and handle errors without chicken-and-egg initialization issues.
+
+    tracing::info!("Desktop mode initialization complete");
+    Ok(())
 }
 
 // --- Test module remains unchanged ---

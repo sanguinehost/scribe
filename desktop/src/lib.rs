@@ -11,6 +11,18 @@ use tauri::http::{Request as TauriRequest, Response as TauriResponse};
 use tauri::Manager;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
+use url::Url;
+
+use serde::{Deserialize, Serialize};
+use tauri::State;
+use tauri_plugin_store::StoreBuilder;
+
+// Token storage keys
+const TOKEN_STORE_FILE: &str = ".tokens.dat";
+const ACCESS_TOKEN_KEY: &str = "access_token";
+const REFRESH_TOKEN_KEY: &str = "refresh_token";
+
+// Shared state for managing backend process and token storage
 
 // Shared state for managing backend process
 struct BackendProcess(Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>);
@@ -115,7 +127,7 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
         .env("ENVIRONMENT", "desktop")
         .env("DATABASE_URL", &database_url)
         .env("COOKIE_SIGNING_KEY", &cookie_signing_key)
-        .env("PORT", "8080")
+        .env("PORT", "38080")
         .env("RUST_LOG", "info")
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {}", e))?;
@@ -151,12 +163,102 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
     Ok(child)
 }
 
-/// Proxy request to embedded backend with self-signed certificate acceptance
-async fn proxy_to_embedded_backend(request: TauriRequest<Vec<u8>>) -> Result<TauriResponse<Vec<u8>>, String> {
+// Token management commands for Tauri
+#[derive(Debug, Serialize, Deserialize)]
+struct TokenPair {
+    access_token: String,
+    refresh_token: String,
+}
+
+/// Save tokens to secure storage
+#[tauri::command]
+async fn save_tokens(
+    app: tauri::AppHandle,
+    access_token: String,
+    refresh_token: String,
+) -> Result<(), String> {
+    let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
+        .build()
+        .map_err(|e| format!("Failed to build store: {}", e))?;
+
+    store
+        .set(ACCESS_TOKEN_KEY.to_string(), access_token.into())
+        .map_err(|e| format!("Failed to save access token: {}", e))?;
+    
+    store
+        .set(REFRESH_TOKEN_KEY.to_string(), refresh_token.into())
+        .map_err(|e| format!("Failed to save refresh token: {}", e))?;
+
+    store.save().map_err(|e| format!("Failed to persist tokens: {}", e))?;
+    
+    log::info!("Tokens saved to secure storage");
+    Ok(())
+}
+
+/// Load tokens from secure storage
+#[tauri::command]
+async fn load_tokens(app: tauri::AppHandle) -> Result<Option<TokenPair>, String> {
+    let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
+        .build()
+        .map_err(|e| format!("Failed to build store: {}", e))?;
+
+    let access_token = store.get(ACCESS_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
+    let refresh_token = store.get(REFRESH_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
+
+    match (access_token, refresh_token) {
+        (Some(access), Some(refresh)) => {
+            log::info!("Tokens loaded from secure storage");
+            Ok(Some(TokenPair {
+                access_token: access,
+                refresh_token: refresh,
+            }))
+        }
+        _ => {
+            log::info!("No tokens found in secure storage");
+            Ok(None)
+        }
+    }
+}
+
+/// Clear tokens from secure storage
+#[tauri::command]
+async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
+    let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
+        .build()
+        .map_err(|e| format!("Failed to build store: {}", e))?;
+
+    store.delete(ACCESS_TOKEN_KEY)
+        .map_err(|e| format!("Failed to delete access token: {}", e))?;
+    
+    store.delete(REFRESH_TOKEN_KEY)
+        .map_err(|e| format!("Failed to delete refresh token: {}", e))?;
+
+    store.save().map_err(|e| format!("Failed to persist changes: {}", e))?;
+    
+    log::info!("Tokens cleared from secure storage");
+    Ok(())
+}
+
+/// Get the current access token from secure storage (for protocol handler)
+async fn get_access_token(app: &tauri::AppHandle) -> Option<String> {
+    let store = StoreBuilder::new(app, TOKEN_STORE_FILE)
+        .build()
+        .ok()?;
+
+    store.get(ACCESS_TOKEN_KEY)
+        .and_then(|v| v.as_str().map(String::from))
+}
+
+/// Proxy request to embedded backend with token authentication
+async fn proxy_to_embedded_backend(
+    app_handle: tauri::AppHandle,
+    request: TauriRequest<Vec<u8>>
+) -> Result<TauriResponse<Vec<u8>>, String> {
     // Create HTTP client that accepts self-signed certs for localhost only
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)  // Safe: only for localhost communication
         .timeout(std::time::Duration::from_secs(30))
+        .cookie_store(false)  // Disable reqwest cookie handling
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -166,17 +268,27 @@ async fn proxy_to_embedded_backend(request: TauriRequest<Vec<u8>>) -> Result<Tau
         .map(|pq| pq.as_str())
         .unwrap_or("/");
 
-    // Construct backend URL (embedded backend on localhost:8080)
-    let url = format!("https://localhost:8080{}", path);
-    log::debug!("Proxying {} {} to {}", method, path, url);
+    // Construct backend URL (embedded backend on localhost:38080)
+    let url_str = format!("https://localhost:38080{}", path);
+    let url = Url::parse(&url_str)
+        .map_err(|e| format!("Failed to parse URL: {}", e))?;
+
+    log::info!("Proxying {} {} to {}", method, path, url_str);
 
     // Build request
-    let mut req = client.request(method, &url);
+    let mut req = client.request(method, url.clone());
 
-    // Forward headers (exclude Host header to avoid conflicts)
+    // Get access token from secure storage and add as Authorization header
+    if let Some(access_token) = get_access_token(&app_handle).await {
+        log::info!("Adding Bearer token to request");
+        req = req.header("Authorization", format!("Bearer {}", access_token));
+    }
+
+    // Forward other headers (except host and cookie - we use tokens now)
     for (name, value) in request.headers() {
-        if name != "host" {
+        if name != "host" && name != "cookie" {
             if let Ok(value_str) = value.to_str() {
+                log::debug!("Forwarding header: {}: {}", name, value_str);
                 req = req.header(name.as_str(), value_str);
             }
         }
@@ -196,9 +308,12 @@ async fn proxy_to_embedded_backend(request: TauriRequest<Vec<u8>>) -> Result<Tau
     let status = response.status();
     let mut builder = TauriResponse::builder().status(status.as_u16());
 
-    // Forward response headers
+    // Forward response headers (except Set-Cookie - we use tokens now)
     for (name, value) in response.headers() {
-        builder = builder.header(name.as_str(), value.as_bytes());
+        if name != "set-cookie" {
+            log::debug!("Response header: {}: {:?}", name, value);
+            builder = builder.header(name.as_str(), value.as_bytes());
+        }
     }
 
     // Forward body
@@ -223,17 +338,25 @@ fn error_response(error: String) -> TauriResponse<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         // Register custom protocol for proxying to embedded backend
         // This allows the WebView to connect without certificate validation issues
-        .register_asynchronous_uri_scheme_protocol("scribe", |_app, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("scribe", |app, request, responder| {
+            let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                let response = match proxy_to_embedded_backend(request).await {
+                let response = match proxy_to_embedded_backend(app_handle, request).await {
                     Ok(resp) => resp,
                     Err(e) => error_response(e),
                 };
                 responder.respond(response);
             });
         })
+        // Register token management commands
+        .invoke_handler(tauri::generate_handler![
+            save_tokens,
+            load_tokens,
+            clear_tokens
+        ])
         .setup(|app| {
             // Setup logging
             if cfg!(debug_assertions) {

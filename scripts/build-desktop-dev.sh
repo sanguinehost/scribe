@@ -9,10 +9,29 @@
 # 4. Binary placement for Tauri sidecar
 # 5. Validation and Tauri dev server startup
 #
-# Usage: ./scripts/build-desktop-dev.sh
+# Usage: ./scripts/build-desktop-dev.sh [--clean]
+#
+# Options:
+#   --clean    Perform a full clean rebuild (removes all Cargo build cache)
 #
 
 set -euo pipefail
+
+# Parse command line flags
+CLEAN_BUILD=false
+for arg in "$@"; do
+    case $arg in
+        --clean)
+            CLEAN_BUILD=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Usage: $0 [--clean]"
+            exit 1
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -42,7 +61,11 @@ log_warn() {
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-log_info "Building Scribe Desktop (Development Mode)"
+if [ "$CLEAN_BUILD" = true ]; then
+    log_info "Building Scribe Desktop (Development Mode - FULL CLEAN REBUILD)"
+else
+    log_info "Building Scribe Desktop (Development Mode)"
+fi
 echo "Project root: $PROJECT_ROOT"
 echo ""
 
@@ -89,11 +112,38 @@ if [ -d "$PROJECT_ROOT/frontend/.svelte-kit" ]; then
     log_success "Cleaned: frontend/.svelte-kit/"
 fi
 
-# Clean backend build artifacts (scribe-backend binary only)
-if [ -f "$PROJECT_ROOT/target/debug/scribe-backend" ]; then
-    log_info "Removing backend binary..."
-    rm -f "$PROJECT_ROOT/target/debug/scribe-backend"
-    log_success "Cleaned: target/debug/scribe-backend"
+# Clean backend build artifacts
+if [ "$CLEAN_BUILD" = true ]; then
+    # Full clean: Remove entire Cargo target directory for complete rebuild
+    if [ -d "$PROJECT_ROOT/target" ]; then
+        log_info "FULL CLEAN: Removing entire Cargo target directory..."
+        BEFORE_SIZE=$(du -sh "$PROJECT_ROOT/target" 2>/dev/null | cut -f1 || echo "unknown")
+        rm -rf "$PROJECT_ROOT/target"
+        log_success "Cleaned: target/ (was $BEFORE_SIZE)"
+    fi
+
+    # Also clean frontend node_modules for thoroughness
+    if [ -d "$PROJECT_ROOT/frontend/node_modules" ]; then
+        log_info "FULL CLEAN: Removing frontend node_modules..."
+        BEFORE_SIZE=$(du -sh "$PROJECT_ROOT/frontend/node_modules" 2>/dev/null | cut -f1 || echo "unknown")
+        rm -rf "$PROJECT_ROOT/frontend/node_modules"
+        log_success "Cleaned: frontend/node_modules/ (was $BEFORE_SIZE)"
+        log_warn "Will run 'pnpm install' to restore dependencies..."
+    fi
+else
+    # Normal clean: Just remove the scribe-backend binary
+    if [ -f "$PROJECT_ROOT/target/debug/scribe-backend" ]; then
+        log_info "Removing backend binary..."
+        rm -f "$PROJECT_ROOT/target/debug/scribe-backend"
+        log_success "Cleaned: target/debug/scribe-backend"
+    fi
+
+    # Also remove the scribe-backend fingerprint to force rebuild
+    if [ -d "$PROJECT_ROOT/target/debug/.fingerprint/scribe-backend-"* ]; then
+        log_info "Removing backend build fingerprints..."
+        rm -rf "$PROJECT_ROOT/target/debug/.fingerprint/scribe-backend-"*
+        log_success "Cleaned: scribe-backend fingerprints"
+    fi
 fi
 
 # Clean desktop binaries directory
@@ -105,6 +155,16 @@ fi
 
 log_success "All stale artifacts cleaned successfully"
 echo ""
+
+# Step 2.5: Restore frontend dependencies if cleaned
+if [ "$CLEAN_BUILD" = true ] && [ ! -d "$PROJECT_ROOT/frontend/node_modules" ]; then
+    log_info "Step 2.5/7: Restoring frontend dependencies..."
+    cd "$PROJECT_ROOT/frontend"
+    log_info "Running: pnpm install"
+    pnpm install
+    log_success "Frontend dependencies restored"
+    echo ""
+fi
 
 # Step 3: Build frontend for desktop
 log_info "Step 3/7: Building frontend with desktop configuration..."

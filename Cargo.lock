@@ -10152,6 +10152,7 @@ dependencies = [
  "diesel-derive-enum",
  "diesel_json",
  "diesel_migrations",
+ "dirs 5.0.1",
  "dotenvy",
  "envy",
  "flate2",
@@ -10277,6 +10278,8 @@ dependencies = [
  "diesel_migrations",
  "dirs 5.0.1",
  "log",
+ "once_cell",
+ "parking_lot 0.12.5",
  "rand 0.8.5",
  "reqwest",
  "scribe-backend",
@@ -10286,8 +10289,10 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-log",
  "tauri-plugin-shell",
+ "tauri-plugin-store",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -11604,6 +11609,22 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.17",
  "tokio",
+]
+
+[[package]]
+name = "tauri-plugin-store"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59a77036340a97eb5bbe1b3209c31e5f27f75e6f92a52fd9dd4b211ef08bf310"
+dependencies = [
+ "dunce",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

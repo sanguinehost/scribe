@@ -424,6 +424,8 @@ impl AuthUser for User {
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewUser {
+    // Always provide explicit ID (required for SQLite)
+    pub id: DbId,
     pub username: String,
     pub password_hash: String,
     pub email: String,

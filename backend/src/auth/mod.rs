@@ -322,7 +322,12 @@ pub fn create_user_sync(
     };
 
     // 3. Create a NewUser instance
+    // Generate UUID for both backends (required for SQLite, overrides DEFAULT for PostgreSQL)
+    let user_id = crate::db::DbId::new();
+
     let new_user = NewUser {
+        #[cfg(feature = "sqlite-backend")]
+        id: user_id,
         username: credentials.username.clone(), // Clone username from credentials
         password_hash,                          // Use the pre-hashed password
         email: credentials.email.clone(),       // Clone email from credentials
@@ -538,11 +543,15 @@ pub fn verify_credentials(
 pub mod session_dek;
 pub mod session_rotation;
 pub mod session_store;
+pub mod token_auth;
+pub mod token_service;
 pub mod user_store;
 
 pub use session_dek::SessionDek;
 pub use session_rotation::session_rotation_middleware;
 pub use session_store::DieselSessionStore;
+pub use token_auth::{CurrentAuth, UnifiedAuth, UnifiedAuthSession};
+pub use token_service::{TokenClaims, TokenPair, TokenService, TokenType};
 pub use user_store::{Backend as AuthBackend, UserCryptoFields};
 
 /// Hashes a password using bcrypt with the default cost factor.

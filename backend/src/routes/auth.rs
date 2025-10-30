@@ -14,9 +14,8 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use axum_login::{AuthSession, AuthUser};
-// use secrecy::{ExposeSecret, Secret}; // Commenting out as they are unused now
-// Added back for DEK length logging
+use axum_login::{AuthSession, AuthUser, AuthnBackend};
+use secrecy::SecretString;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -65,21 +64,80 @@ pub struct LoginSuccessResponse {
     pub expires_at: crate::DbTimestamp,
 }
 
+// Desktop-specific request/response types (feature-gated)
+#[cfg(feature = "desktop")]
+#[derive(Debug, Serialize)]
+pub struct DesktopConfigResponse {
+    pub setup_complete: bool,
+    pub auth_mode: String, // "quick_start" | "account"
+    pub deployment_mode: String, // "local" | "remote"
+}
+
+#[cfg(feature = "desktop")]
+#[derive(Debug, Deserialize)]
+pub struct DesktopSetupPayload {
+    pub auth_mode: String, // "quick_start" | "account"
+}
+
+#[cfg(feature = "desktop")]
+#[derive(Debug, Deserialize)]
+pub struct DesktopUpgradeAccountPayload {
+    pub username: String,
+    pub password: SecretString,
+}
+
 pub fn auth_routes() -> Router<AppState> {
-    Router::new()
-        .route("/register", post(register_handler))
-        .route("/login", post(login_handler))
-        .route("/verify-email", post(verify_email_handler))
-        .route("/logout", post(logout_handler))
-        .route("/invalidate-session", post(invalidate_session_handler))
-        .route("/me", get(me_handler))
-        .route("/change-password", post(change_password_handler))
-        .route("/recover-password", post(recover_password_handler))
-        .route("/session", post(create_session_handler))
-        .route("/session/current", get(get_session_handler))
-        .route("/session/{id}", delete(delete_session_handler))
-        .route("/session/{id}/extend", post(extend_session_handler))
-        .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
+    #[cfg(feature = "desktop")]
+    {
+        Router::new()
+            .route("/register", post(register_handler))
+            .route("/login", post(login_handler))
+            .route("/verify-email", post(verify_email_handler))
+            .route("/logout", post(logout_handler))
+            .route("/invalidate-session", post(invalidate_session_handler))
+            .route("/me", get(me_handler))
+            .route("/change-password", post(change_password_handler))
+            .route("/recover-password", post(recover_password_handler))
+            .route("/session", post(create_session_handler))
+            .route("/session/current", get(get_session_handler))
+            .route("/session/{id}", delete(delete_session_handler))
+            .route("/session/{id}/extend", post(extend_session_handler))
+            .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
+            // Desktop-specific routes
+            .route("/desktop/config", get(get_desktop_config_handler))
+            .route("/desktop/setup", post(desktop_setup_handler))
+            .route("/desktop/auto-login", get(desktop_auto_login_handler))
+            .route(
+                "/desktop/upgrade-account",
+                post(desktop_upgrade_account_handler),
+            )
+            // Token-based authentication endpoints
+            .route("/token/login", post(token_login_handler))
+            .route("/token/refresh", post(token_refresh_handler))
+            .route("/token/logout", post(token_logout_handler))
+    }
+
+    #[cfg(not(feature = "desktop"))]
+    {
+        Router::new()
+            .route("/register", post(register_handler))
+            .route("/login", post(login_handler))
+            .route("/verify-email", post(verify_email_handler))
+            .route("/logout", post(logout_handler))
+            .route("/invalidate-session", post(invalidate_session_handler))
+            .route("/me", get(me_handler))
+            .route("/change-password", post(change_password_handler))
+            .route("/recover-password", post(recover_password_handler))
+            .route("/session", post(create_session_handler))
+            .route("/session/current", get(get_session_handler))
+            .route("/session/{id}", delete(delete_session_handler))
+            .route("/session/{id}/extend", post(extend_session_handler))
+            .route("/user/{id}/sessions", delete(delete_user_sessions_handler))
+            // Token-based authentication endpoints (available for all backends)
+            .route("/token/login", post(token_login_handler))
+            .route("/token/refresh", post(token_refresh_handler))
+            .route("/token/logout", post(token_logout_handler))
+    }
 }
 
 #[instrument(skip(state, payload), err)]
@@ -1036,4 +1094,531 @@ pub async fn recover_password_handler(
             ))
         }
     }
+}
+
+// Desktop-specific handlers (feature-gated)
+#[cfg(feature = "desktop")]
+#[instrument(err)]
+pub async fn get_desktop_config_handler() -> Result<Response, AppError> {
+    info!("Desktop config handler entered");
+
+    let config = crate::desktop::load_desktop_config()?;
+
+    let response = DesktopConfigResponse {
+        setup_complete: config.setup_complete,
+        auth_mode: match config.auth_mode {
+            Some(crate::desktop::AuthMode::QuickStart) => "quick_start".to_string(),
+            Some(crate::desktop::AuthMode::Account) => "account".to_string(),
+            None => "not_set".to_string(),
+        },
+        deployment_mode: match config.deployment_mode {
+            crate::desktop::DeploymentMode::Local => "local".to_string(),
+            crate::desktop::DeploymentMode::Remote => "remote".to_string(),
+        },
+    };
+
+    Ok(Json(response).into_response())
+}
+
+#[cfg(feature = "desktop")]
+#[instrument(skip(state, auth_session, session, payload), err)]
+pub async fn desktop_setup_handler(
+    State(state): State<AppState>,
+    mut auth_session: CurrentAuthSession,
+    session: Session,
+    Json(payload): Json<DesktopSetupPayload>,
+) -> Result<Response, AppError> {
+    info!("🔧 Desktop setup handler entered");
+    info!("📝 Requested auth_mode: {}", payload.auth_mode);
+
+    // Parse auth mode
+    let auth_mode = match payload.auth_mode.as_str() {
+        "quick_start" => {
+            info!("✅ Parsed auth_mode: QuickStart");
+            crate::desktop::AuthMode::QuickStart
+        }
+        "account" => {
+            info!("✅ Parsed auth_mode: Account");
+            crate::desktop::AuthMode::Account
+        }
+        _ => {
+            error!("❌ Invalid auth_mode received: {}", payload.auth_mode);
+            return Err(AppError::BadRequest(
+                "Invalid auth_mode. Must be 'quick_start' or 'account'".to_string(),
+            ));
+        }
+    };
+
+    // Save auth mode to config
+    info!("💾 Saving auth_mode to desktop config...");
+    if let Err(e) = crate::desktop::set_auth_mode(auth_mode) {
+        error!("❌ Failed to save auth_mode: {:?}", e);
+        return Err(e);
+    }
+    info!("✅ Auth mode saved successfully");
+
+    info!("💾 Marking setup as complete...");
+    if let Err(e) = crate::desktop::mark_setup_complete() {
+        error!("❌ Failed to mark setup complete: {:?}", e);
+        return Err(e);
+    }
+    info!("✅ Setup marked as complete");
+
+    info!("🎉 Desktop setup complete with mode: {:?}", auth_mode);
+
+    // If Quick Start mode, create default user and auto-login
+    if matches!(auth_mode, crate::desktop::AuthMode::QuickStart) {
+        info!("👤 Quick Start mode selected - creating default user and auto-logging in");
+
+        // Ensure default user exists
+        // Get a connection using the pool helper (handles async/sync difference)
+        info!("🔌 Getting database connection...");
+        let mut conn = match crate::db::get_conn(&state.pool).await {
+            Ok(c) => {
+                info!("✅ Database connection acquired");
+                c
+            }
+            Err(e) => {
+                error!("❌ Failed to get database connection: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        info!("🏭 Creating/loading default user...");
+        let user = match crate::desktop::ensure_default_user_exists(&mut conn).await {
+            Ok(u) => {
+                info!("✅ Default user ready: id={}, username={}", u.id, u.username);
+                u
+            }
+            Err(e) => {
+                error!("❌ Failed to create/load default user: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        info!("🔐 Establishing session for user {}...", user.id);
+
+        // Log the user in
+        if let Err(e) = auth_session.login(&user).await {
+            error!("❌ Failed to log in default user {}: {:?}", user.id, e);
+            return Err(AppError::InternalServerErrorGeneric(
+                format!("Failed to establish session for default user: {}", e),
+            ));
+        }
+        info!("✅ Session established successfully");
+
+        // Rotate session ID to prevent session fixation
+        info!("🔄 Rotating session ID...");
+        if let Err(e) = session.cycle_id().await {
+            error!("❌ Failed to rotate session ID for user {}: {:?}", user.id, e);
+            return Err(AppError::InternalServerErrorGeneric(
+                format!("Failed to rotate session ID: {}", e),
+            ));
+        }
+        info!("✅ Session ID rotated");
+
+        info!("🎉 Default user auto-login successful for user {}", user.id);
+
+        // Get session details for response
+        let session_id_str = session
+            .id()
+            .map_or_else(|| "error_retrieving_session_id".to_string(), |id| id.0.to_string());
+
+        let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
+            AppError::InternalServerErrorGeneric(
+                "Failed to process session expiry".to_string(),
+            )
+        })?;
+
+        let response = LoginSuccessResponse {
+            user: AuthResponse {
+                user_id: user.id,
+                username: user.username,
+                email: user.email,
+                role: format!("{:?}", user.role),
+                recovery_key: None,
+                default_persona_id: user.default_persona_id,
+            },
+            session_id: session_id_str,
+            expires_at: expires_at_utc,
+        };
+
+        Ok((StatusCode::OK, Json(response)).into_response())
+    } else {
+        // Account mode - setup complete, user will need to register/login
+        Ok((
+            StatusCode::OK,
+            Json(json!({
+                "message": "Setup complete. Please create an account to continue.",
+                "setup_complete": true
+            })),
+        )
+            .into_response())
+    }
+}
+
+#[cfg(feature = "desktop")]
+#[instrument(skip(state, auth_session, session), err)]
+pub async fn desktop_auto_login_handler(
+    State(state): State<AppState>,
+    mut auth_session: CurrentAuthSession,
+    session: Session,
+) -> Result<Response, AppError> {
+    info!("Desktop auto-login handler entered");
+
+    // Check if Quick Start mode is enabled
+    let auth_mode = crate::desktop::get_auth_mode()?;
+    if !matches!(auth_mode, Some(crate::desktop::AuthMode::QuickStart)) {
+        return Err(AppError::Forbidden(
+            "Auto-login is only available in Quick Start mode".to_string(),
+        ));
+    }
+
+    // Get or create default user
+    let pool = state.pool.clone();
+    let user_id = match crate::desktop::get_default_user_id()? {
+        Some(id) => {
+            debug!(?id, "Using existing default user");
+            id
+        }
+        None => {
+            info!("No default user ID in config, checking if user exists in database");
+
+            // First try to find existing user by username
+            let pool_clone = pool.clone();
+            let existing_user_result = crate::db::with_conn(&pool_clone, move |conn| {
+                crate::auth::get_user_by_username(conn, "quickstart_user")
+                    .map_err(AppError::from)
+            })
+            .await;
+
+            let user_id = if let Ok(user) = existing_user_result {
+                info!(?user.id, "Found existing quickstart_user, saving to config");
+                crate::desktop::set_default_user_id(user.id)?;
+                user.id
+            } else {
+                info!("No quickstart_user found in database, creating new user");
+                // Create default user
+                let user_db = crate::auth::user_store::create_user_in_db(
+                    &pool,
+                    "quickstart_user",
+                    "default_password_12345",
+                    "quickstart@localhost",
+                    None,
+                )
+                .await
+                .map_err(|e| {
+                    error!("Failed to create default user: {}", e);
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Failed to create default user: {}",
+                        e
+                    ))
+                })?;
+
+                // Save user ID to config
+                let user_id = user_db.id;
+                crate::desktop::set_default_user_id(user_id)?;
+                info!(?user_id, "Created and saved default user for Quick Start mode");
+                user_id
+            };
+
+            user_id
+        }
+    };
+
+    debug!(?user_id, "Loading default user for auto-login");
+
+    // Load the user from database
+    let user = crate::db::with_conn(&pool, move |conn| {
+        crate::auth::get_user(conn, user_id).map_err(AppError::from)
+    })
+    .await?;
+
+    // Log the user in
+    if let Err(e) = auth_session.login(&user).await {
+        error!(user_id = %user.id, error = ?e, "Failed to auto-login user");
+        return Err(AppError::InternalServerErrorGeneric(
+            "Failed to establish session for auto-login".to_string(),
+        ));
+    }
+
+    // Rotate session ID
+    if let Err(e) = session.cycle_id().await {
+        error!(user_id = %user.id, error = ?e, "Failed to rotate session ID");
+        return Err(AppError::InternalServerErrorGeneric(
+            "Failed to rotate session ID".to_string(),
+        ));
+    }
+
+    info!(user_id = %user.id, "Auto-login successful");
+
+    // Get session details for response
+    let session_id_str = session
+        .id()
+        .map_or_else(|| "error_retrieving_session_id".to_string(), |id| id.0.to_string());
+
+    let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
+        AppError::InternalServerErrorGeneric("Failed to process session expiry".to_string())
+    })?;
+
+    let response = LoginSuccessResponse {
+        user: AuthResponse {
+            user_id: user.id,
+            username: user.username,
+            email: user.email,
+            role: format!("{:?}", user.role),
+            recovery_key: None,
+            default_persona_id: user.default_persona_id,
+        },
+        session_id: session_id_str,
+        expires_at: expires_at_utc,
+    };
+
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+#[cfg(feature = "desktop")]
+#[instrument(skip(state, auth_session, payload), err)]
+pub async fn desktop_upgrade_account_handler(
+    State(state): State<AppState>,
+    auth_session: CurrentAuthSession,
+    Json(payload): Json<DesktopUpgradeAccountPayload>,
+) -> Result<Response, AppError> {
+    info!("Desktop upgrade account handler entered");
+
+    // Ensure user is authenticated
+    let authenticated_user = auth_session.user.ok_or_else(|| {
+        AppError::Unauthorized("Must be logged in to upgrade account".to_string())
+    })?;
+
+    // Check if Quick Start mode is active
+    let auth_mode = crate::desktop::get_auth_mode()?;
+    if !matches!(auth_mode, Some(crate::desktop::AuthMode::QuickStart)) {
+        return Err(AppError::BadRequest(
+            "Account upgrade is only available in Quick Start mode".to_string(),
+        ));
+    }
+
+    info!(user_id = %authenticated_user.id, "Upgrading Quick Start user to full account");
+
+    // Hash the new password
+    let password_hash = crate::auth::hash_password(payload.password)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to hash password during account upgrade");
+            AppError::PasswordProcessingError
+        })?;
+
+    // Update the user's credentials in the database
+    let pool = state.pool.clone();
+    let user_id = authenticated_user.id;
+    let new_username = payload.username.clone();
+
+    crate::db::with_conn(&pool, move |conn| {
+        use crate::schema::users;
+        use diesel::prelude::*;
+
+        diesel::update(users::table.find(user_id))
+            .set((
+                users::username.eq(new_username),
+                users::password_hash.eq(password_hash.as_str()),
+            ))
+            .execute(conn)
+            .map_err(|e| {
+                error!(error = ?e, "Failed to update user credentials during upgrade");
+                AppError::DatabaseQueryError(e.to_string())
+            })
+    })
+    .await?;
+
+    // Switch to Account mode
+    crate::desktop::set_auth_mode(crate::desktop::AuthMode::Account)?;
+
+    info!(user_id = %authenticated_user.id, "Account upgrade successful, switched to Account mode");
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Account upgraded successfully. Please log in with your new credentials.",
+            "auth_mode": "account"
+        })),
+    )
+        .into_response())
+}
+
+// ========================= TOKEN AUTHENTICATION ENDPOINTS =========================
+// These endpoints provide JWT token-based authentication for the desktop application
+// They work alongside the existing cookie-based auth for web clients
+
+/// Request payload for token-based login
+#[derive(Debug, Deserialize)]
+pub struct TokenLoginRequest {
+    pub identifier: String,  // Username or email
+    pub password: SecretString,
+}
+
+/// Response payload for successful token login
+#[derive(Debug, Serialize)]
+pub struct TokenLoginResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: i64,  // seconds until access token expires
+    pub user: AuthResponse,
+}
+
+/// Request payload for token refresh
+#[derive(Debug, Deserialize)]
+pub struct TokenRefreshRequest {
+    pub refresh_token: String,
+}
+
+/// Response payload for successful token refresh
+#[derive(Debug, Serialize)]
+pub struct TokenRefreshResponse {
+    pub access_token: String,
+    pub expires_in: i64,  // seconds until access token expires
+}
+
+/// Token-based login handler for desktop application
+/// This endpoint exchanges credentials for a JWT token pair (access + refresh)
+#[instrument(skip(state, payload), err)]
+pub async fn token_login_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<TokenLoginRequest>,
+) -> Result<Response, AppError> {
+    let client_ip = extract_and_anonymize_ip(&headers);
+    info!(client_ip = %client_ip, "Attempting token-based login");
+
+    // Get the token service
+    let token_service = state.token_service
+        .as_ref()
+        .ok_or_else(|| {
+            error!("Token service not available");
+            AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
+        })?;
+
+    // Convert TokenLoginRequest to LoginPayload for authentication
+    let login_payload = LoginPayload {
+        identifier: payload.identifier.clone(),
+        password: payload.password,
+    };
+
+    // Authenticate the user using the existing auth backend
+    let pool = state.pool.clone();
+    let auth_backend = state.auth_backend.clone();
+    
+    // Use the authenticate method from AuthBackend
+    match auth_backend.authenticate(login_payload).await {
+        Ok(Some(user)) => {
+            let user_id = user.id;
+            info!(%user_id, "Token authentication successful");
+
+            // Generate a session ID for this token session
+            let session_id = Uuid::new_v4().to_string();
+
+            // Generate token pair
+            let token_pair = token_service
+                .generate_token_pair(user_id)
+                .map_err(|e| {
+                    error!(%user_id, error = ?e, "Failed to generate token pair");
+                    AppError::InternalServerErrorGeneric("Token generation failed".to_string())
+                })?;
+
+            // Record successful authentication
+            let user_hash = loggable_user_id(user_id);
+            SECURITY_METRICS.record_auth_success(&user_hash.to_string(), &client_ip);
+
+            let response = TokenLoginResponse {
+                access_token: token_pair.access_token,
+                refresh_token: token_pair.refresh_token,
+                expires_in: token_pair.expires_in,
+                user: AuthResponse {
+                    user_id: user.id,
+                    username: user.username,
+                    email: user.email,
+                    role: format!("{:?}", user.role),
+                    recovery_key: None,
+                    default_persona_id: user.default_persona_id,
+                },
+            };
+
+            Ok((StatusCode::OK, Json(response)).into_response())
+        }
+        Ok(None) => {
+            warn!(client_ip = %client_ip, "Token login failed: Wrong credentials");
+            SECURITY_METRICS.record_auth_failure("unknown", &client_ip);
+            Err(AppError::Unauthorized("Invalid identifier or password".to_string()))
+        }
+        Err(auth_err) => {
+            error!(error = ?auth_err, "Token login failed due to authentication error");
+            // The error is already AuthError directly, not wrapped
+            match auth_err {
+                AuthError::WrongCredentials | AuthError::UserNotFound => {
+                    warn!(client_ip = %client_ip, "Token login failed: Wrong credentials");
+                    SECURITY_METRICS.record_auth_failure("unknown", &client_ip);
+                    Err(AppError::Unauthorized("Invalid identifier or password".to_string()))
+                }
+                AuthError::AccountLocked => {
+                    Err(AppError::Unauthorized("Your account is locked. Please contact an administrator.".to_string()))
+                }
+                AuthError::AccountPendingVerification => {
+                    Err(AppError::Forbidden("Your account is pending email verification.".to_string()))
+                }
+                _ => Err(AppError::InternalServerErrorGeneric("Authentication error".to_string()))
+            }
+        }
+    }
+}
+
+/// Token refresh handler for desktop application
+/// This endpoint exchanges a valid refresh token for a new access token
+#[instrument(skip(state, payload), err)]
+pub async fn token_refresh_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<TokenRefreshRequest>,
+) -> Result<Response, AppError> {
+    info!("Attempting token refresh");
+
+    // Get the token service
+    let token_service = state.token_service
+        .as_ref()
+        .ok_or_else(|| {
+            error!("Token service not available");
+            AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
+        })?;
+
+    // Refresh the access token
+    let new_access_token = token_service
+        .refresh_access_token(&payload.refresh_token)
+        .map_err(|e| {
+            warn!(error = ?e, "Token refresh failed");
+            e
+        })?;
+
+    // Get token duration from service (15 minutes by default)
+    let expires_in = 15 * 60; // 15 minutes in seconds
+
+    let response = TokenRefreshResponse {
+        access_token: new_access_token,
+        expires_in,
+    };
+
+    Ok((StatusCode::OK, Json(response)).into_response())
+}
+
+/// Token logout handler (informational only)
+/// Since JWTs are stateless, this endpoint simply confirms logout
+/// The client should discard the tokens locally
+#[instrument(skip(_state), err)]
+pub async fn token_logout_handler(
+    State(_state): State<AppState>,
+) -> Result<Response, AppError> {
+    info!("Token logout requested");
+    
+    // For stateless JWT tokens, logout is handled client-side
+    // This endpoint exists for API completeness and logging
+    Ok((StatusCode::OK, Json(json!({
+        "message": "Logout successful. Please discard your tokens."
+    }))).into_response())
 }
