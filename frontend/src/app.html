@@ -7,6 +7,39 @@
 		%sveltekit.head%
 	</head>
 	<body class="antialiased" data-sveltekit-preload-data="hover">
+		<!-- Loading overlay (hidden once auth initializes) -->
+		<div id="loading-overlay" class="loading-overlay">
+			<div class="loading-content">
+				<svg class="loading-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+					<circle
+						cx="50"
+						cy="50"
+						r="40"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="4"
+						opacity="0.2"
+					/>
+					<path
+						d="M50 10 A40 40 0 0 1 50 90"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="4"
+						stroke-linecap="round"
+					>
+						<animateTransform
+							attributeName="transform"
+							type="rotate"
+							from="0 50 50"
+							to="360 50 50"
+							dur="1s"
+							repeatCount="indefinite"
+						/>
+					</path>
+				</svg>
+				<div class="loading-text">Loading...</div>
+			</div>
+		</div>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

@@ -131,10 +131,19 @@ import {
 import { browser as _browser } from '$app/environment'; // To check if in browser context
 import { env } from '$env/dynamic/public';
 
+// Helper to check if running in Tauri desktop environment
+function isDesktopApp(): boolean {
+	return _browser && typeof window !== 'undefined' && '__TAURI__' in window;
+}
+
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
 	private fetchFn: typeof fetch = globalThis.fetch;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private desktopAuthService: any = null; // Dynamically loaded for desktop mode
+	private desktopAuthInitialized = false;
+	private readonly DEFAULT_TIMEOUT_MS = 30000; // 30 second timeout to prevent indefinite hangs
 
 	constructor(baseUrl: string = '') {
 		// Handle undefined/null environment variables gracefully
@@ -166,6 +175,55 @@ class ApiClient {
 		this.fetchFn = fetchFn;
 	}
 
+	// Initialize desktop auth service if in Tauri environment
+	private async initDesktopAuth(): Promise<void> {
+		if (this.desktopAuthInitialized) return;
+
+		if (isDesktopApp()) {
+			try {
+				const { desktopAuth } = await import('$lib/api/desktop-auth');
+				this.desktopAuthService = desktopAuth;
+				await this.desktopAuthService.initialize();
+				this.desktopAuthInitialized = true;
+				console.log('[ApiClient] Desktop authentication initialized');
+			} catch (error) {
+				console.error('[ApiClient] Failed to initialize desktop auth:', error);
+				// Don't set initialized flag on failure - allow retry
+			}
+		}
+	}
+
+	// Force desktop auth to reload tokens from secure storage
+	// Called after auto-login saves new tokens to ensure they're loaded into memory
+	async reinitializeDesktopAuth(): Promise<void> {
+		if (isDesktopApp()) {
+			// Ensure desktop auth service is initialized first
+			await this.initDesktopAuth();
+
+			if (this.desktopAuthService) {
+				console.log('[ApiClient] Forcing desktop auth reload from storage...');
+				await this.desktopAuthService.initialize();
+				console.log('[ApiClient] Desktop auth credentials reloaded');
+			}
+		}
+	}
+
+	// Get authentication headers (JWT for desktop, nothing for web - uses cookies)
+	private async getAuthHeaders(): Promise<Record<string, string>> {
+		if (isDesktopApp() && this.desktopAuthService) {
+			// Ensure token is valid before making request
+			const tokenResult = await this.desktopAuthService.ensureValidToken();
+			if (tokenResult.isOk()) {
+				return this.desktopAuthService.getAuthHeaders();
+			} else {
+				console.warn('[ApiClient] Token validation failed:', tokenResult.error);
+				// Token refresh failed, might need to redirect to login
+				// For now, continue without auth headers and let backend return 401
+			}
+		}
+		return {};
+	}
+
 	// Generic fetch method with error handling
 	private async fetch<T>(
 		endpoint: string,
@@ -186,27 +244,54 @@ class ApiClient {
 			return err(new ApiNetworkError('No fetch function available', error));
 		}
 
+		// Initialize desktop auth if needed
+		await this.initDesktopAuth();
+
+		// Get authentication headers (JWT for desktop, empty for web)
+		const authHeaders = await this.getAuthHeaders();
+
 		// Add debug logging for production debugging
 		const fullUrl = `${this.baseUrl}${endpoint}`;
 		console.log(`[${new Date().toISOString()}] ApiClient.fetch: Making request to ${fullUrl}`, {
 			method: options.method || 'GET',
 			headers: options.headers,
 			credentials: 'include',
-			baseUrl: this.baseUrl
+			baseUrl: this.baseUrl,
+			authMode: Object.keys(authHeaders).length > 0 ? 'JWT' : 'Cookie'
 		});
+
+		// Create AbortController for timeout
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => {
+			controller.abort();
+			console.warn(`[ApiClient] Request timeout after ${this.DEFAULT_TIMEOUT_MS}ms: ${fullUrl}`);
+		}, this.DEFAULT_TIMEOUT_MS);
 
 		try {
 			let response: Response;
 			try {
 				response = await fetchFn(fullUrl, {
 					...options,
-					credentials: 'include',
+					credentials: 'include', // Keep for cookie auth in web mode
+					signal: controller.signal, // Add abort signal for timeout
 					headers: {
 						'Content-Type': 'application/json',
+						...authHeaders, // Add JWT Bearer token for desktop mode
 						...options.headers
 					}
 				});
+				clearTimeout(timeoutId); // Clear timeout on successful response
 			} catch (fetchError) {
+				clearTimeout(timeoutId); // Clear timeout on error
+
+				// Check if error was due to timeout/abort
+				if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+					console.error(`[ApiClient] Request aborted (timeout) for ${endpoint}`);
+					return err(
+						new ApiNetworkError(`Request timeout after ${this.DEFAULT_TIMEOUT_MS}ms`, fetchError)
+					);
+				}
+
 				console.error(`[ApiClient] Immediate fetch error for ${endpoint}:`, fetchError);
 				throw fetchError; // Re-throw to be caught by outer catch
 			}
@@ -246,7 +331,7 @@ class ApiClient {
 				const errorMessage = errorData.message || response.statusText;
 				const errorCode = errorData.error_code; // Structured error code from backend
 
-				// Handle 401 Unauthorized - distinguish between DEK missing and other auth failures
+				// Handle 401 Unauthorized - distinguish between DEK missing, JWT expiration, and other auth failures
 				if (response.status === 401) {
 					// Check if this is a DEK missing error using structured error code
 					// Fallback to string matching for backward compatibility with older backend versions
@@ -276,6 +361,38 @@ class ApiClient {
 
 						return err(new ApiDekMissingError(errorMessage));
 					} else {
+						// Check if we're in desktop mode with JWT authentication
+						if (isDesktopApp() && this.desktopAuthService) {
+							console.log(
+								`[${new Date().toISOString()}] ApiClient.fetch: 401 in desktop mode - JWT token expired or invalid. Clearing tokens.`
+							);
+
+							// Clear expired tokens from desktop auth service
+							try {
+								await this.desktopAuthService.logout();
+								console.log(
+									`[${new Date().toISOString()}] ApiClient.fetch: Desktop tokens cleared successfully`
+								);
+							} catch (logoutError) {
+								console.error(
+									`[${new Date().toISOString()}] ApiClient.fetch: Failed to clear desktop tokens:`,
+									logoutError
+								);
+							}
+
+							// Dispatch event to redirect to login
+							if (_browser) {
+								console.log(
+									`[${new Date().toISOString()}] ApiClient.fetch: Dispatching auth:token-expired event`
+								);
+								window.dispatchEvent(
+									new CustomEvent('auth:token-expired', {
+										detail: { reason: 'jwt_expired', endpoint }
+									})
+								);
+							}
+						}
+
 						console.log(
 							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Invalid session or credentials.`
 						);
@@ -494,8 +611,12 @@ class ApiClient {
 
 	async desktopAutoLogin(
 		fetchFn: typeof fetch = globalThis.fetch
-	): Promise<_Result<LoginSuccessData, ApiError>> {
-		return this.fetch<LoginSuccessData>('/api/auth/desktop/auto-login', {}, fetchFn);
+	): Promise<_Result<import('$lib/api/desktop-auth').TokenLoginResponse, ApiError>> {
+		return this.fetch<import('$lib/api/desktop-auth').TokenLoginResponse>(
+			'/api/auth/desktop/auto-login',
+			{},
+			fetchFn
+		);
 	}
 
 	async desktopUpgradeAccount(

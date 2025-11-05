@@ -88,7 +88,7 @@
 			toast.success('Welcome to Sanguine Scribe!', {
 				description: 'Quick Start setup complete. You can start chatting right away.'
 			});
-			goto('/chat');
+			goto('/');
 		} else {
 			toast.error('Setup failed', {
 				description: result.error.message || 'Failed to complete Quick Start setup'
@@ -118,7 +118,7 @@
 			toast.success('Account created!', {
 				description: `Welcome, ${data.user.username}! Your account has been created.`
 			});
-			goto('/chat');
+			goto('/');
 		} else {
 			toast.error('Setup failed', {
 				description: result.error.message || 'Failed to create account'

@@ -95,7 +95,6 @@ export function isDesktopMode(): boolean {
 	console.log('[isDesktopMode] usesCustomProtocol check:', usesCustomProtocol);
 
 	// Fallback checks for additional validation
-	// @ts-expect-error - __TAURI__ is injected by Tauri at runtime
 	const hasTauriApi = typeof window.__TAURI__ !== 'undefined';
 	console.log('[isDesktopMode] window.__TAURI__ check:', hasTauriApi);
 

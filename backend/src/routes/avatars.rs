@@ -1,6 +1,6 @@
 // backend/src/routes/avatars.rs
 
-use crate::auth::user_store::Backend as AuthBackend;
+use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::models::user_assets::{NewUserAsset, UserAsset};
 use crate::schema::user_assets::dsl::user_assets;
@@ -15,12 +15,9 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use axum_login::AuthSession;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use image::ImageFormat;
 use tracing::{debug, error, info, instrument, warn};
-
-type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn avatar_routes() -> Router<AppState> {
     Router::new()
@@ -37,15 +34,15 @@ pub fn avatar_routes() -> Router<AppState> {
 
 // Get user avatar
 #[debug_handler]
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(state, auth), err)]
 pub async fn get_user_avatar(
     Path(user_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
 ) -> Result<Response<Body>, AppError> {
     // Get the user from the session
-    let current_user = auth_session
-        .user
+    let current_user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Users can only access their own avatars
@@ -98,16 +95,16 @@ pub async fn get_user_avatar(
 
 // Upload user avatar
 #[debug_handler]
-#[instrument(skip(state, auth_session, multipart), err)]
+#[instrument(skip(state, auth, multipart), err)]
 pub async fn upload_user_avatar(
     Path(user_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<crate::DbJson>), AppError> {
     // Get the user from the session
-    let current_user = auth_session
-        .user
+    let current_user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Users can only upload their own avatars
@@ -224,15 +221,15 @@ pub async fn upload_user_avatar(
 
 // Delete user avatar
 #[debug_handler]
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(state, auth), err)]
 pub async fn delete_user_avatar(
     Path(user_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
 ) -> Result<StatusCode, AppError> {
     // Get the user from the session
-    let current_user = auth_session
-        .user
+    let current_user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Users can only delete their own avatars
@@ -264,15 +261,15 @@ pub async fn delete_user_avatar(
 
 // Get persona avatar
 #[debug_handler]
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(state, auth), err)]
 pub async fn get_persona_avatar(
     Path(persona_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
 ) -> Result<Response<Body>, AppError> {
-    // Get the user from the session
-    let current_user = auth_session
-        .user
+    // Get the user from the session (cloned for use in closure)
+    let current_user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Load the persona avatar from database (with user ownership check)
@@ -318,16 +315,16 @@ pub async fn get_persona_avatar(
 
 // Upload persona avatar
 #[debug_handler]
-#[instrument(skip(state, auth_session, multipart), err)]
+#[instrument(skip(state, auth, multipart), err)]
 pub async fn upload_persona_avatar(
     Path(persona_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<crate::DbJson>), AppError> {
-    // Get the user from the session
-    let current_user = auth_session
-        .user
+    // Get the user from the session (cloned for use in closure)
+    let current_user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Verify persona ownership (user can only upload avatars for their own personas)
@@ -447,15 +444,15 @@ pub async fn upload_persona_avatar(
 
 // Delete persona avatar
 #[debug_handler]
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(state, auth), err)]
 pub async fn delete_persona_avatar(
     Path(persona_id): Path<crate::db::DbId>,
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
 ) -> Result<StatusCode, AppError> {
-    // Get the user from the session
-    let current_user = auth_session
-        .user
+    // Get the user from the session (cloned for use in closure)
+    let current_user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     let deleted_count = crate::db::with_conn(&state.pool, move |conn_block| {

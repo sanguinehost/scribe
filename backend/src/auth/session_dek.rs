@@ -1,12 +1,16 @@
-use crate::auth::user_store::Backend as AuthBackend;
+use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::privacy::logging::loggable_user_id;
+use crate::AppState;
 use async_trait::async_trait;
-use axum::{extract::FromRequestParts, http::request::Parts};
-use axum_login::AuthSession;
-use secrecy::{ExposeSecret, SecretBox}; // Removed SecretVec
+use axum::{
+    extract::{FromRef, FromRequestParts},
+    http::{header::HeaderName, request::Parts},
+};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use secrecy::{ExposeSecret, SecretBox};
 use std::fmt;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// Represents the session's Data Encryption Key (DEK).
 /// This struct is intended to be used as an Axum request extractor.
@@ -49,55 +53,82 @@ impl fmt::Debug for SessionDek {
 #[async_trait]
 impl<S> FromRequestParts<S> for SessionDek
 where
+    AppState: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // Added detailed logging for test_get_unauthorized debugging
-        tracing::warn!(target: "auth_debug", "SessionDek::from_request_parts called. Parts URI: {:?}", parts.uri);
+        const DEK_HEADER: HeaderName = HeaderName::from_static("x-scribe-dek");
 
-        debug!("SessionDek extractor: Attempting to retrieve DEK from user object.");
+        debug!("SessionDek extractor: Attempting to retrieve DEK.");
 
-        // Extract the AuthSession to get the authenticated user
-        let auth_session: AuthSession<AuthBackend> = AuthSession::from_request_parts(parts, state)
+        // Extract UnifiedAuth to determine auth method and get user for session-based auth
+        let auth = UnifiedAuth::from_request_parts(parts, state)
             .await
-            .map_err(|err| {
-                error!("SessionDek: Failed to extract AuthSession: {:?}", err);
-                AppError::Unauthorized("Failed to extract auth session".to_string())
+            .map_err(|_| AppError::Unauthorized("Authentication required".to_string()))?;
+
+        if !auth.is_authenticated() {
+            warn!("SessionDek: No authenticated user in UnifiedAuth");
+            return Err(AppError::Unauthorized(
+                "No authenticated user found".to_string(),
+            ));
+        }
+
+        // Handle token-based authentication (desktop client)
+        if auth.is_token_auth {
+            debug!(
+                "Auth method is token-based. Looking for DEK in '{}' header.",
+                DEK_HEADER.as_str()
+            );
+            let header_value = parts.headers.get(&DEK_HEADER).ok_or_else(|| {
+                warn!(
+                    "SessionDek extractor: '{}' header missing for token auth.",
+                    DEK_HEADER.as_str()
+                );
+                AppError::DekMissing
             })?;
 
-        // Get the authenticated user
-        let user = auth_session.user.ok_or_else(|| {
-            tracing::warn!(target: "auth_debug", "SessionDek: No authenticated user in AuthSession");
-            AppError::Unauthorized("No authenticated user found".to_string())
-        })?;
+            let b64_dek = header_value.to_str().map_err(|_| {
+                warn!(
+                    "SessionDek extractor: '{}' header contains invalid UTF-8 characters.",
+                    DEK_HEADER.as_str()
+                );
+                AppError::DekInvalid("Header contains invalid characters".to_string())
+            })?;
 
+            let dek_bytes = STANDARD.decode(b64_dek).map_err(|e| {
+                warn!(
+                    "SessionDek extractor: Failed to base64-decode DEK from header: {}",
+                    e
+                );
+                AppError::DekInvalid("Failed to decode DEK".to_string())
+            })?;
+
+            debug!("SessionDek extractor: Successfully retrieved and decoded DEK from header.");
+            return Ok(SessionDek::new(dek_bytes));
+        }
+
+        // Handle session-based authentication (web client)
+        debug!("Auth method is session-based. Looking for DEK in user session object.");
+        let user = auth.user().unwrap(); // Safe to unwrap due to is_authenticated() check above
         let user_id = user.id;
-        tracing::warn!(target: "auth_debug", "SessionDek: Found authenticated user with ID: {}", loggable_user_id(user_id));
 
-        // The AuthBackend's get_user method populates the DEK from cache
-        // So if the user has a DEK, it should be present in the user object
-        user.dek.map_or_else(
+        user.dek.as_ref().map_or_else(
             || {
-                tracing::warn!(target: "auth_debug", "SessionDek: DEK not found in user object for user_id: {}", loggable_user_id(user_id));
                 warn!(
                     user_id = %loggable_user_id(user_id),
-                    "SessionDek extractor: DEK not found in user object. User may need to log in again."
+                    "SessionDek extractor: DEK not found in user session object. User may need to log in again."
                 );
-
                 Err(AppError::DekMissing)
             },
             |dek_wrapper| {
-                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", loggable_user_id(user_id));
                 debug!(
-                    "SessionDek extractor: Successfully retrieved DEK from user object for user_id: {}",
-                    loggable_user_id(user_id)
+                    user_id = %loggable_user_id(user_id),
+                    "SessionDek extractor: Successfully retrieved DEK from user session object"
                 );
-
-                // Convert SerializableSecretDek to SessionDek
                 let dek_bytes_vec = dek_wrapper.expose_secret_bytes().to_vec();
-                Ok(Self(SecretBox::new(Box::new(dek_bytes_vec))))
+                Ok(SessionDek::new(dek_bytes_vec))
             },
         )
     }

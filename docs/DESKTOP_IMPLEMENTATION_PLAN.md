@@ -1,12 +1,66 @@
 # Scribe Desktop Implementation Plan
 
+## Current Status (Updated: 2025-01-04)
+
+### ✅ Completed Progress
+
+**Phase 1.1: Project Setup & Feature Flags** - COMPLETE
+- ✅ Tauri 2.0 initialized and dev server running
+- ✅ Cargo feature flags configured (desktop/cloud modes)
+- ✅ Dependencies added (lancedb, platform-specific libs)
+- ✅ Basic Tauri commands implemented (token storage)
+
+**Phase 1.2: Database Abstraction** - 70% COMPLETE
+- ✅ Database backend trait with unified async interface
+- ✅ PostgreSQL backend fully working (deadpool-diesel)
+- ✅ SQLite type mappings complete (UUID, JSONB, arrays)
+- ✅ Automated migration conversion script (425 lines)
+- ✅ 67 SQLite migrations converted (100% frontend functionality)
+- ⏳ SQLite migrations need testing
+- ⏳ Models need multi-backend updates
+
+**Current Work: Secure Quick Start Architecture** - IN PROGRESS
+- 🔄 Pivoting from insecure DEK transmission to client-side key generation
+- 🔄 Implementing P-256 ECDSA + ChaCha20Poly1305 E2EE architecture
+- 🔄 Adding challenge-response authentication
+
+### 🚨 Critical Architecture Pivot
+
+**Previous Approach** (DEPRECATED - Security Issue):
+```
+Backend generates DEK → Transmits via HTTPS → Client stores → Sends in X-Scribe-Dek header
+❌ Vulnerable to MitM attacks, DEK exposed in transit
+```
+
+**New Approach** (Gemini 2.5 Pro + User Approved):
+```
+Client generates P-256 keypair + DEK → Stores locally → Sends public key only → Challenge-response auth
+✅ DEK never transmitted, client-side E2EE, challenge-response authentication
+```
+
+### 📊 Updated Timeline
+
+**Completed**: ~25 hours (Phase 1.1 + 70% of Phase 1.2)
+
+**Remaining Work**:
+- **Security Architecture** (51-68 hours): Client-side keys, E2EE, challenge-response
+- **Vector Store Integration** (12-15 hours): LanceDB + hybrid search
+- **Platform Builds** (10-12 hours): Windows + macOS signed installers
+- **Performance & Testing** (10-15 hours): Optimization + security validation
+
+**Total Remaining**: 83-110 hours (2-3 weeks at 40hr/week)
+
+**Target Release**: v1.0.0 with production-grade security (E2EE, no key transmission)
+
+---
+
 ## Overview
 
 This document outlines the implementation plan for Scribe Desktop, organized into phased epics with detailed tasks, subtasks, and checkboxes for tracking progress. Each phase follows Test-Driven Development (TDD) principles per `TESTING_PATTERNS.md` and integrates OWASP security testing per `OWASP-TOP-10.md`.
 
-**Realistic Timeline**: 2-3 weeks (40-60 hours of focused work)
 **Target Platforms**: Windows (x64), macOS (Intel + Apple Silicon)
 **Binary Size Goal**: <200MB
+**Security Model**: Client-side E2EE, zero knowledge architecture
 
 ## Compressed Timeline (For Reference)
 
@@ -294,6 +348,269 @@ The following detailed breakdown maintains the original structure for completene
   - [ ] **Test**: Run test with `RUST_LOG=debug` to verify encryption logs
   - [ ] **Test**: Verify no plaintext in SQLite file using `hexdump | grep "test message"`
   - [ ] **DoD**: Encryption roundtrip works end-to-end in SQLite
+
+## Phase 1.5: Secure Quick Start Architecture (NEW - Critical Security Uplift)
+
+### Epic 1.5.1: Client-Side Key Generation & Storage ✅ COMPLETE
+
+**Goal**: Replace insecure DEK transmission with client-side P-256 key generation
+
+**Definition of Done**: Client generates and stores keys locally, no transmission to server
+
+**Timeline**: 4-6 hours (Actual: ~4 hours)
+
+**Completion Date**: 2025-01-04
+
+#### Tasks:
+
+- [x] **Task 1.5.1.1**: Add Tauri Key Generation Commands
+  - [x] Subtask: Add `p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }` to `desktop/Cargo.toml`
+  - [x] Subtask: Add `base64 = "0.21"` and `hex = "0.4"` for encoding
+  - [x] Subtask: Create `#[tauri::command] generate_quick_start_keys()` - desktop/src/lib.rs:282
+    - Generates P-256 ECDSA signing key using OsRng
+    - Generates 32-byte DEK for ChaCha20Poly1305
+    - Stores private key (PKCS#8 PEM) + DEK (base64) in Tauri secure storage
+    - Returns PEM-encoded public key for backend registration
+  - [x] Subtask: Create `#[tauri::command] sign_challenge(challenge: String)` - desktop/src/lib.rs:326
+    - Loads private key from storage
+    - Signs challenge with ECDSA
+    - Returns hex-encoded signature
+  - [x] Subtask: Create `#[tauri::command] get_local_dek()` - desktop/src/lib.rs:356
+    - Returns DEK for client-side encryption (never transmitted)
+  - [x] Subtask: Update `clear_tokens()` to clear JWT tokens + keypair + DEK - desktop/src/lib.rs:267
+  - [x] **Test**: Unit tests for P-256 cryptography - desktop/src/lib.rs:681-879
+    - `test_p256_keypair_generation()` - Validates PKCS#8 PEM key generation
+    - `test_dek_generation()` - Validates 32-byte DEK and base64 encoding
+    - `test_challenge_signing_and_verification()` - Full signing/verification flow
+    - `test_signature_verification_fails_with_wrong_challenge()` - Security test
+    - `test_signature_verification_fails_with_wrong_public_key()` - Security test
+    - `test_private_key_roundtrip()` - PEM serialization/deserialization
+    - `test_key_generation_entropy()` - Validates cryptographic randomness
+    - **Result**: ✅ 7/7 tests passed in 0.01s
+  - [x] **Test**: OWASP Security Tests - desktop/src/lib.rs:880-1196
+    - **OWASP A02: Cryptographic Failures** (6 tests)
+      - `test_owasp_a02_dek_length_validation()` - Validates 32-byte DEK requirement
+      - `test_owasp_a02_private_key_never_exposed()` - Ensures PEM format for secure storage
+      - `test_owasp_a02_public_key_safe_transmission()` - Validates public key transmission safety
+      - `test_owasp_a02_weak_key_detection()` - Validates proper PEM structure and size
+      - `test_owasp_a02_secure_rng()` - Validates OsRng for cryptographic randomness
+      - `test_owasp_a02_base64_integrity()` - Validates base64 encoding/decoding integrity
+    - **OWASP A07: Authentication Failures** (4 tests)
+      - `test_owasp_a07_signature_replay_prevention()` - Prevents signature replay attacks
+      - `test_owasp_a07_challenge_uniqueness()` - Ensures different challenges produce different signatures
+      - `test_owasp_a07_key_confusion_prevention()` - Prevents key confusion attacks
+      - `test_owasp_a07_empty_challenge_rejection()` - Validates empty challenge rejection
+    - **OWASP A08: Data Integrity Failures** (2 tests)
+      - `test_owasp_a08_signature_tampering_detection()` - Detects tampered signatures
+      - `test_owasp_a08_challenge_tampering_detection()` - Detects tampered challenges
+    - **Result**: ✅ 19/19 tests passed in 0.01s (7 cryptography + 12 OWASP security)
+  - [x] **DoD**: ✅ Key generation commands implemented, tested, and compiling
+
+### Epic 1.5.2: Backend Challenge-Response Authentication
+
+**Goal**: Implement challenge-response auth using stored public keys
+
+**Definition of Done**: Desktop users can authenticate via ECDSA signature verification
+
+**Timeline**: 8-10 hours
+
+#### Tasks:
+
+- [ ] **Task 1.5.2.1**: Database Migration for Public Keys
+  - [ ] Subtask: Create migration `add_public_key_to_users`:
+    ```sql
+    ALTER TABLE users ADD COLUMN public_key VARCHAR(128) NULLABLE;
+    CREATE INDEX idx_users_public_key ON users(public_key) WHERE public_key IS NOT NULL;
+    ```
+  - [ ] Subtask: Apply to both PostgreSQL and SQLite migrations
+  - [ ] **Test**: `diesel migration run` successful on both backends
+  - [ ] **DoD**: `users.public_key` column exists
+
+- [ ] **Task 1.5.2.2**: Update User Models
+  - [ ] Subtask: Add `public_key: Option<String>` to User struct
+  - [ ] Subtask: Update UserDbQuery with public_key field
+  - [ ] Subtask: Update schema files (postgres + sqlite)
+  - [ ] **DoD**: Models compile with new field
+
+- [ ] **Task 1.5.2.3**: Create Challenge Service
+  - [ ] Subtask: Create `backend/src/auth/challenge_service.rs`
+  - [ ] Subtask: Implement in-memory challenge store (HashMap with 5min TTL)
+  - [ ] Subtask: Create `generate_challenge(user_id)` → random 32-byte nonce
+  - [ ] Subtask: Create `verify_signature(user_id, nonce, signature)` → verify P-256 ECDSA
+  - [ ] Subtask: Implement nonce cleanup (expired challenges)
+  - [ ] **Test**: Unit test `test_challenge_generation()`
+  - [ ] **Test**: Unit test `test_signature_verification_valid()`
+  - [ ] **Test**: Unit test `test_signature_verification_invalid()`
+  - [ ] **DoD**: Challenge service works with valid/invalid signatures
+
+- [ ] **Task 1.5.2.4**: Create Challenge Endpoints
+  - [ ] Subtask: Create `POST /api/auth/desktop/challenge`:
+    - Accept username or user_id
+    - Generate challenge nonce
+    - Return nonce to client
+  - [ ] Subtask: Create `POST /api/auth/desktop/verify`:
+    - Accept nonce + signature
+    - Verify signature with stored public key
+    - Issue JWT tokens on success
+    - Return access_token + refresh_token
+  - [ ] Subtask: Add endpoints to Axum router
+  - [ ] **Test**: Integration test `test_challenge_response_flow()`
+  - [ ] **DoD**: Challenge-response authentication works end-to-end
+
+- [ ] **Task 1.5.2.5**: Update Desktop Setup Handler
+  - [ ] Subtask: Modify `DesktopSetupPayload`:
+    ```rust
+    pub struct DesktopSetupPayload {
+        pub auth_mode: String,
+        pub public_key: Option<String>, // Base64 P-256 public key
+    }
+    ```
+  - [ ] Subtask: Update `desktop_setup_handler`:
+    - Accept public_key in request
+    - Store public_key in users table
+    - Remove DEK generation logic
+    - Remove dek field from response
+  - [ ] Subtask: Keep JWT token generation (already working)
+  - [ ] **Test**: Integration test `test_setup_stores_public_key()`
+  - [ ] **DoD**: Setup handler stores public key, doesn't generate DEK
+
+### Epic 1.5.3: Frontend Auth Service Redesign
+
+**Goal**: Update frontend to use client-side keys and challenge-response auth
+
+**Definition of Done**: Desktop Quick Start uses new secure flow, no DEK transmission
+
+**Timeline**: 6-8 hours
+
+#### Tasks:
+
+- [ ] **Task 1.5.3.1**: Update TypeScript Types
+  - [ ] Subtask: Remove `dek?: string` from `TokenLoginResponse` interface
+  - [ ] Subtask: Update API client types
+  - [ ] **DoD**: Types reflect new architecture (no DEK in responses)
+
+- [ ] **Task 1.5.3.2**: Implement Quick Start Setup Flow
+  - [ ] Subtask: Create `setupQuickStart()` method in DesktopAuthService:
+    1. Call Tauri `generate_quick_start_keys()` → get public_key
+    2. POST `/api/auth/desktop/setup` with `{ auth_mode: "quick_start", public_key }`
+    3. Store returned JWT tokens
+    4. Store "keys_generated" flag for future auto-login
+  - [ ] Subtask: Remove DEK storage logic (save_dek, load_dek calls)
+  - [ ] **Test**: Unit test `test_quick_start_setup()`
+  - [ ] **DoD**: Quick Start generates keys client-side, sends public key only
+
+- [ ] **Task 1.5.3.3**: Implement Challenge-Response Auto-Login
+  - [ ] Subtask: Create `challengeResponseLogin()` method:
+    1. Check if keys exist in storage
+    2. POST `/api/auth/desktop/challenge` → get nonce
+    3. Call Tauri `sign_challenge(nonce)` → get signature
+    4. POST `/api/auth/desktop/verify` with `{ nonce, signature }` → get tokens
+    5. Store new JWT tokens
+  - [ ] Subtask: Update `initialize()` to use challenge-response if keys exist
+  - [ ] **Test**: Integration test `test_auto_login_with_challenge()`
+  - [ ] **DoD**: Auto-login works via challenge-response (no password)
+
+- [ ] **Task 1.5.3.4**: Remove DEK Transmission Logic
+  - [ ] Subtask: Remove `dek` field from class
+  - [ ] Subtask: Remove X-Scribe-Dek header from `getAuthHeaders()`
+  - [ ] Subtask: Remove DEK loading in `initialize()`
+  - [ ] Subtask: Remove DEK saving in `login()`
+  - [ ] Subtask: Remove DEK clearing in `logout()` and `refreshAccessToken()`
+  - [ ] **DoD**: No DEK transmission code remains
+
+### Epic 1.5.4: Client-Side Encryption Layer
+
+**Goal**: Implement full E2EE for sensitive data before API calls
+
+**Definition of Done**: All sensitive data encrypted client-side with local DEK
+
+**Timeline**: 12-16 hours
+
+#### Tasks:
+
+- [ ] **Task 1.5.4.1**: Create Encryption Service
+  - [ ] Subtask: Add `@noble/ciphers` to `frontend/package.json`
+  - [ ] Subtask: Create `frontend/src/lib/crypto/encryption.ts`
+  - [ ] Subtask: Implement `encrypt(plaintext: string)`:
+    - Get DEK from Tauri `get_local_dek()`
+    - Encrypt with ChaCha20Poly1305
+    - Return base64-encoded ciphertext + nonce
+  - [ ] Subtask: Implement `decrypt(ciphertext: string)`:
+    - Get DEK from Tauri
+    - Decrypt with ChaCha20Poly1305
+    - Return plaintext
+  - [ ] **Test**: Unit test `test_encryption_roundtrip()`
+  - [ ] **DoD**: Encryption service works end-to-end
+
+- [ ] **Task 1.5.4.2**: Update API Client for E2EE
+  - [ ] Subtask: Identify sensitive fields:
+    - Chat messages: `content`, `system_prompt`
+    - Character cards: `description`, `chat_history`
+    - User personas: `attributes`
+    - Lorebook entries: `content`
+  - [ ] Subtask: Add encrypt/decrypt middleware to API client
+  - [ ] Subtask: Encrypt before POST/PUT, decrypt after GET
+  - [ ] **Test**: Integration test `test_encrypted_chat_message_roundtrip()`
+  - [ ] **DoD**: Sensitive data encrypted before transmission
+
+- [ ] **Task 1.5.4.3**: Update Backend for Encrypted Storage
+  - [ ] Subtask: Change TEXT fields to BYTEA/BLOB for encrypted data
+  - [ ] Subtask: Remove SessionDek extractor (no longer needed)
+  - [ ] Subtask: Backend stores encrypted blobs, returns encrypted blobs
+  - [ ] **DoD**: Backend never sees plaintext, only encrypted data
+
+### Epic 1.5.5: Fresh Start Migration
+
+**Goal**: Handle migration from old DEK transmission system to new secure system
+
+**Definition of Done**: Users can migrate with data export/import
+
+**Timeline**: 3-4 hours
+
+#### Tasks:
+
+- [ ] **Task 1.5.5.1**: Migration Detection
+  - [ ] Subtask: Check for legacy DEK in Tauri storage on app start
+  - [ ] Subtask: Display migration modal if detected
+  - [ ] **DoD**: Legacy system detected
+
+- [ ] **Task 1.5.5.2**: Migration UI
+  - [ ] Subtask: Create migration modal component
+  - [ ] Subtask: Options: "Export Data" → "Start Fresh" → "Cancel"
+  - [ ] Subtask: Implement data export (characters, chats, personas to JSON)
+  - [ ] Subtask: Clear database + storage on "Start Fresh"
+  - [ ] **DoD**: Migration flow works
+
+### Epic 1.5.6: Security Testing & Validation
+
+**Goal**: Verify no key transmission, validate E2EE implementation
+
+**Definition of Done**: All security tests pass, Wireshark confirms no DEK in traffic
+
+**Timeline**: 8-10 hours
+
+#### Tasks:
+
+- [ ] **Task 1.5.6.1**: Network Traffic Analysis
+  - [ ] Subtask: Capture HTTPS traffic with Wireshark during Quick Start
+  - [ ] Subtask: Verify NO base64-encoded DEK in any request/response
+  - [ ] Subtask: Verify only JWT tokens in Authorization headers
+  - [ ] **DoD**: Network analysis confirms zero DEK transmission
+
+- [ ] **Task 1.5.6.2**: Backend Security Tests
+  - [ ] Subtask: Create `backend/tests/challenge_auth_tests.rs`
+  - [ ] Subtask: Test challenge-response flow (valid + invalid signatures)
+  - [ ] Subtask: Test public key storage and retrieval
+  - [ ] Subtask: Verify DEK never appears in server logs
+  - [ ] **DoD**: All backend security tests pass
+
+- [ ] **Task 1.5.6.3**: E2E Encryption Tests
+  - [ ] Subtask: Test encrypted chat message roundtrip
+  - [ ] Subtask: Verify server stores encrypted blobs (hexdump check)
+  - [ ] Subtask: Verify client decrypts correctly
+  - [ ] **DoD**: E2EE works end-to-end
+
+---
 
 ## Phase 2: Vector Store Integration (Weeks 4-5)
 

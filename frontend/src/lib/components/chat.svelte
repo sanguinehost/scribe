@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { apiClient as _apiClient } from '$lib/api'; // Import apiClient
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter, Message } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
 	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types'; // Import Scribe types
@@ -23,7 +23,7 @@
 	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
 	import { browser } from '$app/environment';
-	import { getCurrentUser } from '$lib/auth.svelte';
+	import { getCurrentUser, getIsAuthReady, getIsAuthenticated } from '$lib/auth.svelte';
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { UpgradePrompt } from './membership';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
@@ -970,23 +970,46 @@
 	}
 
 	// Load personas when component mounts (regardless of chat)
+	// CRITICAL: Guard with auth checks and hasFetched flag to prevent infinite loop
+	let hasFetchedPersonas = $state(false);
 	$effect(() => {
-		loadAvailablePersonas();
-		loadUserPersona();
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		// Only fetch once when auth is ready
+		if (!hasFetchedPersonas && authReady && authenticated) {
+			console.log('[chat.svelte] Initial persona fetch - auth ready');
+			untrack(() => {
+				loadAvailablePersonas();
+				loadUserPersona();
+				hasFetchedPersonas = true;
+			});
+		}
 	});
 
 	// Load lorebooks when component mounts (for extraction dialog)
+	// CRITICAL: Guard with auth checks and hasFetched flag to prevent infinite loop
+	let hasFetchedLorebooks = $state(false);
 	$effect(() => {
-		async function loadLorebooks() {
-			await lorebookStore.loadLorebooks();
-			// Map lorebooks to simple format needed by dialog
-			// Use the getter directly, not .state.lorebooks
-			availableLorebooks = (lorebookStore.lorebooks || []).map((lb) => ({
-				id: lb.id,
-				name: lb.name
-			}));
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		if (!hasFetchedLorebooks && authReady && authenticated) {
+			console.log('[chat.svelte] Initial lorebooks fetch - auth ready');
+			untrack(() => {
+				async function loadLorebooks() {
+					await lorebookStore.loadLorebooks();
+					// Map lorebooks to simple format needed by dialog
+					// Use the getter directly, not .state.lorebooks
+					availableLorebooks = (lorebookStore.lorebooks || []).map((lb) => ({
+						id: lb.id,
+						name: lb.name
+					}));
+				}
+				loadLorebooks();
+				hasFetchedLorebooks = true;
+			});
 		}
-		loadLorebooks();
 	});
 
 	// Load agent mode when chat changes

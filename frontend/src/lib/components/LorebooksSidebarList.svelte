@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, untrack } from 'svelte';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { Button as ButtonComponent } from './ui/button';
+	import { getIsAuthenticated, getIsAuthReady } from '$lib/auth.svelte';
 	import { BookOpen, Plus } from 'lucide-svelte';
 	import { slideAndFade } from '$lib/utils/transitions';
 
@@ -10,13 +11,23 @@
 		viewAllLorebooks: void;
 	}>();
 
-	// Only fetch on mount, not on every re-render
-	let hasFetched = false;
+	// CRITICAL FIX: Use $effect for reactive data loading
+	// This ensures lorebooks load after auth becomes ready (including re-auth scenarios)
+	// Pattern follows PersonaList.svelte and CharacterList.svelte
+	let hasFetched = $state(false);
 
-	onMount(async () => {
-		if (!hasFetched) {
-			await lorebookStore.loadLorebooks();
-			hasFetched = true;
+	$effect(() => {
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		// Initial fetch when auth becomes ready
+		if (!hasFetched && authReady && authenticated) {
+			console.log('[LorebooksSidebarList] Auth ready detected, loading lorebooks');
+			// Use untrack to prevent infinite loops from state modifications inside loadLorebooks
+			untrack(() => {
+				lorebookStore.loadLorebooks();
+				hasFetched = true;
+			});
 		}
 	});
 

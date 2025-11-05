@@ -23,12 +23,14 @@ tauri = { version = "2.8.5", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-store = "2"
+tauri-plugin-fs = "2"
 
 # Async runtime for embedded backend
 tokio = { version = "1", features = ["full"] }
 
 # HTTP client for custom protocol handler (uses native-tls to avoid aws-lc-sys GCC issues)
-reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream", "cookies"] }
+# CRITICAL FIX: Added "blocking" feature for synchronous health check
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream", "cookies", "blocking"] }
 
 # Cookie management for session persistence
 parking_lot = "0.12"
@@ -42,6 +44,15 @@ tracing = "0.1"
 
 # Cryptographic randomness for session key generation
 rand = "0.8"
+
+# Elliptic curve cryptography for P-256 ECDSA (challenge-response auth)
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+
+# Base64 encoding for DEK storage
+base64 = "0.21"
+
+# Hex encoding for signature transmission
+hex = "0.4"
 
 # Cross-platform user directories
 dirs = "5.0"

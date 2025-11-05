@@ -18,6 +18,7 @@ pub type UnifiedAuthSession = AuthSession<crate::auth::AuthBackend>;
 
 /// Extractor that supports both cookie-based and token-based authentication
 /// This allows the same endpoints to work for both web (cookies) and desktop (tokens)
+#[derive(Debug)]
 pub struct UnifiedAuth {
     pub session: UnifiedAuthSession,
     pub is_token_auth: bool,
@@ -29,9 +30,20 @@ impl UnifiedAuth {
         self.session.user.is_some()
     }
 
-    /// Get the authenticated user
+    /// Get the authenticated user (borrowed)
+    ///
+    /// Use this for simple field access without moving the user.
+    /// For closures or async blocks that need to move the user, use `user_cloned()`.
     pub fn user(&self) -> Option<&User> {
         self.session.user.as_ref()
+    }
+
+    /// Get a cloned copy of the authenticated user
+    ///
+    /// Use this when the user needs to be moved into closures or async blocks.
+    /// For simple field access without cloning, prefer `user()` which returns a reference.
+    pub fn user_cloned(&self) -> Option<User> {
+        self.session.user.clone()
     }
 
     /// Get the user ID if authenticated

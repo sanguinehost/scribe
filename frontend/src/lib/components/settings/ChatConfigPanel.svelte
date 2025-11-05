@@ -710,7 +710,6 @@
 
 	// Session narrative style functions
 	// TODO: Implement GET endpoint for session narrative style
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async function _loadSessionNarrativeStyle() {
 		if (!chat?.id) return;
 

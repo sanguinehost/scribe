@@ -200,7 +200,11 @@ fn initialize_runtime() {
     // Install the default crypto provider (ring) for rustls FIRST.
     let _ = ring::default_provider().install_default();
     dotenvy::dotenv().ok();
+
+    // CRITICAL FIX: Re-enable logger in desktop mode for backend application logs
+    // Tauri log plugin (log crate) and tracing work together - no conflict
     init_subscriber();
+
     tracing::info!("Starting Scribe backend server...");
     tracing::info!(
         "Build configuration: {}",
@@ -699,11 +703,13 @@ fn build_router(
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
+        // JWT middleware is applied globally at api_routes level, not here
         .route_layer(login_required!(AuthBackend));
 
     // Health endpoint - not rate limited for monitoring purposes
     let health_routes = Router::new()
-        .route("/api/health", get(health_check))
+        .route("/health", get(health_check)) // Desktop health check
+        .route("/api/health", get(health_check)) // Cloud/legacy health check
         .with_state(app_state.clone());
 
     // Public auth routes (no authentication required) - rate limited
@@ -814,7 +820,8 @@ fn build_router(
     };
 
     // Build API routes with proper auth layering
-    // Public auth routes (no auth layer) + Protected routes (with auth layer)
+    // JWT middleware is applied individually to each router (public + protected)
+    // AFTER their respective auth layers to ensure auth_session is available
     let api_routes = Router::new()
         .nest("/api", public_auth_routes) // Public auth routes - NO auth required
         .nest(

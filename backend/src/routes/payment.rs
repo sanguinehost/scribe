@@ -37,7 +37,7 @@ use uuid::Uuid;
 
 #[cfg(feature = "payment")]
 use crate::{
-    auth::user_store::Backend as AuthBackend,
+    auth::token_auth::UnifiedAuth,
     errors::AppError,
     models::credit::CreditPackage,
     models::payment::{PlanFeatures, Subscription},
@@ -51,11 +51,6 @@ use crate::{
     },
     state::AppState,
 };
-#[cfg(feature = "payment")]
-use axum_login::AuthSession;
-
-#[cfg(feature = "payment")]
-type CurrentAuthSession = AuthSession<AuthBackend>;
 
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
@@ -265,11 +260,11 @@ pub async fn payment_transaction_to_response(
 /// Get current user's subscription information
 #[cfg(feature = "payment")]
 pub async fn get_subscription(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
@@ -517,11 +512,11 @@ pub async fn get_plans(
 /// Get current user's usage information
 #[cfg(feature = "payment")]
 pub async fn get_usage(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Json<UsageLimitsResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
@@ -607,7 +602,7 @@ pub async fn get_usage(
 /// Create a new payment transaction (replaces direct subscription creation)
 #[cfg(feature = "payment")]
 pub async fn create_payment(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Json(request): Json<CreatePaymentRequest>,
 ) -> Result<Json<CreatePaymentResponse>, AppError> {
@@ -618,8 +613,8 @@ pub async fn create_payment(
         "Handler entered"
     );
 
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     tracing::debug!(
@@ -756,11 +751,11 @@ pub async fn create_payment(
 #[cfg(feature = "payment")]
 pub async fn verify_transaction(
     Path(transaction_id): Path<String>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Json<crate::DbJson>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     tracing::debug!(
@@ -1307,12 +1302,12 @@ pub async fn verify_transaction(
 /// Preview order before checkout
 #[cfg(feature = "payment")]
 pub async fn preview_order(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Json(request): Json<OrderPreviewRequest>,
 ) -> Result<Json<OrderPreview>, AppError> {
-    let _user = auth_session
-        .user
+    let _user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
@@ -1391,12 +1386,12 @@ pub async fn preview_order(
 /// Create a new subscription for the user (legacy - now uses transactions)
 #[cfg(feature = "payment")]
 pub async fn create_subscription(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Json(request): Json<CreateSubscriptionRequest>,
 ) -> Result<Json<CreateSubscriptionResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
@@ -1473,12 +1468,12 @@ pub async fn create_subscription(
 /// Cancel user's subscription
 #[cfg(feature = "payment")]
 pub async fn cancel_subscription(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(_app_state): State<AppState>,
     Json(_request): Json<CancelSubscriptionRequest>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let _user = auth_session
-        .user
+    let _user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // TODO: This is a simplified implementation for now
@@ -1493,11 +1488,11 @@ pub async fn cancel_subscription(
 /// Reactivate user's subscription
 #[cfg(feature = "payment")]
 pub async fn reactivate_subscription(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(_app_state): State<AppState>,
 ) -> Result<Json<SubscriptionResponse>, AppError> {
-    let _user = auth_session
-        .user
+    let _user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // TODO: This is a simplified implementation for now
@@ -4005,11 +4000,11 @@ async fn process_subscription_cancelled(
 /// Get current user's credit balance
 #[cfg(feature = "payment")]
 pub async fn get_credit_balance(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Json<CreditBalanceResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
@@ -4038,12 +4033,12 @@ pub async fn get_credit_balance(
 /// Purchase credits
 #[cfg(feature = "payment")]
 pub async fn purchase_credits(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Json(request): Json<PurchaseCreditsRequest>,
 ) -> Result<Json<PurchaseCreditsResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get credit package details
@@ -4146,12 +4141,12 @@ pub async fn get_credit_packages(
 /// Get user's credit transaction history
 #[cfg(feature = "payment")]
 pub async fn get_credit_transactions(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Query(query): Query<TransactionListQuery>,
 ) -> Result<Json<Vec<CreditTransactionResponse>>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
@@ -4222,12 +4217,12 @@ pub async fn get_credit_transactions(
 /// Get user's payment transaction history
 #[cfg(feature = "payment")]
 pub async fn get_payment_transactions(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Query(query): Query<TransactionListQuery>,
 ) -> Result<Json<Vec<PaymentTransactionResponse>>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get encryption key
@@ -4292,11 +4287,11 @@ pub async fn get_payment_transactions(
 #[cfg(feature = "payment")]
 pub async fn get_payment_transaction(
     Path(transaction_id): Path<crate::db::DbId>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Json<PaymentTransactionResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user_cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get encryption key

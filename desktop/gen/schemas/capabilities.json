@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"enables the default permissions","local":true,"windows":["main"],"permissions":["core:default","shell:allow-execute",{"identifier":"shell:allow-execute","allow":[{"name":"binaries/scribe-backend","sidecar":true}]}]}}
+{"default":{"identifier":"default","description":"enables the default permissions","local":true,"windows":["main"],"permissions":["core:default","log:default","shell:allow-execute",{"identifier":"shell:allow-execute","allow":[{"name":"binaries/scribe-backend","sidecar":true}]}]}}

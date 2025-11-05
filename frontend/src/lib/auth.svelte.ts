@@ -5,6 +5,7 @@ interface AuthState {
 	isAuthenticated: boolean;
 	isLoading: boolean; // To track initial auth state loading
 	hasConnectionError: boolean; // To track if we have connection issues
+	isAuthReady: boolean; // To track if auth initialization is complete (desktop mode)
 }
 
 // Initialize the auth store with Svelte 5 runes
@@ -12,7 +13,8 @@ const auth = $state<AuthState>({
 	user: null,
 	isAuthenticated: false,
 	isLoading: true, // Start in loading state
-	hasConnectionError: false
+	hasConnectionError: false,
+	isAuthReady: false // Start as not ready - set to true after desktop auth loads tokens
 });
 
 // Reactive derivations - export functions instead of derived state to comply with Svelte 5 module rules
@@ -30,6 +32,10 @@ export function getIsLoadingAuth() {
 
 export function getHasConnectionError() {
 	return auth.hasConnectionError;
+}
+
+export function getIsAuthReady() {
+	return auth.isAuthReady;
 }
 
 // Functions to update the auth state
@@ -73,6 +79,11 @@ export function setUnauthenticated(clearUser: boolean = true): void {
 	auth.isLoading = false; // Finished loading, even if it's to an unauthenticated state
 	auth.hasConnectionError = false; // Clear connection errors when explicitly unauthenticated
 	console.log(`[${new Date().toISOString()}] auth.svelte.ts: User set to unauthenticated.`);
+}
+
+export function setAuthReady(ready: boolean): void {
+	auth.isAuthReady = ready;
+	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Auth ready set to ${ready}`);
 }
 
 // Debounce connection error notifications to avoid spam

@@ -29,6 +29,8 @@
 		"@sveltejs/adapter-vercel": "^5.10.2",
 		"@sveltejs/kit": "^2.36.1",
 		"@sveltejs/vite-plugin-svelte": "^5.1.1",
+		"@tauri-apps/api": "^2.9.0",
+		"@tauri-apps/plugin-shell": "^2.3.3",
 		"@testing-library/jest-dom": "^6.8.0",
 		"@testing-library/svelte": "^5.2.8",
 		"@types/lodash-es": "^4.17.12",
@@ -83,6 +85,8 @@
 	"packageManager": "pnpm@10.10.0",
 	"dependencies": {
 		"@microsoft/fetch-event-source": "^2.0.1",
+		"@tauri-apps/plugin-fs": "^2.4.4",
+		"@tauri-apps/plugin-log": "^2.7.1",
 		"@types/dompurify": "^3.2.0",
 		"cookie": "^0.7.2",
 		"dompurify": "^3.2.6",

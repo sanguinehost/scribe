@@ -18,7 +18,8 @@
         "minHeight": 768,
         "resizable": true,
         "fullscreen": false,
-        "center": true
+        "center": true,
+        "url": "scribe://localhost"
       }
     ],
     "security": {

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, untrack } from 'svelte';
 	import { goto as _goto } from '$app/navigation';
 	import type { UserPersona } from '$lib/types';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
+	import { getIsAuthenticated, getIsAuthReady } from '$lib/auth.svelte';
 	import { Button as ButtonComponent } from '$lib/components/ui/button';
 	import { Card, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
 	import { Avatar, AvatarFallback } from '$lib/components/ui/avatar';
@@ -30,14 +31,14 @@
 				error = null;
 				// TODO: Get default persona ID from user settings
 			} else {
-				console.error('Failed to fetch personas:', result.error);
+				console.error('[PersonaList] Failed to fetch personas:', result.error);
 				error = `Failed to fetch personas: ${result.error.message}`;
 			}
 		} catch (e: unknown) {
 			if (e instanceof Error && e.message.includes('401')) {
-				console.error('Caught 401 during fetch, redirection initiated.');
+				console.error('[PersonaList] Caught 401 during fetch, redirection initiated.');
 			} else {
-				console.error('Failed to fetch personas:', e);
+				console.error('[PersonaList] Failed to fetch personas:', e);
 				error = 'Failed to load personas. Please try again later.';
 				personas = [];
 			}
@@ -48,21 +49,37 @@
 		}
 	}
 
-	// Only fetch on mount, not on every re-render
+	// Only fetch once when auth is ready
 	let hasFetched = $state(false);
+	let lastProcessedTrigger = $state(0);
 
-	onMount(async () => {
-		if (!hasFetched) {
-			await fetchPersonas();
-			hasFetched = true;
-		}
-	});
-
-	// Watch for refresh triggers from the store
+	// SINGLE EFFECT: Handles both initial fetch and refresh triggers
+	// This prevents infinite loops by consuming the trigger value
 	$effect(() => {
-		// This will run whenever refreshTrigger changes
-		if (selectedPersonaStore.refreshTrigger > 0) {
-			fetchPersonas();
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+		const trigger = selectedPersonaStore.refreshTrigger;
+
+		// Initial fetch on auth ready
+		const shouldInitialFetch = !hasFetched && authReady && authenticated;
+
+		// Refresh only if trigger value changed (prevents infinite loop)
+		const shouldRefresh =
+			trigger > lastProcessedTrigger && trigger > 0 && authReady && authenticated;
+
+		if (shouldInitialFetch || shouldRefresh) {
+			console.log('[PersonaList] Fetching personas:', {
+				initial: shouldInitialFetch,
+				refresh: shouldRefresh,
+				trigger,
+				lastProcessedTrigger
+			});
+
+			untrack(() => {
+				fetchPersonas();
+				hasFetched = true;
+				lastProcessedTrigger = trigger; // Consume the trigger to prevent re-processing
+			});
 		}
 	});
 
