@@ -10,7 +10,9 @@
 	import {
 		initializeAuth,
 		setUnauthenticated,
+		setAuthenticated,
 		getIsAuthenticated,
+		getCurrentUser,
 		setAuthReady
 	} from '$lib/auth.svelte'; // Import from new auth store
 	import { goto as _goto } from '$app/navigation';
@@ -151,6 +153,57 @@
 					const logError = async (msg: string) => {
 						console.error(msg);
 					};
+
+					// CRITICAL: Check for stored credentials BEFORE attempting auto-login
+					// This enables session persistence across app restarts
+					if (isDesktopMode()) {
+						log('[STEP 8.5] Checking for stored credentials in Tauri secure storage...');
+						try {
+							const storedTokensResult = await withTimeout(
+								apiClient.checkStoredTokens(),
+								3000,
+								'Check stored tokens'
+							);
+
+							if (storedTokensResult.isOk() && storedTokensResult.value) {
+								log('[STEP 8.6] ✓ Found stored credentials, initializing auth...');
+
+								// Tokens are already loaded into memory by checkStoredTokens()
+								// Now initialize auth to populate auth store with user data
+								try {
+									await withTimeout(initializeAuth(true), 8000, 'Initialize auth');
+									log('[STEP 8.7] ✓ Auth successful with stored credentials');
+
+									// Get user from auth store
+									const authenticatedUser = getCurrentUser();
+									if (authenticatedUser) {
+										setAuthReady(true);
+										setAuthenticated(authenticatedUser);
+										isAppReady = true;
+										hideLoadingOverlay();
+										log(
+											'[STEP 8.8] ✓ Session restored from storage - skipping auto-login'
+										);
+										return; // Skip auto-login flow - we're already authenticated!
+									} else {
+										logError('[STEP 8.7] ✗ Auth succeeded but no user data - continuing to auto-login');
+										await apiClient.clearDesktopTokens();
+									}
+								} catch (authError) {
+									logError(`[STEP 8.7] ✗ Auth failed with stored tokens: ${authError}`);
+									log('[STEP 8.8] Clearing invalid tokens, will attempt auto-login...');
+									// Clear invalid tokens and continue to auto-login
+									await apiClient.clearDesktopTokens();
+								}
+							} else {
+								log('[STEP 8.6] No stored credentials found, will attempt Quick Start auto-login');
+							}
+						} catch (tokenCheckError) {
+							logError(`[STEP 8.6] ✗ Token check failed: ${tokenCheckError}`);
+							log('[STEP 8.7] Continuing to auto-login flow...');
+							// Continue to auto-login on error
+						}
+					}
 
 					if (isDesktopMode()) {
 						log('[STEP 9] Desktop mode detected, initializing...');

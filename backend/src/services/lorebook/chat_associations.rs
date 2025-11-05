@@ -4,10 +4,10 @@ use super::*;
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 impl LorebookService {
-    #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]
+    #[instrument(skip(self, auth, payload), fields(user_id = ?auth.user().map(|u| u.id), chat_session_id = %chat_session_id))]
     pub async fn associate_lorebook_to_chat(
         &self,
-        auth_session: &AuthSession<AuthBackend>,
+        auth: &UnifiedAuth,
         chat_session_id: crate::db::DbId,
         payload: AssociateLorebookToChatPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Added for entry decryption
@@ -18,7 +18,7 @@ impl LorebookService {
             lorebook_id = "[REDACTED_UUID]",
             "Attempting to associate lorebook to chat session [REDACTED_UUID]"
         );
-        let user = get_user_from_session(auth_session)?;
+        let user = get_user_from_unified_auth(auth)?;
         let lorebook_id_to_associate = payload.lorebook_id;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -413,17 +413,17 @@ impl LorebookService {
         })
     }
 
-    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param))]
+    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), chat_session_id = %chat_session_id_param))]
     pub async fn list_chat_lorebook_associations(
         &self,
-        auth_session: &AuthSession<AuthBackend>,
+        auth: &UnifiedAuth,
         chat_session_id_param: crate::db::DbId,
     ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, AppError> {
         debug!(
             chat_session_id = "[REDACTED_UUID]",
             "Attempting to list chat lorebook associations"
         );
-        let user = get_user_from_session(auth_session)?;
+        let user = get_user_from_unified_auth(auth)?;
         let current_user_id = user.id;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -512,10 +512,10 @@ impl LorebookService {
     }
 
     /// Enhanced version that includes source information and override status
-    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param))]
+    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), chat_session_id = %chat_session_id_param))]
     pub async fn list_enhanced_chat_lorebook_associations(
         &self,
-        auth_session: &AuthSession<AuthBackend>,
+        auth: &UnifiedAuth,
         chat_session_id_param: crate::db::DbId,
     ) -> Result<
         Vec<crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse>,
@@ -525,7 +525,7 @@ impl LorebookService {
             chat_session_id = "[REDACTED_UUID]",
             "Attempting to list enhanced chat lorebook associations"
         );
-        let user = get_user_from_session(auth_session)?;
+        let user = get_user_from_unified_auth(auth)?;
         let current_user_id = user.id;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -728,15 +728,15 @@ impl LorebookService {
         Ok(unique_associations.into_values().collect())
     }
 
-    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id_param, lorebook_id = %lorebook_id_param))]
+    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), chat_session_id = %chat_session_id_param, lorebook_id = %lorebook_id_param))]
     pub async fn disassociate_lorebook_from_chat(
         &self,
-        auth_session: &AuthSession<AuthBackend>,
+        auth: &UnifiedAuth,
         chat_session_id_param: crate::db::DbId,
         lorebook_id_param: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to disassociate lorebook [REDACTED_UUID] from chat [REDACTED_UUID]");
-        let user = get_user_from_session(auth_session)?;
+        let user = get_user_from_unified_auth(auth)?;
         let current_user_id = user.id;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -833,7 +833,7 @@ impl LorebookService {
             if rows_deleted > 0 {
                 // Also create a disable override for the character association
                 self.set_character_lorebook_override(
-                    auth_session,
+                    auth,
                     chat_session_id_param,
                     lorebook_id_param,
                     "disable".to_string(),
@@ -885,7 +885,7 @@ impl LorebookService {
                 "Creating disable override for character lorebook [REDACTED_UUID] in chat [REDACTED_UUID]"
             );
             self.set_character_lorebook_override(
-                auth_session,
+                auth,
                 chat_session_id_param,
                 lorebook_id_param,
                 "disable".to_string(),
@@ -904,10 +904,10 @@ impl LorebookService {
         }
     }
 
-    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param))]
+    #[instrument(skip(self, auth, user_dek), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id_param))]
     pub async fn list_associated_chat_sessions_for_lorebook(
         &self,
-        auth_session: &AuthSession<AuthBackend>,
+        auth: &UnifiedAuth,
         lorebook_id_param: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<ChatSessionBasicInfo>, AppError> {
@@ -915,7 +915,7 @@ impl LorebookService {
             lorebook_id = "[REDACTED_UUID]",
             "Attempting to list chat sessions associated with lorebook"
         );
-        let user = get_user_from_session(auth_session)?;
+        let user = get_user_from_unified_auth(auth)?;
         let current_user_id = user.id;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {

@@ -1,5 +1,126 @@
 # Scribe Desktop Implementation Plan
 
+## 🚨 Current Session Progress (Updated: 2025-01-05)
+
+### Critical Bugs Fixed - Desktop App Freeze Issues
+
+**Session Goal**: Fix Tauri desktop app freezing on "Loading..." screen with no user interaction possible.
+
+#### Issue 1: Svelte 5 Infinite Loop - Personas API ✅ FIXED
+**Symptom**: Frontend frozen, `/api/personas` called every ~5 seconds in infinite loop
+**Root Cause**: Unconditional `$effect` blocks in `chat.svelte` triggering reactive loops
+
+**Files Fixed**:
+- `frontend/src/lib/components/chat.svelte` - Added `hasFetched` flags + auth guards
+- `frontend/src/lib/components/PersonaList.svelte` - Implemented trigger consumption pattern
+
+**Pattern Discovered**: Svelte 5 Reactive Loop Prevention
+```typescript
+// ❌ BAD: Unconditional $effect causes infinite loop
+$effect(() => {
+    loadAvailablePersonas(); // Triggers state change → re-runs effect
+});
+
+// ✅ GOOD: hasFetched flag + untrack() prevents loop
+let hasFetchedPersonas = $state(false);
+$effect(() => {
+    const authReady = getIsAuthReady();
+    const authenticated = getIsAuthenticated();
+
+    if (!hasFetchedPersonas && authReady && authenticated) {
+        untrack(() => {
+            loadAvailablePersonas();
+            hasFetchedPersonas = true; // Prevents re-triggering
+        });
+    }
+});
+```
+
+#### Issue 2: White Blank Screen ✅ FIXED
+**Symptom**: DevTools accessible but UI completely blank (white screen)
+**Root Cause**: `isAppReady` flag never set to `true` in error paths, blocking UI render
+
+**File Fixed**: `frontend/src/routes/+layout.svelte`
+**Solution**: Added `isAppReady = true` in 7 error paths:
+- Health check failure
+- Setup incomplete redirect
+- Token save error
+- Auto-login failure
+- Config load failure
+- Main catch block
+- Timeout handler
+
+#### Issue 3: Session Persistence Not Working ✅ FIXED
+**Symptom**: Desktop app redirected to login page after computer idle/restart
+**Root Cause**: Tokens saved to Tauri storage but never loaded on app restart
+
+**Files Modified**:
+1. `frontend/src/lib/api/index.ts` - Added helper methods:
+   - `checkStoredTokens()`: Check Tauri storage and load tokens into memory
+   - `clearDesktopTokens()`: Clear invalid tokens from storage
+2. `frontend/src/routes/+layout.svelte` - Added STEP 8.5-8.8:
+   - Check for stored tokens BEFORE attempting auto-login
+   - If tokens found → Load + authenticate → Skip auto-login
+   - If tokens invalid → Clear + Continue to auto-login
+   - If no tokens → Continue to auto-login
+
+**Pattern**: Desktop Token Persistence Flow
+```typescript
+// STEP 8.5: Check stored credentials BEFORE auto-login
+const storedTokensResult = await apiClient.checkStoredTokens();
+
+if (storedTokensResult.isOk() && storedTokensResult.value) {
+    // Tokens loaded into memory
+    await initializeAuth(true); // Populate auth store
+    const user = getCurrentUser();
+    if (user) {
+        setAuthReady(true);
+        setAuthenticated(user);
+        return; // Skip auto-login - already authenticated!
+    }
+}
+// Fall through to STEP 9+ (auto-login flow)
+```
+
+#### Issue 4: JWT Auth Migration Incomplete ❌ IN PROGRESS
+**Symptom**: 401 Unauthorized errors on `/api/lorebooks`, `/api/user-settings`, `/api/chronicles`, `/api/llm/models/all`
+**Root Cause**: 5 route files still using old `AuthSession<AuthBackend>` instead of `UnifiedAuth`
+
+**Status**: **BLOCKED - User requested documentation update before continuing**
+
+**Files Requiring Update** (52 handlers total):
+1. `backend/src/routes/lorebook_routes.rs` (~22 handlers)
+2. `backend/src/routes/user_settings_routes.rs` (~6 handlers)
+3. `backend/src/routes/chronicles.rs` (~10 handlers)
+4. `backend/src/routes/llm_routes.rs` (~11 handlers)
+5. `backend/src/routes/template_preferences_routes.rs` (~3 handlers)
+
+**Update Pattern**:
+```rust
+// OLD (Cookie-only auth):
+async fn handler(auth_session: AuthSession<AuthBackend>, ...) {
+    let user = auth_session.user.ok_or(...)?;
+}
+
+// NEW (JWT + Cookie dual auth):
+async fn handler(auth: UnifiedAuth, ...) {
+    let user = auth.user_cloned().ok_or(...)?;
+}
+```
+
+**Files Already Updated** (10 route files working):
+- ✅ `auth.rs`, `characters.rs`, `personas.rs`, `chat.rs`, `chats.rs`
+- ✅ `avatars.rs`, `documents.rs`, `generation_routes.rs`, `payment.rs`, `templates.rs`
+
+### Key Learnings for CLAUDE.md
+
+1. **Svelte 5 $effect Pattern**: Always use `hasFetched` flag + `untrack()` to prevent infinite loops
+2. **Error Path UI Flags**: Set UI-ready flags (`isAppReady = true`) in ALL error paths, not just success
+3. **Desktop Token Persistence**: Check storage on app start BEFORE calling auto-login endpoints
+4. **JWT Auth Migration**: Use `UnifiedAuth` extractor for all authenticated routes (supports both JWT and cookies)
+
+---
+
 ## Current Status (Updated: 2025-01-04)
 
 ### ✅ Completed Progress

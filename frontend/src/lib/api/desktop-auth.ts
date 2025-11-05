@@ -9,6 +9,7 @@ import type { Result } from 'neverthrow';
 import { ok, err } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiAuthError, ApiNetworkError } from '$lib/errors/api';
+import { isDesktopMode } from '$lib/utils/features';
 
 // Extend Window interface to include Tauri
 declare global {
@@ -61,7 +62,8 @@ class DesktopAuthService {
 	 */
 	async initialize(): Promise<Result<boolean, ApiError>> {
 		console.log('[DesktopAuth.initialize] START - checking environment');
-		if (!browser || !window.__TAURI__) {
+		console.log('[DesktopAuth.initialize] browser:', browser, 'isDesktopMode():', isDesktopMode());
+		if (!browser || !isDesktopMode()) {
 			console.log('[DesktopAuth.initialize] Not in desktop environment, returning false');
 			return ok(false); // Not in desktop environment
 		}
@@ -333,8 +335,3 @@ class DesktopAuthService {
 
 // Export singleton instance
 export const desktopAuth = new DesktopAuthService();
-
-// Helper to check if running in Tauri desktop environment
-export function isDesktopApp(): boolean {
-	return browser && typeof window !== 'undefined' && '__TAURI__' in window;
-}

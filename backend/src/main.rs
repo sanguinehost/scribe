@@ -44,7 +44,7 @@ use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
-use axum_login::{login_required, AuthManagerLayerBuilder}; // Modified
+use axum_login::AuthManagerLayerBuilder; // Auth layer for session management (UnifiedAuth handles authentication in handlers)
                                                            // Import SessionManagerLayer directly from tower_sessions
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
@@ -702,9 +702,9 @@ fn build_router(
         .nest("/", lorebook_routes())
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
-        .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
-        // JWT middleware is applied globally at api_routes level, not here
-        .route_layer(login_required!(AuthBackend));
+        .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))); // 10MB limit for avatar uploads
+        // Authentication is now handled by UnifiedAuth extractor in each handler
+        // which supports both JWT (desktop) and cookie (web) authentication
 
     // Health endpoint - not rate limited for monitoring purposes
     let health_routes = Router::new()

@@ -7,7 +7,7 @@ import {
 	ApiAuthError,
 	ApiDekMissingError
 } from '$lib/errors/api';
-import { ENABLE_LOCAL_LLM, PAYMENT_FEATURES } from '$lib/utils/features';
+import { ENABLE_LOCAL_LLM, PAYMENT_FEATURES, isDesktopMode } from '$lib/utils/features';
 import type {
 	User,
 	Message,
@@ -131,11 +131,6 @@ import {
 import { browser as _browser } from '$app/environment'; // To check if in browser context
 import { env } from '$env/dynamic/public';
 
-// Helper to check if running in Tauri desktop environment
-function isDesktopApp(): boolean {
-	return _browser && typeof window !== 'undefined' && '__TAURI__' in window;
-}
-
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
@@ -177,17 +172,31 @@ class ApiClient {
 
 	// Initialize desktop auth service if in Tauri environment
 	private async initDesktopAuth(): Promise<void> {
+		console.log('[ApiClient.initDesktopAuth] Called, already initialized:', this.desktopAuthInitialized);
 		if (this.desktopAuthInitialized) return;
 
-		if (isDesktopApp()) {
+		const isDesktop = isDesktopMode();
+		console.log('[ApiClient.initDesktopAuth] isDesktopMode():', isDesktop);
+		if (isDesktop) {
 			try {
+				console.log('[ApiClient.initDesktopAuth] Importing desktop-auth module...');
 				const { desktopAuth } = await import('$lib/api/desktop-auth');
 				this.desktopAuthService = desktopAuth;
-				await this.desktopAuthService.initialize();
-				this.desktopAuthInitialized = true;
-				console.log('[ApiClient] Desktop authentication initialized');
+				console.log('[ApiClient.initDesktopAuth] Calling desktopAuth.initialize()...');
+				const result = await this.desktopAuthService.initialize();
+				console.log('[ApiClient.initDesktopAuth] Initialize result:', result.isOk(), result.isOk() ? result.value : result.error);
+
+				// Only set initialized flag if tokens were successfully loaded
+				if (result.isOk() && result.value === true) {
+					this.desktopAuthInitialized = true;
+					console.log('[ApiClient] ✓ Desktop authentication initialized - tokens loaded');
+				} else if (result.isOk() && result.value === false) {
+					console.log('[ApiClient] ⚠ Desktop authentication not initialized - no tokens in storage');
+				} else {
+					console.error('[ApiClient] ✗ Desktop authentication failed:', result.error);
+				}
 			} catch (error) {
-				console.error('[ApiClient] Failed to initialize desktop auth:', error);
+				console.error('[ApiClient] ✗ Failed to initialize desktop auth:', error);
 				// Don't set initialized flag on failure - allow retry
 			}
 		}
@@ -196,7 +205,7 @@ class ApiClient {
 	// Force desktop auth to reload tokens from secure storage
 	// Called after auto-login saves new tokens to ensure they're loaded into memory
 	async reinitializeDesktopAuth(): Promise<void> {
-		if (isDesktopApp()) {
+		if (isDesktopMode()) {
 			// Ensure desktop auth service is initialized first
 			await this.initDesktopAuth();
 
@@ -208,19 +217,56 @@ class ApiClient {
 		}
 	}
 
-	// Get authentication headers (JWT for desktop, nothing for web - uses cookies)
-	private async getAuthHeaders(): Promise<Record<string, string>> {
-		if (isDesktopApp() && this.desktopAuthService) {
-			// Ensure token is valid before making request
-			const tokenResult = await this.desktopAuthService.ensureValidToken();
-			if (tokenResult.isOk()) {
-				return this.desktopAuthService.getAuthHeaders();
-			} else {
-				console.warn('[ApiClient] Token validation failed:', tokenResult.error);
-				// Token refresh failed, might need to redirect to login
-				// For now, continue without auth headers and let backend return 401
+	// Check if stored tokens exist in Tauri secure storage and load them into memory
+	// Returns true if tokens were found and loaded, false if no tokens exist
+	async checkStoredTokens(): Promise<Result<boolean, ApiError>> {
+		if (isDesktopMode()) {
+			await this.initDesktopAuth();
+
+			if (this.desktopAuthService) {
+				console.log('[ApiClient] Checking for stored tokens in Tauri secure storage...');
+				return await this.desktopAuthService.initialize();
 			}
 		}
+		return ok(false);
+	}
+
+	// Clear desktop tokens from memory and secure storage
+	async clearDesktopTokens(): Promise<void> {
+		if (isDesktopMode() && this.desktopAuthService) {
+			console.log('[ApiClient] Clearing desktop tokens...');
+			await this.desktopAuthService.logout();
+		}
+	}
+
+	// Get authentication headers (JWT for desktop, nothing for web - uses cookies)
+	private async getAuthHeaders(): Promise<Record<string, string>> {
+		if (isDesktopMode()) {
+			console.log('[ApiClient.getAuthHeaders] Desktop mode detected, desktopAuthService:', !!this.desktopAuthService);
+			if (this.desktopAuthService) {
+				// Ensure token is valid before making request
+				const tokenResult = await this.desktopAuthService.ensureValidToken();
+				console.log('[ApiClient.getAuthHeaders] Token validation result:', tokenResult.isOk());
+				if (tokenResult.isOk()) {
+					const headers = this.desktopAuthService.getAuthHeaders();
+					console.log('[ApiClient.getAuthHeaders] ✓ Returning JWT headers, has Authorization:', 'Authorization' in headers);
+					return headers;
+				} else {
+					console.error('[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: JWT token validation failed - NO COOKIE FALLBACK');
+					console.error('[ApiClient.getAuthHeaders] Error:', tokenResult.error);
+					console.error('[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401');
+					// Desktop mode should NOT fall back to cookies - return empty headers
+					// This will cause backend to return 401, which is correct behavior
+					return {};
+				}
+			} else {
+				console.error('[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: desktopAuthService not initialized!');
+				console.error('[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401');
+				// Desktop mode should NOT fall back to cookies
+				return {};
+			}
+		}
+		console.log('[ApiClient.getAuthHeaders] Web mode - using Cookie authentication');
 		return {};
 	}
 
@@ -362,7 +408,7 @@ class ApiClient {
 						return err(new ApiDekMissingError(errorMessage));
 					} else {
 						// Check if we're in desktop mode with JWT authentication
-						if (isDesktopApp() && this.desktopAuthService) {
+						if (isDesktopMode() && this.desktopAuthService) {
 							console.log(
 								`[${new Date().toISOString()}] ApiClient.fetch: 401 in desktop mode - JWT token expired or invalid. Clearing tokens.`
 							);
@@ -782,11 +828,19 @@ class ApiClient {
 				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Making multipart request to ${fullUrl}`
 			);
 
+			// Get auth headers (for JWT desktop mode) - must use native fetch for multipart
+			// because this.fetch() sets Content-Type: application/json which breaks multipart
+			const authHeaders = await this.getAuthHeaders();
+
 			const response = await fetch(fullUrl, {
 				method: 'POST',
 				body: formData,
-				credentials: 'include'
-				// Note: Don't set Content-Type header - let browser set it with boundary for multipart
+				credentials: 'include',
+				headers: {
+					// Add JWT auth headers for desktop mode
+					...authHeaders
+					// Note: Don't set Content-Type - let browser set it with boundary for multipart
+				}
 			});
 
 			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Response received`, {

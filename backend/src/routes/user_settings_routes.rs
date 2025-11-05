@@ -16,6 +16,7 @@ use crate::{
     // auth::AuthSession, // Replaced by axum_login::AuthSession
     // models::{user_personas::UserPersona, users::User}, // UserPersona is unused
     auth::user_store::Backend as AuthBackend, // Import the backend
+    auth::token_auth::UnifiedAuth,            // Import UnifiedAuth for dual auth support
     errors::AppError,
     models::{usage::TokenUsageSummary, user_settings::UpdateUserSettingsRequest, users::User},
     services::{
@@ -75,11 +76,11 @@ pub fn user_settings_routes(state: AppState) -> Router<AppState> {
 
 #[axum::debug_handler]
 async fn get_user_settings_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, "Getting user settings");
@@ -92,12 +93,12 @@ async fn get_user_settings_handler(
 
 #[axum::debug_handler]
 async fn update_user_settings_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Json(update_request): Json<UpdateUserSettingsRequest>,
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, "Updating user settings");
@@ -115,11 +116,11 @@ async fn update_user_settings_handler(
 
 #[axum::debug_handler]
 async fn delete_user_settings_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, "Deleting user settings (reset to defaults)");
@@ -131,12 +132,12 @@ async fn delete_user_settings_handler(
 
 #[axum::debug_handler]
 async fn set_default_persona_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Path(persona_id): Path<crate::db::DbId>, // Changed from Json(payload)
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
     debug!(user_id = %user.id, %persona_id, "Attempting to set default persona");
 
@@ -175,11 +176,11 @@ async fn set_default_persona_handler(
 
 #[axum::debug_handler]
 async fn clear_default_persona_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     UserPersonaService::set_default_persona(&app_state.pool, user.id, None).await?;
@@ -189,10 +190,11 @@ async fn clear_default_persona_handler(
 
 #[axum::debug_handler]
 async fn get_user_token_usage_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
+    State(_): State<AppState>,  // Required for UnifiedAuth extractor
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, "Getting user token usage statistics");

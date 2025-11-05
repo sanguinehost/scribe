@@ -98,7 +98,7 @@ where
         if let Some(auth_header) = parts.headers.get(AUTHORIZATION) {
             if let Ok(auth_str) = auth_header.to_str() {
                 if let Some(token) = auth_str.strip_prefix("Bearer ") {
-                    debug!("Found Bearer token in Authorization header");
+                    tracing::info!("Found Bearer token in Authorization header");
 
                     // Get the app state to access token service
                     let app_state = AppState::from_ref(state);
@@ -119,7 +119,7 @@ where
                     // Validate the token
                     match token_service.validate_token(token) {
                         Ok(claims) => {
-                            debug!(?claims.sub, "Token validated successfully");
+                            tracing::info!(?claims.sub, "Token validated successfully");
 
                             // Load the user from the database
                             let pool = app_state.pool.clone();
@@ -139,21 +139,18 @@ where
                                 }
                             };
 
-                            // Create a minimal session for token auth
-                            // Note: This bypasses the normal session flow but maintains compatibility
+                            // For JWT auth, we create a standalone session that doesn't depend on session layer
+                            // Since JWT is stateless, we don't need the session persistence machinery
                             let mut auth_session =
                                 UnifiedAuthSession::from_request_parts(parts, state)
                                     .await
-                                    .map_err(|_| {
-                                        (
-                                            StatusCode::INTERNAL_SERVER_ERROR,
-                                            "Failed to create auth session",
-                                        )
-                                            .into_response()
+                                    .map_err(|e| {
+                                        error!(?e, "Failed to extract auth session after successful token validation");
+                                        (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error").into_response()
                                     })?;
 
                             // Set the user in the session (in-memory only, not persisted)
-                            auth_session.user = Some(user);
+                            auth_session.user = Some(user.clone());
 
                             return Ok(UnifiedAuth {
                                 session: auth_session,
@@ -161,7 +158,7 @@ where
                             });
                         }
                         Err(e) => {
-                            debug!(?e, "Token validation failed");
+                            error!(?e, "Token validation failed");
                             // Fall through to cookie auth
                         }
                     }
@@ -170,7 +167,7 @@ where
         }
 
         // Fall back to cookie-based authentication
-        debug!("Falling back to cookie-based authentication");
+        tracing::info!("Falling back to cookie-based authentication");
         let auth_session = UnifiedAuthSession::from_request_parts(parts, state)
             .await
             .map_err(|e| {

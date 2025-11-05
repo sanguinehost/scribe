@@ -648,7 +648,7 @@ pub async fn upload_character_handler(
         // Import the lorebook
         match lorebook_service
             .import_lorebook(
-                &auth.session,
+                &auth,
                 Some(&dek.0),
                 lorebook_payload,
                 Arc::new(state.clone()),
@@ -659,7 +659,7 @@ pub async fn upload_character_handler(
                 // Associate the lorebook with the character
                 if let Err(e) = lorebook_service
                     .associate_lorebook_to_character(
-                        &auth.session,
+                        &auth,
                         inserted_character.id,
                         lorebook.id,
                     )
@@ -813,7 +813,7 @@ pub async fn get_character_handler(
                 state.qdrant_service.clone(),
             );
             let lorebooks = lorebook_service
-                .list_character_lorebooks(&auth.session, character_id)
+                .list_character_lorebooks(&auth, character_id)
                 .await?;
             let lorebook_ids: Vec<crate::db::DbId> = lorebooks.iter().map(|lb| lb.id).collect();
 
@@ -926,7 +926,7 @@ pub async fn get_character_handler(
             state.qdrant_service.clone(),
         );
         let lorebooks = lorebook_service
-            .list_character_lorebooks(&auth.session, character_id)
+            .list_character_lorebooks(&auth, character_id)
             .await?;
         let lorebook_ids: Vec<crate::db::DbId> = lorebooks.iter().map(|lb| lb.id).collect();
 
