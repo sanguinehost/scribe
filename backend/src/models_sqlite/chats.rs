@@ -1,5 +1,7 @@
 use crate::db::DbId;
+use crate::db::DbBlob;
 use crate::db::DbTimestamp;
+use crate::db::DbBlob;
 use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
@@ -155,10 +157,10 @@ pub struct Chat {
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
-    pub system_prompt_ciphertext: Option<Vec<u8>>,
-    pub system_prompt_nonce: Option<Vec<u8>>,
-    pub title_ciphertext: Option<Vec<u8>>,
-    pub title_nonce: Option<Vec<u8>>,
+    pub system_prompt_ciphertext: Option<DbBlob>,
+    pub system_prompt_nonce: Option<DbBlob>,
+    pub title_ciphertext: Option<DbBlob>,
+    pub title_nonce: Option<DbBlob>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<crate::db::DbId>,
@@ -178,8 +180,8 @@ pub struct Chat {
     pub total_credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_charge: crate::db::DbDecimal,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub narrative_style_override_ciphertext: Option<DbBlob>,
+    pub narrative_style_override_nonce: Option<DbBlob>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -269,8 +271,8 @@ pub struct NewChat {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
     pub character_id: crate::db::DbId,
-    pub title_ciphertext: Option<Vec<u8>>,
-    pub title_nonce: Option<Vec<u8>>,
+    pub title_ciphertext: Option<DbBlob>,
+    pub title_nonce: Option<DbBlob>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
     pub history_management_strategy: String,
@@ -291,8 +293,8 @@ pub struct NewChat {
     pub stop_sequences: crate::models::OptionalStringArray,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    pub system_prompt_ciphertext: Option<Vec<u8>>,
-    pub system_prompt_nonce: Option<Vec<u8>>,
+    pub system_prompt_ciphertext: Option<DbBlob>,
+    pub system_prompt_nonce: Option<DbBlob>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     // Token tracking fields with default values
     pub total_prompt_tokens: i32,
@@ -301,8 +303,8 @@ pub struct NewChat {
     pub tokens_counted_at: DbTimestamp,
     pub total_credits_used: crate::db::DbDecimal,
     pub prompt_template_id: String,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub narrative_style_override_ciphertext: Option<DbBlob>,
+    pub narrative_style_override_nonce: Option<DbBlob>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -510,14 +512,14 @@ pub struct ChatMessage {
     pub session_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
     pub message_type: MessageRole,
-    pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>,
+    pub content: DbBlob,
+    pub content_nonce: Option<DbBlob>,
     pub created_at: DbTimestamp,
     pub user_id: crate::db::DbId,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
-    pub raw_prompt_ciphertext: Option<Vec<u8>>,
-    pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub raw_prompt_ciphertext: Option<DbBlob>,
+    pub raw_prompt_nonce: Option<DbBlob>,
     pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -915,19 +917,19 @@ pub struct Message {
     pub id: crate::db::DbId,
     pub session_id: crate::db::DbId,
     pub message_type: MessageRole,
-    pub content: Vec<u8>,
+    pub content: DbBlob,
     pub rag_embedding_id: Option<crate::db::DbId>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
     pub user_id: crate::db::DbId,
-    pub content_nonce: Option<Vec<u8>>,
+    pub content_nonce: Option<DbBlob>,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
-    pub raw_prompt_ciphertext: Option<Vec<u8>>,
-    pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub raw_prompt_ciphertext: Option<DbBlob>,
+    pub raw_prompt_nonce: Option<DbBlob>,
     pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -1294,8 +1296,8 @@ pub struct NewChatMessage {
     pub id: crate::db::DbId,
     pub session_id: crate::db::DbId,
     pub message_type: MessageRole,
-    pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>,
+    pub content: DbBlob,
+    pub content_nonce: Option<DbBlob>,
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
@@ -1304,8 +1306,8 @@ pub struct NewChatMessage {
     pub attachments: Option<crate::DbJson>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
-    pub raw_prompt_ciphertext: Option<Vec<u8>>,
-    pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub raw_prompt_ciphertext: Option<DbBlob>,
+    pub raw_prompt_nonce: Option<DbBlob>,
     pub model_name: Option<String>, // Added model_name field for consistency
 }
 
@@ -1356,16 +1358,16 @@ pub struct DbInsertableChatMessage {
     pub chat_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
     pub msg_type: MessageRole,
-    pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>,
+    pub content: DbBlob,
+    pub content_nonce: Option<DbBlob>,
     pub user_id: crate::db::DbId,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
-    pub raw_prompt_ciphertext: Option<Vec<u8>>,
-    pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub raw_prompt_ciphertext: Option<DbBlob>,
+    pub raw_prompt_nonce: Option<DbBlob>,
     pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -2537,6 +2539,7 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
 mod tests {
     use super::*;
     use crate::db::DbId;
+use crate::db::DbBlob;
     use bigdecimal::BigDecimal;
     use chrono::Utc;
     use ring::rand::{SecureRandom, SystemRandom};
@@ -3155,8 +3158,8 @@ pub struct MessageVariant {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
-    pub content: Vec<u8>, // Encrypted content
-    pub content_nonce: Option<Vec<u8>>,
+    pub content: DbBlob, // Encrypted content
+    pub content_nonce: Option<DbBlob>,
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
@@ -3169,8 +3172,8 @@ pub struct MessageVariant {
 pub struct NewMessageVariant {
     pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
-    pub content: Vec<u8>, // Encrypted content
-    pub content_nonce: Option<Vec<u8>>,
+    pub content: DbBlob, // Encrypted content
+    pub content_nonce: Option<DbBlob>,
     pub user_id: crate::db::DbId,
 }
 
@@ -3278,10 +3281,10 @@ pub struct ChatListQuery {
     pub character_id: Option<crate::db::DbId>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub title_ciphertext: Option<Vec<u8>>,
-    pub title_nonce: Option<Vec<u8>>,
-    pub system_prompt_ciphertext: Option<Vec<u8>>,
-    pub system_prompt_nonce: Option<Vec<u8>>,
+    pub title_ciphertext: Option<DbBlob>,
+    pub title_nonce: Option<DbBlob>,
+    pub system_prompt_ciphertext: Option<DbBlob>,
+    pub system_prompt_nonce: Option<DbBlob>,
     pub model_name: String,
     pub chat_mode: ChatMode,
     pub history_management_strategy: String,
@@ -3423,10 +3426,10 @@ pub struct ChatSessionQuery {
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
-    pub system_prompt_ciphertext: Option<Vec<u8>>,
-    pub system_prompt_nonce: Option<Vec<u8>>,
-    pub title_ciphertext: Option<Vec<u8>>,
-    pub title_nonce: Option<Vec<u8>>,
+    pub system_prompt_ciphertext: Option<DbBlob>,
+    pub system_prompt_nonce: Option<DbBlob>,
+    pub title_ciphertext: Option<DbBlob>,
+    pub title_nonce: Option<DbBlob>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<crate::db::DbId>,
@@ -3436,8 +3439,8 @@ pub struct ChatSessionQuery {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub narrative_style_override_ciphertext: Option<DbBlob>,
+    pub narrative_style_override_nonce: Option<DbBlob>,
 }
 
 impl ChatSessionQuery {

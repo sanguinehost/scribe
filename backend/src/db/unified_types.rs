@@ -1026,6 +1026,17 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
     }
 }
 
+// Expression trait implementation for DbBlob
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::Expression for DbBlob {
+    type SqlType = Bytea;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::Expression for DbBlob {
+    type SqlType = diesel::sql_types::Binary;
+}
+
 // ============================================================================
 // DbStringArray - Unified String Array Type
 // ============================================================================
