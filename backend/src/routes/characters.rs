@@ -220,7 +220,7 @@ pub async fn upload_character_handler(
         ($self:ident, $field:ident, $nonce_field:ident, $dek:expr) => {
             if let Some(plaintext_bytes) = $self.$field.take() {
                 if !plaintext_bytes.is_empty() {
-                    match String::from_utf8(plaintext_bytes) {
+                    match String::from_utf8(plaintext_bytes.to_vec()) {
                         Ok(string_version) => {
                             if !string_version.is_empty() {
                                 // Use the higher-level EncryptionService for encryption
@@ -321,7 +321,7 @@ pub async fn upload_character_handler(
     // For depth_prompt, we need to encrypt the text content into depth_prompt_ciphertext
     if let Some(depth_prompt_text_bytes) = new_character_for_db.depth_prompt.take() {
         if !depth_prompt_text_bytes.is_empty() {
-            match String::from_utf8(depth_prompt_text_bytes) {
+            match String::from_utf8(depth_prompt_text_bytes.to_vec()) {
                 Ok(depth_prompt_text) if !depth_prompt_text.is_empty() => {
                     let enc_service = EncryptionService::new();
                     match enc_service.encrypt(&depth_prompt_text, dek.0.expose_secret()) {

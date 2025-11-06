@@ -676,7 +676,7 @@ pub async fn get_session_data_for_generation(
                     session_id,
                     user_id,
                     message_type: message_role,
-                    content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                    content: api_msg.content.as_bytes().to_vec().into(), // Store as plaintext bytes
                     content_nonce: None, // No encryption for frontend-provided history
                     created_at: (chrono::Utc::now()
                         - chrono::Duration::seconds(1000 - index as i64))
@@ -854,7 +854,7 @@ pub async fn get_session_data_for_generation(
         if decrypted_content_str.trim().is_empty() {
             // Create a new DbChatMessage with decrypted (empty) content
             let mut updated_msg = db_msg_raw.clone();
-            updated_msg.content = decrypted_content_str.into_bytes();
+            updated_msg.content = decrypted_content_str.into_bytes().into();
             updated_msg.content_nonce = None; // Content is now plaintext
             managed_recent_history.insert(0, updated_msg);
             continue;
@@ -887,7 +887,7 @@ pub async fn get_session_data_for_generation(
             debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Message FITS budget. Adding to managed_recent_history. New actual_recent_history_tokens: {}", actual_recent_history_tokens);
             // Create a new DbChatMessage with decrypted content before adding
             let mut updated_msg = db_msg_raw.clone();
-            updated_msg.content = decrypted_content_str.into_bytes();
+            updated_msg.content = decrypted_content_str.into_bytes().into();
             updated_msg.content_nonce = None; // Content is now plaintext
             managed_recent_history.insert(0, updated_msg);
         } else {
@@ -1199,7 +1199,7 @@ pub async fn get_session_data_for_generation(
                 session_id,
                 user_id,
                 message_type: MessageRole::Assistant,
-                content: content.into_bytes(), // Content is already decrypted String
+                content: content.into_bytes().into(), // Content is already decrypted String
                 content_nonce: None,
                 created_at: chrono::Utc::now().into(),
                 prompt_tokens: None,

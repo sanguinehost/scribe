@@ -148,7 +148,7 @@ fn truncate_message(
     if content_len > remaining_limit {
         let skip_chars = content_len - remaining_limit;
         let truncated_content_str: String = content_str.chars().skip(skip_chars).collect();
-        truncated_message.content = truncated_content_str.into_bytes();
+        truncated_message.content = truncated_content_str.into_bytes().into();
 
         debug!(
             "Truncating message: skip_chars={}, remaining_limit={}, limit={}, content={}",

@@ -237,48 +237,59 @@ def fix_line(line: str, error_text: str) -> str:
     if vec_to_blob:
         # Need to add .into() to convert Vec<u8> -> DbBlob
 
-        # Fix: Some(...to_vec()) -> Some(...to_vec().into())
-        if 'Some(' in line and '.to_vec()' in line and '.into()' not in line:
-            line = re.sub(r'(Some\([^)]*\.to_vec\(\))\)', r'\1.into())', line)
+        # Fix: .to_vec() -> .to_vec().into()
+        if '.to_vec()' in line and '.into()' not in line:
+            line = re.sub(r'\.to_vec\(\)', r'.to_vec().into()', line)
 
-        # Fix: Some(vec![...]) -> Some(vec![...].into())
-        elif 'Some(' in line and 'vec![' in line and '.into()' not in line:
-            line = re.sub(r'Some\((vec!\[[^\]]*\])\)', r'Some(\1.into())', line)
+        # Fix: .into_bytes() -> .into_bytes().into()
+        elif '.into_bytes()' in line and '.into()' not in line:
+            line = re.sub(r'\.into_bytes\(\)', r'.into_bytes().into()', line)
 
-        # Fix: Some(variable) -> Some(variable.into())
+        # Fix: field = value; (direct assignment)
+        elif '=' in line and ';' in line and '.into()' not in line and 'Some(' not in line:
+            # Match assignment: var = simple_expr;
+            line = re.sub(r'=\s*([a-z_][a-z0-9_]*)\s*;', r'= \1.into();', line)
+
+        # Fix: field: var, (struct field assignment)
+        elif ':' in line and ',' in line and '.into()' not in line and 'Some(' not in line:
+            # Match field: simple_var,
+            line = re.sub(r'(:\s*)([a-z_][a-z0-9_]*)(\s*,)', r'\1\2.into()\3', line)
+
+        # Fix: Some(...) patterns
         elif 'Some(' in line and '.into()' not in line:
-            # Match Some(simple_var) but not Some(complex.expression)
-            line = re.sub(r'Some\(([a-z_][a-z0-9_]*)\)', r'Some(\1.into())', line)
+            # Fix: Some(expr.into_bytes())
+            if '.into_bytes()' in line:
+                line = re.sub(r'Some\(([^)]+\.into_bytes\(\))\)', r'Some(\1.into())', line)
+            # Fix: Some(vec![...])
+            elif 'vec![' in line:
+                line = re.sub(r'Some\((vec!\[[^\]]*\])\)', r'Some(\1.into())', line)
+            # Fix: Some(variable)
+            else:
+                line = re.sub(r'Some\(([a-z_][a-z0-9_]*)\)', r'Some(\1.into())', line)
 
-        # Fix: field: vec![...] -> field: vec![...].into()
+        # Fix: vec![...] not in Some
         elif 'vec![' in line and '.into()' not in line:
-            line = re.sub(r'(:\s*)(vec!\[[^\]]*\])([,\s}])', r'\1\2.into()\3', line)
-
-        # Fix: field: variable -> field: variable.into()
-        elif ':' in line and '.into()' not in line:
-            # Conservative: only if field name suggests binary data
-            if any(kw in line.lower() for kw in ['nonce', 'encrypted', 'ciphertext', 'data', 'bytes', 'plaintext']):
-                line = re.sub(r'(:\s*)([a-z_][a-z0-9_]*)([,\s}])', r'\1\2.into()\3', line)
-
-        # Fix: function_call(..., vec, ...) -> function_call(..., vec.into(), ...)
-        elif ',' in line and '.into()' not in line:
-            # Match simple variable as function argument
-            line = re.sub(r',\s*([a-z_][a-z0-9_]*)\s*([,)])', r', \1.into()\2', line)
+            line = re.sub(r'(vec!\[[^\]]*\])([,\s;])', r'\1.into()\2', line)
 
     elif blob_to_vec:
         # Need to add .to_vec() to convert DbBlob -> Vec<u8>
 
+        # Fix: variable as function arg or in expressions
+        if '(' in line and ')' in line and '.to_vec()' not in line:
+            # Fix: function(blob_var) -> function(blob_var.to_vec())
+            line = re.sub(r'\(([a-z_][a-z0-9_]*)\)([,\s;])', r'(\1.to_vec())\2', line)
+
         # Fix: field.unwrap() -> field.unwrap().to_vec()
-        if '.unwrap()' in line and '.to_vec()' not in line:
-            line = re.sub(r'\.unwrap\(\)([^.])', r'.unwrap().to_vec()\1', line)
+        elif '.unwrap()' in line and '.to_vec()' not in line:
+            line = re.sub(r'\.unwrap\(\)', r'.unwrap().to_vec()', line)
 
         # Fix: Some(blob_var) -> Some(blob_var.to_vec())
-        elif 'Some(' in line and '.to_vec()' not in line and '.into()' not in line:
+        elif 'Some(' in line and '.to_vec()' not in line:
             line = re.sub(r'Some\(([a-z_][a-z0-9_]*)\)', r'Some(\1.to_vec())', line)
 
-        # Fix: &field -> &field.to_vec() (for references)
-        elif '&' in line and '.to_vec()' not in line:
-            line = re.sub(r'&([a-z_][a-z0-9_.]*)([,\s)])', r'&\1.to_vec()\2', line)
+        # Fix: field.clone() -> field.clone().to_vec()
+        elif '.clone()' in line and '.to_vec()' not in line:
+            line = re.sub(r'\.clone\(\)', r'.clone().to_vec()', line)
 
     return line
 

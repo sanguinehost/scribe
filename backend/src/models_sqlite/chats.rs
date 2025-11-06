@@ -620,7 +620,7 @@ impl ChatMessage {
         } else {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
-            self.content = ciphertext;
+            self.content = ciphertext.into();
             self.content_nonce = Some(nonce.into());
         }
         Ok(())
@@ -1004,7 +1004,7 @@ impl Message {
         } else {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
-            self.content = ciphertext;
+            self.content = ciphertext.into();
             self.content_nonce = Some(nonce.into());
         }
         Ok(())
@@ -1492,8 +1492,8 @@ impl DbInsertableChatMessage {
         raw_prompt_ciphertext: Option<Vec<u8>>,
         raw_prompt_nonce: Option<Vec<u8>>,
     ) -> Self {
-        self.raw_prompt_ciphertext = raw_prompt_ciphertext;
-        self.raw_prompt_nonce = raw_prompt_nonce;
+        self.raw_prompt_ciphertext = raw_prompt_ciphertext.into();
+        self.raw_prompt_nonce = raw_prompt_nonce.into();
         self
     }
 

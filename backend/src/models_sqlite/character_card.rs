@@ -761,49 +761,49 @@ impl NewCharacter {
             description: if data.description.is_empty() {
                 None
             } else {
-                Some(data.description.into_bytes())
+                Some(data.description.into_bytes().into())
             },
             description_nonce: None,
             personality: if data.personality.is_empty() {
                 None
             } else {
-                Some(data.personality.into_bytes())
+                Some(data.personality.into_bytes().into())
             },
             personality_nonce: None,
             scenario: if data.scenario.is_empty() {
                 None
             } else {
-                Some(data.scenario.into_bytes())
+                Some(data.scenario.into_bytes().into())
             },
             scenario_nonce: None,
             first_mes: if data.first_mes.is_empty() {
                 None
             } else {
-                Some(data.first_mes.into_bytes())
+                Some(data.first_mes.into_bytes().into())
             },
             first_mes_nonce: None,
             mes_example: if data.mes_example.is_empty() {
                 None
             } else {
-                Some(data.mes_example.into_bytes())
+                Some(data.mes_example.into_bytes().into())
             },
             mes_example_nonce: None,
             creator_notes: if data.creator_notes.is_empty() {
                 None
             } else {
-                Some(data.creator_notes.into_bytes())
+                Some(data.creator_notes.into_bytes().into())
             },
             creator_notes_nonce: None,
             system_prompt: if data.system_prompt.is_empty() {
                 None
             } else {
-                Some(data.system_prompt.into_bytes())
+                Some(data.system_prompt.into_bytes().into())
             },
             system_prompt_nonce: None,
             post_history_instructions: if data.post_history_instructions.is_empty() {
                 None
             } else {
-                Some(data.post_history_instructions.into_bytes())
+                Some(data.post_history_instructions.into_bytes().into())
             },
             post_history_instructions_nonce: None,
             creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),

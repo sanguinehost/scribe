@@ -704,7 +704,7 @@ pub async fn generate_chat_response(
             session_id,
             user_id: user_id_value,
             message_type: DbMessageRole::User,
-            content: current_user_content_text.as_bytes().to_vec(),
+            content: current_user_content_text.as_bytes().to_vec().into(),
             content_nonce: None,
             created_at: chrono::Utc::now().into(),
             prompt_tokens: None,

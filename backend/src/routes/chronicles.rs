@@ -704,7 +704,7 @@ async fn get_chat_messages(
                             // Replace the message content with the selected variant
                             // For now, we'll store it as plaintext - in a real implementation,
                             // we might want to encrypt it with the session DEK
-                            first_assistant_msg.content = alternate_greeting.clone().into_bytes();
+                            first_assistant_msg.content = alternate_greeting.clone().into_bytes().into();
                             first_assistant_msg.content_nonce = None; // Clear nonce since it's plaintext
 
                             info!(
