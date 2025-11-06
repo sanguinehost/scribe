@@ -444,8 +444,8 @@ impl Character {
                     .map_err(|e| {
                         AppError::EncryptionError(format!("Failed to encrypt description: {e}"))
                     })?;
-                self.description = Some(ciphertext);
-                self.description_nonce = Some(nonce);
+                self.description = Some(ciphertext.into());
+                self.description_nonce = Some(nonce.into());
             }
             _ => {
                 // If plaintext is None or empty, clear the encrypted fields

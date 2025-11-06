@@ -621,7 +621,7 @@ impl ChatMessage {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
             self.content = ciphertext;
-            self.content_nonce = Some(nonce);
+            self.content_nonce = Some(nonce.into());
         }
         Ok(())
     }
@@ -696,8 +696,8 @@ impl ChatMessage {
         } else {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_raw_prompt.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
-            self.raw_prompt_ciphertext = Some(ciphertext);
-            self.raw_prompt_nonce = Some(nonce);
+            self.raw_prompt_ciphertext = Some(ciphertext.into());
+            self.raw_prompt_nonce = Some(nonce.into());
         }
         Ok(())
     }
@@ -1005,7 +1005,7 @@ impl Message {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_content.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
             self.content = ciphertext;
-            self.content_nonce = Some(nonce);
+            self.content_nonce = Some(nonce.into());
         }
         Ok(())
     }
@@ -1077,8 +1077,8 @@ impl Message {
         } else {
             let (ciphertext, nonce) = encrypt_gcm(plaintext_raw_prompt.as_bytes(), dek)
                 .map_err(|e| AppError::CryptoError(e.to_string()))?;
-            self.raw_prompt_ciphertext = Some(ciphertext);
-            self.raw_prompt_nonce = Some(nonce);
+            self.raw_prompt_ciphertext = Some(ciphertext.into());
+            self.raw_prompt_nonce = Some(nonce.into());
         }
         Ok(())
     }
@@ -1942,8 +1942,8 @@ impl Chat {
                 let (ciphertext, nonce) =
                     encryption_service.encrypt(&json_str, dek.expose_secret().as_slice())?;
 
-                self.narrative_style_override_ciphertext = Some(ciphertext);
-                self.narrative_style_override_nonce = Some(nonce);
+                self.narrative_style_override_ciphertext = Some(ciphertext.into());
+                self.narrative_style_override_nonce = Some(nonce.into());
             }
             None => {
                 // Clear the override
@@ -3235,8 +3235,8 @@ impl NewMessageVariant {
         Ok(Self {
             parent_message_id,
             variant_index,
-            content: encrypted_content,
-            content_nonce: Some(nonce),
+            content: encrypted_content.into(),
+            content_nonce: Some(nonce.into()),
             user_id,
         })
     }
@@ -3632,8 +3632,8 @@ impl ChatSessionQuery {
                 let (ciphertext, nonce) =
                     encryption_service.encrypt(&json_str, dek.expose_secret().as_slice())?;
 
-                self.narrative_style_override_ciphertext = Some(ciphertext);
-                self.narrative_style_override_nonce = Some(nonce);
+                self.narrative_style_override_ciphertext = Some(ciphertext.into());
+                self.narrative_style_override_nonce = Some(nonce.into());
             }
             None => {
                 // Clear the override

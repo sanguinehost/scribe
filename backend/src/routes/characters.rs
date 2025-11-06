@@ -227,8 +227,8 @@ pub async fn upload_character_handler(
                                 let enc_service = EncryptionService::new();
                                 match enc_service.encrypt(&string_version, $dek.expose_secret()) {
                                     Ok((ciphertext, nonce)) => {
-                                        $self.$field = Some(ciphertext);
-                                        $self.$nonce_field = Some(nonce);
+                                        $self.$field = Some(ciphertext.into());
+                                        $self.$nonce_field = Some(nonce.into());
                                     }
                                     Err(e) => {
                                         tracing::error!(
@@ -326,8 +326,8 @@ pub async fn upload_character_handler(
                     let enc_service = EncryptionService::new();
                     match enc_service.encrypt(&depth_prompt_text, dek.0.expose_secret()) {
                         Ok((ciphertext, nonce)) => {
-                            new_character_for_db.depth_prompt_ciphertext = Some(ciphertext);
-                            new_character_for_db.depth_prompt_nonce = Some(nonce);
+                            new_character_for_db.depth_prompt_ciphertext = Some(ciphertext.into());
+                            new_character_for_db.depth_prompt_nonce = Some(nonce.into());
                         }
                         Err(e) => {
                             tracing::error!("Failed to encrypt depth_prompt: {}", e);
@@ -352,8 +352,8 @@ pub async fn upload_character_handler(
             let enc_service = EncryptionService::new();
             match enc_service.encrypt(world_text, dek.0.expose_secret()) {
                 Ok((ciphertext, nonce)) => {
-                    new_character_for_db.world_ciphertext = Some(ciphertext);
-                    new_character_for_db.world_nonce = Some(nonce);
+                    new_character_for_db.world_ciphertext = Some(ciphertext.into());
+                    new_character_for_db.world_nonce = Some(nonce.into());
                 }
                 Err(e) => {
                     tracing::error!("Failed to encrypt world field: {}", e);
@@ -996,13 +996,13 @@ pub async fn generate_character_handler(
         name: "Generated Placeholder".to_string(),
         description: None, // Will be set after potential encryption
         description_nonce: None,
-        personality: Some(b"Placeholder".to_vec()),
+        personality: Some(b"Placeholder".to_vec().into()),
         personality_nonce: None,
-        scenario: Some(b"Placeholder".to_vec()),
+        scenario: Some(b"Placeholder".to_vec().into()),
         scenario_nonce: None,
-        first_mes: Some(b"Placeholder".to_vec()),
+        first_mes: Some(b"Placeholder".to_vec().into()),
         first_mes_nonce: None,
-        mes_example: Some(b"Placeholder".to_vec()),
+        mes_example: Some(b"Placeholder".to_vec().into()),
         mes_example_nonce: None,
         creator_notes: None,
         creator_notes_nonce: None,
@@ -1083,8 +1083,8 @@ pub async fn generate_character_handler(
     if !plaintext_desc.is_empty() {
         match crypto::encrypt_gcm(plaintext_desc.as_bytes(), &dek.0) {
             Ok((ciphertext, nonce)) => {
-                dummy_char_for_db.description = Some(ciphertext);
-                dummy_char_for_db.description_nonce = Some(nonce);
+                dummy_char_for_db.description = Some(ciphertext.into());
+                dummy_char_for_db.description_nonce = Some(nonce.into());
             }
             Err(e) => {
                 tracing::error!("Failed to encrypt dummy character description: {}", e);

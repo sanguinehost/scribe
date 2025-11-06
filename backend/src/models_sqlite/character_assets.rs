@@ -64,7 +64,7 @@ impl NewCharacterAsset {
             uri: None, // No longer using file paths
             name: name.to_string(),
             ext, // Use derived extension
-            data: Some(image_data),
+            data: Some(image_data.into()),
             content_type, // Use provided content_type
         }
     }

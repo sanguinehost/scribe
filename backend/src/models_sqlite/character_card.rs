@@ -858,11 +858,11 @@ impl NewCharacter {
             world,
             creator_comment: None, // Not in extensions, could be mapped from creator_notes
             creator_comment_nonce: None,
-            depth_prompt: depth_prompt_data,
+            depth_prompt: depth_prompt_data.into(),
             depth_prompt_depth,
             depth_prompt_role,
             talkativeness,
-            depth_prompt_ciphertext: depth_prompt_json,
+            depth_prompt_ciphertext: depth_prompt_json.into(),
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption

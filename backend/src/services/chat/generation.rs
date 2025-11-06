@@ -1183,7 +1183,7 @@ pub async fn get_session_data_for_generation(
 
         if let Some(first_mes_override) = override_values_map.get("first_mes") {
             first_mes_content_to_add = Some(first_mes_override.clone());
-        } else if let Some(char_first_mes) = decrypt_field_local(
+        } else if let Some(char_first_mes.to_vec()) = decrypt_field_local(
             character_for_first_mes.first_mes.as_ref(),
             character_for_first_mes.first_mes_nonce.as_ref(),
             &user_dek_secret_box,
