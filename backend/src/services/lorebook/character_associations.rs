@@ -6,11 +6,11 @@ use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 impl LorebookService {
     pub async fn associate_lorebook_to_character(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         character_id: crate::db::DbId,
         lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         // Check character ownership
         use crate::schema::characters;
@@ -82,13 +82,13 @@ impl LorebookService {
     /// Returns `AppError::Unauthorized` if the user is not authenticated,
     /// `AppError::NotFound` if the character doesn't exist,
     /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn list_character_lorebooks(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         character_id: crate::db::DbId,
     ) -> Result<Vec<LorebookResponse>, AppError> {
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let lorebooks = crate::db::with_conn(&self.pool, move |conn_sync| {
             use crate::schema::character_lorebooks;
@@ -119,15 +119,15 @@ impl LorebookService {
     }
 
     /// Creates or updates a character lorebook override for a specific chat session
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn set_character_lorebook_override(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         chat_session_id: crate::db::DbId,
         lorebook_id: crate::db::DbId,
         action: String, // "disable" or "enable"
     ) -> Result<(), AppError> {
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
         // Validate action
@@ -173,14 +173,14 @@ impl LorebookService {
     }
 
     /// Removes a character lorebook override for a specific chat session
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn remove_character_lorebook_override(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         chat_session_id: crate::db::DbId,
         lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
         let rows_deleted = crate::db::with_conn(&self.pool, move |conn_sync| {
@@ -209,13 +209,13 @@ impl LorebookService {
     }
 
     /// Gets all character lorebook overrides for a specific chat session
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn get_character_lorebook_overrides(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         chat_session_id: crate::db::DbId,
     ) -> Result<Vec<crate::models::lorebooks::ChatCharacterLorebookOverride>, AppError> {
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
         let user_id = user.id;
 
         let overrides = crate::db::with_conn(&self.pool, move |conn_sync| {

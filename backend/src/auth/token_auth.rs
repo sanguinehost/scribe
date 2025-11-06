@@ -18,7 +18,6 @@ pub type UnifiedAuthSession = AuthSession<crate::auth::AuthBackend>;
 
 /// Extractor that supports both cookie-based and token-based authentication
 /// This allows the same endpoints to work for both web (cookies) and desktop (tokens)
-#[derive(Debug)]
 pub struct UnifiedAuth {
     pub session: UnifiedAuthSession,
     pub is_token_auth: bool,
@@ -30,20 +29,9 @@ impl UnifiedAuth {
         self.session.user.is_some()
     }
 
-    /// Get the authenticated user (borrowed)
-    ///
-    /// Use this for simple field access without moving the user.
-    /// For closures or async blocks that need to move the user, use `user_cloned()`.
+    /// Get the authenticated user
     pub fn user(&self) -> Option<&User> {
         self.session.user.as_ref()
-    }
-
-    /// Get a cloned copy of the authenticated user
-    ///
-    /// Use this when the user needs to be moved into closures or async blocks.
-    /// For simple field access without cloning, prefer `user()` which returns a reference.
-    pub fn user_cloned(&self) -> Option<User> {
-        self.session.user.clone()
     }
 
     /// Get the user ID if authenticated
@@ -98,7 +86,7 @@ where
         if let Some(auth_header) = parts.headers.get(AUTHORIZATION) {
             if let Ok(auth_str) = auth_header.to_str() {
                 if let Some(token) = auth_str.strip_prefix("Bearer ") {
-                    tracing::info!("Found Bearer token in Authorization header");
+                    debug!("Found Bearer token in Authorization header");
 
                     // Get the app state to access token service
                     let app_state = AppState::from_ref(state);
@@ -119,7 +107,7 @@ where
                     // Validate the token
                     match token_service.validate_token(token) {
                         Ok(claims) => {
-                            tracing::info!(?claims.sub, "Token validated successfully");
+                            debug!(?claims.sub, "Token validated successfully");
 
                             // Load the user from the database
                             let pool = app_state.pool.clone();
@@ -139,18 +127,21 @@ where
                                 }
                             };
 
-                            // For JWT auth, we create a standalone session that doesn't depend on session layer
-                            // Since JWT is stateless, we don't need the session persistence machinery
+                            // Create a minimal session for token auth
+                            // Note: This bypasses the normal session flow but maintains compatibility
                             let mut auth_session =
                                 UnifiedAuthSession::from_request_parts(parts, state)
                                     .await
-                                    .map_err(|e| {
-                                        error!(?e, "Failed to extract auth session after successful token validation");
-                                        (StatusCode::INTERNAL_SERVER_ERROR, "Authentication error").into_response()
+                                    .map_err(|_| {
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            "Failed to create auth session",
+                                        )
+                                            .into_response()
                                     })?;
 
                             // Set the user in the session (in-memory only, not persisted)
-                            auth_session.user = Some(user.clone());
+                            auth_session.user = Some(user);
 
                             return Ok(UnifiedAuth {
                                 session: auth_session,
@@ -158,7 +149,7 @@ where
                             });
                         }
                         Err(e) => {
-                            error!(?e, "Token validation failed");
+                            debug!(?e, "Token validation failed");
                             // Fall through to cookie auth
                         }
                     }
@@ -167,7 +158,7 @@ where
         }
 
         // Fall back to cookie-based authentication
-        tracing::info!("Falling back to cookie-based authentication");
+        debug!("Falling back to cookie-based authentication");
         let auth_session = UnifiedAuthSession::from_request_parts(parts, state)
             .await
             .map_err(|e| {

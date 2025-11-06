@@ -44,7 +44,7 @@ use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
-use axum_login::AuthManagerLayerBuilder; // Auth layer for session management (UnifiedAuth handles authentication in handlers)
+use axum_login::{login_required, AuthManagerLayerBuilder}; // Modified
                                                            // Import SessionManagerLayer directly from tower_sessions
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
@@ -200,11 +200,7 @@ fn initialize_runtime() {
     // Install the default crypto provider (ring) for rustls FIRST.
     let _ = ring::default_provider().install_default();
     dotenvy::dotenv().ok();
-
-    // CRITICAL FIX: Re-enable logger in desktop mode for backend application logs
-    // Tauri log plugin (log crate) and tracing work together - no conflict
     init_subscriber();
-
     tracing::info!("Starting Scribe backend server...");
     tracing::info!(
         "Build configuration: {}",
@@ -702,14 +698,12 @@ fn build_router(
         .nest("/", lorebook_routes())
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
-        .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))); // 10MB limit for avatar uploads
-        // Authentication is now handled by UnifiedAuth extractor in each handler
-        // which supports both JWT (desktop) and cookie (web) authentication
+        .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
+        .route_layer(login_required!(AuthBackend));
 
     // Health endpoint - not rate limited for monitoring purposes
     let health_routes = Router::new()
-        .route("/health", get(health_check)) // Desktop health check
-        .route("/api/health", get(health_check)) // Cloud/legacy health check
+        .route("/api/health", get(health_check))
         .with_state(app_state.clone());
 
     // Public auth routes (no authentication required) - rate limited
@@ -820,8 +814,7 @@ fn build_router(
     };
 
     // Build API routes with proper auth layering
-    // JWT middleware is applied individually to each router (public + protected)
-    // AFTER their respective auth layers to ensure auth_session is available
+    // Public auth routes (no auth layer) + Protected routes (with auth layer)
     let api_routes = Router::new()
         .nest("/api", public_auth_routes) // Public auth routes - NO auth required
         .nest(

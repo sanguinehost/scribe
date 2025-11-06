@@ -3,7 +3,6 @@
 
 use crate::{
     auth::user_store::Backend as AuthBackend,
-    auth::token_auth::UnifiedAuth,            // Import UnifiedAuth for dual auth support
     errors::AppError,
     models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     services::user_settings_service::UserSettingsService,
@@ -209,10 +208,10 @@ pub fn llm_router() -> Router<AppState> {
 /// GET /api/llm/info - Get LLM system information
 #[cfg(feature = "local-llm")]
 async fn get_llm_info(
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<LlmInfoResponse>, StatusCode> {
     // Verify user is authenticated
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     info!("Getting LLM system information");
 
@@ -910,11 +909,11 @@ async fn get_best_recommendation(
 /// GET /api/llm/models/grouped - Get models grouped by base model
 #[cfg(feature = "local-llm")]
 async fn get_grouped_models(
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<GroupedModelInfo>>, StatusCode> {
     // Verify user is authenticated
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     info!("Getting grouped models");
 
@@ -1057,10 +1056,10 @@ async fn download_best_model(
 
 /// GET /api/llm/status - Check if local LLM is available
 async fn get_llm_status(
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<LlmStatusResponse>, StatusCode> {
     // Verify user is authenticated
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     #[cfg(feature = "local-llm")]
     {
@@ -1090,13 +1089,13 @@ async fn get_llm_status(
 #[cfg(feature = "local-llm")]
 async fn test_llm(
     State(app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     Json(request): Json<TestLlmRequest>,
 ) -> Result<Json<TestLlmResponse>, StatusCode> {
     info!("Testing LLM with prompt: {} (secure)", request.prompt);
 
-    let user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Use the secure AI client factory to get a properly wrapped client
     let secure_client = match app_state
@@ -1176,10 +1175,10 @@ async fn test_llm(
 /// GET /api/llm/preferences - Get user's LLM preferences
 async fn get_user_preferences(
     State(app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<UserSettingsResponse>, AppError> {
-    let user = auth
-        .user()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     let settings =
@@ -1191,11 +1190,11 @@ async fn get_user_preferences(
 /// PUT /api/llm/preferences - Update user's LLM preferences
 async fn update_user_preferences(
     State(app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     Json(request): Json<UpdateUserSettingsRequest>,
 ) -> Result<Json<UserSettingsResponse>, AppError> {
-    let user = auth
-        .user()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     let updated_settings = UserSettingsService::update_user_settings(
@@ -1237,11 +1236,11 @@ async fn get_server_status(
 #[cfg(feature = "local-llm")]
 async fn restart_server(
     State(app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<ServerActionResponse>, StatusCode> {
     info!("Restarting server");
 
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
     let client = LlamaCppClient::new(config).await.map_err(|e| {
@@ -1276,11 +1275,11 @@ async fn restart_server(
 #[cfg(feature = "local-llm")]
 async fn shutdown_server(
     State(app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<ServerActionResponse>, StatusCode> {
     info!("Shutting down server");
 
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
     let client = LlamaCppClient::new(config).await.map_err(|e| {
@@ -1309,12 +1308,12 @@ async fn shutdown_server(
 #[cfg(feature = "local-llm")]
 async fn switch_model(
     State(app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     Path(model_id): Path<String>,
 ) -> Result<Json<ServerActionResponse>, StatusCode> {
     info!("Switching to model: {}", model_id);
 
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     let config = crate::llm::llamacpp::LlamaCppConfig::from_env();
     let client = LlamaCppClient::new(config).await.map_err(|e| {
@@ -1377,10 +1376,10 @@ async fn get_current_model(
 
 /// GET /api/llm/models/all - Get all available models with capabilities
 async fn get_all_models(
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<crate::DbJson>, StatusCode> {
     // Verify user is authenticated
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
 
     use crate::llm::ModelRegistry;
 
@@ -1492,11 +1491,11 @@ async fn get_all_models(
 
 /// GET /api/llm/models/:model_id/capabilities - Get specific model capabilities
 async fn get_model_capabilities(
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     Path(model_id): Path<String>,
 ) -> Result<Json<crate::DbJson>, StatusCode> {
     // Verify user is authenticated
-    let _user = auth.user().ok_or(StatusCode::UNAUTHORIZED)?;
+    let _user = auth_session.user.ok_or(StatusCode::UNAUTHORIZED)?;
     use crate::llm::ModelRegistry;
 
     info!("Getting capabilities for model: {}", model_id);

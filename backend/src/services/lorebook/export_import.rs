@@ -7,18 +7,18 @@ use crate::db::DbId;
 impl LorebookService {
     pub async fn export_lorebook(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         lorebook_id: crate::db::DbId,
     ) -> Result<crate::models::lorebook_dtos::ExportedLorebook, AppError> {
-        let _user = get_user_from_unified_auth(auth)?;
+        let _user = get_user_from_session(auth_session)?;
 
         // First get the lorebook metadata
-        let lorebook = self.get_lorebook(auth, lorebook_id).await?;
+        let lorebook = self.get_lorebook(auth_session, lorebook_id).await?;
 
         // Fetch all entry summaries for this lorebook
         let entry_summaries = self
-            .list_lorebook_entries(auth, lorebook_id, user_dek)
+            .list_lorebook_entries(auth_session, lorebook_id, user_dek)
             .await?;
 
         // Convert to SillyTavern format
@@ -29,7 +29,7 @@ impl LorebookService {
         for (index, summary) in entry_summaries.into_iter().enumerate() {
             // Get full entry details
             match self
-                .get_lorebook_entry(auth, lorebook_id, summary.id, user_dek)
+                .get_lorebook_entry(auth_session, lorebook_id, summary.id, user_dek)
                 .await
             {
                 Ok(full_entry) => {
@@ -107,21 +107,21 @@ impl LorebookService {
     /// Returns `AppError::Unauthorized` if the user is not authenticated,
     /// Returns `AppError::NotFound` if the lorebook doesn't exist or user doesn't have access,
     /// Returns `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
-    #[instrument(skip(self, auth, user_dek), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn export_lorebook_minimal(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         lorebook_id: crate::db::DbId,
     ) -> Result<crate::models::lorebook_dtos::ScribeMinimalLorebook, AppError> {
-        let _user = get_user_from_unified_auth(auth)?;
+        let _user = get_user_from_session(auth_session)?;
 
         // First get the lorebook metadata
-        let lorebook = self.get_lorebook(auth, lorebook_id).await?;
+        let lorebook = self.get_lorebook(auth_session, lorebook_id).await?;
 
         // Fetch all entries with full content
         let entries = self
-            .list_lorebook_entries_with_content(auth, lorebook_id, user_dek)
+            .list_lorebook_entries_with_content(auth_session, lorebook_id, user_dek)
             .await?;
 
         // Convert to minimal format
@@ -159,15 +159,15 @@ impl LorebookService {
     /// Returns `AppError::Unauthorized` if the user is not authenticated,
     /// `AppError::ValidationError` if the payload is invalid,
     /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
-    #[instrument(skip(self, auth, user_dek, payload), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session, user_dek, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn import_lorebook(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         payload: crate::models::lorebook_dtos::LorebookUploadPayload,
         state: Arc<AppState>,
     ) -> Result<LorebookResponse, AppError> {
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
@@ -565,19 +565,19 @@ impl LorebookService {
     /// Returns `AppError::Unauthorized` if the user is not authenticated,
     /// `AppError::ValidationError` if the payload is invalid,
     /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur.
-    #[instrument(skip(self, auth, user_dek, payload), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session, user_dek, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn import_lorebook_from_scribe_minimal(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         payload: crate::models::lorebook_dtos::ScribeMinimalLorebook,
         state: Arc<AppState>,
     ) -> Result<LorebookResponse, AppError> {
-        let _user = get_user_from_unified_auth(auth)?;
+        let _user = get_user_from_session(auth_session)?;
 
         // Create the lorebook
         let create_payload: CreateLorebookPayload = payload.clone().into(); // Use the From impl
-        let lorebook = self.create_lorebook(auth, create_payload).await?;
+        let lorebook = self.create_lorebook(auth_session, create_payload).await?;
 
         // Import all entries
         for entry in payload.entries {
@@ -609,7 +609,7 @@ impl LorebookService {
             // This will handle encryption and embedding
             if let Err(e) = self
                 .create_lorebook_entry(
-                    auth,
+                    auth_session,
                     lorebook.id,
                     entry_payload,
                     user_dek,

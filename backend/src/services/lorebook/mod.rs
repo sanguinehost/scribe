@@ -4,7 +4,6 @@ use crate::db::DbId;
 
 use crate::db::DbPool;
 use crate::{
-    auth::token_auth::UnifiedAuth,
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
     models::{
@@ -80,7 +79,7 @@ mod helpers;
 mod lorebook_crud;
 
 // Re-export important items
-pub use helpers::{get_user_from_session, get_user_from_unified_auth};
+pub use helpers::get_user_from_session;
 
 impl LorebookService {
     #[must_use]

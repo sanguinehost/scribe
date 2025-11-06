@@ -12,14 +12,14 @@ impl LorebookService {
     /// Returns `AppError::Unauthorized` if the user is not authenticated,
     /// `AppError::InternalServerErrorGeneric` if database connection fails or database interaction errors occur,
     /// database-related errors if the lorebook insertion fails.
-    #[instrument(skip(self, auth, payload), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn create_lorebook(
         &self,
-        auth: &UnifiedAuth, // Changed to AuthBackend
+        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
         payload: CreateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!(?payload, "Attempting to create lorebook");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
@@ -83,13 +83,13 @@ impl LorebookService {
         })
     }
 
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id)))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id)))]
     pub async fn list_lorebooks(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
     ) -> Result<Vec<LorebookResponse>, AppError> {
         debug!("Attempting to list lorebooks");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -134,14 +134,14 @@ impl LorebookService {
         Ok(lorebook_responses)
     }
 
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn get_lorebook(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: crate::db::DbId,
     ) -> Result<LorebookResponse, AppError> {
         debug!(%lorebook_id, "Attempting to get lorebook");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -199,17 +199,17 @@ impl LorebookService {
         }
     }
 
-    #[instrument(skip(self, auth, payload), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn update_lorebook(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: crate::db::DbId,
         payload: UpdateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!(?payload, "Attempting to update lorebook");
 
         // 1. Get current user
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         // 2. Fetch lorebook by id and check ownership
         let updated_lorebook = crate::db::with_conn(&self.pool, move |conn| {
@@ -287,16 +287,16 @@ impl LorebookService {
         })
     }
 
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn delete_lorebook(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook");
 
         // 1. Get current user
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         // 2. Delete lorebook and verify ownership in a single transaction
         crate::db::with_conn(&self.pool, move |conn| {

@@ -6,17 +6,17 @@ use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 
 impl LorebookService {
-    #[instrument(skip(self, auth, payload, user_dek, state), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn create_lorebook_entry(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: crate::db::DbId,
         payload: CreateLorebookEntryPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         state: Arc<AppState>, // Added AppState
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!(?payload, "Attempting to create lorebook entry");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
         let user_id_for_embedding = user.id; // Clone for embedding task
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -370,15 +370,15 @@ AppError::InternalServerErrorGeneric(format!(
         })
     }
 
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn list_lorebook_entries(
         &self,
-        auth: &UnifiedAuth, // Changed to AuthBackend
+        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
         lorebook_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
     ) -> Result<Vec<LorebookEntrySummaryResponse>, AppError> {
         debug!("Attempting to list lorebook entries");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -489,15 +489,15 @@ AppError::InternalServerErrorGeneric(format!(
 
     /// Lists all lorebook entries with full content (decrypted) for the given lorebook.
     /// This is the method that should be used by the frontend to get complete entry data.
-    #[instrument(skip(self, auth, user_dek), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
     pub async fn list_lorebook_entries_with_content(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<LorebookEntryResponse>, AppError> {
         debug!("Attempting to list lorebook entries with content");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -688,16 +688,16 @@ AppError::InternalServerErrorGeneric(format!(
         Ok(entry_responses)
     }
 
-    #[instrument(skip(self, auth, user_dek), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id, entry_id = %entry_id))]
+    #[instrument(skip(self, auth_session, user_dek), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id, entry_id = %entry_id))]
     pub async fn get_lorebook_entry(
         &self,
-        auth: &UnifiedAuth, // Changed to AuthBackend
+        auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
         lorebook_id: crate::db::DbId,
         entry_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!("Attempting to get lorebook entry");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
@@ -835,10 +835,10 @@ AppError::InternalServerErrorGeneric(format!(
         })
     }
 
-    #[instrument(skip(self, auth, payload, user_dek, state), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id_param, entry_id = %entry_id))]
+    #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id_param, entry_id = %entry_id))]
     pub async fn update_lorebook_entry(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id_param: crate::db::DbId,
         entry_id: crate::db::DbId,
         payload: UpdateLorebookEntryPayload,
@@ -846,7 +846,7 @@ AppError::InternalServerErrorGeneric(format!(
         state: Arc<AppState>,
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!(?payload, "Attempting to update lorebook entry");
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
         let user_id_for_embedding = user.id; // Clone for embedding task
 
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
@@ -1118,17 +1118,17 @@ AppError::InternalServerErrorGeneric(format!(
         })
     }
 
-    #[instrument(skip(self, auth), fields(user_id = ?auth.user().map(|u| u.id), lorebook_id = %lorebook_id, entry_id = %entry_id))]
+    #[instrument(skip(self, auth_session), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id, entry_id = %entry_id))]
     pub async fn delete_lorebook_entry(
         &self,
-        auth: &UnifiedAuth,
+        auth_session: &AuthSession<AuthBackend>,
         lorebook_id: crate::db::DbId,
         entry_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook entry");
 
         // 1. Get current user
-        let user = get_user_from_unified_auth(auth)?;
+        let user = get_user_from_session(auth_session)?;
 
         // 2. Fetch lorebook entry and verify ownership in a single query
         crate::db::with_conn(&self.pool, move |conn| {

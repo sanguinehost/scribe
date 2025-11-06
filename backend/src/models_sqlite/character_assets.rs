@@ -2,9 +2,7 @@
 // SQLite-specific version (id: DbId)
 
 use crate::db::DbId;
-use crate::db::DbBlob;
 use crate::db::DbTimestamp;
-use crate::db::DbBlob;
 use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -21,7 +19,7 @@ pub struct CharacterAsset {
     pub ext: String,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub data: Option<DbBlob>,
+    pub data: Option<Vec<u8>>,
     pub content_type: Option<String>,
 }
 
@@ -35,7 +33,7 @@ pub struct NewCharacterAsset {
     pub uri: Option<String>,
     pub name: String,
     pub ext: String,
-    pub data: Option<DbBlob>,
+    pub data: Option<Vec<u8>>,
     pub content_type: Option<String>,
 }
 
@@ -64,7 +62,7 @@ impl NewCharacterAsset {
             uri: None, // No longer using file paths
             name: name.to_string(),
             ext, // Use derived extension
-            data: Some(image_data.into()),
+            data: Some(image_data),
             content_type, // Use provided content_type
         }
     }

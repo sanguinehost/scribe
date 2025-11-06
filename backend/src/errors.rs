@@ -94,9 +94,6 @@ pub enum AppError {
     #[error("Data Encryption Key not available. Please sign in again.")]
     DekMissing, // Specific error for missing DEK after server restart
 
-    #[error("Data Encryption Key is invalid or malformed: {0}")]
-    DekInvalid(String), // Specific error for malformed DEK in header
-
     #[error("Forbidden: {0}")]
     Forbidden(String), // Access denied despite authentication
 
@@ -348,7 +345,6 @@ impl AppError {
             Self::InvalidCredentials => "INVALID_CREDENTIALS",
             Self::Unauthorized(_) => "UNAUTHORIZED",
             Self::DekMissing => "DEK_MISSING",
-            Self::DekInvalid(_) => "DEK_INVALID",
             Self::Forbidden(_) => "FORBIDDEN",
             Self::AuthError(_) => "AUTH_ERROR",
             Self::SessionStoreError(_) => "SESSION_STORE_ERROR",

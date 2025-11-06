@@ -1,5 +1,5 @@
 use crate::auth::session_dek::SessionDek; // Added SessionDek
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend;
 use crate::crypto; // Added crypto for encryption/decryption
 use crate::db::DbId;
 use crate::db::DbPool; // Added PgPool import
@@ -47,6 +47,9 @@ use tracing::{error, info};
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde::{Deserialize, Serialize}; // Added Deserialize
 use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
+
+// Shorthand for auth session
+type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
@@ -113,7 +116,7 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 /// - Character override validation fails
 /// - Database operation fails
 pub async fn set_chat_character_override_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek,                         // Added SessionDek extractor
     Path(session_id): Path<crate::db::DbId>, // Renamed id to session_id for clarity
@@ -138,8 +141,8 @@ pub async fn set_chat_character_override_handler(
     // Validate the payload first
     payload.validate()?;
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %loggable_user_id(user.id), field_name = %payload.field_name, "Attempting to set chat character override");
@@ -186,13 +189,13 @@ pub async fn set_chat_character_override_handler(
 /// - Character access is denied
 /// - Database operation fails
 pub async fn get_chats_by_character_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek,
     Path(character_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -228,12 +231,12 @@ pub async fn get_chats_by_character_handler(
 /// - Database operation fails
 /// - Decryption fails
 pub async fn get_chats_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor for decryption
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -269,13 +272,13 @@ pub async fn get_chats_handler(
 /// - Database operation fails
 /// - Encryption fails
 pub async fn create_chat_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor for encryption
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     // Use the SessionDek which provides the user's DEK
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
@@ -355,12 +358,12 @@ pub async fn create_chat_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn get_chat_by_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -395,12 +398,12 @@ pub async fn get_chat_by_id_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn get_chat_deletion_analysis_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // First verify the user owns this chat
@@ -449,13 +452,13 @@ pub async fn get_chat_deletion_analysis_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn delete_chat_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
     Query(params): Query<DeleteChatQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -622,8 +625,9 @@ fn parse_chat_id(id: &str) -> Result<crate::db::DbId, AppError> {
 }
 
 /// Helper function to get authenticated user
-fn get_authenticated_user(auth: UnifiedAuth) -> Result<User, AppError> {
-    auth.user_cloned()
+fn get_authenticated_user(auth_session: CurrentAuthSession) -> Result<User, AppError> {
+    auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))
 }
 
@@ -914,7 +918,7 @@ async fn process_messages_for_response(
 /// - Database operation fails
 /// - Decryption fails
 pub async fn get_messages_by_chat_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // ADDED SessionDek extractor
     Path(id): Path<String>,
@@ -929,7 +933,7 @@ pub async fn get_messages_by_chat_id_handler(
 
     // Parse and validate input
     let chat_id = parse_chat_id(&id)?;
-    let user = get_authenticated_user(auth)?;
+    let user = get_authenticated_user(auth_session)?;
 
     tracing::debug!(
         "Parsed chat_id = {}, user_id = {}",
@@ -962,14 +966,14 @@ pub async fn get_messages_by_chat_id_handler(
 }
 
 pub async fn create_message_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
     Path(chat_id): Path<crate::db::DbId>,
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Parse the role into enum for validation
@@ -1207,13 +1211,13 @@ pub async fn create_message_handler(
 /// - Message not found or access denied
 /// - Database operation fails
 pub async fn get_message_by_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -1369,13 +1373,13 @@ pub async fn get_message_by_id_handler(
 /// - Database operation fails
 #[cfg(feature = "postgres-backend")]
 pub async fn vote_message_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
     Json(payload): Json<VoteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -1440,12 +1444,12 @@ pub async fn vote_message_handler(
 /// - Database operation fails
 #[cfg(feature = "postgres-backend")]
 pub async fn get_votes_by_chat_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -1496,12 +1500,12 @@ pub async fn get_votes_by_chat_id_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn delete_trailing_messages_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -1628,12 +1632,12 @@ pub async fn delete_trailing_messages_handler(
 /// - Message not found or access denied
 /// - Database operation fails
 pub async fn delete_message_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -1720,13 +1724,13 @@ pub async fn delete_message_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn update_chat_visibility_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateChatVisibilityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -1776,13 +1780,13 @@ pub async fn update_chat_visibility_handler(
 /// - Database operation fails
 /// - Decryption fails
 pub async fn get_chat_settings_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek,                 // Added SessionDek extractor
     Path(id): Path<crate::db::DbId>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Call the service function to get chat settings
@@ -1814,7 +1818,7 @@ pub async fn get_chat_settings_handler(
 /// - Database operation fails
 /// - Encryption fails
 pub async fn update_chat_settings_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
     Path(id): Path<crate::db::DbId>,
@@ -1823,8 +1827,8 @@ pub async fn update_chat_settings_handler(
     // Manually validate the payload
     payload.validate()?; // Ensure validator is imported and used
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let user_id = user.id; // Clone user_id for use in service call
 
@@ -1868,15 +1872,17 @@ fn default_chronicle_action() -> String {
     "delete_events".to_string()
 }
 
+/// Get token usage statistics for a specific chat session
+#[axum::debug_handler]
 async fn get_chat_token_usage_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(chat_id = %id, "Getting chat token usage statistics");
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Fetch the chat session to verify ownership and get token statistics
@@ -1949,15 +1955,17 @@ async fn get_chat_token_usage_handler(
     Ok((StatusCode::OK, Json(token_usage)))
 }
 
+/// Select a variant for a message
+/// Updates the current_variant_index and returns the message with new content
 pub async fn select_message_variant_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(message_id): Path<crate::db::DbId>,
     dek: SessionDek, // Added SessionDek extractor
     Json(payload): Json<SelectVariantRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     let pool = state.pool.clone();

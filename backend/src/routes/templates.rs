@@ -1,13 +1,17 @@
 use crate::auth::session_dek::SessionDek;
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::middleware::{rate_limit_logger, security_headers, template_rate_limit_middleware};
 use crate::prompt_templates::{TemplateInfo, TEMPLATE_MANAGER};
 use axum::{extract::Path, middleware, response::IntoResponse, routing::get, Json, Router};
+use axum_login::AuthSession;
 use regex::Regex;
 use serde::Serialize;
 use std::sync::LazyLock;
 use tracing::{info, warn};
+
+/// Shorthand for auth session
+type CurrentAuthSession = AuthSession<AuthBackend>;
 
 /// Regex for validating template IDs - alphanumeric and underscore only
 static TEMPLATE_ID_REGEX: LazyLock<Regex> =
@@ -42,12 +46,18 @@ fn validate_template_id(template_id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Lists all available prompt templates
+///
+/// # Security
+/// - Requires authentication
+/// - Returns only template metadata, not content
+/// - Rate limited (handled by middleware)
 pub async fn list_templates_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     _dek: SessionDek, // Require authentication but don't need DEK
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     info!(user_id = %user.id, "Listing available templates");
@@ -57,13 +67,19 @@ pub async fn list_templates_handler(
     Ok(Json(TemplateListResponse { templates }))
 }
 
+/// Gets information for a specific template
+///
+/// # Security
+/// - Requires authentication
+/// - Validates template_id format to prevent path traversal
+/// - Returns 404 for non-existent templates
 pub async fn get_template_info_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     _dek: SessionDek, // Require authentication but don't need DEK
     Path(template_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Validate template ID format for security

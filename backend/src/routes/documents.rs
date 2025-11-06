@@ -5,7 +5,7 @@
 
 #![cfg(feature = "postgres-backend")]
 
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::{DbId, DbTimestamp};
@@ -22,8 +22,12 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
+use axum_login::AuthSession; // Removed AuthUser
 use chrono::Utc;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper}; // Specific diesel imports
+
+// Shorthand for auth session
+type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn document_routes() -> Router<crate::state::AppState> {
     Router::new()
@@ -43,12 +47,12 @@ pub fn document_routes() -> Router<crate::state::AppState> {
 
 // Create a new document
 async fn create_document_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Json(payload): Json<CreateDocumentRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -89,12 +93,12 @@ async fn create_document_handler(
 
 // Get all documents with a specific ID
 async fn get_documents_by_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -141,12 +145,12 @@ async fn get_documents_by_id_handler(
 
 // Get the latest document with a specific ID
 async fn get_document_by_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -186,12 +190,12 @@ async fn get_document_by_id_handler(
 
 // Delete documents after a specific timestamp
 async fn delete_documents_by_id_after_timestamp_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path((id, timestamp)): Path<(crate::db::DbId, String)>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -258,12 +262,12 @@ async fn delete_documents_by_id_after_timestamp_handler(
 
 // Create a new suggestion
 async fn create_suggestion_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Json(payload): Json<CreateSuggestionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
@@ -329,12 +333,12 @@ async fn create_suggestion_handler(
 
 // Get suggestions for a document
 async fn get_suggestions_by_document_id_handler(
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     State(state): State<AppState>,
     Path(document_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 

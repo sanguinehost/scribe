@@ -38,14 +38,15 @@ use diesel::{
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, trace, warn}; // Use needed tracing macros
                                                             // use anyhow::anyhow; // Unused import
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend; // <-- Import the backend type
 use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto};
 use crate::schema::chat_sessions;
 use crate::services::character_service::CharacterService;
 use crate::services::encryption_service::EncryptionService; // Added import
 use crate::services::lorebook::LorebookService;
 use axum::body::Bytes;
-// DieselError moved to main diesel imports
+use axum_login::AuthSession; // <-- Removed login_required import
+                             // DieselError moved to main diesel imports
 use image::ImageFormat; // Added for image processing
 use image::ImageReader; // Use the new name for clarity
 use secrecy::ExposeSecret; // Added for DEK expose
@@ -58,6 +59,10 @@ pub struct ImageQueryParams {
     width: Option<u32>,
     height: Option<u32>,
 }
+
+// Define the type alias for the auth session specific to our AuthBackend
+// type CurrentAuthSession = AuthSession<AppState>;
+type CurrentAuthSession = AuthSession<AuthBackend>; // <-- Use correct Backend type
 
 // Define input structure for the generation prompt
 #[derive(Deserialize, Debug)]
@@ -93,7 +98,7 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
             get(get_character_asset_handler),
         )
         // Apply LoginRequired middleware to all routes in this router
-        // It checks auth.user_cloned() and returns 401 if None.
+        // It checks auth_session.user and returns 401 if None.
         .with_state(state)
 }
 
@@ -114,17 +119,18 @@ fn insert_character_sync(
 }
 
 // POST /api/characters/upload
-#[instrument(skip(state, multipart, auth), err)]
+#[instrument(skip(state, multipart, auth_session), err)]
 pub async fn upload_character_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek, // Added SessionDek extractor
     mut multipart: Multipart,
 ) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
     // Return CharacterDataForClient
     // Get the user from the session
-    let user = auth
-        .user()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
@@ -220,15 +226,15 @@ pub async fn upload_character_handler(
         ($self:ident, $field:ident, $nonce_field:ident, $dek:expr) => {
             if let Some(plaintext_bytes) = $self.$field.take() {
                 if !plaintext_bytes.is_empty() {
-                    match String::from_utf8(plaintext_bytes.to_vec()) {
+                    match String::from_utf8(plaintext_bytes) {
                         Ok(string_version) => {
                             if !string_version.is_empty() {
                                 // Use the higher-level EncryptionService for encryption
                                 let enc_service = EncryptionService::new();
                                 match enc_service.encrypt(&string_version, $dek.expose_secret()) {
                                     Ok((ciphertext, nonce)) => {
-                                        $self.$field = Some(ciphertext.into());
-                                        $self.$nonce_field = Some(nonce.into());
+                                        $self.$field = Some(ciphertext);
+                                        $self.$nonce_field = Some(nonce);
                                     }
                                     Err(e) => {
                                         tracing::error!(
@@ -321,13 +327,13 @@ pub async fn upload_character_handler(
     // For depth_prompt, we need to encrypt the text content into depth_prompt_ciphertext
     if let Some(depth_prompt_text_bytes) = new_character_for_db.depth_prompt.take() {
         if !depth_prompt_text_bytes.is_empty() {
-            match String::from_utf8(depth_prompt_text_bytes.to_vec()) {
+            match String::from_utf8(depth_prompt_text_bytes) {
                 Ok(depth_prompt_text) if !depth_prompt_text.is_empty() => {
                     let enc_service = EncryptionService::new();
                     match enc_service.encrypt(&depth_prompt_text, dek.0.expose_secret()) {
                         Ok((ciphertext, nonce)) => {
-                            new_character_for_db.depth_prompt_ciphertext = Some(ciphertext.into());
-                            new_character_for_db.depth_prompt_nonce = Some(nonce.into());
+                            new_character_for_db.depth_prompt_ciphertext = Some(ciphertext);
+                            new_character_for_db.depth_prompt_nonce = Some(nonce);
                         }
                         Err(e) => {
                             tracing::error!("Failed to encrypt depth_prompt: {}", e);
@@ -352,8 +358,8 @@ pub async fn upload_character_handler(
             let enc_service = EncryptionService::new();
             match enc_service.encrypt(world_text, dek.0.expose_secret()) {
                 Ok((ciphertext, nonce)) => {
-                    new_character_for_db.world_ciphertext = Some(ciphertext.into());
-                    new_character_for_db.world_nonce = Some(nonce.into());
+                    new_character_for_db.world_ciphertext = Some(ciphertext);
+                    new_character_for_db.world_nonce = Some(nonce);
                 }
                 Err(e) => {
                     tracing::error!("Failed to encrypt world field: {}", e);
@@ -648,7 +654,7 @@ pub async fn upload_character_handler(
         // Import the lorebook
         match lorebook_service
             .import_lorebook(
-                &auth,
+                &auth_session,
                 Some(&dek.0),
                 lorebook_payload,
                 Arc::new(state.clone()),
@@ -659,7 +665,7 @@ pub async fn upload_character_handler(
                 // Associate the lorebook with the character
                 if let Err(e) = lorebook_service
                     .associate_lorebook_to_character(
-                        &auth,
+                        &auth_session,
                         inserted_character.id,
                         lorebook.id,
                     )
@@ -687,16 +693,16 @@ pub async fn upload_character_handler(
 }
 
 // POST /api/characters - Manual character creation endpoint
-#[instrument(skip(state, auth, dek, create_dto), err)]
+#[instrument(skip(state, auth_session, dek, create_dto), err)]
 pub async fn create_character_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek,
     Json(create_dto): Json<CharacterCreateDto>,
 ) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
     // Get the user from the session
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
@@ -718,15 +724,15 @@ pub async fn create_character_handler(
 }
 
 // GET /api/characters
-#[instrument(skip(state, auth, dek), err)]
+#[instrument(skip(state, auth_session, dek), err)]
 pub async fn list_characters_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek, // Added SessionDek extractor
 ) -> Result<Json<Vec<CharacterDataForClient>>, AppError> {
     // Return Vec<CharacterDataForClient>
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
@@ -750,17 +756,17 @@ pub async fn list_characters_handler(
 
 // GET /api/characters/:id
 #[debug_handler]
-#[instrument(skip(state, auth, dek), err)]
+#[instrument(skip(state, auth_session, dek), err)]
 pub async fn get_character_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek,
     Path(character_id): Path<crate::db::DbId>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_handler for character_id: {}", character_id);
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .clone() // Clone the user to avoid partial move
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id;
@@ -813,7 +819,7 @@ pub async fn get_character_handler(
                 state.qdrant_service.clone(),
             );
             let lorebooks = lorebook_service
-                .list_character_lorebooks(&auth, character_id)
+                .list_character_lorebooks(&auth_session, character_id)
                 .await?;
             let lorebook_ids: Vec<crate::db::DbId> = lorebooks.iter().map(|lb| lb.id).collect();
 
@@ -926,7 +932,7 @@ pub async fn get_character_handler(
             state.qdrant_service.clone(),
         );
         let lorebooks = lorebook_service
-            .list_character_lorebooks(&auth, character_id)
+            .list_character_lorebooks(&auth_session, character_id)
             .await?;
         let lorebook_ids: Vec<crate::db::DbId> = lorebooks.iter().map(|lb| lb.id).collect();
 
@@ -968,16 +974,16 @@ pub async fn get_character_handler(
 }
 
 // POST /api/characters/generate
-#[instrument(skip(_app_state, auth, payload), err)]
+#[instrument(skip(_app_state, auth_session, payload), err)]
 pub async fn generate_character_handler(
     State(_app_state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek, // Added SessionDek extractor
     Json(payload): Json<GenerateCharacterPayload>,
 ) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
     // Return CharacterDataForClient
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let user_id_val = user.id;
 
@@ -996,13 +1002,13 @@ pub async fn generate_character_handler(
         name: "Generated Placeholder".to_string(),
         description: None, // Will be set after potential encryption
         description_nonce: None,
-        personality: Some(b"Placeholder".to_vec().into()),
+        personality: Some(b"Placeholder".to_vec()),
         personality_nonce: None,
-        scenario: Some(b"Placeholder".to_vec().into()),
+        scenario: Some(b"Placeholder".to_vec()),
         scenario_nonce: None,
-        first_mes: Some(b"Placeholder".to_vec().into()),
+        first_mes: Some(b"Placeholder".to_vec()),
         first_mes_nonce: None,
-        mes_example: Some(b"Placeholder".to_vec().into()),
+        mes_example: Some(b"Placeholder".to_vec()),
         mes_example_nonce: None,
         creator_notes: None,
         creator_notes_nonce: None,
@@ -1083,8 +1089,8 @@ pub async fn generate_character_handler(
     if !plaintext_desc.is_empty() {
         match crypto::encrypt_gcm(plaintext_desc.as_bytes(), &dek.0) {
             Ok((ciphertext, nonce)) => {
-                dummy_char_for_db.description = Some(ciphertext.into());
-                dummy_char_for_db.description_nonce = Some(nonce.into());
+                dummy_char_for_db.description = Some(ciphertext);
+                dummy_char_for_db.description_nonce = Some(nonce);
             }
             Err(e) => {
                 tracing::error!("Failed to encrypt dummy character description: {}", e);
@@ -1105,16 +1111,16 @@ pub async fn generate_character_handler(
 
 // DELETE /api/characters/:id
 #[debug_handler]
-#[instrument(skip(state, auth), err)]
+#[instrument(skip(state, auth_session), err)]
 pub async fn delete_character_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(character_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     info!(target: "handler_log", ">>> ENTERING delete_character_handler for character_id: {}", character_id);
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
     info!(target: "handler_log", user_id = %local_user_id, target_character_id = %character_id, "User attempting to DELETE character.");
@@ -1174,16 +1180,16 @@ pub async fn delete_character_handler(
 }
 
 // PUT /api/characters/:id - Update an existing character
-#[instrument(skip(state, auth, dek, update_dto), err)]
+#[instrument(skip(state, auth_session, dek, update_dto), err)]
 pub async fn update_character_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek,
     Path(character_id_to_update): Path<crate::db::DbId>, // Renamed to avoid conflict
     Json(update_dto): Json<CharacterUpdateDto>,
 ) -> Result<Json<CharacterDataForClient>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
@@ -1214,17 +1220,17 @@ type CharacterAssetIdType = i32;
 type CharacterAssetIdType = crate::db::DbId;
 
 #[debug_handler]
-#[instrument(skip(state, auth), err)]
+#[instrument(skip(state, auth_session), err)]
 pub async fn get_character_asset_handler(
     Path((character_id, asset_id)): Path<(crate::db::DbId, CharacterAssetIdType)>,
     Query(params): Query<ImageQueryParams>, // Extract query parameters
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
 ) -> Result<Response<Body>, AppError> {
     trace!(target: "auth_debug", ">>> ENTERING get_character_asset_handler for character_id: {}, asset_id: {}, params: {:?}", character_id, asset_id, params);
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
     let local_user_id = user.id;
 
@@ -1322,12 +1328,12 @@ pub async fn get_character_asset_handler(
 #[instrument(skip_all, fields(field = ?payload.field))]
 pub async fn generate_field_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     dek: SessionDek, // SECURITY: SessionDek required for decrypting lorebook content
     Json(payload): Json<FieldGenerationRequest>,
 ) -> Result<Json<FieldGenerationResult>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!("Generating field {:?} for user request", payload.field);
@@ -1344,11 +1350,11 @@ pub async fn generate_field_handler(
 #[instrument(skip_all)]
 pub async fn generate_full_character_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Json(payload): Json<FullCharacterRequest>,
 ) -> Result<Json<FullCharacterResult>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!(
@@ -1366,11 +1372,11 @@ pub async fn generate_full_character_handler(
 #[instrument(skip_all, fields(field = ?payload.field))]
 pub async fn enhance_field_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Json(payload): Json<EnhancementRequest>,
 ) -> Result<Json<EnhancementResult>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!("Enhancing field {:?} for user", payload.field);
@@ -1385,11 +1391,11 @@ pub async fn enhance_field_handler(
 #[instrument(skip_all)]
 pub async fn analyze_style_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Json(payload): Json<crate::DbJson>,
 ) -> Result<Json<crate::DbJson>, AppError> {
-    let _user = auth
-        .user_cloned()
+    let _user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Extract content from payload

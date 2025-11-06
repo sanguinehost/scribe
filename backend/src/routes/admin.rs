@@ -9,11 +9,13 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
+use axum_login::AuthSession;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
 
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend;
+type CurrentAuthSession = AuthSession<AuthBackend>;
 
 // DTO for user list display
 #[derive(Debug, Serialize)]
@@ -44,8 +46,8 @@ pub struct UpdateUserRoleRequest {
 }
 
 // Middleware to check if user is Admin
-fn require_admin(auth: &UnifiedAuth) -> Result<(), AppError> {
-    auth.session.user.as_ref().map_or_else(|| {
+fn require_admin(auth_session: &CurrentAuthSession) -> Result<(), AppError> {
+    auth_session.user.as_ref().map_or_else(|| {
             warn!("Unauthorized access attempt to admin endpoint");
             Err(AppError::Unauthorized("Not logged in".to_string()))
         }, |user| {
@@ -69,13 +71,13 @@ fn require_admin(auth: &UnifiedAuth) -> Result<(), AppError> {
 }
 
 // List all users
-#[instrument(skip(state, auth), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn list_users_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth)?;
+    require_admin(&auth_session)?;
 
     info!("Admin: listing all users");
 
@@ -103,14 +105,14 @@ async fn list_users_handler(
 }
 
 // Get a specific user
-#[instrument(skip(state, auth), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn get_user_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(user_id): Path<crate::db::DbId>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth)?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, "Admin: getting specific user details");
 
@@ -147,19 +149,19 @@ async fn get_user_handler(
 }
 
 // Implement user account locking
-#[instrument(skip(state, auth), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn lock_user_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(user_id): Path<crate::db::DbId>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth)?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, "Admin: locking user account");
 
     // Prevent locking own account
-    if let Some(admin_user) = &auth.user_cloned() {
+    if let Some(admin_user) = &auth_session.user {
         if admin_user.id == user_id {
             warn!(user_id = %user_id, "Admin tried to lock their own account");
             return Err(AppError::BadRequest(
@@ -221,14 +223,14 @@ async fn lock_user_handler(
 }
 
 // Implement user account unlocking
-#[instrument(skip(state, auth), err)]
+#[instrument(skip(state, auth_session), err)]
 async fn unlock_user_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(user_id): Path<crate::db::DbId>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth)?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, "Admin: unlocking user account");
 
@@ -285,20 +287,20 @@ async fn unlock_user_handler(
 }
 
 // Update user role
-#[instrument(skip(state, auth, payload), err)]
+#[instrument(skip(state, auth_session, payload), err)]
 async fn update_user_role_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(user_id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateUserRoleRequest>,
 ) -> Result<Response, AppError> {
     // Verify the user is an administrator
-    require_admin(&auth)?;
+    require_admin(&auth_session)?;
 
     info!(user_id = %user_id, new_role = ?payload.role, "Admin: updating user role");
 
     // Prevent changing own role
-    if let Some(admin_user) = &auth.user_cloned() {
+    if let Some(admin_user) = &auth_session.user {
         if admin_user.id == user_id {
             warn!(user_id = %user_id, "Admin tried to change their own role");
             return Err(AppError::BadRequest(

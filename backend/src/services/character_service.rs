@@ -152,22 +152,22 @@ impl CharacterService {
                 .expect("Name should be present after validation"),
             spec: "chara_card_v3".to_string(),
             spec_version: "3.0".to_string(),
-            description: description_enc.into(),
-            description_nonce: description_nonce_enc.into(),
-            personality: personality_enc.into(),
-            personality_nonce: personality_nonce_enc.into(),
-            scenario: scenario_enc.into(),
-            scenario_nonce: scenario_nonce_enc.into(),
-            first_mes: first_mes_enc.into(),
-            first_mes_nonce: first_mes_nonce_enc.into(),
-            mes_example: mes_example_enc.into(),
-            mes_example_nonce: mes_example_nonce_enc.into(),
-            creator_notes: creator_notes_enc.into(),
-            creator_notes_nonce: creator_notes_nonce_enc.into(),
-            system_prompt: system_prompt_enc.into(),
-            system_prompt_nonce: system_prompt_nonce_enc.into(),
-            post_history_instructions: post_history_instructions_enc.into(),
-            post_history_instructions_nonce: post_history_instructions_nonce_enc.into(),
+            description: description_enc,
+            description_nonce: description_nonce_enc,
+            personality: personality_enc,
+            personality_nonce: personality_nonce_enc,
+            scenario: scenario_enc,
+            scenario_nonce: scenario_nonce_enc,
+            first_mes: first_mes_enc,
+            first_mes_nonce: first_mes_nonce_enc,
+            mes_example: mes_example_enc,
+            mes_example_nonce: mes_example_nonce_enc,
+            creator_notes: creator_notes_enc,
+            creator_notes_nonce: creator_notes_nonce_enc,
+            system_prompt: system_prompt_enc,
+            system_prompt_nonce: system_prompt_nonce_enc,
+            post_history_instructions: post_history_instructions_enc,
+            post_history_instructions_nonce: post_history_instructions_nonce_enc,
             tags: OptionalStringArray(if create_dto.tags.is_empty() {
                 None
             } else {
@@ -295,8 +295,8 @@ impl CharacterService {
             if !creator_comment_text.is_empty() {
                 let (ciphertext, nonce) =
                     self.encrypt_string_field_with_nonce(creator_comment_text, dek_key_bytes)?;
-                new_character_for_db.creator_comment = ciphertext.into();
-                new_character_for_db.creator_comment_nonce = nonce.into();
+                new_character_for_db.creator_comment = ciphertext;
+                new_character_for_db.creator_comment_nonce = nonce;
             }
         }
 
@@ -305,8 +305,8 @@ impl CharacterService {
             if !depth_prompt_text.is_empty() {
                 let (ciphertext, nonce) =
                     self.encrypt_string_field_with_nonce(depth_prompt_text, dek_key_bytes)?;
-                new_character_for_db.depth_prompt_ciphertext = ciphertext.into();
-                new_character_for_db.depth_prompt_nonce = nonce.into();
+                new_character_for_db.depth_prompt_ciphertext = ciphertext;
+                new_character_for_db.depth_prompt_nonce = nonce;
             }
         }
 
@@ -315,8 +315,8 @@ impl CharacterService {
             if !world_text.is_empty() {
                 let (ciphertext, nonce) =
                     self.encrypt_string_field_with_nonce(world_text, dek_key_bytes)?;
-                new_character_for_db.world_ciphertext = ciphertext.into();
-                new_character_for_db.world_nonce = nonce.into();
+                new_character_for_db.world_ciphertext = ciphertext;
+                new_character_for_db.world_nonce = nonce;
             }
         }
 
@@ -587,8 +587,8 @@ impl CharacterService {
             if !world_val.is_empty() {
                 let (ciphertext, nonce) =
                     self.encrypt_string_field_with_nonce(&world_val, dek_key_bytes)?;
-                existing_character.world_ciphertext = ciphertext.into();
-                existing_character.world_nonce = nonce.into();
+                existing_character.world_ciphertext = ciphertext;
+                existing_character.world_nonce = nonce;
             } else {
                 existing_character.world_ciphertext = None;
                 existing_character.world_nonce = None;
@@ -626,8 +626,8 @@ impl CharacterService {
             } else {
                 let (ciphertext, nonce) =
                     self.encrypt_string_field_with_nonce(depth_prompt_val, dek_key_bytes)?;
-                existing_character.depth_prompt_ciphertext = ciphertext.into();
-                existing_character.depth_prompt_nonce = nonce.into();
+                existing_character.depth_prompt_ciphertext = ciphertext;
+                existing_character.depth_prompt_nonce = nonce;
             }
         }
 

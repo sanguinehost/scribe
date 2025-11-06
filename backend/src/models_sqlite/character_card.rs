@@ -1,11 +1,7 @@
 use crate::db::DbId;
-use crate::db::DbBlob;
 use crate::db::DbJson; // Using DbJson for flexibility in extensions and mixed types like id
-use crate::db::DbBlob;
 use crate::db::DbTimestamp;
-use crate::db::DbBlob;
 use crate::db::Json;
-use crate::db::DbBlob;
 use crate::models::characters::Character;
 use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
@@ -472,22 +468,22 @@ pub struct NewCharacter {
     pub spec: String,
     pub spec_version: String,
     pub name: String,
-    pub description: Option<DbBlob>,
-    pub description_nonce: Option<DbBlob>,
-    pub personality: Option<DbBlob>,
-    pub personality_nonce: Option<DbBlob>,
-    pub scenario: Option<DbBlob>,
-    pub scenario_nonce: Option<DbBlob>,
-    pub first_mes: Option<DbBlob>,
-    pub first_mes_nonce: Option<DbBlob>,
-    pub mes_example: Option<DbBlob>,
-    pub mes_example_nonce: Option<DbBlob>,
-    pub creator_notes: Option<DbBlob>,
-    pub creator_notes_nonce: Option<DbBlob>,
-    pub system_prompt: Option<DbBlob>,
-    pub system_prompt_nonce: Option<DbBlob>,
-    pub post_history_instructions: Option<DbBlob>,
-    pub post_history_instructions_nonce: Option<DbBlob>,
+    pub description: Option<Vec<u8>>,
+    pub description_nonce: Option<Vec<u8>>,
+    pub personality: Option<Vec<u8>>,
+    pub personality_nonce: Option<Vec<u8>>,
+    pub scenario: Option<Vec<u8>>,
+    pub scenario_nonce: Option<Vec<u8>>,
+    pub first_mes: Option<Vec<u8>>,
+    pub first_mes_nonce: Option<Vec<u8>>,
+    pub mes_example: Option<Vec<u8>>,
+    pub mes_example_nonce: Option<Vec<u8>>,
+    pub creator_notes: Option<Vec<u8>>,
+    pub creator_notes_nonce: Option<Vec<u8>>,
+    pub system_prompt: Option<Vec<u8>>,
+    pub system_prompt_nonce: Option<Vec<u8>>,
+    pub post_history_instructions: Option<Vec<u8>>,
+    pub post_history_instructions_nonce: Option<Vec<u8>>,
     pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
@@ -500,30 +496,30 @@ pub struct NewCharacter {
     pub modification_date: Option<DbTimestamp>,
     pub extensions: Option<DbJson>, // Added extensions field
     // Fields from Character struct that are also in NewCharacter based on schema.rs and common use
-    pub persona: Option<DbBlob>,
-    pub persona_nonce: Option<DbBlob>,
-    pub world_scenario: Option<DbBlob>,
-    pub world_scenario_nonce: Option<DbBlob>,
+    pub persona: Option<Vec<u8>>,
+    pub persona_nonce: Option<Vec<u8>>,
+    pub world_scenario: Option<Vec<u8>>,
+    pub world_scenario_nonce: Option<Vec<u8>>,
     pub avatar: Option<String>,
     pub chat: Option<String>, // This seems like a V1/V2 field, usually not in new cards directly
-    pub greeting: Option<DbBlob>,
-    pub greeting_nonce: Option<DbBlob>,
-    pub definition: Option<DbBlob>,
-    pub definition_nonce: Option<DbBlob>,
+    pub greeting: Option<Vec<u8>>,
+    pub greeting_nonce: Option<Vec<u8>>,
+    pub definition: Option<Vec<u8>>,
+    pub definition_nonce: Option<Vec<u8>>,
     pub default_voice: Option<String>,
     // data_id: Option<i32>, // Usually not set on new character creation this way
     pub category: Option<String>,
     pub definition_visibility: Option<String>,
     // depth: Option<i32>,
-    pub example_dialogue: Option<DbBlob>,
-    pub example_dialogue_nonce: Option<DbBlob>,
+    pub example_dialogue: Option<Vec<u8>>,
+    pub example_dialogue_nonce: Option<Vec<u8>>,
     pub favorite: Option<bool>,
     pub first_message_visibility: Option<String>,
     // height: Option<BigDecimal>,
     // last_activity: Option<DbTimestamp>,
     pub migrated_from: Option<String>,
-    pub model_prompt: Option<DbBlob>,
-    pub model_prompt_nonce: Option<DbBlob>,
+    pub model_prompt: Option<Vec<u8>>,
+    pub model_prompt_nonce: Option<Vec<u8>>,
     pub model_prompt_visibility: Option<String>,
     // model_temperature: Option<BigDecimal>,
     // num_interactions: Option<i64>,
@@ -536,24 +532,24 @@ pub struct NewCharacter {
     pub system_tags: crate::models::OptionalStringArray,
     pub token_budget: Option<i32>,
     pub usage_hints: Option<DbJson>,
-    pub user_persona: Option<DbBlob>,
-    pub user_persona_nonce: Option<DbBlob>,
+    pub user_persona: Option<Vec<u8>>,
+    pub user_persona_nonce: Option<Vec<u8>>,
     pub user_persona_visibility: Option<String>,
     pub visibility: Option<String>,
     // weight: Option<BigDecimal>,
     pub world_scenario_visibility: Option<String>,
     pub fav: Option<bool>,
     pub world: Option<String>,
-    pub creator_comment: Option<DbBlob>,
-    pub creator_comment_nonce: Option<DbBlob>,
-    pub depth_prompt: Option<DbBlob>,
+    pub creator_comment: Option<Vec<u8>>,
+    pub creator_comment_nonce: Option<Vec<u8>>,
+    pub depth_prompt: Option<Vec<u8>>,
     pub depth_prompt_depth: Option<i32>,
     pub depth_prompt_role: Option<String>,
     pub talkativeness: Option<crate::db::DbDecimal>,
-    pub depth_prompt_ciphertext: Option<DbBlob>,
-    pub depth_prompt_nonce: Option<DbBlob>,
-    pub world_ciphertext: Option<DbBlob>,
-    pub world_nonce: Option<DbBlob>,
+    pub depth_prompt_ciphertext: Option<Vec<u8>>,
+    pub depth_prompt_nonce: Option<Vec<u8>>,
+    pub world_ciphertext: Option<Vec<u8>>,
+    pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
     pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
     pub updated_at: Option<DbTimestamp>,
@@ -761,49 +757,49 @@ impl NewCharacter {
             description: if data.description.is_empty() {
                 None
             } else {
-                Some(data.description.into_bytes().into())
+                Some(data.description.into_bytes())
             },
             description_nonce: None,
             personality: if data.personality.is_empty() {
                 None
             } else {
-                Some(data.personality.into_bytes().into())
+                Some(data.personality.into_bytes())
             },
             personality_nonce: None,
             scenario: if data.scenario.is_empty() {
                 None
             } else {
-                Some(data.scenario.into_bytes().into())
+                Some(data.scenario.into_bytes())
             },
             scenario_nonce: None,
             first_mes: if data.first_mes.is_empty() {
                 None
             } else {
-                Some(data.first_mes.into_bytes().into())
+                Some(data.first_mes.into_bytes())
             },
             first_mes_nonce: None,
             mes_example: if data.mes_example.is_empty() {
                 None
             } else {
-                Some(data.mes_example.into_bytes().into())
+                Some(data.mes_example.into_bytes())
             },
             mes_example_nonce: None,
             creator_notes: if data.creator_notes.is_empty() {
                 None
             } else {
-                Some(data.creator_notes.into_bytes().into())
+                Some(data.creator_notes.into_bytes())
             },
             creator_notes_nonce: None,
             system_prompt: if data.system_prompt.is_empty() {
                 None
             } else {
-                Some(data.system_prompt.into_bytes().into())
+                Some(data.system_prompt.into_bytes())
             },
             system_prompt_nonce: None,
             post_history_instructions: if data.post_history_instructions.is_empty() {
                 None
             } else {
-                Some(data.post_history_instructions.into_bytes().into())
+                Some(data.post_history_instructions.into_bytes())
             },
             post_history_instructions_nonce: None,
             creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
@@ -858,11 +854,11 @@ impl NewCharacter {
             world,
             creator_comment: None, // Not in extensions, could be mapped from creator_notes
             creator_comment_nonce: None,
-            depth_prompt: depth_prompt_data.into(),
+            depth_prompt: depth_prompt_data,
             depth_prompt_depth,
             depth_prompt_role,
             talkativeness,
-            depth_prompt_ciphertext: depth_prompt_json.into(),
+            depth_prompt_ciphertext: depth_prompt_json,
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption

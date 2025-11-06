@@ -1,7 +1,7 @@
 // backend/src/routes/chat.rs
 
 use crate::auth::session_dek::SessionDek;
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbId;
@@ -56,6 +56,7 @@ use axum::{
     routing::{get, patch, post},
     Json, Router,
 };
+use axum_login::AuthSession;
 use bigdecimal::ToPrimitive;
 use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use futures_util::StreamExt;
@@ -69,6 +70,9 @@ use std::sync::Arc;
 use tracing::field;
 use tracing::{debug, error, info, instrument, trace, warn};
 use validator::Validate;
+
+// Define CurrentAuthSession type alias
+type CurrentAuthSession = AuthSession<AuthBackend>;
 
 // Credit value in dollars per credit (1 credit = $0.02)
 const CREDIT_VALUE_DOLLARS: f64 = 0.02;
@@ -141,13 +145,13 @@ pub struct AgentAnalysisResponse {
 #[instrument(skip_all, fields(user_id = field::Empty, character_id = field::Empty))]
 pub async fn create_chat_session_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek, // Renamed from _session_dek as it will be used
     Json(payload): Json<CreateChatSessionPayload>,
 ) -> Result<(StatusCode, Json<ChatSessionQuery>), AppError> {
     info!("Attempting to create new chat session");
 
-    let user = auth.user().ok_or_else(|| {
+    let user = auth_session.user.as_ref().ok_or_else(|| {
         error!("User not found in session during chat creation");
         AppError::Unauthorized("User not found in session".to_string())
     })?;
@@ -186,7 +190,7 @@ pub async fn create_chat_session_handler(
 #[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty, chat_id = field::Empty, message_id = field::Empty))]
 pub async fn generate_chat_response(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     session_dek: SessionDek,
     Path(session_id_str): Path<String>,
     Query(query_params): Query<ChatGenerateQueryParams>,
@@ -199,11 +203,11 @@ pub async fn generate_chat_response(
 
     let state_arc = Arc::new(state);
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
-    tracing::debug!(user_id = %loggable_user_id(user.id), user_dek_from_auth_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
+    tracing::debug!(user_id = %loggable_user_id(user.id), user_dek_from_auth_session_is_some = user.dek.is_some(), "generate_chat_response: Checked user.dek from auth_session (expected None or unused).");
 
     let user_id_value = user.id;
     let session_dek_arc = Arc::new(session_dek.0); // MODIFIED: Create Arc for SessionDek
@@ -704,7 +708,7 @@ pub async fn generate_chat_response(
             session_id,
             user_id: user_id_value,
             message_type: DbMessageRole::User,
-            content: current_user_content_text.as_bytes().to_vec().into(),
+            content: current_user_content_text.as_bytes().to_vec(),
             content_nonce: None,
             created_at: chrono::Utc::now().into(),
             prompt_tokens: None,
@@ -2090,9 +2094,9 @@ pub async fn generate_chat_response(
 pub async fn get_chat_session_handler(
     State(state): State<AppState>,
     Path(session_id): Path<crate::db::DbId>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
 ) -> Result<Json<ChatSessionQuery>, AppError> {
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!("User not found in session for session_id: {}", session_id);
         AppError::Unauthorized("User not found in session".to_string())
     })?;
@@ -2117,17 +2121,17 @@ pub async fn get_chat_session_handler(
 /// - `Forbidden`: User doesn't own the session
 /// - `NotFound`: Session doesn't exist
 /// - `EncryptionError`: Failed to encrypt override data
-#[instrument(skip(state, auth, session_dek))]
+#[instrument(skip(state, auth_session, session_dek))]
 pub async fn update_session_narrative_style_handler(
     State(state): State<AppState>,
     Path(session_id): Path<crate::db::DbId>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Json(payload): Json<crate::models::template_preferences::UpdateTemplatePreferenceRequest>,
 ) -> Result<Json<crate::models::template_preferences::TemplatePreferenceResponse>, AppError> {
     use diesel::prelude::*;
 
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!("User not found in session for session_id: {}", session_id);
         AppError::Unauthorized("User not found in session".to_string())
     })?;
@@ -2294,12 +2298,13 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
 #[instrument(skip_all)]
 pub async fn count_tokens_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Json(payload): Json<TokenCountRequest>,
 ) -> Result<Json<TokenCountResponse>, AppError> {
     // Ensure user is authenticated
-    let _user = auth
-        .user_cloned()
+    let _user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     // Validate the payload
@@ -2361,14 +2366,15 @@ pub async fn count_tokens_handler(
 #[instrument(skip_all)]
 pub async fn get_agent_analysis_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Path(session_id): Path<crate::db::DbId>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<AgentAnalysisResponse>>, AppError> {
     // Ensure user is authenticated
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
     let user_id = user.id;
 
@@ -2482,12 +2488,13 @@ async fn ping_handler() -> &'static str {
 /// Get all variants for a message
 async fn get_message_variants_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Path(message_id): Path<crate::db::DbId>,
 ) -> Result<Json<Vec<MessageVariantDto>>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let variants = crate::services::chat::message_variants::get_message_variants(
@@ -2504,13 +2511,14 @@ async fn get_message_variants_handler(
 /// Create a new variant for a message
 async fn create_message_variant_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Path(message_id): Path<crate::db::DbId>,
     Json(payload): Json<CreateMessageVariantPayload>,
 ) -> Result<(StatusCode, Json<crate::models::chats::MessageResponse>), AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let variant = crate::services::chat::message_variants::create_message_variant(
@@ -2528,12 +2536,13 @@ async fn create_message_variant_handler(
 /// Get a specific variant by index
 async fn get_message_variant_by_index_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Path((message_id, variant_index)): Path<(crate::db::DbId, i32)>,
 ) -> Result<Json<Option<MessageVariantDto>>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let variant = crate::services::chat::message_variants::get_message_variant_by_index(
@@ -2551,11 +2560,12 @@ async fn get_message_variant_by_index_handler(
 /// Delete a message variant
 async fn delete_message_variant_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path((message_id, variant_index)): Path<(crate::db::DbId, i32)>,
 ) -> Result<Json<bool>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let deleted = crate::services::chat::message_variants::delete_message_variant(
@@ -2572,11 +2582,12 @@ async fn delete_message_variant_handler(
 /// Get variant count for a message
 async fn get_variant_count_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(message_id): Path<crate::db::DbId>,
 ) -> Result<Json<i64>, AppError> {
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let count = crate::services::chat::message_variants::get_variant_count(
@@ -2589,10 +2600,10 @@ async fn get_variant_count_handler(
     Ok(Json(count))
 }
 
-#[instrument(skip(state, auth, _payload), fields(session_id = %session_id))] // _payload as it's not used
+#[instrument(skip(state, auth_session, _payload), fields(session_id = %session_id))] // _payload as it's not used
 pub async fn generate_suggested_actions(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
     Path(session_id): Path<crate::db::DbId>,
     session_dek: SessionDek,
     Json(_payload): Json<SuggestedActionsRequest>, // _payload as it's an empty struct now
@@ -2605,7 +2616,7 @@ pub async fn generate_suggested_actions(
     let state_arc = Arc::new(state);
     let session_dek_arc = Arc::new(session_dek.0);
 
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!(
             "User not found in session for suggested actions (session_id: {})",
             session_id
@@ -2950,10 +2961,10 @@ pub async fn generate_suggested_actions(
 pub async fn get_chat_session_with_dek(
     State(state): State<AppState>,
     Path(chat_id): Path<crate::db::DbId>,
-    auth: UnifiedAuth, // Use CurrentAuthSession
+    auth_session: CurrentAuthSession, // Use CurrentAuthSession
 ) -> Result<Json<ChatSessionWithDekResponse>, AppError> {
     let pool = state.pool.clone();
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!("User not found in session for chat_id: {}", chat_id);
         AppError::Unauthorized("User not found in session".to_string())
     })?;
@@ -3010,7 +3021,7 @@ pub async fn get_chat_session_with_dek(
 #[instrument(skip_all, fields(user_id = field::Empty, chat_session_id = %session_id, field_name = %payload.field_name))]
 pub async fn create_or_update_chat_character_override_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session_dek: SessionDek,
     Path(session_id): Path<crate::db::DbId>,
     Json(payload): Json<CharacterOverrideDto>,
@@ -3018,7 +3029,7 @@ pub async fn create_or_update_chat_character_override_handler(
     info!("Attempting to create or update chat character override via handler");
     payload.validate()?; // Validate DTO
 
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!("User not found in session during override creation/update");
         AppError::Unauthorized("User not found in session".to_string())
     })?;
@@ -3077,10 +3088,10 @@ pub async fn create_or_update_chat_character_override_handler(
 // Text Expansion Handler
 // ============================================================================
 
-#[instrument(skip(state, auth, _session_dek), fields(user_id, session_id))]
+#[instrument(skip(state, auth_session, _session_dek), fields(user_id, session_id))]
 pub async fn expand_text_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(session_id): Path<crate::db::DbId>,
     _session_dek: SessionDek,
     Json(payload): Json<ExpandTextRequest>,
@@ -3096,7 +3107,7 @@ pub async fn expand_text_handler(
         AppError::BadRequest(format!("Invalid request: {}", e))
     })?;
 
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!(
             "User not found in session for text expansion (session_id: {})",
             session_id
@@ -3387,10 +3398,10 @@ pub async fn expand_text_handler(
 // Impersonate Handler
 // ============================================================================
 
-#[instrument(skip(state, auth, session_dek), fields(user_id, session_id))]
+#[instrument(skip(state, auth_session, session_dek), fields(user_id, session_id))]
 pub async fn impersonate_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(session_id): Path<crate::db::DbId>,
     session_dek: SessionDek,
     Json(payload): Json<ImpersonateRequest>,
@@ -3406,7 +3417,7 @@ pub async fn impersonate_handler(
         AppError::BadRequest(format!("Invalid request: {}", e))
     })?;
 
-    let user = auth.user_cloned().ok_or_else(|| {
+    let user = auth_session.user.ok_or_else(|| {
         error!(
             "User not found in session for impersonation (session_id: {})",
             session_id
@@ -3690,7 +3701,7 @@ pub async fn impersonate_handler(
 /// Select a specific variant for a message
 async fn select_message_variant_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Path(message_id): Path<crate::db::DbId>,
     session_dek: SessionDek,
     Json(payload): Json<crate::models::chats::SelectVariantRequest>,
@@ -3700,8 +3711,9 @@ async fn select_message_variant_handler(
         .validate()
         .map_err(|e| AppError::BadRequest(format!("Invalid request: {}", e)))?;
 
-    let user = auth
-        .user_cloned()
+    let user = auth_session
+        .user
+        .as_ref()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
     let dek = &session_dek.0;

@@ -17,17 +17,17 @@ use axum::routing::{delete, get, post};
 use axum::Json;
 use axum::Router;
 use axum_login::{AuthSession, AuthUser, AuthnBackend};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _}; // For DEK encoding in desktop mode
-use secrecy::ExposeSecret;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{debug, error, info, instrument, warn}; // For exposing DEK bytes to encode
-                                                     // For session DEK handling
+use tracing::{debug, error, info, instrument, warn};
+// use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import - Removed unused
+// For session DEK handling
 use crate::auth::session_store::offset_to_utc;
 use tower_sessions::Session; // Import tower_sessions::Session // Added for time conversion
 
-use crate::auth::token_auth::UnifiedAuth;
+use crate::auth::user_store::Backend as AuthBackend;
+type CurrentAuthSession = AuthSession<AuthBackend>;
 
 use crate::models::users::User; // Removed UserDbQuery
 use crate::schema::sessions;
@@ -253,10 +253,10 @@ pub async fn register_handler(
     }
 }
 
-#[instrument(skip(auth, payload), err)]
+#[instrument(skip(auth_session, payload), err)]
 pub async fn login_handler(
     State(state): State<AppState>, // Added AppState
-    mut auth: UnifiedAuth,
+    mut auth_session: CurrentAuthSession,
     session: Session,                  // tower_sessions session, extracted directly
     headers: axum::http::HeaderMap,    // For IP extraction
     Json(payload): Json<LoginPayload>, // Use LoginPayload
@@ -268,7 +268,7 @@ pub async fn login_handler(
 
     // Use axum-login's authenticate method which will call our AuthBackend::authenticate
     // This ensures the DEK is properly cached
-    match auth.session.authenticate(payload).await {
+    match auth_session.authenticate(payload).await {
         Ok(Some(user)) => {
             let user_id = user.id;
             info!(%user_id, "Authentication successful via AuthBackend.");
@@ -299,7 +299,7 @@ pub async fn login_handler(
             }
 
             // Invalidate the session before logging in to prevent session fixation
-            if let Err(e) = auth.logout().await {
+            if let Err(e) = auth_session.logout().await {
                 error!(%user_id, error = ?e, "Failed to destroy existing session during login: {:?}", e);
                 return Err(AppError::InternalServerErrorGeneric(format!(
                     "Failed to clear existing session during login: {e}"
@@ -307,7 +307,7 @@ pub async fn login_handler(
             }
 
             // Now we need to explicitly log the user in
-            if let Err(e) = auth.login(&user).await {
+            if let Err(e) = auth_session.login(&user).await {
                 error!(%user_id, error = ?e, "Failed to log in user after successful authentication");
                 return Err(AppError::InternalServerErrorGeneric(
                     "Failed to establish session after authentication".to_string(),
@@ -341,8 +341,8 @@ pub async fn login_handler(
                 }
             }
 
-            // Debugging: Log DEK presence after login call (from auth.session.user)
-            if let Some(ref user_after_login) = auth.session.user {
+            // Debugging: Log DEK presence after login call (from auth_session.user)
+            if let Some(ref user_after_login) = auth_session.user {
                 if let Some(ref _wrapped_dek_after_login) = user_after_login.dek {
                     // _wrapped_dek_after_login as it's not used in the error
                     error!(%user_id, "SECURITY WARNING: User.dek is UNEXPECTEDLY PRESENT in auth_session.user AFTER login. DEK should be None and cached server-side.");
@@ -524,15 +524,15 @@ pub async fn login_handler(
     }
 }
 
-#[instrument(skip(auth, state), err)]
+#[instrument(skip(auth_session, state), err)]
 pub async fn logout_handler(
     State(state): State<AppState>,
-    mut auth: UnifiedAuth,
+    mut auth_session: CurrentAuthSession,
 ) -> Result<Response, AppError> {
     info!("Logout handler entered.");
 
     // Remove DEK from cache before logging out
-    if let Some(user) = &auth.session.user {
+    if let Some(user) = &auth_session.user {
         let user_id = user.id();
         info!(user_id = %user_id, "Attempting to log out user.");
 
@@ -543,9 +543,9 @@ pub async fn logout_handler(
         debug!("Logout called, but no user session found in request.");
     }
 
-    debug!("Calling auth.logout().await...");
-    if let Err(e) = auth.logout().await {
-        error!(error = ?e, "Failed to destroy session during logout via auth.logout(): {:?}", e);
+    debug!("Calling auth_session.logout().await...");
+    if let Err(e) = auth_session.logout().await {
+        error!(error = ?e, "Failed to destroy session during logout via auth_session.logout(): {:?}", e);
         return Err(AppError::InternalServerErrorGeneric(format!(
             "Failed to clear session during logout: {e}"
         )));
@@ -606,10 +606,10 @@ pub async fn invalidate_session_handler(
     Ok((StatusCode::NO_CONTENT, headers).into_response())
 }
 
-#[instrument(skip(auth), err)]
-pub async fn me_handler(auth: UnifiedAuth) -> Result<Response, AppError> {
+#[instrument(skip(auth_session), err)]
+pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, AppError> {
     info!("Me handler entered.");
-    if let Some(user) = auth.user_cloned() {
+    if let Some(user) = auth_session.user {
         info!(user_id = %user.id, "Returning current user data for /me endpoint.");
         // Use AuthResponse for consistency
         let response = AuthResponse {
@@ -687,12 +687,12 @@ pub async fn create_session_handler(
 #[instrument(skip_all, err)] // Skip all to avoid issues with AppState and Session not being Debug
 pub async fn get_session_handler(
     State(_state): State<AppState>, // _state might be needed if we fetch more user details not in AuthUser
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     session: tower_sessions::Session, // tower_sessions::Session to get session ID and expiry
 ) -> Result<impl IntoResponse, AppError> {
     info!("Get current session handler entered");
 
-    if let Some(user) = auth.user_cloned() {
+    if let Some(user) = auth_session.user {
         let user_id = user.id;
         info!(%user_id, "Valid session found. Returning user and session details.");
 
@@ -903,12 +903,12 @@ pub async fn delete_user_sessions_handler(
 }
 
 #[allow(dead_code)]
-#[instrument(skip(pool, auth), err)]
+#[instrument(skip(pool, auth_session), err)]
 async fn get_current_user_handler(
     State(pool): State<DbPool>,
-    auth: UnifiedAuth,
+    auth_session: AuthSession<AuthBackend>,
 ) -> Result<Json<User>, AppError> {
-    let user_id = auth.session.user.as_ref().map_or_else(
+    let user_id = auth_session.user.as_ref().map_or_else(
         || {
             warn!("Attempt to get current user without active session");
             Err(AppError::Unauthorized("No active session".to_string()))
@@ -927,16 +927,16 @@ async fn get_current_user_handler(
     Ok(Json(user))
 }
 
-#[instrument(skip(state, auth, payload), err)]
+#[instrument(skip(state, auth_session, payload), err)]
 pub async fn change_password_handler(
     State(state): State<AppState>,
-    mut auth: UnifiedAuth,
+    mut auth_session: CurrentAuthSession,
     Json(payload): Json<ChangePasswordPayload>,
 ) -> Result<Response, AppError> {
     info!("Change password handler entered");
 
     // 1. Ensure user is authenticated
-    let Some(authenticated_user) = auth.user_cloned() else {
+    let Some(authenticated_user) = auth_session.user.clone() else {
         warn!("Change password attempt by unauthenticated user.");
         return Err(AppError::Unauthorized("Not logged in".to_string()));
     };
@@ -974,7 +974,7 @@ pub async fn change_password_handler(
             // For now, we will log out the current session as a minimal step.
             // A more robust solution would invalidate *all other* sessions.
             warn!(user_id = %authenticated_user.id, "TODO: Implement full session invalidation for other active sessions.");
-            if let Err(e) = auth.logout().await {
+            if let Err(e) = auth_session.logout().await {
                 error!(user_id = %authenticated_user.id, error = ?e, "Failed to log out current session after password change.");
                 // Non-critical error, proceed with success response for password change itself.
             } else {
@@ -1121,10 +1121,10 @@ pub async fn get_desktop_config_handler() -> Result<Response, AppError> {
 }
 
 #[cfg(feature = "desktop")]
-#[instrument(skip(state, auth, session, payload), err)]
+#[instrument(skip(state, auth_session, session, payload), err)]
 pub async fn desktop_setup_handler(
     State(state): State<AppState>,
-    mut auth: UnifiedAuth,
+    mut auth_session: CurrentAuthSession,
     session: Session,
     Json(payload): Json<DesktopSetupPayload>,
 ) -> Result<Response, AppError> {
@@ -1166,9 +1166,9 @@ pub async fn desktop_setup_handler(
 
     info!("🎉 Desktop setup complete with mode: {:?}", auth_mode);
 
-    // If Quick Start mode, create default user and return JWT + DEK
+    // If Quick Start mode, create default user and auto-login
     if matches!(auth_mode, crate::desktop::AuthMode::QuickStart) {
-        info!("👤 Quick Start mode selected - creating default user and generating JWT + DEK");
+        info!("👤 Quick Start mode selected - creating default user and auto-logging in");
 
         // Ensure default user exists
         // Get a connection using the pool helper (handles async/sync difference)
@@ -1199,41 +1199,45 @@ pub async fn desktop_setup_handler(
             }
         };
 
-        info!("🔐 Generating JWT tokens for user {}...", user.id);
+        info!("🔐 Establishing session for user {}...", user.id);
 
-        // Get the token service
-        let token_service = state.token_service.as_ref().ok_or_else(|| {
-            error!("Token service not available for desktop setup");
-            AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
+        // Log the user in
+        if let Err(e) = auth_session.login(&user).await {
+            error!("❌ Failed to log in default user {}: {:?}", user.id, e);
+            return Err(AppError::InternalServerErrorGeneric(format!(
+                "Failed to establish session for default user: {}",
+                e
+            )));
+        }
+        info!("✅ Session established successfully");
+
+        // Rotate session ID to prevent session fixation
+        info!("🔄 Rotating session ID...");
+        if let Err(e) = session.cycle_id().await {
+            error!(
+                "❌ Failed to rotate session ID for user {}: {:?}",
+                user.id, e
+            );
+            return Err(AppError::InternalServerErrorGeneric(format!(
+                "Failed to rotate session ID: {}",
+                e
+            )));
+        }
+        info!("✅ Session ID rotated");
+
+        info!("🎉 Default user auto-login successful for user {}", user.id);
+
+        // Get session details for response
+        let session_id_str = session.id().map_or_else(
+            || "error_retrieving_session_id".to_string(),
+            |id| id.0.to_string(),
+        );
+
+        let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
+            AppError::InternalServerErrorGeneric("Failed to process session expiry".to_string())
         })?;
 
-        // Generate JWT token pair
-        let token_pair = token_service.generate_token_pair(user.id).map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Failed to generate JWT tokens");
-            AppError::InternalServerErrorGeneric("Token generation failed".to_string())
-        })?;
-
-        info!("✅ JWT tokens generated successfully");
-
-        // Generate DEK for Quick Start mode
-        info!("🔑 Generating DEK for Quick Start mode...");
-        let dek_secret = crate::crypto::generate_dek().map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
-            AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
-        })?;
-
-        // Base64-encode the DEK for transmission
-        let dek_bytes = dek_secret.expose_secret();
-        let dek_b64 = BASE64.encode(dek_bytes);
-
-        info!("✅ DEK generated and encoded successfully");
-        info!("🎉 Quick Start setup complete for user {}", user.id);
-
-        // Return JWT token response with DEK
-        let response = TokenLoginResponse {
-            access_token: token_pair.access_token,
-            refresh_token: token_pair.refresh_token,
-            expires_in: token_pair.expires_in,
+        let response = LoginSuccessResponse {
             user: AuthResponse {
                 user_id: user.id,
                 username: user.username,
@@ -1242,8 +1246,8 @@ pub async fn desktop_setup_handler(
                 recovery_key: None,
                 default_persona_id: user.default_persona_id,
             },
-            #[cfg(feature = "desktop")]
-            dek: Some(dek_b64),
+            session_id: session_id_str,
+            expires_at: expires_at_utc,
         };
 
         Ok((StatusCode::OK, Json(response)).into_response())
@@ -1261,10 +1265,10 @@ pub async fn desktop_setup_handler(
 }
 
 #[cfg(feature = "desktop")]
-#[instrument(skip(state, auth, session), err)]
+#[instrument(skip(state, auth_session, session), err)]
 pub async fn desktop_auto_login_handler(
     State(state): State<AppState>,
-    mut auth: UnifiedAuth,
+    mut auth_session: CurrentAuthSession,
     session: Session,
 ) -> Result<Response, AppError> {
     info!("Desktop auto-login handler entered");
@@ -1339,63 +1343,61 @@ pub async fn desktop_auto_login_handler(
     })
     .await?;
 
-    // For desktop mode, generate JWT tokens directly (no session-based auth needed)
-    // Get the token service
-    let token_service = state.token_service.as_ref().ok_or_else(|| {
-        error!("Token service not available for desktop auto-login");
-        AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
+    // Log the user in
+    if let Err(e) = auth_session.login(&user).await {
+        error!(user_id = %user.id, error = ?e, "Failed to auto-login user");
+        return Err(AppError::InternalServerErrorGeneric(
+            "Failed to establish session for auto-login".to_string(),
+        ));
+    }
+
+    // Rotate session ID
+    if let Err(e) = session.cycle_id().await {
+        error!(user_id = %user.id, error = ?e, "Failed to rotate session ID");
+        return Err(AppError::InternalServerErrorGeneric(
+            "Failed to rotate session ID".to_string(),
+        ));
+    }
+
+    info!(user_id = %user.id, "Auto-login successful");
+
+    // Get session details for response
+    let session_id_str = session.id().map_or_else(
+        || "error_retrieving_session_id".to_string(),
+        |id| id.0.to_string(),
+    );
+
+    let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
+        AppError::InternalServerErrorGeneric("Failed to process session expiry".to_string())
     })?;
 
-    // Generate token pair for the user
-    let token_pair = token_service.generate_token_pair(user.id).map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to generate token pair for auto-login");
-        AppError::InternalServerErrorGeneric("Token generation failed".to_string())
-    })?;
-
-    // Generate DEK for Quick Start mode
-    let dek_secret = crate::crypto::generate_dek().map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
-        AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
-    })?;
-
-    // Base64-encode the DEK for transmission
-    let dek_bytes = dek_secret.expose_secret();
-    let dek_b64 = BASE64.encode(dek_bytes);
-
-    debug!(user_id = %user.id, "Generated DEK for Quick Start mode");
-
-    // Return JWT token response with DEK
-    let response = TokenLoginResponse {
-        access_token: token_pair.access_token,
-        refresh_token: token_pair.refresh_token,
-        expires_in: token_pair.expires_in,
+    let response = LoginSuccessResponse {
         user: AuthResponse {
             user_id: user.id,
-            username: user.username.clone(),
-            email: user.email.clone(),
+            username: user.username,
+            email: user.email,
             role: format!("{:?}", user.role),
             recovery_key: None,
             default_persona_id: user.default_persona_id,
         },
-        #[cfg(feature = "desktop")]
-        dek: Some(dek_b64),
+        session_id: session_id_str,
+        expires_at: expires_at_utc,
     };
 
-    info!(user_id = %user.id, "Auto-login JWT tokens generated successfully with DEK");
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 #[cfg(feature = "desktop")]
-#[instrument(skip(state, auth, payload), err)]
+#[instrument(skip(state, auth_session, payload), err)]
 pub async fn desktop_upgrade_account_handler(
     State(state): State<AppState>,
-    auth: UnifiedAuth,
+    auth_session: CurrentAuthSession,
     Json(payload): Json<DesktopUpgradeAccountPayload>,
 ) -> Result<Response, AppError> {
     info!("Desktop upgrade account handler entered");
 
     // Ensure user is authenticated
-    let authenticated_user = auth.user_cloned().ok_or_else(|| {
+    let authenticated_user = auth_session.user.ok_or_else(|| {
         AppError::Unauthorized("Must be logged in to upgrade account".to_string())
     })?;
 
@@ -1472,10 +1474,6 @@ pub struct TokenLoginResponse {
     pub refresh_token: String,
     pub expires_in: i64, // seconds until access token expires
     pub user: AuthResponse,
-    /// Base64-encoded DEK for Quick Start mode (desktop only)
-    #[cfg(feature = "desktop")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dek: Option<String>,
 }
 
 /// Request payload for token refresh
@@ -1549,8 +1547,6 @@ pub async fn token_login_handler(
                     recovery_key: None,
                     default_persona_id: user.default_persona_id,
                 },
-                #[cfg(feature = "desktop")]
-                dek: None, // No DEK for password-based login (only Quick Start)
             };
 
             Ok((StatusCode::OK, Json(response)).into_response())
