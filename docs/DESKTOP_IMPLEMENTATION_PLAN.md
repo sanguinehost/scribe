@@ -97,12 +97,13 @@ if (storedTokensResult.isOk() && storedTokensResult.value) {
 | Category | Files | Handlers | Status |
 |----------|-------|----------|--------|
 | Already Migrated | 3 | 17 | ✅ Complete |
-| High Priority | 4 | 55 | ❌ Pending |
+| **High Priority** | **4** | **55** | **✅ Complete** |
 | Medium Priority | 5 | 32 | ❌ Pending |
 | Low Priority | 2 | 6 | ❌ Pending |
 | Optional (Cloud-only) | 2 | 21 | ⏸️ Deferred |
 | No Auth Required | 2 | - | N/A |
-| **TOTAL REQUIRING MIGRATION** | **13** | **126** | **⏳ In Progress** |
+| **TOTAL MIGRATED** | **7** | **72** | **✅ 57% Complete** |
+| **TOTAL REMAINING** | **7** | **54** | **⏳ In Progress** |
 
 ---
 
@@ -146,17 +147,17 @@ These routes are critical for desktop users and should be migrated first:
   - Character import/export
   - SillyTavern V3 compatibility
 
-- [ ] **`backend/src/routes/chats.rs`** (17 handlers)
+- [x] **`backend/src/routes/chats.rs`** (17 handlers) ✅
   - Chat session management
   - Message history
   - Chat creation/deletion
   - Fork/branch operations
 
-- [ ] **`backend/src/routes/chat.rs`** (2 handlers)
+- [x] **`backend/src/routes/chat.rs`** (2 handlers) ✅
   - Streaming chat endpoint (SSE)
   - Real-time message generation
 
-- [ ] **`backend/src/routes/lorebook_routes.rs`** (24 handlers)
+- [x] **`backend/src/routes/lorebook_routes.rs`** (24 handlers) ✅
   - Lorebook CRUD
   - Entry management
   - Character/chat associations
