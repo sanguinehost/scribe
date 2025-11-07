@@ -8,7 +8,7 @@
 #![allow(clippy::unused_async)]
 
 use crate::auth::session_dek::SessionDek;
-use crate::auth::user_store::Backend as AuthBackend;
+use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::services::character_generation::{
     structured_output::*, ApiGenerationChunk, ApiGenerationMetadata, ApiGenerationRequest,
@@ -20,13 +20,11 @@ use crate::services::character_generation::{
 use crate::state::AppState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{extract::State, response::IntoResponse, response::Json, routing::post, Router};
-use axum_login::AuthSession;
 use futures::StreamExt;
 use std::sync::Arc;
 use tracing::{error, info, instrument};
 
 // Define the type alias for the auth session
-type CurrentAuthSession = AuthSession<AuthBackend>;
 
 /// Create the generation router with all endpoints
 pub fn router() -> Router<AppState> {
@@ -63,12 +61,13 @@ pub fn router() -> Router<AppState> {
 #[instrument(skip_all, fields(field = ?payload.field_name, mode = ?payload.mode))]
 pub async fn generate_character_field_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek, // SECURITY: SessionDek required for decrypting lorebook content
     Json(payload): Json<ApiGenerationRequest>,
 ) -> Result<Json<ApiGenerationResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!(
@@ -111,12 +110,13 @@ pub async fn generate_character_field_handler(
 #[instrument(skip_all, fields(field = ?payload.field_name, mode = ?payload.mode))]
 pub async fn generate_character_field_stream_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     _dek: SessionDek, // DEK available if needed in future
     Json(payload): Json<ApiGenerationRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!(
@@ -268,11 +268,12 @@ pub async fn generate_character_field_stream_handler(
 #[instrument(skip_all)]
 pub async fn generate_complete_character_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     Json(payload): Json<FullCharacterRequest>,
 ) -> Result<Json<FullCharacterResult>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!(
@@ -292,11 +293,12 @@ pub async fn generate_complete_character_handler(
 #[instrument(skip_all, fields(field = ?payload.field))]
 pub async fn enhance_character_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     Json(payload): Json<EnhancementRequest>,
 ) -> Result<Json<EnhancementResult>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!(
@@ -466,12 +468,13 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
 
 pub async fn generate_lorebook_entries_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek, // SECURITY: SessionDek for potential lorebook context
     Json(payload): Json<BatchLorebookGenerationRequest>,
 ) -> Result<Json<BatchLorebookGenerationResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!(
@@ -664,12 +667,13 @@ pub async fn generate_lorebook_entries_handler(
 #[instrument(skip_all)]
 pub async fn generate_lorebook_entry_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek, // SECURITY: SessionDek for potential lorebook context
     Json(payload): Json<LorebookGenerationRequest>,
 ) -> Result<Json<LorebookGenerationResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!("Generating single lorebook entry for user {}", user.id);
@@ -848,11 +852,12 @@ pub async fn generate_lorebook_entry_handler(
 #[instrument(skip_all)]
 pub async fn scribe_assistant_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     Json(payload): Json<ScribeAssistantRequest>,
 ) -> Result<Json<ScribeAssistantResponse>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     info!("Scribe assistant chat request from user {}", user.id);

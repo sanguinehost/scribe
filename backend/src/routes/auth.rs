@@ -26,6 +26,7 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::auth::session_store::offset_to_utc;
 use tower_sessions::Session; // Import tower_sessions::Session // Added for time conversion
 
+use crate::auth::token_auth::UnifiedAuth;
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
 
@@ -606,10 +607,10 @@ pub async fn invalidate_session_handler(
     Ok((StatusCode::NO_CONTENT, headers).into_response())
 }
 
-#[instrument(skip(auth_session), err)]
-pub async fn me_handler(auth_session: CurrentAuthSession) -> Result<Response, AppError> {
+#[instrument(skip(auth), err)]
+pub async fn me_handler(auth: UnifiedAuth) -> Result<Response, AppError> {
     info!("Me handler entered.");
-    if let Some(user) = auth_session.user {
+    if let Some(user) = auth.user().cloned() {
         info!(user_id = %user.id, "Returning current user data for /me endpoint.");
         // Use AuthResponse for consistency
         let response = AuthResponse {

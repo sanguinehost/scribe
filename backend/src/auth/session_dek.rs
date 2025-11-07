@@ -2,9 +2,13 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::privacy::logging::loggable_user_id;
 use async_trait::async_trait;
-use axum::{extract::FromRequestParts, http::request::Parts};
+use axum::{
+    extract::FromRequestParts,
+    http::{header::HeaderName, request::Parts},
+};
 use axum_login::AuthSession;
-use secrecy::{ExposeSecret, SecretBox}; // Removed SecretVec
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use secrecy::{ExposeSecret, SecretBox};
 use std::fmt;
 use tracing::{debug, error, warn};
 
@@ -54,10 +58,43 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // Added detailed logging for test_get_unauthorized debugging
-        tracing::warn!(target: "auth_debug", "SessionDek::from_request_parts called. Parts URI: {:?}", parts.uri);
+        const DEK_HEADER: HeaderName = HeaderName::from_static("x-scribe-dek");
 
-        debug!("SessionDek extractor: Attempting to retrieve DEK from user object.");
+        debug!("SessionDek extractor: Attempting to retrieve DEK.");
+
+        // Step 1: Check for X-Scribe-Dek header (JWT desktop mode)
+        if let Some(dek_header) = parts.headers.get(&DEK_HEADER) {
+            debug!(
+                "SessionDek extractor: Found {} header (JWT desktop mode)",
+                DEK_HEADER.as_str()
+            );
+
+            let dek_b64 = dek_header.to_str().map_err(|e| {
+                warn!(
+                    "SessionDek extractor: {} header contains invalid UTF-8: {}",
+                    DEK_HEADER.as_str(),
+                    e
+                );
+                AppError::BadRequest("DEK header contains invalid UTF-8 characters".to_string())
+            })?;
+
+            let dek_bytes = STANDARD.decode(dek_b64).map_err(|e| {
+                warn!(
+                    "SessionDek extractor: Failed to base64-decode DEK from header: {}",
+                    e
+                );
+                AppError::BadRequest("Failed to decode DEK from header".to_string())
+            })?;
+
+            debug!(
+                "SessionDek extractor: Successfully retrieved and decoded DEK from {} header",
+                DEK_HEADER.as_str()
+            );
+            return Ok(SessionDek::new(dek_bytes));
+        }
+
+        // Step 2: Fallback to cookie session (web mode)
+        debug!("SessionDek extractor: No DEK header found, falling back to cookie session");
 
         // Extract the AuthSession to get the authenticated user
         let auth_session: AuthSession<AuthBackend> = AuthSession::from_request_parts(parts, state)
@@ -69,30 +106,30 @@ where
 
         // Get the authenticated user
         let user = auth_session.user.ok_or_else(|| {
-            tracing::warn!(target: "auth_debug", "SessionDek: No authenticated user in AuthSession");
+            warn!("SessionDek: No authenticated user in AuthSession");
             AppError::Unauthorized("No authenticated user found".to_string())
         })?;
 
         let user_id = user.id;
-        tracing::warn!(target: "auth_debug", "SessionDek: Found authenticated user with ID: {}", loggable_user_id(user_id));
+        debug!(
+            "SessionDek extractor: Found authenticated user with ID: {}",
+            loggable_user_id(user_id)
+        );
 
         // The AuthBackend's get_user method populates the DEK from cache
         // So if the user has a DEK, it should be present in the user object
         user.dek.map_or_else(
             || {
-                tracing::warn!(target: "auth_debug", "SessionDek: DEK not found in user object for user_id: {}", loggable_user_id(user_id));
                 warn!(
                     user_id = %loggable_user_id(user_id),
-                    "SessionDek extractor: DEK not found in user object. User may need to log in again."
+                    "SessionDek extractor: DEK not found in user session object. User may need to log in again."
                 );
-
                 Err(AppError::DekMissing)
             },
             |dek_wrapper| {
-                tracing::warn!(target: "auth_debug", "SessionDek: Found DEK in user object for user_id: {}", loggable_user_id(user_id));
                 debug!(
-                    "SessionDek extractor: Successfully retrieved DEK from user object for user_id: {}",
-                    loggable_user_id(user_id)
+                    user_id = %loggable_user_id(user_id),
+                    "SessionDek extractor: Successfully retrieved DEK from user session object"
                 );
 
                 // Convert SerializableSecretDek to SessionDek

@@ -10,14 +10,13 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use axum_login::AuthSession;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
 use validator::Validate;
 
 use crate::{
-    auth::{session_dek::SessionDek, user_store::Backend as AuthBackend},
+    auth::{session_dek::SessionDek, token_auth::UnifiedAuth},
     errors::AppError,
     models::{
         chats::ChatMessage,
@@ -132,9 +131,9 @@ pub fn create_chronicles_router(state: AppState) -> Router<AppState> {
 // --- Chronicle CRUD Handlers ---
 
 /// Create a new chronicle
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn create_chronicle(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     Json(request): Json<CreateChronicleRequest>,
 ) -> Result<(StatusCode, Json<PlayerChronicle>), AppError> {
@@ -143,7 +142,7 @@ async fn create_chronicle(
     // Validate the request
     request.validate()?;
 
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -158,12 +157,12 @@ async fn create_chronicle(
 }
 
 /// List all chronicles for the authenticated user
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn list_chronicles(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<PlayerChronicleWithCounts>>, AppError> {
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -184,13 +183,13 @@ async fn list_chronicles(
 }
 
 /// Get a specific chronicle by ID
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn get_chronicle(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     Path(chronicle_id): Path<crate::db::DbId>,
 ) -> Result<Json<PlayerChronicle>, AppError> {
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -207,9 +206,9 @@ async fn get_chronicle(
 }
 
 /// Update a chronicle
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn update_chronicle(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     Path(chronicle_id): Path<crate::db::DbId>,
     Json(request): Json<UpdateChronicleRequest>,
@@ -217,7 +216,7 @@ async fn update_chronicle(
     // Validate the request
     request.validate()?;
 
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -234,13 +233,13 @@ async fn update_chronicle(
 }
 
 /// Delete a chronicle
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn delete_chronicle(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     Path(chronicle_id): Path<crate::db::DbId>,
 ) -> Result<StatusCode, AppError> {
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -282,9 +281,9 @@ async fn delete_chronicle(
 // --- Event Handlers ---
 
 /// Create a new event in a chronicle
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn create_event(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     session_dek: crate::auth::session_dek::SessionDek,
     State(state): State<AppState>,
     Path(chronicle_id): Path<crate::db::DbId>,
@@ -293,7 +292,7 @@ async fn create_event(
     // Validate the request
     request.validate()?;
 
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -340,15 +339,15 @@ async fn create_event(
 }
 
 /// List events for a chronicle with optional filtering
-#[instrument(skip(auth_session, session_dek, state))]
+#[instrument(skip(auth, session_dek, state))]
 async fn list_events(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     session_dek: SessionDek,
     State(state): State<AppState>,
     Path(chronicle_id): Path<crate::db::DbId>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Vec<ChronicleEvent>>, AppError> {
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -386,13 +385,13 @@ async fn list_events(
 }
 
 /// Delete an event
-#[instrument(skip(auth_session, state))]
+#[instrument(skip(auth, state))]
 async fn delete_event(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     Path((chronicle_id, event_id)): Path<(crate::db::DbId, crate::db::DbId)>,
 ) -> Result<StatusCode, AppError> {
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -425,9 +424,9 @@ async fn delete_event(
 ///
 /// This endpoint processes chat messages and extracts chronicle events using the
 /// narrative intelligence system. It can optionally purge existing events first.
-#[instrument(skip(auth_session, session_dek, state))]
+#[instrument(skip(auth, session_dek, state))]
 async fn re_chronicle_from_chat(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     session_dek: SessionDek,
     State(state): State<AppState>,
     Path(chronicle_id): Path<crate::db::DbId>,
@@ -436,7 +435,7 @@ async fn re_chronicle_from_chat(
     // Validate the request
     request.validate()?;
 
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
@@ -722,9 +721,9 @@ async fn get_chat_messages(
 }
 
 /// Generate a chronicle name from a chat session using AI
-#[instrument(skip(auth_session, session_dek, state))]
+#[instrument(skip(auth, session_dek, state))]
 async fn generate_chronicle_name(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     session_dek: SessionDek,
     State(state): State<AppState>,
     Json(request): Json<GenerateChronicleNameRequest>,
@@ -738,7 +737,7 @@ async fn generate_chronicle_name(
     // Validate the request
     request.validate()?;
 
-    let user = auth_session.user.ok_or_else(|| {
+    let user = auth.user().cloned().ok_or_else(|| {
         error!("No authenticated user found in session");
         AppError::Unauthorized("Authentication required".to_string())
     })?;
