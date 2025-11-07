@@ -83,34 +83,275 @@ if (storedTokensResult.isOk() && storedTokensResult.value) {
 ```
 
 #### Issue 4: JWT Auth Migration Incomplete ❌ IN PROGRESS
-**Symptom**: 401 Unauthorized errors on `/api/lorebooks`, `/api/user-settings`, `/api/chronicles`, `/api/llm/models/all`
-**Root Cause**: 5 route files still using old `AuthSession<AuthBackend>` instead of `UnifiedAuth`
+**Symptom**: 401 Unauthorized errors on various endpoints when using JWT tokens
+**Root Cause**: Most route files still using old `AuthSession<AuthBackend>` (cookie-only) instead of `UnifiedAuth` (JWT + cookie dual mode)
 
-**Status**: **BLOCKED - User requested documentation update before continuing**
+**Status**: Comprehensive audit completed - 126 handlers require migration (not 52)
 
-**Files Requiring Update** (52 handlers total):
-1. `backend/src/routes/lorebook_routes.rs` (~22 handlers)
-2. `backend/src/routes/user_settings_routes.rs` (~6 handlers)
-3. `backend/src/routes/chronicles.rs` (~10 handlers)
-4. `backend/src/routes/llm_routes.rs` (~11 handlers)
-5. `backend/src/routes/template_preferences_routes.rs` (~3 handlers)
+**Critical Finding**: Desktop mode cannot fully work until all routes migrated to UnifiedAuth
 
-**Update Pattern**:
+---
+
+### Migration Status Summary
+
+| Category | Files | Handlers | Status |
+|----------|-------|----------|--------|
+| Already Migrated | 3 | 17 | ✅ Complete |
+| High Priority | 4 | 55 | ❌ Pending |
+| Medium Priority | 5 | 32 | ❌ Pending |
+| Low Priority | 2 | 6 | ❌ Pending |
+| Optional (Cloud-only) | 2 | 21 | ⏸️ Deferred |
+| No Auth Required | 2 | - | N/A |
+| **TOTAL REQUIRING MIGRATION** | **13** | **126** | **⏳ In Progress** |
+
+---
+
+### Files Already Migrated ✅ (3 files, 17 handlers)
+
+- [x] `backend/src/routes/user_settings_routes.rs` (6 handlers)
+  - `get_user_settings_handler`
+  - `update_user_settings_handler`
+  - `delete_user_settings_handler`
+  - `set_default_persona_handler`
+  - `clear_default_persona_handler`
+  - `get_user_token_usage_handler`
+
+- [x] `backend/src/routes/user_persona_routes.rs` (5 handlers)
+  - `create_user_persona_handler`
+  - `list_user_personas_handler`
+  - `get_user_persona_handler`
+  - `update_user_persona_handler`
+  - `delete_user_persona_handler`
+
+- [x] `backend/src/routes/avatars.rs` (6 handlers)
+  - `get_user_avatar`
+  - `upload_user_avatar`
+  - `delete_user_avatar`
+  - `get_persona_avatar`
+  - `upload_persona_avatar`
+  - `delete_persona_avatar`
+
+- [x] `backend/src/auth/session_dek.rs` - Enhanced to support X-Scribe-Dek header (JWT mode) + cookie fallback (web mode)
+
+---
+
+### Files Requiring Migration ❌ (13 files, 126 handlers)
+
+#### **HIGH PRIORITY** (Core User Flows - 55 handlers)
+
+These routes are critical for desktop users and should be migrated first:
+
+- [x] **`backend/src/routes/characters.rs`** (12 handlers) ✅
+  - Character CRUD operations (create, read, update, delete, list)
+  - Character import/export
+  - SillyTavern V3 compatibility
+
+- [ ] **`backend/src/routes/chats.rs`** (17 handlers)
+  - Chat session management
+  - Message history
+  - Chat creation/deletion
+  - Fork/branch operations
+
+- [ ] **`backend/src/routes/chat.rs`** (2 handlers)
+  - Streaming chat endpoint (SSE)
+  - Real-time message generation
+
+- [ ] **`backend/src/routes/lorebook_routes.rs`** (24 handlers)
+  - Lorebook CRUD
+  - Entry management
+  - Character/chat associations
+  - Import/export functionality
+
+#### **MEDIUM PRIORITY** (Generation Features - 32 handlers)
+
+- [ ] **`backend/src/routes/generation_routes.rs`** (8 handlers)
+  - AI generation endpoints
+  - Prompt processing
+  - Context enrichment
+
+- [ ] **`backend/src/routes/llm_routes.rs`** (11 handlers)
+  - Model selection
+  - Provider configuration
+  - Model availability checks
+
+- [ ] **`backend/src/routes/chronicles.rs`** (10 handlers)
+  - Chronicle CRUD
+  - Event management
+  - Timeline operations
+
+- [ ] **`backend/src/routes/templates.rs`** (2 handlers)
+  - Template management
+
+- [ ] **`backend/src/routes/template_preferences_routes.rs`** (3 handlers)
+  - Template preferences CRUD
+
+#### **LOW PRIORITY** (Admin/Utility - 6 handlers)
+
+- [ ] **`backend/src/routes/admin.rs`** (5 handlers)
+  - Admin-only operations
+  - User management
+  - System configuration
+
+- [ ] **`backend/src/routes/auth.rs`** (1 handler)
+  - `get_current_user_handler` - Returns current user info
+
+#### **OPTIONAL** (Cloud-Only Features - 21 handlers)
+
+These routes are PostgreSQL-only and not required for desktop:
+
+- [ ] **`backend/src/routes/payment.rs`** (14 handlers)
+  - Subscription management
+  - Payment webhooks
+  - Credit operations
+  - PostgreSQL only (payment tables)
+
+- [ ] **`backend/src/routes/documents.rs`** (7 handlers)
+  - Document management
+  - PostgreSQL only (document features)
+
+---
+
+### Files Not Requiring Auth (2 files)
+
+- `backend/src/routes/health.rs` - Health check endpoint (public)
+- `backend/src/routes/mod.rs` - Router setup (no handlers)
+
+---
+
+### Migration Pattern
+
 ```rust
-// OLD (Cookie-only auth):
-async fn handler(auth_session: AuthSession<AuthBackend>, ...) {
-    let user = auth_session.user.ok_or(...)?;
-}
+// STEP 1: Update imports
+- use axum_login::AuthSession;
+- use crate::auth::user_store::Backend as AuthBackend;
+- type CurrentAuthSession = AuthSession<AuthBackend>;
++ use crate::auth::token_auth::UnifiedAuth;
 
-// NEW (JWT + Cookie dual auth):
-async fn handler(auth: UnifiedAuth, ...) {
-    let user = auth.user_cloned().ok_or(...)?;
-}
+// STEP 2: Update handler parameters
+- async fn handler(
+-     auth_session: AuthSession<AuthBackend>,
++ async fn handler(
++     auth: UnifiedAuth,
+      State(state): State<AppState>,
+      ...,
+  ) -> Result<...> {
+
+// STEP 3: Update user access
+-     let user = auth_session
+-         .user
+-         .ok_or_else(|| AppError::Unauthorized("...".to_string()))?;
++     let user = auth
++         .user()
++         .ok_or_else(|| AppError::Unauthorized("...".to_string()))?;
+
+// STEP 4: Update instrument attributes
+- #[instrument(skip(state, auth_session, ...), err)]
++ #[instrument(skip(state, auth, ...), err)]
+
+// STEP 5: If handler needs to call .login() or .logout()
++ use auth.login(user).await?;  // Still works (cookie mode only)
++ use auth.logout().await?;      // Still works (cookie mode only)
 ```
 
-**Files Already Updated** (10 route files working):
-- ✅ `auth.rs`, `characters.rs`, `personas.rs`, `chat.rs`, `chats.rs`
-- ✅ `avatars.rs`, `documents.rs`, `generation_routes.rs`, `payment.rs`, `templates.rs`
+---
+
+### Bulk Migration Commands
+
+For efficient migration of each file:
+
+```bash
+# Navigate to the route file
+cd backend/src/routes
+
+# 1. Update imports (remove old, add new)
+sed -i '/use axum_login::AuthSession;/d' <file>.rs
+sed -i '/use crate::auth::user_store::Backend as AuthBackend;/d' <file>.rs
+sed -i '/type CurrentAuthSession/d' <file>.rs
+
+# Add UnifiedAuth import after other auth imports
+sed -i '/use crate::auth/a\use crate::auth::token_auth::UnifiedAuth;' <file>.rs
+
+# 2. Update handler parameters (single-line)
+sed -i 's/auth_session: AuthSession<AuthBackend>/auth: UnifiedAuth/g' <file>.rs
+sed -i 's/auth_session: CurrentAuthSession/auth: UnifiedAuth/g' <file>.rs
+
+# 3. Update instrument attributes
+sed -i 's/skip(state, auth_session/skip(state, auth/g' <file>.rs
+sed -i 's/skip(auth_session/skip(auth/g' <file>.rs
+
+# 4. Fix multi-line user access (requires perl)
+perl -i -0777 -pe 's/let user = auth_session\n        \.user\n        \.ok_or_else/let user = auth\n        .user()\n        .ok_or_else/g' <file>.rs
+
+perl -i -0777 -pe 's/let current_user = auth_session\n        \.user\n        \.ok_or_else/let current_user = auth\n        .user()\n        .ok_or_else/g' <file>.rs
+
+# 5. Verify no auth_session remains
+grep -n "auth_session" <file>.rs
+# Should return nothing (or only in comments)
+
+# 6. Compile check
+cargo check -p scribe-backend --no-default-features --features desktop --message-format=short
+```
+
+---
+
+### Migration Checklist
+
+Use this checklist to track progress (copy to GitHub issue or project board):
+
+#### High Priority (Desktop Core Functionality)
+- [ ] Migrate `characters.rs` (12 handlers)
+- [ ] Migrate `chats.rs` (17 handlers)
+- [ ] Migrate `chat.rs` (2 handlers)
+- [ ] Migrate `lorebook_routes.rs` (24 handlers)
+- [ ] **Compile check**: `cargo check -p scribe-backend --features desktop`
+- [ ] **Desktop test**: Launch app, verify character/chat/lorebook operations work
+
+#### Medium Priority (Generation Features)
+- [ ] Migrate `generation_routes.rs` (8 handlers)
+- [ ] Migrate `llm_routes.rs` (11 handlers)
+- [ ] Migrate `chronicles.rs` (10 handlers)
+- [ ] Migrate `templates.rs` (2 handlers)
+- [ ] Migrate `template_preferences_routes.rs` (3 handlers)
+- [ ] **Compile check**: `cargo check -p scribe-backend --features desktop`
+- [ ] **Desktop test**: Verify AI generation and model selection work
+
+#### Low Priority (Admin/Utility)
+- [ ] Migrate `admin.rs` (5 handlers)
+- [ ] Migrate `auth.rs` (1 handler - `get_current_user_handler`)
+- [ ] **Compile check**: `cargo check -p scribe-backend --features desktop`
+- [ ] **Final test**: Full app walkthrough (desktop mode)
+
+#### Optional (Cloud-Only - Deferred)
+- [ ] Migrate `payment.rs` (14 handlers) - PostgreSQL only
+- [ ] Migrate `documents.rs` (7 handlers) - PostgreSQL only
+
+---
+
+### Expected Timeline
+
+**Estimated effort**: 4-6 hours (with bulk migration commands)
+
+- **High Priority** (55 handlers): 2-3 hours
+  - Characters: 30 min
+  - Chats: 45 min
+  - Chat: 15 min
+  - Lorebook: 1 hour
+  - Testing: 30 min
+
+- **Medium Priority** (32 handlers): 1.5-2 hours
+  - Generation: 20 min
+  - LLM: 25 min
+  - Chronicles: 25 min
+  - Templates: 10 min
+  - Template Prefs: 10 min
+  - Testing: 30 min
+
+- **Low Priority** (6 handlers): 30 min
+  - Admin: 15 min
+  - Auth: 5 min
+  - Testing: 10 min
+
+**Note**: Bulk migration commands significantly reduce manual effort. Each file takes ~10-15 minutes with the commands vs 30-45 minutes manually.
 
 ### Key Learnings for CLAUDE.md
 
