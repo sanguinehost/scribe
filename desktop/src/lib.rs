@@ -167,7 +167,7 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
     // CRITICAL FIX: Health check with retries instead of blind sleep
     // Verify backend is actually listening and responding before proceeding
     log::info!("Waiting for backend to be ready (health check)...");
-    let backend_url = "https://localhost:38080/health";
+    let backend_url = "https://localhost:38080/api/health";
     let max_attempts = 10;
     let retry_delay = Duration::from_millis(500);
 
@@ -447,9 +447,9 @@ async fn proxy_to_embedded_backend(
         req = req.header("X-Scribe-Dek", dek);
     }
 
-    // Forward other headers (except host and cookie - we use tokens now)
+    // Forward other headers (except host, cookie, and authorization - we add our own auth)
     for (name, value) in request.headers() {
-        if name != "host" && name != "cookie" {
+        if name != "host" && name != "cookie" && name != "authorization" {
             if let Ok(value_str) = value.to_str() {
                 log::debug!("Forwarding header: {}: {}", name, value_str);
                 req = req.header(name.as_str(), value_str);
@@ -612,7 +612,8 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_upload::init());
 
     // Register log plugin FIRST in debug mode (before any log calls)
     // CRITICAL FIX: Use Stdout target to capture frontend console.log() calls
