@@ -98,12 +98,12 @@ if (storedTokensResult.isOk() && storedTokensResult.value) {
 |----------|-------|----------|--------|
 | Already Migrated | 3 | 17 | ✅ Complete |
 | **High Priority** | **4** | **55** | **✅ Complete** |
-| Medium Priority | 5 | 32 | ❌ Pending |
+| **Medium Priority** | **5** | **32** | **✅ Complete** |
 | Low Priority | 2 | 6 | ❌ Pending |
 | Optional (Cloud-only) | 2 | 21 | ⏸️ Deferred |
 | No Auth Required | 2 | - | N/A |
-| **TOTAL MIGRATED** | **7** | **72** | **✅ 57% Complete** |
-| **TOTAL REMAINING** | **7** | **54** | **⏳ In Progress** |
+| **TOTAL MIGRATED** | **12** | **104** | **✅ 83% Complete** |
+| **TOTAL REMAINING** | **2** | **6** | **⏳ In Progress** |
 
 ---
 
@@ -165,25 +165,25 @@ These routes are critical for desktop users and should be migrated first:
 
 #### **MEDIUM PRIORITY** (Generation Features - 32 handlers)
 
-- [ ] **`backend/src/routes/generation_routes.rs`** (8 handlers)
+- [x] **`backend/src/routes/generation_routes.rs`** (8 handlers) ✅
   - AI generation endpoints
   - Prompt processing
   - Context enrichment
 
-- [ ] **`backend/src/routes/llm_routes.rs`** (11 handlers)
+- [x] **`backend/src/routes/llm_routes.rs`** (11 handlers) ✅
   - Model selection
   - Provider configuration
   - Model availability checks
 
-- [ ] **`backend/src/routes/chronicles.rs`** (10 handlers)
+- [x] **`backend/src/routes/chronicles.rs`** (10 handlers) ✅
   - Chronicle CRUD
   - Event management
   - Timeline operations
 
-- [ ] **`backend/src/routes/templates.rs`** (2 handlers)
+- [x] **`backend/src/routes/templates.rs`** (2 handlers) ✅
   - Template management
 
-- [ ] **`backend/src/routes/template_preferences_routes.rs`** (3 handlers)
+- [x] **`backend/src/routes/template_preferences_routes.rs`** (3 handlers) ✅
   - Template preferences CRUD
 
 #### **LOW PRIORITY** (Admin/Utility - 6 handlers)
