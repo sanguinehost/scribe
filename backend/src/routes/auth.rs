@@ -17,11 +17,12 @@ use axum::routing::{delete, get, post};
 use axum::Json;
 use axum::Router;
 use axum_login::{AuthSession, AuthUser, AuthnBackend};
-use secrecy::SecretString;
+#[cfg(feature = "desktop")]
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};
-// use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64}; // Add Base64 import - Removed unused
 // For session DEK handling
 use crate::auth::session_store::offset_to_utc;
 use tower_sessions::Session; // Import tower_sessions::Session // Added for time conversion
@@ -1266,11 +1267,9 @@ pub async fn desktop_setup_handler(
 }
 
 #[cfg(feature = "desktop")]
-#[instrument(skip(state, auth_session, session), err)]
+#[instrument(skip(state), err)]
 pub async fn desktop_auto_login_handler(
     State(state): State<AppState>,
-    mut auth_session: CurrentAuthSession,
-    session: Session,
 ) -> Result<Response, AppError> {
     info!("Desktop auto-login handler entered");
 
@@ -1344,47 +1343,48 @@ pub async fn desktop_auto_login_handler(
     })
     .await?;
 
-    // Log the user in
-    if let Err(e) = auth_session.login(&user).await {
-        error!(user_id = %user.id, error = ?e, "Failed to auto-login user");
-        return Err(AppError::InternalServerErrorGeneric(
-            "Failed to establish session for auto-login".to_string(),
-        ));
-    }
-
-    // Rotate session ID
-    if let Err(e) = session.cycle_id().await {
-        error!(user_id = %user.id, error = ?e, "Failed to rotate session ID");
-        return Err(AppError::InternalServerErrorGeneric(
-            "Failed to rotate session ID".to_string(),
-        ));
-    }
-
-    info!(user_id = %user.id, "Auto-login successful");
-
-    // Get session details for response
-    let session_id_str = session.id().map_or_else(
-        || "error_retrieving_session_id".to_string(),
-        |id| id.0.to_string(),
-    );
-
-    let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
-        AppError::InternalServerErrorGeneric("Failed to process session expiry".to_string())
+    // For desktop mode, generate JWT tokens directly (no session-based auth needed)
+    // Get the token service
+    let token_service = state.token_service.as_ref().ok_or_else(|| {
+        error!("Token service not available for desktop auto-login");
+        AppError::InternalServerErrorGeneric("Token authentication not configured".to_string())
     })?;
 
-    let response = LoginSuccessResponse {
+    // Generate token pair for the user
+    let token_pair = token_service.generate_token_pair(user.id).map_err(|e| {
+        error!(user_id = %user.id, error = ?e, "Failed to generate token pair for auto-login");
+        AppError::InternalServerErrorGeneric("Token generation failed".to_string())
+    })?;
+
+    // Generate DEK for Quick Start mode
+    let dek_secret = crate::crypto::generate_dek().map_err(|e| {
+        error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
+        AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
+    })?;
+
+    // Base64-encode the DEK for transmission
+    let dek_bytes = dek_secret.expose_secret();
+    let dek_b64 = BASE64.encode(dek_bytes);
+
+    debug!(user_id = %user.id, "Generated DEK for Quick Start mode");
+
+    // Return JWT token response with DEK
+    let response = TokenLoginResponse {
+        access_token: token_pair.access_token,
+        refresh_token: token_pair.refresh_token,
+        expires_in: token_pair.expires_in,
         user: AuthResponse {
             user_id: user.id,
-            username: user.username,
-            email: user.email,
+            username: user.username.clone(),
+            email: user.email.clone(),
             role: format!("{:?}", user.role),
             recovery_key: None,
             default_persona_id: user.default_persona_id,
         },
-        session_id: session_id_str,
-        expires_at: expires_at_utc,
+        dek: Some(dek_b64),
     };
 
+    info!(user_id = %user.id, "Auto-login JWT tokens generated successfully with DEK");
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
@@ -1475,6 +1475,8 @@ pub struct TokenLoginResponse {
     pub refresh_token: String,
     pub expires_in: i64, // seconds until access token expires
     pub user: AuthResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dek: Option<String>, // Base64-encoded DEK for Quick Start mode
 }
 
 /// Request payload for token refresh
@@ -1548,6 +1550,7 @@ pub async fn token_login_handler(
                     recovery_key: None,
                     default_persona_id: user.default_persona_id,
                 },
+                dek: None, // DEK only included for desktop Quick Start mode
             };
 
             Ok((StatusCode::OK, Json(response)).into_response())

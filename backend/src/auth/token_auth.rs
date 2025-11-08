@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_login::{AuthSession, AuthnBackend};
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::db::unified_types::DbId;
@@ -86,7 +86,9 @@ where
         if let Some(auth_header) = parts.headers.get(AUTHORIZATION) {
             if let Ok(auth_str) = auth_header.to_str() {
                 if let Some(token) = auth_str.strip_prefix("Bearer ") {
-                    debug!("Found Bearer token in Authorization header");
+                    info!(
+                        "✓ Found Bearer token in Authorization header - attempting JWT validation"
+                    );
 
                     // Get the app state to access token service
                     let app_state = AppState::from_ref(state);
@@ -107,7 +109,7 @@ where
                     // Validate the token
                     match token_service.validate_token(token) {
                         Ok(claims) => {
-                            debug!(?claims.sub, "Token validated successfully");
+                            info!(user_id = %claims.sub, "✓ JWT token validated successfully - loading user from database");
 
                             // Load the user from the database
                             let pool = app_state.pool.clone();
@@ -141,7 +143,9 @@ where
                                     })?;
 
                             // Set the user in the session (in-memory only, not persisted)
-                            auth_session.user = Some(user);
+                            auth_session.user = Some(user.clone());
+
+                            info!(user_id = %user.id, username = %user.username, "✓ JWT authentication successful - user loaded and session created");
 
                             return Ok(UnifiedAuth {
                                 session: auth_session,
@@ -149,8 +153,12 @@ where
                             });
                         }
                         Err(e) => {
-                            debug!(?e, "Token validation failed");
-                            // Fall through to cookie auth
+                            error!(?e, "Token validation failed - returning 401 instead of falling back to cookies");
+                            return Err((
+                                StatusCode::UNAUTHORIZED,
+                                format!("Invalid or expired token: {}", e),
+                            )
+                                .into_response());
                         }
                     }
                 }
@@ -158,11 +166,11 @@ where
         }
 
         // Fall back to cookie-based authentication
-        debug!("Falling back to cookie-based authentication");
+        info!("No Bearer token found in Authorization header - falling back to cookie-based authentication");
         let auth_session = UnifiedAuthSession::from_request_parts(parts, state)
             .await
             .map_err(|e| {
-                error!(?e, "Failed to extract auth session");
+                error!(?e, "Failed to extract auth session (cookie mode)");
                 (StatusCode::UNAUTHORIZED, "Authentication required").into_response()
             })?;
 

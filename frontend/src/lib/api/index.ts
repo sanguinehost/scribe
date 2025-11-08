@@ -819,6 +819,62 @@ class ApiClient {
 			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Uploading character file ${file.name}`
 		);
 
+		// Desktop mode uses Tauri upload plugin to bypass protocol handler limitations
+		const desktop = isDesktopMode();
+		console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Desktop mode: ${desktop}`);
+
+		if (desktop) {
+			try {
+				// @ts-expect-error - Tauri upload plugin types
+				const { upload } = await import('@tauri-apps/plugin-upload');
+
+				// Save file to temp location first
+				const tempPath = `${file.name}`;
+
+				// Create File URL for the blob
+				const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+				const fileUrl = URL.createObjectURL(blob);
+
+				console.log(
+					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Using Tauri upload plugin`
+				);
+
+				// Get auth headers
+				const headers = await this.getAuthHeaders();
+
+				// Upload using Tauri plugin (bypasses protocol handler)
+				const response = await upload(
+					'https://localhost:38080/api/characters/upload',
+					fileUrl,
+					(progress) => {
+						console.log(`Upload progress: ${progress.progress}/${progress.total} bytes`);
+					},
+					{
+						...headers,
+						'Content-Type': 'multipart/form-data'
+					}
+				);
+
+				URL.revokeObjectURL(fileUrl);
+
+				// Parse response
+				const character = JSON.parse(response) as Character;
+				return ok(character);
+			} catch (_error) {
+				console.error(
+					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Tauri upload error`,
+					_error
+				);
+				return err(
+					new ApiNetworkError(
+						'Failed to upload character file.',
+						_error as Error
+					)
+				);
+			}
+		}
+
+		// Web mode uses standard multipart upload
 		const formData = new FormData();
 		formData.append('character_card', file);
 

@@ -156,8 +156,8 @@ class DesktopAuthService {
 
 			// Persist tokens to secure storage
 			await invoke('save_tokens', {
-				accessToken: data.access_token,
-				refreshToken: data.refresh_token
+				access_token: data.access_token,
+				refresh_token: data.refresh_token
 			});
 
 			console.log('[DesktopAuth] Login successful, tokens saved');
@@ -313,8 +313,8 @@ class DesktopAuthService {
 
 			// Update stored tokens (DEK remains unchanged)
 			await invoke('save_tokens', {
-				accessToken: data.access_token,
-				refreshToken: this.refreshToken
+				access_token: data.access_token,
+				refresh_token: this.refreshToken
 			});
 
 			console.log('[DesktopAuth] Access token refreshed successfully');

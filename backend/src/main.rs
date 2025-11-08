@@ -19,6 +19,7 @@ use scribe_backend::db::DbPool;
 use scribe_backend::desktop; // Desktop mode initialization
 use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
+use scribe_backend::middleware::unified_login_required;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
 #[cfg(feature = "postgres-backend")]
@@ -44,8 +45,8 @@ use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
-use axum_login::{login_required, AuthManagerLayerBuilder}; // Modified
-                                                           // Import SessionManagerLayer directly from tower_sessions
+use axum_login::AuthManagerLayerBuilder; // Modified
+                                         // Import SessionManagerLayer directly from tower_sessions
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
@@ -699,7 +700,10 @@ fn build_router(
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
-        .route_layer(login_required!(AuthBackend));
+        .route_layer(axum_middleware::from_fn_with_state(
+            app_state.clone(),
+            unified_login_required,
+        ));
 
     // Health endpoint - not rate limited for monitoring purposes
     let health_routes = Router::new()

@@ -46,11 +46,12 @@ use crate::services::encryption_service::EncryptionService; // Added import
 use crate::services::lorebook::LorebookService;
 use axum::body::Bytes;
 // DieselError moved to main diesel imports
+use base64::Engine;
 use image::ImageFormat; // Added for image processing
 use image::ImageReader; // Use the new name for clarity
 use secrecy::ExposeSecret; // Added for DEK expose
 use serde::Deserialize; // Add serde import
-use std::io::Cursor; // Added for image processing
+use std::io::Cursor; // Added for image processing // Required for base64 decode in desktop mode
 
 // Define input structure for image query parameters
 #[derive(Deserialize, Debug)]
@@ -71,6 +72,7 @@ pub struct GenerateCharacterPayload {
 pub fn characters_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/upload", post(upload_character_handler))
+        .route("/upload-base64", post(upload_character_base64_handler)) // JSON-based upload for desktop mode
         .route(
             "/",
             get(list_characters_handler).post(create_character_handler),
@@ -113,6 +115,583 @@ fn insert_character_sync(
         .execute(conn)
         .map(|_| character.id.expect("ID should be set before insert"))
         .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
+}
+
+// Request payload for base64 character upload (desktop mode)
+#[derive(serde::Deserialize)]
+pub struct UploadCharacterBase64Request {
+    /// Base64-encoded file data
+    file_data: String,
+    /// Content type (e.g., "image/png", "application/json")
+    content_type: String,
+    /// Original filename (for logging)
+    filename: Option<String>,
+}
+
+// POST /api/characters/upload-base64
+// JSON-based upload endpoint for desktop mode (bypasses Tauri multipart proxy issues)
+#[instrument(skip(state, auth, dek, payload), err)]
+pub async fn upload_character_base64_handler(
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+    dek: SessionDek,
+    Json(payload): Json<UploadCharacterBase64Request>,
+) -> Result<(StatusCode, Json<CharacterDataForClient>), AppError> {
+    let user = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    info!(
+        user_id = %local_user_id,
+        filename = ?payload.filename,
+        content_type = %payload.content_type,
+        "Processing base64 character upload"
+    );
+
+    // Decode base64 file data
+    let file_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&payload.file_data)
+        .map_err(|e| AppError::BadRequest(format!("Invalid base64 encoding: {}", e)))?;
+
+    let png_data = Bytes::from(file_bytes);
+    let content_type = Some(payload.content_type.clone());
+
+    info!("Decoded {} bytes from base64", png_data.len());
+
+    // Validate image data using the 'image' crate
+    if let Some(ct) = &content_type {
+        if ct.starts_with("image/") {
+            let format = match ct.as_str() {
+                "image/png" => Some(image::ImageFormat::Png),
+                "image/jpeg" => Some(image::ImageFormat::Jpeg),
+                _ => None,
+            };
+
+            if let Some(fmt) = format {
+                match image::load_from_memory_with_format(&png_data, fmt) {
+                    Ok(_) => info!("Image data validated successfully as {}", ct),
+                    Err(e) => {
+                        error!("Failed to decode image data as {}: {}", ct, e);
+                        return Err(AppError::BadRequest(format!("Invalid image data: {}", e)));
+                    }
+                }
+            } else {
+                warn!("Unsupported image content type: {}", ct);
+            }
+        }
+    } else {
+        warn!("No content type provided for character_card upload.");
+    }
+
+    // Parse the character card based on content type
+    let parsed_card = match content_type.as_deref() {
+        Some("application/json") => {
+            info!("Parsing as JSON character card");
+            character_parser::parse_character_card_json(&png_data)?
+        }
+        Some(ct) if ct.starts_with("image/") => {
+            info!("Parsing as PNG character card");
+            character_parser::parse_character_card_png(&png_data)?
+        }
+        _ => {
+            // Default to PNG parsing for backwards compatibility
+            info!("No content type or unknown type, defaulting to PNG parsing");
+            character_parser::parse_character_card_png(&png_data)?
+        }
+    };
+
+    // Debug: Log the parsed card data
+    match &parsed_card {
+        character_parser::ParsedCharacterCard::V3(card) => {
+            info!(
+                "Parsed as V3: spec={}, spec_version={}, name={:?}",
+                card.spec, card.spec_version, card.data.name
+            );
+        }
+        character_parser::ParsedCharacterCard::V2Fallback(data) => {
+            info!("Parsed as V2Fallback: name={:?}", data.name);
+        }
+    }
+
+    let mut new_character_for_db = NewCharacter::from_parsed_card(&parsed_card, local_user_id);
+
+    // Debug: Log the converted character data
+    info!(
+        "Converted to NewCharacter: name={:?}",
+        new_character_for_db.name
+    );
+
+    // --- Encrypt all designated fields before saving ---
+    // Helper macro to reduce boilerplate for encrypting Option<Vec<u8>> fields
+    macro_rules! encrypt_field {
+        ($self:ident, $field:ident, $nonce_field:ident, $dek:expr) => {
+            if let Some(plaintext_bytes) = $self.$field.take() {
+                if !plaintext_bytes.is_empty() {
+                    match String::from_utf8(plaintext_bytes) {
+                        Ok(string_version) => {
+                            if !string_version.is_empty() {
+                                // Use the higher-level EncryptionService for encryption
+                                let enc_service = EncryptionService::new();
+                                match enc_service.encrypt(&string_version, $dek.expose_secret()) {
+                                    Ok((ciphertext, nonce)) => {
+                                        $self.$field = Some(ciphertext);
+                                        $self.$nonce_field = Some(nonce);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Failed to encrypt character field '{}': {}",
+                                            stringify!($field),
+                                            e
+                                        );
+                                        return Err(AppError::EncryptionError(format!(
+                                            "Encryption failed for {}: {e}",
+                                            stringify!($field)
+                                        )));
+                                    }
+                                }
+                            } else {
+                                $self.$field = None;
+                                $self.$nonce_field = None;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Field '{}' bytes not valid UTF-8: {}. Storing as None.",
+                                stringify!($field),
+                                e
+                            );
+                            $self.$field = None;
+                            $self.$nonce_field = None;
+                        }
+                    }
+                } else {
+                    $self.$field = None;
+                    $self.$nonce_field = None;
+                }
+            }
+        };
+    }
+
+    encrypt_field!(new_character_for_db, description, description_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, personality, personality_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, scenario, scenario_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, first_mes, first_mes_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, mes_example, mes_example_nonce, &dek.0);
+    encrypt_field!(
+        new_character_for_db,
+        creator_notes,
+        creator_notes_nonce,
+        &dek.0
+    );
+    encrypt_field!(
+        new_character_for_db,
+        system_prompt,
+        system_prompt_nonce,
+        &dek.0
+    );
+    encrypt_field!(new_character_for_db, persona, persona_nonce, &dek.0);
+    encrypt_field!(
+        new_character_for_db,
+        world_scenario,
+        world_scenario_nonce,
+        &dek.0
+    );
+    encrypt_field!(new_character_for_db, greeting, greeting_nonce, &dek.0);
+    encrypt_field!(new_character_for_db, definition, definition_nonce, &dek.0);
+    encrypt_field!(
+        new_character_for_db,
+        example_dialogue,
+        example_dialogue_nonce,
+        &dek.0
+    );
+    encrypt_field!(
+        new_character_for_db,
+        model_prompt,
+        model_prompt_nonce,
+        &dek.0
+    );
+    encrypt_field!(
+        new_character_for_db,
+        user_persona,
+        user_persona_nonce,
+        &dek.0
+    );
+
+    // Encrypt SillyTavern v3 fields that contain sensitive data
+    encrypt_field!(
+        new_character_for_db,
+        creator_comment,
+        creator_comment_nonce,
+        &dek.0
+    );
+
+    // For depth_prompt, we need to encrypt the text content into depth_prompt_ciphertext
+    if let Some(depth_prompt_text_bytes) = new_character_for_db.depth_prompt.take() {
+        if !depth_prompt_text_bytes.is_empty() {
+            match String::from_utf8(depth_prompt_text_bytes) {
+                Ok(depth_prompt_text) if !depth_prompt_text.is_empty() => {
+                    let enc_service = EncryptionService::new();
+                    match enc_service.encrypt(&depth_prompt_text, dek.0.expose_secret()) {
+                        Ok((ciphertext, nonce)) => {
+                            new_character_for_db.depth_prompt_ciphertext = Some(ciphertext);
+                            new_character_for_db.depth_prompt_nonce = Some(nonce);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to encrypt depth_prompt: {}", e);
+                            return Err(AppError::EncryptionError(format!(
+                                "Encryption failed for depth_prompt: {e}"
+                            )));
+                        }
+                    }
+                }
+                _ => {
+                    // Invalid UTF-8 or empty, leave as None
+                    new_character_for_db.depth_prompt_ciphertext = None;
+                    new_character_for_db.depth_prompt_nonce = None;
+                }
+            }
+        }
+    }
+
+    // For world field, encrypt from the world string into world_ciphertext
+    if let Some(world_text) = new_character_for_db.world.as_ref() {
+        if !world_text.is_empty() {
+            let enc_service = EncryptionService::new();
+            match enc_service.encrypt(world_text, dek.0.expose_secret()) {
+                Ok((ciphertext, nonce)) => {
+                    new_character_for_db.world_ciphertext = Some(ciphertext);
+                    new_character_for_db.world_nonce = Some(nonce);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to encrypt world field: {}", e);
+                    return Err(AppError::EncryptionError(format!(
+                        "Encryption failed for world field: {e}"
+                    )));
+                }
+            }
+        }
+    }
+
+    info!(?new_character_for_db.name, user_id = %local_user_id, "Attempting to insert character into DB for user");
+
+    #[cfg(feature = "postgres-backend")]
+    let conn_insert_op = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    #[cfg(feature = "postgres-backend")]
+    let returned_id: crate::db::DbId = {
+        conn_insert_op
+            .interact(move |conn_insert_block| {
+                diesel::insert_into(characters)
+                    .values(new_character_for_db)
+                    .returning(id)
+                    .get_result::<crate::db::DbId>(conn_insert_block)
+            })
+            .await
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
+            })?
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {e}")))?
+    };
+
+    #[cfg(feature = "sqlite-backend")]
+    let returned_id: crate::db::DbId = {
+        // SQLite doesn't support RETURNING, so we generate UUID before insert
+        let generated_id = crate::db::DbId::new_v4();
+        let mut character_with_id = new_character_for_db;
+        character_with_id.id = Some(generated_id.into());
+
+        crate::db::with_conn(&state.pool, move |conn| {
+            insert_character_sync(conn, &character_with_id)
+        })
+        .await?
+    };
+
+    info!(character_id = %returned_id, "Character basic info returned after insert");
+
+    #[cfg(feature = "postgres-backend")]
+    let conn_fetch_op = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    #[cfg(feature = "postgres-backend")]
+    let inserted_character: Character = conn_fetch_op
+        .interact(move |conn_select_block| {
+            characters
+                .find(returned_id)
+                .get_result::<Character>(conn_select_block)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
+
+    #[cfg(feature = "sqlite-backend")]
+    let inserted_character: Character =
+        crate::db::with_conn(&state.pool, move |conn_select_block| {
+            characters
+                .find(returned_id)
+                .get_result::<Character>(conn_select_block)
+                .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
+        })
+        .await?;
+
+    info!(character_id = %inserted_character.id, "Character uploaded and saved (full data fetched)");
+
+    // --- Save the character avatar image to database ---
+    // Create character asset record with binary data
+    let new_asset = NewCharacterAsset::new_avatar(
+        inserted_character.id,
+        &format!("{}_avatar", inserted_character.name),
+        png_data.to_vec(),
+        content_type, // Pass the extracted content_type
+    );
+
+    // Save asset record to database
+    #[cfg(feature = "postgres-backend")]
+    let conn_asset_op = state
+        .pool
+        .get()
+        .await
+        .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+    #[cfg(feature = "postgres-backend")]
+    let asset_result: Result<CharacterAsset, diesel::result::Error> = conn_asset_op
+        .interact(move |conn_asset_block| {
+            diesel::insert_into(character_assets)
+                .values(new_asset)
+                .returning(CharacterAsset::as_returning())
+                .get_result::<CharacterAsset>(conn_asset_block)
+        })
+        .await
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
+        })?;
+
+    #[cfg(feature = "sqlite-backend")]
+    let asset_result: Result<CharacterAsset, AppError> = {
+        use diesel::prelude::*;
+        let new_asset_clone = new_asset.clone();
+        let asset_id = new_asset
+            .id
+            .expect("NewCharacterAsset should have id set before insertion");
+
+        crate::db::with_conn(&state.pool, move |conn_asset_block| {
+            diesel::insert_into(character_assets)
+                .values(&new_asset_clone)
+                .execute(conn_asset_block)?;
+
+            // Fetch the inserted asset
+            character_assets
+                .find(asset_id)
+                .first(conn_asset_block)
+                .map_err(Into::into)
+        })
+        .await
+    };
+
+    match asset_result {
+        Ok(asset) => {
+            info!(character_id = %inserted_character.id, asset_id = %asset.id, "Character avatar stored in database successfully");
+
+            // Update character record with asset reference (asset ID as string)
+            let character_id_for_update = inserted_character.id;
+            let asset_id_for_update = asset.id.to_string();
+
+            #[cfg(feature = "postgres-backend")]
+            let conn_update_op = state
+                .pool
+                .get()
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+            #[cfg(feature = "postgres-backend")]
+            let update_result = conn_update_op
+                .interact(move |conn_update_block| {
+                    diesel::update(characters.find(character_id_for_update))
+                        .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
+                        .execute(conn_update_block)
+                })
+                .await
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!(
+                        "Avatar update interaction error: {e}"
+                    ))
+                })?;
+
+            #[cfg(feature = "sqlite-backend")]
+            let _update_result = crate::db::with_conn(&state.pool, move |conn_update_block| {
+                diesel::update(characters.find(character_id_for_update))
+                    .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
+                    .execute(conn_update_block)
+                    .map_err(AppError::from)
+            })
+            .await?;
+
+            #[cfg(feature = "postgres-backend")]
+            match update_result {
+                Ok(_) => {
+                    info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
+                }
+                Err(e) => {
+                    warn!(character_id = %inserted_character.id, error = %e, "Failed to update character avatar field");
+                }
+            }
+
+            #[cfg(feature = "sqlite-backend")]
+            {
+                info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
+            }
+        }
+        Err(e) => {
+            warn!(character_id = %inserted_character.id, error = %e, "Failed to save avatar image to database, continuing without avatar");
+        }
+    }
+
+    // Check if the parsed card has an embedded lorebook
+    let character_book = match &parsed_card {
+        crate::services::character_parser::ParsedCharacterCard::V3(card) => {
+            &card.data.character_book
+        }
+        crate::services::character_parser::ParsedCharacterCard::V2Fallback(data) => {
+            &data.character_book
+        }
+    };
+
+    if let Some(lorebook_data) = character_book {
+        // Import the lorebook
+        let lorebook_service = crate::services::LorebookService::new(
+            state.pool.clone(),
+            state.encryption_service.clone(),
+            state.qdrant_service.clone(),
+        );
+
+        // Convert SillyTavern lorebook format to our upload payload
+        use std::collections::HashMap;
+        let mut entries_map = HashMap::new();
+
+        // Handle both array and object formats for entries
+        if let Ok(lorebook_json) = serde_json::to_value(lorebook_data) {
+            if let Some(entries_value) = lorebook_json.get("entries") {
+                if let Some(entries_array) = entries_value.as_array() {
+                    // Handle array format (common in character cards)
+                    for (idx, entry_value) in entries_array.iter().enumerate() {
+                        match serde_json::from_value::<
+                            crate::models::lorebook_dtos::UploadedLorebookEntry,
+                        >(entry_value.clone())
+                        {
+                            Ok(mut entry) => {
+                                // Fallback: use insertion_order if position is None
+                                if entry.position.is_none() && entry.insertion_order.is_some() {
+                                    entry.position = entry.insertion_order;
+                                }
+
+                                let uid = entry
+                                    .uid
+                                    .map(|u| u.to_string())
+                                    .unwrap_or_else(|| idx.to_string());
+                                tracing::info!(
+                                    "Successfully parsed array entry {}: content length={}",
+                                    uid,
+                                    entry.content.len()
+                                );
+                                entries_map.insert(uid, entry);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to parse array entry {}: {}. Raw value: {}",
+                                    idx,
+                                    e,
+                                    entry_value
+                                );
+                            }
+                        }
+                    }
+                } else if let Some(entries_object) = entries_value.as_object() {
+                    // Handle object format (SillyTavern format)
+                    for (uid, entry_value) in entries_object {
+                        match serde_json::from_value::<
+                            crate::models::lorebook_dtos::UploadedLorebookEntry,
+                        >(entry_value.clone())
+                        {
+                            Ok(mut entry) => {
+                                // Fallback: use insertion_order if position is None
+                                if entry.position.is_none() && entry.insertion_order.is_some() {
+                                    entry.position = entry.insertion_order;
+                                }
+
+                                tracing::info!(
+                                    "Successfully parsed object entry {}: content length={}",
+                                    uid,
+                                    entry.content.len()
+                                );
+                                entries_map.insert(uid.clone(), entry);
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to parse object entry {}: {}. Raw value: {}",
+                                    uid,
+                                    e,
+                                    entry_value
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let lorebook_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
+            name: format!("{} Lorebook", inserted_character.name),
+            description: Some(format!("Lorebook for {}", inserted_character.name)),
+            is_public: false,
+            entries: entries_map,
+        };
+
+        // Import the lorebook
+        match lorebook_service
+            .import_lorebook(
+                &auth.session,
+                Some(&dek.0),
+                lorebook_payload,
+                Arc::new(state.clone()),
+            )
+            .await
+        {
+            Ok(lorebook) => {
+                // Associate the lorebook with the character
+                if let Err(e) = lorebook_service
+                    .associate_lorebook_to_character(
+                        &auth.session,
+                        inserted_character.id,
+                        lorebook.id,
+                    )
+                    .await
+                {
+                    warn!("Failed to associate lorebook with character: {}", e);
+                }
+            }
+            Err(e) => {
+                warn!("Failed to import embedded lorebook: {}", e);
+            }
+        }
+    }
+
+    let client_character_data =
+        inserted_character.into_decrypted_for_client(Some(&dek.0), vec![])?;
+
+    // Debug: Log the alternate_greetings in the final client response
+    tracing::info!(
+        "Final client character alternate_greetings: {:?}",
+        client_character_data.alternate_greetings
+    );
+
+    Ok((StatusCode::CREATED, Json(client_character_data)))
 }
 
 // POST /api/characters/upload

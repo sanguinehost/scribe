@@ -154,56 +154,8 @@
 						console.error(msg);
 					};
 
-					// CRITICAL: Check for stored credentials BEFORE attempting auto-login
-					// This enables session persistence across app restarts
-					if (isDesktopMode()) {
-						log('[STEP 8.5] Checking for stored credentials in Tauri secure storage...');
-						try {
-							const storedTokensResult = await withTimeout(
-								apiClient.checkStoredTokens(),
-								3000,
-								'Check stored tokens'
-							);
-
-							if (storedTokensResult.isOk() && storedTokensResult.value) {
-								log('[STEP 8.6] ✓ Found stored credentials, initializing auth...');
-
-								// Tokens are already loaded into memory by checkStoredTokens()
-								// Now initialize auth to populate auth store with user data
-								try {
-									await withTimeout(initializeAuth(true), 8000, 'Initialize auth');
-									log('[STEP 8.7] ✓ Auth successful with stored credentials');
-
-									// Get user from auth store
-									const authenticatedUser = getCurrentUser();
-									if (authenticatedUser) {
-										setAuthReady(true);
-										setAuthenticated(authenticatedUser);
-										isAppReady = true;
-										hideLoadingOverlay();
-										log(
-											'[STEP 8.8] ✓ Session restored from storage - skipping auto-login'
-										);
-										return; // Skip auto-login flow - we're already authenticated!
-									} else {
-										logError('[STEP 8.7] ✗ Auth succeeded but no user data - continuing to auto-login');
-										await apiClient.clearDesktopTokens();
-									}
-								} catch (authError) {
-									logError(`[STEP 8.7] ✗ Auth failed with stored tokens: ${authError}`);
-									log('[STEP 8.8] Clearing invalid tokens, will attempt auto-login...');
-									// Clear invalid tokens and continue to auto-login
-									await apiClient.clearDesktopTokens();
-								}
-							} else {
-								log('[STEP 8.6] No stored credentials found, will attempt Quick Start auto-login');
-							}
-						} catch (tokenCheckError) {
-							logError(`[STEP 8.6] ✗ Token check failed: ${tokenCheckError}`);
-							log('[STEP 8.7] Continuing to auto-login flow...');
-							// Continue to auto-login on error
-						}
-					}
+					// NOTE: Token persistence check removed - the main desktop init flow handles all auth
+					// This simplifies the logic and ensures auto-login always runs when needed
 
 					if (isDesktopMode()) {
 						log('[STEP 9] Desktop mode detected, initializing...');
@@ -258,7 +210,59 @@
 
 							// Auto-login for Quick Start mode
 							if (config.setup_complete && config.auth_mode === 'quick_start') {
-								log('[STEP 16] Quick Start mode, attempting auto-login...');
+								log('[STEP 15.5] Quick Start mode - checking for stored credentials first...');
+
+								// CRITICAL: Check for stored tokens BEFORE auto-login
+								// This enables session persistence across app restarts
+								let hasValidStoredTokens = false;
+								try {
+									const storedTokensResult = await withTimeout(
+										apiClient.checkStoredTokens(),
+										3000,
+										'Check stored tokens'
+									);
+
+									if (storedTokensResult.isOk() && storedTokensResult.value) {
+										log('[STEP 15.6] ✓ Found stored credentials, validating with backend...');
+
+										// Tokens loaded into memory - validate by fetching user data
+										await withTimeout(initializeAuth(true), 8000, 'Validate stored tokens');
+
+										const authenticatedUser = getCurrentUser();
+										if (authenticatedUser) {
+											log('[STEP 15.7] ✓ Stored tokens are VALID - user authenticated');
+											setAuthReady(true);
+											setAuthenticated(authenticatedUser);
+
+											// Initialize subscription store
+											if (ENABLE_PAYMENTS) {
+												subscriptionStore.initialize();
+											}
+
+											isAppReady = true;
+											hideLoadingOverlay();
+											log('[STEP 15.8] ✓ Session restored - SKIPPING auto-login');
+											return; // Skip auto-login entirely
+										} else {
+											logError('[STEP 15.7] ✗ Validation failed - no user returned');
+											log('[STEP 15.8] Clearing invalid tokens...');
+											await apiClient.clearDesktopTokens();
+										}
+									} else {
+										log('[STEP 15.6] No stored credentials found');
+									}
+								} catch (tokenError) {
+									logError(`[STEP 15.6] ✗ Token check/validation failed: ${tokenError}`);
+									log('[STEP 15.7] Clearing any partial tokens...');
+									try {
+										await apiClient.clearDesktopTokens();
+									} catch (e) {
+										logError(`[STEP 15.8] ✗ Failed to clear tokens: ${e}`);
+									}
+								}
+
+								// Only attempt auto-login if stored tokens were invalid/missing
+								log('[STEP 16] No valid stored credentials - attempting Quick Start auto-login...');
 
 								const autoLoginResult = await apiClient.desktopAutoLogin();
 								log('[STEP 17] Auto-login request completed');

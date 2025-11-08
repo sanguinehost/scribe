@@ -63,3 +63,4 @@ diesel_migrations = { version = "2.3", default-features = false, features = ["sq
 
 # Workspace dependencies
 scribe-backend = { path = "../backend", default-features = false, features = ["desktop"] }
+tauri-plugin-upload = "2.3.2"

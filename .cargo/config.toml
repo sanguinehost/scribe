@@ -1,0 +1,7 @@
+# Force use of clang for C compilation to avoid gcc 15 internal compiler error
+# This resolves lz4-sys compilation failures when building with --clean flag
+# See: gcc 15.2.1 bug in cfgcleanup.cc:580 (try_forward_edges)
+
+[env]
+CC = "clang"
+CXX = "clang++"

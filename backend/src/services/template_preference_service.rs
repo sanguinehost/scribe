@@ -22,6 +22,41 @@ fn map_diesel_error(e: DieselError) -> AppError {
     }
 }
 
+/// Helper function to convert tuple to TemplatePreference
+fn tuple_to_template_preference(
+    tuple: (
+        crate::db::DbId,
+        crate::db::DbId,
+        Option<crate::db::DbId>,
+        Option<String>,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        bool,
+        chrono::NaiveDateTime,
+        chrono::NaiveDateTime,
+    ),
+) -> TemplatePreference {
+    TemplatePreference {
+        id: tuple.0,
+        user_id: tuple.1,
+        character_id: tuple.2,
+        template_id: tuple.3,
+        tense: tuple.4,
+        narration: tuple.5,
+        perspective: tuple.6,
+        length: tuple.7,
+        enable_info_box: tuple.8,
+        enable_stats_tracker: tuple.9,
+        enable_thinking: tuple.10,
+        created_at: tuple.11,
+        updated_at: tuple.12,
+    }
+}
+
 pub struct TemplatePreferenceService;
 
 impl TemplatePreferenceService {
@@ -52,16 +87,46 @@ impl TemplatePreferenceService {
                 }
             }
 
+            // Use manual tuple selection instead of .as_select() for SQLite compatibility
             let existing = query
-                .select(TemplatePreference::as_select())
-                .first::<TemplatePreference>(conn)
+                .select((
+                    template_preferences::id,
+                    template_preferences::user_id,
+                    template_preferences::character_id,
+                    template_preferences::template_id,
+                    template_preferences::tense,
+                    template_preferences::narration,
+                    template_preferences::perspective,
+                    template_preferences::length,
+                    template_preferences::enable_info_box,
+                    template_preferences::enable_stats_tracker,
+                    template_preferences::enable_thinking,
+                    template_preferences::created_at,
+                    template_preferences::updated_at,
+                ))
+                .first::<(
+                    crate::db::DbId,
+                    crate::db::DbId,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    String,
+                    bool,
+                    bool,
+                    bool,
+                    chrono::NaiveDateTime,
+                    chrono::NaiveDateTime,
+                )>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             info!(%user_id, ?character_id, found = existing.is_some(), "GET: Query result");
 
             match existing {
-                Some(prefs) => {
+                Some(tuple) => {
+                    let prefs = tuple_to_template_preference(tuple);
                     info!(
                         %user_id, ?character_id,
                         tense = %prefs.tense,
@@ -87,17 +152,7 @@ impl TemplatePreferenceService {
                         enable_thinking: false,
                     };
 
-                    #[cfg(feature = "postgres-backend")]
                     let created = {
-                        diesel::insert_into(template_preferences::table)
-                            .values(&new_prefs)
-                            .get_result::<TemplatePreference>(conn)
-                            .map_err(map_diesel_error)?
-                    };
-
-                    #[cfg(feature = "sqlite-backend")]
-                    let created = {
-                        use diesel::prelude::*;
                         let user_id_clone = new_prefs.user_id;
                         let character_id_clone = new_prefs.character_id;
 
@@ -107,12 +162,53 @@ impl TemplatePreferenceService {
                             .map_err(map_diesel_error)?;
 
                         // Query back using unique constraint (user_id, character_id)
-                        template_preferences::table
+                        let mut query = template_preferences::table
                             .filter(template_preferences::user_id.eq(user_id_clone))
-                            .filter(template_preferences::character_id.eq(character_id_clone))
-                            .select(TemplatePreference::as_select())
-                            .first::<TemplatePreference>(conn)
-                            .map_err(map_diesel_error)?
+                            .into_boxed();
+
+                        match character_id_clone {
+                            Some(char_id) => {
+                                query = query.filter(template_preferences::character_id.eq(char_id));
+                            }
+                            None => {
+                                query = query.filter(template_preferences::character_id.is_null());
+                            }
+                        }
+
+                        let tuple = query
+                            .select((
+                                template_preferences::id,
+                                template_preferences::user_id,
+                                template_preferences::character_id,
+                                template_preferences::template_id,
+                                template_preferences::tense,
+                                template_preferences::narration,
+                                template_preferences::perspective,
+                                template_preferences::length,
+                                template_preferences::enable_info_box,
+                                template_preferences::enable_stats_tracker,
+                                template_preferences::enable_thinking,
+                                template_preferences::created_at,
+                                template_preferences::updated_at,
+                            ))
+                            .first::<(
+                                crate::db::DbId,
+                                crate::db::DbId,
+                                Option<crate::db::DbId>,
+                                Option<String>,
+                                String,
+                                String,
+                                String,
+                                String,
+                                bool,
+                                bool,
+                                bool,
+                                chrono::NaiveDateTime,
+                                chrono::NaiveDateTime,
+                            )>(conn)
+                            .map_err(map_diesel_error)?;
+
+                        tuple_to_template_preference(tuple)
                     };
 
                     info!(%user_id, ?character_id, "Created default template preferences");
@@ -148,15 +244,44 @@ impl TemplatePreferenceService {
                 }
             }
 
+            // Use manual tuple selection instead of .as_select() for SQLite compatibility
             let existing = query
-                .select(TemplatePreference::as_select())
-                .first::<TemplatePreference>(conn)
+                .select((
+                    template_preferences::id,
+                    template_preferences::user_id,
+                    template_preferences::character_id,
+                    template_preferences::template_id,
+                    template_preferences::tense,
+                    template_preferences::narration,
+                    template_preferences::perspective,
+                    template_preferences::length,
+                    template_preferences::enable_info_box,
+                    template_preferences::enable_stats_tracker,
+                    template_preferences::enable_thinking,
+                    template_preferences::created_at,
+                    template_preferences::updated_at,
+                ))
+                .first::<(
+                    crate::db::DbId,
+                    crate::db::DbId,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    String,
+                    bool,
+                    bool,
+                    bool,
+                    chrono::NaiveDateTime,
+                    chrono::NaiveDateTime,
+                )>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             // Get or create the existing preferences
             let existing_prefs = match existing {
-                Some(prefs) => prefs,
+                Some(tuple) => tuple_to_template_preference(tuple),
                 None => {
                     // Create defaults WITH the update request values instead of hardcoded defaults
                     let new_prefs = NewTemplatePreference {
@@ -185,17 +310,7 @@ impl TemplatePreferenceService {
                     };
 
                     // Insert with the requested values, no need to UPDATE after
-                    #[cfg(feature = "postgres-backend")]
                     let created = {
-                        diesel::insert_into(template_preferences::table)
-                            .values(&new_prefs)
-                            .get_result::<TemplatePreference>(conn)
-                            .map_err(map_diesel_error)?
-                    };
-
-                    #[cfg(feature = "sqlite-backend")]
-                    let created = {
-                        use diesel::prelude::*;
                         let user_id_clone = new_prefs.user_id;
                         let character_id_clone = new_prefs.character_id;
 
@@ -205,12 +320,54 @@ impl TemplatePreferenceService {
                             .map_err(map_diesel_error)?;
 
                         // Query back using unique constraint (user_id, character_id)
-                        template_preferences::table
+                        let mut query = template_preferences::table
                             .filter(template_preferences::user_id.eq(user_id_clone))
-                            .filter(template_preferences::character_id.eq(character_id_clone))
-                            .select(TemplatePreference::as_select())
-                            .first::<TemplatePreference>(conn)
-                            .map_err(map_diesel_error)?
+                            .into_boxed();
+
+                        match character_id_clone {
+                            Some(char_id) => {
+                                query =
+                                    query.filter(template_preferences::character_id.eq(char_id));
+                            }
+                            None => {
+                                query = query.filter(template_preferences::character_id.is_null());
+                            }
+                        }
+
+                        let tuple = query
+                            .select((
+                                template_preferences::id,
+                                template_preferences::user_id,
+                                template_preferences::character_id,
+                                template_preferences::template_id,
+                                template_preferences::tense,
+                                template_preferences::narration,
+                                template_preferences::perspective,
+                                template_preferences::length,
+                                template_preferences::enable_info_box,
+                                template_preferences::enable_stats_tracker,
+                                template_preferences::enable_thinking,
+                                template_preferences::created_at,
+                                template_preferences::updated_at,
+                            ))
+                            .first::<(
+                                crate::db::DbId,
+                                crate::db::DbId,
+                                Option<crate::db::DbId>,
+                                Option<String>,
+                                String,
+                                String,
+                                String,
+                                String,
+                                bool,
+                                bool,
+                                bool,
+                                chrono::NaiveDateTime,
+                                chrono::NaiveDateTime,
+                            )>(conn)
+                            .map_err(map_diesel_error)?;
+
+                        tuple_to_template_preference(tuple)
                     };
 
                     info!(
@@ -275,12 +432,42 @@ impl TemplatePreferenceService {
 
             info!(%user_id, ?character_id, rows_affected, "Updated template preferences in DB");
 
-            // Retrieve updated preferences
-            let updated = template_preferences::table
+            // Retrieve updated preferences using manual tuple selection
+            let tuple = template_preferences::table
                 .filter(template_preferences::id.eq(existing_prefs.id))
-                .select(TemplatePreference::as_select())
-                .first::<TemplatePreference>(conn)
+                .select((
+                    template_preferences::id,
+                    template_preferences::user_id,
+                    template_preferences::character_id,
+                    template_preferences::template_id,
+                    template_preferences::tense,
+                    template_preferences::narration,
+                    template_preferences::perspective,
+                    template_preferences::length,
+                    template_preferences::enable_info_box,
+                    template_preferences::enable_stats_tracker,
+                    template_preferences::enable_thinking,
+                    template_preferences::created_at,
+                    template_preferences::updated_at,
+                ))
+                .first::<(
+                    crate::db::DbId,
+                    crate::db::DbId,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    String,
+                    bool,
+                    bool,
+                    bool,
+                    chrono::NaiveDateTime,
+                    chrono::NaiveDateTime,
+                )>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            let updated = tuple_to_template_preference(tuple);
 
             info!(
                 %user_id, ?character_id,

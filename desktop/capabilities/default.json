@@ -8,6 +8,7 @@
   "permissions": [
     "core:default",
     "log:default",
+    "upload:default",
     "shell:allow-execute",
     {
       "identifier": "shell:allow-execute",
