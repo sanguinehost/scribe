@@ -172,7 +172,10 @@ class ApiClient {
 
 	// Initialize desktop auth service if in Tauri environment
 	private async initDesktopAuth(): Promise<void> {
-		console.log('[ApiClient.initDesktopAuth] Called, already initialized:', this.desktopAuthInitialized);
+		console.log(
+			'[ApiClient.initDesktopAuth] Called, already initialized:',
+			this.desktopAuthInitialized
+		);
 		if (this.desktopAuthInitialized) return;
 
 		const isDesktop = isDesktopMode();
@@ -184,14 +187,20 @@ class ApiClient {
 				this.desktopAuthService = desktopAuth;
 				console.log('[ApiClient.initDesktopAuth] Calling desktopAuth.initialize()...');
 				const result = await this.desktopAuthService.initialize();
-				console.log('[ApiClient.initDesktopAuth] Initialize result:', result.isOk(), result.isOk() ? result.value : result.error);
+				console.log(
+					'[ApiClient.initDesktopAuth] Initialize result:',
+					result.isOk(),
+					result.isOk() ? result.value : result.error
+				);
 
 				// Only set initialized flag if tokens were successfully loaded
 				if (result.isOk() && result.value === true) {
 					this.desktopAuthInitialized = true;
 					console.log('[ApiClient] ✓ Desktop authentication initialized - tokens loaded');
 				} else if (result.isOk() && result.value === false) {
-					console.log('[ApiClient] ⚠ Desktop authentication not initialized - no tokens in storage');
+					console.log(
+						'[ApiClient] ⚠ Desktop authentication not initialized - no tokens in storage'
+					);
 				} else {
 					console.error('[ApiClient] ✗ Desktop authentication failed:', result.error);
 				}
@@ -242,26 +251,40 @@ class ApiClient {
 	// Get authentication headers (JWT for desktop, nothing for web - uses cookies)
 	private async getAuthHeaders(): Promise<Record<string, string>> {
 		if (isDesktopMode()) {
-			console.log('[ApiClient.getAuthHeaders] Desktop mode detected, desktopAuthService:', !!this.desktopAuthService);
+			console.log(
+				'[ApiClient.getAuthHeaders] Desktop mode detected, desktopAuthService:',
+				!!this.desktopAuthService
+			);
 			if (this.desktopAuthService) {
 				// Ensure token is valid before making request
 				const tokenResult = await this.desktopAuthService.ensureValidToken();
 				console.log('[ApiClient.getAuthHeaders] Token validation result:', tokenResult.isOk());
 				if (tokenResult.isOk()) {
 					const headers = this.desktopAuthService.getAuthHeaders();
-					console.log('[ApiClient.getAuthHeaders] ✓ Returning JWT headers, has Authorization:', 'Authorization' in headers);
+					console.log(
+						'[ApiClient.getAuthHeaders] ✓ Returning JWT headers, has Authorization:',
+						'Authorization' in headers
+					);
 					return headers;
 				} else {
-					console.error('[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: JWT token validation failed - NO COOKIE FALLBACK');
+					console.error(
+						'[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: JWT token validation failed - NO COOKIE FALLBACK'
+					);
 					console.error('[ApiClient.getAuthHeaders] Error:', tokenResult.error);
-					console.error('[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401');
+					console.error(
+						'[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401'
+					);
 					// Desktop mode should NOT fall back to cookies - return empty headers
 					// This will cause backend to return 401, which is correct behavior
 					return {};
 				}
 			} else {
-				console.error('[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: desktopAuthService not initialized!');
-				console.error('[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401');
+				console.error(
+					'[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: desktopAuthService not initialized!'
+				);
+				console.error(
+					'[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401'
+				);
 				// Desktop mode should NOT fall back to cookies
 				return {};
 			}
@@ -819,58 +842,46 @@ class ApiClient {
 			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Uploading character file ${file.name}`
 		);
 
-		// Desktop mode uses Tauri upload plugin to bypass protocol handler limitations
+		// Desktop mode uses base64 upload to bypass protocol handler multipart issues
 		const desktop = isDesktopMode();
-		console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Desktop mode: ${desktop}`);
+		console.log(
+			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Desktop mode: ${desktop}`
+		);
 
 		if (desktop) {
 			try {
-				// @ts-expect-error - Tauri upload plugin types
-				const { upload } = await import('@tauri-apps/plugin-upload');
+				console.log(
+					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Using base64 upload for desktop`
+				);
 
-				// Save file to temp location first
-				const tempPath = `${file.name}`;
+				// Read file as base64
+				const arrayBuffer = await file.arrayBuffer();
+				const bytes = new Uint8Array(arrayBuffer);
+				const binaryString = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+				const base64Data = btoa(binaryString);
 
-				// Create File URL for the blob
-				const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-				const fileUrl = URL.createObjectURL(blob);
+				// Create JSON payload for base64 upload
+				const payload = {
+					file_data: base64Data,
+					content_type: file.type,
+					filename: file.name
+				};
 
 				console.log(
-					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Using Tauri upload plugin`
+					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Encoded ${bytes.length} bytes to base64`
 				);
 
-				// Get auth headers
-				const headers = await this.getAuthHeaders();
-
-				// Upload using Tauri plugin (bypasses protocol handler)
-				const response = await upload(
-					'https://localhost:38080/api/characters/upload',
-					fileUrl,
-					(progress) => {
-						console.log(`Upload progress: ${progress.progress}/${progress.total} bytes`);
-					},
-					{
-						...headers,
-						'Content-Type': 'multipart/form-data'
-					}
-				);
-
-				URL.revokeObjectURL(fileUrl);
-
-				// Parse response
-				const character = JSON.parse(response) as Character;
-				return ok(character);
+				// Use the base64 upload endpoint
+				return this.fetch<Character>('/api/characters/upload-base64', {
+					method: 'POST',
+					body: JSON.stringify(payload)
+				});
 			} catch (_error) {
 				console.error(
-					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Tauri upload error`,
+					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Base64 upload error`,
 					_error
 				);
-				return err(
-					new ApiNetworkError(
-						'Failed to upload character file.',
-						_error as Error
-					)
-				);
+				return err(new ApiNetworkError('Failed to upload character file.', _error as Error));
 			}
 		}
 
