@@ -1356,17 +1356,32 @@ pub async fn desktop_auto_login_handler(
         AppError::InternalServerErrorGeneric("Token generation failed".to_string())
     })?;
 
-    // Generate DEK for Quick Start mode
-    let dek_secret = crate::crypto::generate_dek().map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
-        AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
-    })?;
+    // Get or generate DEK for Quick Start mode
+    // IMPORTANT: DEK must be persisted to decrypt data across sessions
+    let dek_b64 = match crate::desktop::get_quick_start_dek()? {
+        Some(existing_dek) => {
+            info!(user_id = %user.id, "Using existing persisted DEK for Quick Start mode");
+            existing_dek
+        }
+        None => {
+            info!(user_id = %user.id, "No persisted DEK found, generating new one");
+            // Generate new DEK
+            let dek_secret = crate::crypto::generate_dek().map_err(|e| {
+                error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
+                AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
+            })?;
 
-    // Base64-encode the DEK for transmission
-    let dek_bytes = dek_secret.expose_secret();
-    let dek_b64 = BASE64.encode(dek_bytes);
+            // Base64-encode the DEK for transmission
+            let dek_bytes = dek_secret.expose_secret();
+            let new_dek_b64 = BASE64.encode(dek_bytes);
 
-    debug!(user_id = %user.id, "Generated DEK for Quick Start mode");
+            // Persist the DEK for future auto-logins
+            crate::desktop::set_quick_start_dek(new_dek_b64.clone())?;
+            info!(user_id = %user.id, "Generated and persisted new DEK for Quick Start mode");
+
+            new_dek_b64
+        }
+    };
 
     // Return JWT token response with DEK
     let response = TokenLoginResponse {

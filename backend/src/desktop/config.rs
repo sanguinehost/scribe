@@ -45,6 +45,9 @@ pub struct DesktopConfig {
     pub default_user_id: Option<DbId>,
     /// Remote endpoint URL (for future remote mode)
     pub remote_endpoint: Option<String>,
+    /// Base64-encoded Data Encryption Key for Quick Start mode
+    /// Persisted to ensure data encrypted with this key can be decrypted across sessions
+    pub quick_start_dek: Option<String>,
 }
 
 fn default_deployment_mode() -> DeploymentMode {
@@ -59,6 +62,7 @@ impl Default for DesktopConfig {
             deployment_mode: DeploymentMode::Local,
             default_user_id: None,
             remote_endpoint: None,
+            quick_start_dek: None,
         }
     }
 }
@@ -162,6 +166,19 @@ pub fn set_default_user_id(user_id: DbId) -> Result<(), AppError> {
     save_desktop_config(&config)
 }
 
+/// Get Quick Start DEK (base64-encoded)
+pub fn get_quick_start_dek() -> Result<Option<String>, AppError> {
+    let config = load_desktop_config()?;
+    Ok(config.quick_start_dek)
+}
+
+/// Set Quick Start DEK (base64-encoded) and save configuration
+pub fn set_quick_start_dek(dek_b64: String) -> Result<(), AppError> {
+    let mut config = load_desktop_config()?;
+    config.quick_start_dek = Some(dek_b64);
+    save_desktop_config(&config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +200,7 @@ mod tests {
             deployment_mode: DeploymentMode::Local,
             default_user_id: Some(DbId::new()),
             remote_endpoint: None,
+            quick_start_dek: Some("test_dek_base64".to_string()),
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -191,5 +209,6 @@ mod tests {
         assert_eq!(config.setup_complete, deserialized.setup_complete);
         assert_eq!(config.auth_mode, deserialized.auth_mode);
         assert_eq!(config.deployment_mode, deserialized.deployment_mode);
+        assert_eq!(config.quick_start_dek, deserialized.quick_start_dek);
     }
 }
