@@ -2362,7 +2362,13 @@ pub mod db {
             ),
             avatar: None,
             chat: None,
+            #[cfg(feature = "postgres-backend")]
+            created_at: Some(now),
+            #[cfg(feature = "postgres-backend")]
+            updated_at: Some(now),
+            #[cfg(feature = "sqlite-backend")]
             created_at: now,
+            #[cfg(feature = "sqlite-backend")]
             updated_at: now,
             creation_date: Some(now),
             modification_date: Some(now),

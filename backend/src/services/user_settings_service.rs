@@ -75,35 +75,104 @@ impl UserSettingsService {
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                    let (timestamps, ui_settings, local_settings) = user_settings::table
-                        .filter(user_settings::user_id.eq(user_id))
-                        .select((
-                            (user_settings::created_at, user_settings::updated_at),
-                            (
-                                user_settings::notifications_enabled,
-                                user_settings::typing_speed,
-                            ),
-                            (
-                                user_settings::preferred_local_model,
-                                user_settings::local_llm_enabled,
-                                user_settings::local_model_preferences,
-                            ),
-                        ))
-                        .first::<(
-                            (crate::DbTimestamp, crate::DbTimestamp),
-                            (Option<bool>, Option<i32>),
-                            (Option<String>, Option<bool>, Option<String>),
-                        )>(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    #[cfg(feature = "sqlite-backend")]
+                    let (
+                        created_at,
+                        updated_at,
+                        notifications_enabled,
+                        typing_speed,
+                        preferred_local_model,
+                        local_llm_enabled,
+                        local_model_preferences_json,
+                    ) = {
+                        let (timestamps, ui_settings, local_settings) = user_settings::table
+                            .filter(user_settings::user_id.eq(user_id))
+                            .select((
+                                (user_settings::created_at, user_settings::updated_at),
+                                (
+                                    user_settings::notifications_enabled,
+                                    user_settings::typing_speed,
+                                ),
+                                (
+                                    user_settings::preferred_local_model,
+                                    user_settings::local_llm_enabled,
+                                    user_settings::local_model_preferences,
+                                ),
+                            ))
+                            .first::<(
+                                (crate::DbTimestamp, crate::DbTimestamp),
+                                (Option<bool>, Option<i32>),
+                                (Option<String>, Option<bool>, Option<String>),
+                            )>(conn)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                    // Convert local_model_preferences String to DbJson for SQLite compatibility
-                    let local_model_preferences_json = local_settings.2
-                        .map(|s| serde_json::from_str(&s).map(crate::DbJson::new))
-                        .transpose()
-                        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to parse local_model_preferences JSON: {}", e)))?;
+                        // Convert local_model_preferences String to DbJson for SQLite compatibility
+                        let local_model_preferences_json = local_settings
+                            .2
+                            .map(|s| {
+                                serde_json::from_str::<serde_json::Value>(&s)
+                                    .map(|v| crate::DbJson::new(v))
+                            })
+                            .transpose()
+                            .map_err(|e| {
+                                AppError::DatabaseQueryError(format!(
+                                    "Failed to parse local_model_preferences JSON: {}",
+                                    e
+                                ))
+                            })?;
 
-                    let created_at = timestamps.0;
-                    let updated_at = timestamps.1;
+                        (
+                            timestamps.0,
+                            timestamps.1,
+                            ui_settings.0,
+                            ui_settings.1,
+                            local_settings.0,
+                            local_settings.1,
+                            local_model_preferences_json,
+                        )
+                    };
+
+                    #[cfg(feature = "postgres-backend")]
+                    let (
+                        created_at,
+                        updated_at,
+                        notifications_enabled,
+                        typing_speed,
+                        preferred_local_model,
+                        local_llm_enabled,
+                        local_model_preferences_json,
+                    ) = {
+                        let (timestamps, ui_settings, local_settings) = user_settings::table
+                            .filter(user_settings::user_id.eq(user_id))
+                            .select((
+                                (user_settings::created_at, user_settings::updated_at),
+                                (
+                                    user_settings::notifications_enabled,
+                                    user_settings::typing_speed,
+                                ),
+                                (
+                                    user_settings::preferred_local_model,
+                                    user_settings::local_llm_enabled,
+                                    user_settings::local_model_preferences,
+                                ),
+                            ))
+                            .first::<(
+                                (crate::DbTimestamp, crate::DbTimestamp),
+                                (Option<bool>, Option<i32>),
+                                (Option<String>, Option<bool>, Option<serde_json::Value>),
+                            )>(conn)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                        (
+                            timestamps.0,
+                            timestamps.1,
+                            ui_settings.0,
+                            ui_settings.1,
+                            local_settings.0,
+                            local_settings.1,
+                            local_settings.2,
+                        )
+                    };
 
                     let response = UserSettingsResponse {
                         default_model_name: settings.0,
@@ -121,10 +190,10 @@ impl UserSettingsService {
                         default_context_rag_budget: settings.12,
                         auto_save_chats: settings.13,
                         theme: settings.14,
-                        notifications_enabled: ui_settings.0,
-                        typing_speed: ui_settings.1,
-                        preferred_local_model: local_settings.0,
-                        local_llm_enabled: local_settings.1,
+                        notifications_enabled,
+                        typing_speed,
+                        preferred_local_model,
+                        local_llm_enabled,
                         local_model_preferences: local_model_preferences_json,
                         created_at,
                         updated_at,
@@ -405,35 +474,103 @@ impl UserSettingsService {
                 )>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            let (timestamps, ui_settings, local_settings) = user_settings::table
-                .filter(user_settings::id.eq(settings_id))
-                .select((
-                    (user_settings::created_at, user_settings::updated_at),
-                    (
-                        user_settings::notifications_enabled,
-                        user_settings::typing_speed,
-                    ),
-                    (
-                        user_settings::preferred_local_model,
-                        user_settings::local_llm_enabled,
-                        user_settings::local_model_preferences,
-                    ),
-                ))
-                .first::<(
-                    (crate::DbTimestamp, crate::DbTimestamp),
-                    (Option<bool>, Option<i32>),
-                    (Option<String>, Option<bool>, Option<String>),
-                )>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            #[cfg(feature = "sqlite-backend")]
+            let (
+                created_at,
+                updated_at,
+                notifications_enabled,
+                typing_speed,
+                preferred_local_model,
+                local_llm_enabled,
+                local_model_preferences_json,
+            ) = {
+                let (timestamps, ui_settings, local_settings) = user_settings::table
+                    .filter(user_settings::id.eq(settings_id))
+                    .select((
+                        (user_settings::created_at, user_settings::updated_at),
+                        (
+                            user_settings::notifications_enabled,
+                            user_settings::typing_speed,
+                        ),
+                        (
+                            user_settings::preferred_local_model,
+                            user_settings::local_llm_enabled,
+                            user_settings::local_model_preferences,
+                        ),
+                    ))
+                    .first::<(
+                        (crate::DbTimestamp, crate::DbTimestamp),
+                        (Option<bool>, Option<i32>),
+                        (Option<String>, Option<bool>, Option<String>),
+                    )>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            // Convert local_model_preferences String to DbJson for SQLite compatibility
-            let local_model_preferences_json = local_settings.2
-                .map(|s| serde_json::from_str(&s).map(crate::DbJson::new))
-                .transpose()
-                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to parse local_model_preferences JSON: {}", e)))?;
+                // Convert local_model_preferences String to DbJson for SQLite compatibility
+                let local_model_preferences_json = local_settings
+                    .2
+                    .map(|s| {
+                        serde_json::from_str::<serde_json::Value>(&s).map(|v| crate::DbJson::new(v))
+                    })
+                    .transpose()
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to parse local_model_preferences JSON: {}",
+                            e
+                        ))
+                    })?;
 
-            let created_at = timestamps.0;
-            let updated_at = timestamps.1;
+                (
+                    timestamps.0,
+                    timestamps.1,
+                    ui_settings.0,
+                    ui_settings.1,
+                    local_settings.0,
+                    local_settings.1,
+                    local_model_preferences_json,
+                )
+            };
+
+            #[cfg(feature = "postgres-backend")]
+            let (
+                created_at,
+                updated_at,
+                notifications_enabled,
+                typing_speed,
+                preferred_local_model,
+                local_llm_enabled,
+                local_model_preferences_json,
+            ) = {
+                let (timestamps, ui_settings, local_settings) = user_settings::table
+                    .filter(user_settings::id.eq(settings_id))
+                    .select((
+                        (user_settings::created_at, user_settings::updated_at),
+                        (
+                            user_settings::notifications_enabled,
+                            user_settings::typing_speed,
+                        ),
+                        (
+                            user_settings::preferred_local_model,
+                            user_settings::local_llm_enabled,
+                            user_settings::local_model_preferences,
+                        ),
+                    ))
+                    .first::<(
+                        (crate::DbTimestamp, crate::DbTimestamp),
+                        (Option<bool>, Option<i32>),
+                        (Option<String>, Option<bool>, Option<serde_json::Value>),
+                    )>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                (
+                    timestamps.0,
+                    timestamps.1,
+                    ui_settings.0,
+                    ui_settings.1,
+                    local_settings.0,
+                    local_settings.1,
+                    local_settings.2,
+                )
+            };
 
             let updated_settings = UserSettingsResponse {
                 default_model_name: settings.0,
@@ -451,10 +588,10 @@ impl UserSettingsService {
                 default_context_rag_budget: settings.12,
                 auto_save_chats: settings.13,
                 theme: settings.14,
-                notifications_enabled: ui_settings.0,
-                typing_speed: ui_settings.1,
-                preferred_local_model: local_settings.0,
-                local_llm_enabled: local_settings.1,
+                notifications_enabled,
+                typing_speed,
+                preferred_local_model,
+                local_llm_enabled,
                 local_model_preferences: local_model_preferences_json,
                 created_at,
                 updated_at,

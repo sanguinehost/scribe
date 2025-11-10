@@ -285,8 +285,14 @@ impl CharacterService {
             depth_prompt_nonce: None,
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
-            created_at: None, // Use DEFAULT CURRENT_TIMESTAMP
-            updated_at: None, // Use DEFAULT CURRENT_TIMESTAMP
+            #[cfg(feature = "postgres-backend")]
+            created_at: Some(Utc::now().into()),
+            #[cfg(feature = "postgres-backend")]
+            updated_at: Some(Utc::now().into()),
+            #[cfg(feature = "sqlite-backend")]
+            created_at: Utc::now().into(),
+            #[cfg(feature = "sqlite-backend")]
+            updated_at: Utc::now().into(),
         };
 
         // Encrypt SillyTavern v3 fields
