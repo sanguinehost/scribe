@@ -484,7 +484,10 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
         // Handle NULL by trying to deserialize as Option<String>
-        let opt_text = <Option<String> as FromSql<diesel::sql_types::Nullable<Text>, Sqlite>>::from_sql(bytes)?;
+        let opt_text =
+            <Option<String> as FromSql<diesel::sql_types::Nullable<Text>, Sqlite>>::from_sql(
+                bytes,
+            )?;
 
         match opt_text {
             None => {

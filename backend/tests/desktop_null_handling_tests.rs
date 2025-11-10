@@ -1,10 +1,10 @@
 #[cfg(all(test, feature = "sqlite-backend"))]
 mod desktop_null_handling_tests {
-    use scribe_backend::db::{DbStringArray, DbId, DbType};
-    use scribe_backend::models::OptionalStringArray;
     use diesel::prelude::*;
     use diesel::sql_types::Text;
     use diesel_migrations::MigrationHarness;
+    use scribe_backend::db::{DbId, DbStringArray, DbType};
+    use scribe_backend::models::OptionalStringArray;
 
     // Helper structs for raw SQL queries
     #[derive(QueryableByName)]
@@ -87,7 +87,8 @@ mod desktop_null_handling_tests {
     // ================== Database Integration Tests ===================
 
     /// Helper to create a test database pool
-    async fn create_test_pool() -> diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::SqliteConnection>> {
+    async fn create_test_pool(
+    ) -> diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::SqliteConnection>> {
         use diesel::r2d2::{ConnectionManager, Pool};
 
         let database_url = format!(":memory:?cache=private&uuid={}", DbId::new());
@@ -152,7 +153,10 @@ mod desktop_null_handling_tests {
 
         // Verify NULLs were stored
         assert_eq!(result.tags, None, "Raw NULL should be NULL in database");
-        assert_eq!(result.greetings, None, "Raw NULL should be NULL in database");
+        assert_eq!(
+            result.greetings, None,
+            "Raw NULL should be NULL in database"
+        );
 
         // Now test that DbStringArray can deserialize these NULLs
         let tags_deserialized = DbStringArray::from_sqlite_type(result.tags);

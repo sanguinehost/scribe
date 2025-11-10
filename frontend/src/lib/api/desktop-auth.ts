@@ -187,9 +187,7 @@ class DesktopAuthService {
 
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({ message: 'Auto-login failed' }));
-				return err(
-					new ApiAuthError(errorData.message || 'Auto-login failed', response.status)
-				);
+				return err(new ApiAuthError(errorData.message || 'Auto-login failed', response.status));
 			}
 
 			const data: TokenLoginResponse = await response.json();

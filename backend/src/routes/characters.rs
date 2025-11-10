@@ -560,7 +560,11 @@ pub async fn upload_character_base64_handler(
                 characters
                     .find(character_id_for_refetch)
                     .get_result::<Character>(conn_refetch)
-                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to re-fetch character after avatar update: {e}")))
+                    .map_err(|e| {
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to re-fetch character after avatar update: {e}"
+                        ))
+                    })
             })
             .await?;
 
@@ -1151,7 +1155,11 @@ pub async fn upload_character_handler(
                 characters
                     .find(character_id_for_refetch)
                     .get_result::<Character>(conn_refetch)
-                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to re-fetch character after avatar update: {e}")))
+                    .map_err(|e| {
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to re-fetch character after avatar update: {e}"
+                        ))
+                    })
             })
             .await?;
 

@@ -813,11 +813,15 @@ impl NewCharacter {
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-            source: source.map(DbStringArray::from_vec).unwrap_or_else(DbStringArray::empty),
-            group_only_greetings: group_only_greetings.map(DbStringArray::from_vec).unwrap_or_else(DbStringArray::empty),
-            creation_date: creation_date_ts,                   // Already Option<DbTimestamp>
-            modification_date: modification_date_ts,           // Already Option<DbTimestamp>
-            extensions: extensions_option_json,                // Assign the calculated extensions
+            source: source
+                .map(DbStringArray::from_vec)
+                .unwrap_or_else(DbStringArray::empty),
+            group_only_greetings: group_only_greetings
+                .map(DbStringArray::from_vec)
+                .unwrap_or_else(DbStringArray::empty),
+            creation_date: creation_date_ts, // Already Option<DbTimestamp>
+            modification_date: modification_date_ts, // Already Option<DbTimestamp>
+            extensions: extensions_option_json, // Assign the calculated extensions
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -963,8 +967,8 @@ impl NewCharacter {
             // V2 specific fields, map to V3 equivalents or default
             source: DbStringArray::empty(), // V2 doesn't have a direct source field
             group_only_greetings: DbStringArray::empty(), // V2 doesn't have this
-            creation_date: None, // V2 doesn't have this
-            modification_date: None, // V2 doesn't have this
+            creation_date: None,            // V2 doesn't have this
+            modification_date: None,        // V2 doesn't have this
             creator_notes_multilingual: None, // V2 doesn't have this
             persona: None,
             persona_nonce: None,
@@ -1040,8 +1044,8 @@ pub struct CharacterAsset {
     pub created_at: crate::db::DbTimestamp, // NOT NULL in schema
     pub updated_at: crate::db::DbTimestamp, // NOT NULL in schema
     #[serde(skip_serializing)] // Don't include binary data in JSON by default
-    pub data: Option<Vec<u8>>,         // Nullable - stores image data
-    pub content_type: Option<String>,  // Nullable - MIME type
+    pub data: Option<Vec<u8>>, // Nullable - stores image data
+    pub content_type: Option<String>,       // Nullable - MIME type
 }
 
 impl std::fmt::Debug for CharacterAsset {
@@ -1055,7 +1059,10 @@ impl std::fmt::Debug for CharacterAsset {
             .field("ext", &self.ext)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
-            .field("data", &self.data.as_ref().map(|d| format!("{} bytes", d.len())))
+            .field(
+                "data",
+                &self.data.as_ref().map(|d| format!("{} bytes", d.len())),
+            )
             .field("content_type", &self.content_type)
             .finish()
     }
@@ -1073,8 +1080,8 @@ pub struct NewCharacterAsset {
     pub ext: String,
     pub created_at: Option<crate::db::DbTimestamp>, // Will use DEFAULT if None
     pub updated_at: Option<crate::db::DbTimestamp>, // Will use DEFAULT if None
-    pub data: Option<Vec<u8>>,         // Nullable - stores image data
-    pub content_type: Option<String>,  // Nullable - MIME type
+    pub data: Option<Vec<u8>>,                      // Nullable - stores image data
+    pub content_type: Option<String>,               // Nullable - MIME type
 }
 
 impl std::fmt::Debug for NewCharacterAsset {
@@ -1087,7 +1094,10 @@ impl std::fmt::Debug for NewCharacterAsset {
             .field("ext", &self.ext)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
-            .field("data", &self.data.as_ref().map(|d| format!("{} bytes", d.len())))
+            .field(
+                "data",
+                &self.data.as_ref().map(|d| format!("{} bytes", d.len())),
+            )
             .field("content_type", &self.content_type)
             .finish()
     }

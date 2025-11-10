@@ -228,7 +228,7 @@ class ApiClient {
 
 	// Check if stored tokens exist in Tauri secure storage and load them into memory
 	// Returns true if tokens were found and loaded, false if no tokens exist
-	async checkStoredTokens(): Promise<Result<boolean, ApiError>> {
+	async checkStoredTokens(): Promise<_Result<boolean, ApiError>> {
 		if (isDesktopMode()) {
 			await this.initDesktopAuth();
 
@@ -875,7 +875,6 @@ class ApiClient {
 				return this.fetch<Character>('/api/characters/upload-base64', {
 					method: 'POST',
 					body: JSON.stringify(payload),
-				authMode: 'JWT'
 				});
 			} catch (_error) {
 				console.error(

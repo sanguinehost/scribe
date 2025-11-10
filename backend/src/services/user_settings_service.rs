@@ -92,9 +92,18 @@ impl UserSettingsService {
                         .first::<(
                             (crate::DbTimestamp, crate::DbTimestamp),
                             (Option<bool>, Option<i32>),
-                            (Option<String>, Option<bool>, Option<crate::DbJson>),
+                            (Option<String>, Option<bool>, Option<String>),
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                    // Convert local_model_preferences String to DbJson for SQLite compatibility
+                    let local_model_preferences_json = local_settings.2
+                        .map(|s| serde_json::from_str(&s).map(crate::DbJson::new))
+                        .transpose()
+                        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to parse local_model_preferences JSON: {}", e)))?;
+
+                    let created_at = timestamps.0;
+                    let updated_at = timestamps.1;
 
                     let response = UserSettingsResponse {
                         default_model_name: settings.0,
@@ -116,9 +125,9 @@ impl UserSettingsService {
                         typing_speed: ui_settings.1,
                         preferred_local_model: local_settings.0,
                         local_llm_enabled: local_settings.1,
-                        local_model_preferences: local_settings.2,
-                        created_at: timestamps.0,
-                        updated_at: timestamps.1,
+                        local_model_preferences: local_model_preferences_json,
+                        created_at,
+                        updated_at,
                     };
 
                     info!(%user_id, "Found existing user settings");
@@ -129,25 +138,32 @@ impl UserSettingsService {
                     // Use raw SQL to avoid Diesel tuple size limit
                     use diesel::sql_query;
 
+                    // Generate ID for the new user_settings record
+                    let settings_id = crate::db::DbId::new();
+
                     // First, insert with raw SQL without returning
                     let query = sql_query(
                         r#"
                         INSERT INTO user_settings (
-                            user_id, default_model_name, default_context_total_token_limit,
+                            id, user_id, default_model_name, default_context_total_token_limit,
                             default_context_recent_history_budget, default_context_rag_budget,
                             auto_save_chats, theme, notifications_enabled, typing_speed,
                             local_llm_enabled, local_model_preferences
                         ) VALUES (
-                            $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE, '{}'
+                            $1, $2, $3, $4, $5, $6, TRUE, 'system', TRUE, 30, FALSE, '{}'
                         )
                         "#,
                     );
 
                     #[cfg(feature = "postgres-backend")]
-                    let query = query.bind::<diesel::sql_types::Uuid, _>(user_id);
+                    let query = query
+                        .bind::<diesel::sql_types::Uuid, _>(settings_id)
+                        .bind::<diesel::sql_types::Uuid, _>(user_id);
 
                     #[cfg(feature = "sqlite-backend")]
-                    let query = query.bind::<diesel::sql_types::Text, _>(user_id);
+                    let query = query
+                        .bind::<diesel::sql_types::Text, _>(settings_id)
+                        .bind::<diesel::sql_types::Text, _>(user_id);
 
                     query
                         .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
@@ -196,6 +212,9 @@ impl UserSettingsService {
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
+                    let created_at = created_settings.9;
+                    let updated_at = created_settings.10;
+
                     // Manually construct the response
                     let response = UserSettingsResponse {
                         default_model_name: created_settings.0,
@@ -218,8 +237,8 @@ impl UserSettingsService {
                         preferred_local_model: None,
                         local_llm_enabled: created_settings.8,
                         local_model_preferences: None,
-                        created_at: created_settings.9,
-                        updated_at: created_settings.10,
+                        created_at,
+                        updated_at,
                     };
 
                     info!(%user_id, "Created default user settings");
@@ -403,9 +422,18 @@ impl UserSettingsService {
                 .first::<(
                     (crate::DbTimestamp, crate::DbTimestamp),
                     (Option<bool>, Option<i32>),
-                    (Option<String>, Option<bool>, Option<crate::DbJson>),
+                    (Option<String>, Option<bool>, Option<String>),
                 )>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            // Convert local_model_preferences String to DbJson for SQLite compatibility
+            let local_model_preferences_json = local_settings.2
+                .map(|s| serde_json::from_str(&s).map(crate::DbJson::new))
+                .transpose()
+                .map_err(|e| AppError::DatabaseQueryError(format!("Failed to parse local_model_preferences JSON: {}", e)))?;
+
+            let created_at = timestamps.0;
+            let updated_at = timestamps.1;
 
             let updated_settings = UserSettingsResponse {
                 default_model_name: settings.0,
@@ -427,9 +455,9 @@ impl UserSettingsService {
                 typing_speed: ui_settings.1,
                 preferred_local_model: local_settings.0,
                 local_llm_enabled: local_settings.1,
-                local_model_preferences: local_settings.2,
-                created_at: timestamps.0,
-                updated_at: timestamps.1,
+                local_model_preferences: local_model_preferences_json,
+                created_at,
+                updated_at,
             };
 
             info!(%user_id, "Updated user settings");

@@ -110,7 +110,8 @@
 		console.log('[Quick Start] Auto-login successful, user:', user);
 
 		// Step 3: Set authenticated state and redirect
-		setAuthenticated(user);
+		// Map user_id to id for User type compatibility
+		setAuthenticated({ ...user, id: user.user_id });
 		setAuthReady(true); // CRITICAL: Set auth ready so components can start fetching
 		toast.success('Welcome to Sanguine Scribe!', {
 			description: 'Quick Start setup complete. You can start chatting right away.'

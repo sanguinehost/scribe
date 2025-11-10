@@ -214,7 +214,6 @@
 
 								// CRITICAL: Check for stored tokens BEFORE auto-login
 								// This enables session persistence across app restarts
-								let hasValidStoredTokens = false;
 								try {
 									const storedTokensResult = await withTimeout(
 										apiClient.checkStoredTokens(),
@@ -277,8 +276,11 @@
 										const { invoke } = await import('@tauri-apps/api/core');
 										log('[STEP 20] Saving tokens to secure storage...');
 										await invoke('save_tokens', {
-											accessToken: tokenData.access_token,
-											refreshToken: tokenData.refresh_token
+											tokens: {
+												accessToken: tokenData.access_token,
+												refreshToken: tokenData.refresh_token,
+												expiresIn: tokenData.expires_in
+											}
 										});
 										log('[STEP 21] ✓ JWT tokens saved');
 
