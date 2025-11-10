@@ -136,9 +136,9 @@ impl UserSettingsService {
                             user_id, default_model_name, default_context_total_token_limit,
                             default_context_recent_history_budget, default_context_rag_budget,
                             auto_save_chats, theme, notifications_enabled, typing_speed,
-                            local_llm_enabled
+                            local_llm_enabled, local_model_preferences
                         ) VALUES (
-                            $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
+                            $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE, '{}'
                         )
                         "#,
                     );

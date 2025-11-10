@@ -16,6 +16,9 @@ use url::Url;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreBuilder;
 
+mod storage;
+use storage::StoredTokens;
+
 // P-256 ECDSA for challenge-response authentication
 use p256::ecdsa::{SigningKey, Signature, signature::Signer};
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey, DecodePrivateKey, LineEnding};
@@ -128,6 +131,8 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
     let cookie_signing_key = get_or_create_cookie_key(data_dir)?;
 
     // Start backend as Tauri sidecar using shell plugin - Tauri handles bundling and path resolution
+    log::info!("🚀 Starting backend server with DATABASE_URL: {}", &database_url);
+
     let (mut rx, child) = app_handle
         .shell()
         .sidecar("scribe-backend")
@@ -206,48 +211,48 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
 }
 
 // Token management commands for Tauri
-#[derive(Debug, Serialize, Deserialize)]
-struct TokenPair {
-    access_token: String,
-    refresh_token: String,
-}
-
-/// Save tokens to secure storage
+/// Save tokens to secure storage using unified StoredTokens type
+/// CRITICAL: Now accepts StoredTokens struct with camelCase serialization
 #[tauri::command]
 async fn save_tokens(
     app: tauri::AppHandle,
-    access_token: String,
-    refresh_token: String,
+    tokens: StoredTokens,
 ) -> Result<(), String> {
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
         .build()
         .map_err(|e| format!("Failed to build store: {}", e))?;
 
-    store.set(ACCESS_TOKEN_KEY.to_string(), access_token);
-    store.set(REFRESH_TOKEN_KEY.to_string(), refresh_token);
+    store.set(ACCESS_TOKEN_KEY.to_string(), tokens.access_token.clone());
+    store.set(REFRESH_TOKEN_KEY.to_string(), tokens.refresh_token.clone());
+    store.set("expires_in".to_string(), tokens.expires_in.to_string());
 
     store.save().map_err(|e| format!("Failed to persist tokens: {}", e))?;
 
-    log::info!("Tokens saved to secure storage");
+    log::info!("Tokens saved to secure storage (expires in {}s)", tokens.expires_in);
     Ok(())
 }
 
-/// Load tokens from secure storage
+/// Load tokens from secure storage using unified StoredTokens type
+/// Returns StoredTokens with camelCase serialization for TypeScript compatibility
 #[tauri::command]
-async fn load_tokens(app: tauri::AppHandle) -> Result<Option<TokenPair>, String> {
+async fn load_tokens(app: tauri::AppHandle) -> Result<Option<StoredTokens>, String> {
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
         .build()
         .map_err(|e| format!("Failed to build store: {}", e))?;
 
     let access_token = store.get(ACCESS_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
     let refresh_token = store.get(REFRESH_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
+    let expires_in = store.get("expires_in")
+        .and_then(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+        .unwrap_or(15 * 60); // Default 15 minutes if not stored
 
     match (access_token, refresh_token) {
         (Some(access), Some(refresh)) => {
-            log::info!("Tokens loaded from secure storage");
-            Ok(Some(TokenPair {
+            log::info!("Tokens loaded from secure storage (expires in {}s)", expires_in);
+            Ok(Some(StoredTokens {
                 access_token: access,
                 refresh_token: refresh,
+                expires_in,
             }))
         }
         _ => {
@@ -258,7 +263,7 @@ async fn load_tokens(app: tauri::AppHandle) -> Result<Option<TokenPair>, String>
 }
 
 /// Clear all authentication data from secure storage
-/// Removes tokens, private key, and DEK
+/// Removes tokens (including expires_in), private key, and DEK
 #[tauri::command]
 async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
@@ -268,6 +273,7 @@ async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
     // Clear JWT tokens
     store.delete(ACCESS_TOKEN_KEY);
     store.delete(REFRESH_TOKEN_KEY);
+    store.delete("expires_in");
 
     // Clear Quick Start authentication data
     store.delete(PRIVATE_KEY);
@@ -414,7 +420,7 @@ async fn proxy_to_embedded_backend(
     // Create HTTP client that accepts self-signed certs for localhost only
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)  // Safe: only for localhost communication
-        .timeout(std::time::Duration::from_secs(3))  // CRITICAL FIX: Reduced from 30s to 3s to prevent UI freezes
+        .timeout(std::time::Duration::from_secs(30))  // Allow time for file uploads (base64 images can be large)
         .cookie_store(false)  // Disable reqwest cookie handling
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;

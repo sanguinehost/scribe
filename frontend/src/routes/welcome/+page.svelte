@@ -7,7 +7,8 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { apiClient } from '$lib/api';
-	import { setAuthenticated } from '$lib/auth.svelte';
+	import { setAuthenticated, setAuthReady } from '$lib/auth.svelte';
+	import { desktopAuth } from '$lib/api/desktop-auth';
 	import type { DesktopAuthMode } from '$lib/types';
 
 	// Wizard state
@@ -78,22 +79,43 @@
 	async function handleQuickStart() {
 		isLoading = true;
 
-		const result = await apiClient.desktopSetup({
+		// Step 1: Complete desktop setup and set auth_mode to QuickStart
+		console.log('[Quick Start] Calling desktopSetup to set auth_mode...');
+		const setupResult = await apiClient.desktopSetup({
 			auth_mode: 'quick_start'
 		});
 
-		if (result.isOk()) {
-			const data = result.value;
-			setAuthenticated(data.user);
-			toast.success('Welcome to Sanguine Scribe!', {
-				description: 'Quick Start setup complete. You can start chatting right away.'
-			});
-			goto('/');
-		} else {
+		if (setupResult.isErr()) {
 			toast.error('Setup failed', {
-				description: result.error.message || 'Failed to complete Quick Start setup'
+				description: setupResult.error.message || 'Failed to complete Quick Start setup'
 			});
+			isLoading = false;
+			return;
 		}
+
+		console.log('[Quick Start] Setup complete, calling auto-login...');
+
+		// Step 2: Get JWT tokens + DEK via auto-login
+		const autoLoginResult = await desktopAuth.autoLogin();
+
+		if (autoLoginResult.isErr()) {
+			toast.error('Authentication failed', {
+				description: autoLoginResult.error.message || 'Failed to generate authentication tokens'
+			});
+			isLoading = false;
+			return;
+		}
+
+		const user = autoLoginResult.value;
+		console.log('[Quick Start] Auto-login successful, user:', user);
+
+		// Step 3: Set authenticated state and redirect
+		setAuthenticated(user);
+		setAuthReady(true); // CRITICAL: Set auth ready so components can start fetching
+		toast.success('Welcome to Sanguine Scribe!', {
+			description: 'Quick Start setup complete. You can start chatting right away.'
+		});
+		goto('/');
 
 		isLoading = false;
 	}
@@ -115,6 +137,7 @@
 		if (result.isOk()) {
 			const data = result.value;
 			setAuthenticated(data.user);
+			setAuthReady(true); // CRITICAL: Set auth ready so components can start fetching
 			toast.success('Account created!', {
 				description: `Welcome, ${data.user.username}! Your account has been created.`
 			});

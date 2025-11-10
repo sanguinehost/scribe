@@ -1972,3 +1972,91 @@ jobs:
 | Phase 8: Release | Weeks 13-14 | Documentation complete, v1.0.0 released |
 
 **Total**: 14 weeks (3.5 months)
+
+## Unified Token Storage Architecture (2025-01-09)
+
+### Problem Analysis
+
+The desktop app experienced persistent "invalid args accessToken for command save_tokens" errors due to **type contract fragmentation** across three different token definitions:
+
+1. **Backend Token Service** (`backend/src/auth/token_service.rs::TokenPair`):
+   - Fields: `access_token`, `refresh_token`, `expires_in`
+
+2. **Backend Auth Routes** (`backend/src/routes/auth.rs::TokenLoginResponse`):
+   - Fields: `access_token`, `refresh_token`, `expires_in`, `user`, `dek?`
+
+3. **Frontend Desktop Auth** (`frontend/src/lib/api/desktop-auth.ts::TokenPair`):
+   - Fields: `access_token`, `refresh_token` (missing `expires_in`)
+   - Used camelCase JavaScript conventions
+
+4. **Tauri Commands** (`desktop/src/lib.rs`):
+   - Accepted individual parameters: `access_token: String, refresh_token: String`
+   - Expected snake_case but received camelCase from JavaScript
+   - No explicit serde serialization contract
+
+**Root Cause**: Frontend sent `{ accessToken, refreshToken }` (camelCase) but Rust expected `{ access_token, refresh_token }` (snake_case) with no unified type and no `#[serde(rename_all = "camelCase")]` attribute to bridge the naming conventions.
+
+### Solution: Unified `StoredTokens` Type
+
+Created a single canonical type shared across the Rust/TypeScript boundary with explicit serialization contract:
+
+**Rust** (`desktop/src/storage.rs`):
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredTokens {
+    pub access_token: String,    // Serializes to "accessToken"
+    pub refresh_token: String,   // Serializes to "refreshToken"
+    pub expires_in: i64,         // Serializes to "expiresIn"
+}
+```
+
+**TypeScript** (`frontend/src/lib/api/desktop-auth.ts`):
+```typescript
+interface StoredTokens {
+    accessToken: string;   // Rust: access_token
+    refreshToken: string;  // Rust: refresh_token
+    expiresIn: number;     // Rust: expires_in
+}
+```
+
+**Tauri Commands** (updated):
+- `save_tokens(tokens: StoredTokens)` - accepts struct instead of individual parameters
+- `load_tokens() -> Option<StoredTokens>` - returns struct with expires_in included
+
+**Frontend Invoke** (updated):
+```typescript
+await invoke('save_tokens', {
+    tokens: {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresIn: data.expires_in
+    }
+});
+```
+
+### Benefits
+
+✅ **Single Source of Truth**: One `StoredTokens` type eliminates fragmentation
+✅ **Explicit Serialization Contract**: `#[serde(rename_all = "camelCase")]` eliminates snake_case/camelCase confusion
+✅ **Type Safety**: TypeScript and Rust agree on field names and types at compile time
+✅ **Symmetric Operations**: Save and load use the same type (eliminates asymmetry)
+✅ **Future-Proof**: Includes `expires_in` for smarter token refresh logic
+✅ **Runtime Safety**: Eliminates "missing key accessToken" errors permanently
+
+### Files Modified
+
+- **NEW**: `desktop/src/storage.rs` - Unified StoredTokens type with tests
+- **MODIFIED**: `desktop/src/lib.rs` - Updated Tauri commands to use struct parameters
+- **MODIFIED**: `frontend/src/lib/api/desktop-auth.ts` - Updated type definition and all invoke calls
+
+### Testing
+
+**Unit Tests** (`desktop/src/storage.rs`):
+- ✅ Serialization produces camelCase JSON
+- ✅ Deserialization from TypeScript camelCase format
+- ✅ Roundtrip preservation (serialize → deserialize → identical)
+
+**Integration Test**:
+- Quick Start auto-login → save tokens → restart → load tokens → authenticated
+- No "missing key accessToken" errors in logs

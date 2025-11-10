@@ -421,7 +421,7 @@ pub async fn upload_character_base64_handler(
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     #[cfg(feature = "postgres-backend")]
-    let inserted_character: Character = conn_fetch_op
+    let mut inserted_character: Character = conn_fetch_op
         .interact(move |conn_select_block| {
             characters
                 .find(returned_id)
@@ -432,7 +432,7 @@ pub async fn upload_character_base64_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     #[cfg(feature = "sqlite-backend")]
-    let inserted_character: Character =
+    let mut inserted_character: Character =
         crate::db::with_conn(&state.pool, move |conn_select_block| {
             characters
                 .find(returned_id)
@@ -445,12 +445,18 @@ pub async fn upload_character_base64_handler(
 
     // --- Save the character avatar image to database ---
     // Create character asset record with binary data
-    let new_asset = NewCharacterAsset::new_avatar(
+    let mut new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
         &format!("{}_avatar", inserted_character.name),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
+
+    // For SQLite, generate and set the ID before insertion (SQLite doesn't support RETURNING)
+    #[cfg(feature = "sqlite-backend")]
+    {
+        new_asset.id = Some(crate::db::DbId::new_v4());
+    }
 
     // Save asset record to database
     #[cfg(feature = "postgres-backend")]
@@ -547,6 +553,18 @@ pub async fn upload_character_base64_handler(
             {
                 info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
             }
+
+            // Re-fetch character to get the updated avatar field for the response
+            let character_id_for_refetch = inserted_character.id;
+            inserted_character = crate::db::with_conn(&state.pool, move |conn_refetch| {
+                characters
+                    .find(character_id_for_refetch)
+                    .get_result::<Character>(conn_refetch)
+                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to re-fetch character after avatar update: {e}")))
+            })
+            .await?;
+
+            info!(character_id = %inserted_character.id, avatar = ?inserted_character.avatar, "✅ Character re-fetched - avatar field value");
         }
         Err(e) => {
             warn!(character_id = %inserted_character.id, error = %e, "Failed to save avatar image to database, continuing without avatar");
@@ -994,7 +1012,7 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     #[cfg(feature = "postgres-backend")]
-    let inserted_character: Character = conn_fetch_op
+    let mut inserted_character: Character = conn_fetch_op
         .interact(move |conn_select_block| {
             characters
                 .find(returned_id)
@@ -1005,7 +1023,7 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
     #[cfg(feature = "sqlite-backend")]
-    let inserted_character: Character =
+    let mut inserted_character: Character =
         crate::db::with_conn(&state.pool, move |conn_select_block| {
             characters
                 .find(returned_id)
@@ -1018,12 +1036,18 @@ pub async fn upload_character_handler(
 
     // --- Save the character avatar image to database ---
     // Create character asset record with binary data
-    let new_asset = NewCharacterAsset::new_avatar(
+    let mut new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
         &format!("{}_avatar", inserted_character.name),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
+
+    // For SQLite, generate and set the ID before insertion (SQLite doesn't support RETURNING)
+    #[cfg(feature = "sqlite-backend")]
+    {
+        new_asset.id = Some(crate::db::DbId::new_v4());
+    }
 
     // Save asset record to database
     #[cfg(feature = "postgres-backend")]
@@ -1120,6 +1144,18 @@ pub async fn upload_character_handler(
             {
                 info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
             }
+
+            // Re-fetch character to get the updated avatar field for the response
+            let character_id_for_refetch = inserted_character.id;
+            inserted_character = crate::db::with_conn(&state.pool, move |conn_refetch| {
+                characters
+                    .find(character_id_for_refetch)
+                    .get_result::<Character>(conn_refetch)
+                    .map_err(|e| AppError::InternalServerErrorGeneric(format!("Failed to re-fetch character after avatar update: {e}")))
+            })
+            .await?;
+
+            info!(character_id = %inserted_character.id, avatar = ?inserted_character.avatar, "✅ Character re-fetched - avatar field value");
         }
         Err(e) => {
             warn!(character_id = %inserted_character.id, error = %e, "Failed to save avatar image to database, continuing without avatar");

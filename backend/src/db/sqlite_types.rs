@@ -442,6 +442,13 @@ impl std::ops::Deref for SqliteJson {
     }
 }
 
+impl Default for SqliteJson {
+    fn default() -> Self {
+        // Default to empty JSON object to prevent NULL values
+        Self(serde_json::json!({}))
+    }
+}
+
 impl std::fmt::Display for SqliteJson {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -463,6 +470,7 @@ impl FromSql<Text, Sqlite> for SqliteJson {
 #[cfg(feature = "sqlite-backend")]
 impl ToSql<Text, Sqlite> for SqliteJson {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        // CRITICAL: Always write JSON, never NULL
         let json_str = serde_json::to_string(&self.0)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
         out.set_value(json_str);
@@ -475,10 +483,22 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        let value = serde_json::from_str(&text)
-            .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
-        Ok(SqliteJson(value))
+        // Handle NULL by trying to deserialize as Option<String>
+        let opt_text = <Option<String> as FromSql<diesel::sql_types::Nullable<Text>, Sqlite>>::from_sql(bytes)?;
+
+        match opt_text {
+            None => {
+                // NULL value - return empty JSON object
+                tracing::warn!("NULL value encountered for SqliteJson, using empty object");
+                Ok(SqliteJson(serde_json::json!({})))
+            }
+            Some(text) => {
+                // Parse JSON string
+                let value = serde_json::from_str(&text)
+                    .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
+                Ok(SqliteJson(value))
+            }
+        }
     }
 }
 

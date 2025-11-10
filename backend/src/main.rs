@@ -250,7 +250,19 @@ fn setup_database_pool(config: &Config) -> DbPool {
         .database_url
         .as_ref()
         .expect("DATABASE_URL not set in config");
-    tracing::info!("Connecting to database...");
+
+    tracing::info!("🗄️  DATABASE_URL: {}", db_url);
+    tracing::info!("Connecting to SQLite database...");
+
+    // Verify database file exists
+    if let Some(db_path) = db_url.strip_prefix("sqlite://") {
+        let path = std::path::Path::new(db_path);
+        if path.exists() {
+            tracing::info!("✓ Database file exists at: {}", db_path);
+        } else {
+            tracing::warn!("⚠️  Database file does NOT exist yet at: {}", db_path);
+        }
+    }
 
     let manager = ConnectionManager::<SqliteConnection>::new(db_url);
 

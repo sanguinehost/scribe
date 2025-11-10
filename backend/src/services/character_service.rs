@@ -285,8 +285,8 @@ impl CharacterService {
             depth_prompt_nonce: None,
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
-            created_at: Some(Utc::now().into()),
-            updated_at: Some(Utc::now().into()),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
         };
 
         // Encrypt SillyTavern v3 fields

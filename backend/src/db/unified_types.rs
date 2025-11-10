@@ -1049,7 +1049,7 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 #[cfg_attr(
     feature = "sqlite-backend",
     derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Text)
+    diesel(sql_type = Nullable<Text>)
 )]
 #[repr(transparent)]
 pub struct DbStringArray(pub Option<Vec<Option<String>>>);
@@ -1060,9 +1060,9 @@ impl DbStringArray {
         Self(data)
     }
 
-    /// Create an empty DbStringArray (None)
+    /// Create an empty DbStringArray (empty vector)
     pub fn empty() -> Self {
-        Self(None)
+        Self(Some(Vec::new()))
     }
 
     /// Create from a vector of optional strings
@@ -1169,15 +1169,17 @@ impl DbType for DbStringArray {
     }
 
     fn to_sqlite_type(&self) -> Self::SqliteType {
-        // Serialize to JSON array
-        self.0
-            .as_ref()
-            .map(|vec| serde_json::to_string(vec).unwrap_or_else(|_| "[]".to_string()))
+        // CRITICAL: Always return Some("[]") to prevent NULL writes to database
+        // Even if self.0 is None, we want to write "[]" not NULL
+        match &self.0 {
+            Some(vec) => Some(serde_json::to_string(vec).unwrap_or_else(|_| "[]".to_string())),
+            None => Some("[]".to_string()), // Return empty array JSON, not NULL
+        }
     }
 
     fn from_sqlite_type(value: Self::SqliteType) -> Self {
         match value {
-            None => Self(None),
+            None => Self(Some(Vec::new())), // Return empty array instead of None for NULL values
             Some(json_str) => {
                 // Deserialize from JSON array
                 match serde_json::from_str::<Vec<Option<String>>>(&json_str) {
@@ -1187,7 +1189,7 @@ impl DbType for DbStringArray {
                         tracing::warn!(
                             "Failed to parse DbStringArray from JSON, using empty array"
                         );
-                        Self(None)
+                        Self(Some(Vec::new())) // Return empty array instead of None on parse error
                     }
                 }
             }

@@ -802,11 +802,8 @@ impl Character {
             updated_at: self.updated_at,
             persona: decrypted_fields.persona,
             world_scenario: decrypted_fields.world_scenario,
-            avatar: self.avatar.and_then(|asset_id_str| {
-                asset_id_str
-                    .parse::<i32>()
-                    .ok()
-                    .map(|asset_id| format!("/api/characters/{}/assets/{}", self.id, asset_id))
+            avatar: self.avatar.map(|asset_id_str| {
+                format!("/api/characters/{}/assets/{}", self.id, asset_id_str)
             }),
             chat: default_empty_string_if_none(self.chat),
             greeting: decrypted_fields.greeting,

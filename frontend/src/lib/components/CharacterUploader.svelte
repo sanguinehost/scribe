@@ -62,6 +62,8 @@
 
 			if (result.isOk()) {
 				console.log('Character upload successful:', result.value);
+				console.log('✅ Avatar field:', result.value.avatar);
+				console.log('✅ Full character object:', JSON.stringify(result.value, null, 2));
 				dispatch('uploadSuccess', { character: result.value }); // Notify parent component with character data
 				closeDialog(); // Close dialog on success
 			} else {

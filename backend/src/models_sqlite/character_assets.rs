@@ -33,6 +33,8 @@ pub struct NewCharacterAsset {
     pub uri: Option<String>,
     pub name: String,
     pub ext: String,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub data: Option<Vec<u8>>,
     pub content_type: Option<String>,
 }
@@ -55,6 +57,8 @@ impl NewCharacterAsset {
             }
         });
 
+        let now = DbTimestamp::now();
+
         Self {
             id: None,
             character_id,
@@ -62,6 +66,8 @@ impl NewCharacterAsset {
             uri: None, // No longer using file paths
             name: name.to_string(),
             ext, // Use derived extension
+            created_at: now,
+            updated_at: now,
             data: Some(image_data),
             content_type, // Use provided content_type
         }

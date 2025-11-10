@@ -122,7 +122,11 @@ where
                             {
                                 Ok(user) => user,
                                 Err(e) => {
-                                    error!(?e, "Failed to load user for token auth");
+                                    error!(
+                                        user_id = %claims.sub,
+                                        error = ?e,
+                                        "✗ CRITICAL: Failed to load user from database during JWT validation - user may not exist or database connection failed"
+                                    );
                                     return Err(
                                         (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
                                     );

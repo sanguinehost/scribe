@@ -1,5 +1,6 @@
 use crate::db::DbId;
 use crate::db::DbJson; // Using DbJson for flexibility in extensions and mixed types like id
+use crate::db::DbStringArray;
 use crate::db::DbTimestamp;
 use crate::db::Json;
 use crate::models::characters::Character;
@@ -551,8 +552,8 @@ pub struct NewCharacter {
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DbTimestamp>,
+    pub created_at: DbTimestamp, // Required field matching Character struct
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -812,8 +813,8 @@ impl NewCharacter {
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-            source: source.into(),   // Already converted to Option<Vec<Option<String>>>>
-            group_only_greetings: group_only_greetings.into(), // Already Option<Vec<Option<String>>>
+            source: source.map(DbStringArray::from_vec).unwrap_or_else(DbStringArray::empty),
+            group_only_greetings: group_only_greetings.map(DbStringArray::from_vec).unwrap_or_else(DbStringArray::empty),
             creation_date: creation_date_ts,                   // Already Option<DbTimestamp>
             modification_date: modification_date_ts,           // Already Option<DbTimestamp>
             extensions: extensions_option_json,                // Assign the calculated extensions
@@ -842,7 +843,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None.into(),
+            system_tags: DbStringArray::empty(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -862,8 +863,8 @@ impl NewCharacter {
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption
-            created_at: None,
-            updated_at: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         }
     }
 
@@ -960,8 +961,8 @@ impl NewCharacter {
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             nickname: None, // V2 doesn't have nickname
             // V2 specific fields, map to V3 equivalents or default
-            source: None.into(), // V2 doesn't have a direct source field
-            group_only_greetings: None.into(), // V2 doesn't have this
+            source: DbStringArray::empty(), // V2 doesn't have a direct source field
+            group_only_greetings: DbStringArray::empty(), // V2 doesn't have this
             creation_date: None, // V2 doesn't have this
             modification_date: None, // V2 doesn't have this
             creator_notes_multilingual: None, // V2 doesn't have this
@@ -990,7 +991,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None.into(),
+            system_tags: DbStringArray::empty(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -1010,8 +1011,8 @@ impl NewCharacter {
             depth_prompt_nonce: None,
             world_ciphertext: None,
             world_nonce: None,
-            created_at: None,
-            updated_at: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         }
     }
 
@@ -1036,6 +1037,11 @@ pub struct CharacterAsset {
     pub uri: Option<String>,           // Nullable in schema
     pub name: String,
     pub ext: String,
+    pub created_at: crate::db::DbTimestamp, // NOT NULL in schema
+    pub updated_at: crate::db::DbTimestamp, // NOT NULL in schema
+    #[serde(skip_serializing)] // Don't include binary data in JSON by default
+    pub data: Option<Vec<u8>>,         // Nullable - stores image data
+    pub content_type: Option<String>,  // Nullable - MIME type
 }
 
 impl std::fmt::Debug for CharacterAsset {
@@ -1047,6 +1053,10 @@ impl std::fmt::Debug for CharacterAsset {
             .field("uri", &"[REDACTED]")
             .field("name", &"[REDACTED]")
             .field("ext", &self.ext)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("data", &self.data.as_ref().map(|d| format!("{} bytes", d.len())))
+            .field("content_type", &self.content_type)
             .finish()
     }
 }
@@ -1058,9 +1068,13 @@ pub struct NewCharacterAsset {
     pub id: Option<crate::db::DbId>,
     pub character_id: crate::db::DbId, // Changed from i32
     pub asset_type: String,            // Renamed from `type_`
-    pub uri: String,
+    pub uri: Option<String>,           // Nullable in schema
     pub name: String,
     pub ext: String,
+    pub created_at: Option<crate::db::DbTimestamp>, // Will use DEFAULT if None
+    pub updated_at: Option<crate::db::DbTimestamp>, // Will use DEFAULT if None
+    pub data: Option<Vec<u8>>,         // Nullable - stores image data
+    pub content_type: Option<String>,  // Nullable - MIME type
 }
 
 impl std::fmt::Debug for NewCharacterAsset {
@@ -1071,6 +1085,10 @@ impl std::fmt::Debug for NewCharacterAsset {
             .field("uri", &"[REDACTED]")
             .field("name", &"[REDACTED]")
             .field("ext", &self.ext)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .field("data", &self.data.as_ref().map(|d| format!("{} bytes", d.len())))
+            .field("content_type", &self.content_type)
             .finish()
     }
 }

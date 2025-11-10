@@ -102,15 +102,17 @@ CREATE INDEX idx_characters_user_id ON characters (user_id);
 
 -- Character Assets table (matches updated models/character_card.rs CharacterAsset struct)
 CREATE TABLE character_assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, -- Matches model i32
+    id TEXT NOT NULL PRIMARY KEY, -- Matches model DbId (UUID/TEXT for SQLite)
     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE, -- Matches updated model TEXT
     asset_type TEXT NOT NULL, -- Renamed from 'type_' in model, adjusted size
-    uri TEXT NOT NULL, -- Matches model String
+    uri TEXT, -- Nullable, matches model Option<String>
     name TEXT NOT NULL, -- Matches model String
     ext TEXT NOT NULL, -- Matches model String, adjusted size
     -- Adding standard timestamps, assuming they are desired though not in model struct
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    data BLOB, -- Binary image data
+    content_type TEXT -- MIME type
 );
 --
 -- SQLite trigger for updating timestamps on character_assets

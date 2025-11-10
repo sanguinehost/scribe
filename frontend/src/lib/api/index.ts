@@ -874,7 +874,8 @@ class ApiClient {
 				// Use the base64 upload endpoint
 				return this.fetch<Character>('/api/characters/upload-base64', {
 					method: 'POST',
-					body: JSON.stringify(payload)
+					body: JSON.stringify(payload),
+				authMode: 'JWT'
 				});
 			} catch (_error) {
 				console.error(

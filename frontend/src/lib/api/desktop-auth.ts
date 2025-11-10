@@ -18,10 +18,13 @@ declare global {
 	}
 }
 
-// Token storage interface matching Tauri backend
-interface TokenPair {
-	access_token: string;
-	refresh_token: string;
+// Token storage interface matching Tauri backend StoredTokens
+// CRITICAL: Now includes expires_in and matches Rust type exactly
+// JavaScript uses camelCase, Rust uses snake_case with #[serde(rename_all = "camelCase")]
+interface StoredTokens {
+	accessToken: string; // Rust: access_token (serde camelCase)
+	refreshToken: string; // Rust: refresh_token (serde camelCase)
+	expiresIn: number; // Rust: expires_in (serde camelCase)
 }
 
 // Token refresh response from backend
@@ -70,17 +73,17 @@ class DesktopAuthService {
 
 		console.log('[DesktopAuth.initialize] Desktop environment detected, loading tokens...');
 		try {
-			const tokens = await invoke<TokenPair | null>('load_tokens');
+			const tokens = await invoke<StoredTokens | null>('load_tokens');
 			console.log(
 				'[DesktopAuth.initialize] load_tokens invoke completed:',
 				tokens ? 'TOKENS FOUND' : 'NO TOKENS'
 			);
 
 			if (tokens) {
-				this.accessToken = tokens.access_token;
-				this.refreshToken = tokens.refresh_token;
-				// Set expiry to 15 minutes from now (we don't know actual expiry on load)
-				this.tokenExpiresAt = Date.now() + 15 * 60 * 1000;
+				this.accessToken = tokens.accessToken;
+				this.refreshToken = tokens.refreshToken;
+				// Use stored expires_in value (now available from unified type)
+				this.tokenExpiresAt = Date.now() + tokens.expiresIn * 1000;
 				console.log(
 					'[DesktopAuth.initialize] Tokens set in memory, expiry:',
 					new Date(this.tokenExpiresAt).toISOString()
@@ -156,8 +159,11 @@ class DesktopAuthService {
 
 			// Persist tokens to secure storage
 			await invoke('save_tokens', {
-				access_token: data.access_token,
-				refresh_token: data.refresh_token
+				tokens: {
+					accessToken: data.access_token,
+					refreshToken: data.refresh_token,
+					expiresIn: data.expires_in
+				}
 			});
 
 			console.log('[DesktopAuth] Login successful, tokens saved');
@@ -165,6 +171,66 @@ class DesktopAuthService {
 		} catch (error) {
 			console.error('[DesktopAuth] Login failed:', error);
 			return err(new ApiNetworkError('Login request failed', error as Error));
+		}
+	}
+
+	/**
+	 * Auto-login for Quick Start mode (generates JWT tokens + DEK)
+	 */
+	async autoLogin(): Promise<Result<TokenLoginResponse['user'], ApiError>> {
+		try {
+			console.log('[DesktopAuth] Starting Quick Start auto-login...');
+			// Call the auto-login endpoint
+			const response = await fetch('/api/auth/desktop/auto-login', {
+				method: 'GET'
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({ message: 'Auto-login failed' }));
+				return err(
+					new ApiAuthError(errorData.message || 'Auto-login failed', response.status)
+				);
+			}
+
+			const data: TokenLoginResponse = await response.json();
+			console.log('[DesktopAuth] Auto-login response received:', {
+				hasAccessToken: !!data.access_token,
+				hasRefreshToken: !!data.refresh_token,
+				hasDek: !!data.dek,
+				expiresIn: data.expires_in
+			});
+
+			// Store tokens in memory
+			this.accessToken = data.access_token;
+			this.refreshToken = data.refresh_token;
+			this.tokenExpiresAt = Date.now() + data.expires_in * 1000;
+
+			// Store DEK if present (Quick Start mode - should always be present for auto-login)
+			if (data.dek) {
+				this.dek = data.dek;
+				console.log('[DesktopAuth] DEK received from auto-login and stored in memory');
+
+				// Persist DEK to secure storage
+				await invoke('save_local_dek', { dek: data.dek });
+				console.log('[DesktopAuth] DEK persisted to secure storage');
+			} else {
+				console.warn('[DesktopAuth] No DEK in auto-login response - this is unexpected!');
+			}
+
+			// Persist tokens to secure storage
+			await invoke('save_tokens', {
+				tokens: {
+					accessToken: data.access_token,
+					refreshToken: data.refresh_token,
+					expiresIn: data.expires_in
+				}
+			});
+
+			console.log('[DesktopAuth] Auto-login successful, tokens and DEK saved');
+			return ok(data.user);
+		} catch (error) {
+			console.error('[DesktopAuth] Auto-login failed:', error);
+			return err(new ApiNetworkError('Auto-login request failed', error as Error));
 		}
 	}
 
@@ -313,8 +379,11 @@ class DesktopAuthService {
 
 			// Update stored tokens (DEK remains unchanged)
 			await invoke('save_tokens', {
-				access_token: data.access_token,
-				refresh_token: this.refreshToken
+				tokens: {
+					accessToken: data.access_token,
+					refreshToken: this.refreshToken,
+					expiresIn: data.expires_in
+				}
 			});
 
 			console.log('[DesktopAuth] Access token refreshed successfully');

@@ -1,0 +1,3 @@
+-- This migration fixes data quality issues (NULL → [] or {})
+-- Rolling back would reintroduce NULL values, which we don't want
+-- Therefore, this down migration is intentionally a no-op
