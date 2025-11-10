@@ -74,3 +74,6 @@ terraform.tfstate
 # Sqlite database files
 *.sqlite
 *.db
+
+# Test database files (in-memory SQLite URIs that get materialized)
+backend/:memory:*
