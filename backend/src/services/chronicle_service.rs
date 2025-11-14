@@ -356,9 +356,9 @@ impl ChronicleService {
 
         #[cfg(feature = "sqlite-backend")]
         let chronicle = {
-            let chronicle_id = new_chronicle
-                .id
-                .expect("Chronicle ID must be set before insert");
+            // Generate ID for SQLite (no RETURNING support)
+            let chronicle_id = crate::db::DbId::new_v4();
+            new_chronicle.id = Some(chronicle_id);
 
             crate::db::with_conn(&self.db_pool, move |conn| {
                 Self::insert_chronicle_sync(conn, &new_chronicle, chronicle_id)
