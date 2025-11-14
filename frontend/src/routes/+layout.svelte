@@ -558,40 +558,37 @@
 			reAuthModalShownOnce = true;
 		};
 
-	// Handle JWT token expiry in desktop mode
-	const handleTokenExpired = async (event: Event) => {
-		const customEvent = event as CustomEvent<{
-			reason: string;
-			endpoint: string;
-		}>;
+		// Handle JWT token expiry in desktop mode
+		const handleTokenExpired = async (event: Event) => {
+			const customEvent = event as CustomEvent<{
+				reason: string;
+				endpoint: string;
+			}>;
 
-		console.error('[Layout] JWT token expired - redirecting to login', {
-			reason: customEvent.detail?.reason,
-			endpoint: customEvent.detail?.endpoint
-		});
+			console.error('[Layout] JWT token expired - redirecting to login', {
+				reason: customEvent.detail?.reason,
+				endpoint: customEvent.detail?.endpoint
+			});
 
-		// Clear auth state
-		setAuthenticated(null);
-		setAuthReady(false);
+			// Clear auth state
+			setUnauthenticated();
+			setAuthReady(false);
 
-		// Hide loading overlay if it's showing
-		hideLoadingOverlay();
+			// Show error message to user
+			toast.error('Your session has expired', {
+				description: 'Please log in again to continue.'
+			});
 
-		// Show error message to user
-		toast.error('Your session has expired', {
-			description: 'Please log in again to continue.'
-		});
-
-		// Redirect to login page
-		await goto('/login');
-	};
+			// Redirect to login page
+			await _goto('/login');
+		};
 
 		window.addEventListener('auth:connection-error', handleConnectionError);
 		window.addEventListener('auth:session-expired', handleSessionExpired);
 		window.addEventListener('auth:connection-restored', handleConnectionRestored);
 		window.addEventListener('auth:success', handleAuthSuccess);
 		window.addEventListener('auth:dek-missing', handleDekMissing);
-	window.addEventListener('auth:token-expired', handleTokenExpired);
+		window.addEventListener('auth:token-expired', handleTokenExpired);
 
 		// Set up periodic auth check to detect session expiry during active use
 		// Reduced from 5 minutes to 2 minutes for faster detection of invalidated sessions

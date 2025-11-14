@@ -8,11 +8,13 @@ import type {
 	BackendAuthResponse as _BackendAuthResponse,
 	Message
 } from '$lib/types.ts';
+import { getCurrentUser } from '$lib/auth.svelte';
 
 export async function load({ params: { chatId }, parent }) {
 	try {
 		const parentData = await parent();
-		const { user } = parentData; // Get user from parent layout
+		// In desktop mode, parent.user may be undefined, so fallback to auth store
+		const user = parentData.user ?? getCurrentUser();
 
 		// Fetch chat session details
 		const chatResult = await _apiClient.getChatById(chatId);
@@ -117,6 +119,17 @@ export async function load({ params: { chatId }, parent }) {
 		} else {
 			console.warn(`Chat session ${chatId} does not have an associated character_id.`);
 		}
+
+		// Debug logging for user ID investigation
+		console.log('[chat/[chatId]/+page.ts] Chat page data:', {
+			chatId: chat.id,
+			chatUserId: chat.user_id,
+			userUserId: user?.user_id,
+			characterId: chat.character_id,
+			hasCharacter: character !== null,
+			chatMode: chat.chat_mode,
+			readonly: user?.user_id !== chat.user_id
+		});
 
 		return { chat, messages, character, user, initialCursor };
 	} catch (_e) {

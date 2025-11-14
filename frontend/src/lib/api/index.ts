@@ -574,14 +574,14 @@ class ApiClient {
 			const data = await response.json();
 			// Success logging removed - only log errors
 
-		// Log successful response body for debugging
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.fetch: Success response for ${endpoint}`,
-			{
-				status: response.status,
-				data
-			}
-		);
+			// Log successful response body for debugging
+			console.log(
+				`[${new Date().toISOString()}] ApiClient.fetch: Success response for ${endpoint}`,
+				{
+					status: response.status,
+					data
+				}
+			);
 
 			// If we successfully made a request, clear any connection errors
 			if (_browser) {
@@ -854,7 +854,7 @@ class ApiClient {
 					title: _data.title,
 					active_custom_persona_id: _data.active_custom_persona_id,
 					lorebook_ids: _data.lorebook_ids
-			  }
+				}
 			: _data; // Cloud/PostgreSQL uses full request as-is
 
 		return this.fetch<ScribeChatSession>('/api/chats/create_session', {
