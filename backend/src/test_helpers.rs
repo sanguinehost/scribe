@@ -3241,6 +3241,9 @@ pub async fn set_history_settings(
         top_k: None,
         top_p: None,
         seed: None,
+        #[cfg(feature = "postgres-backend")]
+        stop_sequences: Some(crate::models::OptionalStringArray(None)),
+        #[cfg(feature = "sqlite-backend")]
         stop_sequences: crate::models::OptionalStringArray(None),
         model_name: None,
         model_provider: None,

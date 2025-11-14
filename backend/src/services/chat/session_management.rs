@@ -665,7 +665,7 @@ fn fetch_created_session(
     }
 
     // Check token/cost tracking fields
-    let token_check: Result<(i32, i32, i32, i32), _> = chat_sessions::table
+    let token_check: Result<(i32, i32, i32, crate::db::DbDecimal), _> = chat_sessions::table
         .filter(chat_sessions::id.eq(&new_session_id))
         .select((
             chat_sessions::total_prompt_tokens,
@@ -673,7 +673,7 @@ fn fetch_created_session(
             chat_sessions::estimated_cost_cents,
             chat_sessions::total_credits_used,
         ))
-        .first::<(i32, i32, i32, i32)>(transaction_conn);
+        .first::<(i32, i32, i32, crate::db::DbDecimal)>(transaction_conn);
 
     if let Err(ref e) = token_check {
         tracing::error!("❌ token/cost fields NULL: {:?}", e);

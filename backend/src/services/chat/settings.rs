@@ -576,9 +576,22 @@ fn apply_payload_to_builder(
     if let Some(s) = payload.seed {
         update_builder.seed = DatabaseUpdate::SetValue(s);
     }
-    if let Some(inner_vec) = payload.stop_sequences.0 {
-        update_builder.stop_sequences =
-            DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+    #[cfg(feature = "postgres-backend")]
+    {
+        if let Some(stop_seqs) = payload.stop_sequences {
+            if let Some(inner_vec) = stop_seqs.0 {
+                update_builder.stop_sequences =
+                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+            }
+        }
+    }
+
+    #[cfg(feature = "sqlite-backend")]
+    {
+        if let Some(inner_vec) = payload.stop_sequences.0 {
+            update_builder.stop_sequences =
+                DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+        }
     }
     if let Some(hist_strat) = payload.history_management_strategy {
         update_builder.history_management_strategy = DatabaseUpdate::SetValue(hist_strat);

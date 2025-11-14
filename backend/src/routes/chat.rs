@@ -701,36 +701,68 @@ pub async fn generate_chat_response(
         // For now, we'll create a placeholder since the agent analysis expects a user message
         // In the future, we might want to find the actual user message that prompted the variant
         use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
-        ChatMessage {
-            id: crate::db::DbId::new_v4(), // Temporary ID
-            session_id,
-            user_id: user_id_value,
-            message_type: DbMessageRole::User,
-            content: current_user_content_text.as_bytes().to_vec(),
-            rag_embedding_id: None,
-            content_nonce: None,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
-            role: None,
-            parts: None,
-            attachments: None,
-            prompt_tokens: None,
-            completion_tokens: None,
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: model_to_use.clone(),
-            status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
-            variant_count: 0,
-            current_variant_index: 0,
-            credits_charged: 0,
-            credits_cost: 0, // FIXED: i32, not DbDecimal
-            // New cost tracking fields
-            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
-            modified_cost: 0.0, // FIXED: f64, not DbDecimal
-            credit_cost: 0,
-            actual_charge: 0.0, // FIXED: f64, not DbDecimal
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            ChatMessage {
+                id: crate::db::DbId::new_v4(), // Temporary ID
+                session_id,
+                user_id: user_id_value,
+                message_type: DbMessageRole::User,
+                content: current_user_content_text.as_bytes().to_vec(),
+                rag_embedding_id: None,
+                content_nonce: None,
+                created_at: chrono::Utc::now().into(),
+                updated_at: chrono::Utc::now().into(),
+                role: None,
+                parts: None,
+                attachments: None,
+                prompt_tokens: None,
+                completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
+                model_name: model_to_use.clone(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
+                variant_count: 0,
+                current_variant_index: 0,
+                credits_charged: 0,
+                credits_cost: 0,    // SQLite: i32
+                actual_cost: 0.0,   // SQLite: f64
+                modified_cost: 0.0, // SQLite: f64
+                credit_cost: 0,
+                actual_charge: 0.0, // SQLite: f64
+            }
+        }
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            ChatMessage {
+                id: crate::db::DbId::new_v4(), // Temporary ID
+                session_id,
+                user_id: user_id_value,
+                message_type: DbMessageRole::User,
+                content: current_user_content_text.as_bytes().to_vec(),
+                content_nonce: None,
+                created_at: chrono::Utc::now().into(),
+                prompt_tokens: None,
+                completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
+                model_name: model_to_use.clone(),
+                status: "completed".to_string(),
+                error_message: None,
+                superseded_at: None,
+                variant_count: 0,
+                current_variant_index: 0,
+                credits_charged: 0,
+                credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
+                modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                credit_cost: 0,
+                actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+            }
         }
     } else {
         // Normal flow: save new user message

@@ -460,9 +460,21 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // Generate new ID for SQLite (no DEFAULT in schema)
     let message_id = crate::db::DbId::new();
 
+    #[cfg(feature = "sqlite-backend")]
     let mut new_message_to_insert = DbInsertableChatMessage::new(
-        message_id, // id field - CRITICAL for SQLite
+        message_id, // id field - CRITICAL for SQLite (7 args total)
         session_id, // chat_id field in DbInsertableChatMessage
+        user_id,
+        message_type_enum, // msg_type field in DbInsertableChatMessage
+        content_to_save,   // content field
+        nonce_to_save,     // content_nonce field
+        model_name,        // model_name field
+    )
+    .with_status(status);
+
+    #[cfg(feature = "postgres-backend")]
+    let mut new_message_to_insert = DbInsertableChatMessage::new(
+        session_id, // chat_id field (6 args total - no id)
         user_id,
         message_type_enum, // msg_type field in DbInsertableChatMessage
         content_to_save,   // content field
