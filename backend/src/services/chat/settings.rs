@@ -437,7 +437,7 @@ pub async fn get_session_settings(
             ))
             .first::<(
                 Option<crate::db::DbId>,
-                Option<String>,
+                String,
             )>(conn)
             .map_err(|e| {
                 error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 5 after ownership check");
@@ -506,10 +506,7 @@ pub async fn get_session_settings(
             chronicle_id: player_chronicle_id,
             agent_mode,
             active_custom_persona_id,
-            #[cfg(feature = "postgres-backend")]
             prompt_template_id: Some(prompt_template_id),
-            #[cfg(feature = "sqlite-backend")]
-            prompt_template_id,
         };
 
         info!(%session_id, %user_id,
@@ -579,15 +576,9 @@ fn apply_payload_to_builder(
     if let Some(s) = payload.seed {
         update_builder.seed = DatabaseUpdate::SetValue(s);
     }
-    if let Some(ss_option_vec) = payload.stop_sequences {
-        update_builder.stop_sequences = DatabaseUpdate::SetValue(
-            ss_option_vec
-                .0
-                .unwrap_or_default()
-                .into_iter()
-                .flatten()
-                .collect(),
-        );
+    if let Some(inner_vec) = payload.stop_sequences.0 {
+        update_builder.stop_sequences =
+            DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
     }
     if let Some(hist_strat) = payload.history_management_strategy {
         update_builder.history_management_strategy = DatabaseUpdate::SetValue(hist_strat);

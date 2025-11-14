@@ -1,4 +1,4 @@
-use crate::db::DbId;
+use crate::db::{DbId, DbTimestamp};
 use std::sync::Arc;
 
 use crate::db::DbPool; // Changed from sqlx::PgPool
@@ -286,9 +286,9 @@ impl CharacterService {
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
             #[cfg(feature = "postgres-backend")]
-            created_at: Some(Utc::now().into()),
+            created_at: Some(DbTimestamp::from(Utc::now())),
             #[cfg(feature = "postgres-backend")]
-            updated_at: Some(Utc::now().into()),
+            updated_at: Some(DbTimestamp::from(Utc::now())),
             #[cfg(feature = "sqlite-backend")]
             created_at: Utc::now().into(),
             #[cfg(feature = "sqlite-backend")]
@@ -401,8 +401,8 @@ impl CharacterService {
                             character_id: returned_id,
                             lorebook_id: lorebook_uuid.into(),
                             user_id: user_id_val,
-                            created_at: Some(Utc::now().into()),
-                            updated_at: Some(Utc::now().into()),
+                            created_at: Some(DbTimestamp::from(Utc::now())),
+                            updated_at: Some(DbTimestamp::from(Utc::now())),
                         };
 
                         crate::db::with_conn(&self.db_pool, move |conn_sync| {
@@ -641,7 +641,7 @@ impl CharacterService {
         existing_character.updated_at = Utc::now().into();
         // Update modification_date if it wasn't explicitly provided in the DTO
         if update_dto.modification_date.is_none() {
-            existing_character.modification_date = Some(Utc::now().into());
+            existing_character.modification_date = Some(DbTimestamp::from(Utc::now()));
         }
 
         // Save the updated character
@@ -740,8 +740,8 @@ impl CharacterService {
                             character_id: character_id_to_update,
                             lorebook_id: lorebook_uuid.into(),
                             user_id: user_id_val,
-                            created_at: Some(Utc::now().into()),
-                            updated_at: Some(Utc::now().into()),
+                            created_at: Some(DbTimestamp::from(Utc::now())),
+                            updated_at: Some(DbTimestamp::from(Utc::now())),
                         };
 
                         match crate::db::with_conn(&self.db_pool, move |conn_sync| {

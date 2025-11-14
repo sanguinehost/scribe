@@ -475,7 +475,9 @@ fn insert_chat_session(
     #[cfg(feature = "sqlite-backend")]
     {
         use diesel::prelude::*;
-        diesel::insert_into(chat_sessions::table)
+        tracing::info!("Inserting new chat session with payment fields: total_credits_used=0, total_actual_cost=0.0, total_modified_cost=0.0, total_credit_cost=0, total_actual_charge=0.0");
+
+        let rows_inserted = diesel::insert_into(chat_sessions::table)
             .values((
                 chat_sessions::id.eq(params.new_session_id),
                 chat_sessions::user_id.eq(params.user_id),
@@ -492,9 +494,30 @@ fn insert_chat_session(
                 chat_sessions::history_management_limit.eq(params.default_history_management_limit),
                 chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
                 chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+                // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
+                chat_sessions::total_prompt_tokens.eq(0),
+                chat_sessions::total_completion_tokens.eq(0),
+                chat_sessions::estimated_cost_cents.eq(0),
+                chat_sessions::tokens_counted_at.eq(chrono::Utc::now().naive_utc()),
+                chat_sessions::total_credits_used.eq(0),
+                chat_sessions::total_actual_cost.eq(0.0),
+                chat_sessions::total_modified_cost.eq(0.0),
+                chat_sessions::total_credit_cost.eq(0),
+                chat_sessions::total_actual_charge.eq(0.0),
+                chat_sessions::created_at.eq(chrono::Utc::now().naive_utc()),
+                chat_sessions::updated_at.eq(chrono::Utc::now().naive_utc()),
+                chat_sessions::stop_sequences.eq(crate::models::OptionalStringArray(None)),
             ))
             .execute(transaction_conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!("Failed to insert chat session: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        tracing::info!(
+            "Successfully inserted chat session, rows affected: {}",
+            rows_inserted
+        );
     }
 
     Ok(())
@@ -582,11 +605,154 @@ fn fetch_created_session(
     new_session_id: crate::db::DbId,
     transaction_conn: &mut crate::DbConnection,
 ) -> Result<ChatSessionQuery, AppError> {
-    chat_sessions::table
+    tracing::info!(
+        "Attempting to fetch created session with ID: {}",
+        new_session_id
+    );
+
+    // DEBUG: Check non-nullable fields in groups to identify which is NULL
+    use diesel::prelude::*;
+
+    // Check basic required fields FIRST
+    let basic_check: Result<(crate::db::DbId, crate::db::DbId, String, String), _> =
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(&new_session_id))
+            .select((
+                chat_sessions::id,
+                chat_sessions::user_id,
+                chat_sessions::model_name,
+                chat_sessions::chat_mode,
+            ))
+            .first::<(crate::db::DbId, crate::db::DbId, String, String)>(transaction_conn);
+
+    if let Err(ref e) = basic_check {
+        tracing::error!(
+            "❌ BASIC FIELDS (id/user_id/model_name/chat_mode) NULL: {:?}",
+            e
+        );
+    } else {
+        tracing::info!("✓ basic fields (id/user_id/model_name/chat_mode) OK");
+    }
+
+    // Check stop_sequences specifically
+    let stop_seq_check: Result<crate::models::OptionalStringArray, _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select(chat_sessions::stop_sequences)
+        .first::<crate::models::OptionalStringArray>(transaction_conn);
+
+    if let Err(ref e) = stop_seq_check {
+        tracing::error!("❌ STOP_SEQUENCES FIELD NULL OR INVALID: {:?}", e);
+    } else {
+        tracing::info!(
+            "✓ stop_sequences field OK: {:?}",
+            stop_seq_check.as_ref().unwrap()
+        );
+    }
+
+    // Check history management fields
+    let history_check: Result<(String, i32), _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::history_management_strategy,
+            chat_sessions::history_management_limit,
+        ))
+        .first::<(String, i32)>(transaction_conn);
+
+    if let Err(ref e) = history_check {
+        tracing::error!("❌ history_management fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ history_management fields OK");
+    }
+
+    // Check token/cost tracking fields
+    let token_check: Result<(i32, i32, i32, i32), _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::total_prompt_tokens,
+            chat_sessions::total_completion_tokens,
+            chat_sessions::estimated_cost_cents,
+            chat_sessions::total_credits_used,
+        ))
+        .first::<(i32, i32, i32, i32)>(transaction_conn);
+
+    if let Err(ref e) = token_check {
+        tracing::error!("❌ token/cost fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ token/cost fields OK");
+    }
+
+    // Check timestamp fields
+    let timestamp_check: Result<
+        (
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+        ),
+        _,
+    > = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::created_at,
+            chat_sessions::updated_at,
+            chat_sessions::tokens_counted_at,
+        ))
+        .first::<(
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+        )>(transaction_conn);
+
+    if let Err(ref e) = timestamp_check {
+        tracing::error!("❌ timestamp fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ timestamp fields OK");
+    }
+
+    // Check decimal fields
+    let decimal_check: Result<
+        (
+            crate::db::DbDecimal,
+            crate::db::DbDecimal,
+            i32,
+            crate::db::DbDecimal,
+        ),
+        _,
+    > = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::total_actual_cost,
+            chat_sessions::total_modified_cost,
+            chat_sessions::total_credit_cost,
+            chat_sessions::total_actual_charge,
+        ))
+        .first::<(
+            crate::db::DbDecimal,
+            crate::db::DbDecimal,
+            i32,
+            crate::db::DbDecimal,
+        )>(transaction_conn);
+
+    if let Err(ref e) = decimal_check {
+        tracing::error!("❌ decimal fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ decimal fields OK");
+    }
+
+    let result = chat_sessions::table
         .filter(chat_sessions::id.eq(new_session_id))
         .select(ChatSessionQuery::as_select())
         .first::<ChatSessionQuery>(transaction_conn)
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        .map_err(|e| {
+            tracing::error!("Failed to fetch created session: {}", e);
+            tracing::error!("Diesel error details: {:?}", e);
+            AppError::DatabaseQueryError(format!("Failed to fetch created session: {}", e))
+        });
+
+    if result.is_ok() {
+        tracing::info!("Successfully fetched created session");
+    }
+
+    result
 }
 
 /// Creates a new chat session in the database
@@ -818,6 +984,17 @@ pub async fn create_session_and_maybe_first_message(
     lorebook_ids: Option<Vec<crate::db::DbId>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<ChatSessionQuery, AppError> {
+    // Log function entry with parameters
+    info!(
+        %user_id,
+        character_id = ?character_id,
+        chat_mode = ?chat_mode,
+        active_custom_persona_id = ?active_custom_persona_id,
+        lorebook_count = lorebook_ids.as_ref().map(|ids| ids.len()).unwrap_or(0),
+        has_dek = user_dek_secret_box.is_some(),
+        "create_session_and_maybe_first_message: Entry"
+    );
+
     // Load user settings to get defaults for the new chat session
     // This will auto-create defaults if user has no settings yet
     let user_settings = crate::services::UserSettingsService::get_user_settings(
@@ -860,13 +1037,25 @@ pub async fn create_session_and_maybe_first_message(
     let default_history_management_strategy = "message_window".to_string(); // Not yet in user settings
     let default_history_management_limit = 20; // Not yet in user settings
 
+    info!(
+        %user_id,
+        default_model = %default_model_name,
+        history_strategy = %default_history_management_strategy,
+        history_limit = default_history_management_limit,
+        "User settings loaded successfully"
+    );
+
     let pool: DbPool = state.pool.clone();
     // Clone user_dek_secret_box and lorebook_ids for use inside the 'move' closure
     let user_dek_for_closure = user_dek_secret_box.clone();
     let lorebook_ids_for_closure = lorebook_ids.clone();
+
+    info!(%user_id, "Starting database transaction for session creation");
+
     let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) =
         crate::db::with_conn(&pool, move |conn| {
             conn.transaction(|transaction_conn| {
+                info!("Inside transaction - calling create_session_in_transaction");
                 create_session_in_transaction(
                     transaction_conn,
                     user_id,
@@ -881,18 +1070,39 @@ pub async fn create_session_and_maybe_first_message(
                 )
             })
         })
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(%user_id, error = ?e, "Database transaction failed during session creation");
+            e
+        })?;
+
+    info!(
+        session_id = %created_session.id,
+        has_first_message = first_mes_ciphertext_opt.is_some(),
+        "Session created successfully, transaction committed"
+    );
 
     // Process first message if available
-    process_first_message(
-        state,
-        &created_session,
-        first_mes_ciphertext_opt,
-        first_mes_nonce_opt,
-        user_dek_secret_box,
-    )
-    .await?;
+    if first_mes_ciphertext_opt.is_some() {
+        info!(session_id = %created_session.id, "Processing first message");
+        process_first_message(
+            state,
+            &created_session,
+            first_mes_ciphertext_opt,
+            first_mes_nonce_opt,
+            user_dek_secret_box,
+        )
+        .await
+        .map_err(|e| {
+            error!(session_id = %created_session.id, error = ?e, "Failed to process first message");
+            e
+        })?;
+        info!(session_id = %created_session.id, "First message processed successfully");
+    } else {
+        info!(session_id = %created_session.id, "No first message to process");
+    }
 
+    info!(session_id = %created_session.id, "create_session_and_maybe_first_message: Success");
     Ok(created_session)
 }
 /// Lists chat sessions for a given user.

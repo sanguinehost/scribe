@@ -139,6 +139,9 @@ class ApiClient {
 	private desktopAuthService: any = null; // Dynamically loaded for desktop mode
 	private desktopAuthInitialized = false;
 	private readonly DEFAULT_TIMEOUT_MS = 30000; // 30 second timeout to prevent indefinite hangs
+	// Debouncing for logout to prevent multiple concurrent calls
+	private logoutInProgress = false;
+	private logoutPromise: Promise<void> | null = null;
 
 	constructor(baseUrl: string = '') {
 		// Handle undefined/null environment variables gracefully
@@ -388,6 +391,15 @@ class ApiClient {
 				let isProxyError = false;
 				try {
 					errorData = await response.json();
+					// Log error response body for debugging
+					console.error(
+						`[${new Date().toISOString()}] ApiClient.fetch: Error response body for ${endpoint}`,
+						{
+							status: response.status,
+							statusText: response.statusText,
+							errorData
+						}
+					);
 				} catch (parseError) {
 					console.error(
 						`[${new Date().toISOString()}] ApiClient.fetch: Failed to parse error JSON for ${endpoint}`,
@@ -433,21 +445,64 @@ class ApiClient {
 						// Check if we're in desktop mode with JWT authentication
 						if (isDesktopMode() && this.desktopAuthService) {
 							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: 401 in desktop mode - JWT token expired or invalid. Clearing tokens.`
+								`[${new Date().toISOString()}] ApiClient.fetch: 401 in desktop mode - attempting token refresh before clearing...`
 							);
 
-							// Clear expired tokens from desktop auth service
+							// Try to refresh token first before clearing everything
 							try {
-								await this.desktopAuthService.logout();
+								const refreshResult = await this.desktopAuthService.ensureValidToken();
+
+								if (refreshResult.isOk()) {
+									console.log(
+										`[${new Date().toISOString()}] ApiClient.fetch: Token refresh successful - caller should retry request`
+									);
+									// Token refreshed successfully - return special error to signal retry
+									return err(new ApiAuthError('Token refreshed - please retry request', 401));
+								}
+
 								console.log(
-									`[${new Date().toISOString()}] ApiClient.fetch: Desktop tokens cleared successfully`
+									`[${new Date().toISOString()}] ApiClient.fetch: Token refresh failed - tokens are truly expired or invalid`
 								);
-							} catch (logoutError) {
+							} catch (refreshError) {
 								console.error(
-									`[${new Date().toISOString()}] ApiClient.fetch: Failed to clear desktop tokens:`,
-									logoutError
+									`[${new Date().toISOString()}] ApiClient.fetch: Error during token refresh attempt:`,
+									refreshError
 								);
 							}
+
+							// Only clear tokens if refresh failed - tokens are truly invalid
+							console.log(
+								`[${new Date().toISOString()}] ApiClient.fetch: Clearing expired/invalid tokens...`
+							);
+
+							// Prevent multiple concurrent logout calls
+							if (this.logoutInProgress) {
+								console.log(
+									`[${new Date().toISOString()}] ApiClient.fetch: Logout already in progress - waiting...`
+								);
+								await this.logoutPromise;
+								return err(new ApiAuthError('Authentication cleared by another request', 401));
+							}
+
+							this.logoutInProgress = true;
+							this.logoutPromise = (async () => {
+								try {
+									await this.desktopAuthService.logout();
+									console.log(
+										`[${new Date().toISOString()}] ApiClient.fetch: Desktop tokens cleared successfully`
+									);
+								} catch (logoutError) {
+									console.error(
+										`[${new Date().toISOString()}] ApiClient.fetch: Failed to clear desktop tokens:`,
+										logoutError
+									);
+								} finally {
+									this.logoutInProgress = false;
+									this.logoutPromise = null;
+								}
+							})();
+
+							await this.logoutPromise;
 
 							// Dispatch event to redirect to login
 							if (_browser) {
@@ -518,6 +573,15 @@ class ApiClient {
 
 			const data = await response.json();
 			// Success logging removed - only log errors
+
+		// Log successful response body for debugging
+		console.log(
+			`[${new Date().toISOString()}] ApiClient.fetch: Success response for ${endpoint}`,
+			{
+				status: response.status,
+				data
+			}
+		);
 
 			// If we successfully made a request, clear any connection errors
 			if (_browser) {
@@ -780,10 +844,23 @@ class ApiClient {
 			`[${new Date().toISOString()}] ApiClient.createChat: Creating chat with data:`,
 			_data
 		);
-		return this.fetch<ScribeChatSession>('/api/chat/create_session', {
-			// Use ScribeChatSession
+
+		// Feature-flagged request body: Desktop/SQLite uses minimal backend contract,
+		// Cloud/PostgreSQL uses full frontend format
+		const requestBody = isDesktopMode()
+			? {
+					// Desktop/SQLite contract (matches backend test expectations)
+					character_id: _data.character_id,
+					title: _data.title,
+					active_custom_persona_id: _data.active_custom_persona_id,
+					lorebook_ids: _data.lorebook_ids
+			  }
+			: _data; // Cloud/PostgreSQL uses full request as-is
+
+		return this.fetch<ScribeChatSession>('/api/chats/create_session', {
+			// Fixed: /api/chats (plural) not /api/chat
 			method: 'POST',
-			body: JSON.stringify(_data)
+			body: JSON.stringify(requestBody)
 		});
 	}
 

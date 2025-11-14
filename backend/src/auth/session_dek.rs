@@ -10,7 +10,7 @@ use axum_login::AuthSession;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use secrecy::{ExposeSecret, SecretBox};
 use std::fmt;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Represents the session's Data Encryption Key (DEK).
 /// This struct is intended to be used as an Axum request extractor.
@@ -60,11 +60,14 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         const DEK_HEADER: HeaderName = HeaderName::from_static("x-scribe-dek");
 
-        debug!("SessionDek extractor: Attempting to retrieve DEK.");
+        info!(
+            "SessionDek extractor: Attempting to retrieve DEK. Headers: {:?}",
+            parts.headers.keys().collect::<Vec<_>>()
+        );
 
         // Step 1: Check for X-Scribe-Dek header (JWT desktop mode)
         if let Some(dek_header) = parts.headers.get(&DEK_HEADER) {
-            debug!(
+            info!(
                 "SessionDek extractor: Found {} header (JWT desktop mode)",
                 DEK_HEADER.as_str()
             );
@@ -86,15 +89,16 @@ where
                 AppError::BadRequest("Failed to decode DEK from header".to_string())
             })?;
 
-            debug!(
-                "SessionDek extractor: Successfully retrieved and decoded DEK from {} header",
-                DEK_HEADER.as_str()
+            info!(
+                "SessionDek extractor: Successfully retrieved and decoded DEK from {} header (length: {} bytes)",
+                DEK_HEADER.as_str(),
+                dek_bytes.len()
             );
             return Ok(SessionDek::new(dek_bytes));
         }
 
         // Step 2: Fallback to cookie session (web mode)
-        debug!("SessionDek extractor: No DEK header found, falling back to cookie session");
+        info!("SessionDek extractor: No DEK header found, falling back to cookie session");
 
         // Extract the AuthSession to get the authenticated user
         let auth_session: AuthSession<AuthBackend> = AuthSession::from_request_parts(parts, state)
@@ -111,7 +115,7 @@ where
         })?;
 
         let user_id = user.id;
-        debug!(
+        info!(
             "SessionDek extractor: Found authenticated user with ID: {}",
             loggable_user_id(user_id)
         );
@@ -127,7 +131,7 @@ where
                 Err(AppError::DekMissing)
             },
             |dek_wrapper| {
-                debug!(
+                info!(
                     user_id = %loggable_user_id(user_id),
                     "SessionDek extractor: Successfully retrieved DEK from user session object"
                 );

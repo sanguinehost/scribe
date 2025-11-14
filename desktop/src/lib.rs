@@ -64,6 +64,25 @@ fn initialize_database() -> anyhow::Result<PathBuf> {
     let mut connection = SqliteConnection::establish(&db_url)
         .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
 
+    // Enable WAL mode for better concurrency (allows concurrent reads during writes)
+    // This must be set before running migrations to ensure the database is properly configured
+    diesel::sql_query("PRAGMA journal_mode = WAL;")
+        .execute(&mut connection)
+        .map_err(|e| anyhow::anyhow!("Failed to enable WAL mode: {}", e))?;
+    log::info!("✓ WAL mode enabled for database");
+
+    // Set busy_timeout to 10 seconds (connections will wait instead of failing immediately)
+    diesel::sql_query("PRAGMA busy_timeout = 10000;")
+        .execute(&mut connection)
+        .map_err(|e| anyhow::anyhow!("Failed to set busy_timeout: {}", e))?;
+    log::info!("✓ Busy timeout set to 10 seconds");
+
+    // Enable foreign key constraints
+    diesel::sql_query("PRAGMA foreign_keys = ON;")
+        .execute(&mut connection)
+        .map_err(|e| anyhow::anyhow!("Failed to enable foreign keys: {}", e))?;
+    log::info!("✓ Foreign key constraints enabled");
+
     // Run migrations if database is new or needs updates
     if !db_exists {
         log::info!("Running database migrations...");

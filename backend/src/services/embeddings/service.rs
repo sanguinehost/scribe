@@ -58,7 +58,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Fetch the session to get the chronicle_id
         let chronicle_id = match crate::services::chat::session_management::get_chat_session_by_id(
             &state.pool,
-            message.user_id,
+            message.user_id, // user_id is now NOT NULL
             message.session_id,
         )
         .await
@@ -220,7 +220,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 message_id: message.id,
                 session_id: message.session_id,
                 chronicle_id,             // Include the chronicle_id from the session
-                user_id: message.user_id, // Added user_id from the message
+                user_id: message.user_id, // user_id is now NOT NULL
                 speaker: speaker_str,
                 timestamp: message.created_at,
                 text: text_for_storage, // Placeholder when encrypted, plaintext otherwise

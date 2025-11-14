@@ -707,28 +707,30 @@ pub async fn generate_chat_response(
             user_id: user_id_value,
             message_type: DbMessageRole::User,
             content: current_user_content_text.as_bytes().to_vec(),
+            rag_embedding_id: None,
             content_nonce: None,
             created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+            role: None,
+            parts: None,
+            attachments: None,
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
-            #[cfg(feature = "postgres-backend")]
             model_name: model_to_use.clone(),
-            #[cfg(feature = "sqlite-backend")]
-            model_name: Some(model_to_use.clone()),
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: crate::db::DbDecimal::from(0),
+            credits_cost: 0, // FIXED: i32, not DbDecimal
             // New cost tracking fields
-            actual_cost: crate::db::DbDecimal::from(0),
-            modified_cost: crate::db::DbDecimal::from(0),
+            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+            modified_cost: 0.0, // FIXED: f64, not DbDecimal
             credit_cost: 0,
-            actual_charge: crate::db::DbDecimal::from(0),
+            actual_charge: 0.0, // FIXED: f64, not DbDecimal
         }
     } else {
         // Normal flow: save new user message

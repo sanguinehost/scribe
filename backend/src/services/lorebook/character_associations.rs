@@ -2,6 +2,7 @@ use super::get_user_from_session;
 use super::*;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbTimestamp;
 
 impl LorebookService {
     pub async fn associate_lorebook_to_character(
@@ -60,8 +61,8 @@ impl LorebookService {
             character_id,
             lorebook_id,
             user_id: user.id,
-            created_at: Some(Utc::now().into()),
-            updated_at: Some(Utc::now().into()),
+            created_at: Some(DbTimestamp::from(Utc::now())),
+            updated_at: Some(DbTimestamp::from(Utc::now())),
         };
 
         crate::db::with_conn(&self.pool, move |conn_sync| {

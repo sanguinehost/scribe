@@ -278,6 +278,8 @@ pub async fn create_chat_handler(
     dek: SessionDek, // Added SessionDek extractor for encryption
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    let request_start = std::time::Instant::now();
+
     let user = auth
         .user()
         .cloned()
@@ -287,7 +289,14 @@ pub async fn create_chat_handler(
         dek.0.expose_secret().clone(),
     ))));
 
-    info!(%user.id, character_id=%payload.character_id, lorebook_ids=?payload.lorebook_ids, "Creating chat session");
+    info!(
+        %user.id,
+        character_id=%payload.character_id,
+        lorebook_ids=?payload.lorebook_ids,
+        has_title = payload.title.is_some(),
+        has_custom_persona = payload.active_custom_persona_id.is_some(),
+        "create_chat_handler: Creating chat session"
+    );
 
     let app_state = Arc::new(state.clone());
     let chat = chat::session_management::create_session_and_maybe_first_message(
@@ -299,7 +308,18 @@ pub async fn create_chat_handler(
         payload.lorebook_ids.clone(),     // lorebook_ids
         user_dek_arc,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        error!(
+            user_id = %user.id,
+            character_id = %payload.character_id,
+            error = ?e,
+            error_msg = %e,
+            elapsed_ms = request_start.elapsed().as_millis(),
+            "create_chat_handler: Service call failed"
+        );
+        e
+    })?;
 
     // Generate a custom title if provided (default title is set by the service)
     if let Some(ref title) = payload.title {
@@ -342,8 +362,10 @@ pub async fn create_chat_handler(
         character_id = ?chat.character_id,
         user_id = %chat.user_id,
         system_prompt_present = chat.system_prompt_ciphertext.is_some(), // Avoid logging potentially large/sensitive prompt
-        title_present = chat.title_ciphertext.is_some() // Also avoid logging title directly
+        title_present = chat.title_ciphertext.is_some(), // Also avoid logging title directly
+        elapsed_ms = request_start.elapsed().as_millis(),
         // Removed full 'chat = ?chat' to avoid logging all fields, including encrypted ones
+        "create_chat_handler: Success - returning 201 Created"
     );
 
     // Return the fully configured Chat struct
@@ -877,10 +899,7 @@ async fn process_messages_for_response(
             raw_prompt,
             prompt_tokens: msg_db.prompt_tokens,
             completion_tokens: msg_db.completion_tokens,
-            #[cfg(feature = "postgres-backend")]
             model_name: Some(msg_db.model_name),
-            #[cfg(feature = "sqlite-backend")]
-            model_name: msg_db.model_name,
             status: msg_db.status,
             error_message: msg_db.error_message,
             variant_count: msg_db.variant_count,
@@ -1191,10 +1210,7 @@ pub async fn create_message_handler(
         raw_prompt: client_message.raw_prompt,
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
-        #[cfg(feature = "postgres-backend")]
         model_name: Some(saved_db_message.model_name),
-        #[cfg(feature = "sqlite-backend")]
-        model_name: saved_db_message.model_name,
         status: saved_db_message.status,
         error_message: saved_db_message.error_message,
         variant_count: saved_db_message.variant_count,
@@ -1353,10 +1369,7 @@ pub async fn get_message_by_id_handler(
         raw_prompt: decrypted_raw_prompt,
         prompt_tokens: message_db.prompt_tokens,
         completion_tokens: message_db.completion_tokens,
-        #[cfg(feature = "postgres-backend")]
         model_name: Some(message_db.model_name),
-        #[cfg(feature = "sqlite-backend")]
-        model_name: message_db.model_name,
         status: message_db.status,
         error_message: message_db.error_message,
         variant_count: message_db.variant_count,
@@ -1923,38 +1936,19 @@ async fn get_chat_token_usage_handler(
     let total_tokens = chat.total_prompt_tokens + chat.total_completion_tokens;
     let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
 
-    // Get model_name from most recent message (schema differs between backends)
-    #[cfg(feature = "postgres-backend")]
+    // Get model_name from most recent message
     let model_name_query = crate::db::with_conn(&state.pool, move |conn| {
         chat_messages::table
             .select(chat_messages::model_name)
             .filter(chat_messages::session_id.eq(id))
             .order_by(chat_messages::created_at.desc())
-            .first::<String>(conn) // PostgreSQL: model_name is Varchar (NOT NULL)
+            .first::<String>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await?;
 
-    #[cfg(feature = "sqlite-backend")]
-    let model_name_query = crate::db::with_conn(&state.pool, move |conn| {
-        chat_messages::table
-            .select(chat_messages::model_name)
-            .filter(chat_messages::session_id.eq(id))
-            .order_by(chat_messages::created_at.desc())
-            .first::<Option<String>>(conn) // SQLite: model_name is Nullable<Text>
-            .optional()
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-    })
-    .await?;
-
-    #[cfg(feature = "postgres-backend")]
     let model_name = model_name_query.unwrap_or_else(|| "unknown".to_string());
-
-    #[cfg(feature = "sqlite-backend")]
-    let model_name = model_name_query
-        .flatten()
-        .unwrap_or_else(|| "unknown".to_string());
 
     let token_usage = ChatTokenUsage {
         chat_id: id,
@@ -2063,17 +2057,14 @@ pub async fn select_message_variant_handler(
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
         completion_tokens: updated_message.completion_tokens,
-        #[cfg(feature = "postgres-backend")]
         model_name: Some(updated_message.model_name),
-        #[cfg(feature = "sqlite-backend")]
-        model_name: updated_message.model_name,
         status: updated_message.status,
         error_message: updated_message.error_message,
         variant_count: updated_message.variant_count,
         current_variant_index: updated_message.current_variant_index,
         is_variant: false,
         parent_message_id: None,
-        variants: None, // Don't include full variant data in selection response
+        variants: None,
     };
 
     Ok((StatusCode::OK, Json(response)))

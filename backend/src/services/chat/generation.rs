@@ -441,7 +441,7 @@ pub async fn get_session_data_for_generation(
                             crate::db::DbId,
                             Option<i32>,
                             Option<i32>,
-                            Option<String>,
+                            String,
                             String,
                         )>(conn_interaction)
                     }
@@ -467,9 +467,14 @@ pub async fn get_session_data_for_generation(
                             session_id,
                             message_type,
                             content,
+                            rag_embedding_id: None,
                             content_nonce,
                             created_at,
+                            updated_at: chrono::Utc::now().into(),
                             user_id,
+                            role: None,
+                            parts: None,
+                            attachments: None,
                             prompt_tokens,
                             completion_tokens,
                             model_name,
@@ -481,11 +486,11 @@ pub async fn get_session_data_for_generation(
                             variant_count: 0,
                             current_variant_index: 0,
                             credits_charged: 0,
-                            credits_cost: crate::db::DbDecimal::from(0),
-                            actual_cost: crate::db::DbDecimal::from(0),
-                            modified_cost: crate::db::DbDecimal::from(0),
+                            credits_cost: 0,    // FIXED: i32, not DbDecimal
+                            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+                            modified_cost: 0.0, // FIXED: f64, not DbDecimal
                             credit_cost: 0,
-                            actual_charge: crate::db::DbDecimal::from(0),
+                            actual_charge: 0.0, // FIXED: f64, not DbDecimal
                         }
                     },
                 )
@@ -677,30 +682,32 @@ pub async fn get_session_data_for_generation(
                     user_id,
                     message_type: message_role,
                     content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                    rag_embedding_id: None,
                     content_nonce: None, // No encryption for frontend-provided history
                     created_at: (chrono::Utc::now()
                         - chrono::Duration::seconds(1000 - index as i64))
                     .into(), // Fake timestamps
+                    updated_at: chrono::Utc::now().into(),
+                    role: None,
+                    parts: None,
+                    attachments: None,
                     prompt_tokens: None,
                     completion_tokens: None,
                     raw_prompt_ciphertext: None,
                     raw_prompt_nonce: None,
-                    #[cfg(feature = "postgres-backend")]
                     model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
-                    #[cfg(feature = "sqlite-backend")]
-                    model_name: Some(session_model_name_db.to_string()), // Use session model for frontend-provided history
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
                     superseded_at: None,
                     variant_count: 0,
                     current_variant_index: 0,
                     credits_charged: 0,
-                    credits_cost: crate::db::DbDecimal::from(0),
+                    credits_cost: 0, // FIXED: i32, not DbDecimal
                     // New cost tracking fields
-                    actual_cost: crate::db::DbDecimal::from(0),
-                    modified_cost: crate::db::DbDecimal::from(0),
+                    actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+                    modified_cost: 0.0, // FIXED: f64, not DbDecimal
                     credit_cost: 0,
-                    actual_charge: crate::db::DbDecimal::from(0),
+                    actual_charge: 0.0, // FIXED: f64, not DbDecimal
                 }
             })
             .collect()
@@ -1200,28 +1207,30 @@ pub async fn get_session_data_for_generation(
                 user_id,
                 message_type: MessageRole::Assistant,
                 content: content.into_bytes(), // Content is already decrypted String
+                rag_embedding_id: None,
                 content_nonce: None,
                 created_at: chrono::Utc::now().into(),
+                updated_at: chrono::Utc::now().into(),
+                role: None,
+                parts: None,
+                attachments: None,
                 prompt_tokens: None,
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
-                #[cfg(feature = "postgres-backend")]
                 model_name: session_model_name_db.to_string(), // Use session model for character first message
-                #[cfg(feature = "sqlite-backend")]
-                model_name: Some(session_model_name_db.to_string()), // Use session model for character first message
                 status: "completed".to_string(), // First message is considered completed
                 error_message: None,
                 superseded_at: None,
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: crate::db::DbDecimal::from(0),
+                credits_cost: 0, // FIXED: i32, not DbDecimal
                 // New cost tracking fields
-                actual_cost: crate::db::DbDecimal::from(0),
-                modified_cost: crate::db::DbDecimal::from(0),
+                actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+                modified_cost: 0.0, // FIXED: f64, not DbDecimal
                 credit_cost: 0,
-                actual_charge: crate::db::DbDecimal::from(0),
+                actual_charge: 0.0, // FIXED: f64, not DbDecimal
             };
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
@@ -1229,7 +1238,11 @@ pub async fn get_session_data_for_generation(
     }
 
     // --- Prepare User Message Struct ---
+    // Generate new ID for SQLite (no DEFAULT in schema)
+    let user_message_id = crate::db::DbId::new();
+
     let mut user_db_message_to_save = DbInsertableChatMessage::new(
+        user_message_id, // id field - CRITICAL for SQLite
         session_id,
         user_id,
         MessageRole::User,

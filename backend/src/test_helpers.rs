@@ -3241,7 +3241,7 @@ pub async fn set_history_settings(
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: None,
+        stop_sequences: crate::models::OptionalStringArray(None),
         model_name: None,
         model_provider: None,
         gemini_enable_code_execution: None,

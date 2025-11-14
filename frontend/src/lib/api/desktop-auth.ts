@@ -303,15 +303,45 @@ class DesktopAuthService {
 	async ensureValidToken(): Promise<Result<void, ApiError>> {
 		console.log('[DesktopAuth.ensureValidToken] Checking token validity...');
 
-		// If no token, user needs to login
+		// If no token in memory, try to reload from secure storage
 		if (!this.accessToken || !this.refreshToken) {
-			console.error(
-				'[DesktopAuth.ensureValidToken] ✗ No tokens available - accessToken:',
-				this.accessToken ? 'PRESENT' : 'MISSING',
-				'refreshToken:',
-				this.refreshToken ? 'PRESENT' : 'MISSING'
+			console.warn(
+				'[DesktopAuth.ensureValidToken] ⚠ No tokens in memory - attempting to reload from secure storage'
 			);
-			return err(new ApiAuthError('No authentication tokens available', 401));
+
+			try {
+				const tokens = await invoke<StoredTokens | null>('load_tokens');
+				if (tokens) {
+					console.log('[DesktopAuth.ensureValidToken] ✓ Reloaded tokens from secure storage');
+					this.accessToken = tokens.accessToken;
+					this.refreshToken = tokens.refreshToken;
+					this.tokenExpiresAt = Date.now() + tokens.expiresIn * 1000;
+
+					// Try to reload DEK as well
+					try {
+						const dek = await invoke<string | null>('get_local_dek');
+						if (dek) {
+							this.dek = dek;
+							console.log('[DesktopAuth.ensureValidToken] ✓ DEK reloaded from secure storage');
+						}
+					} catch (dekError) {
+						console.warn('[DesktopAuth.ensureValidToken] DEK not available:', dekError);
+					}
+
+					// Continue with normal validation below
+				} else {
+					console.error(
+						'[DesktopAuth.ensureValidToken] ✗ No tokens available - accessToken:',
+						this.accessToken ? 'PRESENT' : 'MISSING',
+						'refreshToken:',
+						this.refreshToken ? 'PRESENT' : 'MISSING'
+					);
+					return err(new ApiAuthError('No authentication tokens available', 401));
+				}
+			} catch (error) {
+				console.error('[DesktopAuth.ensureValidToken] Failed to load tokens from storage:', error);
+				return err(new ApiAuthError('Failed to load authentication tokens', 401));
+			}
 		}
 
 		// If token is still valid, no refresh needed

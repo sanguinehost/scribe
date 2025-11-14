@@ -477,14 +477,29 @@ export interface MessageAttachment {
 	data: unknown;
 }
 
-// Type definitions for API requests
+/**
+ * Request to create a new chat session.
+ *
+ * NOTE: This type is used differently depending on deployment mode:
+ *
+ * Desktop/SQLite (feature-flagged via isDesktopMode()):
+ *   - Only sends: character_id, title, active_custom_persona_id, lorebook_ids
+ *   - Other fields (chat_mode, system_prompt, personality, scenario) are NOT sent
+ *
+ * Cloud/PostgreSQL (default):
+ *   - Sends all fields as-is
+ *
+ * See frontend/src/lib/api/index.ts createChat() for the feature-flagged implementation.
+ */
 export type CreateChatRequest = {
 	title: string;
-	chat_mode: ChatMode; // NEW: Required chat mode field
-	character_id?: string | null; // CHANGED: Optional for non-character modes
-	system_prompt?: string | null;
-	personality?: string | null;
-	scenario?: string | null;
+	chat_mode: ChatMode; // Only sent to Cloud/PostgreSQL
+	character_id?: string | null;
+	system_prompt?: string | null; // Only sent to Cloud/PostgreSQL
+	personality?: string | null; // Only sent to Cloud/PostgreSQL
+	scenario?: string | null; // Only sent to Cloud/PostgreSQL
+	active_custom_persona_id?: string | null; // Sent to both backends
+	lorebook_ids?: string[] | null; // Sent to both backends
 };
 
 export type CreateMessageRequest = {

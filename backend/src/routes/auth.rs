@@ -27,6 +27,7 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::auth::session_store::offset_to_utc;
 use tower_sessions::Session; // Import tower_sessions::Session // Added for time conversion
 
+use crate::auth::session_dek::SessionDek;
 use crate::auth::token_auth::UnifiedAuth;
 use crate::auth::user_store::Backend as AuthBackend;
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -634,9 +635,28 @@ pub async fn me_handler(auth: UnifiedAuth) -> Result<Response, AppError> {
 /// # Errors
 /// Returns `AppError` if database operations fail or session creation fails
 pub async fn create_session_handler(
+    auth: UnifiedAuth,
+    _dek: SessionDek,
     State(state): State<AppState>,
     Json(payload): Json<SessionRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Verify user is authenticated
+    let user = auth.user().cloned().ok_or_else(|| {
+        error!("User not authenticated in create_session_handler");
+        AppError::Unauthorized("User not authenticated".to_string())
+    })?;
+
+    // Verify the session is being created for the authenticated user
+    if user.id != payload.user_id {
+        error!(
+            "User {:?} attempted to create session for different user {:?}",
+            user.id, payload.user_id
+        );
+        return Err(AppError::Unauthorized(
+            "Cannot create session for another user".to_string(),
+        ));
+    }
+
     let pool = state.pool.clone();
 
     // Insert the session into the database

@@ -400,26 +400,47 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             (0.0, 0.0, 0, 0)
         };
 
-    // Convert to BigDecimal for database storage
-    use bigdecimal::BigDecimal;
-    use std::str::FromStr;
+    // SQLite uses f64 directly, PostgreSQL uses BigDecimal
+    #[cfg(feature = "sqlite-backend")]
+    let actual_cost_bd = actual_cost_dollars;
+    #[cfg(feature = "sqlite-backend")]
+    let modified_cost_bd = modified_cost_dollars;
+    #[cfg(feature = "sqlite-backend")]
+    let actual_charge_bd = 0.0_f64; // TODO: Implement actual charge tracking
+
+    #[cfg(feature = "postgres-backend")]
+    {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+    }
+    #[cfg(feature = "postgres-backend")]
     let actual_cost_bd = credits_cost_override.clone().unwrap_or_else(|| {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
         BigDecimal::from_str(&actual_cost_dollars.to_string())
             .map(crate::db::DbDecimal::from)
             .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
     });
-
-    let modified_cost_bd = BigDecimal::from_str(&modified_cost_dollars.to_string())
-        .map(crate::db::DbDecimal::from)
-        .unwrap_or_else(|_| crate::db::DbDecimal::from(0));
-
+    #[cfg(feature = "postgres-backend")]
+    let modified_cost_bd = {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+        BigDecimal::from_str(&modified_cost_dollars.to_string())
+            .map(crate::db::DbDecimal::from)
+            .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
+    };
+    #[cfg(feature = "postgres-backend")]
     let actual_charge_bd = crate::db::DbDecimal::from(0); // TODO: Implement actual charge tracking
 
     // For backwards compatibility with old code
-    #[cfg(feature = "payment")]
+    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
+    let (credits_cost, credits_charged) = (credit_cost_val, credits_charged_val);
+    #[cfg(all(feature = "payment", feature = "postgres-backend"))]
     let (credits_cost, credits_charged) = (actual_cost_bd.clone(), credits_charged_val);
 
-    #[cfg(not(feature = "payment"))]
+    #[cfg(all(not(feature = "payment"), feature = "sqlite-backend"))]
+    let (credits_cost, credits_charged) = (0_i32, 0);
+    #[cfg(all(not(feature = "payment"), feature = "postgres-backend"))]
     let (credits_cost, credits_charged) = (actual_cost_bd.clone(), 0);
 
     let (content_to_save, nonce_to_save) = if let Some(dek_arc) = &user_dek_secret_box {
@@ -436,7 +457,11 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         (content.as_bytes().to_vec(), None)
     };
 
+    // Generate new ID for SQLite (no DEFAULT in schema)
+    let message_id = crate::db::DbId::new();
+
     let mut new_message_to_insert = DbInsertableChatMessage::new(
+        message_id, // id field - CRITICAL for SQLite
         session_id, // chat_id field in DbInsertableChatMessage
         user_id,
         message_type_enum, // msg_type field in DbInsertableChatMessage
@@ -463,12 +488,20 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
 
     // Clone cost values early for later use in spawned task (before they're moved into with_cost_tracking)
-    #[cfg(feature = "payment")]
+    #[cfg(all(feature = "payment", feature = "postgres-backend"))]
     let actual_cost_bd_clone = actual_cost_bd.clone();
-    #[cfg(feature = "payment")]
+    #[cfg(all(feature = "payment", feature = "postgres-backend"))]
     let modified_cost_bd_clone = modified_cost_bd.clone();
-    #[cfg(feature = "payment")]
+    #[cfg(all(feature = "payment", feature = "postgres-backend"))]
     let actual_charge_bd_clone = actual_charge_bd.clone();
+
+    // SQLite uses f64 which is Copy, so no need to clone
+    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
+    let actual_cost_bd_clone = actual_cost_bd;
+    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
+    let modified_cost_bd_clone = modified_cost_bd;
+    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
+    let actual_charge_bd_clone = actual_charge_bd;
 
     // Set all cost tracking fields using the new method
     new_message_to_insert = new_message_to_insert.with_cost_tracking(

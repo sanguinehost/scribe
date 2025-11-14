@@ -2,14 +2,11 @@
 -- Original: up.sql
 -- Conversion date: 2025-10-19T11:15:25.497383
 --
--- IMPORTANT: Review warnings below and verify functionality
+-- IMPORTANT: This migration ONLY adds chat_mode column
+-- Making character_id nullable is handled by a separate migration
 -- ================================================================
 
 -- Add chat_mode column to chat_sessions table
 -- Default to 'Character' to maintain compatibility with existing sessions
 ALTER TABLE chat_sessions
 ADD COLUMN chat_mode VARCHAR NOT NULL DEFAULT 'Character';
-
--- Make character_id nullable to support non-character modes
--- SQLite Note: Making character_id nullable requires table recreation - defer to fix_nullable_columns.py
--- ALTER TABLE chat_sessions ALTER COLUMN character_id DROP NOT NULL;

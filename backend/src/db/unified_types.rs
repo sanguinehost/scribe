@@ -506,7 +506,12 @@ impl FromSql<Timestamp, Sqlite> for DbTimestamp {
             }
         }
 
-        // Try parsing SQLite DATETIME format: "YYYY-MM-DD HH:MM:SS"
+        // Try parsing SQLite DATETIME format with subseconds: "YYYY-MM-DD HH:MM:SS.sssssssss"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S%.f") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
+        // Try parsing SQLite DATETIME format without subseconds: "YYYY-MM-DD HH:MM:SS"
         if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S") {
             return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
         }
@@ -544,7 +549,12 @@ impl FromSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
             }
         }
 
-        // Try parsing SQLite DATETIME format: "YYYY-MM-DD HH:MM:SS"
+        // Try parsing SQLite DATETIME format with subseconds: "YYYY-MM-DD HH:MM:SS.sssssssss"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S%.f") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
+        // Try parsing SQLite DATETIME format without subseconds: "YYYY-MM-DD HH:MM:SS"
         if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S") {
             return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
         }

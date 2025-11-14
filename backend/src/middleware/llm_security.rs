@@ -1,7 +1,11 @@
 // backend/src/middleware/llm_security.rs
 // Security middleware for LLM operations
 
-use crate::{auth::user_store::Backend as AuthBackend, errors::AppError, state::AppState};
+use crate::{
+    auth::{token_auth::UnifiedAuth, user_store::Backend as AuthBackend},
+    errors::AppError,
+    state::AppState,
+};
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
@@ -160,21 +164,21 @@ pub struct RateLimitResponse {
 /// Security middleware for LLM operations
 pub async fn llm_security_middleware(
     State(app_state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     _headers: HeaderMap,
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let start_time = Instant::now();
 
-    // Extract user from session
-    let user = match auth_session.user {
+    // Extract user from session (supports both JWT and cookie auth)
+    let user = match auth.user().cloned() {
         Some(user) => user,
         None => {
             // Log unauthorized access
             #[cfg(feature = "local-llm")]
             if let Some(ref audit_logger) = app_state.security_audit_logger {
-                let ip = extract_client_ip(&headers);
+                let ip = extract_client_ip(&_headers);
                 audit_logger.log_unauthorized_access(
                     &request.uri().path(),
                     &request.method().as_str(),

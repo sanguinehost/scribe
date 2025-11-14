@@ -135,51 +135,52 @@ pub type SettingsTuple = (
 #[diesel(table_name = chat_sessions)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Chat {
-    pub id: crate::db::DbId,
-    pub user_id: crate::db::DbId,
-    pub character_id: Option<crate::db::DbId>,
-    pub temperature: Option<crate::db::DbDecimal>,
-    pub max_output_tokens: Option<i32>,
-    pub created_at: DbTimestamp,
-    pub updated_at: DbTimestamp,
-    pub frequency_penalty: Option<crate::db::DbDecimal>,
-    pub presence_penalty: Option<crate::db::DbDecimal>,
-    pub top_k: Option<i32>,
-    pub top_p: Option<crate::db::DbDecimal>,
-    pub seed: Option<i32>,
-    pub history_management_strategy: String,
-    pub history_management_limit: i32,
-    pub model_name: String,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
-    pub visibility: Option<String>,
-    pub active_custom_persona_id: Option<crate::db::DbId>,
-    pub active_impersonated_character_id: Option<crate::db::DbId>,
-    pub system_prompt_ciphertext: Option<Vec<u8>>,
-    pub system_prompt_nonce: Option<Vec<u8>>,
-    pub title_ciphertext: Option<Vec<u8>>,
-    pub title_nonce: Option<Vec<u8>>,
-    pub stop_sequences: crate::models::OptionalStringArray,
-    pub chat_mode: ChatMode,
-    pub player_chronicle_id: Option<crate::db::DbId>,
-    pub agent_mode: Option<String>,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
-    pub estimated_cost_cents: i32,
-    pub tokens_counted_at: DbTimestamp,
+    pub id: crate::db::DbId,                                       // 1
+    pub user_id: crate::db::DbId,                                  // 2
+    pub character_id: Option<crate::db::DbId>,                     // 3
+    pub temperature: Option<crate::db::DbDecimal>,                 // 4
+    pub max_output_tokens: Option<i32>,                            // 5
+    pub created_at: DbTimestamp,                                   // 6
+    pub updated_at: DbTimestamp,                                   // 7
+    pub frequency_penalty: Option<crate::db::DbDecimal>,           // 8
+    pub presence_penalty: Option<crate::db::DbDecimal>,            // 9
+    pub top_k: Option<i32>,                                        // 10
+    pub top_p: Option<crate::db::DbDecimal>,                       // 11
+    pub repetition_penalty: Option<crate::db::DbDecimal>,          // 12 - ADDED
+    pub min_p: Option<crate::db::DbDecimal>,                       // 13 - ADDED
+    pub top_a: Option<crate::db::DbDecimal>,                       // 14 - ADDED
+    pub seed: Option<i32>,                                         // 15 - MOVED from position 12
+    pub logit_bias: Option<String>,                                // 16 - ADDED
+    pub history_management_strategy: String,                       // 17
+    pub history_management_limit: i32,                             // 18
+    pub model_name: String,                                        // 19
+    pub gemini_thinking_budget: Option<i32>,                       // 20
+    pub gemini_enable_code_execution: Option<bool>,                // 21
+    pub visibility: Option<String>,                                // 22
+    pub active_custom_persona_id: Option<crate::db::DbId>,         // 23
+    pub active_impersonated_character_id: Option<crate::db::DbId>, // 24
+    pub system_prompt_ciphertext: Option<Vec<u8>>,                 // 25
+    pub system_prompt_nonce: Option<Vec<u8>>,                      // 26
+    pub title_ciphertext: Option<Vec<u8>>,                         // 27
+    pub title_nonce: Option<Vec<u8>>,                              // 28
+    pub stop_sequences: crate::models::OptionalStringArray,        // 29
+    pub chat_mode: ChatMode,                                       // 30
+    pub player_chronicle_id: Option<crate::db::DbId>,              // 31
+    pub agent_mode: Option<String>,                                // 32
+    pub model_provider: Option<String>,                            // 33 - ADDED
+    pub total_prompt_tokens: i32,                                  // 34
+    pub total_completion_tokens: i32,                              // 35
+    pub estimated_cost_cents: i32,                                 // 36
+    pub tokens_counted_at: DbTimestamp,                            // 37
+    pub prompt_template_id: String,                                // 38 - MOVED from position 34
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_credits_used: crate::db::DbDecimal,
-    pub prompt_template_id: Option<String>,
-    // New cost tracking fields
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_actual_cost: crate::db::DbDecimal,
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_modified_cost: crate::db::DbDecimal,
-    pub total_credit_cost: i32,
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_actual_charge: crate::db::DbDecimal,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub total_credits_used: crate::db::DbDecimal, // 39 - MOVED from position 30
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,      // 40 - MOVED from position 38
+    pub narrative_style_override_nonce: Option<Vec<u8>>,           // 41 - MOVED from position 39
+    pub total_actual_cost: f64, // 42 - FIXED: Schema has Double (REAL), not DbDecimal
+    pub total_modified_cost: f64, // 43 - FIXED: Schema has Double (REAL), not DbDecimal
+    pub total_credit_cost: i32, // 44
+    pub total_actual_charge: f64, // 45 - FIXED: Schema has Double (REAL), not DbDecimal
 }
 
 impl std::fmt::Debug for Chat {
@@ -511,29 +512,31 @@ pub struct ChatMessage {
     #[diesel(column_name = message_type)]
     pub message_type: MessageRole,
     pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>,
+    pub rag_embedding_id: Option<crate::db::DbId>,
     pub created_at: DbTimestamp,
-    pub user_id: crate::db::DbId,
+    pub updated_at: DbTimestamp,
+    pub user_id: crate::db::DbId, // NOT NULL in SQLite schema
+    pub content_nonce: Option<Vec<u8>>,
+    pub role: Option<String>,
+    pub parts: Option<crate::DbJson>,
+    pub attachments: Option<crate::DbJson>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub model_name: Option<String>,
+    pub model_name: String, // NOT NULL in SQLite schema
     pub status: String,
     pub error_message: Option<String>,
     pub superseded_at: Option<DbTimestamp>,
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: crate::db::DbDecimal,
+    pub credits_cost: i32, // FIXED: Schema has Integer, not DbDecimal
     // New cost tracking fields
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub actual_cost: crate::db::DbDecimal,
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub modified_cost: crate::db::DbDecimal,
+    pub actual_cost: f64,   // FIXED: Schema has Double (REAL), not DbDecimal
+    pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub credit_cost: i32,
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub actual_charge: crate::db::DbDecimal,
+    pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
 }
 
 impl Default for ChatMessage {
@@ -541,28 +544,33 @@ impl Default for ChatMessage {
         Self {
             id: crate::db::DbId::nil(),
             session_id: crate::db::DbId::nil(),
-            user_id: crate::db::DbId::nil(),
+            user_id: crate::db::DbId::nil(), // user_id is now NOT NULL
             message_type: MessageRole::User,
             content: vec![],
+            rag_embedding_id: None,
             content_nonce: None,
             created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+            role: None,
+            parts: None,
+            attachments: None,
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
-            model_name: Some(String::new()),
+            model_name: String::new(), // model_name is now NOT NULL
             status: "completed".to_string(),
             error_message: None,
             superseded_at: None,
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: crate::db::DbDecimal::from(0),
+            credits_cost: 0, // FIXED: i32, not DbDecimal
             // New cost tracking fields
-            actual_cost: crate::db::DbDecimal::from(0),
-            modified_cost: crate::db::DbDecimal::from(0),
+            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+            modified_cost: 0.0, // FIXED: f64, not DbDecimal
             credit_cost: 0,
-            actual_charge: crate::db::DbDecimal::from(0),
+            actual_charge: 0.0, // FIXED: f64, not DbDecimal
         }
     }
 }
@@ -579,6 +587,7 @@ impl std::fmt::Debug for ChatMessage {
                 &self.content_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
             .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
             .field("user_id", &self.user_id)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
@@ -891,11 +900,11 @@ impl ChatMessage {
             message_type: self.message_type,
             content: final_content,
             created_at: self.created_at,
-            user_id: self.user_id,
+            user_id: Some(self.user_id),
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             raw_prompt,
-            model_name: self.model_name,
+            model_name: Some(self.model_name),
             status: self.status,
             error_message: self.error_message,
             // Convert BigDecimal cost values to f64 for JSON serialization
@@ -919,7 +928,7 @@ pub struct Message {
     pub rag_embedding_id: Option<crate::db::DbId>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub user_id: crate::db::DbId,
+    pub user_id: crate::db::DbId, // NOT NULL in SQLite schema
     pub content_nonce: Option<Vec<u8>>,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
@@ -928,19 +937,19 @@ pub struct Message {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub model_name: Option<String>,
+    pub model_name: String, // NOT NULL in SQLite schema
     pub status: String,
     pub error_message: Option<String>,
     pub superseded_at: Option<DbTimestamp>,
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: crate::db::DbDecimal,
+    pub credits_cost: i32, // FIXED: Schema has Integer, not DbDecimal
     // Cost tracking fields (same as ChatMessage)
-    pub actual_cost: crate::db::DbDecimal,
-    pub modified_cost: crate::db::DbDecimal,
+    pub actual_cost: f64,   // FIXED: Schema has Double (REAL), not DbDecimal
+    pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub credit_cost: i32,
-    pub actual_charge: crate::db::DbDecimal,
+    pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
 }
 
 impl std::fmt::Debug for Message {
@@ -1198,11 +1207,11 @@ impl Message {
             message_type: self.message_type,
             content: final_decrypted_content,
             created_at: self.created_at,
-            user_id: self.user_id,
+            user_id: Some(self.user_id),
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             raw_prompt,
-            model_name: self.model_name,
+            model_name: Some(self.model_name),
             status: self.status,
             error_message: self.error_message,
             // Convert BigDecimal cost values to f64 for JSON serialization
@@ -1248,7 +1257,7 @@ pub struct ChatMessageForClient {
     pub message_type: MessageRole,
     pub content: String,
     pub created_at: DbTimestamp,
-    pub user_id: crate::db::DbId,
+    pub user_id: Option<crate::db::DbId>,
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub raw_prompt: Option<String>,
@@ -1352,13 +1361,14 @@ impl std::fmt::Debug for NewChatMessage {
 #[diesel(table_name = chat_messages)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbInsertableChatMessage {
+    pub id: crate::db::DbId, // CRITICAL: Must be provided for SQLite (no DEFAULT)
     #[diesel(column_name = session_id)]
     pub chat_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
     pub msg_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
-    pub user_id: crate::db::DbId,
+    pub user_id: crate::db::DbId, // NOT NULL in schema
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
@@ -1366,18 +1376,18 @@ pub struct DbInsertableChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub model_name: Option<String>,
+    pub model_name: String, // NOT NULL in schema
     pub status: String,
     pub error_message: Option<String>,
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: crate::db::DbDecimal,
+    pub credits_cost: i32, // FIXED: Schema has Integer, not DbDecimal
     // New cost tracking fields
-    pub actual_cost: crate::db::DbDecimal,
-    pub modified_cost: crate::db::DbDecimal,
+    pub actual_cost: f64,   // FIXED: Schema has Double (REAL), not DbDecimal
+    pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub credit_cost: i32,
-    pub actual_charge: crate::db::DbDecimal,
+    pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1419,6 +1429,7 @@ impl DbInsertableChatMessage {
     /// Create a new chat message with required fields only
     #[must_use]
     pub fn new(
+        id: crate::db::DbId, // CRITICAL: Must be provided for SQLite (no DEFAULT)
         chat_id: crate::db::DbId,
         user_id: crate::db::DbId,
         msg_type: MessageRole,
@@ -1427,12 +1438,13 @@ impl DbInsertableChatMessage {
         model_name: String,
     ) -> Self {
         Self {
+            id, // FIXED: Include id in struct initialization
             chat_id,
             user_id,
             msg_type,
             content,
             content_nonce,
-            model_name: Some(model_name),
+            model_name: model_name,
             role: None,
             parts: None,
             attachments: None,
@@ -1445,12 +1457,12 @@ impl DbInsertableChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: crate::db::DbDecimal::from(0),
+            credits_cost: 0, // FIXED: i32, not DbDecimal
             // Initialize new cost tracking fields
-            actual_cost: crate::db::DbDecimal::from(0),
-            modified_cost: crate::db::DbDecimal::from(0),
+            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+            modified_cost: 0.0, // FIXED: f64, not DbDecimal
             credit_cost: 0,
-            actual_charge: crate::db::DbDecimal::from(0),
+            actual_charge: 0.0, // FIXED: f64, not DbDecimal
         }
     }
 
@@ -1513,7 +1525,7 @@ impl DbInsertableChatMessage {
     pub fn with_credits(
         mut self,
         credits_charged: i32,
-        credits_cost: crate::db::DbDecimal,
+        credits_cost: i32, // FIXED: i32, not DbDecimal
     ) -> Self {
         self.credits_charged = credits_charged;
         self.credits_cost = credits_cost;
@@ -1524,21 +1536,19 @@ impl DbInsertableChatMessage {
     #[must_use]
     pub fn with_cost_tracking(
         mut self,
-        actual_cost: crate::db::DbDecimal,
-        modified_cost: crate::db::DbDecimal,
+        actual_cost: f64,   // FIXED: f64, not DbDecimal
+        modified_cost: f64, // FIXED: f64, not DbDecimal
         credit_cost: i32,
-        actual_charge: crate::db::DbDecimal,
+        actual_charge: f64, // FIXED: f64, not DbDecimal
         credits_charged: i32,
     ) -> Self {
-        // Clone actual_cost for backwards compatibility before moving
-        let actual_cost_clone = actual_cost.clone();
         self.actual_cost = actual_cost;
         self.modified_cost = modified_cost;
         self.credit_cost = credit_cost;
         self.actual_charge = actual_charge;
         self.credits_charged = credits_charged;
         // Keep credits_cost for backwards compatibility
-        self.credits_cost = actual_cost_clone;
+        self.credits_cost = credit_cost; // FIXED: Use credit_cost (i32) not actual_cost
         self
     }
 }
@@ -2040,7 +2050,7 @@ impl From<Chat> for ChatSettingsResponse {
             chronicle_id: chat.player_chronicle_id,
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
-            prompt_template_id: chat.prompt_template_id,
+            prompt_template_id: Some(chat.prompt_template_id),
         }
     }
 }
@@ -2063,7 +2073,7 @@ pub struct UpdateChatSettingsRequest {
     #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
-    pub stop_sequences: Option<crate::models::OptionalStringArray>,
+    pub stop_sequences: crate::models::OptionalStringArray,
     // History Management Fields
     #[validate(custom(function = "validate_optional_history_strategy"))]
     pub history_management_strategy: Option<String>,
@@ -2594,10 +2604,10 @@ mod tests {
             active_impersonated_character_id: None,
             player_chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
-            total_actual_cost: crate::db::DbDecimal::from(0),
-            total_modified_cost: crate::db::DbDecimal::from(0),
+            total_actual_cost: 0.0,   // FIXED: f64, not DbDecimal
+            total_modified_cost: 0.0, // FIXED: f64, not DbDecimal
             total_credit_cost: 0,
-            total_actual_charge: crate::db::DbDecimal::from(0),
+            total_actual_charge: 0.0, // FIXED: f64, not DbDecimal
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
         }
@@ -2821,6 +2831,7 @@ mod tests {
 
     #[test]
     fn test_db_insertable_chat_message() {
+        let message_id = DbId::new();
         let chat_id = DbId::new();
         let user_id = DbId::new();
         let role = MessageRole::User;
@@ -2828,6 +2839,7 @@ mod tests {
         let content_vec = content_str.as_bytes().to_vec();
 
         let message = DbInsertableChatMessage::new(
+            message_id,
             chat_id,
             user_id,
             role,
@@ -2835,6 +2847,7 @@ mod tests {
             None,
             "test-model".to_string(),
         );
+        assert_eq!(message.id, message_id);
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
         assert_eq!(message.msg_type, role);
@@ -2861,7 +2874,7 @@ mod tests {
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
-            prompt_template_id: None,
+            prompt_template_id: "neutral_roleplay".to_string(),
         }
     }
 
@@ -2911,14 +2924,14 @@ mod tests {
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
-            model_name: Some("gemini-2.5-pro".to_string()),
+            model_name: "gemini-2.5-pro".to_string(),
             model_provider: Some("gemini".to_string()),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
-            prompt_template_id: Some("neutral_roleplay".to_string()),
+            prompt_template_id: "neutral_roleplay".to_string(),
         }
     }
 
@@ -3413,11 +3426,14 @@ pub struct ChatSessionQuery {
     pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<String>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
@@ -3431,13 +3447,19 @@ pub struct ChatSessionQuery {
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
-    pub prompt_template_id: Option<String>, // Nullable in SQLite schema
+    pub model_provider: Option<String>,
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
+    pub prompt_template_id: String, // NOT NULL in SQLite schema
+    pub total_credits_used: i32,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub total_actual_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub total_modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub total_credit_cost: i32,
+    pub total_actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
 }
 
 impl ChatSessionQuery {

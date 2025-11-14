@@ -2507,7 +2507,24 @@ impl std::fmt::Debug for UpdateChatVisibilityRequest {
     }
 }
 
-// CreateChatRequest struct for API requests
+/// Request to create a new chat session.
+///
+/// **IMPORTANT: SQLite/Desktop API Contract**
+///
+/// This struct defines the minimal contract for SQLite/Desktop backend.
+/// The frontend uses feature flags (`isDesktopMode()`) to send different request formats:
+///
+/// - **Desktop/SQLite** (this contract):
+///   - Required: `character_id`
+///   - Optional: `title`, `active_custom_persona_id`, `lorebook_ids`
+///   - NOT sent: `chat_mode`, `system_prompt`, `personality`, `scenario`
+///
+/// - **Cloud/PostgreSQL** (may differ):
+///   - Frontend sends additional fields like `chat_mode`, `system_prompt`, etc.
+///   - Those fields are NOT included in this struct
+///
+/// See `frontend/src/lib/api/index.ts` createChat() for the feature-flagged implementation.
+/// See `frontend/src/lib/types.ts` CreateChatRequest for the frontend type documentation.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CreateChatRequest {
     pub character_id: crate::db::DbId,

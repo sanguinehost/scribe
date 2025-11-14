@@ -243,7 +243,8 @@ fn setup_database_pool(config: &Config) -> DbPool {
 
 #[cfg(feature = "sqlite-backend")]
 fn setup_database_pool(config: &Config) -> DbPool {
-    use diesel::r2d2::{ConnectionManager, Pool};
+    use diesel::prelude::*;
+    use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool};
     use diesel::SqliteConnection;
 
     let db_url = config
@@ -264,6 +265,32 @@ fn setup_database_pool(config: &Config) -> DbPool {
         }
     }
 
+    // Connection customizer to enable WAL mode and set busy_timeout
+    // This fixes "database is locked" errors by allowing concurrent reads during writes
+    #[derive(Debug, Clone, Copy)]
+    struct SqliteCustomizer;
+
+    impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for SqliteCustomizer {
+        fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
+            // Enable WAL mode for better concurrency (allows concurrent reads during writes)
+            diesel::sql_query("PRAGMA journal_mode = WAL;")
+                .execute(conn)
+                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+
+            // Set busy_timeout to 10 seconds (connections will wait instead of failing immediately)
+            diesel::sql_query("PRAGMA busy_timeout = 10000;")
+                .execute(conn)
+                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+
+            // Enable foreign key constraints
+            diesel::sql_query("PRAGMA foreign_keys = ON;")
+                .execute(conn)
+                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+
+            Ok(())
+        }
+    }
+
     let manager = ConnectionManager::<SqliteConnection>::new(db_url);
 
     // Configure pool size based on environment
@@ -276,11 +303,12 @@ fn setup_database_pool(config: &Config) -> DbPool {
     let pool = Pool::builder()
         .max_size(max_size)
         .connection_timeout(std::time::Duration::from_secs(30))
+        .connection_customizer(Box::new(SqliteCustomizer))
         .build(manager)
         .expect("Failed to create DB pool.");
 
     tracing::info!(
-        "Database connection pool established with max_size: {}",
+        "Database connection pool established with max_size: {}, WAL mode enabled, busy_timeout: 10s",
         max_size
     );
     pool
