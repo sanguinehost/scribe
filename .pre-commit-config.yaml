@@ -42,9 +42,10 @@ repos:
         always_run: false
 
       # Cloud Backend (PostgreSQL) - Primary production configuration
+      # NOTE: Running in backend/ directory to prevent workspace feature unification
       - id: cargo-clippy-cloud
         name: Cargo Clippy (Cloud Backend)
-        entry: cargo clippy -p scribe-backend --lib --bins --no-default-features --features cloud,payment -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all -A unused-imports
+        entry: bash -c 'cd backend && cargo clippy --lib --bins --no-default-features --features cloud,payment -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all -A unused-imports'
         language: system
         files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
         pass_filenames: false
@@ -52,16 +53,17 @@ repos:
 
       - id: cargo-check-cloud
         name: Cargo Check (Cloud Backend)
-        entry: cargo check -p scribe-backend --lib --bins --no-default-features --features cloud,payment
+        entry: bash -c 'cd backend && cargo check --lib --bins --no-default-features --features cloud,payment'
         language: system
         files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
         pass_filenames: false
         always_run: false
 
       # Desktop Backend (SQLite) - Desktop application configuration
+      # NOTE: Running in backend/ directory to prevent workspace feature unification
       - id: cargo-clippy-desktop
         name: Cargo Clippy (Desktop Backend)
-        entry: cargo clippy -p scribe-backend --lib --bins --no-default-features --features desktop -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all -A unused-imports
+        entry: bash -c 'cd backend && cargo clippy --lib --bins --no-default-features --features desktop -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all -A unused-imports'
         language: system
         files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
         pass_filenames: false
@@ -69,7 +71,7 @@ repos:
 
       - id: cargo-check-desktop
         name: Cargo Check (Desktop Backend)
-        entry: cargo check -p scribe-backend --lib --bins --no-default-features --features desktop
+        entry: bash -c 'cd backend && cargo check --lib --bins --no-default-features --features desktop'
         language: system
         files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
         pass_filenames: false
