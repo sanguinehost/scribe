@@ -32,6 +32,10 @@ tokio = { version = "1", features = ["full"] }
 # CRITICAL FIX: Added "blocking" feature for synchronous health check
 reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream", "cookies", "blocking"] }
 
+# SSE (Server-Sent Events) parsing for streaming chat responses
+eventsource-stream = "0.2"
+futures-util = "0.3"
+
 # Cookie management for session persistence
 parking_lot = "0.12"
 once_cell = "1.20"

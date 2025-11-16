@@ -2144,14 +2144,29 @@ pub async fn stream_ai_response_and_save_message(
 
                         // Send token usage data through the channel
                         if let (Some(prompt_tokens), Some(completion_tokens)) = (saved_message.prompt_tokens, saved_message.completion_tokens) {
-                            info!(session_id = %full_session_id_clone, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, "Sending token usage through channel");
+                            info!(
+                                session_id = %full_session_id_clone,
+                                prompt_tokens = prompt_tokens,
+                                completion_tokens = completion_tokens,
+                                model_name = %service_model_name_clone_full,
+                                "About to send tokenUsage SSE event with values: prompt={}, completion={}, model={}",
+                                prompt_tokens,
+                                completion_tokens,
+                                service_model_name_clone_full
+                            );
                             let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
                                 prompt_tokens,
                                 completion_tokens,
                                 model_name: service_model_name_clone_full.clone(),
                             });
+                            info!(session_id = %full_session_id_clone, "TokenUsage SSE event sent successfully");
                         } else {
-                            warn!(session_id = %full_session_id_clone, "Token data not available in saved message");
+                            warn!(
+                                session_id = %full_session_id_clone,
+                                "Token data not available in saved message - prompt_tokens: {:?}, completion_tokens: {:?}",
+                                saved_message.prompt_tokens,
+                                saved_message.completion_tokens
+                            );
                         }
 
                         // --- Narrative Intelligence Processing (After Message Save) ---
@@ -2239,22 +2254,52 @@ pub async fn stream_ai_response_and_save_message(
         }
 
         // Wait for token usage data from the spawned task and yield it with timeout
-        if !stream_error_occurred && !accumulated_content.is_empty() {
-            info!(session_id = %stream_session_id, "Waiting for token usage data from spawned task");
+        // CRITICAL DEBUG: Log the condition values to understand why events might be skipped
+        info!(
+            session_id = %stream_session_id,
+            stream_error_occurred = stream_error_occurred,
+            accumulated_content_empty = accumulated_content.is_empty(),
+            accumulated_content_len = accumulated_content.len(),
+            "Checking conditions before waiting for token data"
+        );
 
-            // Use timeout to prevent indefinite blocking
+        if !stream_error_occurred && !accumulated_content.is_empty() {
+            info!(session_id = %stream_session_id, "Waiting for message_saved and token_usage events from spawned task");
+
+            // CRITICAL: The spawned task sends TWO events through the channel:
+            // 1. MessageSaved event
+            // 2. TokenUsage event
+            // We need to receive BOTH events, not just one!
+
+            // Receive first event (MessageSaved)
             match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
-                Ok(Some(token_event)) => {
-                    info!(session_id = %stream_session_id, "Received token usage data, yielding to stream");
-                    yield Ok(token_event);
+                Ok(Some(event)) => {
+                    info!(session_id = %stream_session_id, event_type = ?event, "Received first event from spawned task (MessageSaved), yielding to stream");
+                    yield Ok(event);
                 }
                 Ok(None) => {
-                    warn!(session_id = %stream_session_id, "Token sender dropped without sending data");
-                    yield Ok(ScribeSseEvent::Error("Processing completed without token data".to_string()));
+                    warn!(session_id = %stream_session_id, "Channel closed without sending MessageSaved event");
+                    yield Ok(ScribeSseEvent::Error("Processing completed without message_saved event".to_string()));
                 }
                 Err(_) => {
-                    error!(session_id = %stream_session_id, "Timeout waiting for token usage data from spawned task");
+                    error!(session_id = %stream_session_id, "Timeout waiting for MessageSaved event from spawned task");
                     yield Ok(ScribeSseEvent::Error("Processing timeout - message may be incomplete".to_string()));
+                }
+            }
+
+            // Receive second event (TokenUsage)
+            match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
+                Ok(Some(event)) => {
+                    info!(session_id = %stream_session_id, event_type = ?event, "Received second event from spawned task (TokenUsage), yielding to stream");
+                    yield Ok(event);
+                }
+                Ok(None) => {
+                    warn!(session_id = %stream_session_id, "Channel closed without sending TokenUsage event");
+                    yield Ok(ScribeSseEvent::Error("Processing completed without token_usage event".to_string()));
+                }
+                Err(_) => {
+                    error!(session_id = %stream_session_id, "Timeout waiting for TokenUsage event from spawned task");
+                    yield Ok(ScribeSseEvent::Error("Processing timeout - token usage incomplete".to_string()));
                 }
             }
         }

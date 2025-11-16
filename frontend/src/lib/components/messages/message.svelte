@@ -34,7 +34,8 @@
 			completion_tokens: msg.completion_tokens || undefined,
 			model_name: msg.model_name || undefined,
 			backend_id: msg.backend_id,
-			status: msg.status
+			status: msg.status,
+			contentVersion: msg.contentVersion ?? 0 // Preserve from source message for reactivity tracking
 		};
 	}
 

@@ -11,6 +11,7 @@ import type {
 	ScribeCharacterExtensions
 } from '$lib/types/character';
 import { apiClient } from '$lib/api';
+import { logger } from '$lib/utils/logger';
 
 interface ValidationError {
 	path: string;
@@ -250,7 +251,7 @@ class CharacterStore {
 		// Fetch the lorebook entries from the API
 		const entriesResult = await apiClient.getLorebookEntries(lorebookId);
 		if (entriesResult.isErr()) {
-			console.error('Failed to fetch lorebook entries:', entriesResult.error);
+			logger.error('character-store', 'Failed to fetch lorebook entries', entriesResult.error);
 			return;
 		}
 

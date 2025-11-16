@@ -2,6 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import { PAYMENT_FEATURES } from '$lib/utils/features';
 import { apiClient as _apiClient } from '$lib/api';
 import type { CreditBalanceResponse } from '$lib/types/payment';
+import { logger } from '$lib/utils/logger';
 
 // Credit balance and usage information - use the response type for compatibility
 export type CreditBalance = CreditBalanceResponse;
@@ -273,7 +274,7 @@ function createCreditStore() {
 			return data;
 		} catch (_error) {
 			const errorMessage = _error instanceof Error ? _error.message : 'Failed to fetch model costs';
-			console.error('Failed to fetch model costs:', errorMessage);
+			logger.error('credits-store', 'Failed to fetch model costs', { error: errorMessage });
 			// Don't update error state as this is non-critical
 			return null;
 		}

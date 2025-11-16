@@ -4,6 +4,7 @@ import { browser as _browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
 import { apiClient as _apiClient } from '$lib/api';
 import { toast } from 'svelte-sonner';
+import { logger } from '$lib/utils/logger';
 
 interface ModelLifecycleState {
 	activeModel: string | null;
@@ -62,7 +63,7 @@ export class ModelLifecycleStore {
 				throw new Error(result.message || 'Failed to activate model');
 			}
 		} catch (_error) {
-			console.error('Failed to activate model:', _error);
+			logger.error('model-lifecycle-store', 'Failed to activate model', _error as Error);
 			toast.error('Failed to start local model');
 			return false;
 		} finally {
@@ -93,10 +94,12 @@ export class ModelLifecycleStore {
 				this.clearInactivityTimer();
 				toast.info('Local model stopped due to inactivity');
 			} else {
-				console.error('Failed to deactivate model:', result.message);
+				logger.error('model-lifecycle-store', 'Failed to deactivate model', {
+					message: result.message
+				});
 			}
 		} catch (_error) {
-			console.error('Failed to deactivate model:', _error);
+			logger.error('model-lifecycle-store', 'Failed to deactivate model', _error as Error);
 		}
 	}
 

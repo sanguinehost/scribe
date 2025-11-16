@@ -65,6 +65,7 @@ use uuid::Uuid;
 /// let uuid: &Uuid = &id;  // Deref to Uuid
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 #[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
 #[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
 #[repr(transparent)]

@@ -19,6 +19,9 @@ use tauri_plugin_store::StoreBuilder;
 mod storage;
 use storage::StoredTokens;
 
+mod chat_streaming;
+use chat_streaming::stream_chat_response;
+
 // P-256 ECDSA for challenge-response authentication
 use p256::ecdsa::{SigningKey, Signature, signature::Signer};
 use p256::pkcs8::{EncodePrivateKey, EncodePublicKey, DecodePrivateKey, LineEnding};
@@ -232,6 +235,7 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
 // Token management commands for Tauri
 /// Save tokens to secure storage using unified StoredTokens type
 /// CRITICAL: Now accepts StoredTokens struct with camelCase serialization
+/// IMPORTANT: expires_at is an absolute Unix timestamp (milliseconds), not a duration
 #[tauri::command]
 async fn save_tokens(
     app: tauri::AppHandle,
@@ -243,16 +247,17 @@ async fn save_tokens(
 
     store.set(ACCESS_TOKEN_KEY.to_string(), tokens.access_token.clone());
     store.set(REFRESH_TOKEN_KEY.to_string(), tokens.refresh_token.clone());
-    store.set("expires_in".to_string(), tokens.expires_in.to_string());
+    store.set("expires_at".to_string(), tokens.expires_at.to_string());
 
     store.save().map_err(|e| format!("Failed to persist tokens: {}", e))?;
 
-    log::info!("Tokens saved to secure storage (expires in {}s)", tokens.expires_in);
+    log::info!("Tokens saved to secure storage (expires at timestamp: {})", tokens.expires_at);
     Ok(())
 }
 
 /// Load tokens from secure storage using unified StoredTokens type
 /// Returns StoredTokens with camelCase serialization for TypeScript compatibility
+/// IMPORTANT: expires_at is an absolute Unix timestamp (milliseconds), not a duration
 #[tauri::command]
 async fn load_tokens(app: tauri::AppHandle) -> Result<Option<StoredTokens>, String> {
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
@@ -261,28 +266,27 @@ async fn load_tokens(app: tauri::AppHandle) -> Result<Option<StoredTokens>, Stri
 
     let access_token = store.get(ACCESS_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
     let refresh_token = store.get(REFRESH_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
-    let expires_in = store.get("expires_in")
-        .and_then(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-        .unwrap_or(15 * 60); // Default 15 minutes if not stored
+    let expires_at = store.get("expires_at")
+        .and_then(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()));
 
-    match (access_token, refresh_token) {
-        (Some(access), Some(refresh)) => {
-            log::info!("Tokens loaded from secure storage (expires in {}s)", expires_in);
+    match (access_token, refresh_token, expires_at) {
+        (Some(access), Some(refresh), Some(expires)) => {
+            log::info!("Tokens loaded from secure storage (expires at timestamp: {})", expires);
             Ok(Some(StoredTokens {
                 access_token: access,
                 refresh_token: refresh,
-                expires_in,
+                expires_at: expires,
             }))
         }
         _ => {
-            log::info!("No tokens found in secure storage");
+            log::info!("No tokens found in secure storage or incomplete token data");
             Ok(None)
         }
     }
 }
 
 /// Clear all authentication data from secure storage
-/// Removes tokens (including expires_in), private key, and DEK
+/// Removes tokens (including expires_at), private key, and DEK
 #[tauri::command]
 async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
@@ -292,7 +296,7 @@ async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
     // Clear JWT tokens
     store.delete(ACCESS_TOKEN_KEY);
     store.delete(REFRESH_TOKEN_KEY);
-    store.delete("expires_in");
+    store.delete("expires_at");
 
     // Clear Quick Start authentication data
     store.delete(PRIVATE_KEY);
@@ -301,6 +305,27 @@ async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
     store.save().map_err(|e| format!("Failed to persist changes: {}", e))?;
 
     log::info!("[Auth] All authentication data cleared from secure storage");
+    Ok(())
+}
+
+/// Log a message from the frontend to the backend logging system
+/// Coordinates frontend and backend logging for comprehensive diagnostics
+#[tauri::command]
+async fn log_frontend_message(
+    level: String,
+    component: String,
+    message: String,
+    context: Option<String>,
+) -> Result<(), String> {
+    // Parse log level and log accordingly
+    match level.to_lowercase().as_str() {
+        "trace" => log::trace!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+        "debug" => log::debug!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+        "info" => log::info!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+        "warn" => log::warn!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+        "error" => log::error!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+        _ => log::info!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+    }
     Ok(())
 }
 
@@ -407,6 +432,32 @@ async fn save_local_dek(app: tauri::AppHandle, dek: String) -> Result<(), String
     store.save().map_err(|e| format!("Failed to persist DEK: {}", e))?;
 
     log::info!("[QuickStart] DEK saved to secure storage");
+    Ok(())
+}
+
+/// Test command to verify Tauri Channels work in isolation
+/// Sends 5 simple test messages with 500ms delay between each
+/// SUCCESS CRITERIA: All 5 messages must be received by frontend handler
+#[tauri::command]
+async fn test_channel_simple(channel: tauri::ipc::Channel<String>) -> Result<(), String> {
+    log::info!("🔥 [test_channel_simple] Starting test - will send 5 messages");
+
+    for i in 1..=5 {
+        let message = format!("Test message {}/5", i);
+        log::info!("🔥 [test_channel_simple] Sending: {}", message);
+
+        channel.send(message.clone())
+            .map_err(|e| {
+                let err = format!("Failed to send test message {}: {}", i, e);
+                log::error!("🔥 [test_channel_simple] {}", err);
+                err
+            })?;
+
+        log::info!("🔥 [test_channel_simple] Message {} sent successfully", i);
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    log::info!("🔥 [test_channel_simple] Test complete - all 5 messages sent");
     Ok(())
 }
 
@@ -572,13 +623,36 @@ async fn serve_static_file(
     full_path = match full_path.canonicalize() {
         Ok(p) => p,
         Err(_) => {
-            // If not found in dev location, it might be a 404
-            log::warn!("File not found: {}", file_path);
-            return Ok(TauriResponse::builder()
-                .status(404)
-                .header("Content-Type", "text/plain")
-                .body(b"Not Found".to_vec())
-                .unwrap());
+            // SPA FALLBACK: If file doesn't exist and it's not an asset file,
+            // serve index.html to let frontend router handle the route
+            let is_asset_request = file_path.contains('.') &&
+                !file_path.ends_with('/') &&
+                file_path != "index.html";
+
+            if !is_asset_request {
+                // This is a route like /login, /chat, etc. - serve index.html
+                log::debug!("SPA fallback: serving index.html for route: {}", file_path);
+                let index_path = base_dir.join("../../frontend/build/index.html");
+                match index_path.canonicalize() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        log::error!("Failed to find index.html: {}", e);
+                        return Ok(TauriResponse::builder()
+                            .status(404)
+                            .header("Content-Type", "text/plain")
+                            .body(b"index.html not found".to_vec())
+                            .unwrap());
+                    }
+                }
+            } else {
+                // This is an asset file that's actually missing - return 404
+                log::warn!("Asset file not found: {}", file_path);
+                return Ok(TauriResponse::builder()
+                    .status(404)
+                    .header("Content-Type", "text/plain")
+                    .body(b"Not Found".to_vec())
+                    .unwrap());
+            }
         }
     };
 
@@ -676,15 +750,18 @@ pub fn run() {
                 responder.respond(response);
             });
         })
-        // Register authentication commands
+        // Register authentication and streaming commands
         .invoke_handler(tauri::generate_handler![
             save_tokens,
             load_tokens,
             clear_tokens,
+            log_frontend_message,
             generate_quick_start_keys,
             sign_challenge,
             get_local_dek,
-            save_local_dek
+            save_local_dek,
+            stream_chat_response,
+            test_channel_simple
         ])
         .setup(|app| {
             // Log plugin already registered before setup to avoid conflicts

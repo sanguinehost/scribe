@@ -1,4 +1,5 @@
 import type { User } from '$lib/types';
+import { logger } from '$lib/utils/logger';
 
 interface AuthState {
 	user: User | null;
@@ -78,12 +79,12 @@ export function setUnauthenticated(clearUser: boolean = true): void {
 	auth.isAuthenticated = false;
 	auth.isLoading = false; // Finished loading, even if it's to an unauthenticated state
 	auth.hasConnectionError = false; // Clear connection errors when explicitly unauthenticated
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: User set to unauthenticated.`);
+	logger.debug('auth', 'User set to unauthenticated');
 }
 
 export function setAuthReady(ready: boolean): void {
 	auth.isAuthReady = ready;
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Auth ready set to ${ready}`);
+	logger.debug('auth', `Auth ready set to ${ready}`);
 }
 
 // Debounce connection error notifications to avoid spam
@@ -95,7 +96,7 @@ let hasShownSessionInvalidated = false;
 export function setConnectionError(): void {
 	auth.hasConnectionError = true;
 	auth.isLoading = false;
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Connection error detected.`);
+	logger.warn('auth', 'Connection error detected');
 
 	// Debounce the toast notification to avoid showing multiple identical toasts
 	if (_browser && !hasShownConnectionError) {
@@ -122,16 +123,14 @@ export async function performLogout(
 
 	// Debounce rapid logout attempts
 	if (isLoggingOut || now - lastLogoutTime < LOGOUT_DEBOUNCE) {
-		console.log(
-			`[${new Date().toISOString()}] auth.svelte.ts: Logout already in progress or debounced, skipping duplicate attempt`
-		);
+		logger.debug('auth', 'Logout already in progress or debounced, skipping duplicate attempt');
 		return;
 	}
 
 	lastLogoutTime = now;
 
 	isLoggingOut = true;
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Performing logout, reason: ${reason}`);
+	logger.info('auth', 'Performing logout', { reason });
 
 	try {
 		// Clear client-side auth state
@@ -152,15 +151,10 @@ export async function performLogout(
 				credentials: 'include'
 			})
 				.then(() => {
-					console.log(
-						`[${new Date().toISOString()}] auth.svelte.ts: Server-side session invalidation successful`
-					);
+					logger.debug('auth', 'Server-side session invalidation successful');
 				})
 				.catch((error) => {
-					console.warn(
-						`[${new Date().toISOString()}] auth.svelte.ts: Server-side session invalidation failed:`,
-						error
-					);
+					logger.warn('auth', 'Server-side session invalidation failed', error);
 				});
 		}
 
@@ -180,17 +174,13 @@ export async function performLogout(
 		if (_browser && showNotification) {
 			if (reason === 'expired' && !hasShownSessionInvalidated) {
 				hasShownSessionInvalidated = true;
-				console.log(
-					`[${new Date().toISOString()}] auth.svelte.ts: Dispatching auth:session-expired event`
-				);
+				logger.info('auth', 'Dispatching auth:session-expired event');
 				window.dispatchEvent(new CustomEvent('auth:session-expired'));
 
 				// Also redirect immediately as a fallback
 				setTimeout(() => {
 					import('$app/navigation').then(({ goto }) => {
-						console.log(
-							`[${new Date().toISOString()}] auth.svelte.ts: Fallback redirect to /signin`
-						);
+						logger.debug('auth', 'Fallback redirect to /signin');
 						goto('/signin');
 					});
 				}, 2000); // 2 second fallback redirect
@@ -205,14 +195,14 @@ export async function performLogout(
 			}
 		}
 
-		console.log(`[${new Date().toISOString()}] auth.svelte.ts: Logout completed successfully`);
+		logger.info('auth', 'Logout completed successfully');
 	} finally {
 		isLoggingOut = false;
 	}
 }
 
 export function setSessionExpired(): void {
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Session expired detected`);
+	logger.warn('auth', 'Session expired detected');
 	performLogout('expired', true);
 }
 
@@ -224,7 +214,7 @@ export function clearConnectionError(): void {
 		connectionErrorTimeout = null;
 	}
 	hasShownConnectionError = false;
-	console.log(`[${new Date().toISOString()}] auth.svelte.ts: Connection error cleared.`);
+	logger.debug('auth', 'Connection error cleared');
 }
 
 // Enhanced client-side cookie clearing utility that works in both local and cloud environments
@@ -308,11 +298,12 @@ function clearSessionCookies(): void {
 			}
 		});
 
-		console.log(
-			`[${new Date().toISOString()}] auth.svelte.ts: Session cookies cleared from client-side (${successCount}/${cookieOptions.length} attempts successful)`
-		);
-	} catch (_error) {
-		console.warn(`[${new Date().toISOString()}] auth.svelte.ts: Error clearing cookies:`, _error);
+		logger.debug('auth', 'Session cookies cleared from client-side', {
+			successCount,
+			totalAttempts: cookieOptions.length
+		});
+	} catch (error) {
+		logger.warn('auth', 'Error clearing cookies', error);
 	}
 }
 
@@ -332,16 +323,11 @@ export function debugCookies(): void {
 				cookie.startsWith('session_id=')
 		);
 
-	console.log(
-		`[${new Date().toISOString()}] auth.svelte.ts: Current session cookies visible to JS:`,
-		sessionCookies
-	);
-	console.log(
-		`[${new Date().toISOString()}] auth.svelte.ts: All cookies visible to JS:`,
-		allCookies
-	);
-	console.log(
-		`[${new Date().toISOString()}] auth.svelte.ts: NOTE: HttpOnly cookies (like 'id') are NOT visible to JavaScript and cannot be deleted client-side!`
+	logger.debug('auth', 'Current session cookies visible to JS', { sessionCookies });
+	logger.debug('auth', 'All cookies visible to JS', { allCookies });
+	logger.debug(
+		'auth',
+		"NOTE: HttpOnly cookies (like 'id') are NOT visible to JavaScript and cannot be deleted client-side!"
 	);
 }
 
@@ -362,9 +348,7 @@ const SESSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 export async function initializeAuth(forceRecheck = false): Promise<void> {
 	if (!_browser) {
-		console.log(
-			`[${new Date().toISOString()}] auth.svelte.ts: Skipping auth initialization on server.`
-		);
+		logger.debug('auth', 'Skipping auth initialization on server');
 		// Ensure loading is false if we're on the server and not actually fetching.
 		// This might be set by a server load function passing initial data.
 		if (auth.isLoading && !auth.user) {
@@ -378,18 +362,14 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 
 	// Allow forced recheck (e.g., after connection restored) or if enough time has passed
 	if (forceRecheck || now - lastSessionCheck > SESSION_CHECK_INTERVAL) {
-		console.log(
-			`[${new Date().toISOString()}] auth.svelte.ts: ${forceRecheck ? 'Forced' : 'Periodic'} session revalidation triggered`
-		);
+		logger.info('auth', `${forceRecheck ? 'Forced' : 'Periodic'} session revalidation triggered`);
 		initializePromise = null; // Clear cached promise
 		lastSessionCheck = now;
 	}
 
 	// Prevent multiple initializations
 	if (initializePromise) {
-		console.log(
-			`[${new Date().toISOString()}] auth.svelte.ts: Auth initialization already in progress or completed.`
-		);
+		logger.debug('auth', 'Auth initialization already in progress or completed');
 		return initializePromise;
 	}
 
@@ -409,22 +389,18 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 				} else {
 					// This case should ideally not happen if backend returns Ok() only with a user.
 					// If backend can return Ok() with no user for a valid session but no user data, handle it.
-					console.warn(
-						`[${new Date().toISOString()}] auth.svelte.ts: getCurrentUser returned OK but no user object.`
-					);
+					logger.warn('auth', 'getCurrentUser returned OK but no user object');
 					setUnauthenticated();
 				}
 			} else {
 				// ApiError, including 401 if not authenticated or network errors
-				console.log(
-					`[${new Date().toISOString()}] auth.svelte.ts: Failed to get current user. Error:`,
-					result.error
-				);
+				logger.debug('auth', 'Failed to get current user', { error: result.error });
 
 				// Handle DEK missing error - session is still valid but encryption key was lost
 				if (result.error.name === 'ApiDekMissingError') {
-					console.log(
-						`[${new Date().toISOString()}] auth.svelte.ts: DEK missing after server restart. Session valid but encryption key lost.`
+					logger.info(
+						'auth',
+						'DEK missing after server restart - session valid but encryption key lost'
 					);
 					// Dispatch custom event to trigger re-auth modal
 					if (_browser) {
@@ -438,15 +414,14 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 				}
 				// Handle server restart/unavailable - don't invalidate session
 				else if (result.error.name === 'ApiServerRestartError') {
-					console.log(
-						`[${new Date().toISOString()}] auth.svelte.ts: Server restarting or unavailable. Keeping current state.`
-					);
+					logger.warn('auth', 'Server restarting or unavailable - keeping current state');
 					setConnectionError(); // Set connection error state, but keep user data
 				}
 				// For network errors, be less aggressive - just set loading to false but don't clear user completely
 				else if (result.error.name === 'ApiNetworkError') {
-					console.log(
-						`[${new Date().toISOString()}] auth.svelte.ts: Network error during auth check - server may be down. Keeping current state.`
+					logger.warn(
+						'auth',
+						'Network error during auth check - server may be down. Keeping current state'
 					);
 					setConnectionError(); // Set connection error state, but keep user data
 				}
@@ -455,15 +430,11 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 					// Check if this is a session expiry (had a user) or first-time visitor (no user)
 					if (auth.user) {
 						// Session expired - clear user and show specific message
-						console.log(
-							`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401/403). Logging out user.`
-						);
+						logger.info('auth', 'Session expired (401/403) - logging out user');
 						setSessionExpired();
 					} else {
 						// First-time visitor or already logged out - just set unauthenticated without notification
-						console.log(
-							`[${new Date().toISOString()}] auth.svelte.ts: Not authenticated (401/403). No previous session.`
-						);
+						logger.debug('auth', 'Not authenticated (401/403) - no previous session');
 						setUnauthenticated();
 					}
 				}
@@ -476,15 +447,11 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 					// Check if this is a session expiry (had a user) or first-time visitor (no user)
 					if (auth.user) {
 						// Session expired - clear user and show specific message
-						console.log(
-							`[${new Date().toISOString()}] auth.svelte.ts: Session expired (401). Logging out user.`
-						);
+						logger.info('auth', 'Session expired (401) - logging out user');
 						setSessionExpired();
 					} else {
 						// First-time visitor or already logged out - just set unauthenticated without notification
-						console.log(
-							`[${new Date().toISOString()}] auth.svelte.ts: Not authenticated (401). No previous session.`
-						);
+						logger.debug('auth', 'Not authenticated (401) - no previous session');
 						setUnauthenticated();
 					}
 				} else {
@@ -492,11 +459,8 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 					setUnauthenticated();
 				}
 			}
-		} catch (_error) {
-			console.error(
-				`[${new Date().toISOString()}] auth.svelte.ts: Unexpected error during auth initialization:`,
-				_error
-			);
+		} catch (error) {
+			logger.error('auth', 'Unexpected error during auth initialization', error);
 			setUnauthenticated(); // Ensure unauthenticated state on unexpected errors
 		}
 	})();

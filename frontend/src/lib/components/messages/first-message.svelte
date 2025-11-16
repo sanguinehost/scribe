@@ -6,6 +6,7 @@
 	import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 	import { Markdown } from '../markdown';
 	import { fly } from 'svelte/transition';
+	import { untrack } from 'svelte';
 	import type { ScribeChatMessage } from '$lib/types';
 	import { createEventDispatcher } from 'svelte';
 	import type { CharacterDataForClient, User } from '$lib/types'; // Import CharacterDataForClient and User
@@ -45,11 +46,13 @@
 	const hasMultipleGreetings = $derived(availableGreetings.length > 1);
 	const canGoPrevious = $derived(currentGreetingIndex > 0);
 	const canGoNext = $derived(currentGreetingIndex < availableGreetings.length - 1);
-	// Apply template substitution to the current greeting, following character-overview.svelte pattern
-	// NOTE: We explicitly reference userPersonaName here to create a Svelte dependency,
-	// even though substituteTemplateVariables uses it via closure. This ensures the
-	// derivation re-computes when userPersonaName changes.
-	const currentGreeting = $derived.by(() => {
+
+	// Apply template substitution to the current greeting
+	// Use $state + $effect pattern instead of $derived.by to avoid circular reactivity loops
+	// during component unmount when substituteTemplateVariables accesses reactive state
+	let currentGreeting = $state(message.content);
+
+	$effect(() => {
 		const rawGreeting = availableGreetings[currentGreetingIndex] || message.content;
 
 		console.log(
@@ -58,17 +61,18 @@
 		);
 		console.log('🎭 Raw greeting length:', rawGreeting?.length || 0);
 
-		// Access userPersonaName to create dependency (even though the function uses it via closure)
-		const _personaName = userPersonaName;
-
-		if (substituteTemplateVariables && character?.name) {
-			const result = substituteTemplateVariables(rawGreeting, character.name);
-			console.log('🎭 After substitution, greeting length:', result?.length || 0);
-			console.log('🎭 Persona name dependency tracked:', _personaName);
-			return result;
-		}
-		console.log('🎭 No substitution (missing substituteTemplateVariables or character.name)');
-		return rawGreeting;
+		// Use untrack() to prevent circular reactivity loops during unmount
+		// The substituteTemplateVariables function accesses userPersonaName via closure naturally
+		untrack(() => {
+			if (substituteTemplateVariables && character?.name) {
+				const result = substituteTemplateVariables(rawGreeting, character.name);
+				console.log('🎭 After substitution, greeting length:', result?.length || 0);
+				currentGreeting = result;
+			} else {
+				console.log('🎭 No substitution (missing substituteTemplateVariables or character.name)');
+				currentGreeting = rawGreeting;
+			}
+		});
 	});
 
 	function handlePreviousGreeting() {

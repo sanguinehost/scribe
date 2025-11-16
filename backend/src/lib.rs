@@ -7,6 +7,7 @@ pub mod db;
 #[cfg(feature = "desktop")]
 pub mod desktop;
 pub mod errors;
+pub mod extractors;
 pub mod features;
 pub mod llm;
 pub mod logging;

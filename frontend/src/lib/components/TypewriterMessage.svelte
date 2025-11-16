@@ -154,6 +154,8 @@
 	$effect(() => {
 		// Track message.content changes
 		const content = message.content;
+		// CRITICAL: Track contentVersion to force reactivity on updates (nullish coalescing for historical messages)
+		const _version = message.contentVersion ?? 0;
 
 		// Use untrack to prevent infinite loops when updating displayedContent
 		untrack(() => {

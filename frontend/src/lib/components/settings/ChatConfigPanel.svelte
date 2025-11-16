@@ -462,9 +462,7 @@
 				model_name: localSettings.model_name,
 				gemini_thinking_budget: localSettings.gemini_thinking_budget,
 				gemini_enable_code_execution: localSettings.gemini_enable_code_execution,
-				context_total_token_limit: localSettings.context_total_token_limit,
-				context_recent_history_budget: localSettings.context_recent_history_budget,
-				context_rag_budget: localSettings.context_rag_budget,
+				// NOTE: context fields removed - backend doesn't have these (causes 422)
 				chronicle_id: currentChronicleId,
 				agent_mode: localSettings.agent_mode,
 				prompt_template_id: localSettings.prompt_template_id

@@ -1,6 +1,8 @@
 // StreamingService.ts - Decoupled Svelte 5 Streaming Client with Robust Error Handling
 import { fetchEventSource, type EventSourceMessage } from '@microsoft/fetch-event-source';
 import { env } from '$env/dynamic/public';
+import { isInDesktopMode, desktopAuth } from '$lib/api/desktop-auth';
+import { logger } from '$lib/utils/logger';
 import type {
 	ScribeChatMessage as _ScribeChatMessage,
 	ScribeChatSession as _ScribeChatSession
@@ -38,6 +40,7 @@ export interface StreamingMessage {
 	current_variant_index?: number; // Currently selected variant index
 	is_variant?: boolean; // Whether this is a variant of another message
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
+	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
 }
 
 // Connection states following the architectural design
@@ -141,9 +144,10 @@ class StreamingService {
 			const wasVisible = this.isTabVisible;
 			this.isTabVisible = !document.hidden;
 
-			console.log(
-				`👁️ Tab visibility changed: ${wasVisible ? 'visible' : 'hidden'} -> ${this.isTabVisible ? 'visible' : 'hidden'}`
-			);
+			logger.debug('streaming-service', 'Tab visibility changed', {
+				from: wasVisible ? 'visible' : 'hidden',
+				to: this.isTabVisible ? 'visible' : 'hidden'
+			});
 
 			// Tab visibility changed - no special handling needed anymore
 		};
@@ -152,13 +156,13 @@ class StreamingService {
 		const handleFocus = () => {
 			if (!this.isTabVisible) {
 				this.isTabVisible = true;
-				console.log('👁️ Tab gained focus (fallback visibility detection)');
+				logger.debug('streaming-service', 'Tab gained focus (fallback visibility detection)');
 			}
 		};
 
 		const handleBlur = () => {
 			this.isTabVisible = false;
-			console.log('👁️ Tab lost focus');
+			logger.debug('streaming-service', 'Tab lost focus');
 		};
 
 		document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -166,7 +170,7 @@ class StreamingService {
 		window.addEventListener('blur', handleBlur);
 
 		this.visibilityListenersAdded = true;
-		console.log('👁️ Page visibility listeners setup complete');
+		logger.debug('streaming-service', 'Page visibility listeners setup complete');
 	}
 
 	/**
@@ -185,7 +189,7 @@ class StreamingService {
 	 */
 	private tryCloseConnection(): void {
 		if (this.shouldCloseConnection()) {
-			console.log('🔒 All events received, closing connection');
+			logger.debug('streaming-service', 'All events received, closing connection');
 
 			// Clear any pending timeout
 			if (this.connectionCloseState.closeTimeoutId) {
@@ -238,28 +242,25 @@ class StreamingService {
 		const buffer = this.messageBuffers.get(messageId);
 		if (!buffer || !buffer.isComplete) return;
 
-		console.log(
-			`✅ Updating message ${messageId.slice(-8)} with complete content: ${buffer.content.length} chars`
-		);
-
-		// Update message with complete content - TypewriterMessage will handle animation
-		this.messages = this.messages.map((msg) => {
-			if (msg.id === messageId) {
-				return {
-					...msg,
-					content: buffer.content,
-					displayedContent: buffer.content, // Set both to same value
-					isAnimating: false, // Service doesn't animate
-					isRegenerating: false,
-					shouldAnimate: false, // Stream is complete, no need to animate
-					prompt_tokens: buffer.prompt_tokens,
-					completion_tokens: buffer.completion_tokens,
-					model_name: buffer.model_name,
-					backend_id: buffer.backend_id
-				};
-			}
-			return msg;
+		logger.debug('streaming-service', 'Updating message with complete content', {
+			messageId: messageId.slice(-8),
+			contentLength: buffer.content.length
 		});
+
+		// Use in-place mutation to preserve Svelte 5 reactivity proxies
+		// Avoid array reassignment which breaks proxy chain and causes crashes
+		const message = this.messages.find((msg) => msg.id === messageId);
+		if (message) {
+			message.content = buffer.content;
+			message.displayedContent = buffer.content;
+			message.isAnimating = false;
+			message.isRegenerating = false;
+			message.shouldAnimate = false; // Stream is complete, no need to animate
+			message.prompt_tokens = buffer.prompt_tokens;
+			message.completion_tokens = buffer.completion_tokens;
+			message.model_name = buffer.model_name;
+			message.backend_id = buffer.backend_id;
+		}
 	}
 
 	/**
@@ -270,17 +271,13 @@ class StreamingService {
 		if (!buffer) return;
 
 		// Update message with current buffered content (even if not complete)
-		this.messages = this.messages.map((msg) => {
-			if (msg.id === messageId) {
-				return {
-					...msg,
-					content: buffer.content,
-					displayedContent: buffer.content, // Update displayed content for UI
-					isAnimating: false // TypewriterMessage handles animation
-				};
-			}
-			return msg;
-		});
+		// CRITICAL: Use in-place mutation to preserve Svelte 5 proxy chain
+		const message = this.messages.find((msg) => msg.id === messageId);
+		if (message) {
+			message.content = buffer.content;
+			message.displayedContent = buffer.content; // Update displayed content for UI
+			message.isAnimating = false; // TypewriterMessage handles animation
+		}
 	}
 
 	/**
@@ -331,7 +328,9 @@ class StreamingService {
 
 				if (jsonEnd === -1) {
 					// No complete JSON object found
-					console.warn('Incomplete JSON chunk found:', remaining.substring(0, 100) + '...');
+					logger.warn('streaming-service', 'Incomplete JSON chunk found', {
+						remainingPrefix: remaining.substring(0, 100)
+					});
 					break;
 				}
 
@@ -341,7 +340,10 @@ class StreamingService {
 
 				remaining = remaining.substring(jsonEnd).trim();
 			} catch (_e) {
-				console.error('Failed to parse JSON chunk:', _e, 'Remaining:', remaining.substring(0, 100));
+				logger.error('streaming-service', 'Failed to parse JSON chunk', {
+					error: _e as Error,
+					remainingPrefix: remaining.substring(0, 100)
+				});
 				break;
 			}
 		}
@@ -398,7 +400,7 @@ class StreamingService {
 		// Connect to streaming service
 
 		if (this.connectionStatus === 'connecting' || this.connectionStatus === 'open') {
-			console.warn('Connection already active. Disconnect first.');
+			logger.warn('streaming-service', 'Connection already active. Disconnect first.');
 			return;
 		}
 
@@ -426,7 +428,8 @@ class StreamingService {
 				content: params.userMessage,
 				displayedContent: params.userMessage, // User messages show immediately
 				sender: 'user',
-				created_at: new Date().toISOString()
+				created_at: new Date().toISOString(),
+				contentVersion: 0 // Initialize for Svelte 5 reactivity
 			};
 			this.messages = [...this.messages, userMessage];
 		}
@@ -437,12 +440,12 @@ class StreamingService {
 
 		if (params.targetMessageId) {
 			// Variant mode: Update existing message
-			console.log(
-				'🔄 StreamingService: Variant mode - searching for targetMessageId:',
-				params.targetMessageId
-			);
-			console.log(
-				'🔄 StreamingService: Available messages:',
+			logger.debug('streaming-service', 'Variant mode - searching for target message', {
+				targetMessageId: params.targetMessageId
+			});
+			logger.debug(
+				'streaming-service',
+				'Available messages',
 				this.messages.map((m) => ({ id: m.id, backend_id: m.backend_id, sender: m.sender }))
 			);
 
@@ -450,18 +453,19 @@ class StreamingService {
 				(msg) => msg.id === params.targetMessageId || msg.backend_id === params.targetMessageId
 			);
 			if (existingMessageIndex === -1) {
-				console.error(
-					'❌ StreamingService: Target message not found for variant update:',
-					params.targetMessageId
-				);
+				logger.error('streaming-service', 'Target message not found for variant update', {
+					targetMessageId: params.targetMessageId
+				});
 				throw new Error(`Target message ${params.targetMessageId} not found for variant update`);
 			}
 
-			console.log('✅ StreamingService: Found target message at index:', existingMessageIndex);
+			logger.debug('streaming-service', 'Found target message', {
+				index: existingMessageIndex
+			});
 
 			// Update the existing message in place to preserve object identity and variant metadata
 			const existingMessage = this.messages[existingMessageIndex];
-			console.log('🔄 Preserving variant metadata:', {
+			logger.debug('streaming-service', 'Preserving variant metadata', {
 				variant_count: existingMessage.variant_count,
 				current_variant_index: existingMessage.current_variant_index
 			});
@@ -474,6 +478,7 @@ class StreamingService {
 				isAnimating: false, // Keep false - animation starts later
 				isRegenerating: true, // Flag to show loading indicator during regeneration
 				error: undefined, // Clear any existing error
+				contentVersion: 0, // Initialize for Svelte 5 reactivity
 				retryable: false // Clear retry state
 				// variant_count and current_variant_index preserved from spread
 			};
@@ -484,13 +489,12 @@ class StreamingService {
 			assistantMessage = this.messages[existingMessageIndex];
 
 			assistantMessageId = assistantMessage.id;
-			console.log(
-				'🎯 StreamingService: Using existing message ID for variant:',
-				assistantMessageId
-			);
+			logger.debug('streaming-service', 'Using existing message ID for variant', {
+				messageId: assistantMessageId
+			});
 		} else {
 			// New message mode: Create new assistant message
-			console.log('🆕 StreamingService: Creating new message (no targetMessageId provided)');
+			logger.debug('streaming-service', 'Creating new message (no targetMessageId provided)');
 			assistantMessage = {
 				id: crypto.randomUUID(),
 				content: '', // Will be filled when buffering completes
@@ -498,11 +502,14 @@ class StreamingService {
 				sender: 'assistant',
 				created_at: new Date().toISOString(),
 				isAnimating: false, // Will start animating after buffering
+				contentVersion: 0, // Initialize for Svelte 5 reactivity
 				shouldAnimate: true // New streaming message should animate
 			};
 			this.messages = [...this.messages, assistantMessage];
 			assistantMessageId = assistantMessage.id;
-			console.log('🆕 StreamingService: Created new message ID:', assistantMessageId);
+			logger.debug('streaming-service', 'Created new message', {
+				messageId: assistantMessageId
+			});
 		}
 
 		// Track the current assistant message ID
@@ -569,7 +576,7 @@ class StreamingService {
 
 		const lastMessage = historyToSend[historyToSend.length - 1];
 		if (lastMessage.role !== 'user') {
-			console.error('❌ Invalid history: Last message must be from user', {
+			logger.error('streaming-service', 'Invalid history: Last message must be from user', {
 				historyLength: historyToSend.length,
 				lastMessage,
 				isRegeneration: params.isRegeneration,
@@ -580,7 +587,7 @@ class StreamingService {
 			);
 		}
 
-		console.log('✅ History validation passed:', {
+		logger.debug('streaming-service', 'History validation passed', {
 			historyLength: historyToSend.length,
 			lastMessageRole: lastMessage.role,
 			isRegeneration: params.isRegeneration
@@ -595,27 +602,37 @@ class StreamingService {
 			variant_of: params.variantOf // Pass variant_of for creating variants
 		};
 
-		console.log('🚀 Starting fetchEventSource with URL:', apiUrl);
+		logger.debug('streaming-service', 'Starting fetchEventSource', { url: apiUrl });
+
+		// Prepare headers - add JWT Bearer token for desktop mode
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+			Accept: 'text/event-stream'
+		};
+
+		// Add JWT Bearer token for desktop mode (bypasses protocol handler)
+		if (isInDesktopMode()) {
+			const authHeaders = desktopAuth.getAuthHeaders();
+			Object.assign(headers, authHeaders);
+			logger.debug('streaming-service', 'Desktop mode: Added JWT Bearer token to SSE request');
+		}
 
 		await fetchEventSource(apiUrl, {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'text/event-stream'
-			},
+			headers,
 			credentials: 'include',
 			body: JSON.stringify(requestBody),
 			signal: this.abortController?.signal,
 
 			onopen: async (response) => {
-				console.log('🔓 fetchEventSource onopen called', {
+				logger.debug('streaming-service', 'fetchEventSource onopen called', {
 					status: response.status,
 					contentType: response.headers.get('content-type')
 				});
 				if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
 					this.connectionStatus = 'open';
 					this.retryCount = 0; // Reset retry count on successful connection
-					console.log('✓ Stream connection established');
+					logger.debug('streaming-service', 'Stream connection established');
 				} else if (response.status === 401) {
 					this.handleAuthError();
 					throw new Error('Authentication failed');
@@ -628,7 +645,10 @@ class StreamingService {
 							errorText.includes("last message in the payload's history must be from the 'user'")
 						) {
 							// This is a validation error - don't retry, fail immediately
-							console.error('❌ Backend validation error: History validation failed');
+							logger.error(
+								'streaming-service',
+								'Backend validation error: History validation failed'
+							);
 							const error = new Error(
 								`Backend validation failed: ${errorText}. This suggests a frontend bug in history construction.`
 							);
@@ -636,7 +656,7 @@ class StreamingService {
 							throw error;
 						} else if (errorText.includes('Daily message limit reached')) {
 							// Daily limit error - don't retry, preserve original message for user display
-							console.error('❌ Daily message limit reached');
+							logger.error('streaming-service', 'Daily message limit reached');
 							const error = new Error(errorText);
 							error.name = 'DailyLimitError';
 							throw error;
@@ -665,7 +685,7 @@ class StreamingService {
 			},
 
 			onclose: () => {
-				console.log('🔒 fetchEventSource onclose called');
+				logger.debug('streaming-service', 'fetchEventSource onclose called');
 				// Only perform cleanup if the connection was actually closed
 				// Note: This can be called when we abort the connection ourselves or when the server closes
 
@@ -677,20 +697,22 @@ class StreamingService {
 
 				// Mark as closed if not already
 				if (this.connectionStatus !== 'closed' && this.connectionStatus !== 'error') {
-					console.log('🔒 Connection closed by server or client');
+					logger.debug('streaming-service', 'Connection closed by server or client');
 					this.connectionStatus = 'closed';
 				}
 			},
 
 			onerror: (error) => {
-				console.error('❌ fetchEventSource onerror called:', error);
+				logger.error('streaming-service', 'fetchEventSource onerror called', error as Error);
 
 				// Determine if we should retry
 				if (this.shouldRetry(error)) {
 					const delay = this.calculateRetryDelay();
-					console.log(
-						`Retrying in ${delay}ms (attempt ${this.retryCount}/${this.config.maxRetries})`
-					);
+					logger.debug('streaming-service', 'Retrying after error', {
+						delayMs: delay,
+						attempt: this.retryCount,
+						maxRetries: this.config.maxRetries
+					});
 					return delay; // Return delay to trigger retry
 				} else {
 					// Don't retry - let the error bubble up
@@ -708,7 +730,9 @@ class StreamingService {
 		try {
 			switch (_event.event) {
 				case 'content':
-					console.log('📝 Content event received, data length:', _event.data?.length);
+					logger.debug('streaming-service', 'Content event received', {
+						dataLength: _event.data?.length
+					});
 					if (_event.data) {
 						try {
 							// Parse multiple JSON chunks that may be concatenated in a single SSE event
@@ -718,7 +742,7 @@ class StreamingService {
 							const messageBuffer = this.messageBuffers.get(messageId);
 
 							if (!messageBuffer) {
-								console.warn(`No buffer found for message ${messageId}`);
+								logger.warn('streaming-service', 'No buffer found for message', { messageId });
 								break;
 							}
 
@@ -729,9 +753,11 @@ class StreamingService {
 								// Verify checksum
 								const calculatedChecksum = this.calculateChecksum(content);
 								if (calculatedChecksum !== checksum) {
-									console.error(
-										`🔍 Checksum mismatch for chunk ${index}. Expected: ${checksum}, Got: ${calculatedChecksum}`
-									);
+									logger.error('streaming-service', 'Checksum mismatch for chunk', {
+										index,
+										expected: checksum,
+										calculated: calculatedChecksum
+									});
 								}
 
 								// Store chunk in buffer
@@ -740,14 +766,20 @@ class StreamingService {
 								// Check for gaps in chunks
 								const expectedIdx = messageBuffer.expectedIndex;
 								if (index > expectedIdx) {
-									console.log(`⚠️ Chunk gap: expected ${expectedIdx}, got ${index}`);
+									logger.debug('streaming-service', 'Chunk gap detected', {
+										expected: expectedIdx,
+										received: index
+									});
 								}
 							}
 
 							// Update buffer content if we have contiguous chunks
 							this.updateBufferContent(messageId);
 						} catch (_e) {
-							console.error('Failed to parse structured chunks:', _e, 'Raw data:', _event.data);
+							logger.error('streaming-service', 'Failed to parse structured chunks', {
+								error: _e as Error,
+								rawData: _event.data
+							});
 							// For fallback, still buffer the raw content
 							const messageId = this.currentAssistantMessageId || assistantMessageId;
 							const messageBuffer = this.messageBuffers.get(messageId);
@@ -777,9 +809,10 @@ class StreamingService {
 							// Mark buffer as complete
 							messageBuffer.isComplete = true;
 
-							console.log(
-								`✅ DONE received for ${messageId.slice(-8)}: ${messageBuffer.content.length} chars buffered`
-							);
+							logger.debug('streaming-service', 'DONE received for message', {
+								messageId: messageId.slice(-8),
+								contentLength: messageBuffer.content.length
+							});
 
 							// Update message with complete content
 							this.updateMessageContent(messageId);
@@ -787,11 +820,17 @@ class StreamingService {
 
 						// Mark DONE as received and set up fallback timeout
 						this.connectionCloseState.doneReceived = true;
-						console.log('⏳ DONE received, keeping connection open for token_usage events');
+						logger.debug(
+							'streaming-service',
+							'DONE received, keeping connection open for token_usage events'
+						);
 
 						// Set up a fallback timeout in case token_usage event doesn't arrive
 						this.connectionCloseState.closeTimeoutId = setTimeout(() => {
-							console.warn('⚠️ Timeout waiting for token_usage event, closing connection anyway');
+							logger.warn(
+								'streaming-service',
+								'Timeout waiting for token_usage event, closing connection anyway'
+							);
 							this.connectionCloseState.shouldClose = true;
 							this.tryCloseConnection();
 						}, 3000); // 3 second timeout
@@ -805,29 +844,41 @@ class StreamingService {
 					this.handleMessageSaved(_event.data, assistantMessageId);
 					// Mark message_saved as received and try to close connection
 					this.connectionCloseState.messageSavedReceived = true;
-					console.log('💾 message_saved event received, checking if we can close connection');
+					logger.debug(
+						'streaming-service',
+						'message_saved event received, checking if we can close connection'
+					);
 					this.tryCloseConnection();
 					break;
 
 				case 'token_usage': {
-					console.log('📊 Processing token_usage event:', _event.data);
+					logger.debug('streaming-service', 'Processing token_usage event', {
+						data: _event.data
+					});
 					// Use the tracked message ID for token usage
 					const messageIdForTokens = this.currentAssistantMessageId || assistantMessageId;
-					console.log(
-						`📊 TOKEN EVENT: original ID: ${assistantMessageId}, current tracked ID: ${this.currentAssistantMessageId}, using ID: ${messageIdForTokens}`
-					);
+					logger.debug('streaming-service', 'TOKEN EVENT', {
+						originalId: assistantMessageId,
+						currentTrackedId: this.currentAssistantMessageId,
+						usingId: messageIdForTokens
+					});
 					this.handleTokenUsage(_event.data, messageIdForTokens);
 
 					// Mark token_usage as received and try to close connection
 					this.connectionCloseState.tokenUsageReceived = true;
-					console.log('📊 token_usage event received, checking if we can close connection');
+					logger.debug(
+						'streaming-service',
+						'token_usage event received, checking if we can close connection'
+					);
 					this.tryCloseConnection();
 					break;
 				}
 
 				case 'reasoning_chunk':
 					// Handle reasoning chunks if needed
-					console.log('Reasoning:', _event.data);
+					logger.debug('streaming-service', 'Reasoning chunk received', {
+						data: _event.data
+					});
 					break;
 
 				default:
@@ -847,9 +898,11 @@ class StreamingService {
 									// Verify checksum
 									const calculatedChecksum = this.calculateChecksum(content);
 									if (calculatedChecksum !== checksum) {
-										console.error(
-											`🔍 Checksum mismatch for chunk ${index}. Expected: ${checksum}, Got: ${calculatedChecksum}`
-										);
+										logger.error('streaming-service', 'Checksum mismatch for chunk', {
+											index,
+											expected: checksum,
+											calculated: calculatedChecksum
+										});
 									}
 
 									// Store chunk in buffer
@@ -865,13 +918,15 @@ class StreamingService {
 								this.updateMessageContentProgressive(messageId);
 							}
 						} else {
-							console.warn(`No buffer found for default event, messageId: ${messageId}`);
+							logger.warn('streaming-service', 'No buffer found for default event', {
+								messageId
+							});
 						}
 					}
 					break;
 			}
 		} catch (_error) {
-			console.error('Error parsing stream message:', _error);
+			logger.error('streaming-service', 'Error parsing stream message', _error as Error);
 			this.handleStreamError(_error as Error, assistantMessageId);
 		}
 	}
@@ -884,9 +939,10 @@ class StreamingService {
 			const messageData = JSON.parse(_data);
 			const actualMessageId = messageData.message_id;
 
-			console.log(
-				`💾 handleMessageSaved: Updating message ID from ${assistantMessageId} to ${actualMessageId}`
-			);
+			logger.debug('streaming-service', 'handleMessageSaved: Updating message ID', {
+				from: assistantMessageId,
+				to: actualMessageId
+			});
 
 			// NEW: Transfer message buffer to new ID
 			const oldMessageBuffer = this.messageBuffers.get(assistantMessageId);
@@ -898,11 +954,14 @@ class StreamingService {
 				this.messageBuffers.set(actualMessageId, oldMessageBuffer);
 				if (assistantMessageId !== actualMessageId) {
 					this.messageBuffers.delete(assistantMessageId);
-					console.log(
-						`💾 Transferred message buffer from ${assistantMessageId} to ${actualMessageId}`
-					);
+					logger.debug('streaming-service', 'Transferred message buffer', {
+						from: assistantMessageId,
+						to: actualMessageId
+					});
 				} else {
-					console.log(`💾 Updated buffer for variant (same ID): ${actualMessageId}`);
+					logger.debug('streaming-service', 'Updated buffer for variant (same ID)', {
+						messageId: actualMessageId
+					});
 				}
 
 				// Try to start animation if conditions are now met
@@ -921,10 +980,12 @@ class StreamingService {
 			for (const msg of this.messages) {
 				// For variants, we need to match by either frontend ID or backend ID
 				if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
-					console.log(`💾 Updating message backend_id: ${assistantMessageId} → ${actualMessageId}`);
-					console.log(
-						`💾 Updating variant metadata: variant_count=${variantCount}, current_variant_index=${currentVariantIndex}`
-					);
+					logger.debug('streaming-service', 'Updating message backend_id and variant metadata', {
+						from: assistantMessageId,
+						to: actualMessageId,
+						variant_count: variantCount,
+						current_variant_index: currentVariantIndex
+					});
 
 					// Update the existing object in place to maintain identity and reactivity
 					// IMPORTANT: Keep msg.id stable (frontend ID) to prevent component remount
@@ -933,7 +994,7 @@ class StreamingService {
 					msg.variant_count = variantCount;
 					msg.current_variant_index = currentVariantIndex;
 
-					console.log(`💾 Updated message object in place:`, {
+					logger.debug('streaming-service', 'Updated message object in place', {
 						id: msg.id,
 						variant_count: msg.variant_count,
 						current_variant_index: msg.current_variant_index
@@ -950,7 +1011,7 @@ class StreamingService {
 
 			// Verify the update took effect
 			const updatedMessage = this.messages.find((msg) => msg.backend_id === actualMessageId);
-			console.log(`💾 Verification - message in array:`, {
+			logger.debug('streaming-service', 'Verification - message in array', {
 				found: !!updatedMessage,
 				id: updatedMessage?.id,
 				variant_count: updatedMessage?.variant_count,
@@ -961,7 +1022,8 @@ class StreamingService {
 			if (updatedMessage && (variantCount > 0 || currentVariantIndex > 0)) {
 				const msgVariantCount = updatedMessage.variant_count ?? 0;
 				const msgCurrentIndex = updatedMessage.current_variant_index ?? 0;
-				console.log(`✅ VARIANT VALIDATION - Message ${actualMessageId} has variant data:`, {
+				logger.debug('streaming-service', 'VARIANT VALIDATION - Message has variant data', {
+					messageId: actualMessageId,
 					variant_count: msgVariantCount,
 					current_variant_index: msgCurrentIndex,
 					shouldShowChevrons: msgVariantCount > 0,
@@ -970,7 +1032,7 @@ class StreamingService {
 				});
 			}
 		} catch (_error) {
-			console.error('Failed to parse message saved data:', _error);
+			logger.error('streaming-service', 'Failed to parse message saved data', _error as Error);
 		}
 	}
 
@@ -980,7 +1042,8 @@ class StreamingService {
 	private handleTokenUsage(_data: string, assistantMessageId: string): void {
 		try {
 			const tokenData = JSON.parse(_data);
-			console.log(`📊 handleTokenUsage: Processing tokens for message ${assistantMessageId}`, {
+			logger.debug('streaming-service', 'handleTokenUsage: Processing tokens for message', {
+				messageId: assistantMessageId,
 				prompt_tokens: tokenData.prompt_tokens,
 				completion_tokens: tokenData.completion_tokens,
 				model_name: tokenData.model_name
@@ -993,30 +1056,28 @@ class StreamingService {
 				messageBuffer.completion_tokens = tokenData.completion_tokens;
 				messageBuffer.model_name = tokenData.model_name;
 
-				console.log(`📊 Stored tokens in buffer for ${assistantMessageId}`);
+				logger.debug('streaming-service', 'Stored tokens in buffer', {
+					messageId: assistantMessageId
+				});
 
 				// Try to start animation if conditions are now met
 				this.updateMessageContent(assistantMessageId);
 			} else {
-				console.warn(
-					`📊 No buffer found for message ${assistantMessageId}, updating message directly`
-				);
+				logger.warn('streaming-service', 'No buffer found for message, updating message directly', {
+					messageId: assistantMessageId
+				});
 
 				// Fallback: Update message directly if no buffer
-				this.messages = this.messages.map((msg) => {
-					if (msg.id === assistantMessageId) {
-						return {
-							...msg,
-							prompt_tokens: tokenData.prompt_tokens,
-							completion_tokens: tokenData.completion_tokens,
-							model_name: tokenData.model_name
-						};
-					}
-					return msg;
-				});
+				// CRITICAL: Use in-place mutation to preserve Svelte 5 proxy chain
+				const message = this.messages.find((msg) => msg.id === assistantMessageId);
+				if (message) {
+					message.prompt_tokens = tokenData.prompt_tokens;
+					message.completion_tokens = tokenData.completion_tokens;
+					message.model_name = tokenData.model_name;
+				}
 			}
 		} catch (_error) {
-			console.error('Failed to parse token usage data:', _error);
+			logger.error('streaming-service', 'Failed to parse token usage data', _error as Error);
 		}
 	}
 
@@ -1081,19 +1142,15 @@ class StreamingService {
 		this.connectionStatus = 'error';
 
 		// Mark assistant message as failed if provided
+		// CRITICAL: Use in-place mutation to preserve Svelte 5 proxy chain
 		if (assistantMessageId) {
-			this.messages = this.messages.map((msg) => {
-				if (msg.id === assistantMessageId) {
-					return {
-						...msg,
-						isAnimating: false,
-						isRegenerating: false,
-						error: streamingError.message,
-						retryable: streamingError.retryable
-					};
-				}
-				return msg;
-			});
+			const message = this.messages.find((msg) => msg.id === assistantMessageId);
+			if (message) {
+				message.isAnimating = false;
+				message.isRegenerating = false;
+				message.error = streamingError.message;
+				message.retryable = streamingError.retryable;
+			}
 		}
 	}
 
@@ -1142,10 +1199,9 @@ class StreamingService {
 			(isErrorWithName(err) && err.name === 'DailyLimitError') ||
 			(isErrorWithMessage(err) && err.message.includes('Daily message limit reached'))
 		) {
-			console.warn(
-				'🚫 Not retrying daily limit error:',
-				isErrorWithMessage(err) ? err.message : 'Unknown error'
-			);
+			logger.warn('streaming-service', 'Not retrying daily limit error', {
+				message: isErrorWithMessage(err) ? err.message : 'Unknown error'
+			});
 			return false;
 		}
 
@@ -1156,7 +1212,9 @@ class StreamingService {
 				err.message.includes('Invalid conversation history') ||
 				err.message.includes('Backend validation failed'))
 		) {
-			console.warn('🚫 Not retrying validation error:', err.message);
+			logger.warn('streaming-service', 'Not retrying validation error', {
+				message: err.message
+			});
 			return false;
 		}
 
@@ -1171,7 +1229,10 @@ class StreamingService {
 			if (statusMatch) {
 				const statusCode = parseInt(statusMatch[1]);
 				if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
-					console.warn(`🚫 Not retrying client error ${statusCode}:`, err.message);
+					logger.warn('streaming-service', 'Not retrying client error', {
+						statusCode,
+						message: err.message
+					});
 					return false;
 				}
 			}
@@ -1182,7 +1243,9 @@ class StreamingService {
 			isErrorWithMessage(err) &&
 			(err.message.includes('Server error:') || err.message.includes('429'))
 		) {
-			console.log('🔄 Retrying server error or rate limit:', err.message);
+			logger.debug('streaming-service', 'Retrying server error or rate limit', {
+				message: err.message
+			});
 			this.retryCount++;
 			return true;
 		}
@@ -1193,10 +1256,9 @@ class StreamingService {
 				(err.message.includes('timeout') || err.message.includes('network'))) ||
 			(isErrorWithName(err) && err.name === 'TypeError')
 		) {
-			console.log(
-				'🔄 Retrying network/timeout error:',
-				isErrorWithMessage(err) ? err.message : 'Unknown error'
-			);
+			logger.debug('streaming-service', 'Retrying network/timeout error', {
+				message: isErrorWithMessage(err) ? err.message : 'Unknown error'
+			});
 			this.retryCount++;
 			return true;
 		}
@@ -1221,7 +1283,9 @@ class StreamingService {
 	 * Remove a failed assistant message that was created but never successfully started streaming
 	 */
 	private removeFailedAssistantMessage(messageId: string): void {
-		console.log('🗑️ Removing failed assistant message:', messageId);
+		logger.debug('streaming-service', 'Removing failed assistant message', {
+			messageId
+		});
 
 		// Remove from messages array
 		this.messages = this.messages.filter((msg) => msg.id !== messageId);
@@ -1259,7 +1323,7 @@ class StreamingService {
 	 * Interrupt all streaming operations (SSE + animations) immediately
 	 */
 	public interrupt(): void {
-		console.log('🛑 Interrupting all streaming operations');
+		logger.debug('streaming-service', 'Interrupting all streaming operations');
 
 		// Stop SSE connection
 		if (this.abortController) {
@@ -1276,20 +1340,26 @@ class StreamingService {
 
 		// Stop all timestamp-based animations first
 		for (const [messageId, requestId] of this.animationRequestIds) {
-			console.log(`🛑 Canceling requestAnimationFrame for message ${messageId.slice(-8)}`);
+			logger.debug('streaming-service', 'Canceling requestAnimationFrame for message', {
+				messageId: messageId.slice(-8)
+			});
 			cancelAnimationFrame(requestId);
 		}
 		this.animationRequestIds.clear();
 
 		// Stop all local animations immediately
 		for (const [messageId, intervalId] of this.animationIntervals) {
-			console.log(`🛑 Stopping setInterval animation for message ${messageId.slice(-8)}`);
+			logger.debug('streaming-service', 'Stopping setInterval animation for message', {
+				messageId: messageId.slice(-8)
+			});
 			clearInterval(intervalId);
 		}
 
 		// Show full content for all animating messages
 		for (const messageId of allAnimatingMessageIds) {
-			console.log(`🛑 Showing full content for message ${messageId.slice(-8)}`);
+			logger.debug('streaming-service', 'Showing full content for message', {
+				messageId: messageId.slice(-8)
+			});
 
 			// Immediately show all buffered content without animation
 			const buffer = this.messageBuffers.get(messageId);
@@ -1392,11 +1462,13 @@ class StreamingService {
 	 */
 	public stopCurrentStream(): void {
 		if (!this.currentAssistantMessageId) {
-			console.warn('No current stream to stop');
+			logger.warn('streaming-service', 'No current stream to stop');
 			return;
 		}
 
-		console.log('🛑 Stopping current stream:', this.currentAssistantMessageId);
+		logger.debug('streaming-service', 'Stopping current stream', {
+			messageId: this.currentAssistantMessageId
+		});
 
 		// Close the SSE connection
 		if (this.abortController) {

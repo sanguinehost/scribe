@@ -30,6 +30,7 @@ export interface Message {
 	status?: string; // Message status: streaming, completed, failed, partial, pending
 	error_message?: string | null; // Error message if generation failed
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
+	contentVersion?: number; // Reactivity signal - increments when content changes during streaming
 	// Variant metadata
 	variant_count: number; // Number of variants for this message
 	current_variant_index: number; // Currently selected variant index
@@ -582,6 +583,7 @@ export interface ScribeChatMessage {
 	// UI state
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages
+	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
 }
 
 export type DocumentResponse = {
@@ -619,7 +621,8 @@ export type SuggestedActionsResponse = {
 
 // Types for Chat Session Settings
 export interface UpdateChatSessionSettingsRequest {
-	title?: string | null;
+	// NOTE: Must match backend UpdateChatSettingsRequest exactly (no extra fields!)
+	// Extra fields cause 422 errors due to serde's default deny_unknown_fields
 	chronicle_id?: string | null; // Associate chat with chronicle (backend API uses chronicle_id)
 	temperature?: number | null;
 	max_output_tokens?: number | null;
@@ -630,15 +633,11 @@ export interface UpdateChatSessionSettingsRequest {
 	seed?: number | null;
 	history_management_strategy?: string | null;
 	history_management_limit?: number | null;
-	visibility?: VisibilityType | null;
 	active_custom_persona_id?: string | null;
 	model_name?: string | null;
 	model_provider?: string | null;
 	gemini_thinking_budget?: number | null;
 	gemini_enable_code_execution?: boolean | null;
-	context_total_token_limit?: number | null;
-	context_recent_history_budget?: number | null;
-	context_rag_budget?: number | null;
 	agent_mode?: string | null;
 	prompt_template_id?: string | null;
 }

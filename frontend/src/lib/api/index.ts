@@ -130,6 +130,7 @@ import {
 } from '$lib/auth.svelte'; // Import the new auth store functions
 import { browser as _browser } from '$app/environment'; // To check if in browser context
 import { env } from '$env/dynamic/public';
+import { logger } from '$lib/utils/logger';
 
 // Actual API client
 class ApiClient {
@@ -155,16 +156,15 @@ class ApiClient {
 		// Debug log to verify API URL is set correctly
 		if (_browser) {
 			if (!apiUrl) {
-				console.warn(
-					'[ApiClient] PUBLIC_API_URL is not defined, using relative paths or provided baseUrl'
+				logger.warn(
+					'api-client',
+					'PUBLIC_API_URL is not defined, using relative paths or provided baseUrl'
 				);
 			}
-			console.log(
-				`[ApiClient] Initialized with baseUrl: ${this.baseUrl || '(empty - using relative paths)'}`
-			);
-			if (apiUrl) {
-				console.log(`[ApiClient] PUBLIC_API_URL from env: ${apiUrl}`);
-			}
+			logger.debug('api-client', 'Initialized', {
+				baseUrl: this.baseUrl || '(empty - using relative paths)',
+				publicApiUrl: apiUrl
+			});
 		}
 	}
 
@@ -175,40 +175,43 @@ class ApiClient {
 
 	// Initialize desktop auth service if in Tauri environment
 	private async initDesktopAuth(): Promise<void> {
-		console.log(
-			'[ApiClient.initDesktopAuth] Called, already initialized:',
-			this.desktopAuthInitialized
-		);
+		logger.debug('api-client', 'initDesktopAuth called', {
+			alreadyInitialized: this.desktopAuthInitialized
+		});
+
 		if (this.desktopAuthInitialized) return;
 
 		const isDesktop = isDesktopMode();
-		console.log('[ApiClient.initDesktopAuth] isDesktopMode():', isDesktop);
+		logger.debug('api-client', 'Desktop mode check', { isDesktopMode: isDesktop });
+
 		if (isDesktop) {
 			try {
-				console.log('[ApiClient.initDesktopAuth] Importing desktop-auth module...');
+				logger.debug('api-client', 'Importing desktop-auth module');
 				const { desktopAuth } = await import('$lib/api/desktop-auth');
 				this.desktopAuthService = desktopAuth;
-				console.log('[ApiClient.initDesktopAuth] Calling desktopAuth.initialize()...');
+
+				logger.debug('api-client', 'Calling desktopAuth.initialize');
 				const result = await this.desktopAuthService.initialize();
-				console.log(
-					'[ApiClient.initDesktopAuth] Initialize result:',
-					result.isOk(),
-					result.isOk() ? result.value : result.error
-				);
+				logger.debug('api-client', 'Initialize result', {
+					success: result.isOk(),
+					value: result.isOk() ? result.value : null,
+					error: result.isErr() ? result.error : null
+				});
 
 				// Only set initialized flag if tokens were successfully loaded
 				if (result.isOk() && result.value === true) {
 					this.desktopAuthInitialized = true;
-					console.log('[ApiClient] ✓ Desktop authentication initialized - tokens loaded');
+					logger.info('api-client', 'Desktop authentication initialized - tokens loaded');
 				} else if (result.isOk() && result.value === false) {
-					console.log(
-						'[ApiClient] ⚠ Desktop authentication not initialized - no tokens in storage'
+					logger.info(
+						'api-client',
+						'Desktop authentication not initialized - no tokens in storage'
 					);
 				} else {
-					console.error('[ApiClient] ✗ Desktop authentication failed:', result.error);
+					logger.error('api-client', 'Desktop authentication failed', result.error);
 				}
 			} catch (error) {
-				console.error('[ApiClient] ✗ Failed to initialize desktop auth:', error);
+				logger.error('api-client', 'Failed to initialize desktop auth', error as Error);
 				// Don't set initialized flag on failure - allow retry
 			}
 		}
@@ -222,9 +225,9 @@ class ApiClient {
 			await this.initDesktopAuth();
 
 			if (this.desktopAuthService) {
-				console.log('[ApiClient] Forcing desktop auth reload from storage...');
+				logger.debug('api-client', 'Forcing desktop auth reload from storage');
 				await this.desktopAuthService.initialize();
-				console.log('[ApiClient] Desktop auth credentials reloaded');
+				logger.debug('api-client', 'Desktop auth credentials reloaded');
 			}
 		}
 	}
@@ -236,7 +239,7 @@ class ApiClient {
 			await this.initDesktopAuth();
 
 			if (this.desktopAuthService) {
-				console.log('[ApiClient] Checking for stored tokens in Tauri secure storage...');
+				logger.debug('api-client', 'Checking for stored tokens in Tauri secure storage');
 				return await this.desktopAuthService.initialize();
 			}
 		}
@@ -246,7 +249,7 @@ class ApiClient {
 	// Clear desktop tokens from memory and secure storage
 	async clearDesktopTokens(): Promise<void> {
 		if (isDesktopMode() && this.desktopAuthService) {
-			console.log('[ApiClient] Clearing desktop tokens...');
+			logger.debug('api-client', 'Clearing desktop tokens');
 			await this.desktopAuthService.logout();
 		}
 	}
@@ -254,45 +257,46 @@ class ApiClient {
 	// Get authentication headers (JWT for desktop, nothing for web - uses cookies)
 	private async getAuthHeaders(): Promise<Record<string, string>> {
 		if (isDesktopMode()) {
-			console.log(
-				'[ApiClient.getAuthHeaders] Desktop mode detected, desktopAuthService:',
-				!!this.desktopAuthService
-			);
+			logger.debug('api-client', 'Desktop mode detected', {
+				hasAuthService: !!this.desktopAuthService
+			});
+
 			if (this.desktopAuthService) {
 				// Ensure token is valid before making request
 				const tokenResult = await this.desktopAuthService.ensureValidToken();
-				console.log('[ApiClient.getAuthHeaders] Token validation result:', tokenResult.isOk());
+				logger.debug('api-client', 'Token validation result', { success: tokenResult.isOk() });
+
 				if (tokenResult.isOk()) {
 					const headers = this.desktopAuthService.getAuthHeaders();
-					console.log(
-						'[ApiClient.getAuthHeaders] ✓ Returning JWT headers, has Authorization:',
-						'Authorization' in headers
-					);
+					logger.debug('api-client', 'Returning JWT headers', {
+						hasAuthorization: 'Authorization' in headers
+					});
 					return headers;
 				} else {
-					console.error(
-						'[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: JWT token validation failed - NO COOKIE FALLBACK'
+					logger.error(
+						'api-client',
+						'DESKTOP MODE: JWT token validation failed - NO COOKIE FALLBACK'
 					);
-					console.error('[ApiClient.getAuthHeaders] Error:', tokenResult.error);
-					console.error(
-						'[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401'
+					logger.error('api-client', 'Token validation error', tokenResult.error);
+					logger.error(
+						'api-client',
+						'Desktop mode requires JWT authentication - request will fail with 401'
 					);
 					// Desktop mode should NOT fall back to cookies - return empty headers
 					// This will cause backend to return 401, which is correct behavior
 					return {};
 				}
 			} else {
-				console.error(
-					'[ApiClient.getAuthHeaders] ✗ DESKTOP MODE: desktopAuthService not initialized!'
-				);
-				console.error(
-					'[ApiClient.getAuthHeaders] Desktop mode requires JWT authentication - request will fail with 401'
+				logger.error('api-client', 'DESKTOP MODE: desktopAuthService not initialized!');
+				logger.error(
+					'api-client',
+					'Desktop mode requires JWT authentication - request will fail with 401'
 				);
 				// Desktop mode should NOT fall back to cookies
 				return {};
 			}
 		}
-		console.log('[ApiClient.getAuthHeaders] Web mode - using Cookie authentication');
+		logger.debug('api-client', 'Web mode - using Cookie authentication');
 		return {};
 	}
 
@@ -304,14 +308,14 @@ class ApiClient {
 	): Promise<_Result<T, ApiError>> {
 		// Early validation to prevent errors
 		if (!endpoint) {
-			console.error('[ApiClient] fetch: No endpoint provided');
+			logger.error('api-client', 'No endpoint provided');
 			const error = new Error('No endpoint provided');
 			return err(new ApiNetworkError('No endpoint provided', error));
 		}
 
 		// Validate fetch function exists
 		if (!fetchFn || typeof fetchFn !== 'function') {
-			console.error('[ApiClient] fetch: No valid fetch function available');
+			logger.error('api-client', 'No valid fetch function available');
 			const error = new Error('No fetch function available');
 			return err(new ApiNetworkError('No fetch function available', error));
 		}
@@ -324,9 +328,9 @@ class ApiClient {
 
 		// Add debug logging for production debugging
 		const fullUrl = `${this.baseUrl}${endpoint}`;
-		console.log(`[${new Date().toISOString()}] ApiClient.fetch: Making request to ${fullUrl}`, {
+		logger.debug('api-client', 'Making request', {
+			url: fullUrl,
 			method: options.method || 'GET',
-			headers: options.headers,
 			credentials: 'include',
 			baseUrl: this.baseUrl,
 			authMode: Object.keys(authHeaders).length > 0 ? 'JWT' : 'Cookie'
@@ -336,7 +340,10 @@ class ApiClient {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => {
 			controller.abort();
-			console.warn(`[ApiClient] Request timeout after ${this.DEFAULT_TIMEOUT_MS}ms: ${fullUrl}`);
+			logger.warn('api-client', 'Request timeout', {
+				url: fullUrl,
+				timeoutMs: this.DEFAULT_TIMEOUT_MS
+			});
 		}, this.DEFAULT_TIMEOUT_MS);
 
 		try {
@@ -358,31 +365,32 @@ class ApiClient {
 
 				// Check if error was due to timeout/abort
 				if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-					console.error(`[ApiClient] Request aborted (timeout) for ${endpoint}`);
+					logger.error('api-client', 'Request aborted (timeout)', { endpoint });
 					return err(
 						new ApiNetworkError(`Request timeout after ${this.DEFAULT_TIMEOUT_MS}ms`, fetchError)
 					);
 				}
 
-				console.error(`[ApiClient] Immediate fetch error for ${endpoint}:`, fetchError);
+				logger.error('api-client', 'Immediate fetch error', { endpoint, error: fetchError });
 				throw fetchError; // Re-throw to be caught by outer catch
 			}
 
 			// Log response details for debugging
-			console.log(`[${new Date().toISOString()}] ApiClient.fetch: Response received`, {
+			logger.debug('api-client', 'Response received', {
 				url: fullUrl,
 				status: response.status,
 				statusText: response.statusText,
-				headers: Object.fromEntries(response.headers.entries()),
 				ok: response.ok
 			});
 
 			// Only log non-2xx responses
 			if (!response.ok) {
-				console.log(
-					`[${new Date().toISOString()}] ApiClient.fetch: Response status ${response.status} for ${endpoint}`
-				);
+				logger.debug('api-client', 'Non-OK response status', {
+					endpoint,
+					status: response.status
+				});
 			}
+
 			if (!response.ok) {
 				// Parse error message for specific error type detection
 				let errorData: { message: string; error_code?: string } = {
@@ -392,19 +400,14 @@ class ApiClient {
 				try {
 					errorData = await response.json();
 					// Log error response body for debugging
-					console.error(
-						`[${new Date().toISOString()}] ApiClient.fetch: Error response body for ${endpoint}`,
-						{
-							status: response.status,
-							statusText: response.statusText,
-							errorData
-						}
-					);
+					logger.error('api-client', 'Error response body', {
+						endpoint,
+						status: response.status,
+						statusText: response.statusText,
+						errorData
+					});
 				} catch (parseError) {
-					console.error(
-						`[${new Date().toISOString()}] ApiClient.fetch: Failed to parse error JSON for ${endpoint}`,
-						parseError
-					);
+					logger.error('api-client', 'Failed to parse error JSON', { endpoint, parseError });
 					// If we can't parse the JSON and it's a 500+ error, it's likely a proxy error (backend offline)
 					isProxyError = response.status >= 500;
 				}
@@ -423,16 +426,15 @@ class ApiClient {
 						errorMessage.includes('Encryption key missing');
 
 					if (isDekMissingError) {
-						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: 401 DEK Missing detected. Session valid but encryption key lost during restart.`
+						logger.info(
+							'api-client',
+							'401 DEK Missing detected - session valid but encryption key lost'
 						);
 
 						// IMMEDIATELY dispatch global event to show re-auth modal
 						// This ensures ANY API call that hits DEK missing triggers the modal
 						if (_browser) {
-							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: Dispatching global auth:dek-missing event`
-							);
+							logger.info('api-client', 'Dispatching global auth:dek-missing event');
 							window.dispatchEvent(
 								new CustomEvent('auth:dek-missing', {
 									detail: { reason: 'dek_missing', immediate: true, endpoint }
@@ -444,8 +446,9 @@ class ApiClient {
 					} else {
 						// Check if we're in desktop mode with JWT authentication
 						if (isDesktopMode() && this.desktopAuthService) {
-							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: 401 in desktop mode - attempting token refresh before clearing...`
+							logger.info(
+								'api-client',
+								'401 in desktop mode - attempting token refresh before clearing'
 							);
 
 							// Try to refresh token first before clearing everything
@@ -453,33 +456,32 @@ class ApiClient {
 								const refreshResult = await this.desktopAuthService.ensureValidToken();
 
 								if (refreshResult.isOk()) {
-									console.log(
-										`[${new Date().toISOString()}] ApiClient.fetch: Token refresh successful - caller should retry request`
+									logger.info(
+										'api-client',
+										'Token refresh successful - caller should retry request'
 									);
 									// Token refreshed successfully - return special error to signal retry
 									return err(new ApiAuthError('Token refreshed - please retry request', 401));
 								}
 
-								console.log(
-									`[${new Date().toISOString()}] ApiClient.fetch: Token refresh failed - tokens are truly expired or invalid`
+								logger.info(
+									'api-client',
+									'Token refresh failed - tokens are truly expired or invalid'
 								);
 							} catch (refreshError) {
-								console.error(
-									`[${new Date().toISOString()}] ApiClient.fetch: Error during token refresh attempt:`,
-									refreshError
+								logger.error(
+									'api-client',
+									'Error during token refresh attempt',
+									refreshError as Error
 								);
 							}
 
 							// Only clear tokens if refresh failed - tokens are truly invalid
-							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: Clearing expired/invalid tokens...`
-							);
+							logger.info('api-client', 'Clearing expired/invalid tokens');
 
 							// Prevent multiple concurrent logout calls
 							if (this.logoutInProgress) {
-								console.log(
-									`[${new Date().toISOString()}] ApiClient.fetch: Logout already in progress - waiting...`
-								);
+								logger.debug('api-client', 'Logout already in progress - waiting');
 								await this.logoutPromise;
 								return err(new ApiAuthError('Authentication cleared by another request', 401));
 							}
@@ -488,13 +490,12 @@ class ApiClient {
 							this.logoutPromise = (async () => {
 								try {
 									await this.desktopAuthService.logout();
-									console.log(
-										`[${new Date().toISOString()}] ApiClient.fetch: Desktop tokens cleared successfully`
-									);
+									logger.debug('api-client', 'Desktop tokens cleared successfully');
 								} catch (logoutError) {
-									console.error(
-										`[${new Date().toISOString()}] ApiClient.fetch: Failed to clear desktop tokens:`,
-										logoutError
+									logger.error(
+										'api-client',
+										'Failed to clear desktop tokens',
+										logoutError as Error
 									);
 								} finally {
 									this.logoutInProgress = false;
@@ -506,9 +507,7 @@ class ApiClient {
 
 							// Dispatch event to redirect to login
 							if (_browser) {
-								console.log(
-									`[${new Date().toISOString()}] ApiClient.fetch: Dispatching auth:token-expired event`
-								);
+								logger.debug('api-client', 'Dispatching auth:token-expired event');
 								window.dispatchEvent(
 									new CustomEvent('auth:token-expired', {
 										detail: { reason: 'jwt_expired', endpoint }
@@ -517,26 +516,22 @@ class ApiClient {
 							}
 						}
 
-						console.log(
-							`[${new Date().toISOString()}] ApiClient.fetch: 401 Unauthorized. Invalid session or credentials.`
-						);
+						logger.info('api-client', '401 Unauthorized - invalid session or credentials');
 						return err(new ApiAuthError(errorMessage, 401));
 					}
 				}
 
 				// Handle 403 Forbidden
 				if (response.status === 403) {
-					console.log(
-						`[${new Date().toISOString()}] ApiClient.fetch: 403 Forbidden. Access denied.`
-					);
+					logger.info('api-client', '403 Forbidden - access denied');
 					return err(new ApiAuthError(errorMessage, 403));
 				}
 
 				// Handle 503 Service Unavailable and other 5xx errors - backend restarting
 				if (response.status === 503 || response.status >= 500) {
-					console.log(
-						`[${new Date().toISOString()}] ApiClient.fetch: ${response.status} error. Backend may be restarting.`
-					);
+					logger.info('api-client', 'Server error - backend may be restarting', {
+						status: response.status
+					});
 
 					// Handle proxy errors (Vite dev server can't reach backend) as connection issues
 					if (isProxyError && _browser) {
@@ -548,9 +543,10 @@ class ApiClient {
 							endpoint.includes('/api/lorebooks');
 
 						if (isAuthEndpoint) {
-							console.log(
-								`[${new Date().toISOString()}] ApiClient.fetch: Proxy error ${response.status} on endpoint ${endpoint}. Backend appears to be offline.`
-							);
+							logger.info('api-client', 'Proxy error on auth endpoint - backend appears offline', {
+								endpoint,
+								status: response.status
+							});
 							setConnectionError();
 						}
 					}
@@ -559,10 +555,10 @@ class ApiClient {
 				}
 
 				// Other errors
-				console.error(
-					`[${new Date().toISOString()}] ApiClient.fetch: EXIT - API Error ${response.status}`,
+				logger.error('api-client', 'API Error', {
+					status: response.status,
 					errorData
-				);
+				});
 				return err(new ApiResponseError(response.status, errorMessage));
 			}
 
@@ -572,22 +568,19 @@ class ApiClient {
 			}
 
 			const data = await response.json();
-			// Success logging removed - only log errors
 
 			// Log successful response body for debugging
-			console.log(
-				`[${new Date().toISOString()}] ApiClient.fetch: Success response for ${endpoint}`,
-				{
-					status: response.status,
-					data
-				}
-			);
+			logger.debug('api-client', 'Success response', {
+				endpoint,
+				status: response.status
+			});
 
 			// If we successfully made a request, clear any connection errors
 			if (_browser) {
 				if (getHasConnectionError()) {
-					console.log(
-						`[${new Date().toISOString()}] ApiClient.fetch: Server appears to be back online, clearing connection error state.`
+					logger.info(
+						'api-client',
+						'Server appears to be back online - clearing connection error state'
 					);
 					// Clear connection error state
 					clearConnectionError();
@@ -603,10 +596,10 @@ class ApiClient {
 
 			return ok(data as T);
 		} catch (_error) {
-			console.error(
-				`[${new Date().toISOString()}] ApiClient.fetch: EXIT - Network/Fetch Error for ${endpoint}`,
-				_error
-			);
+			logger.error('api-client', 'Network/Fetch Error', {
+				endpoint,
+				error: _error
+			});
 
 			// Check if this is a network connectivity issue
 			const isNetworkError =
@@ -628,9 +621,9 @@ class ApiClient {
 					endpoint.includes('/api/lorebooks');
 
 				if (isAuthEndpoint) {
-					console.log(
-						`[${new Date().toISOString()}] ApiClient.fetch: Network error on auth endpoint ${endpoint}. Backend may be down.`
-					);
+					logger.info('api-client', 'Network error on auth endpoint - backend may be down', {
+						endpoint
+					});
 					// Set connection error state but don't automatically log out
 					setConnectionError();
 				}
@@ -670,7 +663,10 @@ class ApiClient {
 		data: { email: string },
 		fetchFn: typeof fetch = globalThis.fetch
 	): Promise<_Result<LoginSuccessData, ApiError>> {
-		console.warn('getAuthUser called - consider using authenticateUser for standard login flow');
+		logger.warn(
+			'api-client',
+			'getAuthUser called - consider using authenticateUser for standard login flow'
+		);
 		// This method likely also needs to align with the LoginSuccessData response if it's hitting the same /api/auth/login endpoint
 		// For now, assuming it should also return LoginSuccessData. If it's a different flow, this might need adjustment.
 		return this.fetch<LoginSuccessData>(
@@ -840,10 +836,7 @@ class ApiClient {
 	// Updated createChat to accept and send character details
 	async createChat(_data: CreateChatRequest): Promise<_Result<ScribeChatSession, ApiError>> {
 		// Use ScribeChatSession
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.createChat: Creating chat with data:`,
-			_data
-		);
+		logger.debug('api-client', 'Creating chat', { data: _data });
 
 		// Feature-flagged request body: Desktop/SQLite uses minimal backend contract,
 		// Cloud/PostgreSQL uses full frontend format
@@ -876,7 +869,7 @@ class ApiClient {
 	}
 
 	async getCharacter(id: string): Promise<_Result<Character, ApiError>> {
-		console.log(`[${new Date().toISOString()}] ApiClient.getCharacter: Fetching character ${id}`);
+		logger.debug('api-client', 'Fetching character', { id });
 		return this.fetch<Character>(`/api/characters/fetch/${id}`);
 	}
 
@@ -884,10 +877,7 @@ class ApiClient {
 		id: string,
 		data: Partial<Character>
 	): Promise<_Result<Character, ApiError>> {
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.updateCharacter: Updating character ${id}`,
-			data
-		);
+		logger.debug('api-client', 'Updating character', { id, data });
 		return this.fetch<Character>(`/api/characters/${id}`, {
 			method: 'PUT',
 			body: JSON.stringify(data)
@@ -895,10 +885,7 @@ class ApiClient {
 	}
 
 	async createCharacter(_data: Omit<Character, 'id'>): Promise<_Result<Character, ApiError>> {
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.createCharacter: Creating character`,
-			_data
-		);
+		logger.debug('api-client', 'Creating character', { data: _data });
 		return this.fetch<Character>('/api/characters', {
 			method: 'POST',
 			body: JSON.stringify(_data)
@@ -906,30 +893,22 @@ class ApiClient {
 	}
 
 	async deleteCharacter(id: string): Promise<_Result<void, ApiError>> {
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.deleteCharacter: Deleting character ${id}`
-		);
+		logger.debug('api-client', 'Deleting character', { id });
 		return this.fetch<void>(`/api/characters/remove/${id}`, {
 			method: 'DELETE'
 		});
 	}
 
 	async uploadCharacter(file: File): Promise<_Result<Character, ApiError>> {
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Uploading character file ${file.name}`
-		);
+		logger.debug('api-client', 'Uploading character file', { filename: file.name });
 
 		// Desktop mode uses base64 upload to bypass protocol handler multipart issues
 		const desktop = isDesktopMode();
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.uploadCharacter: Desktop mode: ${desktop}`
-		);
+		logger.debug('api-client', 'Upload mode check', { desktop });
 
 		if (desktop) {
 			try {
-				console.log(
-					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Using base64 upload for desktop`
-				);
+				logger.debug('api-client', 'Using base64 upload for desktop');
 
 				// Read file as base64
 				const arrayBuffer = await file.arrayBuffer();
@@ -944,9 +923,7 @@ class ApiClient {
 					filename: file.name
 				};
 
-				console.log(
-					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Encoded ${bytes.length} bytes to base64`
-				);
+				logger.debug('api-client', 'Encoded file to base64', { bytes: bytes.length });
 
 				// Use the base64 upload endpoint
 				return this.fetch<Character>('/api/characters/upload-base64', {
@@ -954,10 +931,7 @@ class ApiClient {
 					body: JSON.stringify(payload)
 				});
 			} catch (_error) {
-				console.error(
-					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Base64 upload error`,
-					_error
-				);
+				logger.error('api-client', 'Base64 upload error', _error as Error);
 				return err(new ApiNetworkError('Failed to upload character file.', _error as Error));
 			}
 		}
@@ -968,9 +942,7 @@ class ApiClient {
 
 		try {
 			const fullUrl = `${this.baseUrl}/api/characters/upload`;
-			console.log(
-				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Making multipart request to ${fullUrl}`
-			);
+			logger.debug('api-client', 'Making multipart request', { url: fullUrl });
 
 			// Get auth headers (for JWT desktop mode) - must use native fetch for multipart
 			// because this.fetch() sets Content-Type: application/json which breaks multipart
@@ -987,7 +959,7 @@ class ApiClient {
 				}
 			});
 
-			console.log(`[${new Date().toISOString()}] ApiClient.uploadCharacter: Response received`, {
+			logger.debug('api-client', 'Upload response received', {
 				url: fullUrl,
 				status: response.status,
 				statusText: response.statusText,
@@ -999,29 +971,20 @@ class ApiClient {
 				try {
 					errorData = await response.json();
 				} catch (parseError) {
-					console.error(
-						`[${new Date().toISOString()}] ApiClient.uploadCharacter: Failed to parse error JSON`,
-						parseError
-					);
+					logger.error('api-client', 'Failed to parse error JSON', parseError as Error);
 				}
-				console.error(
-					`[${new Date().toISOString()}] ApiClient.uploadCharacter: Upload failed with status ${response.status}`,
+				logger.error('api-client', 'Upload failed', {
+					status: response.status,
 					errorData
-				);
+				});
 				return err(new ApiResponseError(response.status, errorData.message));
 			}
 
 			const data = await response.json();
-			console.log(
-				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Upload successful`,
-				data
-			);
+			logger.debug('api-client', 'Upload successful', { data });
 			return ok(data as Character);
 		} catch (_error) {
-			console.error(
-				`[${new Date().toISOString()}] ApiClient.uploadCharacter: Network/Fetch Error`,
-				_error
-			);
+			logger.error('api-client', 'Network/Fetch Error during upload', _error as Error);
 			return err(
 				new ApiNetworkError(
 					'Unable to upload character. Please check your connection or try again later.',
@@ -1032,9 +995,7 @@ class ApiClient {
 	}
 
 	async generateCharacter(payload: { prompt: string }): Promise<_Result<Character, ApiError>> {
-		console.log(
-			`[${new Date().toISOString()}] ApiClient.generateCharacter: Generating character from prompt`
-		);
+		logger.debug('api-client', 'Generating character from prompt');
 		return this.fetch<Character>('/api/characters/generate', {
 			method: 'POST',
 			body: JSON.stringify(payload)
@@ -1669,13 +1630,13 @@ class ApiClient {
 								} as GenerateCharacterFieldResponse;
 							}
 						} catch (parseError) {
-							console.error('[ApiClient] Failed to parse SSE chunk:', parseError);
+							logger.error('api-client', 'Failed to parse SSE chunk', parseError as Error);
 						}
 					}
 				}
 			}
 		} catch (error) {
-			console.error('[ApiClient] generateCharacterFieldStream error:', error);
+			logger.error('api-client', 'generateCharacterFieldStream error', error as Error);
 			throw error;
 		}
 	}

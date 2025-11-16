@@ -10,6 +10,7 @@ import { ok, err } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import { ApiAuthError, ApiNetworkError } from '$lib/errors/api';
 import { isDesktopMode } from '$lib/utils/features';
+import { logger } from '$lib/utils/logger';
 
 // Extend Window interface to include Tauri
 declare global {
@@ -19,12 +20,12 @@ declare global {
 }
 
 // Token storage interface matching Tauri backend StoredTokens
-// CRITICAL: Now includes expires_in and matches Rust type exactly
+// CRITICAL: Uses expires_at (absolute timestamp in milliseconds) instead of expires_in
 // JavaScript uses camelCase, Rust uses snake_case with #[serde(rename_all = "camelCase")]
 interface StoredTokens {
 	accessToken: string; // Rust: access_token (serde camelCase)
 	refreshToken: string; // Rust: refresh_token (serde camelCase)
-	expiresIn: number; // Rust: expires_in (serde camelCase)
+	expiresAt: number; // Rust: expires_at (serde camelCase) - Unix timestamp in milliseconds
 }
 
 // Token refresh response from backend
@@ -64,58 +65,57 @@ class DesktopAuthService {
 	 * Initialize the service by loading stored tokens
 	 */
 	async initialize(): Promise<Result<boolean, ApiError>> {
-		console.log('[DesktopAuth.initialize] START - checking environment');
-		console.log('[DesktopAuth.initialize] browser:', browser, 'isDesktopMode():', isDesktopMode());
+		logger.debug('desktop-auth', 'Initialization started - checking environment', {
+			browser,
+			isDesktopMode: isDesktopMode()
+		});
+
 		if (!browser || !isDesktopMode()) {
-			console.log('[DesktopAuth.initialize] Not in desktop environment, returning false');
+			logger.debug('desktop-auth', 'Not in desktop environment, returning false');
 			return ok(false); // Not in desktop environment
 		}
 
-		console.log('[DesktopAuth.initialize] Desktop environment detected, loading tokens...');
+		logger.info('desktop-auth', 'Desktop environment detected, loading tokens');
 		try {
 			const tokens = await invoke<StoredTokens | null>('load_tokens');
-			console.log(
-				'[DesktopAuth.initialize] load_tokens invoke completed:',
-				tokens ? 'TOKENS FOUND' : 'NO TOKENS'
-			);
+			logger.debug('desktop-auth', 'load_tokens invoke completed', {
+				tokensFound: !!tokens
+			});
 
 			if (tokens) {
 				this.accessToken = tokens.accessToken;
 				this.refreshToken = tokens.refreshToken;
 				// Use stored expires_in value (now available from unified type)
-				this.tokenExpiresAt = Date.now() + tokens.expiresIn * 1000;
-				console.log(
-					'[DesktopAuth.initialize] Tokens set in memory, expiry:',
-					new Date(this.tokenExpiresAt).toISOString()
-				);
+				this.tokenExpiresAt = tokens.expiresAt;
+				logger.debug('desktop-auth', 'Tokens set in memory', {
+					expiry: new Date(this.tokenExpiresAt).toISOString()
+				});
 
 				// Load DEK if available (Quick Start mode)
-				console.log('[DesktopAuth.initialize] Attempting to load DEK...');
+				logger.debug('desktop-auth', 'Attempting to load DEK');
 				try {
 					const dek = await invoke<string | null>('get_local_dek');
 					if (dek) {
 						this.dek = dek;
-						console.log('[DesktopAuth.initialize] ✓ DEK loaded from secure storage');
+						logger.info('desktop-auth', 'DEK loaded from secure storage');
 					} else {
-						console.warn(
-							'[DesktopAuth.initialize] ⚠ No DEK found in storage (Quick Start not used)'
-						);
+						logger.debug('desktop-auth', 'No DEK found in storage (Quick Start not used)');
 					}
 				} catch (error) {
-					console.error(
-						'[DesktopAuth.initialize] ✗ Failed to load DEK - API calls may fail:',
-						error
-					);
+					logger.warn('desktop-auth', 'Failed to load DEK - API calls may fail', error);
 					// Continue initialization - DEK is only required for Quick Start mode
 				}
 
-				console.log('[DesktopAuth.initialize] ✓ SUCCESS - Tokens loaded from secure storage');
+				logger.info(
+					'desktop-auth',
+					'Initialization successful - tokens loaded from secure storage'
+				);
 				return ok(true);
 			}
-			console.log('[DesktopAuth.initialize] No tokens found in storage');
+			logger.debug('desktop-auth', 'No tokens found in storage');
 			return ok(false);
 		} catch (error) {
-			console.error('[DesktopAuth.initialize] ✗ FAILED - Error loading tokens:', error);
+			logger.error('desktop-auth', 'Initialization failed - error loading tokens', error);
 			return err(new ApiNetworkError('Failed to load authentication tokens', error as Error));
 		}
 	}
@@ -154,7 +154,7 @@ class DesktopAuthService {
 			// We just need to store it in memory for the X-Scribe-Dek header
 			if (data.dek) {
 				this.dek = data.dek;
-				console.log('[DesktopAuth] DEK received from login response and stored in memory');
+				logger.debug('desktop-auth', 'DEK received from login response and stored in memory');
 			}
 
 			// Persist tokens to secure storage
@@ -162,14 +162,14 @@ class DesktopAuthService {
 				tokens: {
 					accessToken: data.access_token,
 					refreshToken: data.refresh_token,
-					expiresIn: data.expires_in
+					expiresAt: Date.now() + data.expires_in * 1000
 				}
 			});
 
-			console.log('[DesktopAuth] Login successful, tokens saved');
+			logger.info('desktop-auth', 'Login successful, tokens saved');
 			return ok(data.user);
 		} catch (error) {
-			console.error('[DesktopAuth] Login failed:', error);
+			logger.error('desktop-auth', 'Login failed', error);
 			return err(new ApiNetworkError('Login request failed', error as Error));
 		}
 	}
@@ -179,7 +179,7 @@ class DesktopAuthService {
 	 */
 	async autoLogin(): Promise<Result<TokenLoginResponse['user'], ApiError>> {
 		try {
-			console.log('[DesktopAuth] Starting Quick Start auto-login...');
+			logger.info('desktop-auth', 'Starting Quick Start auto-login');
 			// Call the auto-login endpoint
 			const response = await fetch('/api/auth/desktop/auto-login', {
 				method: 'GET'
@@ -191,11 +191,11 @@ class DesktopAuthService {
 			}
 
 			const data: TokenLoginResponse = await response.json();
-			console.log('[DesktopAuth] Auto-login response received:', {
+			logger.debug('desktop-auth', 'Auto-login response received', {
 				hasAccessToken: !!data.access_token,
 				hasRefreshToken: !!data.refresh_token,
 				hasDek: !!data.dek,
-				expiresIn: data.expires_in
+				expiresAt: Date.now() + data.expires_in * 1000
 			});
 
 			// Store tokens in memory
@@ -206,13 +206,13 @@ class DesktopAuthService {
 			// Store DEK if present (Quick Start mode - should always be present for auto-login)
 			if (data.dek) {
 				this.dek = data.dek;
-				console.log('[DesktopAuth] DEK received from auto-login and stored in memory');
+				logger.debug('desktop-auth', 'DEK received from auto-login and stored in memory');
 
 				// Persist DEK to secure storage
 				await invoke('save_local_dek', { dek: data.dek });
-				console.log('[DesktopAuth] DEK persisted to secure storage');
+				logger.debug('desktop-auth', 'DEK persisted to secure storage');
 			} else {
-				console.warn('[DesktopAuth] No DEK in auto-login response - this is unexpected!');
+				logger.warn('desktop-auth', 'No DEK in auto-login response - this is unexpected!');
 			}
 
 			// Persist tokens to secure storage
@@ -220,14 +220,14 @@ class DesktopAuthService {
 				tokens: {
 					accessToken: data.access_token,
 					refreshToken: data.refresh_token,
-					expiresIn: data.expires_in
+					expiresAt: Date.now() + data.expires_in * 1000
 				}
 			});
 
-			console.log('[DesktopAuth] Auto-login successful, tokens and DEK saved');
+			logger.info('desktop-auth', 'Auto-login successful, tokens and DEK saved');
 			return ok(data.user);
 		} catch (error) {
-			console.error('[DesktopAuth] Auto-login failed:', error);
+			logger.error('desktop-auth', 'Auto-login failed', error);
 			return err(new ApiNetworkError('Auto-login request failed', error as Error));
 		}
 	}
@@ -252,10 +252,10 @@ class DesktopAuthService {
 			// Clear tokens and DEK from secure storage
 			await invoke('clear_tokens'); // This already clears DEK as well
 
-			console.log('[DesktopAuth] Logout successful, tokens and DEK cleared');
+			logger.info('desktop-auth', 'Logout successful, tokens and DEK cleared');
 			return ok(undefined);
 		} catch (error) {
-			console.error('[DesktopAuth] Logout failed:', error);
+			logger.error('desktop-auth', 'Logout failed', error);
 			return err(new ApiNetworkError('Logout failed', error as Error));
 		}
 	}
@@ -264,17 +264,13 @@ class DesktopAuthService {
 	 * Get authorization headers for API requests
 	 */
 	getAuthHeaders(): Record<string, string> {
-		console.log(
-			'[DesktopAuth.getAuthHeaders] Called - accessToken:',
-			this.accessToken ? 'PRESENT' : 'MISSING',
-			'dek:',
-			this.dek ? 'PRESENT' : 'MISSING'
-		);
+		logger.debug('desktop-auth', 'Getting auth headers', {
+			hasAccessToken: !!this.accessToken,
+			hasDek: !!this.dek
+		});
 
 		if (!this.accessToken) {
-			console.warn(
-				'[DesktopAuth.getAuthHeaders] ⚠ No access token available - returning empty headers'
-			);
+			logger.warn('desktop-auth', 'No access token available - returning empty headers');
 			return {};
 		}
 
@@ -285,13 +281,9 @@ class DesktopAuthService {
 		// Include DEK header if available (Quick Start mode)
 		if (this.dek) {
 			headers['X-Scribe-Dek'] = this.dek;
-			console.log(
-				'[DesktopAuth.getAuthHeaders] ✓ Returning headers with Authorization + X-Scribe-Dek'
-			);
+			logger.debug('desktop-auth', 'Returning headers with Authorization + X-Scribe-Dek');
 		} else {
-			console.log(
-				'[DesktopAuth.getAuthHeaders] ✓ Returning headers with Authorization only (no DEK)'
-			);
+			logger.debug('desktop-auth', 'Returning headers with Authorization only (no DEK)');
 		}
 
 		return headers;
@@ -301,45 +293,41 @@ class DesktopAuthService {
 	 * Check if token needs refresh and refresh if necessary
 	 */
 	async ensureValidToken(): Promise<Result<void, ApiError>> {
-		console.log('[DesktopAuth.ensureValidToken] Checking token validity...');
+		logger.debug('desktop-auth', 'Checking token validity');
 
 		// If no token in memory, try to reload from secure storage
 		if (!this.accessToken || !this.refreshToken) {
-			console.warn(
-				'[DesktopAuth.ensureValidToken] ⚠ No tokens in memory - attempting to reload from secure storage'
-			);
+			logger.warn('desktop-auth', 'No tokens in memory - attempting to reload from secure storage');
 
 			try {
 				const tokens = await invoke<StoredTokens | null>('load_tokens');
 				if (tokens) {
-					console.log('[DesktopAuth.ensureValidToken] ✓ Reloaded tokens from secure storage');
+					logger.info('desktop-auth', 'Reloaded tokens from secure storage');
 					this.accessToken = tokens.accessToken;
 					this.refreshToken = tokens.refreshToken;
-					this.tokenExpiresAt = Date.now() + tokens.expiresIn * 1000;
+					this.tokenExpiresAt = tokens.expiresAt;
 
 					// Try to reload DEK as well
 					try {
 						const dek = await invoke<string | null>('get_local_dek');
 						if (dek) {
 							this.dek = dek;
-							console.log('[DesktopAuth.ensureValidToken] ✓ DEK reloaded from secure storage');
+							logger.debug('desktop-auth', 'DEK reloaded from secure storage');
 						}
 					} catch (dekError) {
-						console.warn('[DesktopAuth.ensureValidToken] DEK not available:', dekError);
+						logger.warn('desktop-auth', 'DEK not available', dekError);
 					}
 
 					// Continue with normal validation below
 				} else {
-					console.error(
-						'[DesktopAuth.ensureValidToken] ✗ No tokens available - accessToken:',
-						this.accessToken ? 'PRESENT' : 'MISSING',
-						'refreshToken:',
-						this.refreshToken ? 'PRESENT' : 'MISSING'
-					);
+					logger.error('desktop-auth', 'No tokens available', {
+						hasAccessToken: !!this.accessToken,
+						hasRefreshToken: !!this.refreshToken
+					});
 					return err(new ApiAuthError('No authentication tokens available', 401));
 				}
 			} catch (error) {
-				console.error('[DesktopAuth.ensureValidToken] Failed to load tokens from storage:', error);
+				logger.error('desktop-auth', 'Failed to load tokens from storage', error);
 				return err(new ApiAuthError('Failed to load authentication tokens', 401));
 			}
 		}
@@ -348,22 +336,22 @@ class DesktopAuthService {
 		const timeUntilExpiry = this.tokenExpiresAt ? this.tokenExpiresAt - Date.now() : 0;
 		if (this.tokenExpiresAt && Date.now() < this.tokenExpiresAt - 60000) {
 			// 1 minute buffer
-			console.log(
-				`[DesktopAuth.ensureValidToken] ✓ Token still valid (expires in ${Math.floor(timeUntilExpiry / 1000)}s)`
-			);
+			logger.debug('desktop-auth', 'Token still valid', {
+				expiresInSeconds: Math.floor(timeUntilExpiry / 1000)
+			});
 			return ok(undefined);
 		}
 
-		console.log('[DesktopAuth.ensureValidToken] Token needs refresh or expired');
+		logger.info('desktop-auth', 'Token needs refresh or expired');
 
 		// If already refreshing, wait for that to complete
 		if (this.refreshPromise) {
-			console.log('[DesktopAuth.ensureValidToken] Refresh already in progress, waiting...');
+			logger.debug('desktop-auth', 'Refresh already in progress, waiting');
 			return this.refreshPromise;
 		}
 
 		// Start refresh process
-		console.log('[DesktopAuth.ensureValidToken] Starting token refresh...');
+		logger.info('desktop-auth', 'Starting token refresh');
 		this.refreshPromise = this.refreshAccessToken();
 		const result = await this.refreshPromise;
 		this.refreshPromise = null;
@@ -379,7 +367,7 @@ class DesktopAuthService {
 		}
 
 		try {
-			console.log('[DesktopAuth] Refreshing access token...');
+			logger.info('desktop-auth', 'Refreshing access token');
 			const response = await fetch('/api/auth/token/refresh', {
 				method: 'POST',
 				headers: {
@@ -410,14 +398,14 @@ class DesktopAuthService {
 				tokens: {
 					accessToken: data.access_token,
 					refreshToken: this.refreshToken,
-					expiresIn: data.expires_in
+					expiresAt: Date.now() + data.expires_in * 1000
 				}
 			});
 
-			console.log('[DesktopAuth] Access token refreshed successfully');
+			logger.info('desktop-auth', 'Access token refreshed successfully');
 			return ok(undefined);
 		} catch (error) {
-			console.error('[DesktopAuth] Token refresh failed:', error);
+			logger.error('desktop-auth', 'Token refresh failed', error);
 			return err(new ApiNetworkError('Token refresh failed', error as Error));
 		}
 	}
@@ -432,3 +420,10 @@ class DesktopAuthService {
 
 // Export singleton instance
 export const desktopAuth = new DesktopAuthService();
+
+/**
+ * Check if running in desktop mode
+ */
+export function isInDesktopMode(): boolean {
+	return isDesktopMode();
+}

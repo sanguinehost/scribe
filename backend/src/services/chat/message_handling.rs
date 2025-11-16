@@ -116,7 +116,13 @@ pub fn save_chat_message_internal(
                     .first::<ChatMessage>(conn)
                 {
                     Ok(inserted_message) => {
-                        info!(message_id = %inserted_message.id, session_id = %inserted_message.session_id, "Chat message successfully inserted");
+                        info!(
+                            message_id = %inserted_message.id,
+                            session_id = %inserted_message.session_id,
+                            prompt_tokens = ?inserted_message.prompt_tokens,
+                            completion_tokens = ?inserted_message.completion_tokens,
+                            "Chat message successfully inserted (SQLite query returned)"
+                        );
                         Ok(inserted_message)
                     }
                     Err(e) => {

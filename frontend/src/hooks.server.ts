@@ -2,12 +2,13 @@
 // This is safe because it's baked at build time
 import { PUBLIC_ENVIRONMENT } from '$env/static/public';
 import type { Handle, HandleFetch } from '@sveltejs/kit';
+import { logger } from '$lib/utils/logger';
 
-console.log('[hooks.server.ts] File loaded! PUBLIC_ENVIRONMENT:', PUBLIC_ENVIRONMENT);
+logger.debug('hooks-server', 'File loaded', { environment: PUBLIC_ENVIRONMENT });
 
 // Check if we're in desktop mode - this prevents loading server-side modules in browser
 const isDesktop = PUBLIC_ENVIRONMENT === 'desktop';
-console.log('[hooks.server.ts] isDesktop:', isDesktop);
+logger.debug('hooks-server', 'Desktop mode check', { isDesktop });
 
 // Declare functions that will be conditionally assigned
 let handle: Handle;
@@ -17,13 +18,13 @@ let handleFetch: HandleFetch;
 // These run entirely in the browser and don't need Node.js runtime
 if (isDesktop) {
 	handle = async ({ event, resolve }) => {
-		console.log('[hooks.server.ts] DESKTOP handle() called for:', event.url.toString());
+		logger.debug('hooks-server-desktop', 'Handle called', { url: event.url.toString() });
 		// Just pass through - no server-side auth in desktop mode
 		return resolve(event);
 	};
 
 	handleFetch = async ({ request, fetch }) => {
-		console.log('[hooks.server.ts] DESKTOP handleFetch() called for:', request.url);
+		logger.debug('hooks-server-desktop', 'HandleFetch called', { url: request.url });
 		// Just pass through - no cookie forwarding needed in desktop mode
 		return fetch(request);
 	};
@@ -38,7 +39,7 @@ if (isDesktop) {
 
 	handleFetch = async ({ event, request, fetch }) => {
 		// Add debug logging for production debugging
-		console.log(`[${new Date().toISOString()}] handleFetch: Processing request`, {
+		logger.debug('hooks-server-cloud-fetch', 'Processing request', {
 			url: request.url,
 			method: request.method,
 			headers: Object.fromEntries(request.headers.entries()),
@@ -53,25 +54,22 @@ if (isDesktop) {
 			(request.url.includes('localhost') || request.url.startsWith(event.url.origin + '/api'));
 
 		if (isProductionAPI || isLocalAPI) {
-			console.log(`[${new Date().toISOString()}] handleFetch: Forwarding cookies to API`);
+			logger.debug('hooks-server-cloud-fetch', 'Forwarding cookies to API');
 
 			// Get cookies from the original request
 			const cookies = event.request.headers.get('cookie');
 			if (cookies) {
-				console.log(
-					`[${new Date().toISOString()}] handleFetch: Adding cookies to request:`,
-					cookies
-				);
+				logger.debug('hooks-server-cloud-fetch', 'Adding cookies to request', { cookies });
 				request.headers.set('cookie', cookies);
 			} else {
-				console.log(`[${new Date().toISOString()}] handleFetch: No cookies found to forward`);
+				logger.debug('hooks-server-cloud-fetch', 'No cookies found to forward');
 			}
 		}
 
 		const response = await fetch(request);
 
 		// Log response details
-		console.log(`[${new Date().toISOString()}] handleFetch: Response received`, {
+		logger.debug('hooks-server-cloud-fetch', 'Response received', {
 			url: request.url,
 			status: response.status,
 			headers: Object.fromEntries(response.headers.entries()),
@@ -81,19 +79,17 @@ if (isDesktop) {
 		// Forward Set-Cookie headers from API responses to the browser
 		if (isProductionAPI || isLocalAPI) {
 			const setCookieHeaders = response.headers.getSetCookie?.() || [];
-			console.log(
-				`[${new Date().toISOString()}] handleFetch: Processing ${setCookieHeaders.length} Set-Cookie headers`
-			);
-			console.log(
-				`[${new Date().toISOString()}] handleFetch: Raw response headers:`,
-				Object.fromEntries(response.headers.entries())
-			);
+			logger.debug('hooks-server-cloud-fetch', 'Processing Set-Cookie headers', {
+				count: setCookieHeaders.length
+			});
+			logger.debug('hooks-server-cloud-fetch', 'Raw response headers', {
+				headers: Object.fromEntries(response.headers.entries())
+			});
 
 			for (const cookieHeader of setCookieHeaders) {
-				console.log(
-					`[${new Date().toISOString()}] handleFetch: Raw cookie header:`,
-					JSON.stringify(cookieHeader)
-				);
+				logger.debug('hooks-server-cloud-fetch', 'Raw cookie header', {
+					cookieHeader: JSON.stringify(cookieHeader)
+				});
 
 				// Parse cookie header: "name=value; Domain=...; Path=...; etc"
 				const [nameValue, ...attributes] = cookieHeader.split(';').map((s) => s.trim());
@@ -162,10 +158,10 @@ if (isDesktop) {
 					}
 
 					// Set the cookie on the browser via SvelteKit
-					console.log(
-						`[${new Date().toISOString()}] handleFetch: Setting cookie "${name}" with options:`,
-						cookieOptions
-					);
+					logger.debug('hooks-server-cloud-fetch', 'Setting cookie', {
+						name,
+						options: cookieOptions
+					});
 					event.cookies.set(name, value, cookieOptions);
 				}
 			}
