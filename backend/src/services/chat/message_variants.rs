@@ -60,11 +60,16 @@ pub async fn create_message_variant(
     content: &str,
     user_id: crate::db::DbId,
     dek: &SecretBox<Vec<u8>>,
+    prompt_tokens: Option<i32>,
+    completion_tokens: Option<i32>,
+    model_name: Option<String>,
 ) -> Result<crate::models::chats::MessageResponse, AppError> {
     tracing::info!(
-        "🆕 Creating new variant for message {} with content length {}",
+        "🆕 Creating new variant for message {} with content length {}, tokens: prompt={:?}, completion={:?}",
         message_id,
-        content.len()
+        content.len(),
+        prompt_tokens,
+        completion_tokens
     );
 
     // Get the next variant index first
@@ -79,8 +84,17 @@ pub async fn create_message_variant(
         next_index
     );
 
-    // Create new variant with encryption outside the closure
-    let new_variant = NewMessageVariant::new(message_id, next_index, content, user_id, dek)?;
+    // Create new variant with encryption AND token counts
+    let new_variant = NewMessageVariant::new(
+        message_id,
+        next_index,
+        content,
+        user_id,
+        dek,
+        prompt_tokens,
+        completion_tokens,
+        model_name.clone(),
+    )?;
 
     // Clone the DEK for use in the closure (create a new SecretBox from the exposed secret)
     let dek_for_closure = SecretBox::new(Box::new(dek.expose_secret().clone()));
@@ -137,13 +151,16 @@ pub async fn create_message_variant(
                     })?
                 };
 
-                // Create variant 0 with original content
+                // Create variant 0 with original content AND original token counts
                 let original_variant = NewMessageVariant::new(
                     message_id,
                     0, // Original message is variant 0
                     &original_content,
                     user_id,
                     &dek_for_closure,
+                    parent_message.prompt_tokens,       // Preserve original tokens
+                    parent_message.completion_tokens,   // Preserve original tokens
+                    Some(parent_message.model_name.clone()), // Preserve original model
                 )
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
@@ -480,6 +497,9 @@ pub async fn ensure_original_variant_exists(
             original_content,
             user_id,
             dek,
+            None, // Token counts not available in this edge case
+            None,
+            None,
         )?;
 
         #[cfg(feature = "postgres-backend")]
@@ -535,9 +555,9 @@ pub async fn select_message_variant(
         )));
     }
 
-    // Get variant content - if index 0, use original message content; otherwise get from variants table
-    let variant_content = if variant_index == 0 {
-        // Index 0 is the original message content - decrypt from parent message
+    // Get variant content AND token counts - if index 0, use original message; otherwise get from variants table
+    let (variant_content, variant_prompt_tokens, variant_completion_tokens, variant_model_name) = if variant_index == 0 {
+        // Index 0 is the original message content - decrypt from parent message and use parent's tokens
         use crate::crypto;
 
         // Get the nonce for the parent message content
@@ -551,17 +571,19 @@ pub async fn select_message_variant(
                     "Failed to decrypt original message content: {e}"
                 ))
             })?;
-        String::from_utf8(decrypted_content.expose_secret().clone()).map_err(|e| {
+        let content = String::from_utf8(decrypted_content.expose_secret().clone()).map_err(|e| {
             AppError::DecryptionError(format!("Failed to decode original message content: {e}"))
-        })?
+        })?;
+        
+        (content, parent_message.prompt_tokens, parent_message.completion_tokens, Some(parent_message.model_name.clone()))
     } else {
-        // Get content from variants table
+        // Get content AND token data from variants table
         let variant_dto =
             get_message_variant_by_index(state.clone(), message_id, variant_index, user_id, dek)
                 .await?;
 
         match variant_dto {
-            Some(dto) => dto.content,
+            Some(dto) => (dto.content, dto.prompt_tokens, dto.completion_tokens, dto.model_name),
             None => {
                 return Err(AppError::BadRequest(format!(
                     "Variant with index {} not found",
@@ -616,7 +638,7 @@ pub async fn select_message_variant(
     })
     .await?;
 
-    // Build and return MessageResponse with the selected variant content
+    // Build and return MessageResponse with the selected variant's content AND token counts
     let response = crate::models::chats::MessageResponse {
         id: updated_message.id,
         session_id: updated_message.session_id,
@@ -633,9 +655,9 @@ pub async fn select_message_variant(
             .unwrap_or_else(|| serde_json::json!([]).into()),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
-        prompt_tokens: updated_message.prompt_tokens,
-        completion_tokens: updated_message.completion_tokens,
-        model_name: Some(updated_message.model_name),
+        prompt_tokens: variant_prompt_tokens,        // Use variant's token counts!
+        completion_tokens: variant_completion_tokens, // Use variant's token counts!
+        model_name: variant_model_name,               // Use variant's model name!
         status: updated_message.status,
         error_message: updated_message.error_message,
         variant_count: updated_message.variant_count,

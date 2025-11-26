@@ -2556,6 +2556,9 @@ async fn create_message_variant_handler(
         &payload.content,
         user.id,
         &session_dek.0,
+        None, // prompt_tokens not available in direct variant creation
+        None, // completion_tokens not available
+        None, // model_name not available
     )
     .await?;
 

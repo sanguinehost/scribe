@@ -407,6 +407,9 @@ diesel::table! {
         user_id -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        prompt_tokens -> Nullable<Integer>,
+        completion_tokens -> Nullable<Integer>,
+        model_name -> Nullable<Text>,
     }
 }
 

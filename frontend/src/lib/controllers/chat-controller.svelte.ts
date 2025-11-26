@@ -772,35 +772,43 @@ export class ChatController {
         const message = this.activeStreamingService.messages.find(
             (msg) => msg.id === messageId || msg.backend_id === messageId
         );
-        if (!message || (message.current_variant_index ?? 0) <= 0) return;
+        if (!message) return;
 
         const currentIndex = message.current_variant_index ?? 0;
-        const newIndex = currentIndex - 1;
+        const variantCount = message.variant_count ?? 0;
 
-        try {
-            const apiMessageId = message.backend_id || messageId;
-            const result = await _apiClient.selectMessageVariant(apiMessageId, {
-                variant_index: newIndex
-            });
+        // Allow cycling back to variant 0 (original)
+        if (variantCount > 0 && currentIndex > 0) {
+            const newIndex = currentIndex - 1;
 
-            if (result.isOk()) {
-                const updatedMessage = result.value;
-                this.activeStreamingService.messages = (
-                    this.activeStreamingService.messages as StreamingMessage[]
-                ).map((msg) => {
-                    if (msg.id === messageId || msg.backend_id === messageId) {
-                        return {
-                            ...msg,
-                            content: updatedMessage.content,
-                            current_variant_index: updatedMessage.current_variant_index,
-                            displayedContent: updatedMessage.content
-                        };
-                    }
-                    return msg;
+            try {
+                const apiMessageId = message.backend_id || messageId;
+                const result = await _apiClient.selectMessageVariant(apiMessageId, {
+                    variant_index: newIndex
                 });
+
+                if (result.isOk()) {
+                    const updatedMessage = result.value;
+                    this.activeStreamingService.messages = (
+                        this.activeStreamingService.messages as StreamingMessage[]
+                    ).map((msg) => {
+                        if (msg.id === messageId || msg.backend_id === messageId) {
+                            return {
+                                ...msg,
+                                content: updatedMessage.content,
+                                current_variant_index: updatedMessage.current_variant_index,
+                                displayedContent: updatedMessage.content,
+                                prompt_tokens: updatedMessage.prompt_tokens ?? undefined,
+                                completion_tokens: updatedMessage.completion_tokens ?? undefined,
+                                model_name: updatedMessage.model_name ?? undefined
+                            };
+                        }
+                        return msg;
+                    });
+                }
+            } catch (err) {
+                toast.error('Failed to switch to previous variant');
             }
-        } catch (err) {
-            toast.error('Failed to switch to previous variant');
         }
     }
 
@@ -831,35 +839,23 @@ export class ChatController {
                                 ...msg,
                                 content: updatedMessage.content,
                                 current_variant_index: updatedMessage.current_variant_index,
-                                displayedContent: updatedMessage.content
+                                variant_count: updatedMessage.variant_count,
+                                displayedContent: updatedMessage.content,
+                                prompt_tokens: updatedMessage.prompt_tokens ?? undefined,
+                                completion_tokens: updatedMessage.completion_tokens ?? undefined,
+                                model_name: updatedMessage.model_name ?? undefined
                             };
                         }
                         return msg;
                     });
                 } else {
-                    toast.error('Failed to switch to next variant');
+                    this.regenerateResponse('', message.backend_id || messageId);
                 }
             } catch (err) {
                 toast.error('Failed to switch to next variant');
             }
         } else {
-            const messageIndex = (this.activeStreamingService.messages as StreamingMessage[]).findIndex(
-                (msg) => msg.id === messageId || msg.backend_id === messageId
-            );
-
-            if (messageIndex > 0) {
-                const userMessage = (this.activeStreamingService.messages as StreamingMessage[])[
-                    messageIndex - 1
-                ];
-                if (userMessage.sender === 'user') {
-                    const backendMessageId = message.backend_id || messageId;
-                    this.pendingRegenerationData = {
-                        userMessage: userMessage.content,
-                        messageId: backendMessageId
-                    };
-                    this.showRegenerationModal = true;
-                }
-            }
+            this.regenerateResponse('', message.backend_id || messageId);
         }
     }
 

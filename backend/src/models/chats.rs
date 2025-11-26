@@ -3309,6 +3309,9 @@ pub struct MessageVariant {
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub model_name: Option<String>,
 }
 
 /// Insertable model for creating new message variants
@@ -3328,6 +3331,9 @@ pub struct NewMessageVariant {
     pub content: Vec<u8>, // Encrypted content
     pub content_nonce: Option<Vec<u8>>,
     pub user_id: crate::db::DbId,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub model_name: Option<String>,
 }
 
 impl MessageVariant {
@@ -3381,6 +3387,9 @@ impl NewMessageVariant {
         content: &str,
         user_id: crate::db::DbId,
         dek: &SecretBox<Vec<u8>>,
+        prompt_tokens: Option<i32>,
+        completion_tokens: Option<i32>,
+        model_name: Option<String>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
@@ -3391,6 +3400,9 @@ impl NewMessageVariant {
             content: encrypted_content,
             content_nonce: Some(nonce),
             user_id,
+            prompt_tokens,
+            completion_tokens,
+            model_name,
         })
     }
 }
@@ -3405,6 +3417,9 @@ pub struct MessageVariantDto {
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub prompt_tokens: Option<i32>,
+    pub completion_tokens: Option<i32>,
+    pub model_name: Option<String>,
 }
 
 impl MessageVariantDto {
@@ -3420,6 +3435,9 @@ impl MessageVariantDto {
             user_id: variant.user_id,
             created_at: variant.created_at,
             updated_at: variant.updated_at,
+            prompt_tokens: variant.prompt_tokens,
+            completion_tokens: variant.completion_tokens,
+            model_name: variant.model_name,
         })
     }
 }
