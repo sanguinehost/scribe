@@ -1,5 +1,5 @@
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use std::env;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Log rotation configuration
 #[derive(Debug, Clone)]
@@ -71,7 +71,9 @@ pub fn init_subscriber() {
     let file_appender = match rotation {
         LogRotation::Daily => tracing_appender::rolling::daily(&log_dir, &log_prefix),
         LogRotation::Hourly => tracing_appender::rolling::hourly(&log_dir, &log_prefix),
-        LogRotation::Never => tracing_appender::rolling::never(&log_dir, format!("{}.log", log_prefix)),
+        LogRotation::Never => {
+            tracing_appender::rolling::never(&log_dir, format!("{}.log", log_prefix))
+        }
     };
 
     // tracing-appender's non_blocking() creates a worker thread that handles
@@ -93,14 +95,14 @@ pub fn init_subscriber() {
                         .json()
                         .with_current_span(false)
                         .with_span_list(false)
-                        .with_writer(std::io::stdout)
+                        .with_writer(std::io::stdout),
                 )
                 .with(
                     fmt::layer()
                         .json()
                         .with_current_span(false)
                         .with_span_list(false)
-                        .with_writer(file_writer)
+                        .with_writer(file_writer),
                 )
                 .init();
         }

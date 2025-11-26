@@ -443,11 +443,13 @@ class StreamingService {
 			logger.debug('streaming-service', 'Variant mode - searching for target message', {
 				targetMessageId: params.targetMessageId
 			});
-			logger.debug(
-				'streaming-service',
-				'Available messages',
-				this.messages.map((m) => ({ id: m.id, backend_id: m.backend_id, sender: m.sender }))
-			);
+			logger.debug('streaming-service', 'Available messages', {
+				messages: this.messages.map((m) => ({
+					id: m.id,
+					backend_id: m.backend_id,
+					sender: m.sender
+				}))
+			});
 
 			const existingMessageIndex = this.messages.findIndex(
 				(msg) => msg.id === params.targetMessageId || msg.backend_id === params.targetMessageId

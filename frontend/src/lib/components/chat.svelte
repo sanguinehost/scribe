@@ -24,7 +24,7 @@
 	import { isInDesktopMode } from '$lib/api/desktop-auth';
 	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
-	import { browser } from '$app/environment';
+	import { browser as _browser } from '$app/environment';
 	import { getCurrentUser, getIsAuthReady, getIsAuthenticated } from '$lib/auth.svelte';
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { UpgradePrompt } from './membership';
@@ -56,8 +56,8 @@
 	} = $props();
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
-	const selectedPersonaStore = SelectedPersonaStore.fromContext();
-	const settingsStore = SettingsStore.fromContext();
+	const _selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const _settingsStore = SettingsStore.fromContext();
 
 	// State variables - use props directly for reactivity
 	// Note: In Svelte 5, props are already reactive, so we can use them directly
@@ -117,13 +117,13 @@
 
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
-		settingsStore.loadTypingSpeed();
+		_settingsStore.loadTypingSpeed();
 		// TODO: Animation speed will be handled in TypewriterMessage component
 	});
 
 	// Load saved chronicle preference from localStorage
 	$effect(() => {
-		if (browser) {
+		if (_browser) {
 			const saved = localStorage.getItem('chroniclePreference');
 			if (saved !== null) {
 				chroniclePreference = saved === 'true';
@@ -135,7 +135,7 @@
 	$effect(() => {
 		if (chat?.id) {
 			selectedCharacterStore.clear();
-			selectedPersonaStore.clear();
+			_selectedPersonaStore.clear();
 			// Reset explicit choice flag when switching to a new chat
 			hasExplicitChronicleChoice = false;
 		}
@@ -1252,7 +1252,7 @@
 		// Mark that user made an explicit choice for this session
 		hasExplicitChronicleChoice = true;
 
-		if (rememberChoice && browser) {
+		if (rememberChoice && _browser) {
 			localStorage.setItem('chroniclePreference', String(enableChronicle));
 			chroniclePreference = enableChronicle;
 		}

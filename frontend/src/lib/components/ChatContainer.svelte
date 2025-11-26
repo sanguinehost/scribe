@@ -1,13 +1,11 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { apiClient as _apiClient } from '$lib/api';
-	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
 	import type {
 		User,
 		ScribeCharacter,
-		Message,
 		ScribeChatSession,
 		ScribeChatMessage,
 		UserPersona,
@@ -23,12 +21,10 @@
 	import { useTokenCounter } from '$lib/hooks/token-counter.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
-	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
-	import { desktopStreamingService } from '$lib/services/DesktopStreamingService.svelte';
-	import { isInDesktopMode } from '$lib/api/desktop-auth';
+
 	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
-	import { browser } from '$app/environment';
+
 	import { getCurrentUser, getIsAuthReady, getIsAuthenticated } from '$lib/auth.svelte';
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { UpgradePrompt } from './membership';
@@ -65,9 +61,9 @@
 	);
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
-	const selectedPersonaStore = SelectedPersonaStore.fromContext();
-	const settingsStore = SettingsStore.fromContext();
-	const chatHistory = ChatHistory.fromContext();
+	const _selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const _settingsStore = SettingsStore.fromContext();
+	// const chatHistory = ChatHistory.fromContext();
 
 	// Reactivity for props updates
 	$effect(() => {
@@ -208,7 +204,7 @@
 
 	// --- Chronicle Opt-in ---
 	let showChronicleOptIn = $state(false);
-	function handleChronicleChoice(choice: boolean) {
+	function handleChronicleChoice(_choice: boolean) {
 		showChronicleOptIn = false;
 	}
 
@@ -289,7 +285,7 @@
 	}
 </script>
 
-<div class="bg-background flex h-dvh min-w-0 flex-col">
+<div class="flex h-dvh min-w-0 flex-col bg-background">
 	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
 	{#key `${controller.messages.length}-${controller.firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
@@ -330,11 +326,11 @@
 					controller.fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || controller.isLoadingSuggestions || controller.isLoading}
-				class="border-input bg-background ring-offset-background hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if controller.isLoadingSuggestions}
 					<svg
-						class="text-primary -ml-1 mr-2 h-4 w-4 animate-spin"
+						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
@@ -496,7 +492,7 @@
 						{@const completionTokens = chat.total_completion_tokens || 0}
 						{@const totalTokens = promptTokens + completionTokens}
 
-						<div class="text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs">
+						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
 							<!-- Main breakdown -->
 							<div class="flex items-center justify-between">
 								<span class="font-medium">Session Usage:</span>

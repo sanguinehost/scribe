@@ -48,7 +48,7 @@ use axum::body::Bytes;
 // DieselError moved to main diesel imports
 use base64::Engine;
 use image::ImageFormat; // Added for image processing
-// use image::ImageReader; // Removed for compatibility with image 0.24
+                        // use image::ImageReader; // Removed for compatibility with image 0.24
 use secrecy::ExposeSecret; // Added for DEK expose
 use serde::Deserialize; // Add serde import
 use std::io::Cursor; // Added for image processing // Required for base64 decode in desktop mode

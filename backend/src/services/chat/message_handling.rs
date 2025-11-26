@@ -71,7 +71,10 @@ pub fn save_chat_message_internal(
     conn: &mut crate::DbConnection,
     message: DbInsertableChatMessage,
 ) -> Result<ChatMessage, AppError> {
-    debug!(?message, "Attempting to insert chat message into database (save_chat_message_internal)");
+    debug!(
+        ?message,
+        "Attempting to insert chat message into database (save_chat_message_internal)"
+    );
 
     #[cfg(feature = "postgres-backend")]
     {
@@ -331,7 +334,6 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             ));
         }
     }
-
 
     // ALWAYS calculate actual cost (base Google API cost) - no feature flags
     // This ensures cost tracking works in local deployments without payment feature

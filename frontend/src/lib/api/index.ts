@@ -842,12 +842,12 @@ class ApiClient {
 		// Cloud/PostgreSQL uses full frontend format
 		const requestBody = isDesktopMode()
 			? {
-				// Desktop/SQLite contract (matches backend test expectations)
-				character_id: _data.character_id,
-				title: _data.title,
-				active_custom_persona_id: _data.active_custom_persona_id,
-				lorebook_ids: _data.lorebook_ids
-			}
+					// Desktop/SQLite contract (matches backend test expectations)
+					character_id: _data.character_id,
+					title: _data.title,
+					active_custom_persona_id: _data.active_custom_persona_id,
+					lorebook_ids: _data.lorebook_ids
+				}
 			: _data; // Cloud/PostgreSQL uses full request as-is
 
 		return this.fetch<ScribeChatSession>('/api/chats/create_session', {

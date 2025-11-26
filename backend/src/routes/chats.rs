@@ -1848,7 +1848,9 @@ pub async fn update_chat_settings_handler(
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
     Path(id): Path<crate::db::DbId>,
-    crate::extractors::JsonExtractor(payload): crate::extractors::JsonExtractor<UpdateChatSettingsRequest>,
+    crate::extractors::JsonExtractor(payload): crate::extractors::JsonExtractor<
+        UpdateChatSettingsRequest,
+    >,
 ) -> Result<impl IntoResponse, AppError> {
     // Manually validate the payload
     payload.validate()?; // Ensure validator is imported and used

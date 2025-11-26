@@ -154,7 +154,7 @@ export async function performLogout(
 					logger.debug('auth', 'Server-side session invalidation successful');
 				})
 				.catch((error) => {
-					logger.warn('auth', 'Server-side session invalidation failed', error);
+					logger.warn('auth', 'Server-side session invalidation failed', { error });
 				});
 		}
 
@@ -303,7 +303,7 @@ function clearSessionCookies(): void {
 			totalAttempts: cookieOptions.length
 		});
 	} catch (error) {
-		logger.warn('auth', 'Error clearing cookies', error);
+		logger.warn('auth', 'Error clearing cookies', { error });
 	}
 }
 
@@ -460,7 +460,7 @@ export async function initializeAuth(forceRecheck = false): Promise<void> {
 				}
 			}
 		} catch (error) {
-			logger.error('auth', 'Unexpected error during auth initialization', error);
+			logger.error('auth', 'Unexpected error during auth initialization', { error });
 			setUnauthenticated(); // Ensure unauthenticated state on unexpected errors
 		}
 	})();

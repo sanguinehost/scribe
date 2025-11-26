@@ -505,6 +505,10 @@ diesel::table! {
         user_id -> Uuid,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        prompt_tokens -> Nullable<Int4>,
+        completion_tokens -> Nullable<Int4>,
+        #[max_length = 255]
+        model_name -> Nullable<Varchar>,
     }
 }
 

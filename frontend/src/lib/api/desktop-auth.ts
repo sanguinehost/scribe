@@ -102,7 +102,7 @@ class DesktopAuthService {
 						logger.debug('desktop-auth', 'No DEK found in storage (Quick Start not used)');
 					}
 				} catch (error) {
-					logger.warn('desktop-auth', 'Failed to load DEK - API calls may fail', error);
+					logger.warn('desktop-auth', 'Failed to load DEK - API calls may fail', { error });
 					// Continue initialization - DEK is only required for Quick Start mode
 				}
 
@@ -115,7 +115,7 @@ class DesktopAuthService {
 			logger.debug('desktop-auth', 'No tokens found in storage');
 			return ok(false);
 		} catch (error) {
-			logger.error('desktop-auth', 'Initialization failed - error loading tokens', error);
+			logger.error('desktop-auth', 'Initialization failed - error loading tokens', error as Error);
 			return err(new ApiNetworkError('Failed to load authentication tokens', error as Error));
 		}
 	}
@@ -169,7 +169,7 @@ class DesktopAuthService {
 			logger.info('desktop-auth', 'Login successful, tokens saved');
 			return ok(data.user);
 		} catch (error) {
-			logger.error('desktop-auth', 'Login failed', error);
+			logger.error('desktop-auth', 'Login failed', error as Error);
 			return err(new ApiNetworkError('Login request failed', error as Error));
 		}
 	}
@@ -227,7 +227,7 @@ class DesktopAuthService {
 			logger.info('desktop-auth', 'Auto-login successful, tokens and DEK saved');
 			return ok(data.user);
 		} catch (error) {
-			logger.error('desktop-auth', 'Auto-login failed', error);
+			logger.error('desktop-auth', 'Auto-login failed', error as Error);
 			return err(new ApiNetworkError('Auto-login request failed', error as Error));
 		}
 	}
@@ -255,7 +255,7 @@ class DesktopAuthService {
 			logger.info('desktop-auth', 'Logout successful, tokens and DEK cleared');
 			return ok(undefined);
 		} catch (error) {
-			logger.error('desktop-auth', 'Logout failed', error);
+			logger.error('desktop-auth', 'Logout failed', error as Error);
 			return err(new ApiNetworkError('Logout failed', error as Error));
 		}
 	}
@@ -315,7 +315,7 @@ class DesktopAuthService {
 							logger.debug('desktop-auth', 'DEK reloaded from secure storage');
 						}
 					} catch (dekError) {
-						logger.warn('desktop-auth', 'DEK not available', dekError);
+						logger.warn('desktop-auth', 'DEK not available', { error: dekError });
 					}
 
 					// Continue with normal validation below
@@ -327,7 +327,7 @@ class DesktopAuthService {
 					return err(new ApiAuthError('No authentication tokens available', 401));
 				}
 			} catch (error) {
-				logger.error('desktop-auth', 'Failed to load tokens from storage', error);
+				logger.error('desktop-auth', 'Failed to load tokens from storage', error as Error);
 				return err(new ApiAuthError('Failed to load authentication tokens', 401));
 			}
 		}
@@ -405,7 +405,7 @@ class DesktopAuthService {
 			logger.info('desktop-auth', 'Access token refreshed successfully');
 			return ok(undefined);
 		} catch (error) {
-			logger.error('desktop-auth', 'Token refresh failed', error);
+			logger.error('desktop-auth', 'Token refresh failed', error as Error);
 			return err(new ApiNetworkError('Token refresh failed', error as Error));
 		}
 	}

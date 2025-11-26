@@ -21,13 +21,13 @@ type ChatStreamEvent =
 	| { event: 'thinking'; data: { text: string } }
 	| { event: 'error'; data: { message: string } }
 	| {
-		event: 'tokenUsage';
-		data: { promptTokens: number; completionTokens: number; modelName: string };
-	}
+			event: 'tokenUsage';
+			data: { promptTokens: number; completionTokens: number; modelName: string };
+	  }
 	| {
-		event: 'messageSaved';
-		data: { messageId: string; variantCount: number; currentVariantIndex: number };
-	}
+			event: 'messageSaved';
+			data: { messageId: string; variantCount: number; currentVariantIndex: number };
+	  }
 	| { event: 'done' };
 
 const DEFAULT_CONFIG: StreamingConfig = {
@@ -293,7 +293,8 @@ class DesktopStreamingService {
 				data: eventData,
 				dataType: typeof eventData,
 				dataStringified: JSON.stringify(eventData),
-				dataKeys: eventData && typeof eventData === 'object' ? Object.keys(eventData as object) : 'N/A'
+				dataKeys:
+					eventData && typeof eventData === 'object' ? Object.keys(eventData as object) : 'N/A'
 			});
 
 			this.handleChannelEvent(event, assistantMessageId);
@@ -787,6 +788,13 @@ class DesktopStreamingService {
 			this.stopTimeoutCheck();
 			this.connectionStatus = 'closed';
 		}
+	}
+
+	/**
+	 * Alias for stopCurrentStream to match StreamingService interface
+	 */
+	public interrupt(): void {
+		this.stopCurrentStream();
 	}
 
 	/**

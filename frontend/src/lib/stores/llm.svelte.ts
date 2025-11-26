@@ -755,8 +755,8 @@ export class LLMStore {
 			}
 		};
 
-		this.progressEventSource.onerror = (error) => {
-			logger.error('llm-store', 'Download progress stream error', error as Error);
+		this.progressEventSource.onerror = (event) => {
+			logger.error('llm-store', 'Download progress stream error', { event });
 			this.stopDownloadProgressStream();
 		};
 	}
