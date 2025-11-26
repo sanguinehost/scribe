@@ -1,19 +1,17 @@
 <script lang="ts">
-	// Removed Attachment import
 	import { toast } from 'svelte-sonner';
-	import { apiClient as _apiClient } from '$lib/api'; // Import apiClient
+	import { apiClient as _apiClient } from '$lib/api';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import { tick, untrack } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
-	import type { User, ScribeCharacter, Message } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
-	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types'; // Import Scribe types
+	import type { User, ScribeCharacter, Message } from '$lib/types.ts';
+	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types';
 	import type { UserPersona } from '$lib/types';
 	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import Messages from './messages.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
-	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
+	import SuggestedActions from './suggested-actions.svelte';
 	import ChatConfigSidebar from './chat-config-sidebar.svelte';
-	// Removed untrack import as we no longer use it
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import TokenUsageDisplay from './token-usage-display.svelte';
 	import { useTokenCounter } from '$lib/hooks/token-counter.svelte';

@@ -84,28 +84,21 @@ export function isFeatureEnabled(feature: keyof typeof FEATURES): boolean {
 export function isDesktopMode(): boolean {
 	// Check if we're in a browser environment first
 	if (typeof window === 'undefined') {
-		console.log('[isDesktopMode] window is undefined, returning false');
 		return false;
 	}
 
 	// Primary check: Desktop builds use scribe://localhost as API URL
 	// Cloud builds use https://... or relative URLs
 	const usesCustomProtocol = PUBLIC_API_URL?.startsWith('scribe://');
-	console.log('[isDesktopMode] PUBLIC_API_URL:', PUBLIC_API_URL);
-	console.log('[isDesktopMode] usesCustomProtocol check:', usesCustomProtocol);
 
 	// Fallback checks for additional validation
 	const hasTauriApi = typeof window.__TAURI__ !== 'undefined';
-	console.log('[isDesktopMode] window.__TAURI__ check:', hasTauriApi);
 
 	// Check for scribe:// custom protocol in window location
 	const hasCustomProtocolInLocation =
 		typeof window.location !== 'undefined' && window.location.protocol === 'scribe:';
-	console.log('[isDesktopMode] window.location.protocol:', window.location?.protocol);
-	console.log('[isDesktopMode] hasCustomProtocolInLocation check:', hasCustomProtocolInLocation);
 
 	// Desktop mode is true if any desktop indicator is present
 	const result = usesCustomProtocol || hasTauriApi || hasCustomProtocolInLocation;
-	console.log('[isDesktopMode] Final result:', result);
 	return result;
 }

@@ -819,7 +819,8 @@ export class ChatController {
 								displayedContent: updatedMessage.content,
 								prompt_tokens: updatedMessage.prompt_tokens ?? undefined,
 								completion_tokens: updatedMessage.completion_tokens ?? undefined,
-								model_name: updatedMessage.model_name ?? undefined
+								model_name: updatedMessage.model_name ?? undefined,
+								shouldAnimate: false // Don't animate when switching to previous variant
 							};
 						}
 						return msg;
@@ -862,7 +863,8 @@ export class ChatController {
 								displayedContent: updatedMessage.content,
 								prompt_tokens: updatedMessage.prompt_tokens ?? undefined,
 								completion_tokens: updatedMessage.completion_tokens ?? undefined,
-								model_name: updatedMessage.model_name ?? undefined
+								model_name: updatedMessage.model_name ?? undefined,
+								shouldAnimate: false // Don't animate when switching to existing next variant
 							};
 						}
 						return msg;
@@ -874,6 +876,21 @@ export class ChatController {
 				toast.error('Failed to switch to next variant');
 			}
 		} else {
+			// Set loading state immediately before regeneration starts
+			this.activeStreamingService.messages = (
+				this.activeStreamingService.messages as StreamingMessage[]
+			).map((msg) => {
+				if (msg.id === messageId || msg.backend_id === messageId) {
+					return {
+						...msg,
+						content: '', // Clear content to show loading state
+						displayedContent: '',
+						isRegenerating: true,
+						shouldAnimate: true // Animate the new content when it arrives
+					};
+				}
+				return msg;
+			});
 			this.regenerateResponse('', message.backend_id || messageId);
 		}
 	}
@@ -900,7 +917,8 @@ export class ChatController {
 						content,
 						displayedContent: content,
 						current_variant_index: index,
-						_variantChangedAt: Date.now()
+						_variantChangedAt: Date.now(),
+						shouldAnimate: false // Don't animate greeting changes
 					}
 				: msg
 		);
