@@ -71,6 +71,8 @@ pub fn save_chat_message_internal(
     conn: &mut crate::DbConnection,
     message: DbInsertableChatMessage,
 ) -> Result<ChatMessage, AppError> {
+    debug!(?message, "Attempting to insert chat message into database (save_chat_message_internal)");
+
     #[cfg(feature = "postgres-backend")]
     {
         use diesel::prelude::*;
@@ -191,6 +193,16 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // Changed DbChatMessage to ChatMessage
     trace!(%session_id, %user_id, %message_type_enum, ?role_str, content_len = content.len(), dek_present = user_dek_secret_box.is_some(), %model_name, "Attempting to save message");
+    debug!(
+        session_id = %session_id,
+        user_id = %user_id,
+        message_type = ?message_type_enum,
+        role = ?role_str,
+        content_len = content.len(),
+        model_name = %model_name,
+        status = ?status,
+        "Detailed save_message params"
+    );
 
     if content.trim().is_empty()
         && parts
@@ -257,11 +269,13 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     }
 
     // Calculate token counts
+    // Skip token counting entirely for non-chargeable messages (e.g., character first_mes)
     let mut prompt_tokens_val: Option<i32> = None;
     let mut completion_tokens_val: Option<i32> = None;
 
+    // Always calculate token counts (needed for frontend streaming completion even if free)
+    // For user messages, count tokens for just the user's input content
     if message_type_enum == MessageRole::User {
-        // For user messages, count tokens for just the user's input content
         match state
             .token_counter
             .count_tokens(content, CountingMode::LocalOnly, Some(&model_name))

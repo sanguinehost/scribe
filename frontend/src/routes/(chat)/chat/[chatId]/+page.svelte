@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Chat from '$lib/components/chat.svelte';
+	import ChatContainer from '$lib/components/ChatContainer.svelte';
 	import type {
 		ScribeChatSession,
 		ScribeChatMessage,
@@ -31,13 +31,13 @@
 	});
 </script>
 
-<Chat
+<ChatContainer
 	chat={data.chat}
-	initialMessages={data.messages}
-	initialCursor={data.initialCursor}
-	readonly={isReadonly}
 	user={data.user
 		? { ...data.user, id: data.user.user_id, username: data.user.username, email: data.user.email }
 		: undefined}
 	character={data.character}
+	initialMessages={data.messages}
+	readonly={isReadonly}
+	initialCursor={data.initialCursor}
 />

@@ -21,13 +21,13 @@ type ChatStreamEvent =
 	| { event: 'thinking'; data: { text: string } }
 	| { event: 'error'; data: { message: string } }
 	| {
-			event: 'tokenUsage';
-			data: { promptTokens: number; completionTokens: number; modelName: string };
-	  }
+		event: 'tokenUsage';
+		data: { promptTokens: number; completionTokens: number; modelName: string };
+	}
 	| {
-			event: 'messageSaved';
-			data: { messageId: string; variantCount: number; currentVariantIndex: number };
-	  }
+		event: 'messageSaved';
+		data: { messageId: string; variantCount: number; currentVariantIndex: number };
+	}
 	| { event: 'done' };
 
 const DEFAULT_CONFIG: StreamingConfig = {
@@ -58,6 +58,8 @@ class DesktopStreamingService {
 	private config: StreamingConfig;
 	private currentChatId: string | null = null;
 	private currentAssistantMessageId: string | null = null;
+	private lastActivity: number = 0;
+	private timeoutInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Buffer-first architecture state
 	private messageBuffers = new Map<
@@ -132,6 +134,9 @@ class DesktopStreamingService {
 			tokenUsageReceived: false,
 			shouldClose: false
 		};
+
+		this.lastActivity = Date.now();
+		this.startTimeoutCheck();
 
 		// Add user message optimistically (skip for regeneration)
 		if (!params.isRegeneration) {
@@ -270,18 +275,25 @@ class DesktopStreamingService {
 		let eventCount = 0;
 		channel.onmessage = (event: ChatStreamEvent) => {
 			eventCount++;
+			this.lastActivity = Date.now();
 			logger.debug('desktop-streaming', 'Channel event received', {
 				eventNumber: eventCount,
 				eventType: event.event
 			});
 
 			// Enhanced logging to trace data corruption
+			// Use type narrowing or 'in' check to safely access data
+			let eventData: unknown = 'N/A';
+			if ('data' in event) {
+				eventData = (event as { data: unknown }).data;
+			}
+
 			logger.debug('desktop-streaming', 'Full event data from Tauri', {
 				eventType: event.event,
-				data: event.data,
-				dataType: typeof event.data,
-				dataStringified: JSON.stringify(event.data),
-				dataKeys: event.data && typeof event.data === 'object' ? Object.keys(event.data) : 'N/A'
+				data: eventData,
+				dataType: typeof eventData,
+				dataStringified: JSON.stringify(eventData),
+				dataKeys: eventData && typeof eventData === 'object' ? Object.keys(eventData as object) : 'N/A'
 			});
 
 			this.handleChannelEvent(event, assistantMessageId);
@@ -313,10 +325,58 @@ class DesktopStreamingService {
 			});
 
 			logger.debug('desktop-streaming', 'Stream command completed successfully');
+			this.stopTimeoutCheck();
 			this.connectionStatus = 'closed';
 		} catch (error) {
 			logger.error('desktop-streaming', 'Stream command failed', error as Error);
+			this.stopTimeoutCheck();
 			this.handleConnectionError(error as Error);
+		}
+	}
+
+	/**
+	 * Start timeout check interval
+	 */
+	private startTimeoutCheck(): void {
+		this.stopTimeoutCheck();
+		this.timeoutInterval = setInterval(() => {
+			this.checkTimeout();
+		}, 1000);
+	}
+
+	/**
+	 * Stop timeout check interval
+	 */
+	private stopTimeoutCheck(): void {
+		if (this.timeoutInterval) {
+			clearInterval(this.timeoutInterval);
+			this.timeoutInterval = null;
+		}
+	}
+
+	/**
+	 * Check for connection timeout
+	 */
+	private checkTimeout(): void {
+		if (this.connectionStatus !== 'connecting' && this.connectionStatus !== 'open') {
+			this.stopTimeoutCheck();
+			return;
+		}
+
+		const now = Date.now();
+		// 10s idle timeout
+		if (now - this.lastActivity > 10000) {
+			logger.warn('desktop-streaming', 'Connection timed out (10s idle)');
+
+			// If we have received done but waiting for other events, just close it
+			if (this.connectionCloseState.doneReceived) {
+				logger.info('desktop-streaming', 'Timeout while waiting for final events, forcing close');
+				this.connectionStatus = 'closed';
+			} else {
+				// If we haven't received done, it's a real timeout error
+				this.handleConnectionError(new Error('Connection timed out (no data received for 10s)'));
+			}
+			this.stopTimeoutCheck();
 		}
 	}
 
@@ -602,6 +662,7 @@ class DesktopStreamingService {
 	private tryCloseConnection(): void {
 		if (this.connectionCloseState.doneReceived && this.connectionCloseState.tokenUsageReceived) {
 			logger.debug('desktop-streaming', 'All events received, closing connection');
+			this.stopTimeoutCheck();
 			this.connectionStatus = 'closed';
 		}
 	}
@@ -648,6 +709,7 @@ class DesktopStreamingService {
 	public async disconnect(): Promise<void> {
 		logger.debug('desktop-streaming', 'Disconnecting');
 
+		this.stopTimeoutCheck();
 		this.connectionStatus = 'closed';
 		this.isTyping = false;
 		this.currentChatId = null;
@@ -665,6 +727,7 @@ class DesktopStreamingService {
 		this.currentError = null;
 		this.isTyping = false;
 		this.retryCount = 0;
+		this.stopTimeoutCheck();
 		this.messageBuffers.clear();
 		this.currentChatId = null;
 		this.currentAssistantMessageId = null;
@@ -721,6 +784,7 @@ class DesktopStreamingService {
 
 		// Reset connection status
 		if (this.connectionStatus !== 'idle' && this.connectionStatus !== 'closed') {
+			this.stopTimeoutCheck();
 			this.connectionStatus = 'closed';
 		}
 	}

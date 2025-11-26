@@ -11,6 +11,8 @@ cp .env.production .env.production.bak 2>/dev/null || true
 # Use desktop configs
 cp svelte.config.desktop.js svelte.config.js
 cp .env.production.desktop .env.production
+echo "DEBUG: Content of .env.production used for build:"
+cat .env.production
 
 # Build
 NODE_ENV=production pnpm run build

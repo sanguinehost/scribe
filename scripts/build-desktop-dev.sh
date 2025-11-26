@@ -22,6 +22,13 @@
 
 set -euo pipefail
 
+# Configure local sentencepiece build
+export PKG_CONFIG_PATH="/home/socol/Workspace/sentencepiece/build:${PKG_CONFIG_PATH:-}"
+export LD_LIBRARY_PATH="/home/socol/Workspace/sentencepiece/build/src:${LD_LIBRARY_PATH:-}"
+
+# Disable aws-lc-sys assembly optimizations to avoid assembler compatibility issues
+export AWS_LC_SYS_NO_ASM=1
+
 # Parse command line flags
 CLEAN_BUILD=false
 SKIP_BACKEND=false
@@ -278,10 +285,20 @@ if [ "$RUN_APP" = true ]; then
     # Set required environment variables
     export WEBKIT_DISABLE_DMABUF_RENDERER=1  # Required for Linux WebKitGTK
 
+    # Load GEMINI_API_KEY from .env file if it exists and not already set
+    if [ -z "${GEMINI_API_KEY:-}" ] && [ -f "$PROJECT_ROOT/.env" ]; then
+        # Extract GEMINI_API_KEY from .env file
+        GEMINI_API_KEY=$(grep '^GEMINI_API_KEY=' "$PROJECT_ROOT/.env" | cut -d '=' -f2-)
+        if [ -n "$GEMINI_API_KEY" ]; then
+            export GEMINI_API_KEY
+            log_success "Loaded GEMINI_API_KEY from .env file"
+        fi
+    fi
+
     # Pass GEMINI_API_KEY if set in environment
     if [ -z "${GEMINI_API_KEY:-}" ]; then
         log_warn "GEMINI_API_KEY not set - AI features will not work"
-        log_warn "Set it with: export GEMINI_API_KEY=\"your-key-here\""
+        log_warn "Set it with: export GEMINI_API_KEY=\"your-key-here\" or add to .env file"
     fi
 
     log_info "Starting cargo tauri dev..."

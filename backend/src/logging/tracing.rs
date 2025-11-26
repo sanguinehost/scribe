@@ -55,7 +55,7 @@ pub fn init_subscriber() {
     // Sets the default log level from RUST_LOG env var, defaulting to INFO
     // for scribe_backend and tower_http if not set.
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "info,scribe_backend::routes=info,scribe_backend::auth=info,scribe_backend::services=warn,scribe_backend::vector_db=warn,tower_http=info,sqlx=warn,gemini_client=info,auth_debug=error".into());
+        .unwrap_or_else(|_| "info,scribe_backend::routes=info,scribe_backend::auth=info,scribe_backend::services=info,scribe_backend::vector_db=info,tower_http=info,sqlx=warn,gemini_client=info,auth_debug=error".into());
 
     // Get configuration from environment variables
     let log_dir = env::var("LOG_DIR").unwrap_or_else(|_| "/tmp".to_string());

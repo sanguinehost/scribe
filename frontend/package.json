@@ -89,8 +89,10 @@
 		"@tauri-apps/plugin-log": "^2.7.1",
 		"@tauri-apps/plugin-upload": "^2.3.2",
 		"@types/dompurify": "^3.2.0",
+		"@types/marked": "^6.0.0",
 		"cookie": "^0.7.2",
 		"dompurify": "^3.2.6",
-		"eventsource-parser": "^3.0.5"
+		"eventsource-parser": "^3.0.5",
+		"marked": "^17.0.1"
 	}
 }

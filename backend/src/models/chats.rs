@@ -1458,6 +1458,8 @@ impl std::fmt::Debug for NewChatMessage {
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct DbInsertableChatMessage {
+    #[cfg(feature = "sqlite-backend")]
+    pub id: crate::db::DbId,
     #[diesel(column_name = session_id)]
     pub chat_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
@@ -1491,8 +1493,10 @@ pub struct DbInsertableChatMessage {
 
 impl std::fmt::Debug for DbInsertableChatMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DbInsertableChatMessage")
-            .field("chat_id", &self.chat_id)
+        let mut ds = f.debug_struct("DbInsertableChatMessage");
+        #[cfg(feature = "sqlite-backend")]
+        ds.field("id", &self.id);
+        ds.field("chat_id", &self.chat_id)
             .field("msg_type", &self.msg_type)
             .field("content", &"[REDACTED_BYTES]")
             .field(
@@ -1528,6 +1532,7 @@ impl DbInsertableChatMessage {
     /// Create a new chat message with required fields only
     #[must_use]
     pub fn new(
+        #[cfg(feature = "sqlite-backend")] id: crate::db::DbId,
         chat_id: crate::db::DbId,
         user_id: crate::db::DbId,
         msg_type: MessageRole,
@@ -1536,12 +1541,23 @@ impl DbInsertableChatMessage {
         model_name: String,
     ) -> Self {
         Self {
+            #[cfg(feature = "sqlite-backend")]
+            id,
             chat_id,
             user_id,
             msg_type,
             content,
             content_nonce,
-            model_name,
+            model_name: {
+                #[cfg(feature = "postgres-backend")]
+                {
+                    model_name
+                }
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    Some(model_name)
+                }
+            },
             role: None,
             parts: None,
             attachments: None,

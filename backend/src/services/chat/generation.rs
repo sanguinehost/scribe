@@ -1983,6 +1983,7 @@ pub async fn stream_ai_response_and_save_message(
                         } else {
                             trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (chat_service)");
                             let dek_ref_partial = Some(user_dek_arc_clone_partial.clone());
+                            debug!(session_id = %error_session_id_clone, content_len = partial_content_clone.len(), "Calling save_message for partial response");
                             match save_message(SaveMessageParams {
                                 state: state_for_partial_save,
                                 session_id: error_session_id_clone,
@@ -2076,6 +2077,7 @@ pub async fn stream_ai_response_and_save_message(
 
                 let dek_ref_full = user_dek_arc_clone_full.clone();
                 info!(session_id = %full_session_id_clone, dek_available = true, "NARRATIVE_DEBUG: About to save message");
+                debug!(session_id = %full_session_id_clone, content_len = accumulated_content_clone.len(), "Calling save_message for full response");
 
                 match save_message(SaveMessageParams {
                     state: state_for_full_save.clone(),

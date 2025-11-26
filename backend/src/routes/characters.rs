@@ -48,7 +48,7 @@ use axum::body::Bytes;
 // DieselError moved to main diesel imports
 use base64::Engine;
 use image::ImageFormat; // Added for image processing
-use image::ImageReader; // Use the new name for clarity
+// use image::ImageReader; // Removed for compatibility with image 0.24
 use secrecy::ExposeSecret; // Added for DEK expose
 use serde::Deserialize; // Add serde import
 use std::io::Cursor; // Added for image processing // Required for base64 decode in desktop mode
@@ -1903,8 +1903,7 @@ pub async fn get_character_asset_handler(
         let format = ImageFormat::from_extension(content_type.split('/').last().unwrap_or("png"))
             .unwrap_or(ImageFormat::Png);
 
-        let decoded_image = ImageReader::with_format(Cursor::new(&final_image_data), format)
-            .decode()
+        let decoded_image = image::load_from_memory_with_format(&final_image_data, format)
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to decode image for resizing: {e}"

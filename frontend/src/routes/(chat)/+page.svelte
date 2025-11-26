@@ -1,8 +1,14 @@
 <script lang="ts">
-	import Chat from '$lib/components/chat.svelte';
+	import ChatContainer from '$lib/components/ChatContainer.svelte';
 
 	let { data } = $props();
 </script>
 
-<Chat chat={undefined} initialMessages={[]} readonly={false} user={data.user} character={null} />
+<ChatContainer
+	chat={undefined}
+	user={data.user}
+	character={null}
+	initialMessages={[]}
+	readonly={false}
+/>
 <!-- TODO <DataStreamHandler {id} /> -->
