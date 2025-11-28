@@ -123,7 +123,7 @@
 		<Dialog.Header class="flex flex-row items-center justify-between border-b pb-4">
 			<div>
 				<Dialog.Title class="text-lg font-semibold">Raw Prompt Debug</Dialog.Title>
-				<Dialog.Description class="text-muted-foreground mt-1 text-sm">
+				<Dialog.Description class="mt-1 text-sm text-muted-foreground">
 					The complete prompt that was sent to the AI model
 				</Dialog.Description>
 			</div>
@@ -140,7 +140,7 @@
 		<div class="mt-4 min-h-0 flex-1 overflow-y-auto">
 			{#if isLoading}
 				<div class="flex items-center justify-center py-12">
-					<div class="text-muted-foreground flex items-center gap-3">
+					<div class="flex items-center gap-3 text-muted-foreground">
 						<div
 							class="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent"
 						></div>
@@ -153,9 +153,9 @@
 				</div>
 			{:else if error}
 				<div class="flex flex-col items-center justify-center py-12">
-					<div class="bg-destructive/10 mb-4 rounded-lg p-4 text-center">
-						<div class="text-destructive mb-2 text-sm font-medium">Error</div>
-						<p class="text-muted-foreground text-sm">{error}</p>
+					<div class="mb-4 rounded-lg bg-destructive/10 p-4 text-center">
+						<div class="mb-2 text-sm font-medium text-destructive">Error</div>
+						<p class="text-sm text-muted-foreground">{error}</p>
 					</div>
 					<ButtonComponent
 						variant="outline"
@@ -174,8 +174,8 @@
 					</ButtonComponent>
 				</div>
 			{:else if rawPrompt}
-				<div class="bg-muted/20 rounded-lg border">
-					<div class="bg-muted/80 sticky top-0 z-10 border-b px-4 py-2 backdrop-blur-sm">
+				<div class="rounded-lg border bg-muted/20">
+					<div class="sticky top-0 z-10 border-b bg-muted/80 px-4 py-2 backdrop-blur-sm">
 						<div
 							class="flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400"
 						>
@@ -184,7 +184,7 @@
 						</div>
 					</div>
 					<pre
-						class="text-foreground/90 whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed">{rawPrompt}</pre>
+						class="whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed text-foreground/90">{rawPrompt}</pre>
 				</div>
 			{:else}
 				<div class="flex items-center justify-center py-12">

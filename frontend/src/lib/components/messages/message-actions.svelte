@@ -81,7 +81,7 @@
 			<ButtonComponent
 				variant="ghost"
 				size="sm"
-				class="border-border/40 bg-background/80 hover:bg-accent/80 h-6 w-6 rounded-md border p-0 shadow-sm backdrop-blur-sm"
+				class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
 				onclick={() => onPreviousVariant?.()}
 				disabled={loading || !hasVariants || variantInfo?.current === 0}
 				title="Previous variant"
@@ -90,7 +90,7 @@
 			</ButtonComponent>
 
 			{#if variantInfo}
-				<span class="text-muted-foreground px-1 text-[9px]">
+				<span class="px-1 text-[9px] text-muted-foreground">
 					{variantInfo.current}/{variantInfo.total}
 				</span>
 			{/if}
@@ -98,7 +98,7 @@
 			<ButtonComponent
 				variant="ghost"
 				size="sm"
-				class="border-border/40 bg-background/80 hover:bg-accent/80 h-6 w-6 rounded-md border p-0 shadow-sm backdrop-blur-sm"
+				class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
 				onclick={() => onNextVariant?.()}
 				disabled={loading}
 				title={hasVariants && variantInfo && variantInfo.current < variantInfo.total
@@ -115,7 +115,7 @@
 		<ButtonComponent
 			variant="ghost"
 			size="sm"
-			class="border-border/40 bg-background/80 hover:bg-accent/80 h-6 w-6 rounded-md border p-0 shadow-sm backdrop-blur-sm"
+			class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
 			onclick={() => onEdit?.()}
 			disabled={loading}
 			title="Edit message"
@@ -128,7 +128,7 @@
 	<ButtonComponent
 		variant="ghost"
 		size="sm"
-		class="border-border/40 h-6 w-6 rounded-md border p-0 shadow-sm backdrop-blur-sm transition-colors duration-150 {copyClicked
+		class="h-6 w-6 rounded-md border border-border/40 p-0 shadow-sm backdrop-blur-sm transition-colors duration-150 {copyClicked
 			? 'bg-white text-black'
 			: 'bg-background/80 hover:bg-accent/80'}"
 		onclick={copyToClipboard}
@@ -143,7 +143,7 @@
 		<ButtonComponent
 			variant="ghost"
 			size="sm"
-			class="border-border/40 bg-background/80 text-destructive hover:bg-destructive/80 h-6 w-6 rounded-md border p-0 shadow-sm backdrop-blur-sm"
+			class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 text-destructive shadow-sm backdrop-blur-sm hover:bg-destructive/80"
 			onclick={() => onDelete?.()}
 			disabled={loading}
 			title="Delete message"
@@ -158,7 +158,7 @@
 			<ButtonComponent
 				variant="ghost"
 				size="sm"
-				class="border-border/40 bg-background/80 hover:bg-accent/80 h-6 w-6 rounded-md border p-0 shadow-sm backdrop-blur-sm"
+				class="h-6 w-6 rounded-md border border-border/40 bg-background/80 p-0 shadow-sm backdrop-blur-sm hover:bg-accent/80"
 				onclick={toggleDropdown}
 				disabled={loading}
 				title="More actions"
@@ -168,11 +168,11 @@
 
 			{#if showDropdown}
 				<div
-					class="bg-popover text-popover-foreground absolute bottom-full right-0 z-50 mb-1 w-48 rounded-md border shadow-md"
+					class="absolute bottom-full right-0 z-50 mb-1 w-48 rounded-md border bg-popover text-popover-foreground shadow-md"
 				>
 					{#if !readonly}
 						<button
-							class="hover:bg-accent hover:text-accent-foreground flex w-full items-center px-3 py-2 text-sm"
+							class="flex w-full items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
 							onclick={() => {
 								onRetry?.();
 								closeDropdown();
@@ -183,7 +183,7 @@
 						</button>
 						{#if !isFirstMessage(message)}
 							<button
-								class="hover:bg-accent hover:text-accent-foreground flex w-full items-center px-3 py-2 text-sm"
+								class="flex w-full items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
 								onclick={() => {
 									showRawPromptModal = true;
 									closeDropdown();
@@ -193,7 +193,7 @@
 								Show raw prompt
 							</button>
 							<button
-								class="hover:bg-accent hover:text-accent-foreground flex w-full items-center px-3 py-2 text-sm"
+								class="flex w-full items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
 								onclick={() => {
 									showAgentAnalysisModal = true;
 									closeDropdown();
@@ -203,7 +203,7 @@
 								Show agent analysis
 							</button>
 							<button
-								class="text-destructive hover:bg-destructive/10 hover:text-destructive flex w-full items-center px-3 py-2 text-sm"
+								class="flex w-full items-center px-3 py-2 text-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
 								onclick={() => {
 									onDelete?.();
 									closeDropdown();
