@@ -1082,14 +1082,14 @@ class ApiClient {
 	}
 
 	async voteMessage(id: string, type: 'up' | 'down'): Promise<_Result<void, ApiError>> {
-		return this.fetch<void>(`/api/messages/${id}/vote`, {
+		return this.fetch<void>(`/api/chats/messages/${id}/vote`, {
 			method: 'POST',
 			body: JSON.stringify({ type_: type })
 		});
 	}
 
 	async deleteTrailingMessages(id: string): Promise<_Result<void, ApiError>> {
-		return this.fetch<void>(`/api/messages/${id}/trailing`, {
+		return this.fetch<void>(`/api/chats/messages/${id}/trailing`, {
 			method: 'DELETE'
 		});
 	}
@@ -1115,7 +1115,7 @@ class ApiClient {
 		messageId: string,
 		data: SelectVariantRequest
 	): Promise<_Result<Message, ApiError>> {
-		return this.fetch<Message>(`/api/chat/messages/${messageId}/select-variant`, {
+		return this.fetch<Message>(`/api/chats/messages/${messageId}/select-variant`, {
 			method: 'POST',
 			body: JSON.stringify(data)
 		});

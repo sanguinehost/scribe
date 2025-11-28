@@ -78,6 +78,10 @@
 			controller.initializeChat();
 			// controller.fetchSuggestedActions(); // Removed auto-trigger
 			controller.loadAgentMode();
+		} else {
+			// Clear messages if no chat is selected (e.g. home page)
+			// This ensures the Overview component is displayed instead of old messages
+			controller.activeStreamingService.clearMessages();
 		}
 	});
 

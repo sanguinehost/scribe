@@ -284,7 +284,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         info!(parent_message_id = %parent_message_id, "Creating variant instead of new message");
 
         if let Some(dek_arc) = &user_dek_secret_box {
-            // Create the variant using the existing function, now with token counts
+            // Create the variant using the existing function, now with token counts AND raw_prompt
             let variant_result = message_variants::create_message_variant(
                 state.clone(),
                 parent_message_id,
@@ -294,6 +294,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 prompt_tokens_val,
                 completion_tokens_val,
                 Some(model_name.clone()),
+                raw_prompt_debug, // Pass through the raw_prompt for the variant
             )
             .await;
 

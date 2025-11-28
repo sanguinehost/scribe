@@ -33,6 +33,7 @@ export AWS_LC_SYS_NO_ASM=1
 CLEAN_BUILD=false
 SKIP_BACKEND=false
 RUN_APP=false
+LOG_LEVEL="info"
 for arg in "$@"; do
     case $arg in
         --clean)
@@ -41,6 +42,10 @@ for arg in "$@"; do
             ;;
         --skip-backend)
             SKIP_BACKEND=true
+            shift
+            ;;
+        --log-level=*)
+            LOG_LEVEL="${arg#*=}"
             shift
             ;;
         --run|--open)
@@ -305,6 +310,8 @@ if [ "$RUN_APP" = true ]; then
     log_info "Note: First build may take several minutes..."
     echo ""
 
+    export RUST_LOG="$LOG_LEVEL"
+    log_info "Setting RUST_LOG=$RUST_LOG"
     cargo tauri dev
 
     log_success "Build complete!"

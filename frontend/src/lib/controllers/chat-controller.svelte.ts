@@ -376,6 +376,10 @@ export class ChatController {
 	// ... (loadMoreMessages implementation) ...
 
 	initializeChat() {
+		// CRITICAL: Always clear messages first to prevent stale state from previous chats
+		// This fixes the bug where navigating away and back shows the previous chat's messages
+		this.activeStreamingService.clearMessages();
+
 		if (typeof window !== 'undefined' && this.chat?.id) {
 			const saved = localStorage.getItem(`greeting-variant-${this.chat.id}`);
 			if (saved) {
@@ -385,17 +389,48 @@ export class ChatController {
 						`🎭 Immediately loading saved greeting variant ${variantIndex} for chat ${this.chat.id}`
 					);
 					// We need a way to track this state. I'll add it to the class.
-					// this.firstMessageVariantIndex = variantIndex;
+					this.firstMessageVariantIndex = variantIndex;
 				}
 			}
 		}
 
 		// Logic to populate initial messages
 		if (this.chat?.id) {
-			// let newInitialMessages: StreamingMessage[];
-			// ... logic from chat.svelte lines 188-285 ...
-			// I'll implement this fully later or assume initialMessages passed to constructor are correct for now.
-			// For the refactor, I should probably rely on the constructor's initialMessages.
+			const initialMessages = this.loadedMessagesBatches[0] || [];
+
+			if (initialMessages.length > 0) {
+				console.log(`📥 Initializing chat ${this.chat.id} with ${initialMessages.length} messages`);
+
+				// Convert ScribeChatMessage to StreamingMessage
+				const streamingMessages = initialMessages.map(
+					(msg): StreamingMessage => ({
+						id: msg.id,
+						sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
+						content: msg.content,
+						displayedContent: msg.content,
+						created_at: msg.created_at || new Date().toISOString(),
+						isAnimating: false,
+						shouldAnimate: msg.shouldAnimate ?? false, // Carry over shouldAnimate flag (false for historical)
+						error: msg.error || undefined,
+						retryable: msg.retryable,
+						prompt_tokens: msg.prompt_tokens || undefined,
+						completion_tokens: msg.completion_tokens || undefined,
+						model_name: msg.model_name,
+						backend_id: msg.backend_id,
+						status: msg.status,
+						superseded_at: msg.superseded_at,
+						// Variant metadata
+						variant_count: msg.variant_count,
+						current_variant_index: msg.current_variant_index,
+						is_variant: msg.is_variant,
+						parent_message_id: msg.parent_message_id,
+						contentVersion: 0 // Initialize for Svelte 5 reactivity
+					})
+				);
+
+				// Populate streaming service
+				this.activeStreamingService.messages = streamingMessages;
+			}
 		}
 	}
 
@@ -519,7 +554,8 @@ export class ChatController {
 		_userMessageContent: string,
 		originalMessageId?: string,
 		analysisMode: AnalysisMode = 'existing',
-		guidance?: string
+		guidance?: string,
+		targetMessageId?: string
 	) {
 		if (!this.chat?.id || !this.user?.id) {
 			toast.error('Chat session or user information is missing.');
@@ -538,6 +574,9 @@ export class ChatController {
 				content: m.content
 			}));
 
+		console.log('DEBUG: regenerateResponse historyToSend:', JSON.stringify(historyToSend));
+		console.log('DEBUG: regenerateResponse guidance:', guidance);
+
 		const lastUserMessage = historyToSend.filter((h) => h.role === 'user').pop();
 		if (!lastUserMessage) {
 			toast.error('No user message found to regenerate response.');
@@ -547,8 +586,8 @@ export class ChatController {
 		try {
 			const currentModel = await this.getCurrentChatModel();
 
-			let targetMessageIdForVariant: string | undefined;
-			if (originalMessageId) {
+			let targetMessageIdForVariant: string | undefined = targetMessageId;
+			if (!targetMessageIdForVariant && originalMessageId) {
 				const currentMessages = this.activeStreamingService.messages as StreamingMessage[];
 				const targetMessage = currentMessages.find(
 					(msg) => msg.backend_id === originalMessageId || msg.id === originalMessageId
@@ -557,10 +596,16 @@ export class ChatController {
 					targetMessageIdForVariant = targetMessage.id;
 				}
 			}
+			console.log('DEBUG: regenerateResponse originalMessageId:', originalMessageId);
+			console.log(
+				'DEBUG: regenerateResponse targetMessageIdForVariant:',
+				targetMessageIdForVariant
+			);
 
 			const lastHistoryMessage = historyToSend[historyToSend.length - 1];
 			const shouldSliceHistory = lastHistoryMessage?.role !== 'user';
 			const finalHistory = shouldSliceHistory ? historyToSend.slice(0, -1) : historyToSend;
+			console.log('DEBUG: regenerateResponse finalHistory:', JSON.stringify(finalHistory));
 
 			await this.activeStreamingService.connect({
 				chatId: this.chat.id,
@@ -590,6 +635,18 @@ export class ChatController {
 		const { userMessage, messageId, targetMessageIndex, allMessages } =
 			this.pendingRegenerationData;
 
+		if (targetMessageIndex !== undefined && allMessages) {
+			const messagesToDeleteFromBackend = allMessages.slice(targetMessageIndex + 1);
+			if (messagesToDeleteFromBackend.length > 0 && messagesToDeleteFromBackend[0].backend_id) {
+				try {
+					await _apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
+				} catch (err) {
+					console.warn('Failed to delete trailing messages from backend:', err);
+				}
+			}
+			this.activeStreamingService.messages = allMessages.slice(0, targetMessageIndex + 1);
+		}
+
 		if (messageId) {
 			const existingMessageIndex = (
 				this.activeStreamingService.messages as StreamingMessage[]
@@ -609,19 +666,12 @@ export class ChatController {
 			}
 		}
 
-		if (targetMessageIndex !== undefined && allMessages) {
-			const messagesToDeleteFromBackend = allMessages.slice(targetMessageIndex + 1);
-			if (messagesToDeleteFromBackend.length > 0 && messagesToDeleteFromBackend[0].backend_id) {
-				try {
-					await _apiClient.deleteTrailingMessages(messagesToDeleteFromBackend[0].backend_id);
-				} catch (err) {
-					console.warn('Failed to delete trailing messages from backend:', err);
-				}
-			}
-			this.activeStreamingService.messages = allMessages.slice(0, targetMessageIndex + 1);
+		let targetMessageFrontendId: string | undefined;
+		if (targetMessageIndex !== undefined && allMessages && allMessages[targetMessageIndex]) {
+			targetMessageFrontendId = allMessages[targetMessageIndex].id;
 		}
 
-		this.regenerateResponse(userMessage, messageId, mode, guidance);
+		this.regenerateResponse(userMessage, messageId, mode, guidance, targetMessageFrontendId);
 		this.pendingRegenerationData = null;
 		this.showRegenerationModal = false;
 	}
@@ -820,7 +870,8 @@ export class ChatController {
 								prompt_tokens: updatedMessage.prompt_tokens ?? undefined,
 								completion_tokens: updatedMessage.completion_tokens ?? undefined,
 								model_name: updatedMessage.model_name ?? undefined,
-								shouldAnimate: false // Don't animate when switching to previous variant
+								shouldAnimate: false, // Don't animate when switching to previous variant
+								backend_id: updatedMessage.id // Update backend ID to match the selected variant
 							};
 						}
 						return msg;
@@ -864,18 +915,54 @@ export class ChatController {
 								prompt_tokens: updatedMessage.prompt_tokens ?? undefined,
 								completion_tokens: updatedMessage.completion_tokens ?? undefined,
 								model_name: updatedMessage.model_name ?? undefined,
-								shouldAnimate: false // Don't animate when switching to existing next variant
+								shouldAnimate: false, // Don't animate when switching to existing next variant
+								backend_id: updatedMessage.id // Update backend ID to match the selected variant
 							};
 						}
 						return msg;
 					});
 				} else {
-					this.regenerateResponse('', message.backend_id || messageId);
+					this.regenerateResponse(
+						'',
+						message.backend_id || messageId,
+						'existing',
+						undefined,
+						message.id
+					);
 				}
 			} catch (_err) {
 				toast.error('Failed to switch to next variant');
 			}
 		} else {
+			// We are at the last variant, so we want to generate a new one.
+			// Instead of regenerating immediately, we show the regeneration modal
+			// to allow the user to provide guidance or choose analysis mode.
+
+			const messageIndex = (this.activeStreamingService.messages as StreamingMessage[]).findIndex(
+				(msg) => msg.id === messageId || msg.backend_id === messageId
+			);
+
+			if (messageIndex !== -1) {
+				const userMessageIndex = messageIndex - 1;
+				if (userMessageIndex >= 0) {
+					const userMessage = (this.activeStreamingService.messages as StreamingMessage[])[
+						userMessageIndex
+					];
+
+					if (userMessage.sender === 'user') {
+						this.pendingRegenerationData = {
+							userMessage: userMessage.content,
+							messageId: message.backend_id || messageId,
+							targetMessageIndex: messageIndex,
+							allMessages: [...(this.activeStreamingService.messages as StreamingMessage[])]
+						};
+						this.showRegenerationModal = true;
+						return;
+					}
+				}
+			}
+
+			// Fallback if we can't find the user message (shouldn't happen in normal flow)
 			// Set loading state immediately before regeneration starts
 			this.activeStreamingService.messages = (
 				this.activeStreamingService.messages as StreamingMessage[]
@@ -891,7 +978,13 @@ export class ChatController {
 				}
 				return msg;
 			});
-			this.regenerateResponse('', message.backend_id || messageId);
+			this.regenerateResponse(
+				'',
+				message.backend_id || messageId,
+				'existing',
+				undefined,
+				message.id
+			);
 		}
 	}
 

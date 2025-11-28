@@ -1561,7 +1561,8 @@
 		_userMessageContent: string,
 		originalMessageId?: string,
 		analysisMode: AnalysisMode = 'existing',
-		guidance?: string
+		guidance?: string,
+		targetMessageId?: string
 	) {
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
@@ -1590,6 +1591,8 @@
 				content: m.content
 			}));
 
+		console.log('DEBUG: regenerateResponse guidance:', guidance);
+
 		// Find the last user message to regenerate response for
 		const lastUserMessage = historyToSend.filter((h) => h.role === 'user').pop();
 		if (!lastUserMessage) {
@@ -1602,8 +1605,8 @@
 			const currentModel = await getCurrentChatModel();
 
 			// Find the target message in the streaming service for variant update
-			let targetMessageIdForVariant: string | undefined;
-			if (originalMessageId) {
+			let targetMessageIdForVariant: string | undefined = targetMessageId;
+			if (!targetMessageIdForVariant && originalMessageId) {
 				const currentMessages = activeStreamingService.messages as StreamingMessage[];
 				console.log('🔍 Searching for originalMessageId:', originalMessageId);
 				console.log(
@@ -2056,7 +2059,12 @@
 			console.log('🎯 Generating new variant - no cleanup needed');
 		}
 
-		regenerateResponse(userMessage, messageId, mode, guidance);
+		let targetMessageFrontendId: string | undefined;
+		if (targetMessageIndex !== undefined && allMessages && allMessages[targetMessageIndex]) {
+			targetMessageFrontendId = allMessages[targetMessageIndex].id;
+		}
+
+		regenerateResponse(userMessage, messageId, mode, guidance, targetMessageFrontendId);
 
 		// Clear pending data
 		pendingRegenerationData = null;

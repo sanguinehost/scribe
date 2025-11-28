@@ -1088,7 +1088,17 @@ pub async fn generate_chat_response(
         "Applied narrative style from user template preferences"
     );
 
+    // Log guidance reception
+    if let Some(ref _g) = payload.guidance {
+        // info!("Received guidance for generation: {}", g);
+        // Canary test removed. Proceeding with generation.
+    } else {
+        // info!("No guidance received for generation.");
+    }
+
     // Call the new prompt builder
+
+
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
@@ -1117,6 +1127,8 @@ pub async fn generate_chat_response(
         };
 
     trace!(history_len = final_genai_message_list.len(), %session_id, "Prepared final message list for AI using new prompt builder.");
+
+
 
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
@@ -2559,6 +2571,7 @@ async fn create_message_variant_handler(
         None, // prompt_tokens not available in direct variant creation
         None, // completion_tokens not available
         None, // model_name not available
+        None, // raw_prompt_debug not available in direct variant creation
     )
     .await?;
 

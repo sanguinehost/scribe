@@ -15,7 +15,7 @@ use secrecy::ExposeSecret;
 use serde_json;
 use std::fmt::Write;
 use std::sync::Arc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
@@ -1282,22 +1282,21 @@ async fn build_final_prompt_strings(
 
     // Format current user message with guidance if provided
     let mut final_user_message = current_user_message.clone();
-    if let MessageContent::Text(text_content) = final_user_message.content {
-        let mut formatted_content = String::new();
+    if let Some(guidance_text) = guidance {
 
-        // Add the user input
-        formatted_content.push_str(&format!("**[User Input]**\n{}", text_content));
+        if !guidance_text.is_empty() {
+            if let MessageContent::Text(text_content) = &mut final_user_message.content {
 
-        // Add guidance if provided
-        if let Some(guidance_text) = guidance {
-            formatted_content.push_str("\n\n**[Regeneration Guidance]**\n");
-            formatted_content.push_str(guidance_text);
+                text_content.push_str("\n\n(SYSTEM INSTRUCTION: ");
+                text_content.push_str(guidance_text);
+                text_content.push_str(")\n");
+            } else {
+
+                warn!("User message is not plain text, guidance not applied.");
+            }
         }
-
-        final_user_message.content = MessageContent::Text(formatted_content);
     } else {
-        // Handle other MessageContent variants if necessary, or log a warning
-        warn!("User message is not plain text, formatting not applied.");
+
     }
 
     final_message_list.push(final_user_message);

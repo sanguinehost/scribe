@@ -3176,6 +3176,8 @@ pub struct MessageVariant {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 /// Insertable model for creating new message variants
@@ -3192,6 +3194,8 @@ pub struct NewMessageVariant {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl MessageVariant {
@@ -3235,6 +3239,61 @@ impl MessageVariant {
             AppError::DecryptionError("Failed to convert variant content to UTF-8".to_string())
         })
     }
+
+    /// Decrypt the raw_prompt field if a DEK is available and content is encrypted.
+    /// Returns the decrypted string.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
+    pub fn decrypt_raw_prompt(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
+        match (&self.raw_prompt_ciphertext, &self.raw_prompt_nonce) {
+            (None, None) => Ok(None), // No raw prompt was stored
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() {
+                    return Ok(Some(String::new()));
+                }
+
+                if nonce.is_empty() {
+                    tracing::error!(
+                        "MessageVariant ID {} raw_prompt is present but nonce is empty. Cannot decrypt.",
+                        self.id
+                    );
+                    return Err(AppError::DecryptionError(
+                        "Nonce is empty for raw prompt decryption".to_string(),
+                    ));
+                }
+
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt message variant raw prompt for ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Decryption failed for variant raw prompt: {e}"
+                    ))
+                })?;
+
+                let decrypted_text = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert decrypted variant raw prompt to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert variant raw prompt to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(decrypted_text))
+            }
+            _ => Err(AppError::DecryptionError(
+                "Mismatched raw prompt ciphertext/nonce pair".to_string(),
+            )),
+        }
+    }
 }
 
 impl NewMessageVariant {
@@ -3248,9 +3307,19 @@ impl NewMessageVariant {
         prompt_tokens: Option<i32>,
         completion_tokens: Option<i32>,
         model_name: Option<String>,
+        raw_prompt_debug: Option<&str>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
+
+        // Encrypt raw_prompt if provided
+        let (raw_prompt_ciphertext, raw_prompt_nonce) = if let Some(raw_prompt) = raw_prompt_debug {
+            let (ciphertext, nonce) = encrypt_gcm(raw_prompt.as_bytes(), dek)
+                .map_err(|e| AppError::CryptoError(e.to_string()))?;
+            (Some(ciphertext), Some(nonce))
+        } else {
+            (None, None)
+        };
 
         Ok(Self {
             id: crate::db::DbId::new(),
@@ -3262,6 +3331,8 @@ impl NewMessageVariant {
             prompt_tokens,
             completion_tokens,
             model_name,
+            raw_prompt_ciphertext,
+            raw_prompt_nonce,
         })
     }
 }
@@ -3279,12 +3350,14 @@ pub struct MessageVariantDto {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt: Option<String>, // Decrypted raw prompt
 }
 
 impl MessageVariantDto {
     /// Convert from database model with decrypted content
     pub fn from_model(variant: MessageVariant, dek: &SecretBox<Vec<u8>>) -> Result<Self, AppError> {
         let content = variant.decrypt_content(dek)?;
+        let raw_prompt = variant.decrypt_raw_prompt(dek)?;
 
         Ok(Self {
             id: variant.id,
@@ -3297,6 +3370,7 @@ impl MessageVariantDto {
             prompt_tokens: variant.prompt_tokens,
             completion_tokens: variant.completion_tokens,
             model_name: variant.model_name,
+            raw_prompt,
         })
     }
 }

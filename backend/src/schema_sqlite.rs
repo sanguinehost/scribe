@@ -410,6 +410,8 @@ diesel::table! {
         prompt_tokens -> Nullable<Integer>,
         completion_tokens -> Nullable<Integer>,
         model_name -> Nullable<Text>,
+        raw_prompt_ciphertext -> Nullable<Binary>,
+        raw_prompt_nonce -> Nullable<Binary>,
     }
 }
 

@@ -1626,21 +1626,32 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             user_id: params.user_id,
             incoming_genai_messages: {
                 let mut messages_with_prefill = params.incoming_genai_messages.clone();
-                let prefill_content = if retry_count == 0 {
-                    // First attempt: use standard prefill
-                    create_standard_prefill(params.character_name.as_deref())
-                } else {
-                    // Retry attempts: use enhanced jailbreak prefill
-                    create_jailbreak_prefill(params.character_name.as_deref())
-                };
 
-                // Add fake assistant message with prefill for all attempts
-                let prefill_message = genai::chat::ChatMessage {
-                    role: genai::chat::ChatRole::Assistant,
-                    content: genai::chat::MessageContent::Text(prefill_content),
-                    options: None,
-                };
-                messages_with_prefill.push(prefill_message);
+                // Check if the last message is from User and contains guidance
+                let has_guidance = messages_with_prefill.last().map_or(false, |msg| {
+                    matches!(msg.role, genai::chat::ChatRole::User) &&
+                    matches!(&msg.content, genai::chat::MessageContent::Text(text) if text.contains("(SYSTEM INSTRUCTION:"))
+                });
+
+                if !has_guidance {
+                    let prefill_content = if retry_count == 0 {
+                        // First attempt: use standard prefill
+                        create_standard_prefill(params.character_name.as_deref())
+                    } else {
+                        // Retry attempts: use enhanced jailbreak prefill
+                        create_jailbreak_prefill(params.character_name.as_deref())
+                    };
+
+                    // Add fake assistant message with prefill for all attempts
+                    let prefill_message = genai::chat::ChatMessage {
+                        role: genai::chat::ChatRole::Assistant,
+                        content: genai::chat::MessageContent::Text(prefill_content),
+                        options: None,
+                    };
+                    messages_with_prefill.push(prefill_message);
+                } else {
+                    info!(session_id = %params.session_id, "Guidance detected in user message, skipping prefill injection to ensure adherence.");
+                }
                 messages_with_prefill
             },
             system_prompt: if retry_count == 0 {

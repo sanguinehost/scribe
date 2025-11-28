@@ -3575,6 +3575,8 @@ pub struct MessageVariant {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 /// Insertable model for creating new message variants
@@ -3590,6 +3592,8 @@ pub struct NewMessageVariant {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
 }
 
 impl MessageVariant {
@@ -3633,6 +3637,38 @@ impl MessageVariant {
             AppError::DecryptionError("Failed to convert variant content to UTF-8".to_string())
         })
     }
+
+    /// Decrypt the raw_prompt field using the provided DEK
+    pub fn decrypt_raw_prompt(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
+        match (&self.raw_prompt_ciphertext, &self.raw_prompt_nonce) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt raw prompt for variant ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!("Decryption failed for raw prompt: {e}"))
+                })?;
+
+                let raw_prompt_str =
+                    String::from_utf8(plaintext_secret.expose_secret().clone()).map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert decrypted raw prompt to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert raw prompt to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(raw_prompt_str))
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 impl NewMessageVariant {
@@ -3646,9 +3682,24 @@ impl NewMessageVariant {
         prompt_tokens: Option<i32>,
         completion_tokens: Option<i32>,
         model_name: Option<String>,
+        raw_prompt_debug: Option<&str>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
+
+        // Encrypt raw_prompt if provided
+        let (raw_prompt_ciphertext, raw_prompt_nonce) = if let Some(raw_prompt) = raw_prompt_debug
+        {
+            if !raw_prompt.is_empty() {
+                let (ciphertext, nonce) = encrypt_gcm(raw_prompt.as_bytes(), dek)
+                    .map_err(|e| AppError::CryptoError(e.to_string()))?;
+                (Some(ciphertext), Some(nonce))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
 
         Ok(Self {
             parent_message_id,
@@ -3659,6 +3710,8 @@ impl NewMessageVariant {
             prompt_tokens,
             completion_tokens,
             model_name,
+            raw_prompt_ciphertext,
+            raw_prompt_nonce,
         })
     }
 }
@@ -3676,12 +3729,14 @@ pub struct MessageVariantDto {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt: Option<String>,
 }
 
 impl MessageVariantDto {
     /// Convert from database model with decrypted content
     pub fn from_model(variant: MessageVariant, dek: &SecretBox<Vec<u8>>) -> Result<Self, AppError> {
         let content = variant.decrypt_content(dek)?;
+        let raw_prompt = variant.decrypt_raw_prompt(dek)?;
 
         Ok(Self {
             id: variant.id,
@@ -3694,6 +3749,7 @@ impl MessageVariantDto {
             prompt_tokens: variant.prompt_tokens,
             completion_tokens: variant.completion_tokens,
             model_name: variant.model_name,
+            raw_prompt,
         })
     }
 }

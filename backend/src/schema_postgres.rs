@@ -509,6 +509,8 @@ diesel::table! {
         completion_tokens -> Nullable<Int4>,
         #[max_length = 255]
         model_name -> Nullable<Varchar>,
+        raw_prompt_ciphertext -> Nullable<Bytea>,
+        raw_prompt_nonce -> Nullable<Bytea>,
     }
 }
 
