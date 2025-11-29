@@ -46,25 +46,54 @@ pub async fn ensure_default_user_exists(conn: &mut crate::db::DbConn) -> Result<
 
     // Check if default user already exists in config
     if let Some(user_id) = get_default_user_id()? {
-        debug!(
-            ?user_id,
-            "Default user ID found in config, attempting lookup"
-        );
+        // Check for NIL UUID (bug recovery)
+        if user_id == crate::db::DbId::nil() {
+            tracing::warn!("Found NIL user ID in desktop config. Attempting recovery...");
 
-        // Try to fetch the user from database
-        match get_user(conn, user_id) {
-            Ok(user) => {
-                info!(?user_id, "Default user found and loaded");
-                return Ok(user);
-            }
-            Err(e) => {
-                // User ID in config but not in database (possibly deleted)
-                // Log warning and proceed to create new user
-                tracing::warn!(
-                    ?user_id,
-                    ?e,
-                    "Default user ID in config but user not found in database, creating new user"
+            // Try to find any valid (non-NIL) user in the database to recover
+            // We load all users as UserDbQuery and filter in memory to avoid Diesel type inference issues with DbId::nil()
+            // and because User struct is not directly Queryable (UserDbQuery is)
+            let all_users_db = users::table
+                .load::<crate::models::users::UserDbQuery>(conn)
+                .map_err(AppError::from)?;
+            let recovered_user = all_users_db
+                .into_iter()
+                .map(crate::models::users::User::from)
+                .find(|u| u.id != crate::db::DbId::nil());
+
+            if let Some(user) = recovered_user {
+                info!(
+                    user_id = %user.id,
+                    "Recovered from NIL user ID by switching to existing user"
                 );
+                // Update config with the valid user ID
+                set_default_user_id(user.id)?;
+                return Ok(user);
+            } else {
+                info!("No other users found to recover to. Proceeding to create new user.");
+                // Fall through to create new user
+            }
+        } else {
+            debug!(
+                ?user_id,
+                "Default user ID found in config, attempting lookup"
+            );
+
+            // Try to fetch the user from database
+            match get_user(conn, user_id) {
+                Ok(user) => {
+                    info!(?user_id, "Default user found and loaded");
+                    return Ok(user);
+                }
+                Err(e) => {
+                    // User ID in config but not in database (possibly deleted)
+                    // Log warning and proceed to create new user
+                    tracing::warn!(
+                        ?user_id,
+                        ?e,
+                        "Default user ID in config but user not found in database, creating new user"
+                    );
+                }
             }
         }
     }

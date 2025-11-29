@@ -2073,6 +2073,7 @@ pub struct UpdateChatSettingsRequest {
     #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    #[serde(default)]
     pub stop_sequences: crate::models::OptionalStringArray,
     // History Management Fields
     #[validate(custom(function = "validate_optional_history_strategy"))]
@@ -3245,10 +3246,7 @@ impl MessageVariant {
     ///
     /// # Errors
     /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
-    pub fn decrypt_raw_prompt(
-        &self,
-        dek: &SecretBox<Vec<u8>>,
-    ) -> Result<Option<String>, AppError> {
+    pub fn decrypt_raw_prompt(&self, dek: &SecretBox<Vec<u8>>) -> Result<Option<String>, AppError> {
         match (&self.raw_prompt_ciphertext, &self.raw_prompt_nonce) {
             (None, None) => Ok(None), // No raw prompt was stored
             (Some(ciphertext), Some(nonce)) => {

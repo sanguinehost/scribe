@@ -2216,7 +2216,7 @@ pub async fn stream_ai_response_and_save_message(
                             // For now, use empty RAG context - this could be enhanced later to include relevant lorebook entries
                             let empty_rag_context: Vec<crate::services::embeddings::RetrievedChunk> = Vec::new();
 
-                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context");
+                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context. user_id: {}", full_user_id_clone);
 
                             match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_conversation_context(
                                 full_user_id_clone,

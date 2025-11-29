@@ -158,7 +158,9 @@ pub async fn create_message_variant(
                     &parent_message.raw_prompt_ciphertext,
                     &parent_message.raw_prompt_nonce,
                 ) {
-                    (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                    (Some(ciphertext), Some(nonce))
+                        if !ciphertext.is_empty() && !nonce.is_empty() =>
+                    {
                         match crate::crypto::decrypt_gcm(ciphertext, nonce, &dek_for_closure) {
                             Ok(decrypted_secret_box) => {
                                 let decrypted_bytes = decrypted_secret_box.expose_secret();
@@ -577,80 +579,78 @@ pub async fn select_message_variant(
     }
 
     // Get variant content, token counts, AND raw_prompt - if index 0, use original message; otherwise get from variants table
-    let (variant_content, variant_prompt_tokens, variant_completion_tokens, variant_model_name, variant_raw_prompt) =
-        if variant_index == 0 {
-            // Index 0 is the original message content - decrypt from parent message and use parent's tokens AND raw_prompt
-            use crate::crypto;
+    let (
+        variant_content,
+        variant_prompt_tokens,
+        variant_completion_tokens,
+        variant_model_name,
+        variant_raw_prompt,
+    ) = if variant_index == 0 {
+        // Index 0 is the original message content - decrypt from parent message and use parent's tokens AND raw_prompt
+        use crate::crypto;
 
-            // Get the nonce for the parent message content
-            let nonce_bytes = parent_message.content_nonce.as_ref().ok_or_else(|| {
-                AppError::DecryptionError("Missing content nonce for parent message".to_string())
+        // Get the nonce for the parent message content
+        let nonce_bytes = parent_message.content_nonce.as_ref().ok_or_else(|| {
+            AppError::DecryptionError("Missing content nonce for parent message".to_string())
+        })?;
+
+        let decrypted_content = crypto::decrypt_gcm(&parent_message.content, nonce_bytes, dek)
+            .map_err(|e| {
+                AppError::DecryptionError(format!(
+                    "Failed to decrypt original message content: {e}"
+                ))
+            })?;
+        let content =
+            String::from_utf8(decrypted_content.expose_secret().clone()).map_err(|e| {
+                AppError::DecryptionError(format!("Failed to decode original message content: {e}"))
             })?;
 
-            let decrypted_content = crypto::decrypt_gcm(&parent_message.content, nonce_bytes, dek)
-                .map_err(|e| {
-                    AppError::DecryptionError(format!(
-                        "Failed to decrypt original message content: {e}"
-                    ))
-                })?;
-            let content =
-                String::from_utf8(decrypted_content.expose_secret().clone()).map_err(|e| {
-                    AppError::DecryptionError(format!(
-                        "Failed to decode original message content: {e}"
-                    ))
-                })?;
-
-            // Decrypt parent's raw_prompt if available
-            let raw_prompt = match (
-                &parent_message.raw_prompt_ciphertext,
-                &parent_message.raw_prompt_nonce,
-            ) {
-                (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
-                    match crate::crypto::decrypt_gcm(ciphertext, nonce, dek) {
-                        Ok(decrypted_secret_box) => {
-                            let decrypted_bytes = decrypted_secret_box.expose_secret();
-                            String::from_utf8(decrypted_bytes.clone()).ok()
-                        }
-                        Err(_) => None,
+        // Decrypt parent's raw_prompt if available
+        let raw_prompt = match (
+            &parent_message.raw_prompt_ciphertext,
+            &parent_message.raw_prompt_nonce,
+        ) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                match crate::crypto::decrypt_gcm(ciphertext, nonce, dek) {
+                    Ok(decrypted_secret_box) => {
+                        let decrypted_bytes = decrypted_secret_box.expose_secret();
+                        String::from_utf8(decrypted_bytes.clone()).ok()
                     }
-                }
-                _ => None,
-            };
-
-            (
-                content,
-                parent_message.prompt_tokens,
-                parent_message.completion_tokens,
-                Some(parent_message.model_name.clone()),
-                raw_prompt,
-            )
-        } else {
-            // Get content, token data, AND raw_prompt from variants table
-            let variant_dto = get_message_variant_by_index(
-                state.clone(),
-                message_id,
-                variant_index,
-                user_id,
-                dek,
-            )
-            .await?;
-
-            match variant_dto {
-                Some(dto) => (
-                    dto.content,
-                    dto.prompt_tokens,
-                    dto.completion_tokens,
-                    dto.model_name,
-                    dto.raw_prompt,
-                ),
-                None => {
-                    return Err(AppError::BadRequest(format!(
-                        "Variant with index {} not found",
-                        variant_index
-                    )));
+                    Err(_) => None,
                 }
             }
+            _ => None,
         };
+
+        (
+            content,
+            parent_message.prompt_tokens,
+            parent_message.completion_tokens,
+            Some(parent_message.model_name.clone()),
+            raw_prompt,
+        )
+    } else {
+        // Get content, token data, AND raw_prompt from variants table
+        let variant_dto =
+            get_message_variant_by_index(state.clone(), message_id, variant_index, user_id, dek)
+                .await?;
+
+        match variant_dto {
+            Some(dto) => (
+                dto.content,
+                dto.prompt_tokens,
+                dto.completion_tokens,
+                dto.model_name,
+                dto.raw_prompt,
+            ),
+            None => {
+                return Err(AppError::BadRequest(format!(
+                    "Variant with index {} not found",
+                    variant_index
+                )));
+            }
+        }
+    };
 
     // Update the parent message's current_variant_index
     let updated_message = crate::db::with_conn(&state.pool, move |conn| {

@@ -2475,6 +2475,7 @@ pub struct UpdateChatSettingsRequest {
     #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    #[serde(default)]
     pub stop_sequences: Option<crate::models::OptionalStringArray>,
     // History Management Fields
     #[validate(custom(function = "validate_optional_history_strategy"))]
@@ -3639,10 +3640,7 @@ impl MessageVariant {
     }
 
     /// Decrypt the raw_prompt field using the provided DEK
-    pub fn decrypt_raw_prompt(
-        &self,
-        dek: &SecretBox<Vec<u8>>,
-    ) -> Result<Option<String>, AppError> {
+    pub fn decrypt_raw_prompt(&self, dek: &SecretBox<Vec<u8>>) -> Result<Option<String>, AppError> {
         match (&self.raw_prompt_ciphertext, &self.raw_prompt_nonce) {
             (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
                 let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
@@ -3653,12 +3651,9 @@ impl MessageVariant {
                     AppError::DecryptionError(format!("Decryption failed for raw prompt: {e}"))
                 })?;
 
-                let raw_prompt_str =
-                    String::from_utf8(plaintext_secret.expose_secret().clone()).map_err(|e| {
-                        tracing::error!(
-                            "Failed to convert decrypted raw prompt to UTF-8: {}",
-                            e
-                        );
+                let raw_prompt_str = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!("Failed to convert decrypted raw prompt to UTF-8: {}", e);
                         AppError::DecryptionError(
                             "Failed to convert raw prompt to UTF-8".to_string(),
                         )
@@ -3688,8 +3683,7 @@ impl NewMessageVariant {
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
 
         // Encrypt raw_prompt if provided
-        let (raw_prompt_ciphertext, raw_prompt_nonce) = if let Some(raw_prompt) = raw_prompt_debug
-        {
+        let (raw_prompt_ciphertext, raw_prompt_nonce) = if let Some(raw_prompt) = raw_prompt_debug {
             if !raw_prompt.is_empty() {
                 let (ciphertext, nonce) = encrypt_gcm(raw_prompt.as_bytes(), dek)
                     .map_err(|e| AppError::CryptoError(e.to_string()))?;

@@ -51,7 +51,14 @@ export class ChatController {
 	dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
 	isLoadingSuggestions = $state(false);
 	suggestionsError = $state<string | null>(null);
+
 	suggestionsRetryable = $state(false);
+
+	// Chronicles
+	showChronicleOptIn = $state(false);
+	chroniclePreference = $state<boolean | null>(null);
+	hasExplicitChronicleChoice = $state(false);
+	pendingMessage = $state<string | null>(null);
 
 	// Agent Mode
 	agentMode = $state<'disabled' | 'pre_processing' | 'post_processing'>('disabled');
@@ -74,6 +81,14 @@ export class ChatController {
 		this.nextCursor = initialCursor;
 		this.hasMoreMessages = initialCursor !== null;
 		this.chatInput = initialChatInputValue;
+
+		// Load chronicle preference
+		if (typeof localStorage !== 'undefined') {
+			const pref = localStorage.getItem('chroniclePreference');
+			if (pref !== null) {
+				this.chroniclePreference = pref === 'true';
+			}
+		}
 	}
 
 	get activeStreamingService() {
@@ -443,10 +458,128 @@ export class ChatController {
 			return;
 		}
 
-		// Check chronicle opt-in logic (simplified for now)
-		// ...
+		// Check if we need to show chronicle opt-in
+		// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+		const _isFirst = this.isFirstUserMessage();
+
+		if (
+			!this.chat?.player_chronicle_id &&
+			_isFirst &&
+			this.chroniclePreference === null &&
+			!this.hasExplicitChronicleChoice
+		) {
+			console.log('📖 [sendMessage] SHOWING CHRONICLES OPT-IN DIALOG');
+			this.pendingMessage = content;
+			this.showChronicleOptIn = true;
+			return;
+		}
+
+		// If user has a saved preference and no chronicle, handle it automatically
+		// BUT only if they haven't made an explicit choice for this session
+		if (
+			!this.chat?.player_chronicle_id &&
+			_isFirst &&
+			this.chroniclePreference === true &&
+			!this.hasExplicitChronicleChoice
+		) {
+			console.log('📖 [sendMessage] Auto-creating chronicle based on saved preference...');
+			try {
+				await this.createChronicleForChat();
+				console.log('✅ [sendMessage] Chronicle auto-created successfully');
+			} catch (error) {
+				console.error('❌ [sendMessage] Failed to auto-create chronicle:', error);
+				// Continue anyway - don't block message sending
+			}
+		}
 
 		await this.sendMessageInternal(content);
+	}
+
+	isFirstUserMessage(): boolean {
+		// Check if there are any user messages in the current messages
+		const hasUserMessage = this.activeStreamingService.messages.some(
+			(msg) => msg.sender === 'user'
+		);
+		return !hasUserMessage;
+	}
+
+	async handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
+		// Mark that user made an explicit choice for this session
+		this.hasExplicitChronicleChoice = true;
+
+		if (rememberChoice && typeof localStorage !== 'undefined') {
+			localStorage.setItem('chroniclePreference', String(enableChronicle));
+			this.chroniclePreference = enableChronicle;
+		}
+
+		if (enableChronicle && this.chat?.id) {
+			// Create chronicle and associate with chat
+			await this.createChronicleForChat();
+		}
+
+		// Send the pending message first
+		if (this.pendingMessage) {
+			const message = this.pendingMessage;
+			this.pendingMessage = null;
+			await this.sendMessageInternal(message);
+		}
+
+		// CRITICAL: Wait for next tick before closing dialog
+		await tick();
+		this.showChronicleOptIn = false;
+	}
+
+	async createChronicleForChat() {
+		if (!this.chat?.id) return;
+
+		try {
+			// Generate an AI-powered chronicle name
+			let chronicleName = this.chat.title || 'New Chronicle';
+
+			try {
+				console.log('Generating AI chronicle name for chat:', this.chat.id);
+				const nameResult = await _apiClient.generateChronicleName(this.chat.id);
+
+				if (nameResult.isOk()) {
+					chronicleName = nameResult.value.name;
+					console.log('Generated chronicle name:', chronicleName);
+				} else {
+					console.warn('Failed to generate AI chronicle name, using fallback:', nameResult.error);
+				}
+			} catch (_error) {
+				console.warn('Error generating AI chronicle name, using fallback:', _error);
+			}
+
+			// Create a new chronicle with the generated/fallback name
+			const chronicleResult = await _apiClient.createChronicle({
+				name: chronicleName,
+				description: `Chronicle for ${this.chat.title || 'chat session'}`
+			});
+
+			if (chronicleResult.isOk()) {
+				const chronicle = chronicleResult.value;
+
+				// Update chat to associate with the chronicle
+				const updateResult = await _apiClient.updateChatSessionSettings(this.chat.id, {
+					chronicle_id: chronicle.id
+				});
+
+				if (updateResult.isOk()) {
+					// Update local chat object
+					this.chat.player_chronicle_id = chronicle.id;
+					toast.success(`Chronicle "${chronicleName}" created and linked to chat`);
+				} else {
+					console.error('Failed to link chronicle to chat:', updateResult.error);
+					toast.error('Failed to link chronicle to chat');
+				}
+			} else {
+				console.error('Failed to create chronicle:', chronicleResult.error);
+				toast.error('Failed to create chronicle');
+			}
+		} catch (error) {
+			console.error('Error in createChronicleForChat:', error);
+			toast.error('An error occurred while creating the chronicle');
+		}
 	}
 
 	async sendMessageInternal(content: string) {

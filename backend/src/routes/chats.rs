@@ -1377,22 +1377,27 @@ pub async fn get_message_by_id_handler(
                 .map_err(AppError::from)?;
 
             Ok::<_, AppError>(variant_opt)
-        }).await;
+        })
+        .await;
 
         match variant_raw_prompt_res {
             Ok(Some(variant)) => {
                 match (&variant.raw_prompt_ciphertext, &variant.raw_prompt_nonce) {
-                    (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                    (Some(ciphertext), Some(nonce))
+                        if !ciphertext.is_empty() && !nonce.is_empty() =>
+                    {
                         crypto::decrypt_gcm(ciphertext, nonce, &dek_box)
                             .map_err(|e| {
                                 tracing::error!("Failed to decrypt variant raw prompt: {}", e);
                                 AppError::DecryptionError(e.to_string())
                             })
                             .and_then(|secret_bytes| {
-                                String::from_utf8(secret_bytes.expose_secret().clone()).map_err(|e| {
-                                    tracing::error!("UTF-8 error variant raw prompt: {}", e);
-                                    AppError::DecryptionError(e.to_string())
-                                })
+                                String::from_utf8(secret_bytes.expose_secret().clone()).map_err(
+                                    |e| {
+                                        tracing::error!("UTF-8 error variant raw prompt: {}", e);
+                                        AppError::DecryptionError(e.to_string())
+                                    },
+                                )
                             })
                             .ok()
                     }

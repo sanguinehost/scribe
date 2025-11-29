@@ -205,6 +205,8 @@ impl NarrativeAgentRunner {
             messages.len()
         );
 
+        info!("NARRATIVE_DEBUG: process_narrative_event called with user_id: {}, chat_session_id: {}, chronicle_id: {:?}", user_id, chat_session_id, chronicle_id);
+
         // Check for existing chronicle first
         if chronicle_id.is_none() {
             info!(

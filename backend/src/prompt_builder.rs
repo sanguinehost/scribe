@@ -1283,20 +1283,16 @@ async fn build_final_prompt_strings(
     // Format current user message with guidance if provided
     let mut final_user_message = current_user_message.clone();
     if let Some(guidance_text) = guidance {
-
         if !guidance_text.is_empty() {
             if let MessageContent::Text(text_content) = &mut final_user_message.content {
-
                 text_content.push_str("\n\n(SYSTEM INSTRUCTION: ");
                 text_content.push_str(guidance_text);
                 text_content.push_str(")\n");
             } else {
-
                 warn!("User message is not plain text, guidance not applied.");
             }
         }
     } else {
-
     }
 
     final_message_list.push(final_user_message);

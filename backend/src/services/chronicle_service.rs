@@ -74,7 +74,10 @@ impl ChronicleService {
             )
             .first(conn)
             .map_err(|e| {
-                error!("Diesel error when getting chronicle: {}", e);
+                error!(
+                    "Diesel error when getting chronicle {} for user {}: {}",
+                    chronicle_id, user_id, e
+                );
                 match e {
                     DieselError::NotFound => AppError::NotFound("Chronicle not found".to_string()),
                     _ => AppError::DatabaseQueryError(format!("Failed to get chronicle: {e}")),
@@ -685,6 +688,11 @@ impl ChronicleService {
         session_dek: Option<&crate::auth::session_dek::SessionDek>,
     ) -> Result<ChronicleEvent, AppError> {
         // First verify chronicle ownership
+        tracing::debug!(
+            "Verifying ownership for chronicle {} and user {}",
+            chronicle_id,
+            user_id
+        );
         self.get_chronicle(user_id, chronicle_id).await?;
 
         let mut new_event: NewChronicleEvent = request.into();
@@ -742,56 +750,15 @@ impl ChronicleService {
             }
         }
 
-        // Create temporary event for deduplication check
-        let temp_event = ChronicleEvent {
-            id: DbId::new().into(), // Temporary ID
-            chronicle_id: new_event.chronicle_id,
-            user_id: new_event.user_id,
-            event_type: new_event.event_type.clone(),
-            summary: new_event.summary.clone(),
-            source: new_event.source.clone(),
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
-            summary_encrypted: new_event.summary_encrypted.clone(),
-            summary_nonce: new_event.summary_nonce.clone(),
-            timestamp_iso8601: new_event.timestamp_iso8601,
-            keywords: new_event.keywords.clone(),
-            keywords_encrypted: new_event.keywords_encrypted.clone(),
-            keywords_nonce: new_event.keywords_nonce.clone(),
-            chat_session_id: new_event.chat_session_id,
-        };
+        // Temporary event creation for deduplication removed as deduplication is disabled
 
-        // Check for duplicates before inserting
-        let dedup_service = ChronicleDeduplicationService::new(self.db_pool.clone(), None);
-        // Removed debug output
-        match dedup_service.check_for_duplicates(&temp_event).await {
-            Ok(duplicate_result) => {
-                tracing::debug!(
-                    "Duplicate check result: is_duplicate={}, confidence={}, reasoning={}",
-                    duplicate_result.is_duplicate,
-                    duplicate_result.confidence,
-                    duplicate_result.reasoning
-                );
-                if duplicate_result.is_duplicate {
-                    tracing::warn!(
-                        event_id = %temp_event.id,
-                        duplicate_id = ?duplicate_result.duplicate_event_id,
-                        confidence = duplicate_result.confidence,
-                        reasoning = %duplicate_result.reasoning,
-                        "Duplicate event detected, skipping creation"
-                    );
+        // Deduplication check disabled per user request - we want to chronicle everything for now
+        // let dedup_service = ChronicleDeduplicationService::new(self.db_pool.clone(), None);
+        // match dedup_service.check_for_duplicates(&temp_event).await { ... }
 
-                    // Return the existing duplicate event instead of creating a new one
-                    if let Some(duplicate_id) = duplicate_result.duplicate_event_id {
-                        tracing::debug!("Returning existing duplicate event: {}", duplicate_id);
-                        return self.get_event(user_id, duplicate_id).await;
-                    }
-                }
-            }
-            Err(e) => {
-                // Log the error but don't fail the event creation
-                tracing::warn!(error = %e, "Failed to check for duplicates, proceeding with event creation");
-            }
+        // Generate ID if not present (required for SQLite and good practice)
+        if new_event.id.is_none() {
+            new_event.id = Some(crate::db::DbId::new());
         }
 
         #[cfg(feature = "postgres-backend")]

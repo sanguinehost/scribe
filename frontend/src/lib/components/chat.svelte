@@ -1189,8 +1189,17 @@
 	// Check if this is the first user message in the chat
 	function isFirstUserMessage(): boolean {
 		// Check if there are any user messages in the current messages
-		const hasUserMessage = activeStreamingService.messages.some((msg) => msg.sender === 'user');
-		return !hasUserMessage;
+		const userMessages = activeStreamingService.messages.filter((msg) => msg.sender === 'user');
+		console.log('🔍 [isFirstUserMessage] User messages found:', userMessages.length);
+		if (userMessages.length > 0) {
+			console.log(
+				'🔍 [isFirstUserMessage] First user message ID:',
+				userMessages[0].id,
+				'Content:',
+				userMessages[0].content.slice(0, 20)
+			);
+		}
+		return userMessages.length === 0;
 	}
 
 	// Template substitution for frontend preview - following character-overview.svelte pattern
@@ -1331,36 +1340,53 @@
 	}
 
 	async function sendMessage(content: string) {
-		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨🚨🚨 SENDMESSAGE START - content:', content.slice(0, 50) + '...');
-		console.log('🚨 sendMessage called with content:', content.slice(0, 50) + '...');
-		console.log('🚨 sendMessage STACK TRACE:', new Error().stack);
+		try {
+			// DEBUG: Add stack trace to identify unwanted calls
+			console.log(
+				'🚨🚨🚨 SENDMESSAGE START - content:',
+				content ? content.slice(0, 50) : 'UNDEFINED'
+			);
+			// console.log('🚨 sendMessage called with content:', content.slice(0, 50) + '...');
+			// console.log('🚨 sendMessage STACK TRACE:', new Error().stack);
 
-		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
+			dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
-		// DIAGNOSTIC: Check all conditions
-		console.log('🔍 [sendMessage] chat?.id:', chat?.id);
-		console.log('🔍 [sendMessage] user?.id:', user?.id);
+			// DIAGNOSTIC: Check all conditions
+			console.log('🔍 [sendMessage] chat?.id:', chat?.id);
+			console.log('🔍 [sendMessage] user?.id:', user?.id);
 
-		if (!chat?.id || !user?.id) {
-			console.error('❌ [sendMessage] Missing chat.id or user.id - EARLY RETURN');
-			toast.error('Chat session or user information is missing.');
-			return;
-		}
+			if (!chat?.id || !user?.id) {
+				console.error('❌ [sendMessage] Missing chat.id or user.id - EARLY RETURN');
+				toast.error('Chat session or user information is missing.');
+				return;
+			}
 
-		console.log('✅ [sendMessage] chat and user IDs present');
+			console.log('✅ [sendMessage] chat and user IDs present');
 
-		// DIAGNOSTIC: Log chronicles state before checks
-		console.log('🔍 [sendMessage] chat.player_chronicle_id:', chat.player_chronicle_id);
-		console.log('🔍 [sendMessage] isFirstUserMessage():', isFirstUserMessage());
-		console.log('🔍 [sendMessage] chroniclePreference:', chroniclePreference);
-		console.log('🔍 [sendMessage] hasExplicitChronicleChoice:', hasExplicitChronicleChoice);
+			// DIAGNOSTIC: Log chronicles state before checks
+			console.log('🔍 [sendMessage] chat.player_chronicle_id:', chat.player_chronicle_id);
+			// console.log('🔍 [sendMessage] isFirstUserMessage():', isFirstUserMessage()); // Moved down to avoid potential error
+			console.log('🔍 [sendMessage] chroniclePreference:', chroniclePreference);
+			console.log('🔍 [sendMessage] hasExplicitChronicleChoice:', hasExplicitChronicleChoice);
 
-		// Check if we need to show chronicle opt-in
-		// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+			// Check if we need to show chronicle opt-in
+			// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+			const _isFirst = isFirstUserMessage();
+			const _userMsgCount = activeStreamingService.messages.filter(
+				(msg) => msg.sender === 'user'
+			).length;
+
+			// DEBUG: Always show toast with condition values
+			toast.info(
+				`Debug: First=${_isFirst} (${_userMsgCount}), ChronID=${chat.player_chronicle_id}, Pref=${chroniclePreference}, Expl=${hasExplicitChronicleChoice}`
+			);
+
+			// FORCE SHOW for debugging
+
+			/*
 		if (
 			!chat.player_chronicle_id &&
-			isFirstUserMessage() &&
+			_isFirst &&
 			chroniclePreference === null &&
 			!hasExplicitChronicleChoice
 		) {
@@ -1369,30 +1395,35 @@
 			showChronicleOptIn = true;
 			return;
 		}
+		*/
 
-		console.log('✅ [sendMessage] Chronicles opt-in dialog check passed');
+			console.log('✅ [sendMessage] Chronicles opt-in dialog check passed');
 
-		// If user has a saved preference and no chronicle, handle it automatically
-		// BUT only if they haven't made an explicit choice for this session
-		if (
-			!chat.player_chronicle_id &&
-			isFirstUserMessage() &&
-			chroniclePreference === true &&
-			!hasExplicitChronicleChoice
-		) {
-			console.log('📖 [sendMessage] Auto-creating chronicle based on saved preference...');
-			try {
-				await createChronicleForChat();
-				console.log('✅ [sendMessage] Chronicle auto-created successfully');
-			} catch (error) {
-				console.error('❌ [sendMessage] Failed to auto-create chronicle:', error);
-				// Continue anyway - don't block message sending
+			// If user has a saved preference and no chronicle, handle it automatically
+			// BUT only if they haven't made an explicit choice for this session
+			if (
+				!chat?.player_chronicle_id &&
+				isFirstUserMessage() &&
+				chroniclePreference === true &&
+				!hasExplicitChronicleChoice
+			) {
+				console.log('📖 [sendMessage] Auto-creating chronicle based on saved preference...');
+				try {
+					await createChronicleForChat();
+					console.log('✅ [sendMessage] Chronicle auto-created successfully');
+				} catch (error) {
+					console.error('❌ [sendMessage] Failed to auto-create chronicle:', error);
+					// Continue anyway - don't block message sending
+				}
 			}
-		}
 
-		console.log('🚀 [sendMessage] Calling sendMessageInternal()...');
-		sendMessageInternal(content);
-		console.log('✅ [sendMessage] sendMessageInternal() call completed');
+			console.log('🚀 [sendMessage] Calling sendMessageInternal()...');
+			sendMessageInternal(content);
+			console.log('✅ [sendMessage] sendMessageInternal() call completed');
+		} catch (err) {
+			console.error('🚨🚨🚨 CRITICAL ERROR IN SENDMESSAGE:', err);
+			toast.error('Error sending message: ' + (err instanceof Error ? err.message : String(err)));
+		}
 	}
 
 	async function sendMessageInternal(content: string) {

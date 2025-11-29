@@ -141,7 +141,11 @@ async fn create_test_chat_session(
         .await?;
     assert_eq!(create_session_response.status(), StatusCode::CREATED);
 
-    let response_body = create_session_response.into_body().collect().await?.to_bytes();
+    let response_body = create_session_response
+        .into_body()
+        .collect()
+        .await?
+        .to_bytes();
     let session_response: Value = serde_json::from_slice(&response_body)?;
     let session_id = session_response["id"].as_str().unwrap().parse::<Uuid>()?;
 
@@ -285,7 +289,11 @@ async fn select_variant(
         .await?;
     assert_eq!(select_variant_response.status(), StatusCode::OK);
 
-    let response_body = select_variant_response.into_body().collect().await?.to_bytes();
+    let response_body = select_variant_response
+        .into_body()
+        .collect()
+        .await?
+        .to_bytes();
     Ok(serde_json::from_slice(&response_body)?)
 }
 
@@ -320,7 +328,8 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
     .await?;
 
     // 2. Create Variant 1 with specific raw prompt (simulating guidance injection)
-    let variant_raw_prompt = "System: You are a helpful assistant.\nUser: Hello\n(SYSTEM INSTRUCTION: Guidance applied)";
+    let variant_raw_prompt =
+        "System: You are a helpful assistant.\nUser: Hello\n(SYSTEM INSTRUCTION: Guidance applied)";
     create_message_variant_with_raw_prompt(
         &test_app,
         user_id,
@@ -341,11 +350,7 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
         .header(header::COOKIE, &auth_cookie)
         .body(Body::empty())?;
 
-    let get_message_response = test_app
-        .router
-        .clone()
-        .oneshot(get_message_request)
-        .await?;
+    let get_message_response = test_app.router.clone().oneshot(get_message_request).await?;
     assert_eq!(get_message_response.status(), StatusCode::OK);
 
     let response_body = get_message_response.into_body().collect().await?.to_bytes();
@@ -356,8 +361,15 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
 
     #[cfg(feature = "sqlite-backend")]
     {
-        assert!(fetched_raw_prompt.is_some(), "Raw prompt should be present for variant");
-        assert_eq!(fetched_raw_prompt.unwrap(), variant_raw_prompt, "Raw prompt should match variant's raw prompt");
+        assert!(
+            fetched_raw_prompt.is_some(),
+            "Raw prompt should be present for variant"
+        );
+        assert_eq!(
+            fetched_raw_prompt.unwrap(),
+            variant_raw_prompt,
+            "Raw prompt should match variant's raw prompt"
+        );
     }
 
     #[cfg(feature = "postgres-backend")]

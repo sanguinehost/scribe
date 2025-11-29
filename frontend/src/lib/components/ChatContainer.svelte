@@ -206,12 +206,6 @@
 
 	let canFetchSuggestions = $derived(shouldShowChatInterface);
 
-	// --- Chronicle Opt-in ---
-	let showChronicleOptIn = $state(false);
-	function handleChronicleChoice(_choice: boolean) {
-		showChronicleOptIn = false;
-	}
-
 	// --- Handlers ---
 	function handleOpenExtractDialog() {
 		if (!chat?.id) return;
@@ -547,11 +541,11 @@
 
 <!-- Chronicle Opt-in Dialog -->
 <ChronicleOptInDialog
-	open={showChronicleOptIn}
-	onConfirm={handleChronicleChoice}
+	open={controller.showChronicleOptIn}
+	onConfirm={(enable, remember) => controller.handleChronicleChoice(enable, remember)}
 	onOpenChange={(newOpen) => {
 		console.log('[Chat] ChronicleDialog onOpenChange:', newOpen);
-		showChronicleOptIn = newOpen;
+		controller.showChronicleOptIn = newOpen;
 	}}
 />
 

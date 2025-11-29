@@ -1098,7 +1098,6 @@ pub async fn generate_chat_response(
 
     // Call the new prompt builder
 
-
     let (final_system_prompt_str, final_genai_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
@@ -1127,8 +1126,6 @@ pub async fn generate_chat_response(
         };
 
     trace!(history_len = final_genai_message_list.len(), %session_id, "Prepared final message list for AI using new prompt builder.");
-
-
 
     let accept_header = headers
         .get(axum::http::header::ACCEPT)

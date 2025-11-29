@@ -235,6 +235,8 @@ impl NarrativeIntelligenceService {
             existing_rag_context.len()
         );
 
+        info!("NARRATIVE_DEBUG: process_conversation_context called with user_id: {}, session_id: {}, chronicle_id: {:?}", user_id, session_id, chronicle_id);
+
         // Retrieve user's persona context for narrative intelligence
         let persona_context = self
             .get_user_persona_context(user_id, session_dek)
