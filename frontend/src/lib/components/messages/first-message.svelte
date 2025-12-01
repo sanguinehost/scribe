@@ -36,9 +36,11 @@
 	const dispatch = createEventDispatcher();
 
 	// Filter out null/empty greetings and combine with first_mes
+	// Use character.first_mes as the source of truth for the primary greeting
+	// This ensures the list doesn't change when we switch greetings (which updates message.content)
 	const availableGreetings = $derived(
 		[
-			message.content, // The current first message
+			character?.first_mes || message.content, // Stable primary greeting
 			...(alternateGreetings || [])
 		].filter(Boolean)
 	);
@@ -103,7 +105,7 @@
 >
 	<div class="flex w-full gap-4">
 		<div
-			class="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border"
+			class="bg-background ring-border flex size-8 shrink-0 items-center justify-center rounded-full ring-1"
 		>
 			<div class="translate-y-px">
 				<SparklesIcon size={14} />
@@ -114,20 +116,20 @@
 			<!-- Message content -->
 			<div
 				class={_cn(
-					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2'
+					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 bg-background w-full max-w-none break-words rounded-md border px-3 py-2'
 				)}
 			>
 				{#key `${message.id}-greeting-${currentGreetingIndex}-${userPersonaName}`}
 					<Markdown md={currentGreeting} />
 				{/key}
 				{#if loading}
-					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+					<span class="bg-foreground ml-1 inline-block h-4 w-0.5 animate-pulse"></span>
 				{/if}
 			</div>
 
 			<!-- Greeting indicator and navigation controls when multiple are available -->
 			{#if hasMultipleGreetings}
-				<div class="flex items-center gap-1 text-xs text-muted-foreground">
+				<div class="text-muted-foreground flex items-center gap-1 text-xs">
 					{#if currentGreetingIndex === 0}
 						Primary greeting
 					{:else}
@@ -138,7 +140,7 @@
 							<ButtonComponent
 								variant="ghost"
 								size="icon"
-								class="h-6 w-6 text-foreground"
+								class="text-foreground h-6 w-6"
 								onclick={handlePreviousGreeting}
 								disabled={!canGoPrevious}
 							>
@@ -150,7 +152,7 @@
 						</TooltipContent>
 					</Tooltip>
 
-					<span class="px-1 text-xs text-muted-foreground">
+					<span class="text-muted-foreground px-1 text-xs">
 						{currentGreetingIndex + 1}/{availableGreetings.length}
 					</span>
 
@@ -159,7 +161,7 @@
 							<ButtonComponent
 								variant="ghost"
 								size="icon"
-								class="h-6 w-6 text-foreground"
+								class="text-foreground h-6 w-6"
 								onclick={handleNextGreeting}
 								disabled={!canGoNext}
 							>

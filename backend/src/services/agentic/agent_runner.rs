@@ -18,8 +18,10 @@ use crate::{
     services::{
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
         safety_utils::create_unrestricted_safety_settings,
-        ChronicleService,
+
+        ChronicleService, embeddings::EmbeddingPipelineServiceTrait,
     },
+    state::AppState,
 };
 
 use super::{
@@ -162,7 +164,10 @@ pub struct NarrativeAgentRunner {
     ai_client: Arc<dyn AiClient>,
     tool_registry: Arc<ToolRegistry>,
     config: NarrativeWorkflowConfig,
+
     chronicle_service: Arc<ChronicleService>,
+    embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+    app_state: Arc<AppState>,
     token_counter: Arc<HybridTokenCounter>,
 }
 
@@ -172,7 +177,10 @@ impl NarrativeAgentRunner {
         ai_client: Arc<dyn AiClient>,
         tool_registry: Arc<ToolRegistry>,
         config: NarrativeWorkflowConfig,
+
         chronicle_service: Arc<ChronicleService>,
+        embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+        app_state: Arc<AppState>,
         token_counter: Arc<HybridTokenCounter>,
     ) -> Self {
         Self {
@@ -180,6 +188,8 @@ impl NarrativeAgentRunner {
             tool_registry,
             config,
             chronicle_service,
+            embedding_pipeline_service,
+            app_state,
             token_counter,
         }
     }
@@ -240,7 +250,7 @@ impl NarrativeAgentRunner {
         // Get recent chronicle events for deduplication (if we have a chronicle)
         let previous_chronicles = if let Some(existing_chronicle_id) = chronicle_id {
             match self
-                .get_recent_chronicle_events_simple(existing_chronicle_id)
+                .get_recent_chronicle_events_simple(user_id, existing_chronicle_id)
                 .await
             {
                 Ok(events) => events,
@@ -413,6 +423,30 @@ RULES:
             event.id, chat_session_id
         );
 
+        // Embed the chronicle event for semantic search
+        info!("Calling process_and_embed_chronicle_event for event {} (from agent runner)", event.id);
+        if let Err(e) = self
+            .embedding_pipeline_service
+            .process_and_embed_chronicle_event(
+                self.app_state.clone(),
+                event.clone(),
+                Some(session_dek),
+            )
+            .await
+        {
+            warn!(
+                event_id = %event.id,
+                error = %e,
+                "Failed to embed chronicle event created by narrative agent, but event was created successfully"
+            );
+            // Don't fail the workflow if embedding fails
+        } else {
+            info!(
+                event_id = %event.id,
+                "Successfully embedded chronicle event created by narrative agent for semantic search"
+            );
+        }
+
         // Combine chronicle event result with additional tool results
         let mut all_results = vec![json!({
             "success": true,
@@ -584,6 +618,7 @@ CONVERSATION:
     async fn generate_action_plan(
         &self,
         triage_result: &TriageResult,
+        user_id: crate::db::DbId,
         _knowledge_context: &Value,
         chronicle_id: Option<crate::db::DbId>,
         _chronicle_was_just_created: bool,
@@ -606,7 +641,7 @@ CONVERSATION:
 
         // Get the last 3-5 chronicle events if chronicle exists
         let previous_chronicles = if let Some(chron_id) = chronicle_id {
-            match self.get_recent_chronicle_events_simple(chron_id).await {
+            match self.get_recent_chronicle_events_simple(user_id, chron_id).await {
                 Ok(events) => events,
                 Err(_) => "No previous chronicles found.".to_string(),
             }
@@ -1151,6 +1186,7 @@ RULES:
     /// Get the last 3-5 chronicle events in a simple format for deduplication
     async fn get_recent_chronicle_events_simple(
         &self,
+        user_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
     ) -> Result<String, AppError> {
         use crate::models::chronicle_event::{EventFilter, EventOrderBy};
@@ -1166,7 +1202,7 @@ RULES:
         let events = match self
             .chronicle_service
             .get_chronicle_events(
-                Uuid::nil().into(), // This is a workaround - ideally the service wouldn't require user_id for reads
+                user_id,
                 chronicle_id,
                 filter,
             )

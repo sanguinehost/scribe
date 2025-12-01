@@ -1455,56 +1455,86 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
                 let should_include = matches!(search_type, "all" | "chronicles");
                 if should_include {
-                    // Extract and decrypt chronicle event content
-                    let content = if let (Some(encrypted_chunk_text), Some(chunk_text_nonce)) = (
-                        payload_map.get("encrypted_chunk_text"),
-                        payload_map.get("chunk_text_nonce"),
-                    ) {
-                        // We have encrypted content - need to extract bytes from Qdrant format
-                        let encrypted_bytes = encrypted_chunk_text.as_list().and_then(|list| {
-                            let bytes: Option<Vec<u8>> = list
-                                .iter()
-                                .map(|v| v.as_integer().map(|i| i as u8))
-                                .collect();
-                            bytes
-                        });
-                        let nonce_bytes = chunk_text_nonce.as_list().and_then(|list| {
-                            let bytes: Option<Vec<u8>> = list
-                                .iter()
-                                .map(|v| v.as_integer().map(|i| i as u8))
-                                .collect();
-                            bytes
-                        });
+                    // Extract content - prioritize event_json, then encrypted, then chunk_text
+                    let mut content = None;
 
-                        if let (Some(encrypted), Some(nonce), Some(ref session_dek)) =
-                            (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref())
-                        {
-                            // Decrypt the content
-                            match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0) {
-                                Ok(decrypted_secret) => {
-                                    let decrypted_bytes =
-                                        secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                    String::from_utf8_lossy(decrypted_bytes).to_string()
-                                }
-                                Err(e) => {
-                                    warn!("Failed to decrypt chronicle event content: {}", e);
-                                    "[decryption failed]".to_string()
+                    // 1. Try to extract from event_json (structured data)
+                    if let Some(json_value) = payload_map.get("event_json") {
+                        // Convert Qdrant Value to serde_json::Value
+                        // We need to handle the conversion carefully
+                        let json_val: serde_json::Value = json_value.clone().try_into().unwrap_or(serde_json::Value::Null);
+                        
+                        if let Some(summary) = json_val.get("summary").and_then(|s| s.as_str()) {
+                            content = Some(summary.to_string());
+                        }
+                    }
+
+                    // 2. If no content yet, try to decrypt encrypted_chunk_text
+                    if content.is_none() {
+                        if let (Some(encrypted_chunk_text), Some(chunk_text_nonce)) = (
+                            payload_map.get("encrypted_chunk_text"),
+                            payload_map.get("chunk_text_nonce"),
+                        ) {
+                            // We have encrypted content - need to extract bytes from Qdrant format
+                            let encrypted_bytes = encrypted_chunk_text.as_list().and_then(|list| {
+                                let bytes: Option<Vec<u8>> = list
+                                    .iter()
+                                    .map(|v| v.as_integer().map(|i| i as u8))
+                                    .collect();
+                                bytes
+                            });
+                            let nonce_bytes = chunk_text_nonce.as_list().and_then(|list| {
+                                let bytes: Option<Vec<u8>> = list
+                                    .iter()
+                                    .map(|v| v.as_integer().map(|i| i as u8))
+                                    .collect();
+                                bytes
+                            });
+
+                            if let (Some(encrypted), Some(nonce), Some(ref session_dek)) =
+                                (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref())
+                            {
+                                // Decrypt the content
+                                match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0) {
+                                    Ok(decrypted_secret) => {
+                                        let decrypted_bytes =
+                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                                        content = Some(String::from_utf8_lossy(decrypted_bytes).to_string());
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to decrypt chronicle event content: {}", e);
+                                        // Don't set content, let it fall through to next method
+                                    }
                                 }
                             }
-                        } else {
-                            // No DEK or invalid encrypted data
-                            "[encrypted - no DEK available]".to_string()
                         }
-                    } else {
-                        // No encrypted content available
-                        // Fallback formatting
+                    }
+
+                    // 3. If still no content, try chunk_text (if not placeholder)
+                    if content.is_none() {
+                        if let Some(text_value) = payload_map.get("chunk_text") {
+                            let text = match text_value {
+                                qdrant_client::qdrant::Value {
+                                    kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s)),
+                                } => s.clone(),
+                                _ => String::new(),
+                            };
+                            
+                            if !text.is_empty() && text != "[encrypted]" && text != "[MISSING ENCRYPTION]" {
+                                content = Some(text);
+                            }
+                        }
+                    }
+
+                    // 4. Fallback formatting
+                    let content = content.unwrap_or_else(|| {
                         format!(
                             "Event type: {}, Chronicle: {}, Created: {}",
                             chronicle_meta.event_type,
                             chronicle_meta.chronicle_id,
                             chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")
                         )
-                    };
+                    });
 
                     let result = json!({
                         "type": "chronicle_event",

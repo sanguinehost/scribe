@@ -227,13 +227,19 @@ export class ChatController {
 			if (!Array.isArray(result.value) && 'messages' in result.value) {
 				const { messages: newMessages, nextCursor: newCursor } = result.value;
 
+				// 1. Update Pagination State (Source of Truth)
+				// We update this immediately because the API has confirmed where the next page is.
+				// This prevents getting stuck even if the current batch is all duplicates.
+				this.nextCursor = newCursor;
+				this.hasMoreMessages = newCursor !== null;
+
 				console.log('📥 Loading more messages:', {
 					newMessagesCount: newMessages.length,
 					newCursor,
 					currentStreamingCount: this.activeStreamingService.messages.length
 				});
 
-				// Convert to ScribeChatMessage format
+				// 2. Data Transformation
 				const convertedMessages: ScribeChatMessage[] = newMessages.map(
 					(rawMsg: Message): ScribeChatMessage => ({
 						id: rawMsg.id,
@@ -242,9 +248,9 @@ export class ChatController {
 						message_type: rawMsg.message_type,
 						content:
 							rawMsg.parts &&
-							rawMsg.parts.length > 0 &&
-							'text' in rawMsg.parts[0] &&
-							typeof rawMsg.parts[0].text === 'string'
+								rawMsg.parts.length > 0 &&
+								'text' in rawMsg.parts[0] &&
+								typeof rawMsg.parts[0].text === 'string'
 								? rawMsg.parts[0].text
 								: '',
 						created_at:
@@ -268,111 +274,107 @@ export class ChatController {
 					})
 				);
 
-				// Get reference to messages container for scroll preservation
+				// 3. Deduplication (Business Logic)
+				// Convert to StreamingMessage format
+				const streamingMessages = convertedMessages.map(
+					(msg): StreamingMessage => ({
+						id: msg.id,
+						sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
+						content: msg.content,
+						displayedContent: msg.content,
+						created_at: msg.created_at || new Date().toISOString(),
+						isAnimating: false,
+						shouldAnimate: msg.shouldAnimate ?? false,
+						error: msg.error || undefined,
+						retryable: msg.retryable,
+						prompt_tokens: msg.prompt_tokens || undefined,
+						completion_tokens: msg.completion_tokens || undefined,
+						model_name: msg.model_name,
+						backend_id: msg.backend_id,
+						status: msg.status,
+						superseded_at: msg.superseded_at,
+						variant_count: msg.variant_count,
+						current_variant_index: msg.current_variant_index,
+						is_variant: msg.is_variant,
+						parent_message_id: msg.parent_message_id,
+						contentVersion: 0
+					})
+				);
+
+				const existingIds = new Set(this.activeStreamingService.messages.map((m) => m.id));
+				const uniqueNewMessages = streamingMessages.filter((msg) => !existingIds.has(msg.id));
+
+				// 4. Handle "Empty Batch" Case
+				if (uniqueNewMessages.length === 0) {
+					console.log('⚠️ [loadMoreMessages] No new messages found after deduplication.');
+
+					// Safety check: If the API returned 0 messages, we should stop regardless of cursor
+					if (newMessages.length === 0) {
+						console.log('🛑 [loadMoreMessages] API returned empty message list. Stopping.');
+						this.hasMoreMessages = false;
+						this.nextCursor = null;
+						this.suppressAutoScroll = false;
+						return;
+					}
+
+					// Critical Fix: If we have more messages on the server (hasMoreMessages is true),
+					// but this batch was all duplicates, we MUST try the next batch immediately.
+					// Otherwise the user is stuck at the top with no way to trigger a load.
+					if (this.hasMoreMessages) {
+						console.log('🔄 [loadMoreMessages] Automatically fetching next batch...');
+						// Release the lock briefly to allow the recursive call to proceed
+						this.isLoadingMore = false;
+						await this.loadMoreMessages();
+						return;
+					}
+
+					// If no more messages on server, we are truly done.
+					this.suppressAutoScroll = false;
+					return;
+				}
+
+				console.log(`✅ [loadMoreMessages] Prepending ${uniqueNewMessages.length} unique messages`);
+
+				// 5. UI State Preservation (Scroll)
 				const messagesContainer =
 					document.querySelector('[data-messages-container]') ||
 					document.querySelector('.overflow-y-scroll');
 
+				let distanceFromBottom = 0;
 				if (messagesContainer) {
-					// Store current scroll position relative to bottom
 					const oldScrollTop = messagesContainer.scrollTop;
 					const oldScrollHeight = messagesContainer.scrollHeight;
 					const containerHeight = messagesContainer.clientHeight;
-					const distanceFromBottom = oldScrollHeight - oldScrollTop - containerHeight;
+					distanceFromBottom = oldScrollHeight - oldScrollTop - containerHeight;
+				}
 
-					// Convert to StreamingMessage format and prepend to streaming service
-					const streamingMessages = convertedMessages.map(
-						(msg): StreamingMessage => ({
-							id: msg.id,
-							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
-							content: msg.content,
-							displayedContent: msg.content,
-							created_at: msg.created_at || new Date().toISOString(),
-							isAnimating: false,
-							shouldAnimate: msg.shouldAnimate ?? false, // Carry over shouldAnimate flag
-							error: msg.error || undefined,
-							retryable: msg.retryable,
-							prompt_tokens: msg.prompt_tokens || undefined,
-							completion_tokens: msg.completion_tokens || undefined,
-							model_name: msg.model_name,
-							backend_id: msg.backend_id,
-							status: msg.status,
-							superseded_at: msg.superseded_at,
-							// Variant metadata
-							variant_count: msg.variant_count,
-							current_variant_index: msg.current_variant_index,
-							is_variant: msg.is_variant,
-							parent_message_id: msg.parent_message_id,
-							contentVersion: 0 // Initialize for Svelte 5 reactivity
-						})
-					);
+				// 6. State Mutation
+				this.activeStreamingService.messages = [
+					...uniqueNewMessages,
+					...this.activeStreamingService.messages
+				];
+				this.loadedMessagesBatches.push(convertedMessages);
 
-					// Prepend the new messages to the beginning of the array (create new array reference)
-					this.activeStreamingService.messages = [
-						...streamingMessages,
-						...this.activeStreamingService.messages
-					];
-
-					// Add to loaded batches for tracking
-					this.loadedMessagesBatches.push(convertedMessages);
-
-					// Use tick to wait for DOM update
+				// 7. UI Update (Restore Scroll)
+				if (messagesContainer) {
 					await tick();
-
-					// Calculate new scroll position to maintain same distance from bottom
 					const newScrollHeight = messagesContainer.scrollHeight;
 					const newContainerHeight = messagesContainer.clientHeight;
 					const targetScrollTop = newScrollHeight - distanceFromBottom - newContainerHeight;
 
-					// Adjust scroll position to maintain the same relative position
 					messagesContainer.scrollTop = targetScrollTop;
 
-					// Add another tick and delay to ensure scroll position sticks
+					// Double-check scroll position after a short delay to handle dynamic content resizing
 					await tick();
 					setTimeout(() => {
 						if (messagesContainer) {
 							messagesContainer.scrollTop = targetScrollTop;
 						}
-						// Re-enable auto-scroll after scroll position is set
 						this.suppressAutoScroll = false;
 					}, 150);
 				} else {
-					// Fallback if we can't find the container
-					const streamingMessages = convertedMessages.map(
-						(msg): StreamingMessage => ({
-							id: msg.id,
-							sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
-							content: msg.content,
-							displayedContent: msg.content,
-							created_at: msg.created_at || new Date().toISOString(),
-							isAnimating: false,
-							error: msg.error || undefined,
-							retryable: msg.retryable,
-							prompt_tokens: msg.prompt_tokens || undefined,
-							completion_tokens: msg.completion_tokens || undefined,
-							model_name: msg.model_name,
-							backend_id: msg.backend_id,
-							status: msg.status,
-							superseded_at: msg.superseded_at,
-							// Variant metadata
-							variant_count: msg.variant_count,
-							current_variant_index: msg.current_variant_index,
-							is_variant: msg.is_variant,
-							parent_message_id: msg.parent_message_id,
-							contentVersion: 0 // Initialize for Svelte 5 reactivity
-						})
-					);
-
-					this.activeStreamingService.messages = [
-						...streamingMessages,
-						...this.activeStreamingService.messages
-					];
-					this.loadedMessagesBatches.push(convertedMessages);
+					this.suppressAutoScroll = false;
 				}
-
-				// Update cursor and hasMore state
-				this.nextCursor = newCursor;
-				this.hasMoreMessages = newCursor !== null;
 			}
 		} catch (_error) {
 			console.error('Error loading more messages:', _error);
@@ -603,7 +605,7 @@ export class ChatController {
 				userMessage: content,
 				history: existingHistoryForApi,
 				model: currentModel || undefined,
-				agentMode: 'disabled' // TODO: Implement agentMode state
+				agentMode: this.agentMode
 			});
 
 			// Refresh chat metadata
@@ -1139,13 +1141,13 @@ export class ChatController {
 		).map((msg) =>
 			msg.id === firstMessageId
 				? {
-						...msg,
-						content,
-						displayedContent: content,
-						current_variant_index: index,
-						_variantChangedAt: Date.now(),
-						shouldAnimate: false // Don't animate greeting changes
-					}
+					...msg,
+					content,
+					displayedContent: content,
+					current_variant_index: index,
+					_variantChangedAt: Date.now(),
+					shouldAnimate: false // Don't animate greeting changes
+				}
 				: msg
 		);
 

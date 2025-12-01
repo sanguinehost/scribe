@@ -153,8 +153,18 @@ fn extract_text_chunks(info: &png::Info) -> (Option<String>, Option<String>) {
             ccv3_data_base64 = Some(text_chunk.text.clone());
             info!("Found 'ccv3' tEXt chunk.");
         } else if text_chunk.keyword == chara_keyword || text_chunk.keyword == text_chara_keyword {
-            chara_data_base64 = Some(text_chunk.text.clone());
-            info!(keyword = %text_chunk.keyword, "Found V2-style tEXt chunk.");
+            let new_data = text_chunk.text.clone();
+            if let Some(existing) = &chara_data_base64 {
+                if new_data.len() > existing.len() {
+                    info!(keyword = %text_chunk.keyword, "Found larger V2-style tEXt chunk ({} bytes). Overwriting previous one ({} bytes).", new_data.len(), existing.len());
+                    chara_data_base64 = Some(new_data);
+                } else {
+                    info!(keyword = %text_chunk.keyword, "Found smaller or equal V2-style tEXt chunk ({} bytes). Ignoring (keeping {} bytes).", new_data.len(), existing.len());
+                }
+            } else {
+                chara_data_base64 = Some(new_data);
+                info!(keyword = %text_chunk.keyword, "Found V2-style tEXt chunk.");
+            }
         }
     }
 
@@ -200,47 +210,45 @@ fn apply_v2_fallback_note(data_v2: &mut CharacterCardDataV3, ccv3_parse_failed: 
 
 /// Attempts to parse V2 fallback format from chara data.
 fn try_parse_chara_fallback(
-    chara_data_base64: Option<&String>,
+    base64_data: Option<&String>,
     ccv3_parse_failed: bool,
 ) -> Result<Option<CharacterCardDataV3>, ParserError> {
-    chara_data_base64.map_or(Ok(None), |base64_str| {
-        let decoded_bytes = base64_standard.decode(base64_str)?;
+    let base64_str = match base64_data {
+        Some(s) => s,
+        None => return Ok(None),
+    };
 
-        // Debug: Log the actual JSON being parsed
-        if let Ok(json_str) = String::from_utf8(decoded_bytes.clone()) {
-            info!(
-                "V2 chara chunk JSON: {}",
-                json_str.chars().take(200).collect::<String>()
-            );
-        }
+    let decoded_bytes = base64_standard
+        .decode(base64_str)
+        .map_err(|e| ParserError::Base64Error(e.to_string()))?;
 
-        // Try to parse as structured V2 format first (with spec/data fields)
-        if let Ok(v2_card) = serde_json::from_slice::<CharacterCardV2>(&decoded_bytes) {
-            info!("Parsed as structured V2 format with spec: {}", v2_card.spec);
-            let mut data_v2 = v2_card.data;
-            info!(
-                "V2 structured data after parsing: name={:?}, description_len={}",
-                data_v2.name,
-                data_v2.description.len()
-            );
-            apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
-            return Ok(Some(data_v2));
-        }
-
-        // Fallback to flat V2 format (direct CharacterCardDataV3)
-        let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes)?;
-
-        info!(
-            "Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note."
-        );
-        info!(
-            "V2 flat data after parsing: name={:?}, description_len={}",
-            data_v2.name,
-            data_v2.description.len()
-        );
+    // Try to parse as structured V2 format first (with spec/data fields)
+    if let Ok(v2_card) = serde_json::from_slice::<CharacterCardV2>(&decoded_bytes) {
+        info!("Parsed as structured V2 format with spec: {}", v2_card.spec);
+        let mut data_v2 = v2_card.data;
         apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
-        Ok(Some(data_v2))
-    })
+        return Ok(Some(data_v2));
+    }
+
+    // Fallback to flat V2 format (direct CharacterCardDataV3)
+    let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes).map_err(|e| {
+        warn!(
+            "Failed to parse JSON from 'chara' chunk as CharacterCardDataV3: {}",
+            e
+        );
+        ParserError::JsonError(e.to_string())
+    })?;
+
+    info!(
+        "Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note."
+    );
+    info!(
+        "V2 flat data after parsing: name={:?}, description_len={}",
+        data_v2.name,
+        data_v2.description.len()
+    );
+    apply_v2_fallback_note(&mut data_v2, ccv3_parse_failed);
+    Ok(Some(data_v2))
 }
 
 // --- Main Parsing Function ---

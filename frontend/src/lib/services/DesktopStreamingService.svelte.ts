@@ -1,6 +1,7 @@
 // DesktopStreamingService.ts - Desktop-specific streaming using Tauri Channels
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { logger } from '$lib/utils/logger';
+import { apiClient } from '$lib/api';
 import type {
 	StreamingMessage,
 	ConnectionStatus,
@@ -21,13 +22,13 @@ type ChatStreamEvent =
 	| { event: 'thinking'; data: { text: string } }
 	| { event: 'error'; data: { message: string } }
 	| {
-			event: 'tokenUsage';
-			data: { promptTokens: number; completionTokens: number; modelName: string };
-	  }
+		event: 'tokenUsage';
+		data: { promptTokens: number; completionTokens: number; modelName: string };
+	}
 	| {
-			event: 'messageSaved';
-			data: { messageId: string; variantCount: number; currentVariantIndex: number };
-	  }
+		event: 'messageSaved';
+		data: { messageId: string; variantCount: number; currentVariantIndex: number };
+	}
 	| { event: 'done' };
 
 const DEFAULT_CONFIG: StreamingConfig = {
@@ -67,7 +68,6 @@ class DesktopStreamingService {
 		{
 			content: string;
 			chunks: { [index: number]: string };
-			expectedIndex: number;
 			prompt_tokens?: number;
 			completion_tokens?: number;
 			model_name?: string;
@@ -121,6 +121,7 @@ class DesktopStreamingService {
 		}
 
 		logger.debug('desktop-streaming', 'Starting connection for chat', { chatId: params.chatId });
+		console.log('🚀 [DesktopStreamingService] Connecting to chat', params.chatId);
 
 		this.currentChatId = params.chatId;
 		this.retryCount = 0;
@@ -223,7 +224,6 @@ class DesktopStreamingService {
 		this.messageBuffers.set(assistantMessageId, {
 			content: '',
 			chunks: {},
-			expectedIndex: 0,
 			isComplete: false
 		});
 
@@ -428,7 +428,7 @@ class DesktopStreamingService {
 				break;
 
 			case 'done':
-				this.handleDoneEvent();
+				this.handleDoneEvent(assistantMessageId);
 				break;
 
 			default:
@@ -453,47 +453,80 @@ class DesktopStreamingService {
 				return;
 			}
 
-			// Verify checksum
-			const expectedChecksum = this.crc32(chunk.content);
-			if (chunk.checksum !== expectedChecksum) {
-				logger.error('desktop-streaming', 'Checksum mismatch', {
-					received: chunk.checksum,
-					expected: expectedChecksum
+			// Race Condition Fix:
+			// If the message is already marked as complete (e.g. we received messageSaved),
+			// ignore any late-arriving chunks to prevent overwriting the final state.
+			if (buffer.isComplete) {
+				logger.debug('desktop-streaming', 'Ignoring late chunk for completed message', {
+					messageId: assistantMessageId,
+					chunkIndex: chunk.index
 				});
 				return;
 			}
 
-			// Store chunk
-			buffer.chunks[chunk.index] = chunk.content;
-
-			// Process sequential chunks
-			while (buffer.chunks[buffer.expectedIndex] !== undefined) {
-				buffer.content += buffer.chunks[buffer.expectedIndex];
-				delete buffer.chunks[buffer.expectedIndex];
-				buffer.expectedIndex++;
+			// Soft Checksum Verification
+			const expectedChecksum = this.crc32(chunk.content);
+			if (chunk.checksum !== expectedChecksum) {
+				logger.warn('desktop-streaming', 'Checksum mismatch (soft)', {
+					received: chunk.checksum,
+					expected: expectedChecksum,
+					contentPreview: chunk.content.substring(0, 20)
+				});
 			}
 
-			// Update message content using atomic .map() pattern (matches web StreamingService)
-			// This ensures Svelte 5 reactivity triggers correctly without timing issues
-			this.messages = this.messages.map((msg) => {
-				if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
-					return {
-						...msg,
-						content: buffer.content,
-						displayedContent: buffer.content,
-						contentVersion: (msg.contentVersion || 0) + 1, // Increment for reactivity
-						isAnimating: false,
-						isRegenerating: false
-					};
-				}
-				return msg;
-			});
+			// Store chunk in buffer
+			// We keep ALL chunks to allow for reconstruction
+			buffer.chunks[chunk.index] = chunk.content;
+
+			// Reconstruct content from all available chunks
+			this.reconstructContent(buffer, assistantMessageId);
 
 			this.isTyping = true;
 			this.connectionStatus = 'open';
 		} catch (error) {
 			logger.error('desktop-streaming', 'Failed to parse content chunk', error as Error);
 		}
+	}
+
+	/**
+	 * Reconstruct message content from all buffered chunks
+	 * This ensures that even if chunks arrive out of order, the message
+	 * is always consistent with what we have received so far.
+	 */
+	private reconstructContent(
+		buffer: NonNullable<ReturnType<typeof this.messageBuffers.get>>,
+		assistantMessageId: string
+	): void {
+		// Get all available chunk indices, sorted numerically
+		const indices = Object.keys(buffer.chunks)
+			.map(Number)
+			.sort((a, b) => a - b);
+
+		if (indices.length === 0) return;
+
+		// Rebuild content string
+		let reconstructedContent = '';
+		for (const index of indices) {
+			reconstructedContent += buffer.chunks[index];
+		}
+
+		// Update buffer content
+		buffer.content = reconstructedContent;
+
+		// Update UI
+		this.messages = this.messages.map((msg) => {
+			if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
+				return {
+					...msg,
+					content: buffer.content,
+					displayedContent: buffer.content,
+					contentVersion: (msg.contentVersion || 0) + 1,
+					isAnimating: false,
+					isRegenerating: false
+				};
+			}
+			return msg;
+		});
 	}
 
 	/**
@@ -643,14 +676,85 @@ class DesktopStreamingService {
 		});
 
 		this.connectionCloseState.messageSavedReceived = true;
+
+		// Flush any remaining chunks in the buffer to ensure we have as much as possible
+		this.flushBuffer(assistantMessageId);
+
+		// CRITICAL FIX: Fetch the full, authoritative message from the backend
+		// This ensures that even if the stream skipped chunks or was incomplete,
+		// the user sees the perfect final result stored in the database.
+		this.fetchFullMessage(messageId, assistantMessageId);
+
 		this.tryCloseConnection();
+	}
+
+	/**
+	 * Fetch the full message from backend and update local state
+	 */
+	private async fetchFullMessage(backendId: string, localId: string): Promise<void> {
+		logger.debug('desktop-streaming', 'Fetching full message from backend', { backendId, localId });
+
+		try {
+			const result = await apiClient.getMessageById(backendId);
+
+			if (result.isOk()) {
+				const fullMessage = result.value;
+				logger.debug('desktop-streaming', 'Successfully fetched full message', {
+					id: fullMessage.id,
+					contentLength: fullMessage.content.length
+				});
+
+				// Update the message with the authoritative content
+				this.messages = this.messages.map((msg) => {
+					if (msg.id === localId || msg.backend_id === backendId) {
+						return {
+							...msg,
+							content: fullMessage.content,
+							displayedContent: fullMessage.content,
+							contentVersion: (msg.contentVersion || 0) + 1,
+							status: 'completed',
+							// Preserve other fields
+							backend_id: fullMessage.id,
+							variant_count: fullMessage.variant_count || msg.variant_count,
+							current_variant_index: fullMessage.current_variant_index || msg.current_variant_index
+						};
+					}
+					return msg;
+				});
+			} else {
+				logger.error('desktop-streaming', 'Failed to fetch full message', result.error);
+			}
+		} catch (error) {
+			logger.error('desktop-streaming', 'Exception fetching full message', error as Error);
+		}
+	}
+
+	/**
+	 * Flush buffer - effectively just a final reconstruction
+	 */
+	private flushBuffer(assistantMessageId: string): void {
+		const buffer = this.messageBuffers.get(assistantMessageId);
+		if (!buffer) return;
+
+		logger.debug('desktop-streaming', 'Flushing buffer (final reconstruction)', {
+			messageId: assistantMessageId,
+			bufferedChunks: Object.keys(buffer.chunks).length
+		});
+
+		this.reconstructContent(buffer, assistantMessageId);
 	}
 
 	/**
 	 * Handle done event
 	 */
-	private handleDoneEvent(): void {
+	private handleDoneEvent(assistantMessageId?: string): void {
 		logger.debug('desktop-streaming', 'Done event received');
+
+		if (assistantMessageId) {
+			this.flushBuffer(assistantMessageId);
+		} else if (this.currentAssistantMessageId) {
+			this.flushBuffer(this.currentAssistantMessageId);
+		}
 
 		this.isTyping = false;
 		this.connectionCloseState.doneReceived = true;

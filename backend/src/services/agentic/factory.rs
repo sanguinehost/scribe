@@ -60,6 +60,8 @@ impl AgenticNarrativeFactory {
             registry,
             config,
             chronicle_service,
+            app_state.embedding_pipeline_service.clone(),
+            app_state.clone(),
             app_state.token_counter.clone(),
         )
     }
@@ -108,6 +110,8 @@ impl AgenticNarrativeFactory {
             registry,
             config,
             chronicle_service,
+            app_state.embedding_pipeline_service.clone(),
+            app_state.clone(),
             app_state.token_counter.clone(),
         )
     }

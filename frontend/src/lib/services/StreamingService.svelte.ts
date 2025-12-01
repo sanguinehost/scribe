@@ -94,7 +94,6 @@ class StreamingService {
 		{
 			content: string;
 			chunks: { [index: number]: string };
-			expectedIndex: number;
 			prompt_tokens?: number;
 			completion_tokens?: number;
 			model_name?: string;
@@ -210,29 +209,32 @@ class StreamingService {
 	}
 
 	/**
-	 * NEW ARCHITECTURE: Update buffer content from contiguous chunks
+	 * NEW ARCHITECTURE: Reconstruct message content from all buffered chunks
+	 * This ensures that even if chunks arrive out of order, the message
+	 * is always consistent with what we have received so far.
 	 */
-	private updateBufferContent(messageId: string): void {
+	private reconstructContent(messageId: string): void {
 		const buffer = this.messageBuffers.get(messageId);
 		if (!buffer) return;
 
-		let content = '';
-		let nextIndex = buffer.expectedIndex;
+		// Get all available chunk indices, sorted numerically
+		const indices = Object.keys(buffer.chunks)
+			.map(Number)
+			.sort((a, b) => a - b);
 
-		// Process all contiguous chunks
-		while (buffer.chunks[nextIndex] !== undefined) {
-			content += buffer.chunks[nextIndex];
-			delete buffer.chunks[nextIndex];
-			nextIndex++;
+		if (indices.length === 0) return;
+
+		// Rebuild content string
+		let reconstructedContent = '';
+		for (const index of indices) {
+			reconstructedContent += buffer.chunks[index];
 		}
 
-		if (content) {
-			buffer.content += content;
-			buffer.expectedIndex = nextIndex;
+		// Update buffer content
+		buffer.content = reconstructedContent;
 
-			// Update message progressively so TypewriterMessage can see content
-			this.updateMessageContentProgressive(messageId);
-		}
+		// Update message progressively so TypewriterMessage can see content
+		this.updateMessageContentProgressive(messageId);
 	}
 
 	/**
@@ -398,6 +400,7 @@ class StreamingService {
 		variantOf?: string; // If provided, create this response as a variant of the specified message ID
 	}): Promise<void> {
 		// Connect to streaming service
+		console.log('🌐 [WebStreamingService] Connecting to chat', params.chatId);
 
 		if (this.connectionStatus === 'connecting' || this.connectionStatus === 'open') {
 			logger.warn('streaming-service', 'Connection already active. Disconnect first.');
@@ -521,7 +524,6 @@ class StreamingService {
 		this.messageBuffers.set(assistantMessageId, {
 			content: '',
 			chunks: {},
-			expectedIndex: 0,
 			isComplete: false
 		});
 
@@ -764,19 +766,10 @@ class StreamingService {
 
 								// Store chunk in buffer
 								messageBuffer.chunks[index] = content;
-
-								// Check for gaps in chunks
-								const expectedIdx = messageBuffer.expectedIndex;
-								if (index > expectedIdx) {
-									logger.debug('streaming-service', 'Chunk gap detected', {
-										expected: expectedIdx,
-										received: index
-									});
-								}
 							}
 
-							// Update buffer content if we have contiguous chunks
-							this.updateBufferContent(messageId);
+							// Reconstruct content from all available chunks
+							this.reconstructContent(messageId);
 						} catch (_e) {
 							logger.error('streaming-service', 'Failed to parse structured chunks', {
 								error: _e as Error,
@@ -806,7 +799,7 @@ class StreamingService {
 
 						if (messageBuffer) {
 							// Process any remaining chunks
-							this.updateBufferContent(messageId);
+							this.reconstructContent(messageId);
 
 							// Mark buffer as complete
 							messageBuffer.isComplete = true;
@@ -912,7 +905,7 @@ class StreamingService {
 								}
 
 								// Update buffer content if we have contiguous chunks
-								this.updateBufferContent(messageId);
+								this.reconstructContent(messageId);
 							} catch (_e) {
 								// If parsing as JSON fails, treat as raw text content
 								// Append directly to buffer (for backends that send plain text)

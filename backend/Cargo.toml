@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["cloud"]  # Cloud mode is default for backward compatibility
-desktop = ["sqlite-backend", "embedded-vector"]
+desktop = ["sqlite-backend", "remote-vector"]
 cloud = ["postgres-backend", "remote-vector"]
 sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "diesel_migrations/sqlite", "diesel-derive-enum/sqlite"]
 postgres-backend = ["diesel/postgres", "dep:deadpool-diesel", "deadpool-diesel?/postgres", "diesel_migrations/postgres", "diesel-derive-enum/postgres", "dep:diesel_json"]

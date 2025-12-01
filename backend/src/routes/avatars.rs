@@ -462,7 +462,7 @@ pub async fn delete_persona_avatar(
         diesel::delete(
             user_assets
                 .filter(crate::schema::user_assets::user_id.eq(user_id))
-                .filter(crate::schema::user_assets::persona_id.eq(persona_id))
+                .filter(crate::schema::user_assets::persona_id.eq(Some(persona_id)))
                 .filter(crate::schema::user_assets::asset_type.eq("avatar")),
         )
         .execute(conn_block)

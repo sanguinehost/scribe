@@ -9,12 +9,13 @@
 # 4. Binary placement for Tauri sidecar
 # 5. Validation and Tauri dev server startup (optional)
 #
-# Usage: ./scripts/build-desktop-dev.sh [--clean] [--skip-backend] [--run|--open]
+# Usage: ./scripts/build-desktop-dev.sh [--clean] [--skip-backend] [--no-rebuild] [--run|--open]
 #
 # Options:
 #   --clean         Full clean rebuild (removes all Cargo cache - slow but thorough)
 #                   Use when switching features or if cargo gets confused
 #   --skip-backend  Skip backend compilation (only rebuild frontend)
+#   --no-rebuild    Skip both frontend and backend compilation (just run existing binaries)
 #   --run/--open    Start the Tauri dev server after building
 #
 # Default: Incremental rebuild (fast, only recompiles changed files)
@@ -32,6 +33,7 @@ export AWS_LC_SYS_NO_ASM=1
 # Parse command line flags
 CLEAN_BUILD=false
 SKIP_BACKEND=false
+SKIP_FRONTEND=false
 RUN_APP=false
 LOG_LEVEL="info"
 for arg in "$@"; do
@@ -44,12 +46,21 @@ for arg in "$@"; do
             SKIP_BACKEND=true
             shift
             ;;
+        --no-rebuild)
+            SKIP_BACKEND=true
+            SKIP_FRONTEND=true
+            shift
+            ;;
         --log-level=*)
             LOG_LEVEL="${arg#*=}"
             shift
             ;;
         --run|--open)
             RUN_APP=true
+            shift
+            ;;
+        --skip-frontend)
+            SKIP_FRONTEND=true
             shift
             ;;
         *)
@@ -88,7 +99,9 @@ log_warn() {
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-if [ "$SKIP_BACKEND" = true ]; then
+if [ "$SKIP_FRONTEND" = true ] && [ "$SKIP_BACKEND" = true ]; then
+    log_info "Running Scribe Desktop (Development Mode - NO REBUILD)"
+elif [ "$SKIP_BACKEND" = true ]; then
     log_info "Building Scribe Desktop (Development Mode - FRONTEND ONLY)"
 elif [ "$CLEAN_BUILD" = true ]; then
     log_info "Building Scribe Desktop (Development Mode - FULL CLEAN REBUILD)"
@@ -128,17 +141,21 @@ echo ""
 # Step 2: Clean stale build artifacts
 log_info "Step 2/7: Cleaning stale build artifacts..."
 
-# Always clean frontend build artifacts
-if [ -d "$PROJECT_ROOT/frontend/build" ]; then
-    log_info "Removing frontend build directory..."
-    rm -rf "$PROJECT_ROOT/frontend/build"
-    log_success "Cleaned: frontend/build/"
-fi
+# Clean frontend build artifacts only if we are building frontend
+if [ "$SKIP_FRONTEND" = false ]; then
+    if [ -d "$PROJECT_ROOT/frontend/build" ]; then
+        log_info "Removing frontend build directory..."
+        rm -rf "$PROJECT_ROOT/frontend/build"
+        log_success "Cleaned: frontend/build/"
+    fi
 
-if [ -d "$PROJECT_ROOT/frontend/.svelte-kit" ]; then
-    log_info "Removing frontend .svelte-kit directory..."
-    rm -rf "$PROJECT_ROOT/frontend/.svelte-kit"
-    log_success "Cleaned: frontend/.svelte-kit/"
+    if [ -d "$PROJECT_ROOT/frontend/.svelte-kit" ]; then
+        log_info "Removing frontend .svelte-kit directory..."
+        rm -rf "$PROJECT_ROOT/frontend/.svelte-kit"
+        log_success "Cleaned: frontend/.svelte-kit/"
+    fi
+else
+    log_info "Skipping frontend clean (--no-rebuild flag set)"
 fi
 
 # Clean backend artifacts based on flags
@@ -176,29 +193,33 @@ echo ""
 # Step 3: Build frontend for desktop
 log_info "Step 3/7: Building frontend with desktop configuration..."
 
-cd "$PROJECT_ROOT/frontend"
+if [ "$SKIP_FRONTEND" = false ]; then
+    cd "$PROJECT_ROOT/frontend"
 
-if [ ! -f "package.json" ]; then
-    log_error "frontend/package.json not found"
-    exit 1
+    if [ ! -f "package.json" ]; then
+        log_error "frontend/package.json not found"
+        exit 1
+    fi
+
+    # Run the desktop build script
+    if [ ! -f "build-desktop.sh" ]; then
+        log_error "frontend/build-desktop.sh not found"
+        exit 1
+    fi
+
+    log_info "Running pnpm run build:desktop..."
+    pnpm run build:desktop
+
+    # Verify frontend build output
+    if [ ! -f "$PROJECT_ROOT/frontend/build/index.html" ]; then
+        log_error "Frontend build failed - index.html not found at frontend/build/index.html"
+        exit 1
+    fi
+
+    log_success "Frontend build successful → frontend/build/"
+else
+    log_info "Skipping frontend build (--no-rebuild flag set)"
 fi
-
-# Run the desktop build script
-if [ ! -f "build-desktop.sh" ]; then
-    log_error "frontend/build-desktop.sh not found"
-    exit 1
-fi
-
-log_info "Running pnpm run build:desktop..."
-pnpm run build:desktop
-
-# Verify frontend build output
-if [ ! -f "$PROJECT_ROOT/frontend/build/index.html" ]; then
-    log_error "Frontend build failed - index.html not found at frontend/build/index.html"
-    exit 1
-fi
-
-log_success "Frontend build successful → frontend/build/"
 echo ""
 
 # Step 4: Build backend binary with desktop features (or skip if requested)
@@ -312,7 +333,14 @@ if [ "$RUN_APP" = true ]; then
 
     export RUST_LOG="$LOG_LEVEL"
     log_info "Setting RUST_LOG=$RUST_LOG"
-    cargo tauri dev
+
+    TAURI_ARGS=""
+    if [ "$SKIP_BACKEND" = true ] && [ "$SKIP_FRONTEND" = true ]; then
+        TAURI_ARGS="--no-watch"
+        log_info "Running with --no-watch (no-rebuild mode)"
+    fi
+
+    cargo tauri dev $TAURI_ARGS
 
     log_success "Build complete!"
 else

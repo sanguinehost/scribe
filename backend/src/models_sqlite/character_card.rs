@@ -160,6 +160,7 @@ pub struct CharacterCardDataV3 {
 
     // --- V2 fields changed/clarified in V3 ---
     // `creator_notes`: Already included above, V3 clarifies multilingual handling.
+    #[serde(alias = "world_info")]
     pub character_book: Option<crate::db::DbJson>, // Use DbJson for flexible parsing
 
     // --- New Fields in V3 ---

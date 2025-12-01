@@ -35,6 +35,8 @@ use secrecy::ExposeSecret; // Added for expose_secret method
 use secrecy::SecretBox; // Ensure SecretBox is imported
                         // Removed incorrect ValidatedJson import
 use crate::services::chat;
+use crate::services::chat::generation::{self, StreamAiParams}; // Added generation imports
+use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
 use crate::state::AppState;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use serde_json::json;
@@ -1061,7 +1063,7 @@ pub async fn create_message_handler(
     let app_state = Arc::new(state.clone());
     let saved_db_message = crate::services::chat::message_handling::save_message(
         crate::services::chat::message_handling::SaveMessageParams {
-            state: app_state,
+            state: app_state.clone(),
             session_id: chat_id,
             user_id,
             message_type_enum: message_role_enum,
@@ -1197,6 +1199,142 @@ pub async fn create_message_handler(
         .parts
         .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]).into());
     let response_attachments = payload.attachments.unwrap_or_else(|| json!([]).into());
+
+    // --- Trigger AI Response Generation (Background Task) ---
+    // Only trigger if the user sent the message (system messages don't trigger AI)
+    if message_role_enum == MessageRole::User {
+        let state_for_gen = app_state.clone();
+        let session_id_for_gen = chat_id;
+        let user_id_for_gen = user_id;
+        let user_dek_for_gen = user_dek_arc.clone();
+        let user_message_content_for_gen = payload.content.clone();
+
+        tokio::spawn(async move {
+            info!(chat_id = %session_id_for_gen, "Spawning background task for AI response generation");
+
+            // 1. Fetch session data and history
+            let session_data_result = generation::get_session_data_for_generation(
+                state_for_gen.clone(),
+                user_id_for_gen,
+                session_id_for_gen,
+                user_message_content_for_gen.clone(),
+                user_dek_for_gen.clone(),
+                None, // No frontend history provided in this endpoint
+            )
+            .await;
+
+            match session_data_result {
+                Ok(data) => {
+                    let (
+                        managed_recent_history,
+                        system_prompt,
+                        _active_lorebook_ids,
+                        _session_character_id,
+                        _raw_character_system_prompt,
+                        temperature,
+                        max_output_tokens,
+                        frequency_penalty,
+                        presence_penalty,
+                        top_k,
+                        top_p,
+                        seed,
+                        model_name,
+                        model_provider,
+                        gemini_thinking_budget,
+                        gemini_enable_code_execution,
+                        _user_db_message_to_save, // We already saved the message
+                        _actual_recent_history_tokens,
+                        _rag_context_items,
+                        _history_management_strategy,
+                        _history_management_limit,
+                        _user_persona_name,
+                        player_chronicle_id,
+                        agent_mode,
+                    ) = data;
+
+                    // 2. Convert history to GenAiChatMessage
+                    let mut incoming_genai_messages = Vec::new();
+                    
+                    // Add history
+                    if let Some(dek_arc) = &user_dek_for_gen {
+                        for msg in managed_recent_history {
+                            let role = match msg.message_type {
+                                crate::services::chat::types::MessageRole::User => ChatRole::User,
+                                crate::services::chat::types::MessageRole::Assistant => ChatRole::Assistant,
+                                crate::services::chat::types::MessageRole::System => ChatRole::System,
+                            };
+                            
+                            match msg.decrypt_content_field(&dek_arc) {
+                                Ok(content) => {
+                                    incoming_genai_messages.push(GenAiChatMessage {
+                                        role,
+                                        content: genai::chat::MessageContent::Text(content),
+                                        options: None,
+                                    });
+                                }
+                                Err(e) => {
+                                    error!(message_id = %msg.id, error = %e, "Failed to decrypt message for history, skipping");
+                                }
+                            }
+                        }
+                    }
+
+                    // Add the current user message
+                    let last_msg_content = incoming_genai_messages.last().and_then(|m| match &m.content {
+                        genai::chat::MessageContent::Text(t) => Some(t.clone()),
+                        _ => None,
+                    });
+                    
+                    if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
+                         incoming_genai_messages.push(GenAiChatMessage {
+                            role: ChatRole::User,
+                            content: genai::chat::MessageContent::Text(user_message_content_for_gen),
+                            options: None,
+                         });
+                    }
+
+                    // 3. Prepare params
+                    if let Some(dek_arc) = user_dek_for_gen {
+                        let params = StreamAiParams {
+                            state: state_for_gen,
+                            session_id: session_id_for_gen,
+                            user_id: user_id_for_gen,
+                            incoming_genai_messages,
+                            system_prompt,
+                            temperature,
+                            max_output_tokens,
+                            frequency_penalty,
+                            presence_penalty,
+                            top_k,
+                            top_p,
+                            stop_sequences: None, // TODO: Fetch from settings if needed
+                            seed,
+                            model_name,
+                            model_provider,
+                            gemini_thinking_budget,
+                            gemini_enable_code_execution,
+                            request_thinking: false, // Default to false for now
+                            user_dek: dek_arc,
+                            character_name: None,
+                            player_chronicle_id,
+                            variant_of: None,
+                            charge_credits: true, // Charge for AI response
+                        };
+
+                        // 4. Stream response
+                        if let Err(e) = generation::stream_ai_response_and_save_message(params).await {
+                             error!(chat_id = %session_id_for_gen, error = %e, "Failed to stream AI response");
+                        }
+                    } else {
+                        error!(chat_id = %session_id_for_gen, "User DEK missing for AI generation");
+                    }
+                }
+                Err(e) => {
+                    error!(chat_id = %session_id_for_gen, error = %e, "Failed to get session data for generation");
+                }
+            }
+        });
+    }
 
     let response = MessageResponse {
         id: client_message.id,
