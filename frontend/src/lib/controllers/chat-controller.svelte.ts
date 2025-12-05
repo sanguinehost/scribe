@@ -203,8 +203,15 @@ export class ChatController {
 		}
 	}
 
-	async loadMoreMessages() {
+	async loadMoreMessages(retryCount = 0) {
 		if (!this.chat?.id || this.isLoadingMore || !this.hasMoreMessages || !this.nextCursor) {
+			return;
+		}
+
+		if (retryCount > 3) {
+			console.warn('🛑 [loadMoreMessages] Max retries reached. Stopping infinite load.');
+			this.isLoadingMore = false;
+			this.suppressAutoScroll = false;
 			return;
 		}
 
@@ -212,9 +219,10 @@ export class ChatController {
 		this.suppressAutoScroll = true;
 
 		try {
+			const currentCursor = this.nextCursor;
 			const result = await _apiClient.getMessagesByChatId(this.chat.id, {
 				limit: 20,
-				cursor: this.nextCursor
+				cursor: currentCursor
 			});
 
 			if (result.isErr()) {
@@ -226,6 +234,17 @@ export class ChatController {
 			// Handle paginated response
 			if (!Array.isArray(result.value) && 'messages' in result.value) {
 				const { messages: newMessages, nextCursor: newCursor } = result.value;
+
+				// 0. Safety Check: If backend returns the same cursor, we are stuck.
+				if (newCursor === currentCursor && newMessages.length === 0) {
+					console.warn(
+						'🛑 [loadMoreMessages] Backend returned same cursor with no messages. Stopping.'
+					);
+					this.hasMoreMessages = false;
+					this.nextCursor = null;
+					this.suppressAutoScroll = false;
+					return;
+				}
 
 				// 1. Update Pagination State (Source of Truth)
 				// We update this immediately because the API has confirmed where the next page is.
@@ -248,9 +267,9 @@ export class ChatController {
 						message_type: rawMsg.message_type,
 						content:
 							rawMsg.parts &&
-								rawMsg.parts.length > 0 &&
-								'text' in rawMsg.parts[0] &&
-								typeof rawMsg.parts[0].text === 'string'
+							rawMsg.parts.length > 0 &&
+							'text' in rawMsg.parts[0] &&
+							typeof rawMsg.parts[0].text === 'string'
 								? rawMsg.parts[0].text
 								: '',
 						created_at:
@@ -302,7 +321,17 @@ export class ChatController {
 				);
 
 				const existingIds = new Set(this.activeStreamingService.messages.map((m) => m.id));
-				const uniqueNewMessages = streamingMessages.filter((msg) => !existingIds.has(msg.id));
+				const existingBackendIds = new Set(
+					this.activeStreamingService.messages
+						.map((m) => m.backend_id)
+						.filter((id): id is string => !!id)
+				);
+
+				const uniqueNewMessages = streamingMessages.filter((msg) => {
+					const idExists = existingIds.has(msg.id);
+					const backendIdExists = msg.backend_id && existingBackendIds.has(msg.backend_id);
+					return !idExists && !backendIdExists;
+				});
 
 				// 4. Handle "Empty Batch" Case
 				if (uniqueNewMessages.length === 0) {
@@ -321,10 +350,12 @@ export class ChatController {
 					// but this batch was all duplicates, we MUST try the next batch immediately.
 					// Otherwise the user is stuck at the top with no way to trigger a load.
 					if (this.hasMoreMessages) {
-						console.log('🔄 [loadMoreMessages] Automatically fetching next batch...');
+						console.log(
+							`🔄 [loadMoreMessages] Automatically fetching next batch (retry ${retryCount + 1})...`
+						);
 						// Release the lock briefly to allow the recursive call to proceed
 						this.isLoadingMore = false;
-						await this.loadMoreMessages();
+						await this.loadMoreMessages(retryCount + 1);
 						return;
 					}
 
@@ -392,7 +423,23 @@ export class ChatController {
 
 	// ... (loadMoreMessages implementation) ...
 
+	// Track last initialized chat ID to prevent unnecessary resets
+	private lastInitializedChatId: string | null = null;
+
 	initializeChat() {
+		if (!this.chat?.id) return;
+
+		// Prevent re-initialization if we're already on this chat
+		if (this.lastInitializedChatId === this.chat.id) {
+			console.log(
+				`🔄 [initializeChat] Skipping initialization - already initialized for ${this.chat.id}`
+			);
+			return;
+		}
+
+		console.log(`🚀 [initializeChat] Initializing chat ${this.chat.id}`);
+		this.lastInitializedChatId = this.chat.id;
+
 		// CRITICAL: Always clear messages first to prevent stale state from previous chats
 		// This fixes the bug where navigating away and back shows the previous chat's messages
 		this.activeStreamingService.clearMessages();
@@ -1141,13 +1188,13 @@ export class ChatController {
 		).map((msg) =>
 			msg.id === firstMessageId
 				? {
-					...msg,
-					content,
-					displayedContent: content,
-					current_variant_index: index,
-					_variantChangedAt: Date.now(),
-					shouldAnimate: false // Don't animate greeting changes
-				}
+						...msg,
+						content,
+						displayedContent: content,
+						current_variant_index: index,
+						_variantChangedAt: Date.now(),
+						shouldAnimate: false // Don't animate greeting changes
+					}
 				: msg
 		);
 

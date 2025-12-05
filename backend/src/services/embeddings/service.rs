@@ -846,15 +846,22 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         debug!(point_id = ?scored_point.id, score = scored_point.score, %user_id, %chronicle_id, "Processing chronicle point (RAG)");
                         // Try to extract event_json from payload first (preferred for structured data),
                         // then fall back to chunk_text, then metadata parsing
-                        let chunk_text = if let Some(json_value) = scored_point.payload.get("event_json") {
+                        let chunk_text = if let Some(json_value) =
+                            scored_point.payload.get("event_json")
+                        {
                             // Convert the Qdrant Value to serde_json::Value and then to string
-                            let json_val: serde_json::Value = json_value.clone().try_into().unwrap_or(serde_json::Value::Null);
+                            let json_val: serde_json::Value = json_value
+                                .clone()
+                                .try_into()
+                                .unwrap_or(serde_json::Value::Null);
                             if !json_val.is_null() {
                                 json_val.to_string()
-                            } else if let Some(text_value) = scored_point.payload.get("chunk_text") {
+                            } else if let Some(text_value) = scored_point.payload.get("chunk_text")
+                            {
                                 match text_value {
                                     qdrant_client::qdrant::Value {
-                                        kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s)),
+                                        kind:
+                                            Some(qdrant_client::qdrant::value::Kind::StringValue(s)),
                                     } => s.clone(),
                                     _ => format!("[{}] Chronicle event", "Unknown"),
                                 }
@@ -1096,7 +1103,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         event: crate::models::chronicle_event::ChronicleEvent,
         session_dek: Option<&crate::auth::session_dek::SessionDek>,
     ) -> Result<(), AppError> {
-        info!("process_and_embed_chronicle_event called for event_id: {}", event.id);
+        info!(
+            "process_and_embed_chronicle_event called for event_id: {}",
+            event.id
+        );
         info!(event_id = %event.id, chronicle_id = %event.chronicle_id, "Processing and embedding chronicle event");
 
         let embedding_client = state.embedding_client.clone();

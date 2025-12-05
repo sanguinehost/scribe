@@ -1178,10 +1178,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
         // Use a score threshold to filter out low-relevance results
         // Different thresholds for different search types to optimize results
+        // LOWERED THRESHOLDS based on user feedback that search was too sensitive
         let score_threshold = match search_type {
-            "lorebooks" => Some(0.45), // Slightly lower for lorebooks as they may have broader content
-            "chronicles" => Some(0.5), // Medium threshold for chronicle events
-            _ => Some(0.4),            // Lower threshold for "all" to cast a wider net
+            "lorebooks" => Some(0.35),  // Lowered from 0.45
+            "chronicles" => Some(0.40), // Lowered from 0.5
+            _ => Some(0.30),            // Lowered from 0.4
         };
 
         info!(
@@ -1462,8 +1463,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     if let Some(json_value) = payload_map.get("event_json") {
                         // Convert Qdrant Value to serde_json::Value
                         // We need to handle the conversion carefully
-                        let json_val: serde_json::Value = json_value.clone().try_into().unwrap_or(serde_json::Value::Null);
-                        
+                        let json_val: serde_json::Value = json_value
+                            .clone()
+                            .try_into()
+                            .unwrap_or(serde_json::Value::Null);
+
                         if let Some(summary) = json_val.get("summary").and_then(|s| s.as_str()) {
                             content = Some(summary.to_string());
                         }
@@ -1495,11 +1499,14 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref())
                             {
                                 // Decrypt the content
-                                match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0) {
+                                match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0)
+                                {
                                     Ok(decrypted_secret) => {
                                         let decrypted_bytes =
                                             secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                        content = Some(String::from_utf8_lossy(decrypted_bytes).to_string());
+                                        content = Some(
+                                            String::from_utf8_lossy(decrypted_bytes).to_string(),
+                                        );
                                     }
                                     Err(e) => {
                                         warn!("Failed to decrypt chronicle event content: {}", e);
@@ -1519,8 +1526,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 } => s.clone(),
                                 _ => String::new(),
                             };
-                            
-                            if !text.is_empty() && text != "[encrypted]" && text != "[MISSING ENCRYPTION]" {
+
+                            if !text.is_empty()
+                                && text != "[encrypted]"
+                                && text != "[MISSING ENCRYPTION]"
+                            {
                                 content = Some(text);
                             }
                         }

@@ -84,7 +84,6 @@
 	},
 	"packageManager": "pnpm@10.10.0",
 	"dependencies": {
-		"@microsoft/fetch-event-source": "^2.0.1",
 		"@tauri-apps/plugin-fs": "^2.4.4",
 		"@tauri-apps/plugin-log": "^2.7.1",
 		"@tauri-apps/plugin-upload": "^2.3.2",
@@ -93,6 +92,7 @@
 		"cookie": "^0.7.2",
 		"dompurify": "^3.2.6",
 		"eventsource-parser": "^3.0.5",
-		"marked": "^17.0.1"
+		"marked": "^17.0.1",
+		"sveltekit-sse": "^0.14.3"
 	}
 }

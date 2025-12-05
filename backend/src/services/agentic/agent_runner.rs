@@ -16,10 +16,10 @@ use crate::{
         chronicle_event::CreateEventRequest,
     },
     services::{
+        embeddings::EmbeddingPipelineServiceTrait,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
         safety_utils::create_unrestricted_safety_settings,
-
-        ChronicleService, embeddings::EmbeddingPipelineServiceTrait,
+        ChronicleService,
     },
     state::AppState,
 };
@@ -424,7 +424,10 @@ RULES:
         );
 
         // Embed the chronicle event for semantic search
-        info!("Calling process_and_embed_chronicle_event for event {} (from agent runner)", event.id);
+        info!(
+            "Calling process_and_embed_chronicle_event for event {} (from agent runner)",
+            event.id
+        );
         if let Err(e) = self
             .embedding_pipeline_service
             .process_and_embed_chronicle_event(
@@ -641,7 +644,10 @@ CONVERSATION:
 
         // Get the last 3-5 chronicle events if chronicle exists
         let previous_chronicles = if let Some(chron_id) = chronicle_id {
-            match self.get_recent_chronicle_events_simple(user_id, chron_id).await {
+            match self
+                .get_recent_chronicle_events_simple(user_id, chron_id)
+                .await
+            {
                 Ok(events) => events,
                 Err(_) => "No previous chronicles found.".to_string(),
             }
@@ -1201,11 +1207,7 @@ RULES:
         // We use Uuid::nil() as a workaround since we're only reading and chronicle_id is sufficient
         let events = match self
             .chronicle_service
-            .get_chronicle_events(
-                user_id,
-                chronicle_id,
-                filter,
-            )
+            .get_chronicle_events(user_id, chronicle_id, filter)
             .await
         {
             Ok(events) => events,

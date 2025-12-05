@@ -308,7 +308,10 @@ async fn create_event(
         .await?;
 
     // Embed the chronicle event for semantic search
-    info!("Calling process_and_embed_chronicle_event for event {}", event.id);
+    info!(
+        "Calling process_and_embed_chronicle_event for event {}",
+        event.id
+    );
     if let Err(e) = state
         .embedding_pipeline_service
         .process_and_embed_chronicle_event(

@@ -52,7 +52,8 @@
 	 */
 	function animateContentIncremental(fullContent: string) {
 		// If content hasn't changed, do nothing
-		if (fullContent === lastProcessedContent) {
+		// UNLESS shouldAnimate has changed to false, in which case we must process
+		if (fullContent === lastProcessedContent && message.shouldAnimate !== false) {
 			return;
 		}
 
@@ -62,11 +63,12 @@
 			animationFrameId = null;
 		}
 
-		// If shouldAnimate is false (historical message), show immediately without animation
+		// If shouldAnimate is false (historical message or stream done), show immediately without animation
 		if (message.shouldAnimate === false) {
 			displayedContent = fullContent;
 			isAnimating = false;
 			lastProcessedContent = fullContent;
+			startTime = null;
 			return;
 		}
 
@@ -83,9 +85,14 @@
 
 		if (isIncremental) {
 			// Incremental: animate only the NEW characters
-			startCharIndex = displayedContent.length;
-			startTime = performance.now();
-			isAnimating = true;
+			// CRITICAL FIX: Only reset start time if we aren't already animating
+			// This prevents "stuttering" when updates arrive faster than the animation frame
+			if (!isAnimating || startTime === null) {
+				startCharIndex = displayedContent.length;
+				startTime = performance.now();
+				isAnimating = true;
+			}
+
 			lastProcessedContent = fullContent;
 
 			function animateIncrement(currentTime: number) {
@@ -154,6 +161,8 @@
 	$effect(() => {
 		// Track message.content changes
 		const content = message.content;
+		// Track shouldAnimate to snap to finish when done
+		const _shouldAnimate = message.shouldAnimate;
 		// CRITICAL: Track contentVersion to force reactivity on updates (nullish coalescing for historical messages)
 		const _version = message.contentVersion ?? 0;
 

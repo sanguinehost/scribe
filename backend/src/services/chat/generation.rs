@@ -394,7 +394,7 @@ pub async fn get_session_data_for_generation(
             // Use ChatMessageQuery (11 fields) to avoid Diesel's CompatibleType limit
             let messages_raw_db: Vec<DbChatMessage> = if frontend_history_for_interact.is_none() {
                 // Split query execution into backend-conditional blocks
-                    let mut query_result = {
+                let mut query_result = {
                     let query_base = chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
                         .order(chat_messages::created_at.desc()) // Get newest first
@@ -542,7 +542,7 @@ pub async fn get_session_data_for_generation(
                                 current_variant_index: 0,
                                 credits_charged: 0,
                                 credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                                actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
+                                actual_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                                 modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                                 credit_cost: 0,
                                 actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal

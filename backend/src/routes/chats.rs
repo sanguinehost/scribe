@@ -36,9 +36,9 @@ use secrecy::SecretBox; // Ensure SecretBox is imported
                         // Removed incorrect ValidatedJson import
 use crate::services::chat;
 use crate::services::chat::generation::{self, StreamAiParams}; // Added generation imports
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
 use crate::state::AppState;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
+use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{debug, warn}; // Added for logging
@@ -741,7 +741,24 @@ async fn fetch_paginated_chat_messages(
                 .into_boxed(); // Use into_boxed to allow dynamic query building
 
             if let Some(cursor_timestamp) = cursor {
-                query = query.filter(chat_messages::created_at.lt(cursor_timestamp));
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    // SQLite stores timestamps as strings (often with space separator), but cursor is RFC3339 (T separator).
+                    // We must normalize both to ensure correct lexicographical comparison.
+                    // We bind as Text because DbTimestamp's ToSql for SQLite produces an ISO string.
+                    use diesel::dsl::sql;
+                    use diesel::sql_types::{Bool, Text};
+                    query = query.filter(
+                        sql::<Bool>("datetime(created_at) < datetime(")
+                            .bind::<Text, _>(cursor_timestamp.to_string())
+                            .sql(")"),
+                    );
+                }
+
+                #[cfg(feature = "postgres-backend")]
+                {
+                    query = query.filter(chat_messages::created_at.lt(cursor_timestamp));
+                }
             }
 
             let result = query.load::<Message>(conn);
@@ -1254,16 +1271,20 @@ pub async fn create_message_handler(
 
                     // 2. Convert history to GenAiChatMessage
                     let mut incoming_genai_messages = Vec::new();
-                    
+
                     // Add history
                     if let Some(dek_arc) = &user_dek_for_gen {
                         for msg in managed_recent_history {
                             let role = match msg.message_type {
                                 crate::services::chat::types::MessageRole::User => ChatRole::User,
-                                crate::services::chat::types::MessageRole::Assistant => ChatRole::Assistant,
-                                crate::services::chat::types::MessageRole::System => ChatRole::System,
+                                crate::services::chat::types::MessageRole::Assistant => {
+                                    ChatRole::Assistant
+                                }
+                                crate::services::chat::types::MessageRole::System => {
+                                    ChatRole::System
+                                }
                             };
-                            
+
                             match msg.decrypt_content_field(&dek_arc) {
                                 Ok(content) => {
                                     incoming_genai_messages.push(GenAiChatMessage {
@@ -1280,17 +1301,22 @@ pub async fn create_message_handler(
                     }
 
                     // Add the current user message
-                    let last_msg_content = incoming_genai_messages.last().and_then(|m| match &m.content {
-                        genai::chat::MessageContent::Text(t) => Some(t.clone()),
-                        _ => None,
-                    });
-                    
+                    let last_msg_content =
+                        incoming_genai_messages
+                            .last()
+                            .and_then(|m| match &m.content {
+                                genai::chat::MessageContent::Text(t) => Some(t.clone()),
+                                _ => None,
+                            });
+
                     if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
-                         incoming_genai_messages.push(GenAiChatMessage {
+                        incoming_genai_messages.push(GenAiChatMessage {
                             role: ChatRole::User,
-                            content: genai::chat::MessageContent::Text(user_message_content_for_gen),
+                            content: genai::chat::MessageContent::Text(
+                                user_message_content_for_gen,
+                            ),
                             options: None,
-                         });
+                        });
                     }
 
                     // 3. Prepare params
@@ -1322,8 +1348,10 @@ pub async fn create_message_handler(
                         };
 
                         // 4. Stream response
-                        if let Err(e) = generation::stream_ai_response_and_save_message(params).await {
-                             error!(chat_id = %session_id_for_gen, error = %e, "Failed to stream AI response");
+                        if let Err(e) =
+                            generation::stream_ai_response_and_save_message(params).await
+                        {
+                            error!(chat_id = %session_id_for_gen, error = %e, "Failed to stream AI response");
                         }
                     } else {
                         error!(chat_id = %session_id_for_gen, "User DEK missing for AI generation");

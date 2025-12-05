@@ -534,13 +534,31 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     #[cfg(all(feature = "payment", feature = "postgres-backend"))]
     let actual_charge_bd_clone = actual_charge_bd.clone();
 
-    // SQLite uses f64 which is Copy, so no need to clone
-    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
-    let actual_cost_bd_clone = actual_cost_bd;
-    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
-    let modified_cost_bd_clone = modified_cost_bd;
-    #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
-    let actual_charge_bd_clone = actual_charge_bd;
+    // SQLite uses f64, but update_cumulative_token_counts expects DbDecimal
+    #[cfg(feature = "sqlite-backend")]
+    let actual_cost_bd_clone = {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+        let bd = BigDecimal::from_str(&actual_cost_bd.to_string())
+            .unwrap_or_else(|_| BigDecimal::from(0));
+        crate::db::DbDecimal::from_bigdecimal(bd)
+    };
+    #[cfg(feature = "sqlite-backend")]
+    let modified_cost_bd_clone = {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+        let bd = BigDecimal::from_str(&modified_cost_bd.to_string())
+            .unwrap_or_else(|_| BigDecimal::from(0));
+        crate::db::DbDecimal::from_bigdecimal(bd)
+    };
+    #[cfg(feature = "sqlite-backend")]
+    let actual_charge_bd_clone = {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+        let bd = BigDecimal::from_str(&actual_charge_bd.to_string())
+            .unwrap_or_else(|_| BigDecimal::from(0));
+        crate::db::DbDecimal::from_bigdecimal(bd)
+    };
 
     // Set all cost tracking fields using the new method
     new_message_to_insert = new_message_to_insert.with_cost_tracking(
@@ -605,24 +623,15 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         let state_config_for_payment = state.config.clone();
 
         // Use pre-cloned cost values for the spawned task (cloned earlier before with_cost_tracking)
-        #[cfg(feature = "payment")]
+        // Use pre-cloned cost values for the spawned task (cloned earlier before with_cost_tracking)
         let actual_cost_for_task = actual_cost_bd_clone;
-
-        #[cfg(feature = "payment")]
         let modified_cost_for_task = modified_cost_bd_clone;
-
-        #[cfg(feature = "payment")]
         let credit_cost_for_task = credit_cost_val;
-
-        #[cfg(feature = "payment")]
         let actual_charge_for_task = actual_charge_bd_clone;
-
-        #[cfg(feature = "payment")]
         let credits_charged_for_task = credits_charged_val;
 
         // Spawn async task to update token counts to avoid blocking message save
         tokio::spawn(async move {
-            #[cfg(feature = "payment")]
             let update_result = update_cumulative_token_counts(
                 &db_pool_for_tokens,
                 session_id_for_tokens,
@@ -635,17 +644,6 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 credit_cost_for_task,
                 actual_charge_for_task,
                 credits_charged_for_task,
-            )
-            .await;
-
-            #[cfg(not(feature = "payment"))]
-            let update_result = update_cumulative_token_counts(
-                &db_pool_for_tokens,
-                session_id_for_tokens,
-                user_id_for_tokens,
-                prompt_tokens,
-                completion_tokens,
-                estimated_cost_cents,
             )
             .await;
 
@@ -816,60 +814,74 @@ async fn update_cumulative_token_counts(
     prompt_tokens: i32,
     completion_tokens: i32,
     estimated_cost_cents: i32,
-    #[cfg(feature = "payment")] actual_cost: crate::db::DbDecimal,
-    #[cfg(feature = "payment")] modified_cost: crate::db::DbDecimal,
-    #[cfg(feature = "payment")] credit_cost: i32,
-    #[cfg(feature = "payment")] actual_charge: crate::db::DbDecimal,
-    #[cfg(feature = "payment")] credits_charged: i32,
+    actual_cost: crate::db::DbDecimal,
+    modified_cost: crate::db::DbDecimal,
+    credit_cost: i32,
+    actual_charge: crate::db::DbDecimal,
+    _credits_charged: i32,
 ) -> Result<(), AppError> {
     use crate::schema::{chat_sessions, users};
     use diesel::prelude::*;
 
+    tracing::debug!(
+        session_id = %session_id,
+        prompt_tokens = prompt_tokens,
+        completion_tokens = completion_tokens,
+        actual_cost = ?actual_cost,
+        modified_cost = ?modified_cost,
+        "Updating cumulative token counts"
+    );
+
     crate::db::with_conn(pool, move |conn| {
         // Start a transaction to ensure atomicity
         conn.transaction::<_, diesel::result::Error, _>(|conn| {
-            // Update chat session cumulative counts
-            #[cfg(feature = "payment")]
-            {
-                diesel::update(chat_sessions::table.find(session_id))
-                    .set((
-                        chat_sessions::total_prompt_tokens
-                            .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
-                        chat_sessions::total_completion_tokens
-                            .eq(chat_sessions::total_completion_tokens + completion_tokens),
-                        chat_sessions::estimated_cost_cents
-                            .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
-                        // NEW: Track all four cost values properly
-                        chat_sessions::total_actual_cost
-                            .eq(chat_sessions::total_actual_cost + actual_cost.clone()),
-                        chat_sessions::total_modified_cost
-                            .eq(chat_sessions::total_modified_cost + modified_cost.clone()),
-                        chat_sessions::total_credit_cost
-                            .eq(chat_sessions::total_credit_cost + credit_cost),
-                        chat_sessions::total_actual_charge
-                            .eq(chat_sessions::total_actual_charge + actual_charge.clone()),
-                        // Keep total_credits_used for backwards compatibility (uses actual_cost)
-                        chat_sessions::total_credits_used
-                            .eq(chat_sessions::total_credits_used + actual_cost),
-                        chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
-                    ))
-                    .execute(conn)?;
-            }
+            // Prepare values for update based on backend
+            #[cfg(feature = "sqlite-backend")]
+            let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = {
+                use bigdecimal::ToPrimitive;
+                let cost_f64 = actual_cost.to_f64().unwrap_or(0.0);
+                (
+                    cost_f64,
+                    modified_cost.to_f64().unwrap_or(0.0),
+                    actual_charge.to_f64().unwrap_or(0.0),
+                    cost_f64 as i32,
+                )
+            };
 
-            #[cfg(not(feature = "payment"))]
-            {
-                diesel::update(chat_sessions::table.find(session_id))
-                    .set((
-                        chat_sessions::total_prompt_tokens
-                            .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
-                        chat_sessions::total_completion_tokens
-                            .eq(chat_sessions::total_completion_tokens + completion_tokens),
-                        chat_sessions::estimated_cost_cents
-                            .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
-                        chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
-                    ))
-                    .execute(conn)?;
-            }
+            #[cfg(feature = "postgres-backend")]
+            let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = (
+                actual_cost.clone(),
+                modified_cost,
+                actual_charge,
+                actual_cost,
+            );
+
+            // Update chat session cumulative counts
+            diesel::update(chat_sessions::table.find(session_id))
+                .set((
+                    chat_sessions::total_prompt_tokens
+                        .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
+                    chat_sessions::total_completion_tokens
+                        .eq(chat_sessions::total_completion_tokens + completion_tokens),
+                    chat_sessions::estimated_cost_cents
+                        .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
+                    // NEW: Track all four cost values properly
+                    chat_sessions::total_actual_cost
+                        .eq(chat_sessions::total_actual_cost + actual_cost_val.clone()),
+                    chat_sessions::total_modified_cost
+                        .eq(chat_sessions::total_modified_cost + modified_cost_val.clone()),
+                    chat_sessions::total_credit_cost
+                        .eq(chat_sessions::total_credit_cost + credit_cost),
+                    chat_sessions::total_actual_charge
+                        .eq(chat_sessions::total_actual_charge + actual_charge_val.clone()),
+                    // Keep total_credits_used for backwards compatibility (uses actual_cost)
+                    // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
+                    // We use credits_used_delta which is typed correctly for each backend.
+                    chat_sessions::total_credits_used
+                        .eq(chat_sessions::total_credits_used + credits_used_delta),
+                    chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
+                ))
+                .execute(conn)?;
 
             // Update user cumulative counts
             // Note: PostgreSQL uses i64 (BigInt), SQLite uses i32 (Integer) for DbInt

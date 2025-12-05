@@ -22,13 +22,13 @@ type ChatStreamEvent =
 	| { event: 'thinking'; data: { text: string } }
 	| { event: 'error'; data: { message: string } }
 	| {
-		event: 'tokenUsage';
-		data: { promptTokens: number; completionTokens: number; modelName: string };
-	}
+			event: 'tokenUsage';
+			data: { promptTokens: number; completionTokens: number; modelName: string };
+	  }
 	| {
-		event: 'messageSaved';
-		data: { messageId: string; variantCount: number; currentVariantIndex: number };
-	}
+			event: 'messageSaved';
+			data: { messageId: string; variantCount: number; currentVariantIndex: number };
+	  }
 	| { event: 'done' };
 
 const DEFAULT_CONFIG: StreamingConfig = {
@@ -365,17 +365,27 @@ class DesktopStreamingService {
 		}
 
 		const now = Date.now();
-		// 10s idle timeout
-		if (now - this.lastActivity > 10000) {
-			logger.warn('desktop-streaming', 'Connection timed out (10s idle)');
+		// Use configured timeout (default 60s) instead of hardcoded 10s
+		if (now - this.lastActivity > this.config.timeoutMs) {
+			logger.warn('desktop-streaming', `Connection timed out (${this.config.timeoutMs}ms idle)`);
 
-			// If we have received done but waiting for other events, just close it
-			if (this.connectionCloseState.doneReceived) {
-				logger.info('desktop-streaming', 'Timeout while waiting for final events, forcing close');
+			// If we have received done OR messageSaved, just close it gracefully
+			// This handles cases where the stream ends but the 'done' event is delayed or lost,
+			// but we know the message is safe in the DB.
+			if (
+				this.connectionCloseState.doneReceived ||
+				this.connectionCloseState.messageSavedReceived
+			) {
+				logger.info(
+					'desktop-streaming',
+					'Timeout while waiting for final events, forcing close (message safe)'
+				);
 				this.connectionStatus = 'closed';
 			} else {
-				// If we haven't received done, it's a real timeout error
-				this.handleConnectionError(new Error('Connection timed out (no data received for 10s)'));
+				// If we haven't received done AND haven't saved the message, it's a real timeout error
+				this.handleConnectionError(
+					new Error(`Connection timed out (no data received for ${this.config.timeoutMs}ms)`)
+				);
 			}
 			this.stopTimeoutCheck();
 		}

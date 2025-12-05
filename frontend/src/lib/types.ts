@@ -180,6 +180,7 @@ export interface ScribeChatSession {
 	total_prompt_tokens?: number;
 	total_completion_tokens?: number;
 	total_credits_used?: number | string; // BigDecimal from backend may serialize as string
+	total_actual_cost?: number; // Raw cost in dollars (from backend)
 }
 
 // LoginSuccessData type matching the backend LoginSuccessResponse

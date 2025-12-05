@@ -231,17 +231,16 @@ fn try_parse_chara_fallback(
     }
 
     // Fallback to flat V2 format (direct CharacterCardDataV3)
-    let mut data_v2 = serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes).map_err(|e| {
-        warn!(
-            "Failed to parse JSON from 'chara' chunk as CharacterCardDataV3: {}",
-            e
-        );
-        ParserError::JsonError(e.to_string())
-    })?;
+    let mut data_v2 =
+        serde_json::from_slice::<CharacterCardDataV3>(&decoded_bytes).map_err(|e| {
+            warn!(
+                "Failed to parse JSON from 'chara' chunk as CharacterCardDataV3: {}",
+                e
+            );
+            ParserError::JsonError(e.to_string())
+        })?;
 
-    info!(
-        "Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note."
-    );
+    info!("Loaded character from V2 'chara' chunk (flat format). Applying V3 compatibility note.");
     info!(
         "V2 flat data after parsing: name={:?}, description_len={}",
         data_v2.name,

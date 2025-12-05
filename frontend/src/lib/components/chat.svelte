@@ -240,12 +240,12 @@
 					}
 				} else {
 					// Flatten all loaded batches into a single array
-					const allLoadedMessages = loadedMessagesBatches.flat();
+					const allLoadedMessages = untrack(() => loadedMessagesBatches.flat());
 
 					console.log('🔄 Processing initial messages for chat:', {
 						currentChatId,
 						totalMessages: allLoadedMessages.length,
-						batchCount: loadedMessagesBatches.length
+						batchCount: untrack(() => loadedMessagesBatches.length)
 					});
 
 					// Log details of each message to identify duplicates
@@ -452,7 +452,7 @@
 						distanceFromBottom
 					});
 
-					// Convert to StreamingMessage format and prepend to streaming service
+					// Convert to StreamingMessage format
 					const streamingMessages = convertedMessages.map(
 						(msg): StreamingMessage => ({
 							id: msg.id,
@@ -479,17 +479,60 @@
 						})
 					);
 
+					// Deduplication Logic: Check both ID and backend_id
+					const existingIds = new Set(activeStreamingService.messages.map((m) => m.id));
+					const existingBackendIds = new Set(
+						activeStreamingService.messages
+							.map((m) => m.backend_id)
+							.filter((id): id is string => !!id)
+					);
+
+					const uniqueNewMessages = streamingMessages.filter((msg) => {
+						const idExists = existingIds.has(msg.id);
+						const backendIdExists = msg.backend_id && existingBackendIds.has(msg.backend_id);
+						return !idExists && !backendIdExists;
+					});
+
+					// Handle "Empty Batch" Case (all messages were duplicates)
+					if (uniqueNewMessages.length === 0) {
+						console.log('⚠️ [loadMoreMessages] No new messages found after deduplication.');
+
+						// If we have more messages on the server but this batch was all duplicates,
+						// we MUST try the next batch immediately to avoid getting stuck.
+						if (hasMoreMessages) {
+							console.log('🔄 [loadMoreMessages] Automatically fetching next batch...');
+							// Release the lock briefly to allow the recursive call to proceed
+							isLoadingMore = false;
+							// We need to pass a retry count, but since we can't easily change the function signature
+							// without affecting the template, we'll just call it again.
+							// Ideally we should add a retryCount param to loadMoreMessages.
+							// For now, let's just return and let the user scroll again or rely on the infinite scroll
+							// to trigger again if we're still at the top?
+							// Actually, infinite scroll might not trigger if the content height didn't change.
+							// So explicit recursion is better.
+							await loadMoreMessages();
+							return;
+						}
+
+						suppressAutoScroll = false;
+						return;
+					}
+
+					console.log(
+						`✅ [loadMoreMessages] Prepending ${uniqueNewMessages.length} unique messages`
+					);
+
 					// Prepend the new messages to the beginning of the array (create new array reference)
 					activeStreamingService.messages = [
-						...streamingMessages,
+						...uniqueNewMessages,
 						...activeStreamingService.messages
 					];
 
 					console.log('✅ Added messages to streaming service:', {
-						addedCount: streamingMessages.length,
+						addedCount: uniqueNewMessages.length,
 						newTotalCount: activeStreamingService.messages.length,
-						firstNewMessage: streamingMessages[0]?.id,
-						lastNewMessage: streamingMessages[streamingMessages.length - 1]?.id
+						firstNewMessage: uniqueNewMessages[0]?.id,
+						lastNewMessage: uniqueNewMessages[uniqueNewMessages.length - 1]?.id
 					});
 
 					// Add to loaded batches for tracking
@@ -2359,11 +2402,13 @@
 					{/if}
 
 					<!-- Session Total Display (from backend) -->
-					{#if chat?.total_credits_used || chat?.total_prompt_tokens || chat?.total_completion_tokens}
+					{#if chat?.total_actual_cost || chat?.total_credits_used || chat?.total_prompt_tokens || chat?.total_completion_tokens}
 						{@const sessionCost =
-							typeof chat.total_credits_used === 'string'
-								? parseFloat(chat.total_credits_used)
-								: chat.total_credits_used}
+							chat.total_actual_cost !== undefined
+								? chat.total_actual_cost
+								: typeof chat.total_credits_used === 'string'
+									? parseFloat(chat.total_credits_used)
+									: chat.total_credits_used}
 						{@const formatSessionCost = (cost: number | undefined) =>
 							typeof cost !== 'number' || isNaN(cost) || cost < 0.0001
 								? '<$0.0001'
