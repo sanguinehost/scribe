@@ -1234,7 +1234,10 @@ impl TestAppStateBuilder {
         });
 
         // Create chronicle service for narrative intelligence
-        let chronicle_service = Arc::new(ChronicleService::new(self.db_pool.clone()));
+        let chronicle_service = Arc::new(ChronicleService::new(
+            self.db_pool.clone(),
+            self.ai_client.clone(),
+        ));
 
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)
@@ -1631,15 +1634,15 @@ pub async fn spawn_app_with_rate_limiting_options(
         use diesel_migrations::MigrationHarness;
 
         let database_url = if multi_thread {
-            // Each test gets a unique in-memory database
-            format!(":memory:?cache=private&uuid={}", DbId::new())
+            // Each test gets a unique in-memory database with shared cache to allow multiple connections
+            format!("file:memdb{}?mode=memory&cache=shared", DbId::new())
         } else {
-            ":memory:".to_string()
+            "file:memdb_shared?mode=memory&cache=shared".to_string()
         };
 
         let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
         let pool = Pool::builder()
-            .max_size(1)
+            .max_size(5)
             .build(manager)
             .expect("Failed to create SQLite test pool");
 
@@ -1984,14 +1987,14 @@ pub mod db {
             use diesel::r2d2::{ConnectionManager, Pool};
 
             let database_url = if db_name_suffix.is_some() {
-                format!(":memory:?cache=private&uuid={}", DbId::new())
+                format!("file:memdb{}?mode=memory&cache=shared", DbId::new())
             } else {
-                ":memory:".to_string()
+                "file:memdb_shared?mode=memory&cache=shared".to_string()
             };
 
             let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
             let pool = Pool::builder()
-                .max_size(1)
+                .max_size(5)
                 .build(manager)
                 .expect("Failed to create SQLite test pool");
 

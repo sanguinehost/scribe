@@ -174,6 +174,7 @@ impl ScribeTool for CreateChronicleEventTool {
             keywords,
             timestamp_iso8601: timestamp,
             chat_session_id: None, // Will be set by the service if processing from chat
+            message_variant_id: None,
         };
 
         info!(

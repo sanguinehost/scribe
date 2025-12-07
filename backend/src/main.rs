@@ -407,7 +407,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     ));
 
     // --- Initialize Chronicle Service ---
-    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone(), ai_client_arc.clone()));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
@@ -667,7 +667,10 @@ fn setup_app_state_and_auth(
     let mut app_state = AppState::new(pool.clone(), config.clone(), services);
 
     // Initialize narrative intelligence service after AppState creation to avoid circular dependency
-    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        pool.clone(),
+        app_state.ai_client.clone(),
+    ));
     let narrative_intelligence_service =
         Arc::new(NarrativeIntelligenceService::for_production_with_deps(
             app_state.ai_client.clone(),

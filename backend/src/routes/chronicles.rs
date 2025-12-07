@@ -149,7 +149,7 @@ async fn create_chronicle(
 
     info!("Creating chronicle for user {}: {}", user.id, request.name);
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let chronicle = chronicle_service.create_chronicle(user.id, request).await?;
 
     info!("Successfully created chronicle {}", chronicle.id);
@@ -169,7 +169,7 @@ async fn list_chronicles(
 
     info!("Listing chronicles for user {}", user.id);
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let chronicles = chronicle_service
         .get_user_chronicles_with_counts(user.id)
         .await?;
@@ -196,7 +196,7 @@ async fn get_chronicle(
 
     info!("Getting chronicle {} for user {}", chronicle_id, user.id);
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let chronicle = chronicle_service
         .get_chronicle(user.id, chronicle_id)
         .await?;
@@ -223,7 +223,7 @@ async fn update_chronicle(
 
     info!("Updating chronicle {} for user {}", chronicle_id, user.id);
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let chronicle = chronicle_service
         .update_chronicle(user.id, chronicle_id, request)
         .await?;
@@ -266,7 +266,7 @@ async fn delete_chronicle(
     }
 
     // Now delete the chronicle from the database (this will CASCADE delete all chronicle_events)
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     chronicle_service
         .delete_chronicle(user.id, chronicle_id)
         .await?;
@@ -302,7 +302,7 @@ async fn create_event(
         chronicle_id, user.id, request.event_type
     );
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let mut event = chronicle_service
         .create_event(user.id, chronicle_id, request, Some(&session_dek))
         .await?;
@@ -362,7 +362,7 @@ async fn list_events(
     );
 
     let filter = EventFilter::from(query);
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let mut events = chronicle_service
         .get_chronicle_events(user.id, chronicle_id, filter)
         .await?;
@@ -405,7 +405,7 @@ async fn delete_event(
         event_id, chronicle_id, user.id
     );
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     chronicle_service.delete_event(user.id, event_id).await?;
 
     // Clean up embeddings for the deleted event
@@ -449,7 +449,7 @@ async fn re_chronicle_from_chat(
         request.chat_session_id, chronicle_id, user.id
     );
 
-    let chronicle_service = ChronicleService::new(state.pool.clone());
+    let chronicle_service = ChronicleService::new(state.pool.clone(), state.ai_client.clone());
 
     // Verify the chronicle exists and belongs to the user
     let _chronicle = chronicle_service
@@ -784,7 +784,10 @@ async fn generate_chronicle_name(
         get_character_name_for_session(&state, request.chat_session_id, user.id).await?;
 
     // Create a NarrativeAgentRunner using the factory
-    let chronicle_service = Arc::new(ChronicleService::new(state.pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        state.pool.clone(),
+        state.ai_client.clone(),
+    ));
     let app_state = Arc::new(state.clone());
 
     let agent_runner = AgenticNarrativeFactory::create_system_with_deps(

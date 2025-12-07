@@ -138,6 +138,7 @@ tokio-stream = "0.1"
 
 # Tokenization
 sentencepiece = "0.12.0"
+strsim = "0.11.1"
 
 # Template engine for prompt templates
 minijinja = { version = "2.0", features = ["json", "loader"] }

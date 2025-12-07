@@ -17,10 +17,8 @@ use crate::{
 pub struct DeduplicationConfig {
     /// Time window in minutes for considering events as potential duplicates
     pub time_window_minutes: i64,
-    /// Minimum actor overlap ratio to consider as duplicate (0.0-1.0)
-    pub actor_overlap_threshold: f32,
-    /// Whether to check action similarity for non-exact matches
-    pub enable_action_similarity: bool,
+    /// Minimum content similarity to consider as duplicate (0.0-1.0)
+    pub similarity_threshold: f32,
     /// Maximum number of events to check for duplicates per query
     pub max_events_to_check: i64,
 }
@@ -28,9 +26,8 @@ pub struct DeduplicationConfig {
 impl Default for DeduplicationConfig {
     fn default() -> Self {
         Self {
-            time_window_minutes: 5,       // 5 minute window
-            actor_overlap_threshold: 0.6, // 60% actor overlap
-            enable_action_similarity: true,
+            time_window_minutes: 3,     // 3 minute window (decreased from 5)
+            similarity_threshold: 0.90, // 90% content similarity (Levenshtein)
             max_events_to_check: 50,
         }
     }
@@ -49,17 +46,26 @@ pub struct DuplicateDetectionResult {
     pub reasoning: String,
 }
 
+use crate::llm::AiClient;
+use std::sync::Arc;
+
 /// Chronicle Event Deduplication Service
 pub struct ChronicleDeduplicationService {
     db_pool: DbPool,
+    ai_client: Arc<dyn AiClient>,
     config: DeduplicationConfig,
 }
 
 impl ChronicleDeduplicationService {
     /// Create a new deduplication service
-    pub fn new(db_pool: DbPool, config: Option<DeduplicationConfig>) -> Self {
+    pub fn new(
+        db_pool: DbPool,
+        ai_client: Arc<dyn AiClient>,
+        config: Option<DeduplicationConfig>,
+    ) -> Self {
         Self {
             db_pool,
+            ai_client,
             config: config.unwrap_or_default(),
         }
     }
@@ -157,7 +163,7 @@ impl ChronicleDeduplicationService {
         Ok(events)
     }
 
-    /// Check if two events are similar enough to be considered duplicates
+    /// Check if two events are similar enough to be considered duplicates using LLM
     async fn check_event_similarity(
         &self,
         new_event: &ChronicleEvent,
@@ -168,89 +174,149 @@ impl ChronicleDeduplicationService {
             new_event.id, new_event.timestamp_iso8601, candidate.id, candidate.timestamp_iso8601
         );
 
-        // Stage 0: Quick temporal check - if events are outside the time window, skip detailed analysis
+        // Stage 0: Check message variant ID - distinct variants are never duplicates
+        // REMOVED: We want to deduplicate across variants if the content is semantically identical.
+        // if new_event.message_variant_id != candidate.message_variant_id {
+        //     debug!(
+        //         "Events belong to different message variants ({:?} vs {:?}), skipping similarity check",
+        //         new_event.message_variant_id, candidate.message_variant_id
+        //     );
+        //     return Ok(None);
+        // }
+
+        // Stage 1: Quick temporal check - if events are outside the time window, skip detailed analysis
         let temporal_score = self.calculate_temporal_similarity(new_event, candidate);
         if temporal_score == 0.0 {
             debug!("Events are outside temporal window, skipping similarity check");
             return Ok(None);
         }
 
-        // Stage 1: Check action similarity
-        let action_score = self.calculate_action_similarity(new_event, candidate);
-        if action_score < 0.5 {
-            debug!("Events have low action similarity: {:.2}", action_score);
-            return Ok(None);
-        }
+        // Stage 2: LLM Semantic Analysis
+        self.check_duplicate_with_llm(new_event, candidate).await
+    }
 
-        // Stage 2: Check actor overlap
-        let actor_score = self.calculate_actor_overlap(new_event, candidate).await?;
-        if actor_score < self.config.actor_overlap_threshold {
-            debug!("Events have low actor overlap: {:.2}", actor_score);
-            return Ok(None);
-        }
+    /// Use LLM to check for semantic duplication
+    async fn check_duplicate_with_llm(
+        &self,
+        new_event: &ChronicleEvent,
+        candidate: &ChronicleEvent,
+    ) -> Result<Option<DuplicateDetectionResult>, AppError> {
+        let prompt = format!(
+            r#"Analyze these two narrative events and determine if they describe the SAME underlying story moment, even if the phrasing or level of detail differs.
 
-        // Stage 3: Temporal score already calculated above
+            Event A (Existing): "{}"
+            Event B (New): "{}"
 
-        // Calculate overall confidence
-        let confidence = (action_score * 0.4 + actor_score * 0.4 + temporal_score * 0.2).min(1.0);
+            Context:
+            - These are events from a roleplay chat log.
+            - Users often regenerate responses or swipe for new options, creating multiple "versions" of the same story beat.
+            - We want to keep only ONE event for a given moment.
 
-        // Consider it a duplicate if confidence is high enough
-        let is_duplicate = confidence >= 0.7;
+            Criteria for DUPLICATE (return is_duplicate: true):
+            1. Same Narrative Beat: Both events describe the same core action or conversation segment (e.g., "Solomon meets Elara").
+            2. Summary vs. Detail: One event might be a brief summary ("Solomon talks to Elara") and the other detailed ("Solomon approaches Elara, asks about herbs..."). These ARE duplicates.
+            3. Alternative Phrasing: Different words describing the same outcome (e.g., "He drank water" vs "Solomon quenched his thirst").
 
-        let reasoning = format!(
-            "Action similarity: {:.2}, Actor overlap: {:.2}, Temporal proximity: {:.2}, Overall confidence: {:.2}",
-            action_score, actor_score, temporal_score, confidence
+            Criteria for DISTINCT (return is_duplicate: false):
+            1. Sequential Actions: Event B clearly happens AFTER Event A (e.g., "Solomon meets Elara" vs "Solomon and Elara leave the village").
+            2. Different Topics: They describe completely different things happening.
+
+            Respond with JSON:
+            {{
+                "is_duplicate": boolean,
+                "confidence": number (0.0 to 1.0),
+                "reasoning": string
+            }}"#,
+            candidate.summary, new_event.summary
         );
 
-        Ok(Some(DuplicateDetectionResult {
-            is_duplicate,
-            duplicate_event_id: if is_duplicate {
-                Some(candidate.id)
-            } else {
-                None
-            },
-            confidence,
-            reasoning,
-        }))
+        let request = genai::chat::ChatRequest::from_user(prompt);
+        let options = genai::chat::ChatOptions {
+            temperature: Some(0.0),
+            ..Default::default()
+        };
+
+        let response = self
+            .ai_client
+            .exec_chat("gemini-2.5-flash-lite", request, Some(options))
+            .await
+            .map_err(|e| {
+                AppError::GenerationError(format!("Failed to check duplicates with LLM: {}", e))
+            })?;
+
+        #[derive(serde::Deserialize)]
+        struct LlmResponse {
+            is_duplicate: bool,
+            confidence: f32,
+            reasoning: String,
+        }
+
+        // Parse JSON from the response content
+        let content = response.first_content_text_as_str().ok_or_else(|| {
+            AppError::GenerationError(
+                "LLM returned empty response for deduplication check".to_string(),
+            )
+        })?;
+
+        // Clean up markdown code blocks if present
+        let clean_content = content
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        let llm_result: LlmResponse = serde_json::from_str(clean_content).map_err(|e| {
+            AppError::GenerationError(format!("Failed to parse LLM deduplication response: {}", e))
+        })?;
+
+        if llm_result.is_duplicate && llm_result.confidence > 0.8 {
+            Ok(Some(DuplicateDetectionResult {
+                is_duplicate: true,
+                duplicate_event_id: Some(candidate.id),
+                confidence: llm_result.confidence,
+                reasoning: llm_result.reasoning,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
-    /// Calculate similarity between two events based on keywords
-    fn calculate_action_similarity(&self, event1: &ChronicleEvent, event2: &ChronicleEvent) -> f32 {
-        let keywords1 = event1.get_keywords();
-        let keywords2 = event2.get_keywords();
-
-        if keywords1.is_empty() && keywords2.is_empty() {
-            return 0.5; // Both have no keywords
-        }
-
-        if keywords1.is_empty() || keywords2.is_empty() {
-            return 0.0; // One has keywords, other doesn't
-        }
-
-        // Calculate keyword overlap
-        let mut overlap_count = 0;
-        for kw1 in &keywords1 {
-            if keywords2
-                .iter()
-                .any(|kw2| kw1.to_lowercase() == kw2.to_lowercase())
-            {
-                overlap_count += 1;
-            }
-        }
-
-        let total_keywords = (keywords1.len() + keywords2.len()) as f32;
-        (overlap_count as f32 * 2.0) / total_keywords // Jaccard similarity
-    }
-
-    /// Calculate overlap between keywords (simplified from actor overlap)
-    async fn calculate_actor_overlap(
+    /// Calculate similarity between two events based on Levenshtein distance of summaries
+    fn calculate_content_similarity(
         &self,
         event1: &ChronicleEvent,
         event2: &ChronicleEvent,
-    ) -> Result<f32, AppError> {
-        // For simplified chronicles, we use keyword overlap instead of actors
-        let similarity = self.calculate_action_similarity(event1, event2);
-        Ok(similarity)
+    ) -> f32 {
+        let s1 = event1.summary.trim().to_lowercase();
+        let s2 = event2.summary.trim().to_lowercase();
+
+        if s1.is_empty() && s2.is_empty() {
+            return 1.0; // Both empty = identical
+        }
+        if s1.is_empty() || s2.is_empty() {
+            return 0.0; // One empty = completely different
+        }
+
+        // Use strsim for normalized Levenshtein distance (0.0 = different, 1.0 = identical)
+        let similarity = strsim::normalized_levenshtein(&s1, &s2);
+
+        debug!(
+            "Content similarity (Levenshtein): {:.4} for '{}' vs '{}'",
+            similarity,
+            if s1.len() > 20 {
+                format!("{}...", &s1[0..20])
+            } else {
+                s1
+            },
+            if s2.len() > 20 {
+                format!("{}...", &s2[0..20])
+            } else {
+                s2
+            }
+        );
+
+        similarity as f32
     }
 
     /// Calculate temporal similarity between two events
@@ -319,9 +385,7 @@ impl ChronicleDeduplicationService {
                 }
 
                 if let Some(result) = self.check_event_similarity(event1, event2).await? {
-                    if result.is_duplicate
-                        && result.confidence >= self.config.actor_overlap_threshold
-                    {
+                    if result.is_duplicate {
                         // Keep the earlier event, mark the later one as duplicate
                         duplicates.push((event1.id, event2.id));
                         info!(
@@ -349,72 +413,47 @@ mod tests {
         let pool = test_app.db_pool.clone();
 
         let service = ChronicleDeduplicationService::new(pool, None);
-        assert_eq!(service.config.time_window_minutes, 5);
-        assert_eq!(service.config.actor_overlap_threshold, 0.6);
+        assert_eq!(service.config.time_window_minutes, 3);
+        assert_eq!(service.config.similarity_threshold, 0.90);
     }
 
     #[tokio::test]
-    async fn test_action_similarity_calculation() {
+    async fn test_content_similarity_calculation() {
         let test_app = crate::test_helpers::spawn_app(false, false, false).await;
         let pool = test_app.db_pool.clone();
         let service = ChronicleDeduplicationService::new(pool, None);
 
-        // Test exact match - now returns 0.5 because both events have no keywords
+        // Test exact match
         assert_eq!(
-            service.calculate_action_similarity(
-                &create_test_event("DISCOVERED"),
-                &create_test_event("DISCOVERED")
+            service.calculate_content_similarity(
+                &create_test_event("Solomon punches Midoriya."),
+                &create_test_event("Solomon punches Midoriya.")
             ),
-            0.5
+            1.0
         );
 
-        // Test semantic similarity (both discovery actions) - now returns 0.5 because both have no keywords
-        assert_eq!(
-            service.calculate_action_similarity(
-                &create_test_event("DISCOVERED"),
-                &create_test_event("FOUND")
-            ),
-            0.5
+        // Test near match (typo/punctuation)
+        let sim = service.calculate_content_similarity(
+            &create_test_event("Solomon punches Midoriya"),
+            &create_test_event("Solomon punches Midoriya."),
         );
+        assert!(sim > 0.95);
 
-        // Test no similarity - now returns 0.5 because both have no keywords
-        assert_eq!(
-            service.calculate_action_similarity(
-                &create_test_event("DISCOVERED"),
-                &create_test_event("ATTACKED")
-            ),
-            0.5
+        // Test distinct events
+        let sim = service.calculate_content_similarity(
+            &create_test_event("Solomon punches Midoriya"),
+            &create_test_event("Midoriya punches back"),
         );
+        assert!(sim < 0.5);
     }
 
-    // DISABLED: Actors functionality was removed from ChronicleEvent model
-    // #[tokio::test]
-    // async fn test_actor_overlap_calculation() {
-    //     let test_app = crate::test_helpers::spawn_app(false, false, false).await;
-    //     let pool = test_app.db_pool.clone();
-    //     let service = ChronicleDeduplicationService::new(pool, None);
-
-    //     let event1 = create_test_event_with_actors("DISCOVERED", vec![
-    //         (DbId::new(), "AGENT"),
-    //         (DbId::new(), "PATIENT"),
-    //     ]);
-
-    //     let event2 = create_test_event_with_actors("DISCOVERED", vec![
-    //         (event1.get_actors().unwrap()[0].entity_id, "AGENT"), // Same entity
-    //         (DbId::new(), "WITNESS"), // Different entity
-    //     ]);
-
-    //     let overlap = service.calculate_actor_overlap(&event1, &event2).await.unwrap();
-    //     assert!((overlap - 0.33).abs() < 0.1); // Should be around 1/3 (1 intersection, 3 union)
-    // }
-
-    fn create_test_event(action: &str) -> ChronicleEvent {
+    fn create_test_event(summary: &str) -> ChronicleEvent {
         ChronicleEvent {
             id: DbId::new(),
             chronicle_id: DbId::new(),
             user_id: DbId::new(),
             event_type: "TEST.EVENT".to_string(),
-            summary: format!("Test event with action: {}", action),
+            summary: summary.to_string(),
             source: "AI_EXTRACTED".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),

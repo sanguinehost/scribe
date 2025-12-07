@@ -919,7 +919,10 @@ pub async fn generate_chat_response(
                         state_arc.clone(),
                     ));
 
-                    let chronicle_service = Arc::new(ChronicleService::new(state_arc.pool.clone()));
+                    let chronicle_service = Arc::new(ChronicleService::new(
+                        state_arc.pool.clone(),
+                        state_arc.ai_client.clone(),
+                    ));
 
                     let agent = ContextEnrichmentAgent::new(
                         state_arc.clone(),
@@ -1306,6 +1309,7 @@ pub async fn generate_chat_response(
 
                                         let chronicle_service = Arc::new(ChronicleService::new(
                                             state_clone.pool.clone(),
+                                            state_clone.ai_client.clone(),
                                         ));
 
                                         let agent = ContextEnrichmentAgent::new(
@@ -1855,8 +1859,10 @@ pub async fn generate_chat_response(
                                         state_clone.clone(),
                                     ));
 
-                                    let chronicle_service =
-                                        Arc::new(ChronicleService::new(state_clone.pool.clone()));
+                                    let chronicle_service = Arc::new(ChronicleService::new(
+                                        state_clone.pool.clone(),
+                                        state_clone.ai_client.clone(),
+                                    ));
 
                                     let agent = ContextEnrichmentAgent::new(
                                         state_clone.clone(),

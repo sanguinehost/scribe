@@ -66,6 +66,7 @@ pub struct ChronicleEvent {
     pub source: String,  // Will be converted to/from EventSource
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub event_data: Option<crate::DbJson>, // Added to match schema
     #[serde(skip_serializing)]
     pub summary_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
@@ -77,6 +78,7 @@ pub struct ChronicleEvent {
     #[serde(skip_serializing)]
     pub keywords_nonce: Option<Vec<u8>>,
     pub chat_session_id: Option<crate::db::DbId>, // Link to originating chat
+    pub message_variant_id: Option<crate::db::DbId>, // Link to specific message variant
 }
 
 impl ChronicleEvent {
@@ -201,6 +203,7 @@ pub struct NewChronicleEvent {
     pub keywords_encrypted: Option<Vec<u8>>,
     pub keywords_nonce: Option<Vec<u8>>,
     pub chat_session_id: Option<crate::db::DbId>,
+    pub message_variant_id: Option<crate::db::DbId>,
 }
 
 impl NewChronicleEvent {
@@ -213,6 +216,7 @@ impl NewChronicleEvent {
         source: EventSource,
         keywords: Option<Vec<String>>,
         chat_session_id: Option<crate::db::DbId>,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Self {
         Self {
             id: None,
@@ -228,6 +232,7 @@ impl NewChronicleEvent {
             keywords_encrypted: None, // Will be set by service if encryption is available
             keywords_nonce: None,     // Will be set by service if encryption is available
             chat_session_id,
+            message_variant_id,
         }
     }
 
@@ -238,6 +243,7 @@ impl NewChronicleEvent {
         summary: String,
         keywords: Vec<String>,
         chat_session_id: Option<crate::db::DbId>,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Self {
         Self::new(
             chronicle_id,
@@ -247,6 +253,7 @@ impl NewChronicleEvent {
             EventSource::AiExtracted,
             Some(keywords),
             chat_session_id,
+            message_variant_id,
         )
     }
 }
@@ -309,6 +316,7 @@ pub struct CreateEventRequest {
     pub keywords: Option<Vec<String>>,
     pub timestamp_iso8601: Option<DbTimestamp>,
     pub chat_session_id: Option<crate::db::DbId>,
+    pub message_variant_id: Option<crate::db::DbId>,
 }
 
 fn default_event_source() -> EventSource {
@@ -402,6 +410,7 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             keywords_encrypted: None, // Will be set by service if encryption is available
             keywords_nonce: None,     // Will be set by service if encryption is available
             chat_session_id: request.chat_session_id,
+            message_variant_id: request.message_variant_id,
         }
     }
 }

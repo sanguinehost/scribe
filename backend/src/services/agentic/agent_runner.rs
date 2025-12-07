@@ -403,7 +403,16 @@ RULES:
             }
         };
 
-        // Create the chronicle event directly
+        // Get the message variant ID for the last message
+        let message_variant_id = if let Some(last_message) = messages.last() {
+            self.chronicle_service
+                .get_message_variant_id(last_message.id, last_message.current_variant_index)
+                .await?
+        } else {
+            None
+        };
+
+        // Create new event (always create new, never overwrite)
         let event_request = CreateEventRequest {
             event_type: "NARRATIVE.EVENT".to_string(),
             summary: summary.clone(),
@@ -411,6 +420,7 @@ RULES:
             keywords,
             timestamp_iso8601: Some(chrono::Utc::now().into()),
             chat_session_id: Some(chat_session_id),
+            message_variant_id,
         };
 
         let event = self

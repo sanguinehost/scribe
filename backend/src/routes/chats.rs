@@ -450,7 +450,8 @@ pub async fn get_chat_deletion_analysis_handler(
     .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Get chronicle analysis if this chat has one
-    let chronicle_service = crate::services::ChronicleService::new(state.pool.clone());
+    let chronicle_service =
+        crate::services::ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let chronicle_analysis = chronicle_service
         .get_chat_deletion_analysis(user.id, id)
         .await?;
@@ -505,7 +506,8 @@ pub async fn delete_chat_handler(
     .await
     .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
-    let chronicle_service = crate::services::ChronicleService::new(state.pool.clone());
+    let chronicle_service =
+        crate::services::ChronicleService::new(state.pool.clone(), state.ai_client.clone());
 
     // Handle chronicle deletion based on the requested strategy
     if let Some(chronicle_id) = chat.player_chronicle_id {

@@ -359,6 +359,7 @@ diesel::table! {
         source -> Varchar,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        event_data -> Nullable<Jsonb>,
         summary_encrypted -> Nullable<Bytea>,
         summary_nonce -> Nullable<Bytea>,
         timestamp_iso8601 -> Timestamptz,
@@ -366,6 +367,7 @@ diesel::table! {
         keywords_encrypted -> Nullable<Bytea>,
         keywords_nonce -> Nullable<Bytea>,
         chat_session_id -> Nullable<Uuid>,
+        message_variant_id -> Nullable<Uuid>,
     }
 }
 
@@ -985,6 +987,7 @@ diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
+diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
 diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));

@@ -84,6 +84,7 @@ mod unit_tests {
             ]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         assert_eq!(request.event_type, "CHARACTER_INTERACTION");
@@ -309,6 +310,7 @@ mod integration_tests {
             keywords: Some(vec!["village".to_string(), "fog".to_string()]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let created_event = chronicle_service
@@ -330,6 +332,7 @@ mod integration_tests {
             keywords: Some(vec!["combat".to_string(), "bandits".to_string()]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let event2 = chronicle_service
@@ -431,6 +434,7 @@ mod integration_tests {
                 keywords: None,
                 timestamp_iso8601: None,
                 chat_session_id: None,
+                message_variant_id: None,
             };
 
             chronicle_service
@@ -548,6 +552,7 @@ mod integration_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let result = chronicle_service
@@ -590,6 +595,7 @@ mod integration_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let event = chronicle_service
@@ -648,6 +654,7 @@ mod integration_tests {
             keywords: Some(vec!["secret".to_string(), "hidden cave".to_string()]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let encrypted_event = chronicle_service
@@ -684,6 +691,7 @@ mod integration_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let unencrypted_event = chronicle_service

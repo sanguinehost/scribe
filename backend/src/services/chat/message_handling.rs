@@ -429,11 +429,23 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // SQLite uses f64 directly, PostgreSQL uses BigDecimal
     #[cfg(feature = "sqlite-backend")]
-    let actual_cost_bd = actual_cost_dollars;
+    let actual_cost_bd = {
+        use bigdecimal::BigDecimal;
+        use std::convert::TryFrom;
+        BigDecimal::try_from(actual_cost_dollars)
+            .map(crate::db::DbDecimal::from)
+            .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
+    };
     #[cfg(feature = "sqlite-backend")]
-    let modified_cost_bd = modified_cost_dollars;
+    let modified_cost_bd = {
+        use bigdecimal::BigDecimal;
+        use std::convert::TryFrom;
+        BigDecimal::try_from(modified_cost_dollars)
+            .map(crate::db::DbDecimal::from)
+            .unwrap_or_else(|_| crate::db::DbDecimal::from(0))
+    };
     #[cfg(feature = "sqlite-backend")]
-    let actual_charge_bd = 0.0_f64; // TODO: Implement actual charge tracking
+    let actual_charge_bd = crate::db::DbDecimal::from(0); // TODO: Implement actual charge tracking
 
     #[cfg(feature = "postgres-backend")]
     {
@@ -562,10 +574,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // Set all cost tracking fields using the new method
     new_message_to_insert = new_message_to_insert.with_cost_tracking(
-        actual_cost_bd,
-        modified_cost_bd,
+        actual_cost_bd.clone(),
+        modified_cost_bd.clone(),
         credit_cost_val,
-        actual_charge_bd,
+        actual_charge_bd.clone(),
         credits_charged_val,
     );
 
@@ -622,12 +634,12 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         #[cfg(feature = "payment")]
         let state_config_for_payment = state.config.clone();
 
-        // Use pre-cloned cost values for the spawned task (cloned earlier before with_cost_tracking)
-        // Use pre-cloned cost values for the spawned task (cloned earlier before with_cost_tracking)
-        let actual_cost_for_task = actual_cost_bd_clone;
-        let modified_cost_for_task = modified_cost_bd_clone;
+        // Calculate costs for this task
+        let actual_cost_for_task = actual_cost_bd;
+        let modified_cost_for_task = modified_cost_bd;
         let credit_cost_for_task = credit_cost_val;
-        let actual_charge_for_task = actual_charge_bd_clone;
+        // Calculate charge for this task (using the modified cost which includes markup)
+        let actual_charge_for_task = actual_charge_bd;
         let credits_charged_for_task = credits_charged_val;
 
         // Spawn async task to update token counts to avoid blocking message save

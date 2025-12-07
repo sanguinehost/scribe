@@ -1536,19 +1536,20 @@ impl DbInsertableChatMessage {
     #[must_use]
     pub fn with_cost_tracking(
         mut self,
-        actual_cost: f64,   // FIXED: f64, not DbDecimal
-        modified_cost: f64, // FIXED: f64, not DbDecimal
+        actual_cost: crate::db::DbDecimal,
+        modified_cost: crate::db::DbDecimal,
         credit_cost: i32,
-        actual_charge: f64, // FIXED: f64, not DbDecimal
+        actual_charge: crate::db::DbDecimal,
         credits_charged: i32,
     ) -> Self {
-        self.actual_cost = actual_cost;
-        self.modified_cost = modified_cost;
+        use bigdecimal::ToPrimitive;
+        self.actual_cost = actual_cost.to_f64().unwrap_or(0.0);
+        self.modified_cost = modified_cost.to_f64().unwrap_or(0.0);
         self.credit_cost = credit_cost;
-        self.actual_charge = actual_charge;
+        self.actual_charge = actual_charge.to_f64().unwrap_or(0.0);
         self.credits_charged = credits_charged;
         // Keep credits_cost for backwards compatibility
-        self.credits_cost = credit_cost; // FIXED: Use credit_cost (i32) not actual_cost
+        self.credits_cost = credit_cost;
         self
     }
 }

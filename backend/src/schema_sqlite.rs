@@ -288,9 +288,9 @@ diesel::table! {
         event_type -> Text,
         summary -> Text,
         source -> Text,
-        event_data -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        event_data -> Nullable<Text>,
         summary_encrypted -> Nullable<Binary>,
         summary_nonce -> Nullable<Binary>,
         timestamp_iso8601 -> Nullable<Timestamp>,
@@ -298,6 +298,7 @@ diesel::table! {
         keywords_encrypted -> Nullable<Binary>,
         keywords_nonce -> Nullable<Binary>,
         chat_session_id -> Nullable<Text>,
+        message_variant_id -> Nullable<Text>,
     }
 }
 
@@ -780,6 +781,7 @@ diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
+diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
 diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));

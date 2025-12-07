@@ -1,8 +1,9 @@
 use crate::db::DbId;
 use crate::db::DbPool;
+use diesel::query_dsl::JoinOnDsl;
 use diesel::{
-    result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
-    QueryDsl, RunQueryDsl, SelectableHelper,
+    result::Error as DieselError, AsChangeset, BoolExpressionMethods, ExpressionMethods,
+    OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use tracing::{error, info, instrument};
 
@@ -15,19 +16,25 @@ use crate::models::chronicle_event::{
     ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, NewChronicleEvent,
 };
 use crate::models::OptionalStringArray;
-use crate::schema::{chat_sessions, chronicle_events, player_chronicles};
+use crate::schema::{
+    chat_messages, chat_sessions, chronicle_events, message_variants, player_chronicles,
+};
 use crate::services::ChronicleDeduplicationService;
+
+use crate::llm::AiClient;
+use std::sync::Arc;
 
 /// ChronicleService handles all Chronicle-related database operations
 #[derive(Clone)]
 pub struct ChronicleService {
     db_pool: DbPool,
+    ai_client: Arc<dyn AiClient>,
 }
 
 impl ChronicleService {
     #[must_use]
-    pub fn new(db_pool: DbPool) -> Self {
-        Self { db_pool }
+    pub fn new(db_pool: DbPool, ai_client: Arc<dyn AiClient>) -> Self {
+        Self { db_pool, ai_client }
     }
 
     /// Helper to insert chronicle event and query it back (avoids E0275 Sized overflow)
@@ -119,7 +126,7 @@ impl ChronicleService {
         chronicle_id: DbId,
     ) -> Result<PlayerChronicle, AppError> {
         use diesel::prelude::*;
-
+        use diesel::{delete, insert_into, update};
         diesel::insert_into(player_chronicles::table)
             .values(chronicle)
             .execute(conn)
@@ -750,11 +757,50 @@ impl ChronicleService {
             }
         }
 
-        // Temporary event creation for deduplication removed as deduplication is disabled
+        // Create a temporary event for deduplication check
+        let temp_event = ChronicleEvent {
+            id: new_event.id.unwrap_or_else(crate::db::DbId::new),
+            chronicle_id,
+            user_id,
+            event_type: new_event.event_type.clone(),
+            summary: new_event.summary.clone(),
+            source: new_event.source.clone(),
+            message_variant_id: new_event.message_variant_id.clone(),
+            event_data: None,
+            created_at: new_event.timestamp_iso8601, // Use timestamp as created_at for check
+            updated_at: new_event.timestamp_iso8601,
+            summary_encrypted: new_event.summary_encrypted.clone(),
+            summary_nonce: new_event.summary_nonce.clone(),
+            timestamp_iso8601: new_event.timestamp_iso8601,
+            keywords: new_event.keywords.clone(),
+            keywords_encrypted: new_event.keywords_encrypted.clone(),
+            keywords_nonce: new_event.keywords_nonce.clone(),
+            chat_session_id: new_event.chat_session_id,
+        };
 
-        // Deduplication check disabled per user request - we want to chronicle everything for now
-        // let dedup_service = ChronicleDeduplicationService::new(self.db_pool.clone(), None);
-        // match dedup_service.check_for_duplicates(&temp_event).await { ... }
+        // Check for duplicates
+        let dedup_service =
+            ChronicleDeduplicationService::new(self.db_pool.clone(), self.ai_client.clone(), None);
+        match dedup_service.check_for_duplicates(&temp_event).await {
+            Ok(result) => {
+                if result.is_duplicate {
+                    tracing::info!(
+                        "Skipping duplicate event creation: {} is duplicate of {:?} (confidence: {:.2})",
+                        temp_event.id,
+                        result.duplicate_event_id,
+                        result.confidence
+                    );
+                    // Return the duplicate event if we can find it, or just the temp one marked as existing
+                    // For now, we'll return the temp event but NOT insert it into the DB
+                    // This prevents the duplicate from being stored
+                    return Ok(temp_event);
+                }
+            }
+            Err(e) => {
+                error!("Failed to check for duplicates: {}", e);
+                // Continue with creation on error - better to have duplicate than missing data
+            }
+        }
 
         // Generate ID if not present (required for SQLite and good practice)
         if new_event.id.is_none() {
@@ -804,9 +850,18 @@ impl ChronicleService {
         self.get_chronicle(user_id, chronicle_id).await?;
 
         let events = crate::db::with_conn(&self.db_pool, move |conn| {
-            let mut query = chronicle_events::table
-                .filter(chronicle_events::chronicle_id.eq(chronicle_id))
-                .into_boxed();
+            let mut query =
+                chronicle_events::table
+                    .left_join(message_variants::table)
+                    .left_join(
+                        chat_messages::table
+                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                    )
+                    .filter(chronicle_events::chronicle_id.eq(chronicle_id))
+                    .filter(chronicle_events::message_variant_id.is_null().or(
+                        message_variants::variant_index.eq(chat_messages::current_variant_index),
+                    ))
+                    .into_boxed();
 
             // Apply filters
             if let Some(event_type) = filter.event_type {
@@ -903,7 +958,197 @@ impl ChronicleService {
         Ok(event)
     }
 
-    /// Delete an event
+    /// Update an event
+    #[instrument(skip(self), fields(user_id = %user_id, event_id = %event_id))]
+    pub async fn update_event(
+        &self,
+        user_id: crate::db::DbId,
+        event_id: crate::db::DbId,
+        request: crate::models::chronicle_event::UpdateEventRequest,
+        session_dek: Option<&crate::auth::session_dek::SessionDek>,
+    ) -> Result<ChronicleEvent, AppError> {
+        use crate::models::chronicle_event::UpdateChronicleEvent;
+
+        // First verify ownership
+        self.get_event(user_id, event_id).await?;
+
+        let mut update: UpdateChronicleEvent = request.into();
+
+        // Handle encryption if DEK is provided
+        let (summary_encrypted, summary_nonce) = if let Some(dek) = session_dek {
+            if let Some(summary) = &update.summary {
+                match crate::crypto::encrypt_gcm(summary.as_bytes(), &dek.0) {
+                    Ok((ciphertext, nonce)) => {
+                        // Clear plaintext summary
+                        update.summary = Some("[ENCRYPTED]".to_string());
+                        (Some(ciphertext), Some(nonce))
+                    }
+                    Err(e) => {
+                        error!("Failed to encrypt summary update: {}", e);
+                        return Err(AppError::CryptoError(format!(
+                            "Failed to encrypt summary: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let (keywords_encrypted, keywords_nonce) = if let Some(dek) = session_dek {
+            if let Some(keywords) = &update.keywords {
+                let keywords_json = serde_json::to_string(keywords).map_err(|e| {
+                    AppError::SerializationError(format!("Failed to serialize keywords: {}", e))
+                })?;
+
+                match crate::crypto::encrypt_gcm(keywords_json.as_bytes(), &dek.0) {
+                    Ok((ciphertext, nonce)) => {
+                        // Clear plaintext keywords
+                        update.keywords = Some(vec!["[ENCRYPTED]".to_string()]);
+                        (Some(ciphertext), Some(nonce))
+                    }
+                    Err(e) => {
+                        error!("Failed to encrypt keywords update: {}", e);
+                        // Warn but continue? Or fail? Let's fail to be safe.
+                        return Err(AppError::CryptoError(format!(
+                            "Failed to encrypt keywords: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        let event = crate::db::with_conn(&self.db_pool, move |conn| {
+            let target = chronicle_events::table.filter(
+                chronicle_events::id
+                    .eq(event_id)
+                    .and(chronicle_events::user_id.eq(user_id)),
+            );
+
+            // We have to construct the update manually because we have extra fields (encrypted ones)
+            // that are not in UpdateChronicleEvent
+            let mut query = diesel::update(target).into_boxed();
+
+            // This is getting complicated because we can't easily chain .set() calls conditionally
+            // with different types in Diesel without a lot of boilerplate.
+            // A simpler approach is to fetch, update in memory, and save back? No, race conditions.
+            // Or just use direct diesel calls for each field.
+
+            // Let's try to use a struct that has all fields, including Optionals.
+            // But we don't have one that matches exactly what we want to update.
+
+            // Alternative: Use multiple update calls? No, transactional.
+
+            // Let's use the fact that we can pass a tuple to .set()
+            // But the tuple needs to be fixed size.
+
+            // We will use a custom struct for the update that includes the encrypted fields
+            #[derive(AsChangeset)]
+            #[diesel(table_name = chronicle_events)]
+            struct FullEventUpdate {
+                event_type: Option<String>,
+                summary: Option<String>,
+                source: Option<String>,
+                keywords: Option<OptionalStringArray>,
+                summary_encrypted: Option<Vec<u8>>,
+                summary_nonce: Option<Vec<u8>>,
+                keywords_encrypted: Option<Vec<u8>>,
+                keywords_nonce: Option<Vec<u8>>,
+                updated_at: crate::db::DbTimestamp,
+            }
+
+            let full_update = FullEventUpdate {
+                event_type: update.event_type,
+                summary: update.summary,
+                source: update.source.map(|s| s.to_string()),
+                keywords: update
+                    .keywords
+                    .map(|k| OptionalStringArray(Some(k.into_iter().map(Some).collect()))),
+                summary_encrypted,
+                summary_nonce,
+                keywords_encrypted,
+                keywords_nonce,
+                updated_at: crate::db::DbTimestamp::now(),
+            };
+
+            diesel::update(target)
+                .set(&full_update)
+                .returning(ChronicleEvent::as_returning())
+                .get_result(conn)
+                .map_err(|e| {
+                    error!("Diesel error when updating event: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to update event: {e}"))
+                })
+        })
+        .await?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let event = crate::db::with_conn(&self.db_pool, move |conn| {
+            let target = chronicle_events::table.filter(
+                chronicle_events::id
+                    .eq(event_id)
+                    .and(chronicle_events::user_id.eq(user_id)),
+            );
+
+            // Define the struct locally for SQLite too
+            #[derive(AsChangeset)]
+            #[diesel(table_name = chronicle_events)]
+            struct FullEventUpdate {
+                event_type: Option<String>,
+                summary: Option<String>,
+                source: Option<String>,
+                keywords: Option<OptionalStringArray>,
+                summary_encrypted: Option<Vec<u8>>,
+                summary_nonce: Option<Vec<u8>>,
+                keywords_encrypted: Option<Vec<u8>>,
+                keywords_nonce: Option<Vec<u8>>,
+                updated_at: crate::db::DbTimestamp,
+            }
+
+            let full_update = FullEventUpdate {
+                event_type: update.event_type,
+                summary: update.summary,
+                source: update.source.map(|s| s.to_string()),
+                keywords: update
+                    .keywords
+                    .map(|k| OptionalStringArray(Some(k.into_iter().map(Some).collect()))),
+                summary_encrypted,
+                summary_nonce,
+                keywords_encrypted,
+                keywords_nonce,
+                updated_at: crate::db::DbTimestamp::now(),
+            };
+
+            diesel::update(target)
+                .set(&full_update)
+                .execute(conn)
+                .map_err(|e| {
+                    error!("Diesel error when updating event: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to update event: {e}"))
+                })?;
+
+            // Fetch back
+            chronicle_events::table
+                .find(event_id)
+                .first(conn)
+                .map_err(|e| {
+                    error!("Failed to query event after update: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to query event: {e}"))
+                })
+        })
+        .await?;
+
+        Ok(event)
+    }
     #[instrument(skip(self), fields(user_id = %user_id, event_id = %event_id))]
     pub async fn delete_event(
         &self,
@@ -1156,6 +1401,36 @@ impl ChronicleService {
             session_id, user_id
         );
         Ok(())
+    }
+
+    /// Get the message variant ID for a specific message and variant index
+    #[instrument(skip(self), fields(message_id = %message_id, variant_index = %variant_index))]
+    pub async fn get_message_variant_id(
+        &self,
+        message_id: crate::db::DbId,
+        variant_index: i32,
+    ) -> Result<Option<crate::db::DbId>, AppError> {
+        use crate::schema::message_variants;
+        use diesel::prelude::*;
+
+        let variant_id = crate::db::with_conn(&self.db_pool, move |conn| {
+            message_variants::table
+                .filter(
+                    message_variants::parent_message_id
+                        .eq(message_id)
+                        .and(message_variants::variant_index.eq(variant_index)),
+                )
+                .select(message_variants::id)
+                .first::<crate::db::DbId>(conn)
+                .optional()
+                .map_err(|e| {
+                    error!("Diesel error when getting message variant ID: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to get message variant ID: {e}"))
+                })
+        })
+        .await?;
+
+        Ok(variant_id)
     }
 
     /// Get analysis information for chat deletion decisions
