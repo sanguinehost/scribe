@@ -76,14 +76,7 @@ impl ScribeTool for CreateChronicleEventTool {
         json!({
             "type": "object",
             "properties": {
-                "user_id": {
-                    "type": "string",
-                    "description": "The UUID of the user creating the event"
-                },
-                "chronicle_id": {
-                    "type": "string",
-                    "description": "The UUID of the chronicle to add the event to"
-                },
+
                 "event_type": {
                     "type": "string",
                     "description": "Simple event type, usually 'NARRATIVE.EVENT'",
@@ -91,21 +84,19 @@ impl ScribeTool for CreateChronicleEventTool {
                 },
                 "summary": {
                     "type": "string",
-                    "description": "A rich, narrative description of what happened (like an excerpt from an epic novel)"
+                    "description": "A concise summary of what happened (1-2 paragraphs, under 200 words)"
                 },
                 "keywords": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "3-5 searchable terms from the event (character names, locations, important objects, actions)",
-                    "examples": [["dragon", "battle", "victory"], ["betrayal", "throne room", "assassination"]]
+                    "description": "3-5 searchable terms from the event (character names, locations, important objects, actions)"
                 },
                 "timestamp_iso8601": {
                     "type": "string",
-                    "description": "When this event occurred in the story timeline (ISO 8601 format)",
-                    "examples": ["2025-06-28T15:30:00Z"]
+                    "description": "When this event occurred in the story timeline (ISO 8601 format)"
                 }
             },
-            "required": ["user_id", "chronicle_id", "event_type", "summary", "keywords"]
+            "required": ["event_type", "summary", "keywords"]
         })
     }
 
