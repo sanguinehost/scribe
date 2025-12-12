@@ -274,6 +274,7 @@ impl fmt::Display for LoggablePersonaId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_obfuscated_id_consistency() {

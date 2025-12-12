@@ -306,6 +306,7 @@ impl ChatListQuery {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
+            total_actual_cost: crate::db::DbDecimal::from(0), // ChatListItem doesn't have actual cost data
         })
     }
 }
@@ -351,6 +352,7 @@ pub struct ChatSessionQuery {
     pub tokens_counted_at: DbTimestamp,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub total_actual_cost: crate::db::DbDecimal, // Added for cost display
 }
 
 impl ChatSessionQuery {
@@ -451,6 +453,7 @@ impl ChatSessionQuery {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
+            total_actual_cost: self.total_actual_cost,
         })
     }
 
@@ -2133,6 +2136,7 @@ pub struct ChatForClient {
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub total_credits_used: crate::db::DbDecimal,
+    pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
 }
 
 impl Chat {
@@ -2259,6 +2263,7 @@ impl Chat {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
+            total_actual_cost: self.total_actual_cost,
         })
     }
 

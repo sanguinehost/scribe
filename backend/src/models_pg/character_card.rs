@@ -1069,7 +1069,8 @@ impl std::fmt::Debug for NewCharacterAsset {
 // --- Unit tests ---
 #[cfg(test)]
 mod tests {
-    use super::*; // Import items from the parent module
+    use super::*;
+    use crate::db::DbId; // Import items from the parent module
 
     // --- Tests for parse_decorators_from_content (moved from tests/character_card_tests.rs) ---
 

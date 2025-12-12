@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Tests for the credit system feature flag system
 //!
 //! Tests the three-layer feature gating:

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Tests for the SoftLimitService
 //!
 //! Tests daily usage tracking, soft limit enforcement,

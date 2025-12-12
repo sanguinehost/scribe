@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 // Tests to demonstrate the bug where partial updates clear chronicle_id and active_custom_persona_id
@@ -95,8 +96,8 @@ async fn setup_test_env(
         character_id: character.id,
         title_ciphertext: Some("Test Chat".as_bytes().to_vec()),
         title_nonce: Some(vec![0u8; 12]),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         history_management_strategy: "token_limit".to_string(),
         history_management_limit: 10,
         model_name: "initial-model".to_string(),

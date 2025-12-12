@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use chrono::Utc;
 use scribe_backend::crypto::{crypto_generate_dek, decrypt_gcm, encrypt_gcm};
 use scribe_backend::services::embeddings::metadata::{
@@ -13,7 +14,7 @@ fn test_lorebook_metadata_encryption_fields() {
     let metadata = LorebookChunkMetadata {
         original_lorebook_entry_id: Uuid::new_v4(),
         lorebook_id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         chunk_text: "[encrypted]".to_string(), // Placeholder for backward compat
         entry_title: Some("[encrypted]".to_string()),
         keywords: Some(vec!["test".to_string()]),
@@ -43,7 +44,7 @@ fn test_chat_message_metadata_encryption_fields() {
         message_id: Uuid::new_v4(),
         session_id: Uuid::new_v4(),
         chronicle_id: Some(Uuid::new_v4()),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         speaker: "assistant".to_string(),
         timestamp: Utc::now(),
         text: "[encrypted]".to_string(), // Placeholder for backward compat
@@ -87,7 +88,7 @@ fn test_backward_compatibility_plaintext_only() {
     let metadata = LorebookChunkMetadata {
         original_lorebook_entry_id: Uuid::new_v4(),
         lorebook_id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         chunk_text: "This is plaintext content for backward compatibility".to_string(),
         entry_title: Some("Legacy Entry".to_string()),
         keywords: Some(vec!["legacy".to_string()]),
@@ -120,7 +121,7 @@ fn test_mixed_mode_encrypted_and_plaintext() {
     let metadata = LorebookChunkMetadata {
         original_lorebook_entry_id: Uuid::new_v4(),
         lorebook_id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
         entry_title: Some("Entry Title".to_string()), // Can be plaintext
         keywords: Some(vec!["test".to_string()]),

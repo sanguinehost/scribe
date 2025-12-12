@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for payment transaction customer data encryption
 //!
 //! These tests verify that customer data from Paddle webhooks is properly encrypted

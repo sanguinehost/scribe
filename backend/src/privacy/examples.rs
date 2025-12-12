@@ -259,6 +259,7 @@ pub fn demonstrate_log_output_differences() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_user_id_obfuscation_consistency() {

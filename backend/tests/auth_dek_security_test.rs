@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/auth_dek_security_test.rs
 // Test to verify that DEK is NOT stored in the session after login

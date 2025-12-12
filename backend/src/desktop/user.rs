@@ -166,6 +166,7 @@ fn generate_secure_password() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_generate_secure_password() {

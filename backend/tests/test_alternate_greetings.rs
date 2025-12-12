@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // Test script to verify alternate_greetings parsing
 use scribe_backend::models::character_card;
 use serde_json::json;

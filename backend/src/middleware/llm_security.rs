@@ -345,9 +345,10 @@ pub async fn security_headers_middleware(request: Request, next: Next) -> Respon
     response
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_rate_limiter() {

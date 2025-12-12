@@ -64,14 +64,32 @@ mod tests {
         println!("Serialized JSON: {}", json);
 
         // Verify camelCase format (TypeScript convention)
-        assert!(json.contains("\"accessToken\""), "Should serialize to camelCase");
-        assert!(json.contains("\"refreshToken\""), "Should serialize to camelCase");
-        assert!(json.contains("\"expiresAt\""), "Should serialize to camelCase");
+        assert!(
+            json.contains("\"accessToken\""),
+            "Should serialize to camelCase"
+        );
+        assert!(
+            json.contains("\"refreshToken\""),
+            "Should serialize to camelCase"
+        );
+        assert!(
+            json.contains("\"expiresAt\""),
+            "Should serialize to camelCase"
+        );
 
         // Verify no snake_case (Rust convention should be hidden)
-        assert!(!json.contains("\"access_token\""), "Should not expose snake_case");
-        assert!(!json.contains("\"refresh_token\""), "Should not expose snake_case");
-        assert!(!json.contains("\"expires_at\""), "Should not expose snake_case");
+        assert!(
+            !json.contains("\"access_token\""),
+            "Should not expose snake_case"
+        );
+        assert!(
+            !json.contains("\"refresh_token\""),
+            "Should not expose snake_case"
+        );
+        assert!(
+            !json.contains("\"expires_at\""),
+            "Should not expose snake_case"
+        );
     }
 
     #[test]

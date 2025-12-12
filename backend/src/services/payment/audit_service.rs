@@ -435,6 +435,8 @@ impl Default for PaymentAuditService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_user_id_hashing() {

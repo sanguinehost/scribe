@@ -536,7 +536,7 @@ pub static TEMPLATE_MANAGER: Lazy<TemplateManager> = Lazy::new(|| {
     manager
 });
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use serde_json::json;

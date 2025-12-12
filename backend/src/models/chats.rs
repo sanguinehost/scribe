@@ -1846,6 +1846,7 @@ pub struct ChatForClient {
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub total_credits_used: crate::db::DbDecimal,
+    pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
 }
 
 impl Chat {
@@ -1972,6 +1973,7 @@ impl Chat {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
+            total_actual_cost: self.total_actual_cost,
         })
     }
 

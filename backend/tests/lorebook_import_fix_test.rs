@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // Test to reproduce and fix the SillyTavern lorebook import issue
 
 use scribe_backend::{

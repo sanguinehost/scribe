@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Unit and integration tests for the CreditService
 //!
 //! Tests credit balance management, transaction recording,

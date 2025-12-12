@@ -2180,10 +2180,16 @@ pub async fn stream_ai_response_and_save_message(
                         } else {
                             warn!(
                                 session_id = %full_session_id_clone,
-                                "Token data not available in saved message - prompt_tokens: {:?}, completion_tokens: {:?}",
+                                "Token data not available in saved message - prompt_tokens: {:?}, completion_tokens: {:?}, sending zeros",
                                 saved_message.prompt_tokens,
                                 saved_message.completion_tokens
                             );
+                            // Still send the event with zeros to avoid timeout waiting for the event
+                            let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
+                                prompt_tokens: 0,
+                                completion_tokens: 0,
+                                model_name: service_model_name_clone_full.clone(),
+                            });
                         }
 
                         // --- Narrative Intelligence Processing (After Message Save) ---

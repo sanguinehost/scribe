@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 /// Integration tests for subscription tier context limit enforcement
 ///
 /// Tests verify that users' requested context limits are properly capped

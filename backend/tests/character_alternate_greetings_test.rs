@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // Test for alternate greetings parsing and conversion
 use scribe_backend::models::character_card::{CharacterCardDataV3, CharacterCardV3, NewCharacter};
 use scribe_backend::services::character_parser::ParsedCharacterCard;

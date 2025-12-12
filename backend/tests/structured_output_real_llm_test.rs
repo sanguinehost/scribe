@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/structured_output_real_llm_test.rs
 //
@@ -11,6 +12,7 @@ use chrono::Utc;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto::{encrypt_gcm, generate_dek},
+    db::DbId,
     models::chats::{ChatMessage, MessageRole},
     services::{
         agentic::{
@@ -171,11 +173,11 @@ async fn test_chronicle_naming_with_real_llm() {
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
+                user_id: DbId::new(),
                 message_type: MessageRole::System,
                 content: encrypted_content,
                 content_nonce: Some(content_nonce),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 model_name: "test".to_string(),
                 status: "completed".to_string(),
                 ..Default::default()
@@ -189,11 +191,11 @@ async fn test_chronicle_naming_with_real_llm() {
             ChatMessage {
                 id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
+                user_id: DbId::new(),
                 message_type: MessageRole::User,
                 content: encrypted_content,
                 content_nonce: Some(content_nonce),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 model_name: "test".to_string(),
                 status: "completed".to_string(),
                 ..Default::default()

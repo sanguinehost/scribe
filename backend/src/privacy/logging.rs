@@ -216,6 +216,7 @@ pub fn sanitize_json_value(value: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_uuid_pattern_detection() {

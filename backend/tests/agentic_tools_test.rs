@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use scribe_backend::services::agentic::{AnalyzeTextSignificanceTool, ScribeTool};
 use scribe_backend::test_helpers::MockAiClient;
 use serde_json::json;

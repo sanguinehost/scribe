@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(all(test, feature = "sqlite-backend"))]
 #![allow(clippy::too_many_lines)]
 
@@ -46,6 +47,7 @@ use scribe_backend::db::{DbBlob, DbDecimal, DbId, DbTimestamp};
 use scribe_backend::models::chats::{Chat, ChatMode};
 use scribe_backend::{
     crypto,
+    db::DbId,
     models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
     schema::{characters, chat_sessions, users},
 };

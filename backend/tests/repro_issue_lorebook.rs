@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(test)]
 mod tests {
     use scribe_backend::services::character_parser::{

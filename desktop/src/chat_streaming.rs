@@ -15,9 +15,9 @@
 //! 4. Converts SSE events → ChatStreamEvent and sends through channel
 //! 5. Frontend receives events via `channel.onmessage`
 
-use serde::Serialize;
-use tauri::{AppHandle, ipc::Channel};
 use futures_util::StreamExt;
+use serde::Serialize;
+use tauri::{ipc::Channel, AppHandle};
 
 /// Channel event types for chat streaming
 ///
@@ -35,17 +35,11 @@ use futures_util::StreamExt;
 pub enum ChatStreamEvent {
     /// Content chunk from AI response
     /// Payload is JSON-serialized StreamedChunk: { index, content, checksum }
-    Content {
-        payload: String,
-    },
+    Content { payload: String },
     /// Reasoning/thinking text (for models with thinking mode)
-    Thinking {
-        text: String,
-    },
+    Thinking { text: String },
     /// Error message
-    Error {
-        message: String,
-    },
+    Error { message: String },
     /// Token usage statistics
     /// Fields serialized as camelCase: promptTokens, completionTokens, modelName
     TokenUsage {
@@ -112,9 +106,16 @@ pub async fn stream_chat_response(
     is_regeneration: bool,
     channel: Channel<ChatStreamEvent>,
 ) -> Result<(), String> {
-    log::info!("🔥 [stream_chat_response] ===== ENTRY POINT ===== Starting for session {}", session_id);
-    log::info!("🔥 [stream_chat_response] Parameters: user_message_len={}, history_len={}, model={:?}",
-        user_message.len(), history.len(), model);
+    log::info!(
+        "🔥 [stream_chat_response] ===== ENTRY POINT ===== Starting for session {}",
+        session_id
+    );
+    log::info!(
+        "🔥 [stream_chat_response] Parameters: user_message_len={}, history_len={}, model={:?}",
+        user_message.len(),
+        history.len(),
+        model
+    );
 
     // Get tokens from secure storage
     let access_token = match load_access_token(&app).await {
@@ -165,7 +166,10 @@ pub async fn stream_chat_response(
         // NOTE: Don't send is_regeneration - backend infers from history/variant_of
     });
 
-    log::debug!("[stream_chat_response] Request body with {} history messages", full_history.len());
+    log::debug!(
+        "[stream_chat_response] Request body with {} history messages",
+        full_history.len()
+    );
 
     // Build request to backend SSE endpoint
     let url = format!("https://localhost:38080/api/chat/{}/generate", session_id);
@@ -230,38 +234,30 @@ pub async fn stream_chat_response(
 
                 // Convert SSE event to ChatStreamEvent and send through channel
                 let channel_event = match sse_event.event.as_str() {
-                    "content" => {
-                        ChatStreamEvent::Content {
-                            payload: sse_event.data,
-                        }
-                    }
-                    "thinking" => {
-                        ChatStreamEvent::Thinking {
-                            text: sse_event.data,
-                        }
-                    }
-                    "error" => {
-                        ChatStreamEvent::Error {
-                            message: sse_event.data,
-                        }
-                    }
+                    "content" => ChatStreamEvent::Content {
+                        payload: sse_event.data,
+                    },
+                    "thinking" => ChatStreamEvent::Thinking {
+                        text: sse_event.data,
+                    },
+                    "error" => ChatStreamEvent::Error {
+                        message: sse_event.data,
+                    },
                     "token_usage" => {
                         // Parse JSON: { "prompt_tokens": 123, "completion_tokens": 456, "model_name": "..." }
                         match serde_json::from_str::<serde_json::Value>(&sse_event.data) {
-                            Ok(token_data) => {
-                                ChatStreamEvent::TokenUsage {
-                                    prompt_tokens: token_data["prompt_tokens"]
-                                        .as_i64()
-                                        .unwrap_or(0) as i32,
-                                    completion_tokens: token_data["completion_tokens"]
-                                        .as_i64()
-                                        .unwrap_or(0) as i32,
-                                    model_name: token_data["model_name"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string(),
-                                }
-                            }
+                            Ok(token_data) => ChatStreamEvent::TokenUsage {
+                                prompt_tokens: token_data["prompt_tokens"].as_i64().unwrap_or(0)
+                                    as i32,
+                                completion_tokens: token_data["completion_tokens"]
+                                    .as_i64()
+                                    .unwrap_or(0)
+                                    as i32,
+                                model_name: token_data["model_name"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .to_string(),
+                            },
                             Err(e) => {
                                 log::error!(
                                     "[stream_chat_response] Failed to parse token_usage: {}",
@@ -280,10 +276,16 @@ pub async fn stream_chat_response(
 
                         match serde_json::from_str::<serde_json::Value>(&sse_event.data) {
                             Ok(msg_data) => {
-                                log::debug!("[stream_chat_response] Parsed message_saved JSON: {:?}", msg_data);
+                                log::debug!(
+                                    "[stream_chat_response] Parsed message_saved JSON: {:?}",
+                                    msg_data
+                                );
 
                                 // Extract and validate fields
-                                let message_id = match msg_data.get("message_id").and_then(|v| v.as_str()) {
+                                let message_id = match msg_data
+                                    .get("message_id")
+                                    .and_then(|v| v.as_str())
+                                {
                                     Some(id) if !id.is_empty() => id.to_string(),
                                     _ => {
                                         log::error!(
@@ -294,7 +296,10 @@ pub async fn stream_chat_response(
                                     }
                                 };
 
-                                let variant_count = match msg_data.get("variant_count").and_then(|v| v.as_i64()) {
+                                let variant_count = match msg_data
+                                    .get("variant_count")
+                                    .and_then(|v| v.as_i64())
+                                {
                                     Some(count) => count as i32,
                                     None => {
                                         log::error!(
@@ -305,7 +310,10 @@ pub async fn stream_chat_response(
                                     }
                                 };
 
-                                let current_variant_index = match msg_data.get("current_variant_index").and_then(|v| v.as_i64()) {
+                                let current_variant_index = match msg_data
+                                    .get("current_variant_index")
+                                    .and_then(|v| v.as_i64())
+                                {
                                     Some(index) => index as i32,
                                     None => {
                                         log::error!(
@@ -352,15 +360,26 @@ pub async fn stream_chat_response(
                 };
 
                 // 🔥 CRITICAL: About to send event through Tauri Channel
-                log::info!("🔥 [stream_chat_response] About to send event #{} through channel: {:?}", event_count, channel_event);
+                log::info!(
+                    "🔥 [stream_chat_response] About to send event #{} through channel: {:?}",
+                    event_count,
+                    channel_event
+                );
 
                 // Send event through channel
                 if let Err(e) = channel.send(channel_event.clone()) {
-                    log::error!("🔥 [stream_chat_response] FAILED to send event #{} through channel: {}", event_count, e);
+                    log::error!(
+                        "🔥 [stream_chat_response] FAILED to send event #{} through channel: {}",
+                        event_count,
+                        e
+                    );
                     return Err(format!("Channel send failed: {}", e));
                 }
 
-                log::info!("🔥 [stream_chat_response] Event #{} sent successfully through channel", event_count);
+                log::info!(
+                    "🔥 [stream_chat_response] Event #{} sent successfully through channel",
+                    event_count
+                );
 
                 // Check for done event to exit loop
                 if sse_event.event == "done" {
@@ -397,10 +416,9 @@ async fn load_access_token(app: &AppHandle) -> Option<String> {
     const ACCESS_TOKEN_KEY: &str = "access_token";
 
     match app.store(TOKEN_STORE_FILE) {
-        Ok(store) => {
-            store.get(ACCESS_TOKEN_KEY)
-                .and_then(|v| v.as_str().map(String::from))
-        }
+        Ok(store) => store
+            .get(ACCESS_TOKEN_KEY)
+            .and_then(|v| v.as_str().map(String::from)),
         Err(e) => {
             log::error!("[load_access_token] Failed to access token store: {}", e);
             None
@@ -417,10 +435,9 @@ async fn load_dek(app: &AppHandle) -> Option<String> {
     const DEK_KEY: &str = "dek";
 
     match app.store(TOKEN_STORE_FILE) {
-        Ok(store) => {
-            store.get(DEK_KEY)
-                .and_then(|v| v.as_str().map(String::from))
-        }
+        Ok(store) => store
+            .get(DEK_KEY)
+            .and_then(|v| v.as_str().map(String::from)),
         Err(e) => {
             log::debug!("[load_dek] DEK not available: {}", e);
             None

@@ -23,7 +23,9 @@ use crate::models::chats::{
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-use crate::schema::{chat_messages, chat_sessions, message_variants};
+use crate::schema::{
+    agent_context_analysis, chat_messages, chat_sessions, chronicle_events, message_variants,
+};
 use axum::{
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
@@ -1805,6 +1807,117 @@ pub async fn delete_trailing_messages_handler(
         // Clone message_ids for different operations
         let message_ids_clone_for_messages = message_ids.clone();
         let message_ids_clone_for_embeddings = message_ids.clone();
+        let message_ids_clone_for_variants = message_ids.clone();
+
+        // Fix for SQLite foreign key constraint:
+        // chronicle_events references message_variants(id) but might not have ON DELETE CASCADE.
+        // We must manually set message_variant_id to NULL for any events referencing variants of these messages
+        // before we delete the messages (which cascades to variants).
+        #[cfg(feature = "sqlite-backend")]
+        let variant_ids: Vec<String> = {
+            let message_ids_strings: Vec<String> = message_ids_clone_for_variants
+                .iter()
+                .map(|id| id.to_string())
+                .collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::message_variants::dsl as mv_dsl;
+                mv_dsl::message_variants
+                    .filter(mv_dsl::parent_message_id.eq_any(message_ids_strings))
+                    .select(mv_dsl::id)
+                    .load::<String>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        let variant_ids: Vec<uuid::Uuid> = {
+            let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_variants
+                .iter()
+                .map(|&id| id.into())
+                .collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::message_variants::dsl as mv_dsl;
+                mv_dsl::message_variants
+                    .filter(mv_dsl::parent_message_id.eq_any(message_uuids))
+                    .select(mv_dsl::id)
+                    .load::<uuid::Uuid>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+        };
+
+        if !variant_ids.is_empty() {
+            tracing::info!(
+                "Cleaning up {} variants referenced in chronicle events before trailing message deletion",
+                variant_ids.len()
+            );
+            #[cfg(feature = "sqlite-backend")]
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::chronicle_events::dsl as ce_dsl;
+                diesel::update(
+                    ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+                )
+                .set(ce_dsl::message_variant_id.eq(None::<String>))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+            #[cfg(feature = "postgres-backend")]
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::chronicle_events::dsl as ce_dsl;
+                diesel::update(
+                    ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+                )
+                .set(ce_dsl::message_variant_id.eq(None::<uuid::Uuid>))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
+
+        // Fix for SQLite foreign key constraint:
+        // agent_context_analysis references chat_messages(id) via assistant_message_id but might not have ON DELETE CASCADE.
+        // We must manually delete these analysis records before deleting the messages.
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let message_ids_strings: Vec<String> = message_ids_clone_for_variants
+                .iter()
+                .map(|id| id.to_string())
+                .collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::agent_context_analysis::dsl as aca_dsl;
+                diesel::delete(
+                    aca_dsl::agent_context_analysis
+                        .filter(aca_dsl::assistant_message_id.eq_any(message_ids_strings)),
+                )
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            let message_uuids: Vec<uuid::Uuid> = message_ids.iter().map(|&id| id.into()).collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::agent_context_analysis::dsl as aca_dsl;
+                diesel::delete(
+                    aca_dsl::agent_context_analysis
+                        .filter(aca_dsl::assistant_message_id.eq_any(message_uuids)),
+                )
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
 
         // Delete associated votes first (PostgreSQL only - old_votes table)
         #[cfg(feature = "postgres-backend")]
@@ -1943,6 +2056,105 @@ pub async fn delete_message_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
     }
 
+    // Fix for SQLite foreign key constraint:
+    // chronicle_events references message_variants(id) but might not have ON DELETE CASCADE.
+    // We must manually set message_variant_id to NULL for any events referencing variants of this message
+    // before we delete the message (which cascades to variants).
+    #[cfg(feature = "sqlite-backend")]
+    let variant_ids: Vec<String> = {
+        let message_id_str = message_id.to_string();
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::message_variants::dsl as mv_dsl;
+            mv_dsl::message_variants
+                .filter(mv_dsl::parent_message_id.eq(message_id_str))
+                .select(mv_dsl::id)
+                .load::<String>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+    };
+
+    #[cfg(feature = "postgres-backend")]
+    let variant_ids: Vec<uuid::Uuid> = {
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::message_variants::dsl as mv_dsl;
+            mv_dsl::message_variants
+                .filter(mv_dsl::parent_message_id.eq(message_id))
+                .select(mv_dsl::id)
+                .load::<uuid::Uuid>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+    };
+
+    if !variant_ids.is_empty() {
+        tracing::info!(
+            "Cleaning up {} variants referenced in chronicle events before message deletion",
+            variant_ids.len()
+        );
+        #[cfg(feature = "sqlite-backend")]
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::chronicle_events::dsl as ce_dsl;
+            diesel::update(
+                ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+            )
+            .set(ce_dsl::message_variant_id.eq(None::<String>))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+        #[cfg(feature = "postgres-backend")]
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::chronicle_events::dsl as ce_dsl;
+            diesel::update(
+                ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+            )
+            .set(ce_dsl::message_variant_id.eq(None::<uuid::Uuid>))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
+
+    // Fix for SQLite foreign key constraint:
+    // agent_context_analysis references chat_messages(id) via assistant_message_id but might not have ON DELETE CASCADE.
+    // We must manually delete these analysis records before deleting the message.
+    #[cfg(feature = "sqlite-backend")]
+    {
+        let message_id_str = message_id.to_string();
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::agent_context_analysis::dsl as aca_dsl;
+            diesel::delete(
+                aca_dsl::agent_context_analysis
+                    .filter(aca_dsl::assistant_message_id.eq(message_id_str)),
+            )
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
+
+    #[cfg(feature = "postgres-backend")]
+    {
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::agent_context_analysis::dsl as aca_dsl;
+            diesel::delete(
+                aca_dsl::agent_context_analysis
+                    .filter(aca_dsl::assistant_message_id.eq(message_id)),
+            )
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
+
     // Delete embeddings from Qdrant
     if let Err(e) = state
         .embedding_pipeline_service
@@ -1957,10 +2169,16 @@ pub async fn delete_message_handler(
     crate::db::with_conn(&pool, move |conn| {
         diesel::delete(chat_messages::table.filter(chat_messages::id.eq(message_id)))
             .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            .map_err(|e| {
+                tracing::error!("Failed to delete message from DB: {:?}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })
     })
     .await
-    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    .map_err(|e| {
+        tracing::error!("Failed to delete message (outer error): {:?}", e);
+        AppError::InternalServerErrorGeneric(e.to_string())
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use scribe_backend::services::character_generation::types::*;
 use uuid::Uuid;
 

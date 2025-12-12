@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use axum::{
@@ -13,6 +14,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use scribe_backend::{
+    db::DbId,
     models::{
         characters::Character as DbCharacter,
         chats::{
@@ -100,8 +102,8 @@ async fn setup_rag_test_context() -> TestContext {
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),
@@ -157,8 +159,8 @@ async fn setup_rag_test_context() -> TestContext {
                 message_type: MessageRole::Assistant,
                 content: document_content_clone.as_bytes().to_vec(),
                 content_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 role: Some("assistant".to_string()),
                 prompt_tokens: None,
                 completion_tokens: None,

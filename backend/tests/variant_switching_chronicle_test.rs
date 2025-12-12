@@ -1,6 +1,6 @@
+#![cfg(feature = "postgres-backend")]
 use diesel::prelude::*;
 use scribe_backend::auth::session_dek::SessionDek;
-use scribe_backend::db::DbId;
 use scribe_backend::models::chats::{Chat, NewChat};
 use scribe_backend::models::chats::{DbInsertableChatMessage, MessageRole, NewMessageVariant};
 use scribe_backend::models::chronicle::{CreateChronicleRequest, PlayerChronicle};

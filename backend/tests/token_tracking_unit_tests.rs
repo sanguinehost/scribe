@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use scribe_backend::test_helpers::spawn_app_permissive_rate_limiting;

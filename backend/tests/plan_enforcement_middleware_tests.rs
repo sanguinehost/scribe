@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(all(test, feature = "payment"))]
 mod plan_enforcement_middleware_tests {
     use chrono::Utc;

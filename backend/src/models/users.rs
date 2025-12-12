@@ -496,7 +496,7 @@ mod tests {
     use chrono::Utc;
 
     struct TestUserParams<'a> {
-        id: crate::DbUuid,
+        id: crate::db::DbId,
         username: &'a str,
         password_hash: &'a str,
         email: &'a str,
@@ -508,7 +508,7 @@ mod tests {
         recovery_dek_nonce: Option<Vec<u8>>,
         dek: Option<SerializableSecretDek>,
         role: UserRole,
-        default_persona_id: Option<crate::DbUuid>,
+        default_persona_id: Option<crate::db::DbId>,
     }
 
     impl User {

@@ -1,9 +1,11 @@
+#![cfg(feature = "postgres-backend")]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::ignored_unit_patterns)]
 use chrono::Utc;
 use mockall::predicate::*;
 use qdrant_client::qdrant::{point_id::PointIdOptions, PointId, Value};
 use scribe_backend::{
+    db::DbId,
     models::chats::{ChatMessage, MessageRole},
     services::{
         chat_override_service::ChatOverrideService,
@@ -28,7 +30,7 @@ use serial_test::serial;
 // Removed unused std::convert::TryFrom
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc}; // Removed env
-use uuid::Uuid; // For mock assertions
+use uuid::Uuid; // For mock assertions and Qdrant point IDs
 
 // Helper to assert content and metadata of retrieved chunks
 #[allow(deprecated)]
@@ -248,13 +250,13 @@ async fn test_process_and_embed_message_integration() {
     let test_content = "This is a test message with multiple sentences. It should be chunked into pieces for storage.".to_string();
     let test_user_id = Uuid::new_v4();
     let test_message = ChatMessage {
-        id: test_message_id,
-        session_id: test_session_id,
+        id: test_message_id.into(),
+        session_id: test_session_id.into(),
         message_type: MessageRole::User,
         content: test_content.clone().into(),
         content_nonce: None,
-        created_at: Utc::now(),
-        user_id: test_user_id,
+        created_at: Utc::now().into(),
+        user_id: test_user_id.into(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -313,13 +315,13 @@ async fn test_process_and_embed_message_all_chunks_fail_embedding() {
     let test_session_id = Uuid::new_v4();
     let test_content = "This content will produce multiple chunks. Chunk two.".to_string();
     let test_message = ChatMessage {
-        id: test_message_id,
-        session_id: test_session_id,
+        id: test_message_id.into(),
+        session_id: test_session_id.into(),
         message_type: MessageRole::User,
         content: test_content.clone().into(), // Convert String to Vec<u8>
         content_nonce: None,
-        created_at: Utc::now(),
-        user_id: Uuid::new_v4(), // Add dummy user_id for test data
+        created_at: Utc::now().into(),
+        user_id: DbId::new(), // Add dummy user_id for test data
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -500,9 +502,9 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
         create_mock_scored_point_simple(&MockScoredPointParams {
             id_uuid: Uuid::new_v4(),
             score: 0.95,
-            session_id: test_session_id,
+            session_id: test_session_id.into(),
             message_id: message_id_1,
-            user_id: test_user_id,
+            user_id: test_user_id.into(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Chunk 1 text".to_string(),
@@ -511,9 +513,9 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
         create_mock_scored_point_simple(&MockScoredPointParams {
             id_uuid: Uuid::new_v4(),
             score: 0.88,
-            session_id: test_session_id,
+            session_id: test_session_id.into(),
             message_id: message_id_2,
-            user_id: test_user_id,
+            user_id: test_user_id.into(),
             speaker: "Assistant".to_string(),
             timestamp: Utc::now(),
             text: "Chunk 2 text".to_string(),
@@ -824,7 +826,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             score: 0.9,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Valid text".to_string(),
@@ -836,7 +838,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             score: 0.9,
             session_id,
             message_id: Uuid::new_v4(), // message_id - this should be the one made invalid for the test's purpose
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Valid text with invalid message_id in payload".to_string(),
@@ -905,7 +907,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         score: 0.9,
         session_id,
         message_id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         speaker: "User".to_string(),
         timestamp: Utc::now(),
         text: "Valid text 1".to_string(),
@@ -916,7 +918,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         score: 0.8,
         session_id,
         message_id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         speaker: "User".to_string(),
         timestamp: Utc::now(),
         text: "Text for invalid point".to_string(),
@@ -1053,7 +1055,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             score: 0.85,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             speaker: "Assistant".to_string(),
             timestamp: Utc::now(),
             text: "More text".to_string(),
@@ -1067,7 +1069,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                     score: 0.85,
                     session_id,
                     message_id: Uuid::new_v4(),
-                    user_id: Uuid::new_v4(),
+                    user_id: DbId::new(),
                     speaker: "Assistant".to_string(),
                     timestamp: Utc::now(),
                     text: "Text for invalid TS".to_string(),
@@ -1229,7 +1231,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             score: 0.8,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Some text".to_string(),
@@ -1243,7 +1245,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                     score: 0.8,
                     session_id,
                     message_id: Uuid::new_v4(),
-                    user_id: Uuid::new_v4(),
+                    user_id: DbId::new(),
                     speaker: "User".to_string(),
                     timestamp: Utc::now(),
                     text: "Text for missing field".to_string(),
@@ -1396,7 +1398,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             score: 0.75,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Final text".to_string(),
@@ -1410,7 +1412,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                     score: 0.75,
                     session_id,
                     message_id: Uuid::new_v4(),
-                    user_id: Uuid::new_v4(),
+                    user_id: DbId::new(),
                     speaker: "User".to_string(),
                     timestamp: Utc::now(),
                     text: "Text for wrong type".to_string(),
@@ -1552,7 +1554,7 @@ async fn test_rag_context_injection_with_qdrant() {
         message_type: MessageRole::User,
         content: chat_message_content.as_bytes().to_vec(),
         content_nonce: None,
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id, // Use consistent user_id
         prompt_tokens: None,
         completion_tokens: None,
@@ -1865,7 +1867,7 @@ async fn test_mock_qdrant_retrieve_points() {
         score: 0.9,
         session_id: Uuid::new_v4(),
         message_id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        user_id: DbId::new(),
         speaker: "TestSpeaker".to_string(),
         timestamp: chrono::Utc::now(),
         text: "Retrieved text".to_string(),
@@ -2041,7 +2043,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         message_type: MessageRole::User,
         content: content_a1.as_bytes().to_vec(),
         content_nonce: None,
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id: user_a_id,
         prompt_tokens: None,
         completion_tokens: None,
@@ -2064,7 +2066,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         message_type: MessageRole::User,
         content: content_a2.as_bytes().to_vec(),
         content_nonce: None,
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id: user_a_id,
         prompt_tokens: None,
         completion_tokens: None,
@@ -2087,7 +2089,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         message_type: MessageRole::User,
         content: content_b1.as_bytes().to_vec(),
         content_nonce: None,
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id: user_b_id,
         prompt_tokens: None,
         completion_tokens: None,

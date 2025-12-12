@@ -23,6 +23,24 @@ use crate::{
     AppState,      // Added AppState
 };
 
+/// Get hardcoded pricing for a model when config file is unavailable.
+/// Returns (input_rate_per_million, output_rate_per_million) in dollars.
+fn get_hardcoded_pricing(model_name: &str) -> (f64, f64) {
+    match model_name {
+        "gemini-2.5-flash-lite" | "gemini-2.5-flash-lite-preview-09-2025" => (0.10, 0.40),
+        "gemini-2.5-flash" | "gemini-2.5-flash-preview-09-2025" => (0.30, 2.50),
+        "gemini-2.5-pro" => (1.25, 10.00),
+        "gemini-2.0-flash-experimental" => (0.10, 0.40),
+        _ => {
+            tracing::warn!(
+                "Unknown model '{}', using gemini-2.5-flash-lite pricing as fallback",
+                model_name
+            );
+            (0.10, 0.40)
+        }
+    }
+}
+
 // This function will be in a sibling module
 // This might be unused if not called
 /// Gets messages for a specific chat session, verifying ownership.
@@ -340,88 +358,126 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     // This ensures cost tracking works in local deployments without payment feature
     let (actual_cost_dollars, modified_cost_dollars, credit_cost_val, credits_charged_val) =
         if prompt_tokens_val.is_some() || completion_tokens_val.is_some() {
-            // Load token-based pricing from config
-            let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
-            let config_content = std::fs::read_to_string(config_path).unwrap_or_default();
+            // Try to load token-based pricing from config, with multiple path fallbacks
+            let config_paths = [
+                "backend/config/subscription_tiers.json",
+                "config/subscription_tiers.json",
+                "../backend/config/subscription_tiers.json",
+            ];
 
-            if let Ok(tiers_config) = serde_json::from_str::<crate::DbJson>(&config_content) {
-                let token_pricing = &tiers_config["credit_system"]["token_pricing"];
-
-                // Get base API costs for this model
-                let base_costs = &token_pricing["base_api_costs"][&model_name];
-
-                let (input_rate_per_million, output_rate_per_million) = if !base_costs.is_null() {
-                    (
-                        base_costs["input_per_million"].as_f64().unwrap_or(0.1),
-                        base_costs["output_per_million"].as_f64().unwrap_or(0.4),
-                    )
-                } else {
-                    // Fallback to Flash-Lite pricing if model not found
-                    warn!(
-                        "Model '{}' not found in pricing config, using Flash-Lite pricing",
-                        model_name
-                    );
-                    (0.1, 0.4)
-                };
-
-                let prompt_tokens = prompt_tokens_val.unwrap_or(0);
-                let completion_tokens = completion_tokens_val.unwrap_or(0);
-
-                // Calculate BASE API cost (NO markup) - ALWAYS calculated
-                let input_cost_dollars =
-                    (prompt_tokens as f64 / 1_000_000.0) * input_rate_per_million;
-                let output_cost_dollars =
-                    (completion_tokens as f64 / 1_000_000.0) * output_rate_per_million;
-                let actual_cost = input_cost_dollars + output_cost_dollars;
-
-                // Calculate modified cost and credit cost ONLY if payment feature is enabled
-                #[cfg(feature = "payment")]
-                {
-                    // Get markup percentage (default 20%)
-                    let markup_percentage =
-                        token_pricing["markup_percentage"].as_f64().unwrap_or(20.0);
-                    let markup_multiplier = 1.0 + (markup_percentage / 100.0);
-
-                    // Modified cost = actual cost + markup
-                    let modified_cost = actual_cost * markup_multiplier;
-
-                    // Credit cost: credits derived from MARKED-UP cost
-                    // 1 credit = $0.02 (based on Paddle pricing: 250 credits = $5)
-                    let credit_cost = (modified_cost / 0.02).ceil() as i32;
-
-                    // Credits charged: only if charge_credits flag is set
-                    let credits_charged = if charge_credits { credit_cost } else { 0 };
-
-                    trace!(
-                        model_name = %model_name,
-                        prompt_tokens = prompt_tokens,
-                        completion_tokens = completion_tokens,
-                        actual_cost_dollars = actual_cost,
-                        markup_percentage = markup_percentage,
-                        modified_cost_dollars = modified_cost,
-                        credit_cost = credit_cost,
-                        credits_charged = credits_charged,
-                        "Calculated all cost values with payment feature enabled"
-                    );
-
-                    (actual_cost, modified_cost, credit_cost, credits_charged)
+            let mut config_content = String::new();
+            for path in &config_paths {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    config_content = content;
+                    tracing::debug!("Loaded pricing config from: {}", path);
+                    break;
                 }
+            }
 
-                #[cfg(not(feature = "payment"))]
-                {
-                    trace!(
-                        model_name = %model_name,
-                        prompt_tokens = prompt_tokens,
-                        completion_tokens = completion_tokens,
-                        actual_cost_dollars = actual_cost,
-                        "Calculated actual cost (payment feature disabled)"
-                    );
+            // Helper to parse JSON value that might be string or number
+            fn parse_json_f64(val: &serde_json::Value, default: f64) -> f64 {
+                if let Some(n) = val.as_f64() {
+                    n
+                } else if let Some(s) = val.as_str() {
+                    s.parse::<f64>().unwrap_or(default)
+                } else {
+                    default
+                }
+            }
 
-                    // No payment feature: only actual cost is calculated
-                    (actual_cost, 0.0, 0, 0)
+            let prompt_tokens = prompt_tokens_val.unwrap_or(0);
+            let completion_tokens = completion_tokens_val.unwrap_or(0);
+
+            // Get pricing rates - try config first, fall back to hardcoded values
+            let (input_rate_per_million, output_rate_per_million) = if !config_content.is_empty() {
+                if let Ok(tiers_config) = serde_json::from_str::<crate::DbJson>(&config_content) {
+                    let token_pricing = &tiers_config["credit_system"]["token_pricing"];
+                    let base_costs = &token_pricing["base_api_costs"][&model_name];
+
+                    if !base_costs.is_null() {
+                        (
+                            parse_json_f64(&base_costs["input_per_million"], 0.1),
+                            parse_json_f64(&base_costs["output_per_million"], 0.4),
+                        )
+                    } else {
+                        // Model not in config, use hardcoded fallback
+                        tracing::warn!(
+                            "Model '{}' not found in pricing config, using hardcoded pricing",
+                            model_name
+                        );
+                        get_hardcoded_pricing(&model_name)
+                    }
+                } else {
+                    tracing::warn!("Failed to parse pricing config JSON, using hardcoded pricing");
+                    get_hardcoded_pricing(&model_name)
                 }
             } else {
-                (0.0, 0.0, 0, 0)
+                tracing::warn!(
+                    "Could not load pricing config from any path, using hardcoded pricing"
+                );
+                get_hardcoded_pricing(&model_name)
+            };
+
+            // Calculate BASE API cost (NO markup) - ALWAYS calculated
+            let input_cost_dollars = (prompt_tokens as f64 / 1_000_000.0) * input_rate_per_million;
+            let output_cost_dollars =
+                (completion_tokens as f64 / 1_000_000.0) * output_rate_per_million;
+            let actual_cost = input_cost_dollars + output_cost_dollars;
+
+            tracing::info!(
+                model_name = %model_name,
+                prompt_tokens = prompt_tokens,
+                completion_tokens = completion_tokens,
+                input_rate = input_rate_per_million,
+                output_rate = output_rate_per_million,
+                actual_cost_dollars = actual_cost,
+                "Calculated message cost"
+            );
+
+            // Calculate modified cost and credit cost ONLY if payment feature is enabled
+            #[cfg(feature = "payment")]
+            {
+                // Get markup percentage (default 20%)
+                let markup_percentage = 20.0; // Hardcoded for simplicity
+                let markup_multiplier = 1.0 + (markup_percentage / 100.0);
+
+                // Modified cost = actual cost + markup
+                let modified_cost = actual_cost * markup_multiplier;
+
+                // Credit cost: credits derived from MARKED-UP cost
+                // 1 credit = $0.02 (based on Paddle pricing: 250 credits = $5)
+                let credit_cost = (modified_cost / 0.02).ceil() as i32;
+
+                // Credits charged: only if charge_credits flag is set
+                let credits_charged = if charge_credits { credit_cost } else { 0 };
+
+                trace!(
+                    model_name = %model_name,
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    actual_cost_dollars = actual_cost,
+                    markup_percentage = markup_percentage,
+                    modified_cost_dollars = modified_cost,
+                    credit_cost = credit_cost,
+                    credits_charged = credits_charged,
+                    "Calculated all cost values with payment feature enabled"
+                );
+
+                (actual_cost, modified_cost, credit_cost, credits_charged)
+            }
+
+            #[cfg(not(feature = "payment"))]
+            {
+                trace!(
+                    model_name = %model_name,
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    actual_cost_dollars = actual_cost,
+                    "Calculated actual cost (payment feature disabled)"
+                );
+
+                // No payment feature: only actual cost is calculated
+                (actual_cost, 0.0, 0, 0)
             }
         } else {
             (0.0, 0.0, 0, 0)

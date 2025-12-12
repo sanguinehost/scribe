@@ -654,7 +654,7 @@
 			<AlertDialogDescription>
 				Are you sure you want to delete this event? This action cannot be undone.
 				{#if eventToDelete}
-					<div class="mt-4 rounded-md bg-muted p-3">
+					<div class="mt-4 max-h-[50vh] overflow-y-auto rounded-md bg-muted p-3">
 						<div class="font-medium">{eventToDelete.event_type}</div>
 						<div class="text-sm text-muted-foreground">{eventToDelete.summary}</div>
 					</div>
@@ -683,7 +683,7 @@
 				Are you sure you want to delete this chronicle? This action cannot be undone and will
 				permanently delete all events associated with this chronicle.
 				{#if chronicle}
-					<div class="mt-4 rounded-md bg-muted p-3">
+					<div class="mt-4 max-h-[50vh] overflow-y-auto rounded-md bg-muted p-3">
 						<div class="font-medium">{chronicle.name}</div>
 						{#if chronicle.description}
 							<div class="text-sm text-muted-foreground">{chronicle.description}</div>

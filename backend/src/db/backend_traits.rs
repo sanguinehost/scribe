@@ -139,7 +139,7 @@ pub trait DbExpression: DbType {
 // Automatically implement DbExpression for all DbType implementors
 impl<T: DbType> DbExpression for T {}
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
 

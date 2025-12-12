@@ -5,9 +5,9 @@
 #[cfg(feature = "payment")]
 pub mod payment_test_helpers;
 
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbId;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::{SqliteInteractExt, SqlitePoolExt};
 use std::fmt;
 use std::net::SocketAddr;
 
@@ -1373,6 +1373,7 @@ pub struct TestApp {
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     // user_persona_service field removed as per plan
     // embedding_call_tracker field removed as per plan
+    pub state: Arc<AppState>, // Added state field
 }
 
 /// TestAppGuard - Automatic cleanup wrapper for TestApp
@@ -1925,7 +1926,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         mock_embedding_pipeline_service: mock_embedding_pipeline_service_for_test_app.clone(),
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
-        // user_persona_service and embedding_call_tracker removed from TestApp instantiation
+        state: Arc::new(app_state_inner.clone()), // Populate state field
     };
 
     // Wrap in TestAppGuard for automatic cleanup
@@ -1942,7 +1943,7 @@ pub mod db {
                                              // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
-    use crate::{DbId, DbTimestamp}; // Import unified types from crate root
+    use crate::db::{DbId, DbTimestamp}; // Import unified types from crate::db
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]

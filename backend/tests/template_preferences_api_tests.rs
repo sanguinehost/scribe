@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use axum::http::{header::COOKIE, StatusCode};
 use serde_json::json;
 use uuid::Uuid;

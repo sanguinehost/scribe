@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agentic_security_tests.rs
 //
@@ -13,6 +14,7 @@ use axum::{
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
+    db::DbId,
     schema,
     test_helpers::{self, TestApp, TestDataGuard},
 };

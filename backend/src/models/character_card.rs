@@ -8,7 +8,7 @@ use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize}; // Added Deserializer
-use std::collections::HashMap; 
+use std::collections::HashMap;
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -1098,7 +1098,8 @@ impl std::fmt::Debug for NewCharacterAsset {
 // --- Unit tests ---
 #[cfg(test)]
 mod tests {
-    use super::*; // Import items from the parent module
+    use super::*;
+    use crate::db::DbId; // Import items from the parent module
 
     // --- Tests for parse_decorators_from_content (moved from tests/character_card_tests.rs) ---
 

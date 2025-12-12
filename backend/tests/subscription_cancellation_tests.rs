@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(all(test, feature = "payment"))]
 mod subscription_cancellation_tests {
     use chrono::{Duration, Utc};
@@ -71,7 +72,7 @@ mod subscription_cancellation_tests {
             // Create a cancelled trial that expired 1 hour ago
             let subscription = Subscription {
                 id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
+                user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
@@ -113,7 +114,7 @@ mod subscription_cancellation_tests {
             // Create a cancelled trial that expires in the future
             let subscription = Subscription {
                 id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
+                user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
@@ -155,7 +156,7 @@ mod subscription_cancellation_tests {
             // Create an active subscription (not cancelled)
             let subscription = Subscription {
                 id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
+                user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
@@ -197,7 +198,7 @@ mod subscription_cancellation_tests {
             // Create a cancelled subscription with no trial_end (regular subscription)
             let subscription = Subscription {
                 id: Uuid::new_v4(),
-                user_id: Uuid::new_v4(),
+                user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),

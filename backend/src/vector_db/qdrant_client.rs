@@ -939,10 +939,11 @@ impl QdrantClientServiceTrait for QdrantClientService {
 }
 
 // --- Unit/Integration Tests
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::db::DbId;
     use dotenvy::dotenv;
     use qdrant_client::qdrant::point_id::PointIdOptions;
     use qdrant_client::qdrant::r#match::MatchValue; // Corrected import
@@ -1030,10 +1031,10 @@ mod tests {
     fn test_create_qdrant_point_with_payload() {
         let id = DbId::new();
         let vector = vec![0.1, 0.2, 0.3];
-        let payload = json!({
+        let payload = crate::DbJson::from(json!({
             "key": "value",
             "number": 123
-        });
+        }));
 
         let result = create_qdrant_point(id, vector.clone(), Some(payload));
         assert!(result.is_ok());
@@ -1086,7 +1087,7 @@ mod tests {
     fn test_create_qdrant_point_payload_not_object() {
         let id = DbId::new();
         let vector = vec![0.6];
-        let payload = json!("this is just a string"); // Not a JSON object
+        let payload = crate::DbJson::from(json!("this is just a string")); // Not a JSON object
 
         let result = create_qdrant_point(id, vector, Some(payload));
         assert!(result.is_err());
@@ -1107,10 +1108,10 @@ mod tests {
         // Let's use a nested structure.
         let id = DbId::new();
         let vector = vec![0.7, 0.8];
-        let payload = json!({
+        let payload = crate::DbJson::from(json!({
             "nested": { "a": 1 },
             "array": [1, 2, 3]
-        });
+        }));
 
         let result = create_qdrant_point(id, vector, Some(payload));
         assert!(result.is_ok()); // Should be Ok because HashMap<String, Value> can handle nested objects/arrays
@@ -1193,7 +1194,7 @@ mod tests {
                                                   // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
         let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.random::<f32>()).collect();
 
-        let payload_1 = json!({"test_key": "value1"});
+        let payload_1 = crate::DbJson::from(json!({"test_key": "value1"}));
         let point_1 = create_qdrant_point(point_id_1, vector_1.clone(), Some(payload_1.clone()))
             .expect("Failed to create point 1");
 
@@ -1202,7 +1203,7 @@ mod tests {
         let mut rng2 = StdRng::seed_from_u64(99);
         let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.random::<f32>()).collect();
 
-        let payload_2 = json!({"test_key": "value2"});
+        let payload_2 = crate::DbJson::from(json!({"test_key": "value2"}));
         let point_2 = create_qdrant_point(point_id_2, vector_2.clone(), Some(payload_2.clone()))
             .expect("Failed to create point 2");
 
@@ -1279,7 +1280,8 @@ mod tests {
         let mut rng3 = StdRng::seed_from_u64(123);
         let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.random::<f32>()).collect();
 
-        let payload_filter = json!({"filter_key": "target_value", "other": "data1"});
+        let payload_filter =
+            crate::DbJson::from(json!({"filter_key": "target_value", "other": "data1"}));
         let point_filter = create_qdrant_point(
             point_id_filter,
             vector_filter.clone(),
@@ -1291,7 +1293,8 @@ mod tests {
         let mut rng4 = StdRng::seed_from_u64(456);
         let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.random::<f32>()).collect();
 
-        let payload_other = json!({"filter_key": "different_value", "other": "data2"});
+        let payload_other =
+            crate::DbJson::from(json!({"filter_key": "different_value", "other": "data2"}));
         let point_other = create_qdrant_point(
             point_id_other,
             vector_other.clone(),

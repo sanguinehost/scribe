@@ -146,9 +146,10 @@ async fn set_last_save_time(
     session.insert(LAST_SAVE_KEY, time_str).await
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use std::sync::Arc;
     use tower_sessions::MemoryStore;
 

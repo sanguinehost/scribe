@@ -477,11 +477,9 @@
 					{/if}
 
 					<!-- Session Total Display (from backend) -->
-					{#if chat?.total_credits_used || chat?.total_prompt_tokens || chat?.total_completion_tokens}
+					{#if chat?.total_actual_cost || chat?.total_prompt_tokens || chat?.total_completion_tokens}
 						{@const sessionCost =
-							typeof chat.total_credits_used === 'string'
-								? parseFloat(chat.total_credits_used)
-								: chat.total_credits_used}
+							typeof chat.total_actual_cost === 'number' ? chat.total_actual_cost : 0}
 						{@const formatSessionCost = (cost: number | undefined) =>
 							typeof cost !== 'number' || isNaN(cost) || cost < 0.0001
 								? '<$0.0001'

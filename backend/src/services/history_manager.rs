@@ -207,9 +207,10 @@ fn estimate_message_tokens(message: &ChatMessage) -> usize {
     content_str.chars().count() // Approximation
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::models::chats::MessageRole;
     use chrono::Utc;
     use uuid::Uuid;
@@ -221,7 +222,7 @@ mod tests {
             message_type: role,
             content: content.as_bytes().to_vec(),
             content_nonce: None, // Added missing field
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,

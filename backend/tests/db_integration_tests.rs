@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use anyhow::{anyhow, Context, Error as AnyhowError}; // Consolidate anyhow imports
@@ -166,7 +167,7 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
     diesel::insert_into(schema::users::table)
         .values(&new_user)
@@ -403,7 +404,7 @@ fn test_user_character_insert_and_query() {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: Utc::now(),
+            token_usage_updated_at: Utc::now().into(),
         };
 
         let inserted_user: User = diesel::insert_into(schema::users::table)
@@ -507,7 +508,7 @@ fn insert_test_user_with_password(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
 
     diesel::insert_into(users::table)
@@ -1194,8 +1195,8 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         character_id: character.id,
         title_ciphertext: None,
         title_nonce: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
         model_name: "test_cleanup_model".to_string(),
@@ -1246,8 +1247,8 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         message_type: MessageRole::User,
         content: b"Guard message content".to_vec(),
         content_nonce: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         role: None,
         parts: None,
         attachments: None,

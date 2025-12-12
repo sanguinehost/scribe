@@ -19,8 +19,7 @@ fn main() {
     // CRITICAL: Must use try_build with .codegen() - build() doesn't include asset codegen!
     println!("cargo:warning=Starting tauri_build with codegen...");
     tauri_build::try_build(
-        tauri_build::Attributes::new()
-            .codegen(tauri_build::CodegenContext::new())
+        tauri_build::Attributes::new().codegen(tauri_build::CodegenContext::new()),
     )
     .expect("failed to run tauri-build");
 

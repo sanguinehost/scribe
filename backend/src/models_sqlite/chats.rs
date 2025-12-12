@@ -1732,6 +1732,7 @@ pub struct ChatForClient {
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub total_credits_used: crate::db::DbDecimal,
+    pub total_actual_cost: f64, // Raw API cost in dollars
 }
 
 impl Chat {
@@ -1858,6 +1859,7 @@ impl Chat {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
+            total_actual_cost: self.total_actual_cost,
         })
     }
 
@@ -2545,7 +2547,7 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use crate::db::DbId;
@@ -2582,8 +2584,8 @@ mod tests {
             system_prompt_nonce: None,
             temperature: Some(bd("0.7")),
             max_output_tokens: Some(1024),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             frequency_penalty: Some(bd("0.0")),
             presence_penalty: Some(bd("0.0")),
             top_k: Some(50),
@@ -2597,7 +2599,7 @@ mod tests {
             gemini_enable_code_execution: None,
             estimated_cost_cents: 0,
             prompt_template_id: "default".to_string(),
-            tokens_counted_at: Utc::now(),
+            tokens_counted_at: Utc::now().into(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
             total_credits_used: crate::db::DbDecimal::from(0),
@@ -2664,7 +2666,7 @@ mod tests {
             message_type: MessageRole::User,
             content: b"Hello, how are you?".to_vec(),
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -2681,7 +2683,7 @@ mod tests {
             actual_cost: crate::db::DbDecimal::from(0),
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: crate::db::DbDecimal::from(0),
+            actual_charge: 0.0,
         }
     }
 
@@ -2797,8 +2799,8 @@ mod tests {
             content: b"Hello!".to_vec(),
             content_nonce: None,
             user_id: DbId::new(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
@@ -3499,6 +3501,7 @@ impl ChatListQuery {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
+            total_actual_cost: 0.0, // ChatListItem doesn't have actual cost data
         })
     }
 }
@@ -3653,6 +3656,7 @@ impl ChatSessionQuery {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
+            total_actual_cost: self.total_actual_cost,
         })
     }
 

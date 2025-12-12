@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(test)]
 mod chat_overrides_api_tests {
     use reqwest::StatusCode as ReqwestStatusCode;

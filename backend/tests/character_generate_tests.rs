@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 // Local helper functions
@@ -13,6 +14,7 @@ use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
+    db::DbId,
     models::{
         characters::Character as DbCharacter,
         users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
@@ -66,7 +68,7 @@ fn insert_test_user_with_password(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

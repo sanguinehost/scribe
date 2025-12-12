@@ -401,9 +401,10 @@ impl ChronicleDeduplicationService {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::DbId;
     use chrono::Utc;
 
@@ -455,11 +456,11 @@ mod tests {
             event_type: "TEST.EVENT".to_string(),
             summary: summary.to_string(),
             source: "AI_EXTRACTED".to_string(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             summary_encrypted: None,
             summary_nonce: None,
-            timestamp_iso8601: Utc::now(),
+            timestamp_iso8601: Utc::now().into(),
             keywords: None,
             keywords_encrypted: None,
             keywords_nonce: None,

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for Paddle payment service
 //!
 //! These tests verify the Paddle service can correctly:

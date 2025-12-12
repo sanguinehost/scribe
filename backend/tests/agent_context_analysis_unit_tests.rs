@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use scribe_backend::models::agent_context_analysis::{AnalysisType, NewAgentContextAnalysis};

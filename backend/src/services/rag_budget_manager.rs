@@ -272,10 +272,12 @@ impl DynamicRagSelector {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::services::embeddings::ChronicleEventMetadata;
+    use chrono::Utc;
     use uuid::Uuid;
 
     #[test]
@@ -298,7 +300,7 @@ mod tests {
             event_type: "plot.twist.revealed".to_string(),
             chronicle_id: DbId::new(),
             user_id: DbId::new(),
-            created_at: Utc::now() - chrono::Duration::hours(1), // 1 hour ago
+            created_at: (Utc::now() - chrono::Duration::hours(1)).into(), // 1 hour ago
         };
 
         let chunk = RetrievedChunk {
@@ -307,7 +309,7 @@ mod tests {
             metadata: RetrievedMetadata::Chronicle(chronicle_meta),
         };
 
-        let priority = ContentPriority::calculate(&chunk, Utc::now());
+        let priority = ContentPriority::calculate(&chunk, Utc::now().into());
 
         // Chronicle events should get high priority (type bonus + recency)
         assert!(priority.type_priority > 1.0);

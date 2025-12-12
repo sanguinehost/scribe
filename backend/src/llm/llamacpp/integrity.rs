@@ -531,6 +531,7 @@ impl SecureModelRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

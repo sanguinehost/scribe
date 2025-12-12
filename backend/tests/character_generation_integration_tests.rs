@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode},

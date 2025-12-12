@@ -76,6 +76,9 @@ pub enum AppError {
     #[error("Service Unavailable: {0}")]
     ServiceUnavailable(String), // For service unavailability
 
+    #[error("Operation timed out: {0}")]
+    TimeoutError(String), // For operations that exceed their time limit
+
     #[error("Invalid credentials")]
     InvalidCredentials, // Specific auth error
 
@@ -391,6 +394,7 @@ impl AppError {
             // Gateway/External Service Errors
             Self::BadGateway(_) => "BAD_GATEWAY",
             Self::ServiceUnavailable(_) => "SERVICE_UNAVAILABLE",
+            Self::TimeoutError(_) => "TIMEOUT_ERROR",
             Self::RateLimited(_) => "RATE_LIMITED",
             Self::HttpRequestError(_) => "HTTP_REQUEST_ERROR",
             Self::HttpMiddlewareError(_) => "HTTP_MIDDLEWARE_ERROR",
@@ -558,6 +562,7 @@ impl AppError {
             error,
             Self::BadGateway(_)
                 | Self::ServiceUnavailable(_)
+                | Self::TimeoutError(_)
                 | Self::GenerationError(_)
                 | Self::EmbeddingError(_)
                 | Self::VectorDbError(_)
@@ -735,6 +740,11 @@ impl AppError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("Service Unavailable: {msg}"),
                 msg,
+            ),
+            Self::TimeoutError(msg) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                format!("Operation timed out: {msg}"),
+                "The operation timed out. Please try again.".to_string(),
             ),
             Self::GenerationError(e) => (
                 StatusCode::BAD_GATEWAY,

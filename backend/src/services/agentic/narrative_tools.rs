@@ -1198,17 +1198,16 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             info!("Using hybrid search for keyword-like query: {}", query);
 
             // Define which text fields to search based on content type
+            // Note: LanceDB schema only has: chunk_text, entry_title, keywords
             let text_fields = match search_type {
                 "lorebooks" => vec![
                     "chunk_text".to_string(),
                     "entry_title".to_string(),
                     "keywords".to_string(),
                 ],
-                "chronicles" => vec!["event_text".to_string(), "chronicle_name".to_string()],
+                "chronicles" => vec!["chunk_text".to_string(), "keywords".to_string()],
                 _ => vec![
-                    "text".to_string(),
                     "chunk_text".to_string(),
-                    "event_text".to_string(),
                     "entry_title".to_string(),
                     "keywords".to_string(),
                 ],

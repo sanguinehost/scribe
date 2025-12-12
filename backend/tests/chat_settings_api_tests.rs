@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 // Common imports needed for settings tests
@@ -188,8 +189,8 @@ async fn create_test_chat_session(
         character_id,
         title_ciphertext: None,
         title_nonce: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         history_management_strategy: "token_limit".to_string(),
         history_management_limit: 10,
         model_name: "test-model".to_string(),
@@ -313,8 +314,8 @@ async fn setup_chat_settings_test_env(
             character_id: character.id,
             title_ciphertext: Some(format!("Chat for {username_prefix}").as_bytes().to_vec()),
             title_nonce: Some(vec![0u8; 12]), // Dummy nonce
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             history_management_strategy: "truncate_summary".to_string(),
             history_management_limit: 20,
             model_name: "initial-model".to_string(),
@@ -536,12 +537,12 @@ async fn get_chat_settings_defaults() {
         "Get Defaults Char",
         Some(NewChat {
             id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(), // Will be overwritten by setup_chat_settings_test_env
+            user_id: DbId::new(), // Will be overwritten by setup_chat_settings_test_env
             character_id: Uuid::new_v4(), // Will be overwritten
             title_ciphertext: Some(b"Chat for get_chat_settings_defaults".to_vec()),
             title_nonce: Some(vec![0u8; 12]), // Dummy nonce
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             history_management_strategy: "token_limit".to_string(),
             history_management_limit: 1000,
             model_name: "scribe-default-model".to_string(),
@@ -811,8 +812,8 @@ async fn setup_update_test_env(
         character_id: character.id,
         title_ciphertext: Some(format!("Chat for {chat_title_suffix}").as_bytes().to_vec()),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         history_management_strategy: initial_hist_strat.to_string(),
         history_management_limit: initial_hist_limit,
         model_name: initial_model_name.to_string(),
@@ -1308,8 +1309,8 @@ async fn debug_system_prompt_encryption_decryption() {
                 character_id: character.id,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
                 model_name: "gemini-2.5-flash".to_string(),
@@ -1550,8 +1551,8 @@ async fn test_actual_api_route_for_system_prompt() {
                 character_id: character.id,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
                 model_name: "gemini-2.5-flash".to_string(),

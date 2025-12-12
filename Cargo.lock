@@ -10206,6 +10206,7 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "argon2",
+ "arrow",
  "async-stream",
  "async-trait",
  "aws-config",

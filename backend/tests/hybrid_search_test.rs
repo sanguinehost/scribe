@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use scribe_backend::config::Config;
 use scribe_backend::vector_db::qdrant_client::{
     Kind, PointId, QdrantClientService, QdrantClientServiceTrait, Value,

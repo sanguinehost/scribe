@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Simple Chronicle Event Deduplication Test
 
 use serde_json;

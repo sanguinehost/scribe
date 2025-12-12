@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use std::sync::Arc;
 
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // Test chronicle-scoped search functionality
 use scribe_backend::services::agentic::narrative_tools::SearchKnowledgeBaseTool;
 use scribe_backend::services::agentic::tools::ScribeTool;

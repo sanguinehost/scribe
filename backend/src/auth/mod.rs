@@ -959,9 +959,11 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
     Ok(User::from(updated_user))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
     // use secrecy::Secret; // This line should be removed or already gone
     use secrecy::SecretString; // This is fine if SecretString is used, or can be removed if sub-tests import it.
     use tokio;

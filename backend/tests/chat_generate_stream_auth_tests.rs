@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use axum::{
@@ -12,6 +13,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use scribe_backend::{
+    db::DbId,
     models::{
         characters::Character as DbCharacter,
         chats::{ApiChatMessage, Chat as ChatSession, GenerateChatRequest, NewChat},
@@ -205,8 +207,8 @@ async fn generate_chat_response_streaming_forbidden() {
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),

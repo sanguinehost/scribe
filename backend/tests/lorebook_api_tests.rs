@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use axum::http::StatusCode;
 use scribe_backend::models::chats::CreateChatRequest;
 use scribe_backend::models::lorebook_dtos::{

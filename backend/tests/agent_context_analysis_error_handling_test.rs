@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use diesel::prelude::*;
 use scribe_backend::models::agent_context_analysis::{
     AgentContextAnalysis, AnalysisStatus, AnalysisType,

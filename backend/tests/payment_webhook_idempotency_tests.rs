@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for Paddle webhook idempotency and replay protection
 //!
 //! These tests verify that our webhook system properly handles:

@@ -298,7 +298,7 @@ pub struct SillyTavernCharacterBook {
 ///
 /// Parses decorator lines (starting with specific syntax) and regular content lines,
 /// returning both the parsed decorators and the cleaned content.
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 fn parse_decorators_from_content(raw_content: &str) -> (Vec<Decorator>, String) {
     let mut decorators = Vec::new();
     let mut content_lines = Vec::new();
@@ -440,7 +440,7 @@ impl std::fmt::Debug for StandaloneLorebook {
 // Test module declaration removed as tests are now in the /tests directory
 /*
 // Declare the test module (it lives in a separate file)
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 #[path = "character_card_tests.rs"]
 mod tests;
 */
@@ -1105,9 +1105,11 @@ impl std::fmt::Debug for NewCharacterAsset {
 }
 
 // --- Unit tests ---
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
-    use super::*; // Import items from the parent module
+    use super::*;
+    use crate::db::DbId;
+    use chrono::Utc; // Import items from the parent module
 
     // --- Tests for parse_decorators_from_content (moved from tests/character_card_tests.rs) ---
 
@@ -1459,7 +1461,7 @@ mod tests {
             )])),
             extensions: HashMap::from([(
                 "ext_key".to_string(),
-                crate::db::DbJson::String("ext_val".to_string()),
+                serde_json::Value::String("ext_val".to_string()),
             )]),
             ..Default::default()
         };

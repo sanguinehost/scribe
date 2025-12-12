@@ -73,9 +73,11 @@ impl From<UserPersonaDataForClient> for UserPersonaContext {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_persona_context_creation() {

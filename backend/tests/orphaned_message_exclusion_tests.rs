@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Test cases to verify that orphaned messages are properly excluded from AI context and RAG
 //! when using frontend-provided history
 
@@ -71,8 +72,8 @@ async fn create_test_character_and_session(
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),

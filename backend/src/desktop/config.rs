@@ -182,6 +182,7 @@ pub fn set_quick_start_dek(dek_b64: String) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_default_config() {

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::too_many_arguments)]

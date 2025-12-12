@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(test)]
 mod get_session_data_for_generation_tests {
     use bigdecimal::BigDecimal;

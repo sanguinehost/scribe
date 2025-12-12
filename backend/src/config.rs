@@ -35,6 +35,10 @@ pub struct Config {
     #[serde(default = "default_qdrant_on_disk")]
     pub qdrant_on_disk: Option<bool>, // Added
 
+    // LanceDB Config (for embedded-vector mode)
+    #[serde(default)]
+    pub lancedb_data_dir: Option<std::path::PathBuf>, // Override default LanceDB data directory
+
     // Chunking Config - Added
     #[serde(default = "default_chunking_metric")]
     pub chunking_metric: String, // "word" or "char"
@@ -864,6 +868,7 @@ impl Default for Config {
             embedding_dimension: default_embedding_dimension(),
             qdrant_distance_metric: default_qdrant_distance_metric(), // Added
             qdrant_on_disk: default_qdrant_on_disk(),                 // Added
+            lancedb_data_dir: None,                                   // LanceDB data directory
             chunking_metric: default_chunking_metric(),
             chunking_max_size: default_chunking_max_size(),
             chunking_overlap: default_chunking_overlap(),

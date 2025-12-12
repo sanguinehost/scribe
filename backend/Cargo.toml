@@ -5,11 +5,11 @@ edition = "2021"
 
 [features]
 default = ["cloud"]  # Cloud mode is default for backward compatibility
-desktop = ["sqlite-backend", "remote-vector"]
+desktop = ["sqlite-backend", "embedded-vector"]
 cloud = ["postgres-backend", "remote-vector"]
 sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "diesel_migrations/sqlite", "diesel-derive-enum/sqlite"]
 postgres-backend = ["diesel/postgres", "dep:deadpool-diesel", "deadpool-diesel?/postgres", "diesel_migrations/postgres", "diesel-derive-enum/postgres", "dep:diesel_json"]
-embedded-vector = ["dep:lancedb"]
+embedded-vector = ["dep:lancedb", "dep:arrow", "dep:tokio-stream"]
 remote-vector = []  # qdrant-client is already a direct dependency
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
 payment = ["dep:hmac", "dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
@@ -134,7 +134,7 @@ which = { version = "7.0", optional = true }  # For finding executables in PATH
 tempfile = { version = "3.19.1", optional = true }  # For temporary files in model management
 clap = { version = "4.5.26", features = ["derive"] }
 
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", optional = true }
 
 # Tokenization
 sentencepiece = "0.12.0"
@@ -161,6 +161,7 @@ lazy_static = "1.4"  # For global metrics registry
 
 # Vector database (optional - only with embedded-vector feature)
 lancedb = { version = "0.22.2", optional = true }
+arrow = { version = "56.0", optional = true }
 jsonwebtoken = "9.3.1"
 
 # Platform-specific dependencies

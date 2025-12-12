@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 //! Tests verifying that chronicle events created by narrative agents are properly embedded
 //! for RAG retrieval, addressing the issue where agentic events weren't searchable

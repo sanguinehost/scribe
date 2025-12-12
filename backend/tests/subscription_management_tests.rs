@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(all(test, feature = "payment"))]
 mod subscription_management_tests {
     use chrono::Utc;

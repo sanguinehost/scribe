@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agentic_auto_chronicle_tests.rs
 //
@@ -7,6 +8,7 @@
 use chrono::Utc;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    db::DbId,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle_event::EventSource,
@@ -102,7 +104,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             message_type: MessageRole::User,
             content: "Hello! I want to start a new adventure where I play as a young wizard named Alex.".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(15),
             completion_tokens: Some(0),
@@ -122,7 +124,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             message_type: MessageRole::Assistant,
             content: "Welcome to the mystical realm of Aethermoor! You are Alex, a young wizard who has just arrived at the prestigious Starfall Academy. The ancient towers gleam in the moonlight as you approach the great oak doors.".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(20),
             completion_tokens: Some(35),
@@ -142,7 +144,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             message_type: MessageRole::User,
             content: "I knock on the doors and wait to see who answers.".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(12),
             completion_tokens: Some(0),
@@ -162,7 +164,7 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
             message_type: MessageRole::Assistant,
             content: "The massive doors creak open to reveal Professor Willowshade, a tall elf with silver hair and kind eyes. 'Ah, you must be Alex! We've been expecting you. Welcome to Starfall Academy, young wizard.'".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(25),
             completion_tokens: Some(42),

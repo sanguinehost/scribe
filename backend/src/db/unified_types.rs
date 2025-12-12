@@ -1254,9 +1254,11 @@ impl ToSql<Nullable<Text>, Sqlite> for DbStringArray {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_db_id_creation() {

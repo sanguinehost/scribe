@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agentic_lorebook_creation_tests.rs
 //
@@ -149,7 +150,7 @@ fn create_chat_message(
         message_type: role,
         content: encrypted_content,
         content_nonce: Some(content_nonce),
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id,
         prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {

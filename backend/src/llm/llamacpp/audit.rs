@@ -715,6 +715,8 @@ impl From<SecurityError> for SecurityEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_security_event_creation() {

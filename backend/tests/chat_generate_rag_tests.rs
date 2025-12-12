@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // backend/tests/chat_generate_rag_tests.rs
 #![cfg(test)]
 
@@ -92,8 +93,8 @@ When asked about RAG or embeddings, {{char}} will provide relevant information b
 {{char}}: Embeddings are dense vector representations of text that capture semantic meaning. They allow us to find similar content by comparing vectors in high-dimensional space. When you ask a question, we convert it to an embedding and search for similar embeddings in our database to find relevant context.".to_vec()
                     ),
                     visibility: Some("private".to_string()),
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
+                    created_at: Utc::now().into(),
+                    updated_at: Utc::now().into(),
                     creator_notes: Some(
                         b"This character is designed for testing RAG functionality. It should be knowledgeable about technical topics and incorporate retrieved context naturally.".to_vec()
                     ),
@@ -213,8 +214,8 @@ async fn create_test_chat_session(
                 character_id,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 100,
                 model_name: "test-model-embedding-trigger".to_string(),

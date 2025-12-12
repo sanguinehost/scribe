@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! User Persona Security Tests
 //!
 //! This module contains comprehensive security tests for user persona functionality,

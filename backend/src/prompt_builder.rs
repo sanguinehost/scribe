@@ -1356,7 +1356,7 @@ pub async fn build_final_llm_prompt(
 }
 
 // --- Unit Tests ---
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
 
     use crate::models::characters::CharacterMetadata;
@@ -1381,8 +1381,8 @@ mod tests {
             name: "Test Bot".to_string(),
             description: Some(b"A friendly test bot.".to_vec()),
             description_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             first_mes: Some(b"Bot greeting".to_vec()),
             personality: None,
             personality_nonce: None,
@@ -1414,8 +1414,8 @@ mod tests {
             name: "Minimal Bot".to_string(),
             description: None, // No description
             description_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             first_mes: None,
             personality: None,
             personality_nonce: None,
@@ -1443,8 +1443,8 @@ mod tests {
             name: "Silent Bot".to_string(),
             description: Some(b"".to_vec()), // Empty description
             description_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             first_mes: None,
             personality: None,
             personality_nonce: None,

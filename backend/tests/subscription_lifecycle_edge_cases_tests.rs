@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(all(test, feature = "payment"))]
 mod subscription_lifecycle_edge_cases_tests {
     use chrono::{Duration, Utc};

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use diesel::prelude::*;
 use genai::adapter::AdapterKind;
 use genai::chat::{ChatResponse, MessageContent, Usage};

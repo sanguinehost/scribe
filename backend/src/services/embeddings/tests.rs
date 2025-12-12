@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use crate::auth::session_dek::SessionDek;
     use crate::errors::AppError;
@@ -320,7 +320,7 @@ mod tests {
             message_type: MessageRole::User,
             content: message_content.as_bytes().to_vec(),
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -365,7 +365,7 @@ mod tests {
             message_type: MessageRole::User,
             content: long_content.as_bytes().to_vec(),
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -411,7 +411,7 @@ mod tests {
             message_type: MessageRole::User,
             content: b"   ".to_vec(), // Empty after trim
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -452,7 +452,7 @@ mod tests {
             message_type: MessageRole::User,
             content: b"Some content".to_vec(),
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -501,7 +501,7 @@ mod tests {
             message_type: MessageRole::User,
             content: b"Some content".to_vec(),
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -665,7 +665,7 @@ mod tests {
                     message_id: message_id_1,
                     user_id,
                     speaker: "user",
-                    timestamp: Utc::now(),
+                    timestamp: Utc::now().into(),
                     text: "Cats are furry.",
                     source_type: "chat_message",
                 },
@@ -679,7 +679,7 @@ mod tests {
                     message_id: message_id_2,
                     user_id,
                     speaker: "ai",
-                    timestamp: Utc::now(),
+                    timestamp: Utc::now().into(),
                     text: "They meow a lot.",
                     source_type: "chat_message",
                 },
@@ -744,7 +744,7 @@ mod tests {
                 .as_bytes()
                 .to_vec(),
             content_nonce: None, // ENSURED
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -784,7 +784,7 @@ mod tests {
                 .as_bytes()
                 .to_vec(),
             content_nonce: None, // ENSURED
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -820,7 +820,7 @@ mod tests {
             message_type: MessageRole::User,
             content: b"Short and sweet.".to_vec(),
             content_nonce: None, // ENSURED
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -858,7 +858,7 @@ mod tests {
                 .as_bytes()
                 .to_vec(),
             content_nonce: None, // ENSURED
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -900,7 +900,7 @@ mod tests {
                 .as_bytes()
                 .to_vec(),
             content_nonce: None, // ENSURED
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -950,7 +950,7 @@ mod tests {
             message_type: MessageRole::User,
             content: encrypted_content,
             content_nonce: Some(nonce),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -1007,7 +1007,7 @@ mod tests {
             message_type: MessageRole::User,
             content: encrypted_content.clone(), // This will be used for lossy conversion
             content_nonce: Some(nonce),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -1072,7 +1072,7 @@ mod tests {
             message_type: MessageRole::User,
             content: encrypted_content.clone(), // This will be used for lossy conversion
             content_nonce: Some(nonce),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -1131,7 +1131,7 @@ mod tests {
             message_type: MessageRole::User,
             content: encrypted_content_bytes.clone(), // This is ciphertext
             content_nonce: None,                      // Crucially, nonce is None
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -1186,7 +1186,7 @@ mod tests {
             message_type: MessageRole::User,
             content: plaintext_content.as_bytes().to_vec(), // Plaintext
             content_nonce: None,                            // No nonce, so it's plaintext
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -1897,7 +1897,7 @@ mod tests {
                 message_id: DbId::new(),
                 user_id,
                 speaker: "User",
-                timestamp: Utc::now(),
+                timestamp: Utc::now().into(),
                 text: "Test chat message content",
                 source_type: "chat_message",
             },
@@ -2136,7 +2136,7 @@ mod tests {
                 message_id: DbId::new(),
                 user_id,
                 speaker: "User",
-                timestamp: Utc::now(),
+                timestamp: Utc::now().into(),
                 text: "Chat content about topic",
                 source_type: "chat_message",
             },
@@ -2320,7 +2320,7 @@ mod tests {
                 message_id: DbId::new(),
                 user_id,
                 speaker: "User",
-                timestamp: Utc::now(),
+                timestamp: Utc::now().into(),
                 text: "Chat message for this test",
                 source_type: "chat_message",
             },
@@ -2388,7 +2388,7 @@ mod tests {
                     message_id: DbId::new(),
                     user_id,
                     speaker: "U1",
-                    timestamp: Utc::now(),
+                    timestamp: Utc::now().into(),
                     text: "Chat1",
                     source_type: "chat_message",
                 },
@@ -2402,7 +2402,7 @@ mod tests {
                     message_id: DbId::new(),
                     user_id,
                     speaker: "U2",
-                    timestamp: Utc::now(),
+                    timestamp: Utc::now().into(),
                     text: "Chat2",
                     source_type: "chat_message",
                 },

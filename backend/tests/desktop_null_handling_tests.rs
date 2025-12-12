@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(all(test, feature = "sqlite-backend"))]
 mod desktop_null_handling_tests {
     use diesel::prelude::*;

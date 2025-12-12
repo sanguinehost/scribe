@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // This file will contain tests for character_card.rs
 
 // Import items from the main library crate

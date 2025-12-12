@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use axum::http::StatusCode;
 use uuid::Uuid;
 

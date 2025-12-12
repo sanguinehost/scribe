@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/chronicle_service_tests.rs
 
@@ -7,6 +8,7 @@ use chrono::Utc;
 use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use scribe_backend::{
     crypto,
+    db::DbId,
     models::{
         chronicle::{CreateChronicleRequest, UpdateChronicleRequest},
         chronicle_event::{CreateEventRequest, EventFilter, EventSource},
@@ -139,7 +141,7 @@ mod integration_tests {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: Utc::now(),
+            token_usage_updated_at: Utc::now().into(),
         };
 
         let user_db: UserDbQuery = diesel::insert_into(users::table)

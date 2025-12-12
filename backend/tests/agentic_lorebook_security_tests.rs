@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agentic_lorebook_security_tests.rs
 //
@@ -12,6 +13,7 @@
 use reqwest::StatusCode as HttpStatusCode;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    db::DbId,
     models::lorebook_dtos::CreateLorebookPayload,
     services::agentic::{
         AnalyzeLorebookTool, CreateBatchLorebookEntriesTool, CreateLorebookEntryTool, ScribeTool,

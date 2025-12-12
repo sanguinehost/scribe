@@ -437,10 +437,11 @@ pub struct UpdateUserPersonaDto {
 // TODO: Implement custom Debug formatting to redact sensitive fields
 // TODO: Add CreateUserPersonaDto and UpdateUserPersonaDto
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use crate::crypto;
+    use crate::db::DbId;
     use crate::db::{DbBlob, DbId, DbTimestamp};
     use secrecy::SecretBox;
     use serde_json;

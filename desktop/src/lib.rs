@@ -23,8 +23,8 @@ mod chat_streaming;
 use chat_streaming::stream_chat_response;
 
 // P-256 ECDSA for challenge-response authentication
-use p256::ecdsa::{SigningKey, Signature, signature::Signer};
-use p256::pkcs8::{EncodePrivateKey, EncodePublicKey, DecodePrivateKey, LineEnding};
+use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, LineEnding};
 use rand::rngs::OsRng;
 
 // Secure storage keys
@@ -128,7 +128,8 @@ fn get_or_create_cookie_key(data_dir: &std::path::Path) -> anyhow::Result<String
     // Generate new 128-character hex key (64 bytes)
     log::info!("Generating new session key for cookie signing...");
     let random_bytes: Vec<u8> = (0..64).map(|_| rand::random::<u8>()).collect();
-    let hex_key = random_bytes.iter()
+    let hex_key = random_bytes
+        .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
 
@@ -141,19 +142,26 @@ fn get_or_create_cookie_key(data_dir: &std::path::Path) -> anyhow::Result<String
 }
 
 /// Start the backend server as a separate process
-fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> anyhow::Result<tauri_plugin_shell::process::CommandChild> {
+fn start_backend_process(
+    db_path: PathBuf,
+    app_handle: &tauri::AppHandle,
+) -> anyhow::Result<tauri_plugin_shell::process::CommandChild> {
     log::info!("Starting backend server as Tauri sidecar...");
 
     // Construct DATABASE_URL
     let database_url = format!("sqlite://{}", db_path.display());
 
     // Get or generate cookie signing key for session encryption
-    let data_dir = db_path.parent()
+    let data_dir = db_path
+        .parent()
         .ok_or_else(|| anyhow::anyhow!("Failed to get database parent directory"))?;
     let cookie_signing_key = get_or_create_cookie_key(data_dir)?;
 
     // Start backend as Tauri sidecar using shell plugin - Tauri handles bundling and path resolution
-    log::info!("🚀 Starting backend server with DATABASE_URL: {}", &database_url);
+    log::info!(
+        "🚀 Starting backend server with DATABASE_URL: {}",
+        &database_url
+    );
 
     let (mut rx, child) = app_handle
         .shell()
@@ -167,7 +175,10 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {}", e))?;
 
-    log::info!("Backend server started as sidecar with PID: {}", child.pid());
+    log::info!(
+        "Backend server started as sidecar with PID: {}",
+        child.pid()
+    );
 
     // Spawn task to handle backend output
     tauri::async_runtime::spawn(async move {
@@ -208,15 +219,28 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
         match client.get(backend_url).send() {
             Ok(response) => {
                 if response.status().is_success() {
-                    log::info!("Backend health check passed (attempt {}/{})", attempt, max_attempts);
+                    log::info!(
+                        "Backend health check passed (attempt {}/{})",
+                        attempt,
+                        max_attempts
+                    );
                     return Ok(child);
                 } else {
-                    log::warn!("Backend health check failed with status {} (attempt {}/{})",
-                              response.status(), attempt, max_attempts);
+                    log::warn!(
+                        "Backend health check failed with status {} (attempt {}/{})",
+                        response.status(),
+                        attempt,
+                        max_attempts
+                    );
                 }
             }
             Err(e) => {
-                log::warn!("Backend health check error: {} (attempt {}/{})", e, attempt, max_attempts);
+                log::warn!(
+                    "Backend health check error: {} (attempt {}/{})",
+                    e,
+                    attempt,
+                    max_attempts
+                );
             }
         }
 
@@ -237,10 +261,7 @@ fn start_backend_process(db_path: PathBuf, app_handle: &tauri::AppHandle) -> any
 /// CRITICAL: Now accepts StoredTokens struct with camelCase serialization
 /// IMPORTANT: expires_at is an absolute Unix timestamp (milliseconds), not a duration
 #[tauri::command]
-async fn save_tokens(
-    app: tauri::AppHandle,
-    tokens: StoredTokens,
-) -> Result<(), String> {
+async fn save_tokens(app: tauri::AppHandle, tokens: StoredTokens) -> Result<(), String> {
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
         .build()
         .map_err(|e| format!("Failed to build store: {}", e))?;
@@ -249,9 +270,14 @@ async fn save_tokens(
     store.set(REFRESH_TOKEN_KEY.to_string(), tokens.refresh_token.clone());
     store.set("expires_at".to_string(), tokens.expires_at.to_string());
 
-    store.save().map_err(|e| format!("Failed to persist tokens: {}", e))?;
+    store
+        .save()
+        .map_err(|e| format!("Failed to persist tokens: {}", e))?;
 
-    log::info!("Tokens saved to secure storage (expires at timestamp: {})", tokens.expires_at);
+    log::info!(
+        "Tokens saved to secure storage (expires at timestamp: {})",
+        tokens.expires_at
+    );
     Ok(())
 }
 
@@ -264,14 +290,22 @@ async fn load_tokens(app: tauri::AppHandle) -> Result<Option<StoredTokens>, Stri
         .build()
         .map_err(|e| format!("Failed to build store: {}", e))?;
 
-    let access_token = store.get(ACCESS_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
-    let refresh_token = store.get(REFRESH_TOKEN_KEY).and_then(|v| v.as_str().map(String::from));
-    let expires_at = store.get("expires_at")
+    let access_token = store
+        .get(ACCESS_TOKEN_KEY)
+        .and_then(|v| v.as_str().map(String::from));
+    let refresh_token = store
+        .get(REFRESH_TOKEN_KEY)
+        .and_then(|v| v.as_str().map(String::from));
+    let expires_at = store
+        .get("expires_at")
         .and_then(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()));
 
     match (access_token, refresh_token, expires_at) {
         (Some(access), Some(refresh), Some(expires)) => {
-            log::info!("Tokens loaded from secure storage (expires at timestamp: {})", expires);
+            log::info!(
+                "Tokens loaded from secure storage (expires at timestamp: {})",
+                expires
+            );
             Ok(Some(StoredTokens {
                 access_token: access,
                 refresh_token: refresh,
@@ -302,7 +336,9 @@ async fn clear_tokens(app: tauri::AppHandle) -> Result<(), String> {
     store.delete(PRIVATE_KEY);
     store.delete(DEK_KEY);
 
-    store.save().map_err(|e| format!("Failed to persist changes: {}", e))?;
+    store
+        .save()
+        .map_err(|e| format!("Failed to persist changes: {}", e))?;
 
     log::info!("[Auth] All authentication data cleared from secure storage");
     Ok(())
@@ -319,12 +355,24 @@ async fn log_frontend_message(
 ) -> Result<(), String> {
     // Parse log level and log accordingly
     match level.to_lowercase().as_str() {
-        "trace" => log::trace!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
-        "debug" => log::debug!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
-        "info" => log::info!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
-        "warn" => log::warn!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
-        "error" => log::error!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
-        _ => log::info!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default()),
+        "trace" => {
+            log::trace!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default())
+        }
+        "debug" => {
+            log::debug!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default())
+        }
+        "info" => {
+            log::info!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default())
+        }
+        "warn" => {
+            log::warn!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default())
+        }
+        "error" => {
+            log::error!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default())
+        }
+        _ => {
+            log::info!(target: &format!("frontend::{}", component), "{} | {}", message, context.unwrap_or_default())
+        }
     }
     Ok(())
 }
@@ -362,10 +410,15 @@ async fn generate_quick_start_keys(app: tauri::AppHandle) -> Result<String, Stri
     store.set(PRIVATE_KEY.to_string(), private_key_pem.to_string());
     store.set(DEK_KEY.to_string(), dek_base64);
 
-    store.save().map_err(|e| format!("Failed to persist keys: {}", e))?;
+    store
+        .save()
+        .map_err(|e| format!("Failed to persist keys: {}", e))?;
 
     log::info!("[QuickStart] Keypair and DEK generated and stored securely");
-    log::info!("[QuickStart] Public key (first 64 chars): {}...", &public_key_pem[..64.min(public_key_pem.len())]);
+    log::info!(
+        "[QuickStart] Public key (first 64 chars): {}...",
+        &public_key_pem[..64.min(public_key_pem.len())]
+    );
 
     // Return only the public key (safe to transmit)
     Ok(public_key_pem)
@@ -375,7 +428,10 @@ async fn generate_quick_start_keys(app: tauri::AppHandle) -> Result<String, Stri
 /// Used for challenge-response authentication
 #[tauri::command]
 async fn sign_challenge(app: tauri::AppHandle, challenge: String) -> Result<String, String> {
-    log::info!("[QuickStart] Signing challenge (length: {})", challenge.len());
+    log::info!(
+        "[QuickStart] Signing challenge (length: {})",
+        challenge.len()
+    );
 
     // Load private key from secure storage
     let store = StoreBuilder::new(&app, TOKEN_STORE_FILE)
@@ -409,7 +465,9 @@ async fn get_local_dek(app: tauri::AppHandle) -> Result<Option<String>, String> 
         .build()
         .map_err(|e| format!("Failed to build store: {}", e))?;
 
-    let dek = store.get(DEK_KEY).and_then(|v| v.as_str().map(String::from));
+    let dek = store
+        .get(DEK_KEY)
+        .and_then(|v| v.as_str().map(String::from));
 
     match &dek {
         Some(_) => log::info!("[QuickStart] DEK retrieved for local encryption"),
@@ -429,7 +487,9 @@ async fn save_local_dek(app: tauri::AppHandle, dek: String) -> Result<(), String
 
     store.set(DEK_KEY.to_string(), dek);
 
-    store.save().map_err(|e| format!("Failed to persist DEK: {}", e))?;
+    store
+        .save()
+        .map_err(|e| format!("Failed to persist DEK: {}", e))?;
 
     log::info!("[QuickStart] DEK saved to secure storage");
     Ok(())
@@ -446,12 +506,11 @@ async fn test_channel_simple(channel: tauri::ipc::Channel<String>) -> Result<(),
         let message = format!("Test message {}/5", i);
         log::info!("🔥 [test_channel_simple] Sending: {}", message);
 
-        channel.send(message.clone())
-            .map_err(|e| {
-                let err = format!("Failed to send test message {}: {}", i, e);
-                log::error!("🔥 [test_channel_simple] {}", err);
-                err
-            })?;
+        channel.send(message.clone()).map_err(|e| {
+            let err = format!("Failed to send test message {}: {}", i, e);
+            log::error!("🔥 [test_channel_simple] {}", err);
+            err
+        })?;
 
         log::info!("🔥 [test_channel_simple] Message {} sent successfully", i);
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -463,48 +522,47 @@ async fn test_channel_simple(channel: tauri::ipc::Channel<String>) -> Result<(),
 
 /// Get the current access token from secure storage (for protocol handler)
 async fn get_access_token(app: &tauri::AppHandle) -> Option<String> {
-    let store = StoreBuilder::new(app, TOKEN_STORE_FILE)
-        .build()
-        .ok()?;
+    let store = StoreBuilder::new(app, TOKEN_STORE_FILE).build().ok()?;
 
-    store.get(ACCESS_TOKEN_KEY)
+    store
+        .get(ACCESS_TOKEN_KEY)
         .and_then(|v| v.as_str().map(String::from))
 }
 
 /// Get the Data Encryption Key (DEK) from secure storage for Quick Start mode
 /// Returns None if DEK is not available (e.g., password-based auth mode)
 async fn get_dek(app: &tauri::AppHandle) -> Option<String> {
-    let store = StoreBuilder::new(app, TOKEN_STORE_FILE)
-        .build()
-        .ok()?;
+    let store = StoreBuilder::new(app, TOKEN_STORE_FILE).build().ok()?;
 
-    store.get(DEK_KEY)
+    store
+        .get(DEK_KEY)
         .and_then(|v| v.as_str().map(String::from))
 }
 
 /// Proxy request to embedded backend with token authentication
 async fn proxy_to_embedded_backend(
     app_handle: tauri::AppHandle,
-    request: TauriRequest<Vec<u8>>
+    request: TauriRequest<Vec<u8>>,
 ) -> Result<TauriResponse<Vec<u8>>, String> {
     // Create HTTP client that accepts self-signed certs for localhost only
     let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)  // Safe: only for localhost communication
-        .timeout(std::time::Duration::from_secs(30))  // Allow time for file uploads (base64 images can be large)
-        .cookie_store(false)  // Disable reqwest cookie handling
+        .danger_accept_invalid_certs(true) // Safe: only for localhost communication
+        .timeout(std::time::Duration::from_secs(30)) // Allow time for file uploads (base64 images can be large)
+        .cookie_store(false) // Disable reqwest cookie handling
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     // Extract request details
     let method = request.method().clone();
-    let path = request.uri().path_and_query()
+    let path = request
+        .uri()
+        .path_and_query()
         .map(|pq| pq.as_str())
         .unwrap_or("/");
 
     // Construct backend URL (embedded backend on localhost:38080)
     let url_str = format!("https://localhost:38080{}", path);
-    let url = Url::parse(&url_str)
-        .map_err(|e| format!("Failed to parse URL: {}", e))?;
+    let url = Url::parse(&url_str).map_err(|e| format!("Failed to parse URL: {}", e))?;
 
     log::info!("Proxying {} {} to {}", method, path, url_str);
 
@@ -540,7 +598,9 @@ async fn proxy_to_embedded_backend(
     }
 
     // Execute request
-    let response = req.send().await
+    let response = req
+        .send()
+        .await
         .map_err(|e| format!("Failed to send request to backend: {}", e))?;
 
     // Build Tauri response
@@ -556,10 +616,13 @@ async fn proxy_to_embedded_backend(
     }
 
     // Forward body
-    let body = response.bytes().await
+    let body = response
+        .bytes()
+        .await
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
-    builder.body(body.to_vec())
+    builder
+        .body(body.to_vec())
         .map_err(|e| format!("Failed to build response: {}", e))
 }
 
@@ -596,7 +659,7 @@ fn get_mime_type(path: &str) -> &'static str {
 
 /// Serve static files from the frontend build directory
 async fn serve_static_file(
-    request: TauriRequest<Vec<u8>>
+    request: TauriRequest<Vec<u8>>,
 ) -> Result<TauriResponse<Vec<u8>>, String> {
     let path = request.uri().path();
 
@@ -625,9 +688,8 @@ async fn serve_static_file(
         Err(_) => {
             // SPA FALLBACK: If file doesn't exist and it's not an asset file,
             // serve index.html to let frontend router handle the route
-            let is_asset_request = file_path.contains('.') &&
-                !file_path.ends_with('/') &&
-                file_path != "index.html";
+            let is_asset_request =
+                file_path.contains('.') && !file_path.ends_with('/') && file_path != "index.html";
 
             if !is_asset_request {
                 // This is a route like /login, /chat, etc. - serve index.html
@@ -683,7 +745,9 @@ async fn serve_static_file(
 }
 
 /// Gracefully terminate the backend process with timeout fallback
-fn terminate_backend_process(backend_process: &Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>) {
+fn terminate_backend_process(
+    backend_process: &Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>,
+) {
     if let Ok(mut process_guard) = backend_process.lock() {
         if let Some(mut child) = process_guard.take() {
             let pid = child.pid();
@@ -696,7 +760,9 @@ fn terminate_backend_process(backend_process: &Arc<Mutex<Option<tauri_plugin_she
                 }
                 Err(e) => {
                     log::error!("Failed to kill backend process {}: {}", pid, e);
-                    log::warn!("Backend process may still be running - manual cleanup may be required");
+                    log::warn!(
+                        "Backend process may still be running - manual cleanup may be required"
+                    );
                 }
             }
         } else {
@@ -720,7 +786,9 @@ pub fn run() {
         builder = builder.plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Debug)
-                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ))
                 .build(),
         );
     }
@@ -767,20 +835,18 @@ pub fn run() {
             // Log plugin already registered before setup to avoid conflicts
 
             // Initialize database and run migrations
-            let db_path = initialize_database()
-                .map_err(|e| {
-                    eprintln!("Failed to initialize database: {:#}", e);
-                    log::error!("Failed to initialize database: {}", e);
-                    e
-                })?;
+            let db_path = initialize_database().map_err(|e| {
+                eprintln!("Failed to initialize database: {:#}", e);
+                log::error!("Failed to initialize database: {}", e);
+                e
+            })?;
 
             // Start the backend server as sidecar
-            let backend_child = start_backend_process(db_path, &app.handle())
-                .map_err(|e| {
-                    eprintln!("Failed to start backend server: {:#}", e);
-                    log::error!("Failed to start backend server: {}", e);
-                    e
-                })?;
+            let backend_child = start_backend_process(db_path, &app.handle()).map_err(|e| {
+                eprintln!("Failed to start backend server: {:#}", e);
+                log::error!("Failed to start backend server: {}", e);
+                e
+            })?;
 
             // Store backend process in app state for cleanup
             let backend_process = Arc::new(Mutex::new(Some(backend_child)));
@@ -796,18 +862,16 @@ pub fn run() {
                 #[cfg(debug_assertions)]
                 main_window.open_devtools();
 
-                main_window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::CloseRequested { .. } => {
-                            log::info!("Window close requested - initiating backend shutdown");
-                            terminate_backend_process(&backend_process_for_window);
-                        }
-                        tauri::WindowEvent::Destroyed => {
-                            log::info!("Window destroyed - ensuring backend cleanup");
-                            terminate_backend_process(&backend_process_for_window);
-                        }
-                        _ => {}
+                main_window.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        log::info!("Window close requested - initiating backend shutdown");
+                        terminate_backend_process(&backend_process_for_window);
                     }
+                    tauri::WindowEvent::Destroyed => {
+                        log::info!("Window destroyed - ensuring backend cleanup");
+                        terminate_backend_process(&backend_process_for_window);
+                    }
+                    _ => {}
                 });
                 log::info!("Backend cleanup handlers registered successfully");
             } else {
@@ -838,11 +902,15 @@ mod tests {
 
         // Verify PEM format
         assert!(
-            private_key_pem.to_string().starts_with("-----BEGIN PRIVATE KEY-----"),
+            private_key_pem
+                .to_string()
+                .starts_with("-----BEGIN PRIVATE KEY-----"),
             "Private key should be in PKCS#8 PEM format"
         );
         assert!(
-            private_key_pem.to_string().ends_with("-----END PRIVATE KEY-----\n"),
+            private_key_pem
+                .to_string()
+                .ends_with("-----END PRIVATE KEY-----\n"),
             "Private key should end with PEM footer"
         );
 
@@ -869,10 +937,8 @@ mod tests {
         let dek_bytes: [u8; 32] = rand::random();
 
         // Encode as base64
-        let dek_base64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            dek_bytes,
-        );
+        let dek_base64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, dek_bytes);
 
         // Verify base64 encoding
         assert!(
@@ -1038,10 +1104,8 @@ mod tests {
         );
 
         // Verify base64 encoding doesn't truncate
-        let dek_base64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            dek_bytes,
-        );
+        let dek_base64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, dek_bytes);
         let decoded = base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
             dek_base64.as_bytes(),
@@ -1068,7 +1132,9 @@ mod tests {
 
         // Verify it's PEM format (not raw bytes)
         assert!(
-            private_key_pem.to_string().starts_with("-----BEGIN PRIVATE KEY-----"),
+            private_key_pem
+                .to_string()
+                .starts_with("-----BEGIN PRIVATE KEY-----"),
             "OWASP A02: Private key must be in PEM format for secure storage"
         );
 
@@ -1242,7 +1308,8 @@ mod tests {
 
         // Ensure PEM header is present (validates it's a proper key)
         assert!(
-            pem_str.contains("-----BEGIN PRIVATE KEY-----") && pem_str.contains("-----END PRIVATE KEY-----"),
+            pem_str.contains("-----BEGIN PRIVATE KEY-----")
+                && pem_str.contains("-----END PRIVATE KEY-----"),
             "OWASP A02: Key must have proper PEM structure"
         );
 
@@ -1318,10 +1385,8 @@ mod tests {
         let original_dek: [u8; 32] = rand::random();
 
         // Encode
-        let encoded = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            original_dek,
-        );
+        let encoded =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, original_dek);
 
         // Decode
         let decoded = base64::Engine::decode(

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // tests/token_auth_security_tests.rs
 //! Comprehensive JWT Token Authentication Security Tests

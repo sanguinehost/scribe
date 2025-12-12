@@ -1552,11 +1552,13 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use crate::crypto::{encrypt_gcm, generate_dek};
+    use crate::db::DbId;
     use crate::models::chats::{ChatMessage, MessageRole};
+    use chrono::Utc;
     use chrono::{Duration, Utc};
 
     // Helper struct to test JSON repair functions without full runner setup

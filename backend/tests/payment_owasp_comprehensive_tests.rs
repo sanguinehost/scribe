@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 /// Comprehensive OWASP Top 10 Security Tests for Payment System
 ///
 /// This test suite provides OWASP Top 10 security coverage for SAQ-A compliant systems:

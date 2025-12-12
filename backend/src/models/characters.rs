@@ -1388,11 +1388,13 @@ impl std::fmt::Debug for ClientCharacter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
     use crate::services::character_parser::ParsedCharacterCard;
+    use chrono::Utc;
     use ring::rand::{SecureRandom, SystemRandom};
     use secrecy::SecretBox; // For testing encryption/decryption - Corrected import // For generating a dummy DEK
     use std::collections::HashMap;

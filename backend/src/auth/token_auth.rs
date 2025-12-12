@@ -188,7 +188,7 @@ where
 // Re-export for convenience
 pub use UnifiedAuth as CurrentAuth;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
 

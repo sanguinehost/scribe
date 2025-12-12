@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for Paddle webhook handlers
 //!
 //! These tests verify that our webhook endpoints can:

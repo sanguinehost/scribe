@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/llm_security_tests.rs
 // Comprehensive security tests for Local LLM integration

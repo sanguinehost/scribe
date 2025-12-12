@@ -415,7 +415,9 @@ impl StreamingEncryptionHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::test_helpers::*;
+    use chrono::Utc;
     use genai::chat::ChatRole;
 
     #[tokio::test]
