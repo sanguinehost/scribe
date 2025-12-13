@@ -177,7 +177,8 @@ jobs:
           libayatana-appindicator3-dev \
           librsvg2-dev \
           libssl-dev \
-          pkg-config
+          pkg-config \
+          protobuf-compiler
 
     - name: Install Rust with clippy
       uses: dtolnay/rust-toolchain@stable
