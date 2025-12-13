@@ -1,17 +1,30 @@
-# CodeQL configuration for Rust analysis
-# This file configures which paths should be analyzed
+# CodeQL configuration for multi-language security analysis
+# This file configures which paths should be analyzed per language
 
 name: "Scribe Security Analysis"
 
-# Only analyze the backend crate for security issues
-# Desktop crate has mutually exclusive feature flags with backend
+# Include paths for all analyzed languages:
+# - .github: For GitHub Actions workflow analysis
+# - frontend/src: For JavaScript/TypeScript analysis
+# - backend/src: For Rust analysis (excludes desktop which has conflicting features)
+# - cli/src: For CLI Rust analysis
 paths:
+  - '.github'
+  - 'frontend/src'
   - 'backend/src'
   - 'cli/src'
 
+# Exclude paths that shouldn't be analyzed
 paths-ignore:
+  # Desktop crate has mutually exclusive feature flags with backend
   - 'desktop'
-  - 'frontend'
+  # Test files (filtered separately in SARIF post-processing)
   - '**/tests/**'
   - '**/test_*.rs'
   - '**/*_test.rs'
+  - '**/test_helpers.rs'
+  - '**/test_fixtures.rs'
+  # Generated/vendored code
+  - '**/node_modules/**'
+  - '**/target/**'
+  - '**/.svelte-kit/**'
