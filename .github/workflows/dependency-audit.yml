@@ -181,3 +181,7 @@ jobs:
         # Allow dependencies with valid licenses that the action can't parse correctly
         # All three have MIT OR Apache-2.0 dual licensing (from RustCrypto)
         allow-dependencies-licenses: 'pkg:cargo/zeroize, pkg:cargo/hmac, pkg:cargo/fs-err'
+        # Allow glib 0.18.x vulnerability - transitive dependency from Tauri via muda → gtk → glib
+        # Fix requires glib 0.20.0+ but Tauri ecosystem hasn't upgraded yet
+        # Track: https://github.com/tauri-apps/muda/issues for gtk4 migration
+        allow-ghsas: 'GHSA-wrw7-89jp-8q8g'
