@@ -16,9 +16,6 @@ ignore = [
     # Risk: Only affects test environment, not production
     "RUSTSEC-2025-0111",
 ]
-
-# Unmanned crates are warnings, not errors
-[unmaintained]
-# These are from Tauri's GTK3 dependencies on Linux
-# Tauri is migrating to GTK4 but not complete yet
-warn = true
+# Allow informational advisories (unmaintained crates are warnings, not errors)
+# Unmaintained gtk3/atk warnings are from Tauri's Linux dependencies
+informational_warnings = ["unmaintained"]
