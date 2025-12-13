@@ -2035,7 +2035,8 @@ pub async fn stream_ai_response_and_save_message(
                     if detailed_error.contains("PropertyNotFound(\"/content/parts\")") && !accumulated_content.is_empty() {
                         warn!(session_id = %stream_session_id, content_length = accumulated_content.len(),
                               "PropertyNotFound error occurred but response appears complete. This may be a final API response parsing issue - treating as successful completion.");
-                        // Don't set error flag and don't send error event, let the stream complete normally
+                        // Reset error flag so [DONE] gets sent and message is saved as complete
+                        stream_error_occurred = false;
                         break;
                     }
 
