@@ -130,7 +130,7 @@ async fn load_cloud_certificate() -> Result<RustlsConfig> {
 
     // Get PEM-encoded certificate and private key
     let cert_pem = cert_key.cert.pem();
-    let key_pem = cert_key.key_pair.serialize_pem();
+    let key_pem = cert_key.signing_key.serialize_pem();
 
     tracing::info!("Self-signed certificate generated successfully");
 
@@ -954,7 +954,7 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                 .context("Failed to generate self-signed certificate for desktop mode")?;
 
             let cert_pem = cert_key.cert.pem();
-            let key_pem = cert_key.key_pair.serialize_pem();
+            let key_pem = cert_key.signing_key.serialize_pem();
 
             tracing::info!("Desktop self-signed certificate generated successfully");
 
