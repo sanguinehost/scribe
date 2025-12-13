@@ -199,4 +199,5 @@ jobs:
 
     - name: Run cargo clippy for security lints
       run: |
-        cargo clippy -- -W clippy::suspicious -W clippy::complexity -W clippy::perf
+        # Only check backend - desktop requires pre-built sidecar binary
+        cargo clippy -p scribe-backend -- -W clippy::suspicious -W clippy::complexity -W clippy::perf
