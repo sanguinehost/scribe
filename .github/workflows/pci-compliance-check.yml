@@ -51,10 +51,13 @@ jobs:
           echo "✅ PASS: No prohibited card data fields in database schema"
         fi
 
-        # Check 2: Paddle reference fields
+        # Check 2: Paddle reference fields (skip for desktop-only branches)
         echo "🔍 Checking for required Paddle reference fields..."
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-        if ! grep -q "paddle_transaction_id\|paddle_customer_id\|paddle_subscription_id" backend/src/schema.rs; then
+        # Skip this check for desktop branch as payment is cloud-only
+        if [[ "${{ github.ref }}" == *"desktop"* ]] || [[ "${{ github.head_ref }}" == *"desktop"* ]]; then
+          echo "⏭️ SKIP: Paddle reference fields check (desktop branch - payment is cloud-only)"
+        elif ! grep -q "paddle_transaction_id\|paddle_customer_id\|paddle_subscription_id" backend/src/schema.rs; then
           echo "❌ FAIL: Paddle reference fields not found in schema"
           FAILED_CHECKS=$((FAILED_CHECKS + 1))
         else
@@ -178,7 +181,8 @@ jobs:
     - name: Run cargo audit
       run: |
         cargo install cargo-audit
-        cargo audit --ignore RUSTSEC-0000-0000 # Add specific ignores if needed
+        # Uses .cargo/audit.toml for vulnerability ignore list
+        cargo audit
 
     - name: Run cargo clippy for security lints
       run: |

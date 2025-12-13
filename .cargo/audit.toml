@@ -1,0 +1,24 @@
+# Cargo Audit Configuration
+# See: https://docs.rs/cargo-audit
+
+[advisories]
+# Advisories to ignore due to no available fix or acceptable risk
+ignore = [
+    # rsa 0.9.8 - Marvin Attack timing sidechannel (RUSTSEC-2023-0071)
+    # Transitive: lancedb → opendal → reqsign → rsa
+    # No fix available - rsa crate maintainers working on 0.10 release
+    # Risk: Theoretical remote key recovery, requires specific attack conditions
+    "RUSTSEC-2023-0071",
+
+    # tokio-tar 0.3.1 - PAX header parsing allows file smuggling (RUSTSEC-2025-0111)
+    # Transitive: testcontainers → tokio-tar (dev dependency only)
+    # No fix available yet
+    # Risk: Only affects test environment, not production
+    "RUSTSEC-2025-0111",
+]
+
+# Unmanned crates are warnings, not errors
+[unmaintained]
+# These are from Tauri's GTK3 dependencies on Linux
+# Tauri is migrating to GTK4 but not complete yet
+warn = true
