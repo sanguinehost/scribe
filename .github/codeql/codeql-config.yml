@@ -1,0 +1,17 @@
+# CodeQL configuration for Rust analysis
+# This file configures which paths should be analyzed
+
+name: "Scribe Security Analysis"
+
+# Only analyze the backend crate for security issues
+# Desktop crate has mutually exclusive feature flags with backend
+paths:
+  - 'backend/src'
+  - 'cli/src'
+
+paths-ignore:
+  - 'desktop'
+  - 'frontend'
+  - '**/tests/**'
+  - '**/test_*.rs'
+  - '**/*_test.rs'
