@@ -27,7 +27,7 @@ fn escape_xml(text: &str) -> String {
 }
 
 /// Replaces template variables {{char}} and {{user}} with actual names
-fn replace_template_variables(
+pub fn replace_template_variables(
     text: &str,
     character_name: Option<&str>,
     user_persona_name: Option<&str>,

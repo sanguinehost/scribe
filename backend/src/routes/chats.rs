@@ -836,6 +836,8 @@ async fn process_messages_for_response(
     dek: &crate::auth::session_dek::SessionDek,
     pool: DbPool,
     user_id: crate::db::DbId,
+    character_name: Option<&str>,
+    user_persona_name: Option<&str>,
 ) -> Result<Vec<MessageResponse>, AppError> {
     tracing::info!("🔄 Processing {} messages for response", messages_db.len());
     let mut responses = Vec::new();
@@ -889,9 +891,7 @@ async fn process_messages_for_response(
             }
         };
 
-        // Always reconstruct parts from the current content (original or variant)
-        // This ensures the frontend gets the correct variant content, not the original parts
-        let response_parts = json!([{"text": content.clone()}]).into();
+        // Parts are created inline with template substitution below
         let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]).into());
 
         let response_role = msg_db
@@ -915,8 +915,8 @@ async fn process_messages_for_response(
             session_id: msg_db.session_id,
             message_type: msg_db.message_type,
             role: response_role,
-            content,
-            parts: response_parts,
+            content: crate::prompt_builder::replace_template_variables(&content, character_name, user_persona_name),
+            parts: json!([{"text": crate::prompt_builder::replace_template_variables(&content, character_name, user_persona_name)}]).into(),
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
@@ -989,16 +989,67 @@ pub async fn get_messages_by_chat_id_handler(
     );
 
     // Fetch chat session and verify ownership
-    let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+    let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+
+    // Fetch character name for template substitution (if character_id exists)
+    let character_name: Option<String> = if let Some(char_id) = chat.character_id {
+        crate::db::with_conn(&state.pool, move |conn| {
+            use crate::schema::characters;
+            characters::table
+                .filter(characters::id.eq(char_id))
+                .select(characters::name)
+                .first::<String>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
+
+    // Fetch persona name for template substitution
+    // Priority: 1) chat's active_custom_persona_id, 2) user's default_persona_id
+    let effective_persona_id: Option<crate::db::DbId> = if chat.active_custom_persona_id.is_some() {
+        chat.active_custom_persona_id
+    } else {
+        // Fall back to user's default persona
+        user.default_persona_id
+    };
+
+    let user_persona_name: Option<String> = if let Some(persona_id) = effective_persona_id {
+        crate::db::with_conn(&state.pool, move |conn| {
+            use crate::schema::user_personas;
+            user_personas::table
+                .filter(user_personas::id.eq(persona_id))
+                .select(user_personas::name)
+                .first::<String>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
 
     // Fetch paginated messages for the chat
     let messages_db =
         fetch_paginated_chat_messages(state.pool.clone(), chat_id, params.limit, params.cursor)
             .await?;
 
-    // Decrypt and transform messages for response with variant support
-    let mut responses =
-        process_messages_for_response(messages_db, &dek, state.pool.clone(), user.id).await?;
+    // Decrypt and transform messages for response with variant support + template substitution
+    let mut responses = process_messages_for_response(
+        messages_db,
+        &dek,
+        state.pool.clone(),
+        user.id,
+        character_name.as_deref(),
+        user_persona_name.as_deref(),
+    )
+    .await?;
 
     // Determine the next cursor
     let next_cursor = responses.last().map(|msg| msg.created_at);

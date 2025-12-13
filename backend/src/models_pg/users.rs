@@ -465,6 +465,7 @@ pub struct UserCredentials {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use uuid::Uuid;
 
     struct TestUserParams<'a> {
         id: crate::db::DbId,
