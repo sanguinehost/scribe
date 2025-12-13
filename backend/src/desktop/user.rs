@@ -101,7 +101,9 @@ pub async fn ensure_default_user_exists(conn: &mut crate::db::DbConn) -> Result<
     info!("No default user found, creating Local User account");
 
     // Generate secure credentials for the default user
-    // Use a random password since the user won't need to know it (auto-login)
+    // The password generated here is never shown to the user and does not need to be remembered.
+    // It is only used internally for auto-login in Quick Start mode, where the user is automatically
+    // logged in and never prompted for credentials. This is why a random password is acceptable.
     let random_password = generate_secure_password();
 
     // Create registration payload for default user

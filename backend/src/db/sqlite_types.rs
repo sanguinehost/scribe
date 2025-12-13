@@ -268,7 +268,7 @@ impl Ord for SqliteDateTime {
 
 // Arithmetic operations for DateTime
 impl std::ops::Sub for SqliteDateTime {
-    type Output = chrono::Duration;
+    type Output = chrono::TimeDelta;
 
     fn sub(self, other: Self) -> Self::Output {
         self.0 - other.0
@@ -276,25 +276,25 @@ impl std::ops::Sub for SqliteDateTime {
 }
 
 impl std::ops::Sub<SqliteDateTime> for DateTime<Utc> {
-    type Output = chrono::Duration;
+    type Output = chrono::TimeDelta;
 
     fn sub(self, other: SqliteDateTime) -> Self::Output {
         self - other.0
     }
 }
 
-impl std::ops::Add<chrono::Duration> for SqliteDateTime {
+impl std::ops::Add<chrono::TimeDelta> for SqliteDateTime {
     type Output = SqliteDateTime;
 
-    fn add(self, duration: chrono::Duration) -> Self::Output {
+    fn add(self, duration: chrono::TimeDelta) -> Self::Output {
         SqliteDateTime(self.0 + duration)
     }
 }
 
-impl std::ops::Sub<chrono::Duration> for SqliteDateTime {
+impl std::ops::Sub<chrono::TimeDelta> for SqliteDateTime {
     type Output = SqliteDateTime;
 
-    fn sub(self, duration: chrono::Duration) -> Self::Output {
+    fn sub(self, duration: chrono::TimeDelta) -> Self::Output {
         SqliteDateTime(self.0 - duration)
     }
 }

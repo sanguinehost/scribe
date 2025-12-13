@@ -15,4 +15,4 @@ SET paddle_price_id_yearly = CASE
     WHEN plan_type = 'basic' THEN 'pri_01k5ejs7h9zmw4d888r3pjjqna'
     WHEN plan_type = 'premium' THEN 'pri_01k5ejva0cwqzbtgzd2c9qk0d4'
     ELSE NULL
--- END;
+END;

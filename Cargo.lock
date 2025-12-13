@@ -3310,6 +3310,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "diesel_json"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b4e35cdca3d007ccca4cac79b2dd52469b74f7baf0cbdeac47bdcc7a31662e5"
+dependencies = [
+ "diesel",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "diesel_migrations"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9927,7 +9938,7 @@ dependencies = [
  "deadpool-diesel",
  "diesel",
  "diesel-derive-enum",
- "diesel_json",
+ "diesel_json 0.2.1",
  "diesel_migrations",
  "dirs 5.0.1",
  "dotenvy",
@@ -10024,8 +10035,8 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "clap",
- "diesel_json",
- "dirs 5.0.1",
+ "diesel_json 0.3.0",
+ "dirs 6.0.0",
  "futures-util",
  "genai 0.3.9-WIP",
  "httptest",

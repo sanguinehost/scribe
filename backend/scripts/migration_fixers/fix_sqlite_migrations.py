@@ -93,8 +93,8 @@ def fix_migration(content: str) -> Tuple[str, dict]:
 
         # Fix uncommented function syntax ONLY if in function block AND NOT in trigger
         if in_function_comment and trigger_depth == 0:
-            if (stripped.startswith(('RETURNS', 'BEGIN', 'END', 'IF', 'THEN',
-                                    'ELSE', 'EXEC', 'NEW', 'OLD', 'END IF', 'RETURN'))
+            if (stripped.startswith(('RETURNS', 'BEGIN', 'END IF', 'END', 'IF', 'THEN',
+                                    'ELSE', 'EXEC', 'NEW', 'OLD', 'RETURN'))
                 and not stripped.startswith('--')):
                 line = '-- ' + line
                 stats['incomplete_comments'] += 1

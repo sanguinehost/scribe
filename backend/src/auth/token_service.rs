@@ -65,7 +65,7 @@ impl TokenService {
 
         // Generate access token
         let access_claims = TokenClaims {
-            sub: user_id.clone(),
+            sub: user_id,
             exp: (now + self.access_token_duration).timestamp(),
             iat: now.timestamp(),
             token_type: TokenType::Access.as_str().to_string(),
