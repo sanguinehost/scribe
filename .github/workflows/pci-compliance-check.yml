@@ -57,11 +57,11 @@ jobs:
         # Skip this check for desktop branch as payment is cloud-only
         if [[ "${{ github.ref }}" == *"desktop"* ]] || [[ "${{ github.head_ref }}" == *"desktop"* ]]; then
           echo "⏭️ SKIP: Paddle reference fields check (desktop branch - payment is cloud-only)"
-        elif ! grep -q "paddle_transaction_id\|paddle_customer_id\|paddle_subscription_id" backend/src/schema.rs; then
-          echo "❌ FAIL: Paddle reference fields not found in schema"
+        elif ! grep -rq "paddle_transaction_id\|paddle_customer_id\|paddle_subscription_id" backend/src/models/; then
+          echo "❌ FAIL: Paddle reference fields not found in payment models"
           FAILED_CHECKS=$((FAILED_CHECKS + 1))
         else
-          echo "✅ PASS: Paddle reference fields found in schema"
+          echo "✅ PASS: Paddle reference fields found in payment models"
         fi
 
         # Check 3: Frontend hosted checkout
