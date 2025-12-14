@@ -360,10 +360,9 @@ pub async fn stream_chat_response(
                 };
 
                 // 🔥 CRITICAL: About to send event through Tauri Channel
-                log::info!(
-                    "🔥 [stream_chat_response] About to send event #{} through channel: {:?}",
-                    event_count,
-                    channel_event
+                tracing::debug!(
+                    "🔥 [stream_chat_response] About to send event #{} through channel",
+                    event_count
                 );
 
                 // Send event through channel

@@ -40,12 +40,13 @@
 	// Derived state
 	let charCount = $derived(displayedContent.length);
 	let shouldShowTypewriter = $derived(
-		message.sender === 'assistant' && isAnimating && displayedContent.length > 0
+		message?.sender === 'assistant' && isAnimating && displayedContent.length > 0
 	);
 
 	// Show loading when no content or regenerating
-	let hasTextContent = $derived((message.content || '').replace(/\s/g, '').length > 0);
-	let shouldShowLoading = $derived(!hasTextContent || message.isRegenerating === true);
+	// CRITICAL: Add null guards to prevent TypeError when message is undefined during reactive updates
+	let hasTextContent = $derived((message?.content || '').replace(/\s/g, '').length > 0);
+	let shouldShowLoading = $derived(!hasTextContent || message?.isRegenerating === true);
 
 	/**
 	 * Animate content incrementally - only animate NEW characters added
@@ -53,7 +54,7 @@
 	function animateContentIncremental(fullContent: string) {
 		// If content hasn't changed, do nothing
 		// UNLESS shouldAnimate has changed to false, in which case we must process
-		if (fullContent === lastProcessedContent && message.shouldAnimate !== false) {
+		if (fullContent === lastProcessedContent && message?.shouldAnimate !== false) {
 			return;
 		}
 
@@ -64,7 +65,7 @@
 		}
 
 		// If shouldAnimate is false (historical message or stream done), show immediately without animation
-		if (message.shouldAnimate === false) {
+		if (message?.shouldAnimate === false) {
 			displayedContent = fullContent;
 			isAnimating = false;
 			lastProcessedContent = fullContent;
@@ -73,7 +74,7 @@
 		}
 
 		// If no content or not an assistant message, show immediately
-		if (!fullContent || message.sender !== 'assistant') {
+		if (!fullContent || message?.sender !== 'assistant') {
 			displayedContent = fullContent;
 			isAnimating = false;
 			lastProcessedContent = fullContent;
@@ -159,6 +160,9 @@
 	 * Watch for content changes and trigger animation
 	 */
 	$effect(() => {
+		// CRITICAL: Early return if message is undefined to prevent reactive errors
+		if (!message) return;
+
 		// Track message.content changes
 		const content = message.content;
 		// Track shouldAnimate to snap to finish when done
@@ -191,14 +195,14 @@
 			cancelAnimationFrame(animationFrameId);
 			animationFrameId = null;
 		}
-		displayedContent = message.content;
+		displayedContent = message?.content || '';
 		isAnimating = false;
 	}
 </script>
 
 <div class="message-content-wrapper">
 	<!-- Skip Animation Button (only visible during animation) -->
-	{#if isAnimating && message.sender === 'assistant'}
+	{#if isAnimating && message?.sender === 'assistant'}
 		<button class="skip-animation-button" onclick={skipAnimation} title="Skip animation">
 			Skip
 		</button>

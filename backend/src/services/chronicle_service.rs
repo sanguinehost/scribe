@@ -192,14 +192,25 @@ impl ChronicleService {
         let mut chronicles_with_counts = Vec::new();
 
         for chronicle in chronicles {
-            // Count events
-            let event_count: i64 = chronicle_events::table
-                .filter(chronicle_events::chronicle_id.eq(chronicle.id))
-                .count()
-                .get_result(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to count events: {e}"))
-                })?;
+            // Count events - only count events where:
+            // 1. message_variant_id is NULL (manually added events), OR
+            // 2. variant_index matches current_variant_index (active variant events)
+            let event_count: i64 =
+                chronicle_events::table
+                    .left_join(message_variants::table)
+                    .left_join(
+                        chat_messages::table
+                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                    )
+                    .filter(chronicle_events::chronicle_id.eq(chronicle.id))
+                    .filter(chronicle_events::message_variant_id.is_null().or(
+                        message_variants::variant_index.eq(chat_messages::current_variant_index),
+                    ))
+                    .count()
+                    .get_result(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to count events: {e}"))
+                    })?;
 
             // Count linked chat sessions
             let chat_session_count: i64 = chat_sessions::table
@@ -434,9 +445,19 @@ impl ChronicleService {
             let mut chronicles_with_counts = Vec::new();
 
             for chronicle in chronicles {
-                // Count events
+                // Count events - only count events where:
+                // 1. message_variant_id is NULL (manually added events), OR
+                // 2. variant_index matches current_variant_index (active variant events)
                 let event_count: i64 = chronicle_events::table
+                    .left_join(message_variants::table)
+                    .left_join(
+                        chat_messages::table
+                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                    )
                     .filter(chronicle_events::chronicle_id.eq(chronicle.id))
+                    .filter(chronicle_events::message_variant_id.is_null().or(
+                        message_variants::variant_index.eq(chat_messages::current_variant_index),
+                    ))
                     .count()
                     .get_result(conn)
                     .map_err(|e| {

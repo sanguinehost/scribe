@@ -402,7 +402,8 @@ pub fn get_user_by_username(
     info!("Attempting to find user by username"); // Removed PII: username
     users::table
         .filter(users::username.eq(username))
-        .first::<UserDbQuery>(conn)
+        .select(UserDbQuery::as_select())
+        .first(conn)
         .map(User::from)
         .map_err(AuthError::from)
 }
@@ -420,7 +421,8 @@ pub fn get_user(conn: &mut crate::db::DbConn, user_id: crate::db::DbId) -> Resul
     info!(%user_id, "Attempting to find user by ID");
     users::table
         .find(user_id)
-        .first::<UserDbQuery>(conn)
+        .select(UserDbQuery::as_select())
+        .first(conn)
         .map(User::from)
         .map_err(AuthError::from)
 }
@@ -432,7 +434,8 @@ pub fn find_user_by_email(conn: &mut crate::db::DbConn, email: &str) -> Result<U
 
     let user_db_query = users::table
         .filter(users::email.eq(email))
-        .first::<UserDbQuery>(conn)
+        .select(UserDbQuery::as_select())
+        .first(conn)
         .map_err(AuthError::from)?;
 
     Ok(User::from(user_db_query))
@@ -446,7 +449,8 @@ pub fn find_user_by_id(
 
     let user_db_query = users::table
         .filter(users::id.eq(user_id))
-        .first::<UserDbQuery>(conn)
+        .select(UserDbQuery::as_select())
+        .first(conn)
         .map_err(AuthError::from)?;
 
     Ok(User::from(user_db_query))
@@ -469,7 +473,8 @@ pub fn verify_credentials(
                 .eq(identifier)
                 .or(users::email.eq(identifier)),
         ) // Query by username OR email
-        .first::<UserDbQuery>(conn)
+        .select(UserDbQuery::as_select())
+        .first(conn)
         .map_err(AuthError::from)?;
 
     // Convert UserDbQuery to User. This User object already contains encrypted_dek, kek_salt, dek_nonce

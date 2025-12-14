@@ -78,17 +78,21 @@
 	} = $props();
 
 	// Component lifecycle tracking (reduced logging)
-	let componentId = `preview-${message.id}-${Math.random().toString(36).substr(2, 9)}`;
-	console.log(
-		`🆕 COMPONENT MOUNT: ${componentId} - Message ${message.id.slice(-8)} (${message.message_type}) loading: ${message.loading}`
-	);
+	let componentId = `preview-${message?.id || 'unknown'}-${Math.random().toString(36).substr(2, 9)}`;
+	if (message) {
+		console.log(
+			`🆕 COMPONENT MOUNT: ${componentId} - Message ${message.id.slice(-8)} (${message.message_type}) loading: ${message.loading}`
+		);
+	}
 
 	// Track component destruction to catch unnecessary unmounting
 	$effect(() => {
 		return () => {
-			console.log(
-				`❌ COMPONENT UNMOUNT: ${componentId} - Message ${message.id.slice(-8)} destroyed`
-			);
+			if (message) {
+				console.log(
+					`❌ COMPONENT UNMOUNT: ${componentId} - Message ${message.id.slice(-8)} destroyed`
+				);
+			}
 		};
 	});
 

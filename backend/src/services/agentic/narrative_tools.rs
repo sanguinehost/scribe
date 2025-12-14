@@ -164,9 +164,86 @@ impl ScribeTool for CreateChronicleEventTool {
             source: crate::models::chronicle_event::EventSource::AiExtracted,
             keywords,
             timestamp_iso8601: timestamp,
-            chat_session_id: None, // Will be set by the service if processing from chat
-            message_variant_id: None,
+            chat_session_id: None,    // Will be set below if provided in params
+            message_variant_id: None, // Will be set below if variant lookup succeeds
         };
+
+        // Extract chat_session_id if provided (it should be for chat-based events)
+        let chat_session_id = params
+            .get("chat_session_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DbId::parse_str(s).ok());
+
+        // If we have a session ID, try to find the active variant to link this event to
+        let mut final_create_request = create_request;
+        final_create_request.chat_session_id = chat_session_id;
+
+        if let Some(session_id) = chat_session_id {
+            // We need to find the most recent assistant message for this session
+            // and check if it has an active variant.
+            // This links the chronicle event to the specific timeline branch.
+
+            let variant_lookup_result = crate::db::with_conn(&self.app_state.pool, move |conn| {
+                use crate::schema::{chat_messages, message_variants};
+                use diesel::prelude::*;
+
+                // 1. Find the latest assistant message
+                // 1. Find the latest assistant message
+                let base_query =
+                    chat_messages::table.filter(chat_messages::session_id.eq(session_id));
+
+                #[cfg(feature = "sqlite-backend")]
+                let filtered_query = base_query.filter(
+                    chat_messages::message_type
+                        .eq(crate::models::chats::MessageRole::Assistant.to_string()),
+                );
+
+                #[cfg(feature = "postgres-backend")]
+                let filtered_query = base_query.filter(
+                    chat_messages::message_type.eq(crate::models::chats::MessageRole::Assistant),
+                );
+
+                let latest_message = filtered_query
+                    .order(chat_messages::created_at.desc())
+                    .select(crate::models::chats::Message::as_select())
+                    .first::<crate::models::chats::Message>(conn)
+                    .optional()?;
+
+                if let Some(msg) = latest_message {
+                    let (msg_id, variant_index) = (msg.id, msg.current_variant_index);
+                    if variant_index > 0 {
+                        // 2. If it has a variant, find the variant ID
+                        let variant_id = message_variants::table
+                            .filter(message_variants::parent_message_id.eq(msg_id))
+                            .filter(message_variants::variant_index.eq(variant_index))
+                            .select(message_variants::id)
+                            .first::<crate::db::DbId>(conn)
+                            .optional()?;
+
+                        return Ok::<Option<crate::db::DbId>, crate::errors::AppError>(variant_id);
+                    }
+                }
+
+                Ok(None)
+            })
+            .await;
+
+            match variant_lookup_result {
+                Ok(Some(variant_id)) => {
+                    debug!("Linking chronicle event to message variant: {}", variant_id);
+                    final_create_request.message_variant_id = Some(variant_id);
+                }
+                Ok(None) => {
+                    debug!(
+                        "No active variant found for session {}, event will be on main timeline",
+                        session_id
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to lookup message variant for linking: {}", e);
+                }
+            }
+        }
 
         info!(
             "Creating chronicle event '{}' ({}) for chronicle {}",
@@ -194,7 +271,7 @@ impl ScribeTool for CreateChronicleEventTool {
             .create_event(
                 user_uuid.into(),
                 chronicle_uuid.into(),
-                create_request,
+                final_create_request,
                 Some(&session_dek_wrapper), // Pass SessionDek for AI-generated events encryption
             )
             .await

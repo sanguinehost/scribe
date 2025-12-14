@@ -399,7 +399,7 @@ impl std::fmt::Debug for NewChat {
 
 // MessageRole enum for database storage
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow, diesel::query_builder::QueryId,
 )]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
 pub enum MessageRole {
@@ -513,6 +513,13 @@ impl ToSql<diesel::sql_types::Text, Pg> for ChatMode {
     }
 }
 
+#[cfg(feature = "postgres-backend")]
+impl ToSql<diesel::sql_types::Varchar, Pg> for ChatMode {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        <Self as ToSql<diesel::sql_types::Text, Pg>>::to_sql(self, out)
+    }
+}
+
 // Manual FromSql implementation for ChatMode
 #[cfg(feature = "postgres-backend")]
 impl FromSql<diesel::sql_types::Text, Pg> for ChatMode {
@@ -529,6 +536,13 @@ impl FromSql<diesel::sql_types::Text, Pg> for ChatMode {
                 Err("Unrecognized enum variant from database".into())
             }
         }
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Varchar, Pg> for ChatMode {
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        <Self as FromSql<diesel::sql_types::Text, Pg>>::from_sql(bytes)
     }
 }
 

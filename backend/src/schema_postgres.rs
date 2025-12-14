@@ -6,7 +6,7 @@ pub mod sql_types {
     #[diesel(postgres_type(name = "account_status"))]
     pub struct AccountStatus;
 
-    #[derive(diesel::sql_types::SqlType)]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
 
