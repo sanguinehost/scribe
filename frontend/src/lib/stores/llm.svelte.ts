@@ -2,6 +2,7 @@
 import { browser as _browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
 import { apiClient as _apiClient } from '$lib/api';
+import { logger } from '$lib/utils/logger';
 import type {
 	ModelCapabilities,
 	ModelInfo,
@@ -159,7 +160,7 @@ export class LLMStore {
 			this.state.capabilities = capabilities;
 			this.state.lastFetched = Date.now();
 		} catch (_error) {
-			console.error('Failed to fetch models:', _error);
+			logger.error('llm-store', 'Failed to fetch models', _error as Error);
 			this.state.error = _error instanceof Error ? _error.message : 'Unknown error occurred';
 		} finally {
 			this.state.loading = false;
@@ -208,7 +209,7 @@ export class LLMStore {
 
 			this.state.lastFetched = Date.now();
 		} catch (_error) {
-			console.error('Failed to fetch grouped models:', _error);
+			logger.error('llm-store', 'Failed to fetch grouped models', _error as Error);
 			this.state.error = _error instanceof Error ? _error.message : 'Unknown error occurred';
 		} finally {
 			this.state.loading = false;
@@ -237,7 +238,9 @@ export class LLMStore {
 			const response = await fetch(`/api/llm/models/${_modelId}/capabilities`);
 
 			if (!response.ok) {
-				console.warn(`Failed to fetch capabilities for model ${_modelId}: ${response.statusText}`);
+				logger.warn('llm-store', `Failed to fetch capabilities for model ${_modelId}`, {
+					status: response.statusText
+				});
 				return null;
 			}
 
@@ -248,7 +251,11 @@ export class LLMStore {
 				return data.recommended_settings;
 			}
 		} catch (_error) {
-			console.error(`Failed to fetch recommended settings for ${_modelId}:`, _error);
+			logger.error(
+				'llm-store',
+				`Failed to fetch recommended settings for ${_modelId}`,
+				_error as Error
+			);
 		}
 
 		return null;
@@ -359,7 +366,7 @@ export class LLMStore {
 		// Clear any existing error and retry fetching
 		this.state.error = null;
 		this.fetchModels(true).catch((error) => {
-			console.warn('Retry after auth failed:', error);
+			logger.warn('llm-store', 'Retry after auth failed', { error });
 		});
 	}
 
@@ -455,7 +462,7 @@ export class LLMStore {
 			// Refresh models to get updated active status
 			await Promise.all([this.fetchModels(true), this.fetchGroupedModels(true)]);
 		} catch (_error) {
-			console.error('Failed to activate model:', _error);
+			logger.error('llm-store', 'Failed to activate model', _error as Error);
 			this.state.error = _error instanceof Error ? _error.message : 'Activation failed';
 			throw _error;
 		}
@@ -477,7 +484,7 @@ export class LLMStore {
 			// Refresh models to get updated active status
 			await this.fetchModels(true);
 		} catch (_error) {
-			console.error('Failed to deactivate model:', _error);
+			logger.error('llm-store', 'Failed to deactivate model', _error as Error);
 			throw _error;
 		}
 	}
@@ -500,7 +507,7 @@ export class LLMStore {
 			// Refresh models to get updated status
 			await Promise.all([this.fetchModels(true), this.fetchGroupedModels(true)]);
 		} catch (_error) {
-			console.error('Failed to delete model:', _error);
+			logger.error('llm-store', 'Failed to delete model', _error as Error);
 			this.state.error = _error instanceof Error ? _error.message : 'Delete failed';
 			throw _error;
 		}
@@ -510,10 +517,12 @@ export class LLMStore {
 		if (!_browser) return;
 
 		try {
-			console.log(`Starting download for model: ${_modelId}`);
+			logger.debug('llm-store', `Starting download for model: ${_modelId}`);
 			// Add to downloading models set
 			this.state.downloadingModels.add(_modelId);
-			console.log('Added model to downloading set:', Array.from(this.state.downloadingModels));
+			logger.debug('llm-store', 'Added model to downloading set', {
+				downloadingModels: Array.from(this.state.downloadingModels)
+			});
 			// Note: SSE stream disabled for now due to placeholder backend implementation
 			// this.startDownloadProgressStream();
 
@@ -528,11 +537,11 @@ export class LLMStore {
 				throw new Error(`Download failed: ${result.value.message}`);
 			}
 
-			console.log(`Download request succeeded for ${_modelId}`);
+			logger.debug('llm-store', `Download request succeeded for ${_modelId}`);
 			// Download request succeeded - start polling for completion
 			this.pollDownloadCompletion(_modelId);
 		} catch (_error) {
-			console.error('Failed to download model:', _error);
+			logger.error('llm-store', 'Failed to download model', _error as Error);
 			this.state.error = _error instanceof Error ? _error.message : 'Download failed';
 			// Remove from downloading set on error
 			this.state.downloadingModels.delete(_modelId);
@@ -545,12 +554,12 @@ export class LLMStore {
 	}
 
 	loadRecommendations(): Promise<void> {
-		console.warn('loadRecommendations not implemented yet');
+		logger.warn('llm-store', 'loadRecommendations not implemented yet');
 		return Promise.resolve();
 	}
 
 	downloadBestModel(): Promise<void> {
-		console.warn('downloadBestModel not implemented yet');
+		logger.warn('llm-store', 'downloadBestModel not implemented yet');
 		return Promise.resolve();
 	}
 
@@ -562,18 +571,18 @@ export class LLMStore {
 			if (result.isOk()) {
 				this.state.localLlmEnabled = result.value.local_llm_enabled;
 				if (result.value.local_llm_enabled) {
-					console.log('Local LLM support detected');
+					logger.debug('llm-store', 'Local LLM support detected');
 					// Start progress stream to catch any ongoing downloads
 					this.startDownloadProgressStream();
 				} else {
-					console.log('Local LLM support not available');
+					logger.debug('llm-store', 'Local LLM support not available');
 				}
 			} else {
-				console.log('Local LLM support not available:', result.error);
+				logger.debug('llm-store', 'Local LLM support not available', { error: result.error });
 				this.state.localLlmEnabled = false;
 			}
 		} catch (_error) {
-			console.error('Failed to check local LLM support:', _error);
+			logger.error('llm-store', 'Failed to check local LLM support', _error as Error);
 			this.state.localLlmEnabled = false;
 		}
 	}
@@ -588,9 +597,10 @@ export class LLMStore {
 
 		const poll = async (): Promise<void> => {
 			attempts++;
-			console.log(
-				`Polling download status for ${_modelId} (attempt ${attempts}/${LLMStore.MAX_POLL_ATTEMPTS})`
-			);
+			logger.debug('llm-store', `Polling download status for ${_modelId}`, {
+				attempt: attempts,
+				maxAttempts: LLMStore.MAX_POLL_ATTEMPTS
+			});
 
 			try {
 				// Only refresh every 3rd attempt (every ~22 seconds) to reduce UI thrashing
@@ -599,7 +609,9 @@ export class LLMStore {
 					attempts === 1 || attempts % 3 === 0 || attempts > LLMStore.MAX_POLL_ATTEMPTS - 5;
 
 				if (shouldRefresh) {
-					console.log(`Refreshing models for ${_modelId} (refresh ${++lastRefreshAttempt})`);
+					logger.debug('llm-store', `Refreshing models for ${_modelId}`, {
+						refreshAttempt: ++lastRefreshAttempt
+					});
 					await this.fetchModels(true);
 					await this.fetchGroupedModels(true);
 				}
@@ -614,7 +626,9 @@ export class LLMStore {
 						const variant = group.variants.find((v) => v.id === _modelId);
 						if (variant?.downloaded) {
 							variantDownloaded = true;
-							console.log(`Found downloaded variant ${_modelId} in group ${group.base_model_name}`);
+							logger.debug('llm-store', `Found downloaded variant ${_modelId}`, {
+								groupName: group.base_model_name
+							});
 							break;
 						}
 					}
@@ -622,7 +636,7 @@ export class LLMStore {
 
 				// Check if download completed in either location
 				if (model?.downloaded || variantDownloaded) {
-					console.log(`✅ Download completed for ${_modelId}, cleaning up states`);
+					logger.info('llm-store', `Download completed for ${_modelId}, cleaning up states`);
 					this.state.downloadingModels.delete(_modelId);
 
 					// Clean up any download progress data
@@ -635,7 +649,7 @@ export class LLMStore {
 					await this.fetchModels(true);
 					await this.fetchGroupedModels(true);
 
-					console.log(`🎉 Download process complete for ${_modelId}`);
+					logger.info('llm-store', `Download process complete for ${_modelId}`);
 					return;
 				}
 
@@ -647,14 +661,15 @@ export class LLMStore {
 					consecutiveNoProgressAttempts = 0; // Reset counter if model exists
 				} else {
 					consecutiveNoProgressAttempts++;
-					console.log(
-						`No model found for ${_modelId}, consecutive attempts: ${consecutiveNoProgressAttempts}`
-					);
+					logger.debug('llm-store', `No model found for ${_modelId}`, {
+						consecutiveAttempts: consecutiveNoProgressAttempts
+					});
 				}
 
 				// If we haven't seen progress for too long, assume failure
 				if (consecutiveNoProgressAttempts >= LLMStore.MAX_NO_PROGRESS_ATTEMPTS) {
-					console.error(
+					logger.error(
+						'llm-store',
 						`Download appears to have failed for ${_modelId} - no model found for too long`
 					);
 					this.state.downloadingModels.delete(_modelId);
@@ -670,9 +685,9 @@ export class LLMStore {
 				if (attempts < LLMStore.MAX_POLL_ATTEMPTS) {
 					setTimeout(poll, LLMStore.POLL_INTERVAL_MS);
 				} else {
-					console.warn(
-						`Download polling timed out for ${_modelId} after ${LLMStore.MAX_POLL_ATTEMPTS} attempts`
-					);
+					logger.warn('llm-store', `Download polling timed out for ${_modelId}`, {
+						attempts: LLMStore.MAX_POLL_ATTEMPTS
+					});
 					this.state.downloadingModels.delete(_modelId);
 					// Clean up download progress on timeout
 					if (this.state.downloadProgress[_modelId]) {
@@ -681,7 +696,7 @@ export class LLMStore {
 					this.state.error = `Download timed out for ${_modelId} - please check server logs`;
 				}
 			} catch (_error) {
-				console.error(`Error polling download status for ${_modelId}:`, _error);
+				logger.error('llm-store', `Error polling download status for ${_modelId}`, _error as Error);
 				this.state.downloadingModels.delete(_modelId);
 				// Clean up download progress on error too
 				if (this.state.downloadProgress[_modelId]) {
@@ -701,43 +716,47 @@ export class LLMStore {
 	private startDownloadProgressStream(): void {
 		if (!_browser || this.progressEventSource) return;
 
-		console.log('Starting download progress stream...');
+		logger.debug('llm-store', 'Starting download progress stream');
 		this.progressEventSource = _apiClient.createDownloadProgressStream();
 		if (!this.progressEventSource) {
-			console.warn('Failed to create download progress stream');
+			logger.warn('llm-store', 'Failed to create download progress stream');
 			return;
 		}
 
-		console.log('Download progress stream created successfully');
+		logger.debug('llm-store', 'Download progress stream created successfully');
 
 		this.progressEventSource.onopen = () => {
-			console.log('Download progress stream connected');
+			logger.debug('llm-store', 'Download progress stream connected');
 		};
 
 		this.progressEventSource.onmessage = (event) => {
-			console.log('Download progress received:', event.data);
+			logger.debug('llm-store', 'Download progress received', { data: event.data });
 			try {
 				const progressData: DownloadProgressInfo = JSON.parse(event.data);
-				console.log('Parsed progress data:', progressData);
+				logger.debug('llm-store', 'Parsed progress data', { progressData });
 				this.state.downloadProgress[progressData.model_id] = progressData;
 
 				// If download is complete (100%), remove from downloading set and refresh models
 				if (progressData.percentage >= 100) {
-					console.log(`Download complete for ${progressData.model_id}`);
+					logger.info('llm-store', `Download complete for ${progressData.model_id}`);
 					this.state.downloadingModels.delete(progressData.model_id);
 					delete this.state.downloadProgress[progressData.model_id];
 
 					// Refresh models in background to update status
-					this.fetchModels(true).catch(console.error);
-					this.fetchGroupedModels(true).catch(console.error);
+					this.fetchModels(true).catch((error) =>
+						logger.error('llm-store', 'Failed to refresh models after download', error)
+					);
+					this.fetchGroupedModels(true).catch((error) =>
+						logger.error('llm-store', 'Failed to refresh grouped models after download', error)
+					);
 				}
 			} catch (_error) {
-				console.error('Error parsing download progress:', _error);
+				logger.error('llm-store', 'Error parsing download progress', _error as Error);
 			}
 		};
 
-		this.progressEventSource.onerror = (error) => {
-			console.error('Download progress stream error:', error);
+		this.progressEventSource.onerror = (event) => {
+			logger.error('llm-store', 'Download progress stream error', { event });
 			this.stopDownloadProgressStream();
 		};
 	}
@@ -761,7 +780,7 @@ export class LLMStore {
 	}
 
 	toggleRecommendations(): void {
-		console.warn('toggleRecommendations not implemented yet');
+		logger.warn('llm-store', 'toggleRecommendations not implemented yet');
 	}
 
 	/**
@@ -794,13 +813,13 @@ export function initGlobalLlmStore(): void {
 		globalLlmStore = new LLMStore();
 		// Initialize by checking local LLM support and fetching models
 		globalLlmStore.checkLocalLlmSupport().catch((error) => {
-			console.warn('Initial LLM support check failed:', error);
+			logger.warn('llm-store', 'Initial LLM support check failed', { error });
 		});
 		globalLlmStore.fetchModels().catch((error) => {
-			console.warn('Initial LLM model fetch failed:', error);
+			logger.warn('llm-store', 'Initial LLM model fetch failed', { error });
 		});
 		globalLlmStore.fetchGroupedModels().catch((error) => {
-			console.warn('Initial grouped models fetch failed:', error);
+			logger.warn('llm-store', 'Initial grouped models fetch failed', { error });
 		});
 	}
 }

@@ -1,3 +1,6 @@
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+
 use crate::{
     errors::AppError,
     models::{
@@ -11,7 +14,6 @@ use crate::{
 use diesel::{prelude::*, QueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{debug, error, info, instrument};
-use uuid::Uuid;
 
 use super::LorebookService;
 
@@ -20,8 +22,8 @@ impl LorebookService {
     #[instrument(skip(self, user_dek, payload))]
     pub async fn extract_entries_from_chat(
         &self,
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         payload: ExtractLorebookEntriesFromChatPayload,
         user_dek: &SecretBox<Vec<u8>>,
     ) -> Result<ExtractLorebookEntriesFromChatResponse, AppError> {
@@ -89,12 +91,12 @@ impl LorebookService {
     /// Verify that the user owns the lorebook
     async fn verify_lorebook_ownership(
         &self,
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         use crate::schema::lorebooks;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -105,6 +107,7 @@ impl LorebookService {
                     .filter(lorebooks::user_id.eq(user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
@@ -113,11 +116,7 @@ impl LorebookService {
                     e
                 );
                 AppError::InternalServerErrorGeneric(format!("Database interaction failed: {e}"))
-            })?
-            .map_err(|e| {
-                error!("Failed to query lorebook ownership: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to verify lorebook ownership: {e}"))
-            })?;
+            })??;
 
         if lorebook_exists == 0 {
             return Err(AppError::NotFound(format!(
@@ -131,12 +130,12 @@ impl LorebookService {
     /// Verify that the user owns the chat session
     async fn verify_chat_ownership(
         &self,
-        user_id: Uuid,
-        chat_session_id: Uuid,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         use crate::schema::chat_sessions;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -147,16 +146,13 @@ impl LorebookService {
                     .filter(chat_sessions::user_id.eq(user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
                 error!("Interaction error while verifying chat ownership: {:?}", e);
                 AppError::InternalServerErrorGeneric(format!("Database interaction failed: {e}"))
-            })?
-            .map_err(|e| {
-                error!("Failed to query chat ownership: {:?}", e);
-                AppError::DatabaseQueryError(format!("Failed to verify chat ownership: {e}"))
-            })?;
+            })??;
 
         if chat_exists == 0 {
             return Err(AppError::NotFound(format!(
@@ -170,11 +166,11 @@ impl LorebookService {
     /// Fetch messages from the chat session for extraction
     async fn fetch_messages_for_extraction(
         &self,
-        chat_session_id: Uuid,
+        chat_session_id: crate::db::DbId,
         start_index: Option<usize>,
         end_index: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 

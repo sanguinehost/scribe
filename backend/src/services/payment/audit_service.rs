@@ -6,6 +6,7 @@
 //! - Automatic purging of old records (30 days by default)
 //! - Only essential financial events are tracked
 
+use crate::db::DbId;
 use crate::errors::AppError;
 use chrono::{DateTime, Duration, Utc};
 use diesel::prelude::*;
@@ -80,7 +81,7 @@ impl AuditEventType {
 #[derive(Queryable, Insertable)]
 #[diesel(table_name = crate::schema::payment_audit_logs)]
 pub struct PaymentAuditLog {
-    pub id: Uuid,
+    pub id: crate::db::DbId,
     pub user_id_hash: String,
     pub event_type: String,
     pub amount: Option<i32>,
@@ -88,7 +89,7 @@ pub struct PaymentAuditLog {
     pub success: bool,
     pub error_code: Option<String>,
     pub external_reference_hash: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
 }
 
 impl PaymentAuditService {
@@ -105,7 +106,7 @@ impl PaymentAuditService {
     }
 
     /// Hash a user ID for privacy (one-way, non-reversible)
-    fn hash_user_id(user_id: &Uuid) -> String {
+    fn hash_user_id(user_id: &crate::db::DbId) -> String {
         let mut hasher = Sha256::new();
         hasher.update(user_id.as_bytes());
         format!("{:x}", hasher.finalize())
@@ -122,14 +123,14 @@ impl PaymentAuditService {
     pub fn log_credit_operation(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         event_type: AuditEventType,
         amount: i32,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: Some(amount),
@@ -137,7 +138,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: None,
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -160,14 +161,14 @@ impl PaymentAuditService {
     pub fn log_subscription_event(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         event_type: AuditEventType,
         external_ref: Option<&str>,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: None,
@@ -175,7 +176,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -194,7 +195,7 @@ impl PaymentAuditService {
     pub fn log_plan_change(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         event_type: AuditEventType,
         old_plan: &str,
         new_plan: &str,
@@ -203,7 +204,7 @@ impl PaymentAuditService {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: None,
@@ -211,7 +212,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -235,16 +236,16 @@ impl PaymentAuditService {
     pub fn log_plan_change_scheduled(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         current_plan: &str,
         scheduled_plan: &str,
-        scheduled_date: DateTime<Utc>,
+        scheduled_date: crate::DbTimestamp,
         external_ref: Option<&str>,
     ) -> Result<(), AppError> {
         use crate::schema::payment_audit_logs;
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: AuditEventType::PlanChangeScheduled.as_str().to_string(),
             amount: None,
@@ -252,7 +253,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -274,7 +275,7 @@ impl PaymentAuditService {
     pub fn log_payment_event(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         amount_cents: i32,
         success: bool,
         error_code: Option<&str>,
@@ -289,7 +290,7 @@ impl PaymentAuditService {
         };
 
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_user_id(&user_id),
             event_type: event_type.as_str().to_string(),
             amount: Some(amount_cents),
@@ -297,7 +298,7 @@ impl PaymentAuditService {
             success,
             error_code: error_code.map(|s| s.to_string()),
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -327,7 +328,7 @@ impl PaymentAuditService {
 
         // For webhooks, we don't have a user_id, so we use a static hash
         let log_entry = PaymentAuditLog {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id_hash: Self::hash_reference("webhook_system"),
             event_type: format!("webhook_{}", event_type),
             amount: None,
@@ -335,7 +336,7 @@ impl PaymentAuditService {
             success: true,
             error_code: None,
             external_reference_hash: external_ref.map(Self::hash_reference),
-            created_at: Utc::now(),
+            created_at: crate::DbTimestamp::now(),
         };
 
         diesel::insert_into(payment_audit_logs::table)
@@ -354,7 +355,8 @@ impl PaymentAuditService {
     pub fn purge_old_logs(&self, conn: &mut PgConnection) -> Result<usize, AppError> {
         use crate::schema::payment_audit_logs::dsl::*;
 
-        let cutoff_date = Utc::now() - Duration::days(self.retention_days);
+        let cutoff_date =
+            crate::DbTimestamp::from_datetime(Utc::now() - Duration::days(self.retention_days));
 
         let deleted = diesel::delete(payment_audit_logs)
             .filter(created_at.lt(cutoff_date))
@@ -382,7 +384,7 @@ impl PaymentAuditService {
     ) -> Result<AggregateStats, AppError> {
         use crate::schema::payment_audit_logs::dsl::*;
 
-        let since = Utc::now() - Duration::hours(hours);
+        let since = crate::DbTimestamp::from_datetime(Utc::now() - Duration::hours(hours));
 
         // Count events by type
         let total_events: i64 = payment_audit_logs
@@ -433,11 +435,13 @@ impl Default for PaymentAuditService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_user_id_hashing() {
-        let user_id1 = Uuid::new_v4();
-        let user_id2 = Uuid::new_v4();
+        let user_id1 = DbId::new();
+        let user_id2 = DbId::new();
 
         let hash1a = PaymentAuditService::hash_user_id(&user_id1);
         let hash1b = PaymentAuditService::hash_user_id(&user_id1);

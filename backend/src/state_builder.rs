@@ -228,7 +228,10 @@ impl AppStateServicesBuilder {
         });
 
         // Create chronicle service for narrative intelligence
-        let _chronicle_service = Arc::new(ChronicleService::new(self.db_pool.clone()));
+        let _chronicle_service = Arc::new(ChronicleService::new(
+            self.db_pool.clone(),
+            ai_client.clone(),
+        ));
 
         // Get or create rate limiter
         let rate_limiter = self.rate_limiter.unwrap_or_else(|| {
@@ -256,6 +259,7 @@ impl AppStateServicesBuilder {
             email_service,
             ai_client_factory,
             rate_limiter,
+            token_service: None, // Will be set in main.rs if configured
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
             #[cfg(feature = "local-llm")]
@@ -385,7 +389,10 @@ impl AppStateBuilder {
         let narrative_intelligence_service =
             Arc::new(NarrativeIntelligenceService::for_development_with_deps(
                 app_state.ai_client.clone(),
-                Arc::new(ChronicleService::new(app_state.pool.clone())),
+                Arc::new(ChronicleService::new(
+                    app_state.pool.clone(),
+                    app_state.ai_client.clone(),
+                )),
                 app_state.lorebook_service.clone(),
                 app_state.qdrant_service.clone(),
                 app_state.embedding_client.clone(),

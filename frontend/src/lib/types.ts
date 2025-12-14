@@ -30,6 +30,7 @@ export interface Message {
 	status?: string; // Message status: streaming, completed, failed, partial, pending
 	error_message?: string | null; // Error message if generation failed
 	superseded_at?: string | null; // ISO 8601 timestamp when message was superseded
+	contentVersion?: number; // Reactivity signal - increments when content changes during streaming
 	// Variant metadata
 	variant_count: number; // Number of variants for this message
 	current_variant_index: number; // Currently selected variant index
@@ -179,6 +180,7 @@ export interface ScribeChatSession {
 	total_prompt_tokens?: number;
 	total_completion_tokens?: number;
 	total_credits_used?: number | string; // BigDecimal from backend may serialize as string
+	total_actual_cost?: number; // Raw cost in dollars (from backend)
 }
 
 // LoginSuccessData type matching the backend LoginSuccessResponse
@@ -477,14 +479,29 @@ export interface MessageAttachment {
 	data: unknown;
 }
 
-// Type definitions for API requests
+/**
+ * Request to create a new chat session.
+ *
+ * NOTE: This type is used differently depending on deployment mode:
+ *
+ * Desktop/SQLite (feature-flagged via isDesktopMode()):
+ *   - Only sends: character_id, title, active_custom_persona_id, lorebook_ids
+ *   - Other fields (chat_mode, system_prompt, personality, scenario) are NOT sent
+ *
+ * Cloud/PostgreSQL (default):
+ *   - Sends all fields as-is
+ *
+ * See frontend/src/lib/api/index.ts createChat() for the feature-flagged implementation.
+ */
 export type CreateChatRequest = {
 	title: string;
-	chat_mode: ChatMode; // NEW: Required chat mode field
-	character_id?: string | null; // CHANGED: Optional for non-character modes
-	system_prompt?: string | null;
-	personality?: string | null;
-	scenario?: string | null;
+	chat_mode: ChatMode; // Only sent to Cloud/PostgreSQL
+	character_id?: string | null;
+	system_prompt?: string | null; // Only sent to Cloud/PostgreSQL
+	personality?: string | null; // Only sent to Cloud/PostgreSQL
+	scenario?: string | null; // Only sent to Cloud/PostgreSQL
+	active_custom_persona_id?: string | null; // Sent to both backends
+	lorebook_ids?: string[] | null; // Sent to both backends
 };
 
 export type CreateMessageRequest = {
@@ -567,6 +584,7 @@ export interface ScribeChatMessage {
 	// UI state
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages
+	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
 }
 
 export type DocumentResponse = {
@@ -604,7 +622,8 @@ export type SuggestedActionsResponse = {
 
 // Types for Chat Session Settings
 export interface UpdateChatSessionSettingsRequest {
-	title?: string | null;
+	// NOTE: Must match backend UpdateChatSettingsRequest exactly (no extra fields!)
+	// Extra fields cause 422 errors due to serde's default deny_unknown_fields
 	chronicle_id?: string | null; // Associate chat with chronicle (backend API uses chronicle_id)
 	temperature?: number | null;
 	max_output_tokens?: number | null;
@@ -615,15 +634,11 @@ export interface UpdateChatSessionSettingsRequest {
 	seed?: number | null;
 	history_management_strategy?: string | null;
 	history_management_limit?: number | null;
-	visibility?: VisibilityType | null;
 	active_custom_persona_id?: string | null;
 	model_name?: string | null;
 	model_provider?: string | null;
 	gemini_thinking_budget?: number | null;
 	gemini_enable_code_execution?: boolean | null;
-	context_total_token_limit?: number | null;
-	context_recent_history_budget?: number | null;
-	context_rag_budget?: number | null;
 	agent_mode?: string | null;
 	prompt_template_id?: string | null;
 }
@@ -1442,4 +1457,47 @@ export interface UpdateTemplatePreferenceRequest {
 	enable_info_box?: boolean;
 	enable_stats_tracker?: boolean;
 	enable_thinking?: boolean;
+}
+
+// ============================================================================
+// Desktop Authentication Types
+// ============================================================================
+
+/**
+ * Desktop authentication mode options
+ */
+export type DesktopAuthMode = 'quick_start' | 'account' | 'not_set';
+
+/**
+ * Desktop deployment mode options
+ */
+export type DesktopDeploymentMode = 'local' | 'remote';
+
+/**
+ * Desktop configuration response from backend
+ * Returned by GET /api/auth/desktop/config
+ */
+export interface DesktopConfigResponse {
+	setup_complete: boolean;
+	auth_mode: DesktopAuthMode;
+	deployment_mode: DesktopDeploymentMode;
+}
+
+/**
+ * Desktop setup payload for initial wizard
+ * Sent to POST /api/auth/desktop/setup
+ */
+export interface DesktopSetupPayload {
+	auth_mode: DesktopAuthMode;
+	username?: string; // Required when auth_mode is 'account'
+	password?: string; // Required when auth_mode is 'account'
+}
+
+/**
+ * Payload for upgrading Quick Start to Account mode
+ * Sent to POST /api/auth/desktop/upgrade-account
+ */
+export interface DesktopUpgradeAccountPayload {
+	username: string;
+	password: string;
 }

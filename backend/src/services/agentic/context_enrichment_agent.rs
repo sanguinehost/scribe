@@ -5,7 +5,8 @@
 //! (after LLM response) mode. All operations are fully auditable with encrypted
 //! storage of the agent's reasoning and execution log.
 
-use chrono::{DateTime, Utc};
+use crate::db::DbId;
+use chrono::Utc;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
     JsonSchemaSpec, MessageContent,
@@ -15,7 +16,6 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 use crate::{
     crypto,
@@ -40,8 +40,8 @@ pub enum EnrichmentMode {
 /// Complete result of context enrichment including audit trail
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContextEnrichmentResult {
-    pub session_id: Uuid,
-    pub user_id: Uuid,
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub mode: EnrichmentMode,
     pub agent_reasoning: String,
     pub planned_searches: Vec<PlannedSearch>,
@@ -51,7 +51,7 @@ pub struct ContextEnrichmentResult {
     pub total_tokens_used: u32,
     pub execution_time_ms: u64,
     pub model_used: String,
-    pub analysis_id: Option<Uuid>, // ID of the stored analysis for later updates
+    pub analysis_id: Option<crate::db::DbId>, // ID of the stored analysis for later updates
 }
 
 /// A search query planned by the agent
@@ -74,7 +74,7 @@ pub struct AgentExecutionLog {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AgentStep {
     pub step_number: u32,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: crate::DbTimestamp,
     pub action_type: String, // "planning", "search", "synthesis"
     pub thought: String,
     pub tool_call: Option<ToolCall>,
@@ -116,13 +116,13 @@ impl ContextEnrichmentAgent {
     /// Main entry point: Enrich context for a chat session
     pub async fn enrich_context(
         &self,
-        session_id: Uuid,
-        user_id: Uuid,
-        chronicle_id: Option<Uuid>,    // Added for scoped search
-        messages: &[(String, String)], // (role, content) pairs
+        session_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>, // Added for scoped search
+        messages: &[(String, String)],         // (role, content) pairs
         mode: EnrichmentMode,
         session_dek: &[u8],
-        message_id: Uuid, // Required message ID to link analysis to specific message
+        message_id: crate::db::DbId, // Required message ID to link analysis to specific message
     ) -> Result<ContextEnrichmentResult, AppError> {
         let start_time = Instant::now();
         let mut execution_log = AgentExecutionLog {
@@ -191,7 +191,7 @@ impl ContextEnrichmentAgent {
 
                         let search_step = AgentStep {
                             step_number: execution_log.steps.len() as u32 + 1,
-                            timestamp: Utc::now(),
+                            timestamp: Utc::now().into(),
                             action_type: "search".to_string(),
                             thought: format!(
                                 "Searching for '{}' because: {}",
@@ -212,7 +212,7 @@ impl ContextEnrichmentAgent {
                         // Log the failure but continue with other searches
                         let error_step = AgentStep {
                             step_number: execution_log.steps.len() as u32 + 1,
-                            timestamp: Utc::now(),
+                            timestamp: Utc::now().into(),
                             action_type: "search_error".to_string(),
                             thought: format!("Search failed for '{}'", search.query),
                             tool_call: None,
@@ -494,7 +494,7 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
 
                     let planning_step = AgentStep {
                         step_number: 1,
-                        timestamp: Utc::now(),
+                        timestamp: Utc::now().into(),
                         action_type: "planning".to_string(),
                         thought: reasoning.clone(),
                         tool_call: None,
@@ -554,7 +554,7 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
 
         let planning_step = AgentStep {
             step_number: 1,
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             action_type: "planning".to_string(),
             thought: "AI planning unavailable, using fallback search".to_string(),
             tool_call: None,
@@ -644,9 +644,9 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     async fn execute_search(
         &self,
         search: &PlannedSearch,
-        user_id: Uuid,
-        session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         session_dek: &[u8],
     ) -> Result<(Value, u32), AppError> {
         debug!(
@@ -721,7 +721,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
             info!("No search results to synthesize");
             let empty_step = AgentStep {
                 step_number: 0,
-                timestamp: Utc::now(),
+                timestamp: Utc::now().into(),
                 action_type: "synthesis".to_string(),
                 thought: "No relevant context found".to_string(),
                 tool_call: None,
@@ -837,7 +837,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
 
                     let synthesis_step = AgentStep {
                         step_number: 0, // Will be set by caller
-                        timestamp: Utc::now(),
+                        timestamp: Utc::now().into(),
                         action_type: "synthesis".to_string(),
                         thought: "AI synthesis of search results completed".to_string(),
                         tool_call: None,
@@ -869,7 +869,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
 
         let synthesis_step = AgentStep {
             step_number: 0,
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             action_type: "synthesis".to_string(),
             thought: "Fallback synthesis (AI unavailable)".to_string(),
             tool_call: None,
@@ -888,7 +888,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Supersede any failed analyses for this session
     async fn supersede_failed_analyses(
         &self,
-        session_id: Uuid,
+        session_id: crate::db::DbId,
         mode: EnrichmentMode,
     ) -> Result<(), AppError> {
         use crate::models::{AgentContextAnalysis, AnalysisType};
@@ -898,20 +898,11 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
             EnrichmentMode::PostProcessing => AnalysisType::PostProcessing,
         };
 
-        // Get database connection
-        let conn = self.state.pool.get().await.map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e))
-        })?;
-
         // Supersede failed analyses
-        let count = conn
-            .interact(move |conn| {
-                AgentContextAnalysis::supersede_failed_analyses(conn, session_id, analysis_type)
-            })
-            .await
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e))
-            })??;
+        let count = crate::db::with_conn(&self.state.pool, move |conn| {
+            AgentContextAnalysis::supersede_failed_analyses(conn, session_id, analysis_type)
+        })
+        .await?;
 
         if count > 0 {
             info!(
@@ -926,12 +917,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Create a new pending analysis record
     async fn create_pending_analysis(
         &self,
-        session_id: Uuid,
-        user_id: Uuid,
+        session_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         mode: EnrichmentMode,
         session_dek: &[u8],
-        message_id: Uuid,
-    ) -> Result<Uuid, AppError> {
+        message_id: crate::db::DbId,
+    ) -> Result<crate::db::DbId, AppError> {
         use crate::models::{AnalysisStatus, AnalysisType};
         use crate::schema::agent_context_analysis;
         use diesel::prelude::*;
@@ -945,17 +936,13 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         }
         .to_string();
 
-        // Get database connection
-        let conn = self.state.pool.get().await.map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e))
-        })?;
-
         // Create a minimal pending analysis record
-        let analysis_id = conn
-            .interact(move |conn| {
+        #[cfg(feature = "postgres-backend")]
+        let analysis_id = {
+            crate::db::with_conn(&self.state.pool, move |conn| {
                 diesel::insert_into(agent_context_analysis::table)
                     .values((
-                        agent_context_analysis::id.eq(Uuid::new_v4()),
+                        agent_context_analysis::id.eq(DbId::new()),
                         agent_context_analysis::chat_session_id.eq(session_id),
                         agent_context_analysis::user_id.eq(user_id),
                         agent_context_analysis::analysis_type.eq(analysis_type_str),
@@ -967,15 +954,48 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         agent_context_analysis::updated_at.eq(diesel::dsl::now),
                     ))
                     .returning(agent_context_analysis::id)
-                    .get_result::<Uuid>(conn)
+                    .get_result::<crate::db::DbId>(conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create pending analysis: {}",
+                            e
+                        ))
+                    })
             })
-            .await
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e))
-            })?
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to create pending analysis: {}", e))
-            })?;
+            .await?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let analysis_id = {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING, so we generate UUID before insert
+            let generated_id = DbId::new().into();
+
+            crate::db::with_conn(&self.state.pool, move |conn| {
+                diesel::insert_into(agent_context_analysis::table)
+                    .values((
+                        agent_context_analysis::id.eq(generated_id),
+                        agent_context_analysis::chat_session_id.eq(session_id),
+                        agent_context_analysis::user_id.eq(user_id),
+                        agent_context_analysis::analysis_type.eq(analysis_type_str),
+                        agent_context_analysis::message_id.eq(message_id),
+                        agent_context_analysis::status.eq(AnalysisStatus::Pending.to_string()),
+                        agent_context_analysis::retry_count.eq(0),
+                        agent_context_analysis::model_used.eq(Some("gemini-2.5-flash-lite")),
+                        agent_context_analysis::created_at.eq(crate::db::DbTimestamp::now()),
+                        agent_context_analysis::updated_at.eq(crate::db::DbTimestamp::now()),
+                    ))
+                    .execute(conn)
+                    .map(|_| generated_id)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create pending analysis: {}",
+                            e
+                        ))
+                    })
+            })
+            .await?
+        };
 
         info!(
             "Created pending analysis: id={}, session={}, mode={:?}",
@@ -988,7 +1008,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Update an existing analysis with results
     async fn update_analysis(
         &self,
-        analysis_id: Uuid,
+        analysis_id: crate::db::DbId,
         agent_reasoning: &str,
         planned_searches: &[PlannedSearch],
         execution_log: &AgentExecutionLog,
@@ -1005,8 +1025,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         // Convert session_dek to SecretBox
         let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
 
-        // Convert planned searches to JSON value
-        let planned_searches_json = serde_json::to_value(planned_searches)?;
+        // Convert planned searches to JSON (Value for PostgreSQL, String for SQLite)
+        #[cfg(feature = "postgres-backend")]
+        let planned_searches_json = serde_json::to_value(&planned_searches)?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let planned_searches_json = serde_json::to_string(&planned_searches)?;
 
         // Encrypt fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {
@@ -1027,11 +1051,11 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         AppError::CryptoError(format!("Failed to encrypt execution log: {}", e))
                     })?;
                 (
-                    Some(serde_json::Value::String(hex::encode(encrypted))),
+                    Some(crate::DbJson::String(hex::encode(encrypted))),
                     Some(nonce),
                 )
             } else {
-                (Some(serde_json::to_value(execution_log)?), None)
+                (Some(serde_json::to_value(execution_log)?.into()), None)
             }
         };
 
@@ -1051,13 +1075,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
             (Some(String::new()), None)
         };
 
-        // Get database connection
-        let conn = self.state.pool.get().await.map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e))
-        })?;
-
         // Update the analysis record
-        conn.interact(move |conn| {
+        crate::db::with_conn(&self.state.pool, move |conn| {
             diesel::update(agent_context_analysis::table.find(analysis_id))
                 .set((
                     agent_context_analysis::agent_reasoning.eq(encrypted_reasoning),
@@ -1076,9 +1095,9 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     agent_context_analysis::updated_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)
+                .map_err(Into::into)
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e)))?
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to update analysis: {}", e)))?;
 
         info!(
@@ -1092,18 +1111,13 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     /// Mark an analysis as failed
     async fn mark_analysis_failed(
         &self,
-        analysis_id: Uuid,
+        analysis_id: crate::db::DbId,
         error_message: &str,
     ) -> Result<(), AppError> {
         use crate::models::{AgentContextAnalysis, AnalysisStatus};
 
-        // Get database connection
-        let conn = self.state.pool.get().await.map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get DB connection: {}", e))
-        })?;
-
         let error_msg = error_message.to_string();
-        conn.interact(move |conn| {
+        crate::db::with_conn(&self.state.pool, move |conn| {
             AgentContextAnalysis::update_status(
                 conn,
                 analysis_id,
@@ -1111,10 +1125,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                 Some(error_msg),
             )
         })
-        .await
-        .map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to interact with DB: {}", e))
-        })??;
+        .await?;
 
         warn!(
             "Marked analysis {} as failed: {}",

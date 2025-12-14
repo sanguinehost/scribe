@@ -12,23 +12,71 @@
 	import { Label } from '$lib/components/ui/label';
 	import { BookOpen, Search, Clock, Sparkles } from 'lucide-svelte';
 
-	export let _open = false;
-	export let onConfirm: (enableChronicle: boolean, rememberChoice: boolean) => void;
+	// SVELTE 5: Use $bindable() for two-way binding with parent
+	let {
+		open = $bindable(false),
+		onConfirm,
+		onOpenChange
+	}: {
+		open?: boolean;
+		onConfirm: (enableChronicle: boolean, rememberChoice: boolean) => void;
+		onOpenChange?: (newOpen: boolean) => void;
+	} = $props();
 
-	let rememberChoice = false;
+	let rememberChoice = $state(false);
+
+	// DIAGNOSTIC: Track open state changes
+	$effect(() => {
+		console.log('[ChronicleDialog] $effect: open state changed to:', open);
+	});
+
+	// Handle dialog open state changes from bits-ui Dialog.Root
+	function handleDialogOpenChange(newOpen: boolean) {
+		console.log('[ChronicleDialog] handleDialogOpenChange CALLED', {
+			newOpen,
+			oldOpen: open,
+			rememberChoice
+		});
+		open = newOpen; // Sync via $bindable two-way binding
+		// Also notify parent explicitly (for Tauri compatibility where $bindable may not sync properly)
+		onOpenChange?.(newOpen);
+		// Reset checkbox when dialog closes (via any method: X button, Escape, or our buttons)
+		if (!newOpen) {
+			rememberChoice = false;
+		}
+		console.log('[ChronicleDialog] handleDialogOpenChange COMPLETE, open:', open);
+	}
 
 	function handleEnable() {
+		console.log('[ChronicleDialog] handleEnable CALLED', {
+			rememberChoice,
+			openStateBefore: open
+		});
+		// CRITICAL: Close dialog directly FIRST (before parent callback)
+		// This ensures it closes in Tauri WebView where $bindable() across portals may not work properly
+		console.log('[ChronicleDialog] Setting open = false...');
+		open = false;
+		console.log('[ChronicleDialog] open is now:', open);
 		onConfirm(true, rememberChoice);
-		_open = false;
+		console.log('[ChronicleDialog] Dialog closed and onConfirm(true) executed, open =', open);
 	}
 
 	function handleSkip() {
+		console.log('[ChronicleDialog] handleSkip CALLED', {
+			rememberChoice,
+			openStateBefore: open
+		});
+		// CRITICAL: Close dialog directly FIRST (before parent callback)
+		// This ensures it closes in Tauri WebView where $bindable() across portals may not work properly
+		console.log('[ChronicleDialog] Setting open = false...');
+		open = false;
+		console.log('[ChronicleDialog] open is now:', open);
 		onConfirm(false, rememberChoice);
-		_open = false;
+		console.log('[ChronicleDialog] Dialog closed and onConfirm(false) executed, open =', open);
 	}
 </script>
 
-<Dialog bind:open={_open}>
+<Dialog {open} onOpenChange={handleDialogOpenChange}>
 	<DialogContent class="sm:max-w-[500px]">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">

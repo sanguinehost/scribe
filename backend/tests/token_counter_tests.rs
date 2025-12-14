@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use dotenvy::dotenv;
 use scribe_backend::services::gemini_token_client::GeminiTokenClient;
 use scribe_backend::services::hybrid_token_counter::{CountingMode, HybridTokenCounter};

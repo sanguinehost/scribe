@@ -1,10 +1,13 @@
 use crate::auth::session_dek::SessionDek; // Added SessionDek
-use crate::auth::user_store::Backend as AuthBackend;
+use crate::auth::token_auth::UnifiedAuth;
 use crate::crypto; // Added crypto for encryption/decryption
+use crate::db::DbId;
+use crate::db::DbPool; // Added PgPool import
 use crate::errors::AppError;
 use crate::models::chat_override::CharacterOverrideDto; // Added for override handler
 use crate::models::chats::{
-    Chat,
+    ChatListQuery,    // Added for lightweight list queries
+    ChatSessionQuery, // Added for session queries
     // ChatSettingsResponse, // Not used directly in this file anymore
     CreateChatRequest,    // Now available
     CreateMessageRequest, // Now available
@@ -20,8 +23,9 @@ use crate::models::chats::{
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-use crate::schema::{chat_messages, chat_sessions};
-use crate::PgPool; // Added PgPool import
+use crate::schema::{
+    agent_context_analysis, chat_messages, chat_sessions, chronicle_events, message_variants,
+};
 use axum::{
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
@@ -29,30 +33,29 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use axum_login::AuthSession;
 use secrecy::ExposeSecret; // Added for expose_secret method
 use secrecy::SecretBox; // Ensure SecretBox is imported
                         // Removed incorrect ValidatedJson import
 use crate::services::chat;
+use crate::services::chat::generation::{self, StreamAiParams}; // Added generation imports
 use crate::state::AppState;
-use diesel::{
-    ExpressionMethods, OptionalExtension, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
+use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, warn}; // Added for logging
+use tracing::{error, info};
 // ExposeSecret already imported above
-use chrono::{DateTime, Utc};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde::{Deserialize, Serialize}; // Added Deserialize
-use uuid::Uuid;
 use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
 
 // Shorthand for auth session
-type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
-    Router::new()
+    let mut router = Router::new()
         .route("/", get(get_chats_handler)) // Keep GET / for listing
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
@@ -84,17 +87,25 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             "/messages/:id/select-variant",
             post(select_message_variant_handler),
         )
-        .route("/messages/:id/vote", post(vote_message_handler))
         .route(
             "/messages/:id/trailing",
             delete(delete_trailing_messages_handler),
         )
-        .route("/:id/votes", get(get_votes_by_chat_id_handler))
         .route(
             "/:id/character/overrides",
             post(set_chat_character_override_handler),
         )
-        .route("/:id/token-usage", get(get_chat_token_usage_handler))
+        .route("/:id/token-usage", get(get_chat_token_usage_handler));
+
+    // Postgres-only routes (voting feature not yet implemented for SQLite)
+    #[cfg(feature = "postgres-backend")]
+    {
+        router = router
+            .route("/messages/:id/vote", post(vote_message_handler))
+            .route("/:id/votes", get(get_votes_by_chat_id_handler));
+    }
+
+    router
 }
 
 /// Sets character overrides for a chat session.
@@ -107,33 +118,34 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 /// - Character override validation fails
 /// - Database operation fails
 pub async fn set_chat_character_override_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    dek: SessionDek,              // Added SessionDek extractor
-    Path(session_id): Path<Uuid>, // Renamed id to session_id for clarity
+    dek: SessionDek,                         // Added SessionDek extractor
+    Path(session_id): Path<crate::db::DbId>, // Renamed id to session_id for clarity
     Json(payload): Json<CharacterOverrideDto>,
 ) -> Result<impl IntoResponse, AppError> {
     #[derive(Serialize)]
     struct OverrideResponse {
         message: String,
-        session_id: Uuid,
+        session_id: crate::db::DbId,
         field_name: String,
         new_value: String,
         // Include original fields for compatibility with existing tests
-        id: Uuid,
-        chat_session_id: Uuid,
-        original_character_id: Uuid,
+        id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        original_character_id: crate::db::DbId,
         overridden_value: Vec<u8>,
         overridden_value_nonce: Option<Vec<u8>>,
-        created_at: chrono::DateTime<chrono::Utc>,
-        updated_at: chrono::DateTime<chrono::Utc>,
+        created_at: crate::DbTimestamp,
+        updated_at: crate::DbTimestamp,
     }
 
     // Validate the payload first
     payload.validate()?;
 
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     tracing::info!(target: "scribe_backend::routes::chats", %session_id, user_id = %loggable_user_id(user.id), field_name = %payload.field_name, "Attempting to set chat character override");
@@ -180,31 +192,28 @@ pub async fn set_chat_character_override_handler(
 /// - Character access is denied
 /// - Database operation fails
 pub async fn get_chats_by_character_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek,
-    Path(character_id): Path<Uuid>,
+    Path(character_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
-    let chats = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::user_id.eq(user.id))
-                .filter(chat_sessions::character_id.eq(character_id))
-                .order_by(chat_sessions::created_at.desc())
-                .select(Chat::as_select())
-                .load::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chats = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::user_id.eq(user.id))
+            .filter(chat_sessions::character_id.eq(character_id))
+            .order_by(chat_sessions::created_at.desc())
+            .select(ChatListQuery::as_select())
+            .load::<ChatListQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Decrypt the titles for client display
     let mut decrypted_chats = Vec::new();
@@ -226,29 +235,26 @@ pub async fn get_chats_by_character_handler(
 /// - Database operation fails
 /// - Decryption fails
 pub async fn get_chats_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor for decryption
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
-    let chats = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::user_id.eq(user.id))
-                .order_by(chat_sessions::created_at.desc())
-                .select(Chat::as_select()) // Added select
-                .load::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chats = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::user_id.eq(user.id))
+            .order_by(chat_sessions::created_at.desc())
+            .select(ChatListQuery::as_select())
+            .load::<ChatListQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Decrypt the titles for client display
     let mut decrypted_chats = Vec::new();
@@ -271,20 +277,30 @@ pub async fn get_chats_handler(
 /// - Database operation fails
 /// - Encryption fails
 pub async fn create_chat_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor for encryption
     Json(payload): Json<CreateChatRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let request_start = std::time::Instant::now();
+
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     // Use the SessionDek which provides the user's DEK
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
         dek.0.expose_secret().clone(),
     ))));
 
-    info!(%user.id, character_id=%payload.character_id, lorebook_ids=?payload.lorebook_ids, "Creating chat session");
+    info!(
+        %user.id,
+        character_id=%payload.character_id,
+        lorebook_ids=?payload.lorebook_ids,
+        has_title = payload.title.is_some(),
+        has_custom_persona = payload.active_custom_persona_id.is_some(),
+        "create_chat_handler: Creating chat session"
+    );
 
     let app_state = Arc::new(state.clone());
     let chat = chat::session_management::create_session_and_maybe_first_message(
@@ -296,7 +312,18 @@ pub async fn create_chat_handler(
         payload.lorebook_ids.clone(),     // lorebook_ids
         user_dek_arc,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        error!(
+            user_id = %user.id,
+            character_id = %payload.character_id,
+            error = ?e,
+            error_msg = %e,
+            elapsed_ms = request_start.elapsed().as_millis(),
+            "create_chat_handler: Service call failed"
+        );
+        e
+    })?;
 
     // Generate a custom title if provided (default title is set by the service)
     if let Some(ref title) = payload.title {
@@ -310,20 +337,17 @@ pub async fn create_chat_handler(
             match crypto::encrypt_gcm(custom_title.as_bytes(), dek_for_title_encryption) {
                 Ok((ciphertext, nonce)) => {
                     // Update with encrypted title
-                    pool.get()
-                        .await
-                        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-                        .interact(move |conn| {
-                            diesel::update(chat_sessions::table.find(session_id))
-                                .set((
-                                    chat_sessions::title_ciphertext.eq(Some(ciphertext)),
-                                    chat_sessions::title_nonce.eq(Some(nonce)),
-                                ))
-                                .execute(conn)
-                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-                        })
-                        .await
-                        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+                    crate::db::with_conn(&pool, move |conn| {
+                        diesel::update(chat_sessions::table.find(session_id))
+                            .set((
+                                chat_sessions::title_ciphertext.eq(Some(ciphertext)),
+                                chat_sessions::title_nonce.eq(Some(nonce)),
+                            ))
+                            .execute(conn)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                    })
+                    .await
+                    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
                 }
                 Err(e) => {
                     error!(error = ?e, "Failed to encrypt chat title");
@@ -342,8 +366,10 @@ pub async fn create_chat_handler(
         character_id = ?chat.character_id,
         user_id = %chat.user_id,
         system_prompt_present = chat.system_prompt_ciphertext.is_some(), // Avoid logging potentially large/sensitive prompt
-        title_present = chat.title_ciphertext.is_some() // Also avoid logging title directly
+        title_present = chat.title_ciphertext.is_some(), // Also avoid logging title directly
+        elapsed_ms = request_start.elapsed().as_millis(),
         // Removed full 'chat = ?chat' to avoid logging all fields, including encrypted ones
+        "create_chat_handler: Success - returning 201 Created"
     );
 
     // Return the fully configured Chat struct
@@ -360,28 +386,25 @@ pub async fn create_chat_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn get_chat_by_id_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
-                .first::<Chat>(conn)
-                .map_err(AppError::from) // Use From trait to handle NotFound correctly
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(AppError::from) // Use From trait to handle NotFound correctly
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Ensure the user owns this chat or it's public
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
@@ -404,35 +427,33 @@ pub async fn get_chat_by_id_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn get_chat_deletion_analysis_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // First verify the user owns this chat
     let pool = state.pool.clone();
-    let _chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
-                })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let _chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
+            })
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Get chronicle analysis if this chat has one
-    let chronicle_service = crate::services::ChronicleService::new(state.pool.clone());
+    let chronicle_service =
+        crate::services::ChronicleService::new(state.pool.clone(), state.ai_client.clone());
     let chronicle_analysis = chronicle_service
         .get_chat_deletion_analysis(user.id, id)
         .await?;
@@ -462,35 +483,33 @@ pub async fn get_chat_deletion_analysis_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn delete_chat_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
     Query(params): Query<DeleteChatQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First check if user owns the chat
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
-                })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .filter(chat_sessions::user_id.eq(user.id)) // Ensure ownership
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Chat not found or access denied: {e}"))
+            })
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
-    let chronicle_service = crate::services::ChronicleService::new(state.pool.clone());
+    let chronicle_service =
+        crate::services::ChronicleService::new(state.pool.clone(), state.ai_client.clone());
 
     // Handle chronicle deletion based on the requested strategy
     if let Some(chronicle_id) = chat.player_chronicle_id {
@@ -592,16 +611,13 @@ pub async fn delete_chat_handler(
     }
 
     // Delete the chat (messages and other associated data will cascade)
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::delete(chat_sessions::table.filter(chat_sessions::id.eq(id)))
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    crate::db::with_conn(&pool, move |conn| {
+        diesel::delete(chat_sessions::table.filter(chat_sessions::id.eq(id)))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     info!(
         "Successfully deleted chat session {} with strategy '{}'",
@@ -615,7 +631,7 @@ pub async fn delete_chat_handler(
 pub struct GetMessagesQueryParams {
     #[serde(default = "default_message_limit")]
     pub limit: i64,
-    pub cursor: Option<DateTime<Utc>>, // Timestamp of the last message from previous batch
+    pub cursor: Option<crate::DbTimestamp>, // Timestamp of the last message from previous batch
 }
 
 fn default_message_limit() -> i64 {
@@ -627,7 +643,7 @@ fn default_message_limit() -> i64 {
 pub struct PaginatedMessagesResponse {
     pub messages: Vec<MessageResponse>,
     #[serde(rename = "nextCursor")]
-    pub next_cursor: Option<DateTime<Utc>>,
+    pub next_cursor: Option<crate::DbTimestamp>,
 }
 
 /// Helper function to validate and parse the chat ID
@@ -635,46 +651,47 @@ pub struct PaginatedMessagesResponse {
 /// # Errors
 ///
 /// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
-fn parse_chat_id(id: &str) -> Result<Uuid, AppError> {
-    Uuid::parse_str(id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
+fn parse_chat_id(id: &str) -> Result<crate::db::DbId, AppError> {
+    DbId::parse_str(id)
+        .map(Into::into)
+        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
 }
 
 /// Helper function to get authenticated user
-fn get_authenticated_user(auth_session: CurrentAuthSession) -> Result<User, AppError> {
-    auth_session
-        .user
+fn get_authenticated_user(auth: UnifiedAuth) -> Result<User, AppError> {
+    auth.user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))
 }
 
 /// Helper function to fetch chat session and verify ownership
 async fn fetch_and_verify_chat_ownership(
-    pool: PgPool,
-    chat_id: Uuid,
-    user_id: Uuid,
-) -> Result<Chat, AppError> {
-    pool.get()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get connection from pool: {}", e);
-            AppError::DbPoolError(e.to_string())
-        })?
-        .interact(move |conn| fetch_chat_with_ownership_check(conn, chat_id, user_id))
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))?
+    pool: DbPool,
+    chat_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+) -> Result<ChatSessionQuery, AppError> {
+    crate::db::with_conn(&pool, move |conn| {
+        fetch_chat_with_ownership_check(conn, chat_id, user_id)
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to verify chat ownership: {}", e);
+        AppError::DbInteractError(e.to_string())
+    })
 }
 
 /// Database operation to fetch chat and check ownership
 fn fetch_chat_with_ownership_check(
-    conn: &mut PgConnection,
-    chat_id: Uuid,
-    user_id: Uuid,
-) -> Result<Chat, AppError> {
+    conn: &mut crate::DbConnection,
+    chat_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+) -> Result<ChatSessionQuery, AppError> {
     tracing::debug!("Fetching chat for id={}", chat_id);
 
     let chat = chat_sessions::table
         .filter(chat_sessions::id.eq(chat_id))
-        .select(Chat::as_select())
-        .first::<Chat>(conn)
+        .select(ChatSessionQuery::as_select())
+        .first::<ChatSessionQuery>(conn)
         .map_err(|e| {
             if e == diesel::result::Error::NotFound {
                 tracing::warn!("Chat with id {} not found", chat_id);
@@ -707,21 +724,12 @@ fn fetch_chat_with_ownership_check(
 
 /// Helper function to fetch messages for a chat session with pagination
 async fn fetch_paginated_chat_messages(
-    pool: PgPool,
-    chat_id: Uuid,
+    pool: DbPool,
+    chat_id: crate::db::DbId,
     limit: i64,
-    cursor: Option<DateTime<Utc>>,
+    cursor: Option<crate::DbTimestamp>,
 ) -> Result<Vec<Message>, AppError> {
-    pool.get()
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                "Failed to get connection from pool for paginated messages query: {}",
-                e
-            );
-            AppError::DbPoolError(e.to_string())
-        })?
-        .interact(move |conn| {
+    crate::db::with_conn(&pool, move |conn| {
             tracing::debug!(
                 "Fetching paginated messages for session_id = {}, limit = {}, cursor = {:?}",
                 chat_id,
@@ -734,11 +742,27 @@ async fn fetch_paginated_chat_messages(
                 .filter(chat_messages::status.eq("completed")) // Only get completed messages
                 .order_by(chat_messages::created_at.desc()) // Order by descending for reverse pagination
                 .limit(limit)
-                .select(Message::as_select())
                 .into_boxed(); // Use into_boxed to allow dynamic query building
 
             if let Some(cursor_timestamp) = cursor {
-                query = query.filter(chat_messages::created_at.lt(cursor_timestamp));
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    // SQLite stores timestamps as strings (often with space separator), but cursor is RFC3339 (T separator).
+                    // We must normalize both to ensure correct lexicographical comparison.
+                    // We bind as Text because DbTimestamp's ToSql for SQLite produces an ISO string.
+                    use diesel::dsl::sql;
+                    use diesel::sql_types::{Bool, Text};
+                    query = query.filter(
+                        sql::<Bool>("datetime(created_at) < datetime(")
+                            .bind::<Text, _>(cursor_timestamp.to_string())
+                            .sql(")"),
+                    );
+                }
+
+                #[cfg(feature = "postgres-backend")]
+                {
+                    query = query.filter(chat_messages::created_at.lt(cursor_timestamp));
+                }
             }
 
             let result = query.load::<Message>(conn);
@@ -765,41 +789,37 @@ async fn fetch_paginated_chat_messages(
             }
 
             result.map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| {
-            tracing::error!("Join error in paginated messages query: {}", e);
-            AppError::InternalServerErrorGeneric(e.to_string())
-        })?
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("Join error in paginated messages query: {}", e);
+        AppError::InternalServerErrorGeneric(e.to_string())
+    })
 }
 
 /// Helper function to get the default variant content for a message (variant index 0)
 #[allow(dead_code)]
 async fn get_default_variant_content(
-    pool: PgPool,
-    message_id: Uuid,
-    user_id: Uuid,
+    pool: DbPool,
+    message_id: crate::db::DbId,
+    user_id: crate::db::DbId,
     dek: &crate::auth::session_dek::SessionDek,
 ) -> Result<Option<String>, AppError> {
     use crate::models::chats::MessageVariant;
     use crate::schema::message_variants;
     use diesel::OptionalExtension; // Add this import for .optional()
 
-    let conn = pool.get().await?;
-
-    let variant_opt = conn
-        .interact(move |conn| {
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::user_id.eq(user_id))
-                .filter(message_variants::variant_index.eq(0)) // Always get variant 0 (original)
-                .select(MessageVariant::as_select())
-                .first::<MessageVariant>(conn)
-                .optional()
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let variant_opt = crate::db::with_conn(&pool, move |conn| {
+        message_variants::table
+            .filter(message_variants::parent_message_id.eq(message_id))
+            .filter(message_variants::user_id.eq(user_id))
+            .filter(message_variants::variant_index.eq(0)) // Always get variant 0 (original)
+            .first::<MessageVariant>(conn)
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if let Some(variant) = variant_opt {
         // Decrypt the variant content
@@ -814,8 +834,10 @@ async fn get_default_variant_content(
 async fn process_messages_for_response(
     messages_db: Vec<Message>,
     dek: &crate::auth::session_dek::SessionDek,
-    pool: PgPool,
-    user_id: Uuid,
+    pool: DbPool,
+    user_id: crate::db::DbId,
+    character_name: Option<&str>,
+    user_persona_name: Option<&str>,
 ) -> Result<Vec<MessageResponse>, AppError> {
     tracing::info!("🔄 Processing {} messages for response", messages_db.len());
     let mut responses = Vec::new();
@@ -869,10 +891,8 @@ async fn process_messages_for_response(
             }
         };
 
-        // Always reconstruct parts from the current content (original or variant)
-        // This ensures the frontend gets the correct variant content, not the original parts
-        let response_parts = json!([{"text": content.clone()}]);
-        let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]));
+        // Parts are created inline with template substitution below
+        let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]).into());
 
         let response_role = msg_db
             .role
@@ -895,8 +915,8 @@ async fn process_messages_for_response(
             session_id: msg_db.session_id,
             message_type: msg_db.message_type,
             role: response_role,
-            content,
-            parts: response_parts,
+            content: crate::prompt_builder::replace_template_variables(&content, character_name, user_persona_name),
+            parts: json!([{"text": crate::prompt_builder::replace_template_variables(&content, character_name, user_persona_name)}]).into(),
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
@@ -945,7 +965,7 @@ async fn process_messages_for_response(
 /// - Database operation fails
 /// - Decryption fails
 pub async fn get_messages_by_chat_id_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek, // ADDED SessionDek extractor
     Path(id): Path<String>,
@@ -960,7 +980,7 @@ pub async fn get_messages_by_chat_id_handler(
 
     // Parse and validate input
     let chat_id = parse_chat_id(&id)?;
-    let user = get_authenticated_user(auth_session)?;
+    let user = get_authenticated_user(auth)?;
 
     tracing::debug!(
         "Parsed chat_id = {}, user_id = {}",
@@ -969,16 +989,67 @@ pub async fn get_messages_by_chat_id_handler(
     );
 
     // Fetch chat session and verify ownership
-    let _chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+    let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+
+    // Fetch character name for template substitution (if character_id exists)
+    let character_name: Option<String> = if let Some(char_id) = chat.character_id {
+        crate::db::with_conn(&state.pool, move |conn| {
+            use crate::schema::characters;
+            characters::table
+                .filter(characters::id.eq(char_id))
+                .select(characters::name)
+                .first::<String>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
+
+    // Fetch persona name for template substitution
+    // Priority: 1) chat's active_custom_persona_id, 2) user's default_persona_id
+    let effective_persona_id: Option<crate::db::DbId> = if chat.active_custom_persona_id.is_some() {
+        chat.active_custom_persona_id
+    } else {
+        // Fall back to user's default persona
+        user.default_persona_id
+    };
+
+    let user_persona_name: Option<String> = if let Some(persona_id) = effective_persona_id {
+        crate::db::with_conn(&state.pool, move |conn| {
+            use crate::schema::user_personas;
+            user_personas::table
+                .filter(user_personas::id.eq(persona_id))
+                .select(user_personas::name)
+                .first::<String>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
 
     // Fetch paginated messages for the chat
     let messages_db =
         fetch_paginated_chat_messages(state.pool.clone(), chat_id, params.limit, params.cursor)
             .await?;
 
-    // Decrypt and transform messages for response with variant support
-    let mut responses =
-        process_messages_for_response(messages_db, &dek, state.pool.clone(), user.id).await?;
+    // Decrypt and transform messages for response with variant support + template substitution
+    let mut responses = process_messages_for_response(
+        messages_db,
+        &dek,
+        state.pool.clone(),
+        user.id,
+        character_name.as_deref(),
+        user_persona_name.as_deref(),
+    )
+    .await?;
 
     // Determine the next cursor
     let next_cursor = responses.last().map(|msg| msg.created_at);
@@ -993,14 +1064,15 @@ pub async fn get_messages_by_chat_id_handler(
 }
 
 pub async fn create_message_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
-    Path(chat_id): Path<Uuid>,
+    Path(chat_id): Path<crate::db::DbId>,
     Json(payload): Json<CreateMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Parse the role into enum for validation
@@ -1035,20 +1107,10 @@ pub async fn create_message_handler(
         let pool = state.pool.clone();
         let user_id_for_daily_tracking = user_id;
 
-        let _daily_usage_result = pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| {
-                soft_limit_service.record_usage(
-                    conn,
-                    user_id_for_daily_tracking,
-                    "manual_message",
-                    0,
-                )
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        let _daily_usage_result = crate::db::with_conn(&pool, move |conn| {
+            soft_limit_service.record_usage(conn, user_id_for_daily_tracking, "manual_message", 0)
+        })
+        .await;
 
         match _daily_usage_result {
             Ok(_) => {
@@ -1073,14 +1135,14 @@ pub async fn create_message_handler(
     let app_state = Arc::new(state.clone());
     let saved_db_message = crate::services::chat::message_handling::save_message(
         crate::services::chat::message_handling::SaveMessageParams {
-            state: app_state,
+            state: app_state.clone(),
             session_id: chat_id,
             user_id,
             message_type_enum: message_role_enum,
             content: &payload.content,
             role_str: Some(payload.role.clone()),
-            parts: payload.parts.clone(),
-            attachments: payload.attachments.clone(),
+            parts: payload.parts.clone().map(Into::into),
+            attachments: payload.attachments.clone().map(Into::into),
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
             raw_prompt_debug: None,
@@ -1107,7 +1169,7 @@ pub async fn create_message_handler(
         let model_name_for_tracking = chat.model_name.clone();
 
         // Get a database connection for the usage tracking
-        match state.pool.get().await {
+        match crate::db::get_conn(&state.pool).await {
             Ok(conn) => {
                 let subscription_id = None; // TODO: Get from user's subscription if needed
                 let mut model_usage = std::collections::HashMap::new();
@@ -1118,7 +1180,7 @@ pub async fn create_message_handler(
                         model_usage,
                         feature_usage: std::collections::HashMap::new(),
                         request_count: 1,
-                        last_activity: chrono::Utc::now(),
+                        last_activity: crate::DbTimestamp::now(),
                     },
                 );
 
@@ -1207,8 +1269,155 @@ pub async fn create_message_handler(
     // Use client_message.content (String) for parts if payload.parts is None
     let response_parts = payload
         .parts
-        .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]));
-    let response_attachments = payload.attachments.unwrap_or_else(|| json!([]));
+        .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]).into());
+    let response_attachments = payload.attachments.unwrap_or_else(|| json!([]).into());
+
+    // --- Trigger AI Response Generation (Background Task) ---
+    // Only trigger if the user sent the message (system messages don't trigger AI)
+    if message_role_enum == MessageRole::User {
+        let state_for_gen = app_state.clone();
+        let session_id_for_gen = chat_id;
+        let user_id_for_gen = user_id;
+        let user_dek_for_gen = user_dek_arc.clone();
+        let user_message_content_for_gen = payload.content.clone();
+
+        tokio::spawn(async move {
+            info!(chat_id = %session_id_for_gen, "Spawning background task for AI response generation");
+
+            // 1. Fetch session data and history
+            let session_data_result = generation::get_session_data_for_generation(
+                state_for_gen.clone(),
+                user_id_for_gen,
+                session_id_for_gen,
+                user_message_content_for_gen.clone(),
+                user_dek_for_gen.clone(),
+                None, // No frontend history provided in this endpoint
+            )
+            .await;
+
+            match session_data_result {
+                Ok(data) => {
+                    let (
+                        managed_recent_history,
+                        system_prompt,
+                        _active_lorebook_ids,
+                        _session_character_id,
+                        _raw_character_system_prompt,
+                        temperature,
+                        max_output_tokens,
+                        frequency_penalty,
+                        presence_penalty,
+                        top_k,
+                        top_p,
+                        seed,
+                        model_name,
+                        model_provider,
+                        gemini_thinking_budget,
+                        gemini_enable_code_execution,
+                        _user_db_message_to_save, // We already saved the message
+                        _actual_recent_history_tokens,
+                        _rag_context_items,
+                        _history_management_strategy,
+                        _history_management_limit,
+                        _user_persona_name,
+                        player_chronicle_id,
+                        agent_mode,
+                    ) = data;
+
+                    // 2. Convert history to GenAiChatMessage
+                    let mut incoming_genai_messages = Vec::new();
+
+                    // Add history
+                    if let Some(dek_arc) = &user_dek_for_gen {
+                        for msg in managed_recent_history {
+                            let role = match msg.message_type {
+                                crate::services::chat::types::MessageRole::User => ChatRole::User,
+                                crate::services::chat::types::MessageRole::Assistant => {
+                                    ChatRole::Assistant
+                                }
+                                crate::services::chat::types::MessageRole::System => {
+                                    ChatRole::System
+                                }
+                            };
+
+                            match msg.decrypt_content_field(&dek_arc) {
+                                Ok(content) => {
+                                    incoming_genai_messages.push(GenAiChatMessage {
+                                        role,
+                                        content: genai::chat::MessageContent::Text(content),
+                                        options: None,
+                                    });
+                                }
+                                Err(e) => {
+                                    error!(message_id = %msg.id, error = %e, "Failed to decrypt message for history, skipping");
+                                }
+                            }
+                        }
+                    }
+
+                    // Add the current user message
+                    let last_msg_content =
+                        incoming_genai_messages
+                            .last()
+                            .and_then(|m| match &m.content {
+                                genai::chat::MessageContent::Text(t) => Some(t.clone()),
+                                _ => None,
+                            });
+
+                    if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
+                        incoming_genai_messages.push(GenAiChatMessage {
+                            role: ChatRole::User,
+                            content: genai::chat::MessageContent::Text(
+                                user_message_content_for_gen,
+                            ),
+                            options: None,
+                        });
+                    }
+
+                    // 3. Prepare params
+                    if let Some(dek_arc) = user_dek_for_gen {
+                        let params = StreamAiParams {
+                            state: state_for_gen,
+                            session_id: session_id_for_gen,
+                            user_id: user_id_for_gen,
+                            incoming_genai_messages,
+                            system_prompt,
+                            temperature,
+                            max_output_tokens,
+                            frequency_penalty,
+                            presence_penalty,
+                            top_k,
+                            top_p,
+                            stop_sequences: None, // TODO: Fetch from settings if needed
+                            seed,
+                            model_name,
+                            model_provider,
+                            gemini_thinking_budget,
+                            gemini_enable_code_execution,
+                            request_thinking: false, // Default to false for now
+                            user_dek: dek_arc,
+                            character_name: None,
+                            player_chronicle_id,
+                            variant_of: None,
+                            charge_credits: true, // Charge for AI response
+                        };
+
+                        // 4. Stream response
+                        if let Err(e) =
+                            generation::stream_ai_response_and_save_message(params).await
+                        {
+                            error!(chat_id = %session_id_for_gen, error = %e, "Failed to stream AI response");
+                        }
+                    } else {
+                        error!(chat_id = %session_id_for_gen, "User DEK missing for AI generation");
+                    }
+                }
+                Err(e) => {
+                    error!(chat_id = %session_id_for_gen, error = %e, "Failed to get session data for generation");
+                }
+            }
+        });
+    }
 
     let response = MessageResponse {
         id: client_message.id,
@@ -1245,43 +1454,35 @@ pub async fn create_message_handler(
 /// - Message not found or access denied
 /// - Database operation fails
 pub async fn get_message_by_id_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
-    let message_db: Message = pool
-        .get()
-        .await // Fetches Message struct
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(id))
-                .select(Message::as_select())
-                .first::<Message>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let message_db: Message = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(id))
+            .first::<Message>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(message_db.session_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(message_db.session_id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
         return Err(AppError::Forbidden("Access denied to message".to_string()));
@@ -1337,7 +1538,7 @@ pub async fn get_message_by_id_handler(
 
     let response_parts = message_db
         .parts
-        .unwrap_or_else(|| json!([{"text": decrypted_content_string}]));
+        .unwrap_or_else(|| json!([{"text": decrypted_content_string}]).into());
 
     // Decrypt raw prompt if available
     let decrypted_raw_prompt = match (
@@ -1375,6 +1576,65 @@ pub async fn get_message_by_id_handler(
         _ => None, // No raw prompt stored or empty/missing fields
     };
 
+    // If this is a variant (index > 0), try to fetch the raw prompt from the variant itself
+    #[cfg(feature = "sqlite-backend")]
+    let decrypted_raw_prompt = if message_db.current_variant_index > 0 {
+        let pool = state.pool.clone();
+        let msg_id = message_db.id;
+        let var_idx = message_db.current_variant_index;
+        // Clone the secret key for the closure
+        use secrecy::ExposeSecret;
+        let dek_bytes = dek.0.expose_secret().clone();
+        let dek_box = SecretBox::new(Box::new(dek_bytes));
+
+        let variant_raw_prompt_res = crate::db::with_conn(&pool, move |conn| {
+            use crate::models::chats::MessageVariant;
+
+            let variant_opt = message_variants::table
+                .filter(message_variants::parent_message_id.eq(msg_id))
+                .filter(message_variants::variant_index.eq(var_idx))
+                .first::<MessageVariant>(conn)
+                .optional()
+                .map_err(AppError::from)?;
+
+            Ok::<_, AppError>(variant_opt)
+        })
+        .await;
+
+        match variant_raw_prompt_res {
+            Ok(Some(variant)) => {
+                match (&variant.raw_prompt_ciphertext, &variant.raw_prompt_nonce) {
+                    (Some(ciphertext), Some(nonce))
+                        if !ciphertext.is_empty() && !nonce.is_empty() =>
+                    {
+                        crypto::decrypt_gcm(ciphertext, nonce, &dek_box)
+                            .map_err(|e| {
+                                tracing::error!("Failed to decrypt variant raw prompt: {}", e);
+                                AppError::DecryptionError(e.to_string())
+                            })
+                            .and_then(|secret_bytes| {
+                                String::from_utf8(secret_bytes.expose_secret().clone()).map_err(
+                                    |e| {
+                                        tracing::error!("UTF-8 error variant raw prompt: {}", e);
+                                        AppError::DecryptionError(e.to_string())
+                                    },
+                                )
+                            })
+                            .ok()
+                    }
+                    _ => decrypted_raw_prompt,
+                }
+            }
+            Ok(None) => decrypted_raw_prompt,
+            Err(e) => {
+                tracing::warn!("Failed to fetch variant for raw prompt: {}", e);
+                decrypted_raw_prompt
+            }
+        }
+    } else {
+        decrypted_raw_prompt
+    };
+
     let response = MessageResponse {
         id: message_db.id,
         session_id: message_db.session_id,
@@ -1384,7 +1644,7 @@ pub async fn get_message_by_id_handler(
             .unwrap_or_else(|| message_db.message_type.to_string()),
         content: decrypted_content_string,
         parts: response_parts,
-        attachments: message_db.attachments.unwrap_or_else(|| json!([])),
+        attachments: message_db.attachments.unwrap_or_else(|| json!([]).into()),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
         prompt_tokens: message_db.prompt_tokens,
@@ -1411,46 +1671,39 @@ pub async fn get_message_by_id_handler(
 /// - Authentication fails
 /// - Message not found or access denied
 /// - Database operation fails
+#[cfg(feature = "postgres-backend")]
 pub async fn vote_message_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
     Json(payload): Json<VoteRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First get the message to find its chat ID
-    let message = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(id))
-                .select(Message::as_select()) // Use SelectableHelper trait
-                .first::<Message>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let message = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(id))
+            .first::<Message>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Check if user has access to the chat
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(message.session_id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(message.session_id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if chat.user_id != user.id {
         return Err(AppError::Forbidden("Access denied to vote".to_string()));
@@ -1459,27 +1712,24 @@ pub async fn vote_message_handler(
     let is_upvoted = payload.type_ == "up";
 
     // Insert or update the vote
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::insert_into(crate::schema::old_votes::table) // Use old_votes
-                .values((
-                    crate::schema::old_votes::dsl::chat_id.eq(message.session_id), // Use old_votes::dsl
-                    crate::schema::old_votes::dsl::message_id.eq(id), // Use old_votes::dsl
-                    crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted), // Use old_votes::dsl
-                ))
-                .on_conflict((
-                    crate::schema::old_votes::dsl::chat_id,
-                    crate::schema::old_votes::dsl::message_id,
-                )) // Use old_votes::dsl
-                .do_update()
-                .set(crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted)) // Use old_votes::dsl
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    crate::db::with_conn(&pool, move |conn| {
+        diesel::insert_into(crate::schema::old_votes::table) // Use old_votes
+            .values((
+                crate::schema::old_votes::dsl::chat_id.eq(message.session_id), // Use old_votes::dsl
+                crate::schema::old_votes::dsl::message_id.eq(id),              // Use old_votes::dsl
+                crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted),      // Use old_votes::dsl
+            ))
+            .on_conflict((
+                crate::schema::old_votes::dsl::chat_id,
+                crate::schema::old_votes::dsl::message_id,
+            )) // Use old_votes::dsl
+            .do_update()
+            .set(crate::schema::old_votes::dsl::is_upvoted.eq(is_upvoted)) // Use old_votes::dsl
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     Ok(StatusCode::OK)
 }
@@ -1493,57 +1743,51 @@ pub async fn vote_message_handler(
 /// - Authentication fails
 /// - Chat not found or access denied
 /// - Database operation fails
+#[cfg(feature = "postgres-backend")]
 pub async fn get_votes_by_chat_id_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First check if user has access to the chat
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if chat.user_id != user.id && chat.visibility != Some("public".to_string()) {
         return Err(AppError::Forbidden("Access denied to votes".to_string()));
     }
 
     // Get all votes for the chat
-    let votes = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            crate::schema::old_votes::table // Use old_votes
-                .filter(crate::schema::old_votes::dsl::chat_id.eq(id)) // Use old_votes::dsl
-                .load::<(Uuid, Uuid, bool)>(conn)
-                .map(|rows| {
-                    rows.into_iter()
-                        .map(|(chat_id, message_id, is_upvoted)| Vote {
-                            chat_id,
-                            message_id,
-                            is_upvoted,
-                        })
-                        .collect::<Vec<Vote>>()
-                })
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let votes = crate::db::with_conn(&pool, move |conn| {
+        crate::schema::old_votes::table // Use old_votes
+            .filter(crate::schema::old_votes::dsl::chat_id.eq(id)) // Use old_votes::dsl
+            .load::<(crate::db::DbId, crate::db::DbId, bool)>(conn)
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(chat_id, message_id, is_upvoted)| Vote {
+                        chat_id,
+                        message_id,
+                        is_upvoted,
+                    })
+                    .collect::<Vec<Vote>>()
+            })
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     Ok(Json(votes))
 }
@@ -1558,44 +1802,36 @@ pub async fn get_votes_by_chat_id_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn delete_trailing_messages_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First get the message to find its timestamp and chat ID
-    let message = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(id))
-                .select(Message::as_select()) // Use SelectableHelper trait
-                .first::<Message>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let message = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(id))
+            .first::<Message>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Check if user owns the chat
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(message.session_id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(message.session_id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if chat.user_id != user.id {
         return Err(AppError::Forbidden(
@@ -1607,42 +1843,149 @@ pub async fn delete_trailing_messages_handler(
     let chat_id = message.session_id;
     let timestamp = message.created_at;
 
-    let message_ids = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::session_id.eq(chat_id))
-                .filter(chat_messages::created_at.ge(timestamp))
-                .select(chat_messages::id)
-                .load::<Uuid>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let message_ids = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::session_id.eq(chat_id))
+            .filter(chat_messages::created_at.ge(timestamp))
+            .select(chat_messages::id)
+            .load::<crate::db::DbId>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if !message_ids.is_empty() {
         // Clone message_ids for different operations
         let message_ids_clone_for_messages = message_ids.clone();
         let message_ids_clone_for_embeddings = message_ids.clone();
+        let message_ids_clone_for_variants = message_ids.clone();
 
-        // Delete associated votes first
-        pool.get()
+        // Fix for SQLite foreign key constraint:
+        // chronicle_events references message_variants(id) but might not have ON DELETE CASCADE.
+        // We must manually set message_variant_id to NULL for any events referencing variants of these messages
+        // before we delete the messages (which cascades to variants).
+        #[cfg(feature = "sqlite-backend")]
+        let variant_ids: Vec<String> = {
+            let message_ids_strings: Vec<String> = message_ids_clone_for_variants
+                .iter()
+                .map(|id| id.to_string())
+                .collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::message_variants::dsl as mv_dsl;
+                mv_dsl::message_variants
+                    .filter(mv_dsl::parent_message_id.eq_any(message_ids_strings))
+                    .select(mv_dsl::id)
+                    .load::<String>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
             .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| {
-                // This closure moves the original message_ids
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        let variant_ids: Vec<uuid::Uuid> = {
+            let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_variants
+                .iter()
+                .map(|&id| id.into())
+                .collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::message_variants::dsl as mv_dsl;
+                mv_dsl::message_variants
+                    .filter(mv_dsl::parent_message_id.eq_any(message_uuids))
+                    .select(mv_dsl::id)
+                    .load::<uuid::Uuid>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+        };
+
+        if !variant_ids.is_empty() {
+            tracing::info!(
+                "Cleaning up {} variants referenced in chronicle events before trailing message deletion",
+                variant_ids.len()
+            );
+            #[cfg(feature = "sqlite-backend")]
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::chronicle_events::dsl as ce_dsl;
+                diesel::update(
+                    ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+                )
+                .set(ce_dsl::message_variant_id.eq(None::<String>))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+            #[cfg(feature = "postgres-backend")]
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::chronicle_events::dsl as ce_dsl;
+                diesel::update(
+                    ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+                )
+                .set(ce_dsl::message_variant_id.eq(None::<uuid::Uuid>))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
+
+        // Fix for SQLite foreign key constraint:
+        // agent_context_analysis references chat_messages(id) via assistant_message_id but might not have ON DELETE CASCADE.
+        // We must manually delete these analysis records before deleting the messages.
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let message_ids_strings: Vec<String> = message_ids_clone_for_variants
+                .iter()
+                .map(|id| id.to_string())
+                .collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::agent_context_analysis::dsl as aca_dsl;
                 diesel::delete(
-                    crate::schema::old_votes::table // Use old_votes
-                        .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
-                        .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_ids)) // Use original message_ids here
+                    aca_dsl::agent_context_analysis
+                        .filter(aca_dsl::assistant_message_id.eq_any(message_ids_strings)),
                 )
                 .execute(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            let message_uuids: Vec<uuid::Uuid> = message_ids.iter().map(|&id| id.into()).collect();
+            crate::db::with_conn(&pool, move |conn| {
+                use crate::schema::agent_context_analysis::dsl as aca_dsl;
+                diesel::delete(
+                    aca_dsl::agent_context_analysis
+                        .filter(aca_dsl::assistant_message_id.eq_any(message_uuids)),
+                )
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
+
+        // Delete associated votes first (PostgreSQL only - old_votes table)
+        #[cfg(feature = "postgres-backend")]
+        {
+            crate::db::with_conn(&pool, move |conn| {
+                // This closure moves the original message_ids
+                let message_uuids: Vec<uuid::Uuid> =
+                    message_ids.iter().map(|&id| id.into()).collect();
+                diesel::delete(crate::schema::old_votes::table) // Use old_votes
+                    .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id)) // Use old_votes::dsl
+                    .filter(crate::schema::old_votes::dsl::message_id.eq_any(message_uuids)) // Use converted UUIDs
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        }
 
         // Delete embeddings from Qdrant
         if let Err(e) = state
@@ -1658,22 +2001,37 @@ pub async fn delete_trailing_messages_handler(
             tracing::warn!("Failed to delete message embeddings from Qdrant: {}", e);
         }
 
-        // Now delete the messages from PostgreSQL
-        pool.get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| {
-                // This closure moves the clone
-                diesel::delete(
-                    chat_messages::table
-                        .filter(chat_messages::session_id.eq(chat_id))
-                        .filter(chat_messages::id.eq_any(message_ids_clone_for_messages)), // Use the clone here
-                )
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        // Now delete the messages from the database
+        crate::db::with_conn(&pool, move |conn| {
+            // This closure moves the clone
+            #[cfg(feature = "postgres-backend")]
+            {
+                let message_uuids: Vec<uuid::Uuid> = message_ids_clone_for_messages
+                    .iter()
+                    .map(|&id| id.into())
+                    .collect();
+                diesel::delete(chat_messages::table)
+                    .filter(chat_messages::session_id.eq(chat_id))
+                    .filter(chat_messages::id.eq_any(message_uuids))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            }
+
+            #[cfg(feature = "sqlite-backend")]
+            {
+                let message_strings: Vec<String> = message_ids_clone_for_messages
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect();
+                diesel::delete(chat_messages::table)
+                    .filter(chat_messages::session_id.eq(chat_id))
+                    .filter(chat_messages::id.eq_any(message_strings))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            }
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -1688,49 +2046,41 @@ pub async fn delete_trailing_messages_handler(
 /// - Message not found or access denied
 /// - Database operation fails
 pub async fn delete_message_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First get the message to verify ownership
-    let message = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(id))
-                .select(Message::as_select())
-                .first::<Message>(conn)
-                .map_err(|e| match e {
-                    diesel::result::Error::NotFound => {
-                        AppError::NotFound("Message not found".to_string())
-                    }
-                    _ => AppError::DatabaseQueryError(e.to_string()),
-                })
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let message = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(id))
+            .first::<Message>(conn)
+            .map_err(|e| match e {
+                diesel::result::Error::NotFound => {
+                    AppError::NotFound("Message not found".to_string())
+                }
+                _ => AppError::DatabaseQueryError(e.to_string()),
+            })
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     // Check if user owns the chat
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(message.session_id))
-                .select(Chat::as_select())
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(message.session_id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     if chat.user_id != user.id {
         return Err(AppError::Forbidden(
@@ -1741,11 +2091,10 @@ pub async fn delete_message_handler(
     let message_id = message.id;
     let chat_id = message.session_id;
 
-    // Delete associated votes first
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
+    // Delete associated votes first (PostgreSQL only - old_votes table)
+    #[cfg(feature = "postgres-backend")]
+    {
+        crate::db::with_conn(&pool, move |conn| {
             diesel::delete(
                 crate::schema::old_votes::table
                     .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id))
@@ -1755,7 +2104,107 @@ pub async fn delete_message_handler(
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
+
+    // Fix for SQLite foreign key constraint:
+    // chronicle_events references message_variants(id) but might not have ON DELETE CASCADE.
+    // We must manually set message_variant_id to NULL for any events referencing variants of this message
+    // before we delete the message (which cascades to variants).
+    #[cfg(feature = "sqlite-backend")]
+    let variant_ids: Vec<String> = {
+        let message_id_str = message_id.to_string();
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::message_variants::dsl as mv_dsl;
+            mv_dsl::message_variants
+                .filter(mv_dsl::parent_message_id.eq(message_id_str))
+                .select(mv_dsl::id)
+                .load::<String>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+    };
+
+    #[cfg(feature = "postgres-backend")]
+    let variant_ids: Vec<uuid::Uuid> = {
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::message_variants::dsl as mv_dsl;
+            mv_dsl::message_variants
+                .filter(mv_dsl::parent_message_id.eq(message_id))
+                .select(mv_dsl::id)
+                .load::<uuid::Uuid>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
+    };
+
+    if !variant_ids.is_empty() {
+        tracing::info!(
+            "Cleaning up {} variants referenced in chronicle events before message deletion",
+            variant_ids.len()
+        );
+        #[cfg(feature = "sqlite-backend")]
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::chronicle_events::dsl as ce_dsl;
+            diesel::update(
+                ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+            )
+            .set(ce_dsl::message_variant_id.eq(None::<String>))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+        #[cfg(feature = "postgres-backend")]
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::chronicle_events::dsl as ce_dsl;
+            diesel::update(
+                ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
+            )
+            .set(ce_dsl::message_variant_id.eq(None::<uuid::Uuid>))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
+
+    // Fix for SQLite foreign key constraint:
+    // agent_context_analysis references chat_messages(id) via assistant_message_id but might not have ON DELETE CASCADE.
+    // We must manually delete these analysis records before deleting the message.
+    #[cfg(feature = "sqlite-backend")]
+    {
+        let message_id_str = message_id.to_string();
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::agent_context_analysis::dsl as aca_dsl;
+            diesel::delete(
+                aca_dsl::agent_context_analysis
+                    .filter(aca_dsl::assistant_message_id.eq(message_id_str)),
+            )
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
+
+    #[cfg(feature = "postgres-backend")]
+    {
+        crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::agent_context_analysis::dsl as aca_dsl;
+            diesel::delete(
+                aca_dsl::agent_context_analysis
+                    .filter(aca_dsl::assistant_message_id.eq(message_id)),
+            )
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+    }
 
     // Delete embeddings from Qdrant
     if let Err(e) = state
@@ -1768,16 +2217,19 @@ pub async fn delete_message_handler(
     }
 
     // Delete the message from PostgreSQL
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::delete(chat_messages::table.filter(chat_messages::id.eq(message_id)))
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    crate::db::with_conn(&pool, move |conn| {
+        diesel::delete(chat_messages::table.filter(chat_messages::id.eq(message_id)))
+            .execute(conn)
+            .map_err(|e| {
+                tracing::error!("Failed to delete message from DB: {:?}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to delete message (outer error): {:?}", e);
+        AppError::InternalServerErrorGeneric(e.to_string())
+    })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1792,30 +2244,27 @@ pub async fn delete_message_handler(
 /// - Chat not found or access denied
 /// - Database operation fails
 pub async fn update_chat_visibility_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateChatVisibilityRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let pool = state.pool.clone();
 
     // First check if user owns the chat
-    let chat = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_sessions::table
-                .filter(chat_sessions::id.eq(id))
-                .select(Chat::as_select()) // Use SelectableHelper trait
-                .first::<Chat>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
     if chat.user_id != user.id {
         return Err(AppError::Forbidden(
             "Access denied to update chat visibility".to_string(),
@@ -1830,17 +2279,14 @@ pub async fn update_chat_visibility_handler(
     }
 
     // Update the chat visibility
-    pool.get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(id)))
-                .set(chat_sessions::visibility.eq(payload.visibility))
-                .execute(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+    crate::db::with_conn(&pool, move |conn| {
+        diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(id)))
+            .set(chat_sessions::visibility.eq(payload.visibility))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
     Ok(StatusCode::OK)
 }
@@ -1855,13 +2301,14 @@ pub async fn update_chat_visibility_handler(
 /// - Database operation fails
 /// - Decryption fails
 pub async fn get_chat_settings_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    dek: SessionDek,      // Added SessionDek extractor
-    Path(id): Path<Uuid>, // This is session_id
+    dek: SessionDek,                 // Added SessionDek extractor
+    Path(id): Path<crate::db::DbId>, // This is session_id
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Call the service function to get chat settings
@@ -1893,17 +2340,20 @@ pub async fn get_chat_settings_handler(
 /// - Database operation fails
 /// - Encryption fails
 pub async fn update_chat_settings_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
     dek: SessionDek, // Added SessionDek extractor
-    Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateChatSettingsRequest>, // Use standard Json extractor
+    Path(id): Path<crate::db::DbId>,
+    crate::extractors::JsonExtractor(payload): crate::extractors::JsonExtractor<
+        UpdateChatSettingsRequest,
+    >,
 ) -> Result<impl IntoResponse, AppError> {
     // Manually validate the payload
     payload.validate()?; // Ensure validator is imported and used
 
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
     let user_id = user.id; // Clone user_id for use in service call
 
@@ -1923,7 +2373,7 @@ pub async fn update_chat_settings_handler(
 // DTOs for deletion analysis
 #[derive(Debug, Serialize)]
 pub struct ChronicleAnalysisDto {
-    pub id: Uuid,
+    pub id: crate::db::DbId,
     pub name: String,
     pub total_events: i32,
     pub events_from_this_chat: i32,
@@ -1950,65 +2400,53 @@ fn default_chronicle_action() -> String {
 /// Get token usage statistics for a specific chat session
 #[axum::debug_handler]
 async fn get_chat_token_usage_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(chat_id = %id, "Getting chat token usage statistics");
 
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Fetch the chat session to verify ownership and get token statistics
     let user_id = user.id;
-    let conn = state.pool.get().await.map_err(|e| {
-        tracing::error!("Failed to get database connection: {}", e);
-        AppError::DbPoolError(e.to_string())
-    })?;
-
-    let chat = conn
-        .interact(move |conn| {
-            chat_sessions::table
-                .select(Chat::as_select())
-                .filter(chat_sessions::id.eq(id))
-                .filter(chat_sessions::user_id.eq(user_id))
-                .first::<Chat>(conn)
-                .map_err(|e| match e {
-                    diesel::result::Error::NotFound => {
-                        AppError::NotFound("Chat not found or access denied".to_string())
-                    }
-                    _ => {
-                        tracing::error!("Database error querying chat: {}", e);
-                        AppError::DatabaseQueryError("Failed to query chat".to_string())
-                    }
-                })
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+    let chat = crate::db::with_conn(&state.pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(id))
+            .filter(chat_sessions::user_id.eq(user_id))
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
+            .map_err(|e| match e {
+                diesel::result::Error::NotFound => {
+                    AppError::NotFound("Chat not found or access denied".to_string())
+                }
+                _ => {
+                    tracing::error!("Database error querying chat: {}", e);
+                    AppError::DatabaseQueryError("Failed to query chat".to_string())
+                }
+            })
+    })
+    .await?;
 
     let total_tokens = chat.total_prompt_tokens + chat.total_completion_tokens;
     let estimated_cost_dollars = chat.estimated_cost_cents as f64 / 100.0;
 
-    // Get the last used model from the most recent message in this chat
-    let conn_clone = state.pool.get().await.map_err(|e| {
-        tracing::error!("Failed to get second database connection: {}", e);
-        AppError::DbPoolError(e.to_string())
-    })?;
+    // Get model_name from most recent message
+    let model_name_query = crate::db::with_conn(&state.pool, move |conn| {
+        chat_messages::table
+            .select(chat_messages::model_name)
+            .filter(chat_messages::session_id.eq(id))
+            .order_by(chat_messages::created_at.desc())
+            .first::<String>(conn)
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await?;
 
-    let model_name = conn_clone
-        .interact(move |conn| {
-            chat_messages::table
-                .select(chat_messages::model_name)
-                .filter(chat_messages::session_id.eq(id))
-                .order_by(chat_messages::created_at.desc())
-                .first::<String>(conn)
-                .optional()
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))??
-        .unwrap_or_else(|| "unknown".to_string());
+    let model_name = model_name_query.unwrap_or_else(|| "unknown".to_string());
 
     let token_usage = ChatTokenUsage {
         chat_id: id,
@@ -2027,35 +2465,30 @@ async fn get_chat_token_usage_handler(
 /// Select a variant for a message
 /// Updates the current_variant_index and returns the message with new content
 pub async fn select_message_variant_handler(
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     State(state): State<AppState>,
-    Path(message_id): Path<Uuid>,
+    Path(message_id): Path<crate::db::DbId>,
     dek: SessionDek, // Added SessionDek extractor
     Json(payload): Json<SelectVariantRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     let pool = state.pool.clone();
 
     // Verify the message exists and user has access
-    let message_db = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            chat_messages::table
-                .filter(chat_messages::id.eq(message_id))
-                .filter(chat_messages::user_id.eq(user.id))
-                .select(Message::as_select())
-                .first::<Message>(conn)
-                .optional()
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))?
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("Message not found".to_string()))?;
+    let message_db = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(message_id))
+            .filter(chat_messages::user_id.eq(user.id))
+            .first::<Message>(conn)
+            .optional()
+            .map_err(Into::into)
+    })
+    .await?
+    .ok_or_else(|| AppError::NotFound("Message not found".to_string()))?;
 
     // Validate variant index
     if payload.variant_index < 0 || payload.variant_index >= message_db.variant_count {
@@ -2069,11 +2502,8 @@ pub async fn select_message_variant_handler(
 
     // Update the current_variant_index in the database
     let pool_clone = pool.clone();
-    let updated_message = pool_clone
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| -> Result<Message, AppError> {
+    let updated_message =
+        crate::db::with_conn(&pool_clone, move |conn| -> Result<Message, AppError> {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))
                 .set(chat_messages::current_variant_index.eq(payload.variant_index))
                 .execute(conn)
@@ -2082,12 +2512,11 @@ pub async fn select_message_variant_handler(
             // Get the updated message
             chat_messages::table
                 .filter(chat_messages::id.eq(message_id))
-                .select(Message::as_select())
                 .first::<Message>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))??;
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?;
 
     // Get the content for the selected variant
     let content = if payload.variant_index == 0 {
@@ -2118,8 +2547,10 @@ pub async fn select_message_variant_handler(
             .role
             .unwrap_or_else(|| updated_message.message_type.to_string()),
         content,
-        parts: updated_message.parts.unwrap_or_else(|| json!([])),
-        attachments: updated_message.attachments.unwrap_or_else(|| json!([])),
+        parts: updated_message.parts.unwrap_or_else(|| json!([]).into()),
+        attachments: updated_message
+            .attachments
+            .unwrap_or_else(|| json!([]).into()),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
@@ -2131,7 +2562,7 @@ pub async fn select_message_variant_handler(
         current_variant_index: updated_message.current_variant_index,
         is_variant: false,
         parent_message_id: None,
-        variants: None, // Don't include full variant data in selection response
+        variants: None,
     };
 
     Ok((StatusCode::OK, Json(response)))
@@ -2139,30 +2570,25 @@ pub async fn select_message_variant_handler(
 
 /// Helper function to get variant content by index
 async fn get_variant_content_by_index(
-    pool: PgPool,
-    message_id: Uuid,
+    pool: DbPool,
+    message_id: crate::db::DbId,
     variant_index: i32,
-    user_id: Uuid,
+    user_id: crate::db::DbId,
     dek: &SessionDek,
 ) -> Result<Option<String>, AppError> {
     use crate::schema::message_variants;
 
     let dek_ref = &dek.0;
-    let variant_opt = pool
-        .get()
-        .await
-        .map_err(|e| AppError::DbPoolError(e.to_string()))?
-        .interact(move |conn| {
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::user_id.eq(user_id))
-                .filter(message_variants::variant_index.eq(variant_index))
-                .first::<crate::models::chats::MessageVariant>(conn)
-                .optional()
-        })
-        .await
-        .map_err(|e| AppError::DbInteractError(e.to_string()))?
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    let variant_opt = crate::db::with_conn(&pool, move |conn| {
+        message_variants::table
+            .filter(message_variants::parent_message_id.eq(message_id))
+            .filter(message_variants::user_id.eq(user_id))
+            .filter(message_variants::variant_index.eq(variant_index))
+            .first::<crate::models::chats::MessageVariant>(conn)
+            .optional()
+            .map_err(Into::into)
+    })
+    .await?;
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;

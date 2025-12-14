@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Workspace dependency
-scribe-backend = { path = "../backend" }
+scribe-backend = { path = "../backend", default-features = false, features = ["cloud"] }
 
 # CLI dependencies
 clap = { version = "4.5.37", features = ["derive", "env"] }
@@ -26,14 +26,14 @@ chrono = { version = "0.4.40" }
 secrecy = { version = "0.10.3", features = ["serde"] }
 async-stream = "0.3" # For creating streams
 tokio-stream = "0.1" # Removed incorrect features
-dirs = "5.0.1" # For locating config directory
+dirs = "6.0.0" # For locating config directory
 
 # Added missing dependencies for handlers
 genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "cbb1c69" }
 qdrant-client = "1.10.0"
 
 # Added for JSON handling with backend
-diesel_json = "0.2.1"
+diesel_json = "0.3.0"
 
 # Moved from dev-dependencies
 httptest = "0.16.3" # For mocking HTTP requests in tests

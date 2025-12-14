@@ -79,11 +79,11 @@ pub enum SecurityEventSeverity {
 /// Security event record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityEvent {
-    pub id: Uuid,
-    pub timestamp: DateTime<Utc>,
+    pub id: crate::db::DbId,
+    pub timestamp: crate::DbTimestamp,
     pub event_type: SecurityEventType,
     pub severity: SecurityEventSeverity,
-    pub user_id: Option<Uuid>,
+    pub user_id: Option<crate::db::DbId>,
     pub session_id: Option<String>,
     pub source_ip: Option<String>,
     pub user_agent: Option<String>,
@@ -91,7 +91,7 @@ pub struct SecurityEvent {
     pub endpoint: String,
     pub method: String,
     pub message: String,
-    pub details: HashMap<String, serde_json::Value>,
+    pub details: HashMap<String, crate::DbJson>,
     pub blocked: bool,
     pub remediation_taken: Vec<String>,
 }
@@ -106,7 +106,7 @@ impl SecurityEvent {
         message: String,
     ) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             timestamp: Utc::now(),
             event_type,
             severity,
@@ -125,7 +125,7 @@ impl SecurityEvent {
     }
 
     /// Add user context to the event
-    pub fn with_user(mut self, user_id: Uuid) -> Self {
+    pub fn with_user(mut self, user_id: crate::db::DbId) -> Self {
         self.user_id = Some(user_id);
         self
     }
@@ -272,7 +272,7 @@ pub struct SecurityAuditLogger {
     max_events: usize,
     alerting_enabled: bool,
     alert_thresholds: HashMap<SecurityEventType, (u32, Duration)>, // (count, time_window)
-    user_activity: Arc<RwLock<HashMap<Uuid, Vec<DateTime<Utc>>>>>, // Track user activity
+    user_activity: Arc<RwLock<HashMap<crate::db::DbId, Vec<crate::DbTimestamp>>>>, // Track user activity
 }
 
 impl SecurityAuditLogger {
@@ -357,7 +357,7 @@ impl SecurityAuditLogger {
     }
 
     /// Track user activity for pattern detection
-    fn track_user_activity(&self, user_id: Uuid) {
+    fn track_user_activity(&self, user_id: crate::db::DbId) {
         if let Ok(mut activity) = self.user_activity.write() {
             let user_events = activity.entry(user_id).or_insert_with(Vec::new);
             user_events.push(Utc::now());
@@ -439,7 +439,7 @@ impl SecurityAuditLogger {
     }
 
     /// Get suspicious user activity
-    pub fn get_suspicious_users(&self, min_events: usize) -> Vec<(Uuid, usize)> {
+    pub fn get_suspicious_users(&self, min_events: usize) -> Vec<(crate::db::DbId, usize)> {
         if let Ok(activity) = self.user_activity.read() {
             activity
                 .iter()
@@ -470,9 +470,9 @@ impl SecurityAuditLogger {
 pub struct SecurityEventFilter {
     pub event_types: Option<Vec<SecurityEventType>>,
     pub severity_min: Option<SecurityEventSeverity>,
-    pub user_id: Option<Uuid>,
-    pub since: Option<DateTime<Utc>>,
-    pub until: Option<DateTime<Utc>>,
+    pub user_id: Option<crate::db::DbId>,
+    pub since: Option<crate::DbTimestamp>,
+    pub until: Option<crate::DbTimestamp>,
     pub blocked_only: bool,
     pub limit: Option<usize>,
 }
@@ -492,12 +492,12 @@ impl SecurityEventFilter {
         self
     }
 
-    pub fn with_user(mut self, user_id: Uuid) -> Self {
+    pub fn with_user(mut self, user_id: crate::db::DbId) -> Self {
         self.user_id = Some(user_id);
         self
     }
 
-    pub fn since(mut self, timestamp: DateTime<Utc>) -> Self {
+    pub fn since(mut self, timestamp: crate::DbTimestamp) -> Self {
         self.since = Some(timestamp);
         self
     }
@@ -569,7 +569,7 @@ impl SecurityAuditLogger {
     /// Log a prompt injection attempt
     pub fn log_prompt_injection(
         &self,
-        user_id: Option<Uuid>,
+        user_id: Option<crate::db::DbId>,
         endpoint: &str,
         pattern: &str,
         blocked: bool,
@@ -596,7 +596,13 @@ impl SecurityAuditLogger {
     }
 
     /// Log rate limit exceeded
-    pub fn log_rate_limit_exceeded(&self, user_id: Uuid, endpoint: &str, limit: u32, current: u32) {
+    pub fn log_rate_limit_exceeded(
+        &self,
+        user_id: crate::db::DbId,
+        endpoint: &str,
+        limit: u32,
+        current: u32,
+    ) {
         let event = SecurityEvent::new(
             SecurityEventType::RateLimitExceeded,
             SecurityEventType::RateLimitExceeded.default_severity(),
@@ -613,7 +619,12 @@ impl SecurityAuditLogger {
     }
 
     /// Log sensitive data leakage
-    pub fn log_sensitive_data_leak(&self, user_id: Option<Uuid>, endpoint: &str, data_type: &str) {
+    pub fn log_sensitive_data_leak(
+        &self,
+        user_id: Option<crate::db::DbId>,
+        endpoint: &str,
+        data_type: &str,
+    ) {
         let event = SecurityEvent::new(
             SecurityEventType::SensitiveDataLeakage,
             SecurityEventType::SensitiveDataLeakage.default_severity(),
@@ -704,6 +715,8 @@ impl From<SecurityError> for SecurityEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_security_event_creation() {

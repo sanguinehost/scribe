@@ -1,7 +1,7 @@
 // backend/src/routes/user_persona_routes.rs
 
 use crate::auth::session_dek::SessionDek;
-use crate::auth::user_store::Backend as AuthBackend;
+use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::models::user_personas::{
     CreateUserPersonaDto, UpdateUserPersonaDto, UserPersonaDataForClient,
@@ -16,13 +16,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use axum_login::AuthSession;
 use std::sync::Arc;
 use tracing::instrument;
-use uuid::Uuid;
-
-// Type alias for the auth session
-type CurrentAuthSession = AuthSession<AuthBackend>;
 
 pub fn user_personas_router(state: AppState) -> Router<AppState> {
     Router::new()
@@ -39,15 +34,15 @@ pub fn user_personas_router(state: AppState) -> Router<AppState> {
         .with_state(state)
 }
 
-#[instrument(skip(state, auth_session, dek, payload), err)]
+#[instrument(skip(state, auth, dek, payload), err)]
 async fn create_user_persona_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek,
     Json(payload): Json<CreateUserPersonaDto>,
 ) -> Result<(StatusCode, Json<UserPersonaDataForClient>), AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     let enc_service = Arc::new(EncryptionService::new());
@@ -60,14 +55,14 @@ async fn create_user_persona_handler(
     Ok((StatusCode::CREATED, Json(created_persona)))
 }
 
-#[instrument(skip(state, auth_session, dek), err)]
+#[instrument(skip(state, auth, dek), err)]
 async fn list_user_personas_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek,
 ) -> Result<Json<Vec<UserPersonaDataForClient>>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     let enc_service = Arc::new(EncryptionService::new());
@@ -80,15 +75,15 @@ async fn list_user_personas_handler(
     Ok(Json(personas))
 }
 
-#[instrument(skip(state, auth_session, dek), err)]
+#[instrument(skip(state, auth, dek), err)]
 async fn get_user_persona_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek,
-    Path(persona_id): Path<Uuid>,
+    Path(persona_id): Path<crate::db::DbId>,
 ) -> Result<Json<UserPersonaDataForClient>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     let enc_service = Arc::new(EncryptionService::new());
@@ -101,16 +96,16 @@ async fn get_user_persona_handler(
     Ok(Json(persona))
 }
 
-#[instrument(skip(state, auth_session, dek, payload), err)]
+#[instrument(skip(state, auth, dek, payload), err)]
 async fn update_user_persona_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
+    auth: UnifiedAuth,
     dek: SessionDek,
-    Path(persona_id): Path<Uuid>,
+    Path(persona_id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateUserPersonaDto>,
 ) -> Result<Json<UserPersonaDataForClient>, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     let enc_service = Arc::new(EncryptionService::new());
@@ -123,14 +118,14 @@ async fn update_user_persona_handler(
     Ok(Json(updated_persona))
 }
 
-#[instrument(skip(state, auth_session), err)]
+#[instrument(skip(state, auth), err)]
 async fn delete_user_persona_handler(
     State(state): State<AppState>,
-    auth_session: CurrentAuthSession,
-    Path(persona_id): Path<Uuid>,
+    auth: UnifiedAuth,
+    Path(persona_id): Path<crate::db::DbId>,
 ) -> Result<StatusCode, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
 
     // Note: UserPersonaService::delete_user_persona does not require EncryptionService or DEK

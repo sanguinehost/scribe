@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
+use diesel::sql_query;
 use tracing::{info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,
@@ -23,6 +23,41 @@ fn map_diesel_error(e: DieselError) -> AppError {
     }
 }
 
+/// Helper function to convert tuple to TemplatePreference
+fn tuple_to_template_preference(
+    tuple: (
+        crate::db::DbId,
+        crate::db::DbId,
+        Option<crate::db::DbId>,
+        Option<String>,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        bool,
+        bool,
+        chrono::NaiveDateTime,
+        chrono::NaiveDateTime,
+    ),
+) -> TemplatePreference {
+    TemplatePreference {
+        id: tuple.0,
+        user_id: tuple.1,
+        character_id: tuple.2,
+        template_id: tuple.3,
+        tense: tuple.4,
+        narration: tuple.5,
+        perspective: tuple.6,
+        length: tuple.7,
+        enable_info_box: tuple.8,
+        enable_stats_tracker: tuple.9,
+        enable_thinking: tuple.10,
+        created_at: tuple.11,
+        updated_at: tuple.12,
+    }
+}
+
 pub struct TemplatePreferenceService;
 
 impl TemplatePreferenceService {
@@ -32,12 +67,10 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn get_template_preferences(
         pool: &DbPool,
-        user_id: Uuid,
-        character_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        character_id: Option<crate::db::DbId>,
     ) -> Result<TemplatePreferenceResponse, AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             info!(%user_id, ?character_id, "GET: Looking for template preferences");
 
             // Try to find existing preferences for this user+character combination
@@ -55,15 +88,46 @@ impl TemplatePreferenceService {
                 }
             }
 
+            // Use manual tuple selection instead of .as_select() for SQLite compatibility
             let existing = query
-                .first::<TemplatePreference>(conn)
+                .select((
+                    template_preferences::id,
+                    template_preferences::user_id,
+                    template_preferences::character_id,
+                    template_preferences::template_id,
+                    template_preferences::tense,
+                    template_preferences::narration,
+                    template_preferences::perspective,
+                    template_preferences::length,
+                    template_preferences::enable_info_box,
+                    template_preferences::enable_stats_tracker,
+                    template_preferences::enable_thinking,
+                    template_preferences::created_at,
+                    template_preferences::updated_at,
+                ))
+                .first::<(
+                    crate::db::DbId,
+                    crate::db::DbId,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    String,
+                    bool,
+                    bool,
+                    bool,
+                    chrono::NaiveDateTime,
+                    chrono::NaiveDateTime,
+                )>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             info!(%user_id, ?character_id, found = existing.is_some(), "GET: Query result");
 
             match existing {
-                Some(prefs) => {
+                Some(tuple) => {
+                    let prefs = tuple_to_template_preference(tuple);
                     info!(
                         %user_id, ?character_id,
                         tense = %prefs.tense,
@@ -75,31 +139,99 @@ impl TemplatePreferenceService {
                 None => {
                     info!(%user_id, ?character_id, "GET: No template preferences found, creating defaults");
 
-                    // Create default preferences
-                    let new_prefs = NewTemplatePreference {
-                        user_id,
-                        character_id,
-                        template_id: None,
-                        tense: "past-tense".to_string(),
-                        narration: "third-person".to_string(),
-                        perspective: "omniscient".to_string(),
-                        length: "flexible".to_string(),
-                        enable_info_box: false,
-                        enable_stats_tracker: false,
-                        enable_thinking: false,
-                    };
+                    // Generate ID for the new template_preferences record
+                    let preference_id = crate::db::DbId::new();
 
-                    let created = diesel::insert_into(template_preferences::table)
-                        .values(&new_prefs)
-                        .get_result::<TemplatePreference>(conn)
+                    // Create default preferences
+                    let tense = "past-tense".to_string();
+                    let narration = "third-person".to_string();
+                    let perspective = "omniscient".to_string();
+                    let length = "flexible".to_string();
+                    let enable_info_box = false;
+                    let enable_stats_tracker = false;
+                    let enable_thinking = false;
+                    let now = chrono::Utc::now().naive_utc();
+
+                    // Insert with raw SQL to explicitly set ID field (SQLite doesn't support DEFAULT uuid_generate_v4())
+                    let query = sql_query(
+                        r#"
+                        INSERT INTO template_preferences (
+                            id, user_id, character_id, template_id, tense, narration,
+                            perspective, length, enable_info_box, enable_stats_tracker,
+                            enable_thinking, created_at, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        "#,
+                    );
+
+                    #[cfg(feature = "postgres-backend")]
+                    let query = query
+                        .bind::<diesel::sql_types::Uuid, _>(preference_id)
+                        .bind::<diesel::sql_types::Uuid, _>(user_id)
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Uuid>, _>(character_id);
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let query = query
+                        .bind::<diesel::sql_types::Text, _>(preference_id)
+                        .bind::<diesel::sql_types::Text, _>(user_id)
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(character_id);
+
+                    let query = query
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(None::<String>) // template_id
+                        .bind::<diesel::sql_types::Text, _>(&tense)
+                        .bind::<diesel::sql_types::Text, _>(&narration)
+                        .bind::<diesel::sql_types::Text, _>(&perspective)
+                        .bind::<diesel::sql_types::Text, _>(&length)
+                        .bind::<diesel::sql_types::Bool, _>(enable_info_box)
+                        .bind::<diesel::sql_types::Bool, _>(enable_stats_tracker)
+                        .bind::<diesel::sql_types::Bool, _>(enable_thinking)
+                        .bind::<diesel::sql_types::Timestamp, _>(now)
+                        .bind::<diesel::sql_types::Timestamp, _>(now);
+
+                    query.execute(conn).map_err(map_diesel_error)?;
+
+                    // Query back using the known ID
+                    let tuple = template_preferences::table
+                        .filter(template_preferences::id.eq(preference_id))
+                        .select((
+                            template_preferences::id,
+                            template_preferences::user_id,
+                            template_preferences::character_id,
+                            template_preferences::template_id,
+                            template_preferences::tense,
+                            template_preferences::narration,
+                            template_preferences::perspective,
+                            template_preferences::length,
+                            template_preferences::enable_info_box,
+                            template_preferences::enable_stats_tracker,
+                            template_preferences::enable_thinking,
+                            template_preferences::created_at,
+                            template_preferences::updated_at,
+                        ))
+                        .first::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            Option<crate::db::DbId>,
+                            Option<String>,
+                            String,
+                            String,
+                            String,
+                            String,
+                            bool,
+                            bool,
+                            bool,
+                            chrono::NaiveDateTime,
+                            chrono::NaiveDateTime,
+                        )>(conn)
                         .map_err(map_diesel_error)?;
+
+                    let created = tuple_to_template_preference(tuple);
 
                     info!(%user_id, ?character_id, "Created default template preferences");
                     Ok(TemplatePreferenceResponse::from(created))
                 }
             }
         })
-        .await?
+        .await
     }
 
     /// Updates template preferences for a specific user and optional character.
@@ -107,13 +239,11 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn update_template_preferences(
         pool: &DbPool,
-        user_id: Uuid,
-        character_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        character_id: Option<crate::db::DbId>,
         update_request: UpdateTemplatePreferenceRequest,
     ) -> Result<TemplatePreferenceResponse, AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             // Find or create preferences
             // Use .is_null() for None and .eq() for Some(uuid) to properly handle NULLs in Diesel
             let mut query = template_preferences::table
@@ -129,46 +259,150 @@ impl TemplatePreferenceService {
                 }
             }
 
+            // Use manual tuple selection instead of .as_select() for SQLite compatibility
             let existing = query
-                .first::<TemplatePreference>(conn)
+                .select((
+                    template_preferences::id,
+                    template_preferences::user_id,
+                    template_preferences::character_id,
+                    template_preferences::template_id,
+                    template_preferences::tense,
+                    template_preferences::narration,
+                    template_preferences::perspective,
+                    template_preferences::length,
+                    template_preferences::enable_info_box,
+                    template_preferences::enable_stats_tracker,
+                    template_preferences::enable_thinking,
+                    template_preferences::created_at,
+                    template_preferences::updated_at,
+                ))
+                .first::<(
+                    crate::db::DbId,
+                    crate::db::DbId,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    String,
+                    bool,
+                    bool,
+                    bool,
+                    chrono::NaiveDateTime,
+                    chrono::NaiveDateTime,
+                )>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             // Get or create the existing preferences
             let existing_prefs = match existing {
-                Some(prefs) => prefs,
+                Some(tuple) => tuple_to_template_preference(tuple),
                 None => {
-                    // Create defaults WITH the update request values instead of hardcoded defaults
-                    let new_prefs = NewTemplatePreference {
-                        user_id,
-                        character_id,
-                        template_id: update_request.template_id.clone(),
-                        tense: update_request
-                            .tense
-                            .clone()
-                            .unwrap_or_else(|| "past-tense".to_string()),
-                        narration: update_request
-                            .narration
-                            .clone()
-                            .unwrap_or_else(|| "third-person".to_string()),
-                        perspective: update_request
-                            .perspective
-                            .clone()
-                            .unwrap_or_else(|| "omniscient".to_string()),
-                        length: update_request
-                            .length
-                            .clone()
-                            .unwrap_or_else(|| "flexible".to_string()),
-                        enable_info_box: update_request.enable_info_box.unwrap_or(false),
-                        enable_stats_tracker: update_request.enable_stats_tracker.unwrap_or(false),
-                        enable_thinking: update_request.enable_thinking.unwrap_or(false),
-                    };
+                    // Generate ID for the new template_preferences record
+                    let preference_id = crate::db::DbId::new();
 
-                    // Insert with the requested values, no need to UPDATE after
-                    let created = diesel::insert_into(template_preferences::table)
-                        .values(&new_prefs)
-                        .get_result::<TemplatePreference>(conn)
+                    // Create defaults WITH the update request values instead of hardcoded defaults
+                    let template_id = update_request.template_id.clone();
+                    let tense = update_request
+                        .tense
+                        .clone()
+                        .unwrap_or_else(|| "past-tense".to_string());
+                    let narration = update_request
+                        .narration
+                        .clone()
+                        .unwrap_or_else(|| "third-person".to_string());
+                    let perspective = update_request
+                        .perspective
+                        .clone()
+                        .unwrap_or_else(|| "omniscient".to_string());
+                    let length = update_request
+                        .length
+                        .clone()
+                        .unwrap_or_else(|| "flexible".to_string());
+                    let enable_info_box = update_request.enable_info_box.unwrap_or(false);
+                    let enable_stats_tracker = update_request.enable_stats_tracker.unwrap_or(false);
+                    let enable_thinking = update_request.enable_thinking.unwrap_or(false);
+                    let now = chrono::Utc::now().naive_utc();
+
+                    // Insert with raw SQL to explicitly set ID field (SQLite doesn't support DEFAULT uuid_generate_v4())
+                    let query = sql_query(
+                        r#"
+                        INSERT INTO template_preferences (
+                            id, user_id, character_id, template_id, tense, narration,
+                            perspective, length, enable_info_box, enable_stats_tracker,
+                            enable_thinking, created_at, updated_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        "#,
+                    );
+
+                    #[cfg(feature = "postgres-backend")]
+                    let query = query
+                        .bind::<diesel::sql_types::Uuid, _>(preference_id)
+                        .bind::<diesel::sql_types::Uuid, _>(user_id)
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Uuid>, _>(
+                            character_id,
+                        );
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let query = query
+                        .bind::<diesel::sql_types::Text, _>(preference_id)
+                        .bind::<diesel::sql_types::Text, _>(user_id)
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(
+                            character_id,
+                        );
+
+                    let query = query
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(
+                            template_id,
+                        )
+                        .bind::<diesel::sql_types::Text, _>(&tense)
+                        .bind::<diesel::sql_types::Text, _>(&narration)
+                        .bind::<diesel::sql_types::Text, _>(&perspective)
+                        .bind::<diesel::sql_types::Text, _>(&length)
+                        .bind::<diesel::sql_types::Bool, _>(enable_info_box)
+                        .bind::<diesel::sql_types::Bool, _>(enable_stats_tracker)
+                        .bind::<diesel::sql_types::Bool, _>(enable_thinking)
+                        .bind::<diesel::sql_types::Timestamp, _>(now)
+                        .bind::<diesel::sql_types::Timestamp, _>(now);
+
+                    query.execute(conn).map_err(map_diesel_error)?;
+
+                    // Query back using the known ID
+                    let tuple = template_preferences::table
+                        .filter(template_preferences::id.eq(preference_id))
+                        .select((
+                            template_preferences::id,
+                            template_preferences::user_id,
+                            template_preferences::character_id,
+                            template_preferences::template_id,
+                            template_preferences::tense,
+                            template_preferences::narration,
+                            template_preferences::perspective,
+                            template_preferences::length,
+                            template_preferences::enable_info_box,
+                            template_preferences::enable_stats_tracker,
+                            template_preferences::enable_thinking,
+                            template_preferences::created_at,
+                            template_preferences::updated_at,
+                        ))
+                        .first::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            Option<crate::db::DbId>,
+                            Option<String>,
+                            String,
+                            String,
+                            String,
+                            String,
+                            bool,
+                            bool,
+                            bool,
+                            chrono::NaiveDateTime,
+                            chrono::NaiveDateTime,
+                        )>(conn)
                         .map_err(map_diesel_error)?;
+
+                    let created = tuple_to_template_preference(tuple);
 
                     info!(
                         %user_id, ?character_id,
@@ -232,11 +466,42 @@ impl TemplatePreferenceService {
 
             info!(%user_id, ?character_id, rows_affected, "Updated template preferences in DB");
 
-            // Retrieve updated preferences
-            let updated = template_preferences::table
+            // Retrieve updated preferences using manual tuple selection
+            let tuple = template_preferences::table
                 .filter(template_preferences::id.eq(existing_prefs.id))
-                .first::<TemplatePreference>(conn)
+                .select((
+                    template_preferences::id,
+                    template_preferences::user_id,
+                    template_preferences::character_id,
+                    template_preferences::template_id,
+                    template_preferences::tense,
+                    template_preferences::narration,
+                    template_preferences::perspective,
+                    template_preferences::length,
+                    template_preferences::enable_info_box,
+                    template_preferences::enable_stats_tracker,
+                    template_preferences::enable_thinking,
+                    template_preferences::created_at,
+                    template_preferences::updated_at,
+                ))
+                .first::<(
+                    crate::db::DbId,
+                    crate::db::DbId,
+                    Option<crate::db::DbId>,
+                    Option<String>,
+                    String,
+                    String,
+                    String,
+                    String,
+                    bool,
+                    bool,
+                    bool,
+                    chrono::NaiveDateTime,
+                    chrono::NaiveDateTime,
+                )>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            let updated = tuple_to_template_preference(tuple);
 
             info!(
                 %user_id, ?character_id,
@@ -246,7 +511,7 @@ impl TemplatePreferenceService {
             );
             Ok(TemplatePreferenceResponse::from(updated))
         })
-        .await?
+        .await
     }
 
     /// Deletes template preferences for a specific user and optional character.
@@ -254,12 +519,10 @@ impl TemplatePreferenceService {
     #[instrument(skip(pool), err)]
     pub async fn delete_template_preferences(
         pool: &DbPool,
-        user_id: Uuid,
-        character_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        character_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             // Use .is_null() for None and .eq() for Some(uuid) to properly handle NULLs in Diesel
             let deleted_count = match character_id {
                 Some(char_id) => diesel::delete(
@@ -286,6 +549,6 @@ impl TemplatePreferenceService {
 
             Ok(())
         })
-        .await?
+        .await
     }
 }

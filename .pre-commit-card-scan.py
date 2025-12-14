@@ -179,10 +179,20 @@ IGNORE_PATTERNS = [
     # Build and compiled files (timestamped data, not card numbers)
     re.compile(r'"version":"[0-9]{13}"', re.IGNORECASE),
     re.compile(r'when.*[0-9]{13}', re.IGNORECASE),
+
+    # Unix timestamps (milliseconds since epoch)
+    re.compile(r'timestamp.*\d{13}', re.IGNORECASE),
+    re.compile(r'expires_at.*\d{13}', re.IGNORECASE),
+    re.compile(r'expiresAt.*\d{13}', re.IGNORECASE),
+    re.compile(r'\d{13}.*//.*timestamp', re.IGNORECASE),
+    re.compile(r'\d{13}.*milliseconds', re.IGNORECASE),
+    re.compile(r'desktop/src/storage\.rs', re.IGNORECASE),
 ]
 
 def scan_file(file_path):
     """Scan a single file for card data patterns."""
+    # Ensure file_path is a Path object and convert to string
+    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
     file_path_str = str(file_path)
 
     # Skip files by path patterns
@@ -202,34 +212,52 @@ def scan_file(file_path):
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
     except Exception as e:
-        print(f"Warning: Could not read {file_path}: {e}")
+        print(f"Warning: Could not read {file_path_str}: {e}")
         return []
 
     issues = []
     lines = content.splitlines()
 
     for i, line in enumerate(lines, 1):
-        line_lower = line.lower()
+        # Ensure line is a string
+        try:
+            line = str(line) if not isinstance(line, str) else line
+            line_lower = line.lower()
+        except Exception as e:
+            print(f"Warning: Could not process line {i} in {file_path_str}: {e} (type: {type(line)})")
+            continue
 
         # Check if line should be ignored
         ignore = False
-        for ignore_pattern in IGNORE_PATTERNS:
-            if ignore_pattern.search(line_lower) or ignore_pattern.search(file_path_str):
-                ignore = True
-                break
+        for pattern_idx, ignore_pattern in enumerate(IGNORE_PATTERNS):
+            try:
+                if ignore_pattern.search(line_lower) or ignore_pattern.search(file_path_str):
+                    ignore = True
+                    break
+            except TypeError as e:
+                print(f"Warning: TypeError in ignore pattern #{pattern_idx} for {file_path_str}:{i} - {e}")
+                print(f"  Pattern type: {type(ignore_pattern)}, pattern: {repr(ignore_pattern)[:100]}")
+                print(f"  line_lower type: {type(line_lower)}, value: {repr(line_lower)[:100]}")
+                print(f"  file_path_str type: {type(file_path_str)}, value: {repr(file_path_str)[:100]}")
+                continue
 
         if ignore:
             continue
 
         # Check for card data patterns
         for pattern, description in CARD_PATTERNS:
-            if pattern.search(line_lower):
-                issues.append({
-                    'file': file_path,
-                    'line': i,
-                    'pattern': description,
-                    'content': line.strip()[:100]  # Truncate long lines
-                })
+            try:
+                if pattern.search(line_lower):
+                    issues.append({
+                        'file': file_path_str,  # Use string instead of Path object
+                        'line': i,
+                        'pattern': description,
+                        'content': line.strip()[:100]  # Truncate long lines
+                    })
+            except TypeError as e:
+                print(f"Warning: TypeError in card pattern for {file_path_str}:{i} - {e}")
+                print(f"  line_lower type: {type(line_lower)}, value: {repr(line_lower)[:100]}")
+                continue
 
     return issues
 

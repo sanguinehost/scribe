@@ -6,6 +6,7 @@ import type {
 	SoftLimitStatus,
 	DailyUsage
 } from '$lib/types/payment';
+import { logger } from '$lib/utils/logger';
 
 // Usage store state
 interface UsageState {
@@ -123,7 +124,9 @@ function createUsageStore() {
 
 		refreshInterval = setInterval(() => {
 			if (PAYMENT_FEATURES.enabled) {
-				fetchUsageStats().catch(console.error);
+				fetchUsageStats().catch((error) =>
+					logger.error('usage-store', 'Auto-refresh usage stats failed', error)
+				);
 			}
 		}, intervalMs);
 	}

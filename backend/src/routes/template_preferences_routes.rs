@@ -6,20 +6,20 @@ use axum::{
     routing::{delete, get, put},
     Json, Router,
 };
-use axum_login::AuthSession;
 use serde::Deserialize;
 use tracing::debug;
-use uuid::Uuid;
 
 use crate::{
-    auth::AuthBackend, errors::AppError,
+    auth::{session_dek::SessionDek, token_auth::UnifiedAuth},
+    errors::AppError,
     models::template_preferences::UpdateTemplatePreferenceRequest,
-    services::TemplatePreferenceService, state::AppState,
+    services::TemplatePreferenceService,
+    state::AppState,
 };
 
 #[derive(Deserialize)]
 struct CharacterIdQuery {
-    character_id: Option<Uuid>,
+    character_id: Option<crate::db::DbId>,
 }
 
 /// Logging middleware for template preferences routes
@@ -49,12 +49,13 @@ pub fn template_preferences_routes(state: AppState) -> Router<AppState> {
 /// Gets template preferences for the authenticated user and optional character
 #[axum::debug_handler]
 async fn get_template_preferences_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Query(query): Query<CharacterIdQuery>,
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, ?query.character_id, "Getting template preferences");
@@ -73,15 +74,16 @@ async fn get_template_preferences_handler(
 /// Updates template preferences for the authenticated user and optional character
 #[axum::debug_handler]
 async fn update_template_preferences_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Query(query): Query<CharacterIdQuery>,
     Json(update_request): Json<UpdateTemplatePreferenceRequest>,
 ) -> Result<Response, AppError> {
     debug!("=== UPDATE HANDLER ENTERED ===");
 
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, ?query.character_id, ?update_request, "Updating template preferences");
@@ -101,12 +103,13 @@ async fn update_template_preferences_handler(
 /// Deletes template preferences for the authenticated user and optional character
 #[axum::debug_handler]
 async fn delete_template_preferences_handler(
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     State(app_state): State<AppState>,
     Query(query): Query<CharacterIdQuery>,
 ) -> Result<Response, AppError> {
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
+        .cloned()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
     debug!(user_id = %user.id, ?query.character_id, "Deleting template preferences");

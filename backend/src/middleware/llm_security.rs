@@ -1,7 +1,11 @@
 // backend/src/middleware/llm_security.rs
 // Security middleware for LLM operations
 
-use crate::{auth::user_store::Backend as AuthBackend, errors::AppError, state::AppState};
+use crate::{
+    auth::{token_auth::UnifiedAuth, user_store::Backend as AuthBackend},
+    errors::AppError,
+    state::AppState,
+};
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
@@ -14,7 +18,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, warn};
-use uuid::Uuid;
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{SecurityAuditLogger, SecurityEventType};
@@ -29,7 +32,7 @@ pub struct UserRateLimit {
 /// Global rate limiter for LLM operations
 #[derive(Debug)]
 pub struct LlmRateLimiter {
-    user_limits: Arc<RwLock<HashMap<Uuid, UserRateLimit>>>,
+    user_limits: Arc<RwLock<HashMap<crate::db::DbId, UserRateLimit>>>,
     max_requests_per_minute: u32,
     max_requests_per_hour: u32,
     cleanup_interval: Duration,
@@ -48,7 +51,7 @@ impl LlmRateLimiter {
     }
 
     /// Check if user is allowed to make a request
-    pub fn check_rate_limit(&self, user_id: Uuid) -> Result<(), RateLimitError> {
+    pub fn check_rate_limit(&self, user_id: crate::db::DbId) -> Result<(), RateLimitError> {
         let now = Instant::now();
 
         // Cleanup old entries if needed
@@ -161,21 +164,21 @@ pub struct RateLimitResponse {
 /// Security middleware for LLM operations
 pub async fn llm_security_middleware(
     State(app_state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     _headers: HeaderMap,
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let start_time = Instant::now();
 
-    // Extract user from session
-    let user = match auth_session.user {
+    // Extract user from session (supports both JWT and cookie auth)
+    let user = match auth.user().cloned() {
         Some(user) => user,
         None => {
             // Log unauthorized access
             #[cfg(feature = "local-llm")]
             if let Some(ref audit_logger) = app_state.security_audit_logger {
-                let ip = extract_client_ip(&headers);
+                let ip = extract_client_ip(&_headers);
                 audit_logger.log_unauthorized_access(
                     &request.uri().path(),
                     &request.method().as_str(),
@@ -342,14 +345,15 @@ pub async fn security_headers_middleware(request: Request, next: Next) -> Respon
     response
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_rate_limiter() {
         let limiter = LlmRateLimiter::new(2, 5); // 2 per minute, 5 per hour
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
 
         // First two requests should pass
         assert!(limiter.check_rate_limit(user_id).is_ok());

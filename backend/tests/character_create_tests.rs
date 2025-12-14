@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 #![allow(clippy::too_many_lines)]
 
@@ -24,6 +25,7 @@ use http_body_util::BodyExt;
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{
     crypto,
+    db::DbId,
     models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
     schema::users,
 };
@@ -69,7 +71,7 @@ fn insert_test_user_with_password(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)

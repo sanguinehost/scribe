@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // backend/tests/agentic_workflow_integration_tests.rs
 //
 // Integration tests for the complete agentic narrative workflow using mock AI responses.
@@ -150,7 +151,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                     .as_bytes()
                     .to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(20),
             completion_tokens: Some(0),
@@ -173,7 +174,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                     .as_bytes()
                     .to_vec(),
             content_nonce: Some(vec![5, 6, 7, 8]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(0),
             completion_tokens: Some(25),
@@ -307,7 +308,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
             .as_bytes()
             .to_vec(),
         content_nonce: Some(vec![1, 2, 3, 4]),
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id,
         prompt_tokens: Some(15),
         completion_tokens: Some(0),
@@ -419,7 +420,7 @@ async fn test_dual_mode_extraction_comparison() {
             message_type: MessageRole::User,
             content: "How are you today?".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(5),
             completion_tokens: Some(0),
@@ -439,7 +440,7 @@ async fn test_dual_mode_extraction_comparison() {
             message_type: MessageRole::Assistant,
             content: "I'm doing well, thank you for asking!".as_bytes().to_vec(),
             content_nonce: Some(vec![5, 6, 7, 8]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(0),
             completion_tokens: Some(10),
@@ -538,7 +539,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         message_type: MessageRole::User,
         content: "This should cause JSON parsing failure".as_bytes().to_vec(),
         content_nonce: Some(vec![1, 2, 3, 4]),
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id,
         prompt_tokens: Some(5),
         completion_tokens: Some(0),

@@ -1,5 +1,8 @@
 use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 
 impl LorebookService {
     /// Creates a new lorebook for the authenticated user.
@@ -18,30 +21,39 @@ impl LorebookService {
         debug!(?payload, "Attempting to create lorebook");
         let user = get_user_from_session(auth_session)?;
 
-        let new_lorebook_id = Uuid::new_v4();
+        let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id: user.id,
             name: payload.name,
             description: payload.description,
             source_format: "scribe_v1".to_string(), // Default for API created
             is_public: false,                       // Default to private
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
+        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let inserted_lorebook = conn
             .interact(move |conn_sync| {
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook_db)
-                    .returning(Lorebook::as_returning()) // Specify returning columns
-                    .get_result::<Lorebook>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .returning(Lorebook::as_returning())
+                        .get_result::<Lorebook>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    super::insert_lorebook_sync(conn_sync, &new_lorebook_db)
+                }
             })
             .await
             .map_err(|e| {
@@ -79,7 +91,7 @@ impl LorebookService {
         debug!("Attempting to list lorebooks");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -126,12 +138,12 @@ impl LorebookService {
     pub async fn get_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<LorebookResponse, AppError> {
         debug!(%lorebook_id, "Attempting to get lorebook");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -191,7 +203,7 @@ impl LorebookService {
     pub async fn update_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
         payload: UpdateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!(?payload, "Attempting to update lorebook");
@@ -199,75 +211,68 @@ impl LorebookService {
         // 1. Get current user
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
         // 2. Fetch lorebook by id and check ownership
-        let updated_lorebook = conn
-            .interact(move |conn| {
-                use crate::schema::lorebooks::dsl::{
-                    description, id, lorebooks, name, updated_at, user_id,
-                };
+        let updated_lorebook = crate::db::with_conn(&self.pool, move |conn| {
+            use crate::schema::lorebooks::dsl::{
+                description, id, lorebooks, name, updated_at, user_id,
+            };
 
-                // First verify the lorebook exists and belongs to the user
-                let existing_lorebook = lorebooks
+            // First verify the lorebook exists and belongs to the user
+            let existing_lorebook = lorebooks
+                .filter(id.eq(lorebook_id))
+                .filter(user_id.eq(user.id))
+                .select(Lorebook::as_select())
+                .first::<Lorebook>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            if let Some(existing) = existing_lorebook {
+                // User owns this lorebook, proceed with update
+                // Build the update dynamically based on what fields are provided
+                let update_query = diesel::update(lorebooks.filter(id.eq(lorebook_id)));
+
+                // Only update fields that are provided (Some)
+                let new_name = payload.name.unwrap_or(existing.name);
+                let new_description = payload.description.or(existing.description);
+
+                let timestamp: crate::DbTimestamp = Utc::now().into();
+                let _rows_updated = update_query
+                    .set((
+                        name.eq(new_name),
+                        description.eq(new_description),
+                        updated_at.eq(timestamp),
+                    ))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                // Fetch the updated lorebook with proper column ordering
+                let updated = lorebooks
                     .filter(id.eq(lorebook_id))
-                    .filter(user_id.eq(user.id))
                     .select(Lorebook::as_select())
                     .first::<Lorebook>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                tracing::info!(
+                    "Successfully updated lorebook [REDACTED_UUID] for user [REDACTED_UUID]"
+                );
+                Ok(updated)
+            } else {
+                // Check if lorebook exists but belongs to another user
+                let exists = lorebooks
+                    .filter(id.eq(lorebook_id))
+                    .select(id)
+                    .first::<crate::db::DbId>(conn)
                     .optional()
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                if let Some(existing) = existing_lorebook {
-                    // User owns this lorebook, proceed with update
-                    // Build the update dynamically based on what fields are provided
-                    let update_query = diesel::update(lorebooks.filter(id.eq(lorebook_id)));
-
-                    // Only update fields that are provided (Some)
-                    let new_name = payload.name.unwrap_or(existing.name);
-                    let new_description = payload.description.or(existing.description);
-
-                    let _rows_updated = update_query
-                        .set((
-                            name.eq(new_name),
-                            description.eq(new_description),
-                            updated_at.eq(Utc::now()),
-                        ))
-                        .execute(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                    // Fetch the updated lorebook with proper column ordering
-                    let updated = lorebooks
-                        .filter(id.eq(lorebook_id))
-                        .select(Lorebook::as_select())
-                        .first::<Lorebook>(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                    tracing::info!(
-                        "Successfully updated lorebook [REDACTED_UUID] for user [REDACTED_UUID]"
-                    );
-                    Ok(updated)
+                if exists.is_some() {
+                    Err(AppError::Forbidden("Access denied to lorebook".to_string()))
                 } else {
-                    // Check if lorebook exists but belongs to another user
-                    let exists = lorebooks
-                        .filter(id.eq(lorebook_id))
-                        .select(id)
-                        .first::<Uuid>(conn)
-                        .optional()
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                    if exists.is_some() {
-                        Err(AppError::Forbidden("Access denied to lorebook".to_string()))
-                    } else {
-                        Err(AppError::NotFound("Lorebook not found".to_string()))
-                    }
+                    Err(AppError::NotFound("Lorebook not found".to_string()))
                 }
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))??;
+            }
+        })
+        .await?;
 
         // 6. Map to LorebookResponse
         Ok(LorebookResponse {
@@ -286,67 +291,56 @@ impl LorebookService {
     pub async fn delete_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook");
 
         // 1. Get current user
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
         // 2. Delete lorebook and verify ownership in a single transaction
+        crate::db::with_conn(&self.pool, move |conn| {
+            use crate::schema::lorebooks::dsl::{id, lorebooks, user_id};
 
-        // Perform database deletion first
-        conn
-            .interact(move |conn| {
-                use crate::schema::lorebooks::dsl::{id, lorebooks, user_id};
+            // First verify the lorebook exists and belongs to the user
+            let lorebook_owner = lorebooks
+                .filter(id.eq(lorebook_id))
+                .select(user_id)
+                .first::<crate::db::DbId>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                // First verify the lorebook exists and belongs to the user
-                let lorebook_owner = lorebooks
-                    .filter(id.eq(lorebook_id))
-                    .select(user_id)
-                    .first::<Uuid>(conn)
-                    .optional()
+            match lorebook_owner {
+                Some(owner_id) if owner_id == user.id => {
+                    // User owns this lorebook
+                    // Due to foreign key constraints with CASCADE DELETE,
+                    // deleting the lorebook will automatically delete:
+                    // - All lorebook_entries
+                    // - All chat_session_lorebooks associations
+
+                    diesel::delete(
+                        lorebooks
+                            .filter(id.eq(lorebook_id))
+                            .filter(user_id.eq(user.id)),
+                    )
+                    .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                match lorebook_owner {
-                    Some(owner_id) if owner_id == user.id => {
-                        // User owns this lorebook
-                        // Due to foreign key constraints with CASCADE DELETE,
-                        // deleting the lorebook will automatically delete:
-                        // - All lorebook_entries
-                        // - All chat_session_lorebooks associations
-
-                        diesel::delete(
-                            lorebooks
-                                .filter(id.eq(lorebook_id))
-                                .filter(user_id.eq(user.id)),
-                        )
-                        .execute(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                        tracing::info!(
-                            "Successfully deleted lorebook [REDACTED_UUID] from database for user [REDACTED_UUID]"
-                        );
-                        Ok(())
-                    }
-                    Some(_) => {
-                        // Lorebook exists but belongs to another user
-                        Err(AppError::Forbidden("Access denied to lorebook".to_string()))
-                    }
-                    None => {
-                        // Lorebook doesn't exist
-                        Err(AppError::NotFound("Lorebook not found".to_string()))
-                    }
+                    tracing::info!(
+                        "Successfully deleted lorebook [REDACTED_UUID] from database for user [REDACTED_UUID]"
+                    );
+                    Ok(())
                 }
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))??; // Propagate the error
+                Some(_) => {
+                    // Lorebook exists but belongs to another user
+                    Err(AppError::Forbidden("Access denied to lorebook".to_string()))
+                }
+                None => {
+                    // Lorebook doesn't exist
+                    Err(AppError::NotFound("Lorebook not found".to_string()))
+                }
+            }
+        }).await?;
 
         // After successful database deletion, clean up vector embeddings
         tracing::info!(

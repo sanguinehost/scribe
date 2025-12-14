@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 /// Security event types for structured logging to CloudWatch
@@ -9,7 +8,7 @@ pub enum SecurityEvent {
     /// Webhook signature verification failure (potential attack)
     #[serde(rename = "webhook_signature_failure")]
     WebhookSignatureFailure {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         ip_address: String, // Anonymized IP (last octet masked)
         endpoint: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -19,7 +18,7 @@ pub enum SecurityEvent {
     /// Authentication failure (credential stuffing, brute force)
     #[serde(rename = "auth_failure")]
     AuthFailure {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         user_hash: String,  // Hashed user ID (SHA-256 + salt)
         ip_address: String, // Anonymized IP
         failure_reason: String,
@@ -29,7 +28,7 @@ pub enum SecurityEvent {
     /// Credit operation anomaly (fraud detection)
     #[serde(rename = "credit_operation_anomaly")]
     CreditOperationAnomaly {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         user_hash: String,      // Hashed user ID
         operation_type: String, // "add", "deduct", "expire"
         amount: f64,
@@ -40,7 +39,7 @@ pub enum SecurityEvent {
     /// Encryption/decryption error (key compromise indicator)
     #[serde(rename = "encryption_error")]
     EncryptionError {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         error_type: String, // "decryption_failed", "invalid_key", "corrupted_data"
         context: String,    // Operation context (NO PII)
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,7 +49,7 @@ pub enum SecurityEvent {
     /// Suspicious data access pattern (exfiltration attempt)
     #[serde(rename = "suspicious_data_access")]
     SuspiciousDataAccess {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         user_hash: String, // Hashed user ID
         endpoint: String,
         record_count: usize,
@@ -61,7 +60,7 @@ pub enum SecurityEvent {
     /// DEK cache bulk access (key scraping attempt)
     #[serde(rename = "dek_cache_bulk_access")]
     DekCacheBulkAccess {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         user_hash: String, // Hashed user ID
         access_count: usize,
         time_window_seconds: u64,
@@ -71,17 +70,17 @@ pub enum SecurityEvent {
     /// Payment webhook replay attack detected
     #[serde(rename = "webhook_replay_attack")]
     WebhookReplayAttack {
-        timestamp: DateTime<Utc>,
+        timestamp: crate::DbTimestamp,
         ip_address: String, // Anonymized IP
         event_id: String,   // Paddle event ID
-        original_timestamp: DateTime<Utc>,
+        original_timestamp: crate::DbTimestamp,
         replay_delay_seconds: i64,
     },
 }
 
 impl SecurityEvent {
     /// Get the timestamp of the security event
-    pub fn timestamp(&self) -> DateTime<Utc> {
+    pub fn timestamp(&self) -> crate::DbTimestamp {
         match self {
             SecurityEvent::WebhookSignatureFailure { timestamp, .. } => *timestamp,
             SecurityEvent::AuthFailure { timestamp, .. } => *timestamp,
@@ -190,14 +189,15 @@ impl SecurityEventSeverity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use chrono::Utc;
 
     #[test]
     fn test_webhook_signature_failure_serialization() {
         let event = SecurityEvent::WebhookSignatureFailure {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             ip_address: "192.168.1.0".to_string(),
             endpoint: "/api/webhooks/paddle".to_string(),
             user_agent: Some("curl/7.68.0".to_string()),
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn test_auth_failure_serialization() {
         let event = SecurityEvent::AuthFailure {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#abc123".to_string(),
             ip_address: "10.0.0.0".to_string(),
             failure_reason: "invalid_password".to_string(),
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn test_credit_operation_anomaly_severity() {
         let event_low = SecurityEvent::CreditOperationAnomaly {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#xyz789".to_string(),
             operation_type: "add".to_string(),
             amount: 1000.0,
@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(event_low.severity(), SecurityEventSeverity::P1);
 
         let event_critical = SecurityEvent::CreditOperationAnomaly {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#xyz789".to_string(),
             operation_type: "add".to_string(),
             amount: 1000000.0,
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn test_encryption_error_serialization() {
         let event = SecurityEvent::EncryptionError {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             error_type: "decryption_failed".to_string(),
             context: "payment_transaction_decryption".to_string(),
             affected_record_count: Some(15),
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn test_suspicious_data_access_severity() {
         let event_low = SecurityEvent::SuspiciousDataAccess {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#def456".to_string(),
             endpoint: "/api/characters".to_string(),
             record_count: 50,
@@ -279,7 +279,7 @@ mod tests {
         assert_eq!(event_low.severity(), SecurityEventSeverity::P2);
 
         let event_high = SecurityEvent::SuspiciousDataAccess {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#def456".to_string(),
             endpoint: "/api/users".to_string(),
             record_count: 500,
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(event_high.severity(), SecurityEventSeverity::P1);
 
         let event_critical = SecurityEvent::SuspiciousDataAccess {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#def456".to_string(),
             endpoint: "/api/transactions".to_string(),
             record_count: 2000,
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn test_dek_cache_bulk_access_serialization() {
         let event = SecurityEvent::DekCacheBulkAccess {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#ghi012".to_string(),
             access_count: 150,
             time_window_seconds: 60,
@@ -321,7 +321,7 @@ mod tests {
     fn test_webhook_replay_attack_serialization() {
         let original_ts = Utc::now() - chrono::Duration::hours(2);
         let event = SecurityEvent::WebhookReplayAttack {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             ip_address: "203.0.113.0".to_string(),
             event_id: "evt_abc123xyz".to_string(),
             original_timestamp: original_ts,
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_high_volume_auth_failure_severity() {
         let event = SecurityEvent::AuthFailure {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#brute123".to_string(),
             ip_address: "198.51.100.0".to_string(),
             failure_reason: "invalid_password".to_string(),
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_privacy_safe_serialization_no_pii() {
         let event = SecurityEvent::AuthFailure {
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
             user_hash: "user#abc123".to_string(),
             ip_address: "192.168.1.0".to_string(),
             failure_reason: "invalid_password".to_string(),

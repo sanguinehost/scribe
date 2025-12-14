@@ -1,7 +1,8 @@
 #![allow(clippy::items_after_statements)]
 use crate::{
-    auth::session_dek::SessionDek,            // Import SessionDek
-    auth::user_store::Backend as AuthBackend, // Import AuthBackend
+    auth::session_dek::SessionDek, // Import SessionDek
+    auth::token_auth::UnifiedAuth, // Import UnifiedAuth
+    db::DbId,
     errors::AppError,
     middleware::rate_limit::ai_lorebook_rate_limit_middleware, // Import AI rate limiter
     models::lorebook_dtos::{
@@ -22,13 +23,11 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use axum_login::AuthSession;
 use axum_macros::debug_handler;
 use secrecy::ExposeSecret; // For exposing SessionDek secret
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::instrument; // Keep instrument
-use uuid::Uuid;
 use validator::Validate; // For validating payloads
 
 pub fn lorebook_routes() -> Router<AppState> {
@@ -115,10 +114,10 @@ pub fn lorebook_routes() -> Router<AppState> {
 
 // --- Lorebook Handlers ---
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload))]
+#[instrument(skip(state, auth, payload))]
 async fn create_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
+    auth: UnifiedAuth, // Changed to AuthBackend
     Json(payload): Json<CreateLorebookPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
@@ -128,32 +127,32 @@ async fn create_lorebook_handler(
         state.qdrant_service.clone(),
     ); // Added qdrant service
     let lorebook = lorebook_service
-        .create_lorebook(&auth_session, payload)
+        .create_lorebook(&auth.session, payload)
         .await?;
     Ok((StatusCode::CREATED, Json(lorebook)))
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn list_lorebooks_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
+    auth: UnifiedAuth, // Changed to AuthBackend
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     );
-    let lorebooks = lorebook_service.list_lorebooks(&auth_session).await?;
+    let lorebooks = lorebook_service.list_lorebooks(&auth.session).await?;
     Ok((StatusCode::OK, Json(lorebooks)))
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn get_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    Path(lorebook_id): Path<Uuid>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    Path(lorebook_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -161,17 +160,17 @@ async fn get_lorebook_handler(
         state.qdrant_service.clone(),
     );
     let lorebook = lorebook_service
-        .get_lorebook(&auth_session, lorebook_id)
+        .get_lorebook(&auth.session, lorebook_id)
         .await?;
     Ok((StatusCode::OK, Json(lorebook)))
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload))]
+#[instrument(skip(state, auth, payload))]
 async fn update_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    Path(lorebook_id): Path<Uuid>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    Path(lorebook_id): Path<crate::db::DbId>,
     Json(payload): Json<UpdateLorebookPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
@@ -181,17 +180,17 @@ async fn update_lorebook_handler(
         state.qdrant_service.clone(),
     );
     let lorebook = lorebook_service
-        .update_lorebook(&auth_session, lorebook_id, payload)
+        .update_lorebook(&auth.session, lorebook_id, payload)
         .await?;
     Ok((StatusCode::OK, Json(lorebook)))
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn delete_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    Path(lorebook_id): Path<Uuid>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    Path(lorebook_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -199,19 +198,19 @@ async fn delete_lorebook_handler(
         state.qdrant_service.clone(),
     );
     lorebook_service
-        .delete_lorebook(&auth_session, lorebook_id)
+        .delete_lorebook(&auth.session, lorebook_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 // --- Lorebook Entry Handlers ---
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload, dek))]
+#[instrument(skip(state, auth, payload, dek))]
 async fn create_lorebook_entry_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    dek: SessionDek,                        // Add SessionDek extractor
-    Path(lorebook_id): Path<Uuid>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    dek: SessionDek,   // Add SessionDek extractor
+    Path(lorebook_id): Path<crate::db::DbId>,
     Json(payload): Json<CreateLorebookEntryPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     tracing::debug!(
@@ -227,7 +226,7 @@ async fn create_lorebook_entry_handler(
     );
     let entry = lorebook_service
         .create_lorebook_entry(
-            &auth_session,
+            &auth.session,
             lorebook_id,
             payload,
             Some(&dek.0),
@@ -238,12 +237,12 @@ async fn create_lorebook_entry_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek))]
+#[instrument(skip(state, auth, dek))]
 async fn list_lorebook_entries_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    dek: SessionDek,                        // Add SessionDek extractor
-    Path(lorebook_id): Path<Uuid>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    dek: SessionDek,   // Add SessionDek extractor
+    Path(lorebook_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -251,18 +250,18 @@ async fn list_lorebook_entries_handler(
         state.qdrant_service.clone(),
     );
     let entries = lorebook_service
-        .list_lorebook_entries_with_content(&auth_session, lorebook_id, Some(&dek.0))
+        .list_lorebook_entries_with_content(&auth.session, lorebook_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(entries)))
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek))]
+#[instrument(skip(state, auth, dek))]
 async fn get_lorebook_entry_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    dek: SessionDek,                        // Add SessionDek extractor
-    Path((lorebook_id, entry_id)): Path<(Uuid, Uuid)>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    dek: SessionDek,   // Add SessionDek extractor
+    Path((lorebook_id, entry_id)): Path<(crate::db::DbId, crate::db::DbId)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -270,18 +269,18 @@ async fn get_lorebook_entry_handler(
         state.qdrant_service.clone(),
     );
     let entry = lorebook_service
-        .get_lorebook_entry(&auth_session, lorebook_id, entry_id, Some(&dek.0))
+        .get_lorebook_entry(&auth.session, lorebook_id, entry_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(entry)))
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload, dek))]
+#[instrument(skip(state, auth, payload, dek))]
 async fn update_lorebook_entry_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    dek: SessionDek,                        // Add SessionDek extractor
-    Path((lorebook_id, entry_id)): Path<(Uuid, Uuid)>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    dek: SessionDek,   // Add SessionDek extractor
+    Path((lorebook_id, entry_id)): Path<(crate::db::DbId, crate::db::DbId)>,
     Json(payload): Json<UpdateLorebookEntryPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
@@ -292,7 +291,7 @@ async fn update_lorebook_entry_handler(
     );
     let entry = lorebook_service
         .update_lorebook_entry(
-            &auth_session,
+            &auth.session,
             lorebook_id,
             entry_id,
             payload,
@@ -304,11 +303,11 @@ async fn update_lorebook_entry_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn delete_lorebook_entry_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    Path((lorebook_id, entry_id)): Path<(Uuid, Uuid)>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    Path((lorebook_id, entry_id)): Path<(crate::db::DbId, crate::db::DbId)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -316,19 +315,19 @@ async fn delete_lorebook_entry_handler(
         state.qdrant_service.clone(),
     );
     lorebook_service
-        .delete_lorebook_entry(&auth_session, lorebook_id, entry_id)
+        .delete_lorebook_entry(&auth.session, lorebook_id, entry_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 // --- Chat Session Lorebook Association Handlers ---
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload, dek))]
+#[instrument(skip(state, auth, payload, dek))]
 async fn associate_lorebook_to_chat_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek, // Add SessionDek extractor
-    Path(chat_session_id): Path<Uuid>,
+    Path(chat_session_id): Path<crate::db::DbId>,
     Json(payload): Json<AssociateLorebookToChatPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     // payload.validate()?; // Validation removed from DTO for this field
@@ -339,7 +338,7 @@ async fn associate_lorebook_to_chat_handler(
     );
     let association = lorebook_service
         .associate_lorebook_to_chat(
-            &auth_session,
+            &auth.session,
             chat_session_id,
             payload,
             Some(&dek.0),
@@ -350,11 +349,11 @@ async fn associate_lorebook_to_chat_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn list_chat_lorebook_associations_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
-    Path(chat_session_id): Path<Uuid>,
+    auth: UnifiedAuth,
+    Path(chat_session_id): Path<crate::db::DbId>,
     Query(params): Query<LorebookAssociationsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
@@ -365,7 +364,7 @@ async fn list_chat_lorebook_associations_handler(
 
     if params.include_source {
         let enhanced_associations = lorebook_service
-            .list_enhanced_chat_lorebook_associations(&auth_session, chat_session_id)
+            .list_enhanced_chat_lorebook_associations(&auth.session, chat_session_id)
             .await?;
         Ok((
             StatusCode::OK,
@@ -375,7 +374,7 @@ async fn list_chat_lorebook_associations_handler(
         ))
     } else {
         let associations = lorebook_service
-            .list_chat_lorebook_associations(&auth_session, chat_session_id)
+            .list_chat_lorebook_associations(&auth.session, chat_session_id)
             .await?;
         Ok((
             StatusCode::OK,
@@ -385,11 +384,11 @@ async fn list_chat_lorebook_associations_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn disassociate_lorebook_from_chat_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>, // Changed to AuthBackend
-    Path((chat_session_id, lorebook_id)): Path<(Uuid, Uuid)>,
+    auth: UnifiedAuth, // Changed to AuthBackend
+    Path((chat_session_id, lorebook_id)): Path<(crate::db::DbId, crate::db::DbId)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -397,18 +396,18 @@ async fn disassociate_lorebook_from_chat_handler(
         state.qdrant_service.clone(),
     );
     lorebook_service
-        .disassociate_lorebook_from_chat(&auth_session, chat_session_id, lorebook_id)
+        .disassociate_lorebook_from_chat(&auth.session, chat_session_id, lorebook_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek))]
+#[instrument(skip(state, auth, dek))]
 async fn list_associated_chat_sessions_for_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek, // Add SessionDek extractor
-    Path(lorebook_id): Path<Uuid>,
+    Path(lorebook_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -416,7 +415,7 @@ async fn list_associated_chat_sessions_for_lorebook_handler(
         state.qdrant_service.clone(),
     );
     let chat_sessions = lorebook_service
-        .list_associated_chat_sessions_for_lorebook(&auth_session, lorebook_id, Some(&dek.0))
+        .list_associated_chat_sessions_for_lorebook(&auth.session, lorebook_id, Some(&dek.0))
         .await?;
     Ok((StatusCode::OK, Json(chat_sessions)))
 }
@@ -438,12 +437,12 @@ fn default_export_format() -> ExportFormat {
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek))]
+#[instrument(skip(state, auth, dek))]
 async fn export_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek,
-    Path(lorebook_id): Path<Uuid>,
+    Path(lorebook_id): Path<crate::db::DbId>,
     Query(params): Query<ExportQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
@@ -455,13 +454,13 @@ async fn export_lorebook_handler(
     let response: Result<axum::response::Response, AppError> = match params.format {
         ExportFormat::ScribeMinimal => {
             let exported = lorebook_service
-                .export_lorebook_minimal(&auth_session, Some(&dek.0), lorebook_id)
+                .export_lorebook_minimal(&auth.session, Some(&dek.0), lorebook_id)
                 .await?;
             Ok((StatusCode::OK, Json(exported)).into_response())
         }
         ExportFormat::SillyTavernFull => {
             let exported = lorebook_service
-                .export_lorebook(&auth_session, Some(&dek.0), lorebook_id)
+                .export_lorebook(&auth.session, Some(&dek.0), lorebook_id)
                 .await?;
             Ok((StatusCode::OK, Json(exported)).into_response())
         }
@@ -486,13 +485,13 @@ fn default_import_format() -> ImportFormat {
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek, payload, params))]
+#[instrument(skip(state, auth, dek, payload, params))]
 async fn import_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek,
     Query(params): Query<ImportQuery>,
-    Json(payload): Json<serde_json::Value>, // Accept generic JSON for dynamic deserialization
+    Json(payload): Json<crate::DbJson>, // Accept generic JSON for dynamic deserialization
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -503,7 +502,7 @@ async fn import_lorebook_handler(
     let response: Result<axum::response::Response, AppError> = match params.format {
         ImportFormat::ScribeMinimal => {
             let scribe_payload: crate::models::lorebook_dtos::ScribeMinimalLorebook =
-                serde_json::from_value(payload).map_err(|e| {
+                serde_json::from_value(payload.clone().into()).map_err(|e| {
                     AppError::BadRequest(format!("Invalid Scribe Minimal payload: {}", e))
                 })?;
 
@@ -511,7 +510,7 @@ async fn import_lorebook_handler(
 
             let imported_lorebook = lorebook_service
                 .import_lorebook_from_scribe_minimal(
-                    &auth_session,
+                    &auth.session,
                     Some(&dek.0),
                     scribe_payload,
                     state.clone().into(),
@@ -528,13 +527,13 @@ async fn import_lorebook_handler(
                 if entries.is_array() {
                     // This is actually a Scribe format, not SillyTavern
                     let scribe_payload: crate::models::lorebook_dtos::ScribeMinimalLorebook =
-                        serde_json::from_value(payload).map_err(|e| {
+                        serde_json::from_value(payload.clone().into()).map_err(|e| {
                             AppError::BadRequest(format!("Invalid lorebook format: {}", e))
                         })?;
 
                     let imported_lorebook = lorebook_service
                         .import_lorebook_from_scribe_minimal(
-                            &auth_session,
+                            &auth.session,
                             Some(&dek.0),
                             scribe_payload,
                             state.clone().into(),
@@ -544,7 +543,7 @@ async fn import_lorebook_handler(
                 } else if entries.is_object() {
                     // This is SillyTavern format
                     let sillytavern_import_payload: crate::models::lorebook_dtos::SillyTavernImportPayload =
-                        serde_json::from_value(payload)
+                        serde_json::from_value(payload.clone().into())
                             .map_err(|e| AppError::BadRequest(format!("Invalid SillyTavern Full payload: {}", e)))?;
 
                     // Construct LorebookUploadPayload from SillyTavernImportPayload
@@ -566,7 +565,7 @@ async fn import_lorebook_handler(
 
                     let imported_lorebook = lorebook_service
                         .import_lorebook(
-                            &auth_session,
+                            &auth.session,
                             Some(&dek.0),
                             lorebook_upload_payload,
                             Arc::new(state.clone()),
@@ -591,11 +590,11 @@ async fn import_lorebook_handler(
 // --- Character Lorebook Override Handlers ---
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, payload))]
+#[instrument(skip(state, auth, payload))]
 async fn set_character_lorebook_override_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
-    Path((chat_session_id, lorebook_id)): Path<(Uuid, Uuid)>,
+    auth: UnifiedAuth,
+    Path((chat_session_id, lorebook_id)): Path<(crate::db::DbId, crate::db::DbId)>,
     Json(payload): Json<SetCharacterLorebookOverridePayload>,
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
@@ -607,7 +606,7 @@ async fn set_character_lorebook_override_handler(
 
     lorebook_service
         .set_character_lorebook_override(
-            &auth_session,
+            &auth.session,
             chat_session_id,
             lorebook_id,
             payload.action,
@@ -618,11 +617,11 @@ async fn set_character_lorebook_override_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn remove_character_lorebook_override_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
-    Path((chat_session_id, lorebook_id)): Path<(Uuid, Uuid)>,
+    auth: UnifiedAuth,
+    Path((chat_session_id, lorebook_id)): Path<(crate::db::DbId, crate::db::DbId)>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -631,18 +630,18 @@ async fn remove_character_lorebook_override_handler(
     );
 
     lorebook_service
-        .remove_character_lorebook_override(&auth_session, chat_session_id, lorebook_id)
+        .remove_character_lorebook_override(&auth.session, chat_session_id, lorebook_id)
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state, auth))]
 async fn get_character_lorebook_overrides_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
-    Path(chat_session_id): Path<Uuid>,
+    auth: UnifiedAuth,
+    Path(chat_session_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let lorebook_service = LorebookService::new(
         state.pool.clone(),
@@ -651,7 +650,7 @@ async fn get_character_lorebook_overrides_handler(
     );
 
     let overrides = lorebook_service
-        .get_character_lorebook_overrides(&auth_session, chat_session_id)
+        .get_character_lorebook_overrides(&auth.session, chat_session_id)
         .await?;
 
     // Convert model to response DTO
@@ -674,19 +673,19 @@ async fn get_character_lorebook_overrides_handler(
 // --- AI-Powered Lorebook Handlers ---
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek, payload))]
+#[instrument(skip(state, auth, dek, payload))]
 async fn ai_generate_entries_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek,
-    Path(lorebook_id): Path<Uuid>,
+    Path(lorebook_id): Path<crate::db::DbId>,
     Json(payload): Json<GenerateLorebookEntriesPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
 
     // Get user from auth session
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
     let user_id = user.id;
 
@@ -785,7 +784,7 @@ async fn ai_generate_entries_handler(
                     let id = entry
                         .get("entry_id")
                         .and_then(|v| v.as_str())
-                        .and_then(|s| Uuid::parse_str(s).ok())?;
+                        .and_then(|s| DbId::parse_str(s).ok())?;
                     let entry_title = entry
                         .get("title")
                         .and_then(|v| v.as_str())
@@ -794,7 +793,7 @@ async fn ai_generate_entries_handler(
                     let keys_text = None;
 
                     Some(GeneratedEntryPreview {
-                        id,
+                        id: id.into(),
                         entry_title,
                         keys_text,
                     })
@@ -828,16 +827,16 @@ async fn ai_generate_entries_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek))]
+#[instrument(skip(state, auth, dek))]
 async fn ai_analyze_lorebook_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek,
-    Path(lorebook_id): Path<Uuid>,
+    Path(lorebook_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     // Get user from auth session
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
     let user_id = user.id;
 
@@ -979,19 +978,19 @@ async fn ai_analyze_lorebook_handler(
 }
 
 #[debug_handler]
-#[instrument(skip(state, auth_session, dek, payload))]
+#[instrument(skip(state, auth, dek, payload))]
 async fn extract_from_chat_handler(
     State(state): State<AppState>,
-    auth_session: AuthSession<AuthBackend>,
+    auth: UnifiedAuth,
     dek: SessionDek,
-    Path(lorebook_id): Path<Uuid>,
+    Path(lorebook_id): Path<crate::db::DbId>,
     Json(payload): Json<ExtractLorebookEntriesFromChatPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     payload.validate()?;
 
     // Get user from auth session
-    let user = auth_session
-        .user
+    let user = auth
+        .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
     let user_id = user.id;
 

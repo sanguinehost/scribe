@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use axum::{
@@ -132,8 +133,8 @@ async fn create_test_chat_session(
                 character_id,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "test_model".to_string(),
@@ -755,8 +756,8 @@ async fn create_real_client_test_session(
                 character_id,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "real-model-for-failure-test".to_string(),
@@ -815,8 +816,8 @@ async fn add_real_client_test_user_message(
                 message_type: MessageRole::User,
                 content: content_owned.as_bytes().to_vec(),
                 content_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 role: Some("user".to_string()),
                 parts: None,
                 attachments: None,

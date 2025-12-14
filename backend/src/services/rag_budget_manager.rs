@@ -1,6 +1,6 @@
 // backend/src/services/rag_budget_manager.rs
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::cmp::Ordering;
 use tracing::{debug, info, warn};
 
@@ -104,7 +104,7 @@ pub struct ContentPriority {
 
 impl ContentPriority {
     /// Calculate priority for a retrieved chunk
-    pub fn calculate(chunk: &RetrievedChunk, query_timestamp: DateTime<Utc>) -> Self {
+    pub fn calculate(chunk: &RetrievedChunk, query_timestamp: crate::DbTimestamp) -> Self {
         let relevance = chunk.score;
 
         // Calculate recency boost based on content type and timestamp
@@ -161,10 +161,10 @@ impl DynamicRagSelector {
     pub async fn select_rag_content(
         &self,
         candidates: Vec<RetrievedChunk>,
-        query_timestamp: Option<DateTime<Utc>>,
+        query_timestamp: Option<crate::DbTimestamp>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         let available_budget = self.budget_planner.available_rag_budget();
-        let query_time = query_timestamp.unwrap_or_else(Utc::now);
+        let query_time = query_timestamp.unwrap_or_else(|| Utc::now().into());
 
         debug!(
             num_candidates = candidates.len(),
@@ -272,10 +272,12 @@ impl DynamicRagSelector {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::services::embeddings::ChronicleEventMetadata;
+    use chrono::Utc;
     use uuid::Uuid;
 
     #[test]
@@ -294,11 +296,11 @@ mod tests {
     #[test]
     fn test_content_priority_chronicle_events() {
         let chronicle_meta = ChronicleEventMetadata {
-            event_id: Uuid::new_v4(),
+            event_id: DbId::new(),
             event_type: "plot.twist.revealed".to_string(),
-            chronicle_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            created_at: Utc::now() - chrono::Duration::hours(1), // 1 hour ago
+            chronicle_id: DbId::new(),
+            user_id: DbId::new(),
+            created_at: (Utc::now() - chrono::Duration::hours(1)).into(), // 1 hour ago
         };
 
         let chunk = RetrievedChunk {
@@ -307,7 +309,7 @@ mod tests {
             metadata: RetrievedMetadata::Chronicle(chronicle_meta),
         };
 
-        let priority = ContentPriority::calculate(&chunk, Utc::now());
+        let priority = ContentPriority::calculate(&chunk, Utc::now().into());
 
         // Chronicle events should get high priority (type bonus + recency)
         assert!(priority.type_priority > 1.0);

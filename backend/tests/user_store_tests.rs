@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(test)]
 #[allow(clippy::items_after_statements)]
 #[allow(clippy::module_inception)]

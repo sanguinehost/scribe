@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/chat_security_tests.rs
 //

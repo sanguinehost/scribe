@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
-use uuid::Uuid;
 
 /// Global privacy configuration (loaded from environment or defaults)
 static PRIVACY_CONFIG: std::sync::LazyLock<PrivacyConfig> =
@@ -43,19 +42,19 @@ macro_rules! privacy_error {
 }
 
 /// Helper functions to create loggable wrappers with global salt
-pub fn loggable_user_id(uuid: Uuid) -> LoggableUserId {
+pub fn loggable_user_id(uuid: crate::db::DbId) -> LoggableUserId {
     LoggableUserId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
-pub fn loggable_session_id(uuid: Uuid) -> LoggableSessionId {
+pub fn loggable_session_id(uuid: crate::db::DbId) -> LoggableSessionId {
     LoggableSessionId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
-pub fn loggable_character_id(uuid: Uuid) -> LoggableCharacterId {
+pub fn loggable_character_id(uuid: crate::db::DbId) -> LoggableCharacterId {
     LoggableCharacterId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
-pub fn loggable_persona_id(uuid: Uuid) -> LoggablePersonaId {
+pub fn loggable_persona_id(uuid: crate::db::DbId) -> LoggablePersonaId {
     LoggablePersonaId::new(uuid, &PRIVACY_CONFIG.hash_salt)
 }
 
@@ -217,6 +216,7 @@ pub fn sanitize_json_value(value: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_uuid_pattern_detection() {
@@ -257,8 +257,8 @@ mod tests {
 
     #[test]
     fn test_loggable_wrappers() {
-        let user_uuid = Uuid::new_v4();
-        let session_uuid = Uuid::new_v4();
+        let user_uuid = DbId::new();
+        let session_uuid = DbId::new();
 
         let loggable_user = loggable_user_id(user_uuid);
         let loggable_session = loggable_session_id(session_uuid);

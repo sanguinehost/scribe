@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/legacy_manual_extraction_baseline_tests.rs
 //

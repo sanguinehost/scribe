@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // backend/tests/user_persona_api_tests.rs
 
 // For making HTTP calls

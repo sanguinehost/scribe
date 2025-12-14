@@ -1,5 +1,8 @@
 use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 
 impl LorebookService {
@@ -7,7 +10,7 @@ impl LorebookService {
     pub async fn create_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
         payload: CreateLorebookEntryPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         state: Arc<AppState>, // Added AppState
@@ -16,7 +19,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let user_id_for_embedding = user.id; // Clone for embedding task
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -87,11 +90,11 @@ AppError::InternalServerErrorGeneric(format!(
             None => (None, None), // For None comment, store None for ciphertext and nonce
         };
 
-        let current_time = Utc::now();
-        let new_entry_id = Uuid::new_v4();
+        let current_time = DbTimestamp::now();
+        let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id,
+            id: new_entry_id.into(),
             lorebook_id,
             user_id: user.id,
             original_sillytavern_uid: None,
@@ -110,16 +113,18 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated in favor of encrypted title
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         // 3. Save to DB
         let inserted_entry_db = new_entry_db.clone(); // Clone before moving into interact
-        let inserted_entry = conn
-            .interact(move |conn_sync| {
+
+        #[cfg(feature = "postgres-backend")]
+        let inserted_entry = {
+            conn.interact(move |conn_sync| {
                 diesel::insert_into(lorebook_entries::table)
-                    .values(&inserted_entry_db) // Use the cloned value
+                    .values(&inserted_entry_db)
                     .returning(LorebookEntry::as_returning())
                     .get_result::<LorebookEntry>(conn_sync)
             })
@@ -135,7 +140,39 @@ AppError::InternalServerErrorGeneric(format!(
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to create lorebook entry in DB: {e}"
                 ))
-            })?;
+            })?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let inserted_entry = {
+            use diesel::prelude::*;
+            let entry_id = new_entry_db.id;
+
+            crate::db::with_conn(&self.pool, move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&inserted_entry_db)
+                    .execute(conn_sync)
+                    .map_err(|e| {
+                        error!("Failed to insert lorebook entry into DB: {:?}", e);
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to create lorebook entry in DB: {e}"
+                        ))
+                    })?;
+
+                // Query back the inserted entry
+                lorebook_entries::table
+                    .find(entry_id)
+                    .select(LorebookEntry::as_select())
+                    .first::<LorebookEntry>(conn_sync)
+                    .map_err(|e| {
+                        error!("Failed to query lorebook entry after insert: {:?}", e);
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to query lorebook entry: {e}"
+                        ))
+                    })
+            })
+            .await?
+        };
 
         // 4. Return decrypted LorebookEntryResponse
         // Use the same DEK that was passed as parameter
@@ -337,13 +374,13 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn list_lorebook_entries(
         &self,
         auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
     ) -> Result<Vec<LorebookEntrySummaryResponse>, AppError> {
         debug!("Attempting to list lorebook entries");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -456,13 +493,13 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn list_lorebook_entries_with_content(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<LorebookEntryResponse>, AppError> {
         debug!("Attempting to list lorebook entries with content");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -655,14 +692,14 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn get_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>, // Changed to AuthBackend
-        lorebook_id: Uuid,
-        entry_id: Uuid,
+        lorebook_id: crate::db::DbId,
+        entry_id: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Add DEK parameter
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!("Attempting to get lorebook entry");
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -802,8 +839,8 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn update_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id_param: Uuid,
-        entry_id: Uuid,
+        lorebook_id_param: crate::db::DbId,
+        entry_id: crate::db::DbId,
         payload: UpdateLorebookEntryPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>,
         state: Arc<AppState>,
@@ -812,7 +849,7 @@ AppError::InternalServerErrorGeneric(format!(
         let user = get_user_from_session(auth_session)?;
         let user_id_for_embedding = user.id; // Clone for embedding task
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -915,16 +952,32 @@ AppError::InternalServerErrorGeneric(format!(
         }
 
         // Always update timestamp on PUT to ensure `updated_at` is current
-        entry_to_update.updated_at = Utc::now();
+        entry_to_update.updated_at = DbTimestamp::now();
 
         // 4. Save to DB
         let updated_db_entry_struct = entry_to_update.clone(); // Clone for interact closure
         let updated_db_entry = conn
             .interact(move |conn_sync| {
-                diesel::update(lorebook_entries::table.find(entry_id))
-                    .set(&updated_db_entry_struct)
-                    .returning(LorebookEntry::as_returning())
-                    .get_result::<LorebookEntry>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::update(lorebook_entries::table.find(entry_id))
+                        .set(&updated_db_entry_struct)
+                        .returning(LorebookEntry::as_returning())
+                        .get_result::<LorebookEntry>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::update(lorebook_entries::table.find(entry_id))
+                        .set(&updated_db_entry_struct)
+                        .execute(conn_sync)?;
+
+                    lorebook_entries::table
+                        .find(entry_id)
+                        .select(LorebookEntry::as_select())
+                        .first::<LorebookEntry>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {
@@ -1069,63 +1122,53 @@ AppError::InternalServerErrorGeneric(format!(
     pub async fn delete_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id: Uuid,
-        entry_id: Uuid,
+        lorebook_id: crate::db::DbId,
+        entry_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to delete lorebook entry");
 
         // 1. Get current user
         let user = get_user_from_session(auth_session)?;
 
-        let conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
         // 2. Fetch lorebook entry and verify ownership in a single query
+        crate::db::with_conn(&self.pool, move |conn| {
+            use crate::schema::lorebook_entries::dsl::{id, lorebook_entries, lorebook_id, user_id};
 
-        conn
-            .interact(move |conn| {
-                use crate::schema::lorebook_entries::dsl::{id, lorebook_entries, lorebook_id, user_id};
+            // First, verify the entry exists and belongs to the user
+            let entry_owner = lorebook_entries
+                .filter(id.eq(entry_id))
+                .filter(lorebook_id.eq(lorebook_id))
+                .select(user_id)
+                .first::<crate::db::DbId>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                // First, verify the entry exists and belongs to the user
-                let entry_owner = lorebook_entries
-                    .filter(id.eq(entry_id))
-                    .filter(lorebook_id.eq(lorebook_id))
-                    .select(user_id)
-                    .first::<Uuid>(conn)
-                    .optional()
+            match entry_owner {
+                Some(owner_id) if owner_id == user.id => {
+                    // User owns this entry, proceed with deletion
+                    diesel::delete(
+                        lorebook_entries
+                            .filter(id.eq(entry_id))
+                            .filter(user_id.eq(user.id)),
+                    )
+                    .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                match entry_owner {
-                    Some(owner_id) if owner_id == user.id => {
-                        // User owns this entry, proceed with deletion
-                        diesel::delete(
-                            lorebook_entries
-                                .filter(id.eq(entry_id))
-                                .filter(user_id.eq(user.id)),
-                        )
-                        .execute(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                        tracing::info!(
-                            "Successfully deleted lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
-                        );
-                        Ok(())
-                    }
-                    Some(_) => {
-                        // Entry exists but belongs to another user
-                        Err(AppError::Forbidden("Access denied to lorebook entry".to_string()))
-                    }
-                    None => {
-                        // Entry doesn't exist
-                        Err(AppError::NotFound("Lorebook entry not found".to_string()))
-                    }
+                    tracing::info!(
+                        "Successfully deleted lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
+                    );
+                    Ok(())
                 }
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("Database interaction error: {e}")))?
+                Some(_) => {
+                    // Entry exists but belongs to another user
+                    Err(AppError::Forbidden("Access denied to lorebook entry".to_string()))
+                }
+                None => {
+                    // Entry doesn't exist
+                    Err(AppError::NotFound("Lorebook entry not found".to_string()))
+                }
+            }
+        }).await
     }
 
     /// Create a lorebook entry for narrative intelligence processing
@@ -1133,8 +1176,8 @@ AppError::InternalServerErrorGeneric(format!(
     #[instrument(skip(self, user_dek_bytes), fields(user_id = %user_id, entry_title = %entry_title))]
     pub async fn create_entry_for_narrative_intelligence(
         &self,
-        user_id: Uuid,
-        lorebook_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        lorebook_id: Option<crate::db::DbId>,
         entry_title: String,
         content: String,
         keys_text: Option<String>,
@@ -1142,7 +1185,7 @@ AppError::InternalServerErrorGeneric(format!(
     ) -> Result<LorebookEntryResponse, AppError> {
         debug!("Creating lorebook entry for narrative intelligence");
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -1156,7 +1199,7 @@ AppError::InternalServerErrorGeneric(format!(
                         .filter(lorebooks::id.eq(lb_id))
                         .filter(lorebooks::user_id.eq(user_id_clone))
                         .select(lorebooks::id)
-                        .first::<Uuid>(conn_sync)
+                        .first::<crate::db::DbId>(conn_sync)
                         .optional()
                 })
                 .await
@@ -1203,11 +1246,11 @@ AppError::InternalServerErrorGeneric(format!(
         // No comment for AI-generated entries
         let (comment_ciphertext, comment_nonce) = (None, None);
 
-        let current_time = Utc::now();
-        let new_entry_id = Uuid::new_v4();
+        let current_time = DbTimestamp::now();
+        let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id,
+            id: new_entry_id.into(),
             lorebook_id: target_lorebook_id,
             user_id,
             original_sillytavern_uid: None,
@@ -1226,14 +1269,16 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         // 3. Save to database
         let inserted_entry_db = new_entry_db.clone();
-        let inserted_entry = conn
-            .interact(move |conn_sync| {
+
+        #[cfg(feature = "postgres-backend")]
+        let inserted_entry = {
+            conn.interact(move |conn_sync| {
                 diesel::insert_into(lorebook_entries::table)
                     .values(&inserted_entry_db)
                     .returning(LorebookEntry::as_returning())
@@ -1254,7 +1299,39 @@ AppError::InternalServerErrorGeneric(format!(
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to create AI lorebook entry: {e}"
                 ))
-            })?;
+            })?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let inserted_entry = {
+            use diesel::prelude::*;
+            let entry_id = new_entry_db.id;
+
+            crate::db::with_conn(&self.pool, move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&inserted_entry_db)
+                    .execute(conn_sync)
+                    .map_err(|e| {
+                        error!("Failed to insert AI lorebook entry into DB: {:?}", e);
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to create AI lorebook entry in DB: {e}"
+                        ))
+                    })?;
+
+                // Query back the inserted entry
+                lorebook_entries::table
+                    .find(entry_id)
+                    .select(LorebookEntry::as_select())
+                    .first::<LorebookEntry>(conn_sync)
+                    .map_err(|e| {
+                        error!("Failed to query AI lorebook entry after insert: {:?}", e);
+                        AppError::InternalServerErrorGeneric(format!(
+                            "Failed to query AI lorebook entry: {e}"
+                        ))
+                    })
+            })
+            .await?
+        };
 
         // 4. Build response with decrypted fields (for verification)
         let decrypted_entry_title_bytes = self
@@ -1331,8 +1408,11 @@ AppError::InternalServerErrorGeneric(format!(
     }
 
     /// Find or create a default "AI Extracted" lorebook for the user
-    async fn find_or_create_ai_extracted_lorebook(&self, user_id: Uuid) -> Result<Uuid, AppError> {
-        let conn = self.pool.get().await.map_err(|e| {
+    async fn find_or_create_ai_extracted_lorebook(
+        &self,
+        user_id: crate::db::DbId,
+    ) -> Result<crate::db::DbId, AppError> {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -1346,7 +1426,7 @@ AppError::InternalServerErrorGeneric(format!(
                     .filter(lorebooks::user_id.eq(user_id_clone))
                     .filter(lorebooks::name.eq(ai_lorebook_name))
                     .select(lorebooks::id)
-                    .first::<Uuid>(conn_sync)
+                    .first::<crate::db::DbId>(conn_sync)
                     .optional()
             })
             .await
@@ -1367,26 +1447,42 @@ AppError::InternalServerErrorGeneric(format!(
         }
 
         // Create new AI lorebook
-        let new_lorebook_id = Uuid::new_v4();
-        let current_time = Utc::now();
+        let new_lorebook_id = DbId::new();
+        let current_time = DbTimestamp::now();
 
         let new_lorebook = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id,
             name: ai_lorebook_name.to_string(),
             description: Some("Automatically generated lorebook entries from AI narrative intelligence. This contains world-building information extracted from your roleplay conversations.".to_string()),
             source_format: "scribe_ai_v1".to_string(),
             is_public: false,
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
+        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let created_lorebook = conn
             .interact(move |conn_sync| {
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook)
-                    .returning(Lorebook::as_returning())
-                    .get_result::<Lorebook>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook)
+                        .returning(Lorebook::as_returning())
+                        .get_result::<Lorebook>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook)
+                        .execute(conn_sync)?;
+
+                    lorebooks::table
+                        .find(lorebook_id)
+                        .first::<Lorebook>(conn_sync)
+                }
             })
             .await
             .map_err(|e| {

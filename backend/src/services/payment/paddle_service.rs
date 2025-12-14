@@ -99,8 +99,8 @@ pub struct PaddleWebhook {
     #[serde(alias = "eventId", alias = "id")]
     pub event_id: String,
     #[serde(alias = "occurredAt", alias = "timestamp")]
-    pub occurred_at: DateTime<Utc>,
-    pub data: serde_json::Value,
+    pub occurred_at: crate::DbTimestamp,
+    pub data: crate::DbJson,
 }
 
 /// Paddle subscription data structure
@@ -111,29 +111,29 @@ pub struct PaddleSubscription {
     pub status: String,
     pub current_billing_period: Option<PaddleBillingPeriod>,
     pub billing_cycle: Option<PaddleBillingCycle>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
     pub items: Vec<PaddleSubscriptionItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial_dates: Option<PaddleTrialDates>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scheduled_change: Option<serde_json::Value>,
+    pub scheduled_change: Option<crate::DbJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub management_urls: Option<serde_json::Value>,
+    pub management_urls: Option<crate::DbJson>,
 }
 
 /// Paddle billing period
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PaddleBillingPeriod {
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub starts_at: crate::DbTimestamp,
+    pub ends_at: crate::DbTimestamp,
 }
 
 /// Paddle trial dates
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PaddleTrialDates {
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
+    pub starts_at: crate::DbTimestamp,
+    pub ends_at: crate::DbTimestamp,
 }
 
 /// Paddle billing cycle
@@ -149,12 +149,12 @@ pub struct PaddleSubscriptionItem {
     pub status: String,
     pub quantity: i32,
     pub recurring: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub previously_billed_at: Option<DateTime<Utc>>,
+    pub previously_billed_at: Option<crate::DbTimestamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_billed_at: Option<DateTime<Utc>>,
+    pub next_billed_at: Option<crate::DbTimestamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial_dates: Option<PaddleTrialDates>,
     pub price: PaddlePrice,     // Full price object (was: price_id: String)
@@ -170,8 +170,8 @@ pub struct PaddleLegacyTransaction {
     pub status: String,
     pub total: String,
     pub currency_code: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
 }
 
 /// Paddle customer data
@@ -180,8 +180,8 @@ pub struct PaddleCustomer {
     pub id: String,
     pub email: Option<String>,
     pub name: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
 }
 
 /// Create transaction request (replaces subscription request)
@@ -194,7 +194,7 @@ pub struct CreateTransactionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub billing_details: Option<TransactionBillingDetails>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<crate::DbJson>,
 }
 
 /// Transaction item
@@ -245,8 +245,8 @@ pub struct PaddleTransaction {
     pub checkout: Option<PaddleTransactionCheckout>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkout_url: Option<String>, // Paddle returns this at the root level for automatic collection mode
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
     pub items: Vec<PaddleTransactionItem>,
 }
 
@@ -262,7 +262,7 @@ pub struct PaddleTransactionItem {
     pub price: PaddlePrice, // Nested price object from Paddle API
     pub quantity: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub proration: Option<serde_json::Value>,
+    pub proration: Option<crate::DbJson>,
 }
 
 /// Paddle price information within transaction items
@@ -275,22 +275,22 @@ pub struct PaddlePrice {
     pub name: Option<String>,
     pub product_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub billing_cycle: Option<serde_json::Value>,
+    pub billing_cycle: Option<crate::DbJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trial_period: Option<serde_json::Value>,
+    pub trial_period: Option<crate::DbJson>,
     pub tax_mode: String,
-    pub unit_price: serde_json::Value,
+    pub unit_price: crate::DbJson,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub unit_price_overrides: Option<Vec<serde_json::Value>>,
+    pub unit_price_overrides: Option<Vec<crate::DbJson>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<crate::DbJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quantity: Option<serde_json::Value>,
+    pub quantity: Option<crate::DbJson>,
     pub status: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub import_meta: Option<serde_json::Value>,
+    pub import_meta: Option<crate::DbJson>,
 }
 
 /// Paddle product information within subscription items
@@ -306,10 +306,10 @@ pub struct PaddleProduct {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_data: Option<serde_json::Value>,
+    pub custom_data: Option<crate::DbJson>,
     pub status: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: crate::DbTimestamp,
+    pub updated_at: crate::DbTimestamp,
 }
 
 /// Legacy - keep for backward compatibility
@@ -331,7 +331,7 @@ pub struct CreateSubscriptionResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PaddleApiResponse<T> {
     pub data: T,
-    pub meta: serde_json::Value,
+    pub meta: crate::DbJson,
 }
 
 impl PaddleService {
@@ -512,8 +512,8 @@ impl PaddleService {
                         id: customer_id,
                         email: Some(email.to_string()),
                         name: name.map(|s| s.to_string()),
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
+                        created_at: crate::DbTimestamp::now(),
+                        updated_at: crate::DbTimestamp::now(),
                     });
                 }
             }
@@ -543,7 +543,7 @@ impl PaddleService {
     /// Extract customer ID from "customer_already_exists" error message
     fn extract_customer_id_from_error(&self, error_body: &str) -> Option<String> {
         // Error format: "customer email conflicts with customer of id ctm_01k4w5czs63fx0jb421rz6n45z"
-        if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(error_body) {
+        if let Ok(error_json) = serde_json::from_str::<crate::DbJson>(error_body) {
             if let Some(detail) = error_json["error"]["detail"].as_str() {
                 // Look for pattern "customer of id <customer_id>"
                 if let Some(start) = detail.find("customer of id ") {
@@ -647,7 +647,7 @@ impl PaddleService {
         );
 
         // DETAILED LOGGING: Parse response as raw JSON first to see structure
-        if let Ok(raw_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+        if let Ok(raw_json) = serde_json::from_str::<crate::DbJson>(&response_text) {
             info!(
                 raw_json = %serde_json::to_string_pretty(&raw_json).unwrap_or_else(|_| "Invalid JSON".to_string()),
                 "RAW PADDLE RESPONSE STRUCTURE"
@@ -815,7 +815,7 @@ impl PaddleService {
         // since subscriptions are created after successful payment.
         // However, we can check the response for any additional checkout information.
         let checkout_url = if let Ok(raw_json) =
-            serde_json::from_str::<serde_json::Value>(&response_text)
+            serde_json::from_str::<crate::DbJson>(&response_text)
         {
             // Check if there's any checkout URL in the response
             raw_json.get("data")
@@ -906,10 +906,7 @@ impl PaddleService {
     }
 
     /// Get a transaction by ID from Paddle
-    pub async fn get_transaction(
-        &self,
-        transaction_id: &str,
-    ) -> Result<serde_json::Value, AppError> {
+    pub async fn get_transaction(&self, transaction_id: &str) -> Result<crate::DbJson, AppError> {
         let api_key = self.config.paddle_api_key.as_ref().ok_or_else(|| {
             AppError::ConfigurationError("Paddle API key not configured".to_string())
         })?;
@@ -959,11 +956,10 @@ impl PaddleService {
         }
 
         // Parse response as JSON
-        let response_json: serde_json::Value =
-            serde_json::from_str(&response_text).map_err(|e| {
-                tracing::error!("Failed to parse Paddle response: {}", e);
-                AppError::ExternalServiceError(format!("Failed to parse Paddle response: {}", e))
-            })?;
+        let response_json: crate::DbJson = serde_json::from_str(&response_text).map_err(|e| {
+            tracing::error!("Failed to parse Paddle response: {}", e);
+            AppError::ExternalServiceError(format!("Failed to parse Paddle response: {}", e))
+        })?;
 
         // Extract data field if it exists
         if let Some(data) = response_json.get("data") {
@@ -1103,18 +1099,17 @@ impl PaddleService {
         );
 
         // Parse the response to extract the token
-        let response_json: serde_json::Value =
-            serde_json::from_str(&response_text).map_err(|e| {
-                error!(
-                    error = %e,
-                    response_text = %response_text,
-                    "Failed to parse customer auth token response"
-                );
-                AppError::JsonParseError(format!(
-                    "Failed to parse customer auth token response: {}",
-                    e
-                ))
-            })?;
+        let response_json: crate::DbJson = serde_json::from_str(&response_text).map_err(|e| {
+            error!(
+                error = %e,
+                response_text = %response_text,
+                "Failed to parse customer auth token response"
+            );
+            AppError::JsonParseError(format!(
+                "Failed to parse customer auth token response: {}",
+                e
+            ))
+        })?;
 
         // Extract the customer auth token from the response
         let auth_token = response_json

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for subscription lifecycle management
 //!
 //! These tests verify the complete subscription lifecycle:

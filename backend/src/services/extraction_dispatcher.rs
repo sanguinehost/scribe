@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,
@@ -59,9 +58,9 @@ impl ExtractionDispatcher {
     #[instrument(skip(self, messages, session_dek), fields(user_id = %user_id, num_messages = messages.len()))]
     pub async fn extract_events_from_chat(
         &self,
-        user_id: Uuid,
-        chat_session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
@@ -113,9 +112,9 @@ impl ExtractionDispatcher {
     /// Extract events using the manual system
     async fn extract_events_manual(
         &self,
-        _user_id: Uuid,
-        _chat_session_id: Uuid,
-        _chronicle_id: Option<Uuid>,
+        _user_id: crate::db::DbId,
+        _chat_session_id: crate::db::DbId,
+        _chronicle_id: Option<crate::db::DbId>,
         _messages: &[ChatMessage],
         _session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
@@ -144,9 +143,9 @@ impl ExtractionDispatcher {
     /// Extract events using the agentic system
     async fn extract_events_agentic(
         &self,
-        user_id: Uuid,
-        chat_session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {
@@ -244,9 +243,9 @@ impl ExtractionDispatcher {
     /// Run both manual and agentic extraction for comparison
     async fn extract_events_dual_mode(
         &self,
-        user_id: Uuid,
-        chat_session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        chat_session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
     ) -> Result<ExtractionResult, AppError> {

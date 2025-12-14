@@ -1,7 +1,8 @@
+use crate::db::DbId;
+use crate::db::DbTimestamp;
 use chrono::{DateTime, NaiveDate, Utc};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 // ============================================================================
 // Credit Balance
@@ -10,15 +11,22 @@ use uuid::Uuid;
 /// User's current credit balance and lifetime statistics
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name = crate::schema::user_credits)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct CreditBalance {
-    pub user_id: Uuid,
+    pub user_id: crate::db::DbId,
     pub balance: i32,
     pub lifetime_earned: i32,
     pub lifetime_spent: i32,
-    pub last_monthly_grant: Option<DateTime<Utc>>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub last_monthly_grant: Option<DbTimestamp>,
+    pub created_at: Option<DbTimestamp>,
+    pub updated_at: Option<DbTimestamp>,
     /// Version number for optimistic concurrency control
     /// Incremented on each update to prevent race conditions
     pub version: i32,
@@ -26,12 +34,20 @@ pub struct CreditBalance {
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::user_credits)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewCreditBalance {
-    pub user_id: Uuid,
+    pub user_id: crate::db::DbId,
     pub balance: i32,
     pub lifetime_earned: i32,
     pub lifetime_spent: i32,
-    pub last_monthly_grant: Option<DateTime<Utc>>,
+    pub last_monthly_grant: Option<DbTimestamp>,
 }
 
 // ============================================================================
@@ -41,10 +57,17 @@ pub struct NewCreditBalance {
 /// Record of a credit transaction (encrypted sensitive data)
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::credit_transactions)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct CreditTransaction {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
@@ -53,15 +76,23 @@ pub struct CreditTransaction {
     pub metadata_encrypted: Option<Vec<u8>>,
     pub metadata_nonce: Option<Vec<u8>>,
     pub reference_id: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbTimestamp>,
+    pub expires_at: Option<DbTimestamp>,
 }
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::credit_transactions)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewCreditTransaction {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
@@ -70,23 +101,23 @@ pub struct NewCreditTransaction {
     pub metadata_encrypted: Option<Vec<u8>>,
     pub metadata_nonce: Option<Vec<u8>>,
     pub reference_id: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbTimestamp>,
+    pub expires_at: Option<DbTimestamp>,
 }
 
 /// Decrypted version for API responses
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreditTransactionDto {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
     pub description: String,
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<crate::DbJson>,
     pub reference_id: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DbTimestamp,
+    pub expires_at: Option<DbTimestamp>,
 }
 
 // ============================================================================
@@ -96,27 +127,42 @@ pub struct CreditTransactionDto {
 /// Daily usage statistics for soft limits
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, AsChangeset)]
 #[diesel(table_name = crate::schema::daily_usage_tracking)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct DailyUsage {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub date: NaiveDate,
     pub message_count: i32,
     pub token_count: i64,
-    pub model_breakdown: Option<serde_json::Value>,
+    pub model_breakdown: Option<crate::DbJson>,
     pub soft_limit_triggered_at: Option<i32>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbTimestamp>,
+    pub updated_at: Option<DbTimestamp>,
 }
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::daily_usage_tracking)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewDailyUsage {
-    pub user_id: Uuid,
+    pub user_id: crate::db::DbId,
     pub date: NaiveDate,
     pub message_count: i32,
     pub token_count: i64,
-    pub model_breakdown: Option<serde_json::Value>,
+    pub model_breakdown: Option<crate::DbJson>,
     pub soft_limit_triggered_at: Option<i32>,
 }
 
@@ -126,7 +172,7 @@ pub struct DailyUsageDto {
     pub date: NaiveDate,
     pub message_count: i32,
     pub token_count: i64,
-    pub model_breakdown: serde_json::Value,
+    pub model_breakdown: crate::DbJson,
     pub soft_limit_triggered: bool,
     pub soft_limit_triggered_at: Option<i32>,
 }
@@ -138,9 +184,16 @@ pub struct DailyUsageDto {
 /// Available credit packages for purchase
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::credit_packages)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct CreditPackage {
-    pub id: Uuid,
+    pub id: crate::db::DbId,
     pub package_id: String,
     pub name: String,
     pub credits: i32,
@@ -149,12 +202,20 @@ pub struct CreditPackage {
     pub paddle_price_id: Option<String>,
     pub active: Option<bool>,
     pub display_order: Option<i32>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbTimestamp>,
+    pub updated_at: Option<DbTimestamp>,
 }
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::credit_packages)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewCreditPackage {
     pub package_id: String,
     pub name: String,
@@ -214,7 +275,7 @@ pub struct CreditBalanceResponse {
     pub balance: i32,
     pub lifetime_earned: i32,
     pub lifetime_spent: i32,
-    pub last_monthly_grant: Option<DateTime<Utc>>,
+    pub last_monthly_grant: Option<DbTimestamp>,
 }
 
 impl From<CreditBalance> for CreditBalanceResponse {
@@ -240,8 +301,8 @@ pub struct CreditCheckResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UseCreditsRequest {
     pub model: String,
-    pub session_id: Uuid,
-    pub message_id: Option<Uuid>,
+    pub session_id: crate::db::DbId,
+    pub message_id: Option<crate::db::DbId>,
 }
 
 /// Response after using credits
@@ -249,5 +310,5 @@ pub struct UseCreditsRequest {
 pub struct UseCreditsResponse {
     pub credits_used: i32,
     pub remaining_balance: i32,
-    pub transaction_id: Uuid,
+    pub transaction_id: crate::db::DbId,
 }

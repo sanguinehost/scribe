@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 #[cfg(feature = "payment")]
@@ -347,8 +348,8 @@ async fn create_test_chat_session(
                 character_id,
                 title_ciphertext: Some(title.into_bytes()),
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "test_model".to_string(),

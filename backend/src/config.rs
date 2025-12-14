@@ -35,6 +35,10 @@ pub struct Config {
     #[serde(default = "default_qdrant_on_disk")]
     pub qdrant_on_disk: Option<bool>, // Added
 
+    // LanceDB Config (for embedded-vector mode)
+    #[serde(default)]
+    pub lancedb_data_dir: Option<std::path::PathBuf>, // Override default LanceDB data directory
+
     // Chunking Config - Added
     #[serde(default = "default_chunking_metric")]
     pub chunking_metric: String, // "word" or "char"
@@ -608,8 +612,9 @@ impl Config {
         }
 
         // Set environment-specific cookie security defaults
-        if environment == "local" && self.session_cookie_secure {
-            // For local development, default to non-secure cookies for easier testing
+        if (environment == "local" || environment == "desktop") && self.session_cookie_secure {
+            // For local development and desktop, default to non-secure cookies
+            // Desktop uses custom protocol (scribe://) which doesn't support Secure flag
             self.session_cookie_secure = false;
         }
     }
@@ -644,7 +649,7 @@ impl Config {
         let config_content = std::fs::read_to_string(&self.payment.subscription_config_path)
             .map_err(|e| anyhow::anyhow!("Failed to read subscription config: {}", e))?;
 
-        let tiers_config: serde_json::Value = serde_json::from_str(&config_content)
+        let tiers_config: crate::DbJson = serde_json::from_str(&config_content)
             .map_err(|e| anyhow::anyhow!("Invalid subscription config JSON: {}", e))?;
 
         // Validate required sections exist
@@ -691,7 +696,7 @@ impl Config {
     fn validate_tier_config(
         &self,
         tier_name: &str,
-        tier_config: &serde_json::Value,
+        tier_config: &crate::DbJson,
     ) -> Result<(), anyhow::Error> {
         // Required fields for all tiers
         let required_fields = ["display_name", "limits", "credits", "models"];
@@ -772,7 +777,7 @@ impl Config {
     #[cfg(feature = "payment")]
     fn validate_credit_system_config(
         &self,
-        credit_system: &serde_json::Value,
+        credit_system: &crate::DbJson,
     ) -> Result<(), anyhow::Error> {
         // Check required fields
         if credit_system.get("enabled").is_none() {
@@ -824,10 +829,7 @@ impl Config {
     }
 
     #[cfg(feature = "payment")]
-    fn validate_feature_flags(
-        &self,
-        feature_flags: &serde_json::Value,
-    ) -> Result<(), anyhow::Error> {
+    fn validate_feature_flags(&self, feature_flags: &crate::DbJson) -> Result<(), anyhow::Error> {
         // Check required feature flags exist
         let required_flags = ["credits_enabled", "soft_limits_enabled"];
         for flag in &required_flags {
@@ -866,6 +868,7 @@ impl Default for Config {
             embedding_dimension: default_embedding_dimension(),
             qdrant_distance_metric: default_qdrant_distance_metric(), // Added
             qdrant_on_disk: default_qdrant_on_disk(),                 // Added
+            lancedb_data_dir: None,                                   // LanceDB data directory
             chunking_metric: default_chunking_metric(),
             chunking_max_size: default_chunking_max_size(),
             chunking_overlap: default_chunking_overlap(),

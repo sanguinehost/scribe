@@ -4,10 +4,9 @@ pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
 use crate::schema::users;
 use bcrypt::BcryptError;
+#[cfg(feature = "postgres-backend")]
 use deadpool_diesel::InteractError;
-use diesel::{
-    BoolExpressionMethods, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl, SelectableHelper,
-};
+use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -28,7 +27,19 @@ type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthEr
 /// Generate a secure random verification token
 fn generate_verification_token() -> String {
     // Generate a 32-character alphanumeric token using UUID for simplicity and security
-    format!("{}", uuid::Uuid::new_v4().simple())
+    format!("{}", crate::db::DbId::new().simple())
+}
+
+/// Helper to insert email verification token (avoids E0275 Sized overflow with complex closures)
+fn insert_verification_token_sync(
+    conn: &mut crate::db::DbConnection,
+    token: &NewEmailVerificationToken,
+) -> Result<usize, crate::errors::AppError> {
+    use crate::schema::email_verification_tokens;
+    diesel::insert_into(email_verification_tokens::table)
+        .values(token)
+        .execute(conn)
+        .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
 }
 
 // Make AuthError enum public
@@ -51,7 +62,11 @@ pub enum AuthError {
     #[error("Database error during authentication: {0}")]
     DatabaseError(String),
     #[error("Database pool error: {0}")]
+    #[cfg(feature = "postgres-backend")]
     PoolError(#[from] deadpool_diesel::PoolError),
+    #[error("Database pool error: {0}")]
+    #[cfg(feature = "sqlite-backend")]
+    PoolErrorSqlite(String),
     #[error("Database interaction error: {0}")]
     InteractError(String), // Changed from InteractError to String
     #[error("Cryptography error: {0}")]
@@ -91,6 +106,7 @@ impl PartialEq for AuthError {
 }
 
 // Manual From implementation for InteractError
+#[cfg(feature = "postgres-backend")]
 impl From<InteractError> for AuthError {
     fn from(err: InteractError) -> Self {
         Self::InteractError(err.to_string())
@@ -124,13 +140,21 @@ impl From<diesel::result::Error> for AuthError {
     }
 }
 
+// From implementation for AppError
+impl From<crate::errors::AppError> for AuthError {
+    fn from(err: crate::errors::AppError) -> Self {
+        // Map AppError to AuthError variants appropriately
+        Self::DatabaseError(err.to_string())
+    }
+}
+
 /// Check if there are any users in the database
 ///
 /// # Errors
 ///
 /// Returns an error if the database query fails
 #[instrument(skip(conn), err)]
-pub fn are_there_any_users(conn: &mut PgConnection) -> Result<bool, AuthError> {
+pub fn are_there_any_users(conn: &mut crate::db::DbConn) -> Result<bool, AuthError> {
     use crate::schema::users::dsl::{id, users};
     use diesel::dsl::count;
 
@@ -154,21 +178,19 @@ pub async fn create_user_with_verification(
     // Hash password first in async context
     let password_hash = hash_password(credentials.password.clone()).await?;
 
-    let conn = pool.get().await.map_err(AuthError::PoolError)?;
-
     // Clone credentials for the async block
     let credentials_clone = credentials.clone();
-    let user = conn
-        .interact(move |conn| {
-            // This is a sync function that creates the user
-            create_user_sync(conn, credentials_clone, password_hash)
-        })
-        .await
-        .map_err(AuthError::from)??;
+    let user = crate::db::with_conn(pool, move |conn| {
+        // This is a sync function that creates the user
+        create_user_sync(conn, credentials_clone, password_hash)
+            .map_err(|e| crate::errors::AppError::from(e))
+    })
+    .await
+    .map_err(AuthError::from)?;
 
     // Generate verification token
     let verification_token = generate_verification_token();
-    let expires_at = Utc::now() + Duration::hours(24);
+    let expires_at: crate::db::DbTimestamp = (Utc::now() + Duration::hours(24)).into();
 
     let new_token = NewEmailVerificationToken {
         user_id: user.id,
@@ -177,15 +199,11 @@ pub async fn create_user_with_verification(
     };
 
     // Store verification token in database
-    let conn = pool.get().await.map_err(AuthError::PoolError)?;
-    conn.interact(move |conn| {
-        use crate::schema::email_verification_tokens;
-        diesel::insert_into(email_verification_tokens::table)
-            .values(&new_token)
-            .execute(conn)
+    crate::db::with_conn(pool, move |conn| {
+        insert_verification_token_sync(conn, &new_token)
     })
     .await
-    .map_err(AuthError::from)??;
+    .map_err(AuthError::from)?;
 
     // Send verification email
     if let Err(e) = email_service
@@ -204,7 +222,7 @@ pub async fn create_user_with_verification(
 // Function to create a new user (backward compatibility wrapper)
 #[instrument(skip(conn, credentials), err)]
 pub async fn create_user(
-    conn: &mut PgConnection,
+    conn: &mut crate::db::DbConn,
     credentials: RegisterPayload,
 ) -> Result<User, AuthError> {
     // Hash password first in async context
@@ -215,7 +233,7 @@ pub async fn create_user(
 // Function to create a new user (internal sync helper)
 #[instrument(skip(conn, credentials, password_hash), err)] // Skip entire credentials struct for safety, Secret fields are not logged by Debug.
 pub fn create_user_sync(
-    conn: &mut PgConnection,
+    conn: &mut crate::db::DbConn,
     mut credentials: RegisterPayload, // Use RegisterPayload struct, make it mutable
     password_hash: String,            // Pre-hashed password
 ) -> Result<User, AuthError> {
@@ -304,31 +322,53 @@ pub fn create_user_sync(
     };
 
     // 3. Create a NewUser instance
+    // Generate UUID for both backends (required for SQLite, overrides DEFAULT for PostgreSQL)
+    let user_id = crate::db::DbId::new();
+
     let new_user = NewUser {
+        #[cfg(feature = "sqlite-backend")]
+        id: user_id,
         username: credentials.username.clone(), // Clone username from credentials
         password_hash,                          // Use the pre-hashed password
         email: credentials.email.clone(),       // Clone email from credentials
         kek_salt,
-        encrypted_dek,
-        encrypted_dek_by_recovery,
+        encrypted_dek: crate::db::DbBlob::from(encrypted_dek),
+        encrypted_dek_by_recovery: encrypted_dek_by_recovery.map(crate::db::DbBlob::from),
         recovery_kek_salt,
-        dek_nonce,
-        recovery_dek_nonce,
+        dek_nonce: crate::db::DbBlob::from(dek_nonce),
+        recovery_dek_nonce: recovery_dek_nonce.map(crate::db::DbBlob::from),
         role: user_role, // Using appropriate role based on whether this is the first user
         account_status: AccountStatus::Pending, // Default to Pending account status
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: chrono::Utc::now(),
+        token_usage_updated_at: chrono::Utc::now().into(),
     };
 
     debug!("Inserting new user with encryption fields into database...");
     // 4. Insert into the database
-    let insert_result = diesel::insert_into(users::table)
-        .values(&new_user)
-        .returning(UserDbQuery::as_returning())
-        .get_result::<UserDbQuery>(conn);
+    #[cfg(feature = "postgres-backend")]
+    let insert_result = {
+        diesel::insert_into(users::table)
+            .values(&new_user)
+            .returning(UserDbQuery::as_returning())
+            .get_result(conn)
+    };
+
+    #[cfg(feature = "sqlite-backend")]
+    let insert_result = {
+        use diesel::prelude::*;
+        // SQLite doesn't support RETURNING, so we insert and query back by username
+        let username_clone = new_user.username.clone();
+        diesel::insert_into(users::table)
+            .values(&new_user)
+            .execute(conn)?;
+
+        users::table
+            .filter(users::username.eq(username_clone))
+            .first::<UserDbQuery>(conn)
+    };
 
     match insert_result {
         Ok(user_db_query) => {
@@ -354,12 +394,14 @@ pub fn create_user_sync(
 /// - The database query fails
 /// - The user is not found
 #[instrument(skip(conn), err)]
-pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<User, AuthError> {
+pub fn get_user_by_username(
+    conn: &mut crate::db::DbConn,
+    username: &str,
+) -> Result<User, AuthError> {
     // --- Log username explicitly ---
     info!("Attempting to find user by username"); // Removed PII: username
     users::table
         .filter(users::username.eq(username))
-        .select(UserDbQuery::as_select())
         .first::<UserDbQuery>(conn)
         .map(User::from)
         .map_err(AuthError::from)
@@ -373,12 +415,11 @@ pub fn get_user_by_username(conn: &mut PgConnection, username: &str) -> Result<U
 /// - The database query fails
 /// - The user is not found
 #[instrument(skip(conn), err)]
-pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthError> {
+pub fn get_user(conn: &mut crate::db::DbConn, user_id: crate::db::DbId) -> Result<User, AuthError> {
     // --- Log user_id explicitly ---
     info!(%user_id, "Attempting to find user by ID");
     users::table
         .find(user_id)
-        .select(UserDbQuery::as_select())
         .first::<UserDbQuery>(conn)
         .map(User::from)
         .map_err(AuthError::from)
@@ -386,24 +427,25 @@ pub fn get_user(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthErro
 
 // Function to find user by email
 #[instrument(skip(conn), err)]
-pub fn find_user_by_email(conn: &mut PgConnection, email: &str) -> Result<User, AuthError> {
+pub fn find_user_by_email(conn: &mut crate::db::DbConn, email: &str) -> Result<User, AuthError> {
     info!("Finding user by email"); // Don't log email for privacy
 
     let user_db_query = users::table
         .filter(users::email.eq(email))
-        .select(UserDbQuery::as_select())
         .first::<UserDbQuery>(conn)
         .map_err(AuthError::from)?;
 
     Ok(User::from(user_db_query))
 }
 
-pub fn find_user_by_id(conn: &mut PgConnection, user_id: Uuid) -> Result<User, AuthError> {
+pub fn find_user_by_id(
+    conn: &mut crate::db::DbConn,
+    user_id: crate::db::DbId,
+) -> Result<User, AuthError> {
     info!("Finding user by ID: {}", user_id);
 
     let user_db_query = users::table
         .filter(users::id.eq(user_id))
-        .select(UserDbQuery::as_select())
         .first::<UserDbQuery>(conn)
         .map_err(AuthError::from)?;
 
@@ -413,7 +455,7 @@ pub fn find_user_by_id(conn: &mut PgConnection, user_id: Uuid) -> Result<User, A
 // Function to verify user credentials
 #[instrument(skip(conn, password), err)]
 pub fn verify_credentials(
-    conn: &mut PgConnection,
+    conn: &mut crate::db::DbConn,
     identifier: &str,       // Changed from username to identifier
     password: SecretString, // Corrected: Was Secret<String>
 ) -> VerifyCredentialsResult {
@@ -427,7 +469,6 @@ pub fn verify_credentials(
                 .eq(identifier)
                 .or(users::email.eq(identifier)),
         ) // Query by username OR email
-        .select(UserDbQuery::as_select())
         .first::<UserDbQuery>(conn)
         .map_err(AuthError::from)?;
 
@@ -502,11 +543,15 @@ pub fn verify_credentials(
 pub mod session_dek;
 pub mod session_rotation;
 pub mod session_store;
+pub mod token_auth;
+pub mod token_service;
 pub mod user_store;
 
 pub use session_dek::SessionDek;
 pub use session_rotation::session_rotation_middleware;
 pub use session_store::DieselSessionStore;
+pub use token_auth::{CurrentAuth, UnifiedAuth, UnifiedAuthSession};
+pub use token_service::{TokenClaims, TokenPair, TokenService, TokenType};
 pub use user_store::{Backend as AuthBackend, UserCryptoFields};
 
 /// Hashes a password using bcrypt with the default cost factor.
@@ -528,7 +573,7 @@ pub async fn hash_password(password: SecretString) -> Result<String, AuthError> 
 #[instrument(skip(backend, current_db_user, current_password_payload, new_password_payload), err, fields(user_id = %user_id))]
 pub async fn change_user_password(
     backend: &user_store::Backend,
-    user_id: Uuid,
+    user_id: crate::db::DbId,
     current_db_user: User, // Assumes this is a fresh fetch of the user
     current_password_payload: SecretString, // Corrected: Was Secret<String>
     new_password_payload: SecretString, // Corrected: Was Secret<String>
@@ -618,9 +663,9 @@ pub async fn change_user_password(
             user_id,
             UserCryptoFields {
                 password_hash: Some(new_password_hash_str),
-                dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
-                dek_nonce: Some(new_nonce_dek_bytes),           // Pass nonce
-                kek_salt: Some(new_kek_salt_str),               // KEK salt (already a string)
+                dek_ciphertext: Some(crate::db::DbBlob::from(new_ciphertext_dek_bytes)), // Pass ciphertext
+                dek_nonce: Some(crate::db::DbBlob::from(new_nonce_dek_bytes)), // Pass nonce
+                kek_salt: Some(new_kek_salt_str), // KEK salt (already a string)
                 recovery_dek_ciphertext: updated_encrypted_dek_by_recovery,
                 recovery_dek_nonce: current_db_user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
             },
@@ -638,27 +683,23 @@ pub async fn recover_user_password_with_phrase(
     identifier: String,
     recovery_phrase_payload: SecretString, // Corrected: Was Secret<String>
     new_password_payload: SecretString,    // Corrected: Was Secret<String>
-) -> Result<Uuid, AuthError> {
+) -> Result<crate::db::DbId, AuthError> {
     info!("Attempting password recovery with phrase"); // Removed PII: identifier
 
     // 1. Fetch user by identifier (username or email)
     debug!("Fetching user by identifier...");
-    let user_db_query = pool
-        .get()
-        .await
-        .map_err(AuthError::PoolError)?
-        .interact(move |conn| {
-            users::table
-                .filter(
-                    users::username
-                        .eq(&identifier)
-                        .or(users::email.eq(&identifier)),
-                )
-                .select(UserDbQuery::as_select())
-                .first::<UserDbQuery>(conn)
-        })
-        .await
-        .map_err(AuthError::from)??; // Double ?? for InteractError then diesel::Error -> AuthError
+    let user_db_query = crate::db::with_conn(pool, move |conn| {
+        users::table
+            .filter(
+                users::username
+                    .eq(&identifier)
+                    .or(users::email.eq(&identifier)),
+            )
+            .first::<UserDbQuery>(conn)
+            .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(AuthError::from)?;
 
     let user = User::from(user_db_query);
     info!(user_id = %user.id, "User found for password recovery."); // Removed PII: username
@@ -735,8 +776,8 @@ pub async fn recover_user_password_with_phrase(
             user.id,
             UserCryptoFields {
                 password_hash: Some(new_password_hash_str),
-                dek_ciphertext: Some(new_ciphertext_dek_bytes), // Pass ciphertext
-                dek_nonce: Some(new_nonce_dek_bytes),           // Pass nonce
+                dek_ciphertext: Some(crate::db::DbBlob::from(new_ciphertext_dek_bytes)), // Pass ciphertext
+                dek_nonce: Some(crate::db::DbBlob::from(new_nonce_dek_bytes)), // Pass nonce
                 kek_salt: Some(new_kek_salt_str), // The new KEK salt (already a string)
                 recovery_dek_ciphertext: user.encrypted_dek_by_recovery.clone(), // This remains unchanged
                 recovery_dek_nonce: user.recovery_dek_nonce.clone(), // Pass existing recovery nonce
@@ -749,16 +790,16 @@ pub async fn recover_user_password_with_phrase(
 }
 
 /// Extracts user ID from session data JSON
-fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option<Uuid> {
+fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option<crate::db::DbId> {
     match serde_json::from_str::<serde_json::Value>(data_json_str) {
         Ok(json_value) => {
-            json_value.get("userId").and_then(serde_json::Value::as_str).map_or_else(|| {
+            json_value.get("userId").and_then(|v| v.as_str()).map_or_else(|| {
                 warn!(session_id, "Session data does not contain a 'userId' string field during invalidation sweep.");
                 None
             }, |session_user_id_str| Uuid::parse_str(session_user_id_str).map_or_else(|_| {
                 warn!(session_id, "Failed to parse userId UUID from session data during invalidation sweep.");
                 None
-            }, Some))
+            }, |id| Some(crate::db::DbId::from(id))))
         }
         Err(e) => {
             warn!(session_id, error = ?e, "Failed to parse session data JSON during invalidation sweep.");
@@ -770,7 +811,7 @@ fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option
 /// Filters sessions to find those belonging to the target user
 fn filter_sessions_for_user(
     all_sessions_data: Vec<(String, String)>,
-    user_id_to_invalidate: Uuid,
+    user_id_to_invalidate: crate::db::DbId,
 ) -> Vec<String> {
     all_sessions_data
         .into_iter()
@@ -784,7 +825,7 @@ fn filter_sessions_for_user(
 
 /// Deletes sessions from the database
 fn delete_sessions_from_db(
-    conn: &mut diesel::PgConnection,
+    conn: &mut crate::db::DbConn,
     session_ids_to_delete: &[String],
 ) -> Result<usize, AuthError> {
     use crate::schema::sessions::dsl::{id as session_id_col, sessions};
@@ -810,7 +851,7 @@ fn delete_sessions_from_db(
 #[instrument(skip(pool), err, fields(user_id = %user_id_to_invalidate))]
 pub async fn delete_all_sessions_for_user(
     pool: &DbPool,
-    user_id_to_invalidate: Uuid,
+    user_id_to_invalidate: crate::db::DbId,
 ) -> Result<usize, AuthError> {
     use crate::schema::sessions::dsl::{
         id as session_id_col, session as session_data_col, sessions,
@@ -819,29 +860,28 @@ pub async fn delete_all_sessions_for_user(
 
     info!("Attempting to delete all sessions for user.");
 
-    let deleted_count = pool
-        .get()
-        .await
-        .map_err(AuthError::PoolError)?
-        .interact(move |conn| {
-            // 1. Fetch all session IDs and their data
-            let all_sessions_data = sessions
-                .select((session_id_col, session_data_col))
-                .load::<(String, String)>(conn)
-                .map_err(|e| {
-                    error!(error = ?e, "Failed to load sessions from DB for invalidation.");
-                    AuthError::DatabaseError(e.to_string())
-                })?;
+    let deleted_count = crate::db::with_conn(pool, move |conn| {
+        // 1. Fetch all session IDs and their data
+        let all_sessions_data = sessions
+            .select((session_id_col, session_data_col))
+            .load::<(String, String)>(conn)
+            .map_err(|e| {
+                error!(error = ?e, "Failed to load sessions from DB for invalidation.");
+                crate::errors::AppError::DatabaseQueryError(e.to_string())
+            })?;
 
-            // 2. Filter to find session IDs belonging to the target user
-            let session_ids_to_delete =
-                filter_sessions_for_user(all_sessions_data, user_id_to_invalidate);
+        // 2. Filter to find session IDs belonging to the target user
+        let session_ids_to_delete =
+            filter_sessions_for_user(all_sessions_data, user_id_to_invalidate);
 
-            // 3. Delete the identified sessions
-            delete_sessions_from_db(conn, &session_ids_to_delete)
+        // 3. Delete the identified sessions
+        delete_sessions_from_db(conn, &session_ids_to_delete).map_err(|e| match e {
+            AuthError::DatabaseError(msg) => crate::errors::AppError::DatabaseQueryError(msg),
+            _ => crate::errors::AppError::InternalServerErrorGeneric(e.to_string()),
         })
-        .await
-        .map_err(AuthError::from)??; // Double ?? for InteractError then AuthError from inner logic
+    })
+    .await
+    .map_err(AuthError::from)?;
 
     info!(
         num_deleted = deleted_count,
@@ -851,7 +891,7 @@ pub async fn delete_all_sessions_for_user(
 }
 
 #[instrument(skip(conn), err)]
-pub fn verify_email(conn: &mut PgConnection, token: &str) -> Result<User, AuthError> {
+pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, AuthError> {
     use crate::schema::email_verification_tokens;
     use crate::schema::users;
 
@@ -864,7 +904,7 @@ pub fn verify_email(conn: &mut PgConnection, token: &str) -> Result<User, AuthEr
         .map_err(|_| AuthError::InvalidVerificationToken)?;
 
     // 2. Check if the token has expired
-    if verification_token.expires_at < Utc::now() {
+    if verification_token.expires_at < Utc::now().into() {
         warn!(token_id = %verification_token.id, "Attempted to use expired verification token");
         // Optionally, delete the expired token
         diesel::delete(email_verification_tokens::table.find(verification_token.id))
@@ -874,14 +914,38 @@ pub fn verify_email(conn: &mut PgConnection, token: &str) -> Result<User, AuthEr
     }
 
     // 3. Update the user's account status to Active
-    let updated_user = diesel::update(users::table.find(verification_token.user_id))
-        .set(users::account_status.eq(AccountStatus::Active))
-        .returning(UserDbQuery::as_returning())
-        .get_result::<UserDbQuery>(conn)
-        .map_err(|e| {
-            error!(user_id = %verification_token.user_id, error = ?e, "Failed to update user status to active");
-            AuthError::from(e)
-        })?;
+    #[cfg(feature = "postgres-backend")]
+    let updated_user = {
+        diesel::update(users::table.find(verification_token.user_id))
+            .set(users::account_status.eq(AccountStatus::Active))
+            .returning(UserDbQuery::as_returning())
+            .get_result(conn)
+            .map_err(|e| {
+                error!(user_id = %verification_token.user_id, error = ?e, "Failed to update user status to active");
+                AuthError::from(e)
+            })?
+    };
+
+    #[cfg(feature = "sqlite-backend")]
+    let updated_user = {
+        use diesel::prelude::*;
+        // SQLite doesn't support RETURNING on UPDATE, so we update and query back
+        diesel::update(users::table.find(verification_token.user_id))
+            .set(users::account_status.eq(AccountStatus::Active))
+            .execute(conn)
+            .map_err(|e| {
+                error!(user_id = %verification_token.user_id, error = ?e, "Failed to update user status to active");
+                AuthError::from(e)
+            })?;
+
+        users::table
+            .find(verification_token.user_id)
+            .first::<UserDbQuery>(conn)
+            .map_err(|e| {
+                error!(user_id = %verification_token.user_id, error = ?e, "Failed to query user after update");
+                AuthError::from(e)
+            })?
+    };
 
     // 4. Delete the used verification token
     diesel::delete(email_verification_tokens::table.find(verification_token.id))
@@ -895,9 +959,11 @@ pub fn verify_email(conn: &mut PgConnection, token: &str) -> Result<User, AuthEr
     Ok(User::from(updated_user))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
     // use secrecy::Secret; // This line should be removed or already gone
     use secrecy::SecretString; // This is fine if SecretString is used, or can be removed if sub-tests import it.
     use tokio;

@@ -10,11 +10,7 @@ use std::sync::Arc;
 use super::{AiClient, ChatStream};
 use crate::errors::AppError;
 
-fn log_stream_event_error(
-    model_iden: &ModelIden,
-    body: &serde_json::Value,
-    gen_err: &genai::Error,
-) {
+fn log_stream_event_error(model_iden: &ModelIden, body: &crate::DbJson, gen_err: &genai::Error) {
     tracing::error!(
         target: "gemini_client",
         model_iden = ?model_iden,
@@ -62,7 +58,8 @@ fn log_generic_error(gen_err: &genai::Error) {
 fn log_and_convert_genai_error(gen_err: genai::Error) -> AppError {
     match &gen_err {
         genai::Error::StreamEventError { model_iden, body } => {
-            log_stream_event_error(model_iden, body, &gen_err);
+            let body_json: crate::DbJson = body.clone().into();
+            log_stream_event_error(model_iden, &body_json, &gen_err);
         }
         genai::Error::ReqwestEventSource(event_source_error) => {
             log_reqwest_event_source_error(event_source_error, &gen_err);

@@ -7,8 +7,8 @@
 //! - Expired subscription cleanup
 //! - Credit expiry cleanup (daily)
 
+use crate::db::DbPool;
 use chrono::{Datelike, NaiveTime, Timelike, Utc};
-use deadpool_diesel::Pool;
 use diesel::prelude::*;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
@@ -28,17 +28,14 @@ use crate::{
 /// Payment scheduler service that manages all periodic payment tasks
 pub struct PaymentScheduler {
     config: Arc<Config>,
-    pool: Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
+    pool: DbPool,
     credit_service: Arc<CreditService>,
     subscription_service: Arc<SubscriptionService>,
     usage_service: Arc<UsageTrackingService>,
 }
 
 impl PaymentScheduler {
-    pub fn new(
-        config: Arc<Config>,
-        pool: Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    ) -> Self {
+    pub fn new(config: Arc<Config>, pool: DbPool) -> Self {
         let credit_service = Arc::new(CreditService::new(config.clone()));
         let subscription_service = Arc::new(SubscriptionService::new(
             config.as_ref().clone(),
@@ -216,10 +213,9 @@ impl PaymentScheduler {
             "Starting daily usage reset at {}",
             Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
         );
-        let conn = self.pool.get().await?;
         let today = Utc::now().date_naive();
 
-        conn.interact(move |conn| {
+        crate::db::with_conn(&self.pool, move |conn| {
             // Archive yesterday's usage before reset
             let _yesterday = today - chrono::Duration::days(1);
             info!(
@@ -231,7 +227,11 @@ impl PaymentScheduler {
             // This allows fresh records to be created for today with correct date
             let reset_count = diesel::delete(daily_usage_tracking::table)
                 .filter(daily_usage_tracking::date.lt(today))
-                .execute(conn)?;
+                .execute(conn)
+                .map_err(|e| {
+                    error!("Failed to reset daily usage: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?;
 
             info!(
                 "Successfully deleted {} old daily usage records",
@@ -241,24 +241,17 @@ impl PaymentScheduler {
             // Update user last_daily_usage_reset timestamps
             let user_update_count = diesel::update(users::table)
                 .set(users::last_daily_usage_reset.eq(Utc::now()))
-                .execute(conn)?;
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             info!(
                 "Updated last_daily_usage_reset for {} users",
                 user_update_count
             );
 
-            Ok::<_, diesel::result::Error>(())
+            Ok(())
         })
-        .await
-        .map_err(|e| {
-            error!("Database error during daily usage reset: {}", e);
-            AppError::DatabaseQueryError(e.to_string())
-        })?
-        .map_err(|e| {
-            error!("Failed to reset daily usage: {}", e);
-            AppError::DatabaseQueryError(e.to_string())
-        })?;
+        .await?;
 
         info!(
             "Daily usage reset completed successfully at {}",
@@ -269,35 +262,26 @@ impl PaymentScheduler {
 
     /// Allocate monthly credits to all active subscribers
     async fn allocate_monthly_credits(&self) -> Result<(), AppError> {
-        let conn = self.pool.get().await?;
         let credit_service = self.credit_service.clone();
 
         // Get all active subscriptions
-        let active_subscriptions = conn
-            .interact(move |conn| {
-                subscriptions::table
-                    .filter(subscriptions::status.eq_any(vec![
-                        SubscriptionStatus::Active.to_string(),
-                        SubscriptionStatus::Trialing.to_string(),
-                    ]))
-                    .filter(
-                        subscriptions::last_credit_grant
-                            .is_null()
-                            .or(subscriptions::last_credit_grant
-                                .lt(Utc::now() - chrono::Duration::days(25))),
-                    )
-                    .select(Subscription::as_select())
-                    .load::<Subscription>(conn)
-            })
-            .await
-            .map_err(|e| {
-                error!("Failed to fetch active subscriptions: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?
-            .map_err(|e| {
-                error!("Failed to query subscriptions: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let active_subscriptions = crate::db::with_conn(&self.pool, move |conn| {
+            subscriptions::table
+                .filter(subscriptions::status.eq_any(vec![
+                    SubscriptionStatus::Active.to_string(),
+                    SubscriptionStatus::Trialing.to_string(),
+                ]))
+                .filter(subscriptions::last_credit_grant.is_null().or(
+                    subscriptions::last_credit_grant.lt(Utc::now() - chrono::Duration::days(25)),
+                ))
+                .select(Subscription::as_select())
+                .load::<Subscription>(conn)
+                .map_err(|e| {
+                    error!("Failed to query subscriptions: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })
+        })
+        .await?;
 
         info!(
             "Processing monthly credits for {} active subscriptions",
@@ -306,43 +290,36 @@ impl PaymentScheduler {
 
         // Allocate credits for each subscription
         for subscription in active_subscriptions {
-            let conn = self.pool.get().await?;
             let credit_service = credit_service.clone();
             let user_id = subscription.user_id;
             let plan_type = subscription.plan_type.clone();
             let plan_type_for_log = plan_type.clone();
             let subscription_id = subscription.id;
 
-            match conn
-                .interact(move |conn| {
-                    // Grant credits based on plan
-                    let result = credit_service.grant_monthly_credits(conn, user_id, &plan_type);
+            match crate::db::with_conn(&self.pool, move |conn| {
+                // Grant credits based on plan
+                let result = credit_service.grant_monthly_credits(conn, user_id, &plan_type);
 
-                    // Update last_credit_grant timestamp
-                    if result.is_ok() {
-                        diesel::update(subscriptions::table.find(subscription_id))
-                            .set(subscriptions::last_credit_grant.eq(Utc::now()))
-                            .execute(conn)?;
-                    }
+                // Update last_credit_grant timestamp
+                if result.is_ok() {
+                    diesel::update(subscriptions::table.find(subscription_id))
+                        .set(subscriptions::last_credit_grant.eq(Utc::now()))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                }
 
-                    result
-                })
-                .await
+                result
+            })
+            .await
             {
-                Ok(Ok(_)) => {
+                Ok(_) => {
                     info!(
                         "Successfully allocated monthly credits for user {} (plan: {})",
                         user_id, plan_type_for_log
                     );
                 }
-                Ok(Err(e)) => {
-                    error!("Failed to allocate credits for user {}: {}", user_id, e);
-                }
                 Err(e) => {
-                    error!(
-                        "Database error allocating credits for user {}: {}",
-                        user_id, e
-                    );
+                    error!("Failed to allocate credits for user {}: {}", user_id, e);
                 }
             }
         }
@@ -352,30 +329,23 @@ impl PaymentScheduler {
 
     /// Process subscription renewals and handle expired subscriptions
     async fn process_subscription_renewals(&self) -> Result<(), AppError> {
-        let conn = self.pool.get().await?;
-
         // Get subscriptions that need renewal processing
-        let subscriptions_to_process = conn
-            .interact(move |conn| {
-                subscriptions::table
-                    .filter(subscriptions::current_period_end.lt(Utc::now()).and(
-                        subscriptions::status.eq_any(vec![
-                            SubscriptionStatus::Active.to_string(),
-                            SubscriptionStatus::Trialing.to_string(),
-                        ]),
-                    ))
-                    .select(Subscription::as_select())
-                    .load::<Subscription>(conn)
-            })
-            .await
-            .map_err(|e| {
-                error!("Failed to fetch subscriptions for renewal: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?
-            .map_err(|e| {
-                error!("Failed to query subscriptions: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let subscriptions_to_process = crate::db::with_conn(&self.pool, move |conn| {
+            subscriptions::table
+                .filter(subscriptions::current_period_end.lt(Utc::now()).and(
+                    subscriptions::status.eq_any(vec![
+                        SubscriptionStatus::Active.to_string(),
+                        SubscriptionStatus::Trialing.to_string(),
+                    ]),
+                ))
+                .select(Subscription::as_select())
+                .load::<Subscription>(conn)
+                .map_err(|e| {
+                    error!("Failed to query subscriptions: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })
+        })
+        .await?;
 
         info!(
             "Processing {} subscriptions for renewal/expiration",
@@ -383,33 +353,29 @@ impl PaymentScheduler {
         );
 
         for subscription in subscriptions_to_process {
-            let conn = self.pool.get().await?;
             let subscription_id = subscription.id;
             let grace_period_days = self.config.payment.grace_period_days as i64;
 
             // Check if subscription is past grace period
-            let days_overdue =
-                (Utc::now().signed_duration_since(subscription.current_period_end)).num_days();
+            let days_overdue = (Utc::now()
+                .signed_duration_since(subscription.current_period_end.into_datetime()))
+            .num_days();
 
             if days_overdue > grace_period_days {
                 // Expire the subscription
-                conn.interact(move |conn| {
+                crate::db::with_conn(&self.pool, move |conn| {
                     diesel::update(subscriptions::table.find(subscription_id))
                         .set((
                             subscriptions::status.eq(SubscriptionStatus::Cancelled.to_string()),
                             subscriptions::updated_at.eq(Utc::now()),
                         ))
                         .execute(conn)
+                        .map_err(|e| {
+                            error!("Database error expiring subscription: {}", e);
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 })
-                .await
-                .map_err(|e| {
-                    error!("Failed to expire subscription {}: {}", subscription_id, e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?
-                .map_err(|e| {
-                    error!("Database error expiring subscription: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+                .await?;
 
                 warn!(
                     "Expired subscription {} for user {} (overdue by {} days)",
@@ -417,23 +383,19 @@ impl PaymentScheduler {
                 );
             } else if subscription.cancel_at_period_end.unwrap_or(false) {
                 // Cancel the subscription
-                conn.interact(move |conn| {
+                crate::db::with_conn(&self.pool, move |conn| {
                     diesel::update(subscriptions::table.find(subscription_id))
                         .set((
                             subscriptions::status.eq(SubscriptionStatus::Cancelled.to_string()),
                             subscriptions::updated_at.eq(Utc::now()),
                         ))
                         .execute(conn)
+                        .map_err(|e| {
+                            error!("Database error cancelling subscription: {}", e);
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 })
-                .await
-                .map_err(|e| {
-                    error!("Failed to cancel subscription {}: {}", subscription_id, e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?
-                .map_err(|e| {
-                    error!("Database error cancelling subscription: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+                .await?;
 
                 info!(
                     "Cancelled subscription {} for user {} as requested",
@@ -442,10 +404,12 @@ impl PaymentScheduler {
             } else {
                 // Mark as past due during grace period
                 // Calculate grace_period_end based on current_period_end + grace_period_days
-                let grace_period_end =
-                    subscription.current_period_end + chrono::Duration::days(grace_period_days);
+                let grace_period_end = crate::DbTimestamp::from_datetime(
+                    subscription.current_period_end.into_datetime()
+                        + chrono::Duration::days(grace_period_days),
+                );
 
-                conn.interact(move |conn| {
+                crate::db::with_conn(&self.pool, move |conn| {
                     diesel::update(subscriptions::table.find(subscription_id))
                         .set((
                             subscriptions::status.eq(SubscriptionStatus::PastDue.to_string()),
@@ -453,19 +417,12 @@ impl PaymentScheduler {
                             subscriptions::updated_at.eq(Utc::now()),
                         ))
                         .execute(conn)
+                        .map_err(|e| {
+                            error!("Database error updating subscription: {}", e);
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 })
-                .await
-                .map_err(|e| {
-                    error!(
-                        "Failed to mark subscription as past due {}: {}",
-                        subscription_id, e
-                    );
-                    AppError::DatabaseQueryError(e.to_string())
-                })?
-                .map_err(|e| {
-                    error!("Database error updating subscription: {}", e);
-                    AppError::DatabaseQueryError(e.to_string())
-                })?;
+                .await?;
 
                 warn!(
                     "Marked subscription {} as past due (grace period: {} days remaining, ends: {})",
@@ -505,22 +462,16 @@ impl PaymentScheduler {
             cutoff_date.format("%Y-%m-%d %H:%M:%S UTC")
         );
 
-        let conn = self.pool.get().await?;
-        let deleted_count = conn
-            .interact(move |conn| {
-                diesel::delete(webhook_events::table)
-                    .filter(webhook_events::created_at.lt(cutoff_date))
-                    .execute(conn)
-            })
-            .await
-            .map_err(|e| {
-                error!("Database error during webhook cleanup: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?
-            .map_err(|e| {
-                error!("Failed to delete old webhook events: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let deleted_count = crate::db::with_conn(&self.pool, move |conn| {
+            diesel::delete(webhook_events::table)
+                .filter(webhook_events::created_at.lt(cutoff_date))
+                .execute(conn)
+                .map_err(|e| {
+                    error!("Failed to delete old webhook events: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })
+        })
+        .await?;
 
         info!(
             "Successfully deleted {} webhook events older than {} days",
@@ -552,21 +503,13 @@ impl PaymentScheduler {
             Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
         );
 
-        let conn = self.pool.get().await?;
         let credit_service = self.credit_service.clone();
 
         // Cleanup expired credits for all users
-        let stats = conn
-            .interact(move |conn| credit_service.cleanup_expired_credits(conn, None))
-            .await
-            .map_err(|e| {
-                error!("Database error during credit expiry cleanup: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?
-            .map_err(|e| {
-                error!("Failed to cleanup expired credits: {}", e);
-                e
-            })?;
+        let stats = crate::db::with_conn(&self.pool, move |conn| {
+            credit_service.cleanup_expired_credits(conn, None)
+        })
+        .await?;
 
         info!(
             "Successfully cleaned up {} expired credits for {} users",
@@ -600,29 +543,19 @@ impl PaymentScheduler {
             Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
         );
 
-        let conn = self.pool.get().await?;
-
         // Get all subscriptions with scheduled changes that are due
-        let subscriptions_with_changes = conn
-            .interact(move |conn| {
-                subscriptions::table
-                    .filter(subscriptions::scheduled_plan_change.is_not_null())
-                    .filter(subscriptions::scheduled_change_date.le(Utc::now()))
-                    .select(Subscription::as_select())
-                    .load::<Subscription>(conn)
-            })
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to fetch subscriptions with scheduled changes: {}",
-                    e
-                );
-                AppError::DatabaseQueryError(e.to_string())
-            })?
-            .map_err(|e| {
-                error!("Failed to query subscriptions: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let subscriptions_with_changes = crate::db::with_conn(&self.pool, move |conn| {
+            subscriptions::table
+                .filter(subscriptions::scheduled_plan_change.is_not_null())
+                .filter(subscriptions::scheduled_change_date.le(Utc::now()))
+                .select(Subscription::as_select())
+                .load::<Subscription>(conn)
+                .map_err(|e| {
+                    error!("Failed to query subscriptions: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })
+        })
+        .await?;
 
         if subscriptions_with_changes.is_empty() {
             info!("No scheduled plan changes due");
@@ -638,8 +571,6 @@ impl PaymentScheduler {
 
         // Process each scheduled change
         for subscription in subscriptions_with_changes {
-            let conn = self.pool.get().await?;
-
             let subscription_id = subscription.id;
             let user_id = subscription.user_id;
             let old_plan = subscription.plan_type.clone();
@@ -658,51 +589,42 @@ impl PaymentScheduler {
             let old_plan_for_log = old_plan.clone();
             let new_plan_for_log = new_plan.clone();
 
-            match conn
-                .interact(move |conn| {
-                    // 1. Update subscription to new plan
-                    diesel::update(subscriptions::table.find(subscription_id))
-                        .set((
-                            subscriptions::plan_type.eq(&new_plan),
-                            subscriptions::scheduled_plan_change.eq::<Option<String>>(None),
-                            subscriptions::scheduled_change_date
-                                .eq::<Option<chrono::DateTime<chrono::Utc>>>(None),
-                            subscriptions::updated_at.eq(Utc::now()),
-                        ))
-                        .execute(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            match crate::db::with_conn(&self.pool, move |conn| {
+                // 1. Update subscription to new plan
+                diesel::update(subscriptions::table.find(subscription_id))
+                    .set((
+                        subscriptions::plan_type.eq(&new_plan),
+                        subscriptions::scheduled_plan_change.eq::<Option<String>>(None),
+                        subscriptions::scheduled_change_date.eq::<Option<crate::DbTimestamp>>(None),
+                        subscriptions::updated_at.eq(Utc::now()),
+                    ))
+                    .execute(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                    // 2. Audit log the downgrade
-                    audit_service_for_task.log_plan_change(
-                        conn,
-                        user_id,
-                        AuditEventType::PlanDowngraded,
-                        &old_plan,
-                        &new_plan,
-                        paddle_subscription_id.as_deref(),
-                    )?;
+                // 2. Audit log the downgrade
+                audit_service_for_task.log_plan_change(
+                    conn,
+                    user_id,
+                    AuditEventType::PlanDowngraded,
+                    &old_plan,
+                    &new_plan,
+                    paddle_subscription_id.as_deref(),
+                )?;
 
-                    Ok::<_, AppError>(())
-                })
-                .await
+                Ok::<_, AppError>(())
+            })
+            .await
             {
-                Ok(Ok(_)) => {
+                Ok(_) => {
                     info!(
                         "Successfully applied plan change for user {}: {} -> {}",
                         user_id, old_plan_for_log, new_plan_for_log
                     );
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     error!(
                         "Failed to apply plan change for user {}: {} -> {} - {}",
                         user_id, old_plan_for_log, new_plan_for_log, e
-                    );
-                    // Continue with other subscriptions
-                }
-                Err(e) => {
-                    error!(
-                        "Database error applying plan change for user {}: {}",
-                        user_id, e
                     );
                     // Continue with other subscriptions
                 }

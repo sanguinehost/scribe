@@ -1,5 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
-import { env } from '$env/dynamic/public';
+import { PUBLIC_ENVIRONMENT } from '$env/static/public';
 // Unused imports after simplification:
 // import {
 // 	deleteSessionTokenCookie,
@@ -13,6 +13,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	console.log(
 		`[${timestamp}] handle: ENTER - path=${event.url.pathname}, isSubRequest=${event.isSubRequest}`
 	);
+
+	// CRITICAL: Skip ALL server-side logic in desktop mode (SSR disabled, no server)
+	// Desktop mode uses client-side auth only
+	// MUST use $env/static/public (not dynamic) to work during build-time prerendering
+	const isDesktopMode = PUBLIC_ENVIRONMENT === 'desktop';
+	if (isDesktopMode) {
+		console.log(`[${timestamp}] handle: EXIT - Desktop mode, skipping all server logic`);
+		return resolve(event);
+	}
 
 	// If this is an internal fetch (e.g., from a load function calling an internal endpoint,
 	// or a fetch initiated by the SvelteKit framework itself), skip custom handling.
@@ -53,15 +62,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	// For non-API requests, validate session and set user in locals for SSR
+	// (Desktop mode already handled at the start of the function)
 	if (!event.url.pathname.startsWith('/api/')) {
 		const sessionCookie = event.cookies.get('id');
 		if (sessionCookie) {
 			try {
 				// Validate session with backend
-				// In local dev, use relative URL to work with Vite proxy
-				// In production, use full backend URL
-				const isProduction = process.env.NODE_ENV === 'production' || env.PUBLIC_API_URL;
-				const authUrl = isProduction ? `${env.PUBLIC_API_URL?.trim()}/api/auth/me` : '/api/auth/me';
+				// This code only runs in cloud mode (desktop mode exits early)
+				// Use relative URL - works with Vite proxy in dev, works in cloud prod
+				const authUrl = '/api/auth/me';
 				console.log(`[${timestamp}] handle: Validating session at ${authUrl}`);
 
 				const response = await event.fetch(authUrl, {

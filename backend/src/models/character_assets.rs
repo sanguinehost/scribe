@@ -1,30 +1,53 @@
 // backend/src/models/character_assets.rs
 
-use chrono::{DateTime, Utc};
+use crate::db::DbId;
+use crate::db::DbTimestamp;
+use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::character_assets)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct CharacterAsset {
+    #[cfg(feature = "postgres-backend")]
     pub id: i32,
-    pub character_id: Uuid,
+    #[cfg(feature = "sqlite-backend")]
+    pub id: crate::db::DbId,
+    pub character_id: crate::db::DbId,
     pub asset_type: String,
     pub uri: Option<String>,
     pub name: String,
     pub ext: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub data: Option<Vec<u8>>,
     pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::character_assets)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewCharacterAsset {
-    pub character_id: Uuid,
+    #[cfg(feature = "postgres-backend")]
+    pub id: Option<i32>,
+    #[cfg(feature = "sqlite-backend")]
+    pub id: Option<crate::db::DbId>,
+    pub character_id: crate::db::DbId,
     pub asset_type: String,
     pub uri: Option<String>,
     pub name: String,
@@ -35,7 +58,7 @@ pub struct NewCharacterAsset {
 
 impl NewCharacterAsset {
     pub fn new_avatar(
-        character_id: Uuid,
+        character_id: crate::db::DbId,
         name: &str,
         image_data: Vec<u8>,
         content_type: Option<String>,
@@ -52,6 +75,7 @@ impl NewCharacterAsset {
         });
 
         Self {
+            id: None,
             character_id,
             asset_type: "avatar".to_string(),
             uri: None, // No longer using file paths

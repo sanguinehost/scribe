@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
+	import { onMount, createEventDispatcher, untrack } from 'svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { Button as ButtonComponent } from './ui/button';
+	import { getIsAuthenticated, getIsAuthReady } from '$lib/auth.svelte';
 	import { ScrollText, Plus } from 'lucide-svelte';
 	import { slideAndFade } from '$lib/utils/transitions';
 
@@ -11,11 +12,23 @@
 		createChronicle: void;
 	}>();
 
-	// Load chronicles on mount
-	onMount(async () => {
-		// Always load if we don't have any chronicles yet
-		if (chronicleStore.chronicles.length === 0 && !chronicleStore.isLoading) {
-			await chronicleStore.loadChronicles();
+	// CRITICAL FIX: Use $effect for reactive data loading
+	// This ensures chronicles load after auth becomes ready (including re-auth scenarios)
+	// Pattern follows PersonaList.svelte and CharacterList.svelte
+	let hasFetched = $state(false);
+
+	$effect(() => {
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		// Initial fetch when auth becomes ready
+		if (!hasFetched && authReady && authenticated) {
+			console.log('[ChroniclesSidebarList] Auth ready detected, loading chronicles');
+			// Use untrack to prevent infinite loops from state modifications inside loadChronicles
+			untrack(() => {
+				chronicleStore.loadChronicles();
+				hasFetched = true;
+			});
 		}
 	});
 
@@ -76,7 +89,7 @@
 	<!-- Loading state -->
 	{#if chronicleStore.isLoading}
 		<div class="space-y-2 p-4">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="animate-pulse">
 					<div class="h-10 rounded border border-primary/10 bg-primary/5"></div>
 				</div>

@@ -4,12 +4,10 @@ use crate::auth::SessionDek;
 use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
-use chrono::{DateTime, Utc};
 use qdrant_client::qdrant::Value as QdrantValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{info, instrument, warn};
-use uuid::Uuid;
 
 /// Helper function to decrypt lorebook content (encryption required)
 #[allow(deprecated)]
@@ -87,11 +85,11 @@ pub(super) fn decrypt_chat_content(
 
 #[derive(Debug, Clone)]
 pub struct ChronicleEventMetadata {
-    pub event_id: Uuid,
+    pub event_id: crate::db::DbId,
     pub event_type: String,
-    pub chronicle_id: Uuid,
-    pub user_id: Uuid, // SECURITY: Added user_id for access control
-    pub created_at: DateTime<Utc>,
+    pub chronicle_id: crate::db::DbId,
+    pub user_id: crate::db::DbId, // SECURITY: Added user_id for access control
+    pub created_at: crate::DbTimestamp,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
@@ -120,7 +118,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
             event_type,
             chronicle_id,
             user_id,
-            created_at,
+            created_at: created_at.into(),
         })
     }
 }
@@ -148,7 +146,7 @@ pub struct RetrievedChunk {
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
-    session_id: Uuid,
+    session_id: crate::db::DbId,
     query_text: &str,
     limit: u64,
 ) -> Result<Vec<RetrievedChunk>, AppError> {

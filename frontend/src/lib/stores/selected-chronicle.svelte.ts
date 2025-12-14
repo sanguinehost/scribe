@@ -1,5 +1,6 @@
 // Store for managing the selected chronicle state
 import { getContext, setContext } from 'svelte';
+import { logger } from '$lib/utils/logger';
 
 class SelectedChronicleStore {
 	selectedChronicleId = $state<string | null>(null);
@@ -10,28 +11,28 @@ class SelectedChronicleStore {
 		this.selectedChronicleId = chronicleId;
 		this.isCreating = false;
 		this.isShowingList = false;
-		console.log('[SelectedChronicleStore] Chronicle selected:', chronicleId);
+		logger.debug('selected-chronicle-store', 'Chronicle selected', { chronicleId });
 	}
 
 	showCreating() {
 		this.selectedChronicleId = null;
 		this.isCreating = true;
 		this.isShowingList = false;
-		console.log('[SelectedChronicleStore] Showing chronicle creation');
+		logger.debug('selected-chronicle-store', 'Showing chronicle creation');
 	}
 
 	showList() {
 		this.selectedChronicleId = null;
 		this.isCreating = false;
 		this.isShowingList = true;
-		console.log('[SelectedChronicleStore] Showing chronicle list');
+		logger.debug('selected-chronicle-store', 'Showing chronicle list');
 	}
 
 	clear() {
 		this.selectedChronicleId = null;
 		this.isCreating = false;
 		this.isShowingList = false;
-		console.log('[SelectedChronicleStore] Cleared chronicle selection');
+		logger.debug('selected-chronicle-store', 'Cleared chronicle selection');
 	}
 
 	// Context API for sharing the store

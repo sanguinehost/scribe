@@ -1,9 +1,9 @@
+use crate::db::DbId;
 use std::sync::Arc;
 
 use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,
@@ -12,6 +12,7 @@ use crate::{
         chats::{
             Chat,
             ChatMode,
+            ChatSessionQuery,
             MessageRole,
             // ChatSessionSettings, // Removed, settings are part of Chat struct
             // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
@@ -25,7 +26,7 @@ use crate::{
 use super::message_handling::{save_message, SaveMessageParams};
 
 /// Type alias for session creation result
-type SessionCreationResult = Result<(Chat, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
+type SessionCreationResult = Result<(ChatSessionQuery, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
 
 /// Type alias for encrypted session data result
 type EncryptedSessionData = ((Vec<u8>, Vec<u8>), (Option<Vec<u8>>, Option<Vec<u8>>));
@@ -34,7 +35,7 @@ type EncryptedSessionData = ((Vec<u8>, Vec<u8>), (Option<Vec<u8>>, Option<Vec<u8
 #[derive(Debug, Clone, Copy)]
 enum DefaultPersonaQuery {
     /// User exists and has a default persona
-    HasDefault(Uuid),
+    HasDefault(crate::db::DbId),
     /// User exists but has no default persona
     NoDefault,
     /// User was not found
@@ -45,7 +46,7 @@ enum DefaultPersonaQuery {
 impl DefaultPersonaQuery {
     /// Creates a `DefaultPersonaQuery` from a database query result
     /// where Some(uuid) means user has default persona, None means no default persona
-    fn from_nullable_uuid(user_exists: bool, persona_id: Option<Uuid>) -> Self {
+    fn from_nullable_uuid(user_exists: bool, persona_id: Option<crate::db::DbId>) -> Self {
         if user_exists {
             persona_id.map_or(Self::NoDefault, Self::HasDefault)
         } else {
@@ -56,9 +57,9 @@ impl DefaultPersonaQuery {
 
 /// Handles successful query result cases for default persona ID
 fn handle_successful_persona_query(
-    user_id: Uuid,
+    user_id: crate::db::DbId,
     persona_result: DefaultPersonaQuery,
-) -> Option<Uuid> {
+) -> Option<crate::db::DbId> {
     match persona_result {
         DefaultPersonaQuery::HasDefault(default_id) => {
             info!(%user_id, default_persona_id = %default_id, "Found user's default persona. Using it for this session.");
@@ -77,9 +78,9 @@ fn handle_successful_persona_query(
 
 /// Handles database query result for default persona ID
 fn handle_persona_query_result(
-    user_id: Uuid,
+    user_id: crate::db::DbId,
     result: Result<DefaultPersonaQuery, diesel::result::Error>,
-) -> Option<Uuid> {
+) -> Option<crate::db::DbId> {
     match result {
         Ok(persona_result) => handle_successful_persona_query(user_id, persona_result),
         Err(e) => {
@@ -90,11 +91,14 @@ fn handle_persona_query_result(
 }
 
 /// Fetches the user's default persona ID from the database
-fn get_user_default_persona_id(user_id: Uuid, conn: &mut PgConnection) -> Option<Uuid> {
+fn get_user_default_persona_id(
+    user_id: crate::db::DbId,
+    conn: &mut crate::DbConnection,
+) -> Option<crate::db::DbId> {
     let db_result = crate::schema::users::table
         .filter(users_dsl::id.eq(user_id))
         .select(users_dsl::default_persona_id)
-        .first::<Option<Uuid>>(conn)
+        .first::<Option<crate::db::DbId>>(conn)
         .optional();
 
     // Convert the database result to our custom enum
@@ -109,10 +113,10 @@ fn get_user_default_persona_id(user_id: Uuid, conn: &mut PgConnection) -> Option
 
 /// Helper function to determine the effective active persona ID
 fn determine_effective_persona_id(
-    user_id: Uuid,
-    active_custom_persona_id: Option<Uuid>,
-    conn: &mut PgConnection,
-) -> Option<Uuid> {
+    user_id: crate::db::DbId,
+    active_custom_persona_id: Option<crate::db::DbId>,
+    conn: &mut crate::DbConnection,
+) -> Option<crate::db::DbId> {
     if let Some(persona_id) = active_custom_persona_id {
         return Some(persona_id);
     }
@@ -123,10 +127,10 @@ fn determine_effective_persona_id(
 
 /// Helper function to extract system prompt from persona
 fn extract_persona_system_prompt(
-    persona_id: Uuid,
-    user_id: Uuid,
+    persona_id: crate::db::DbId,
+    user_id: crate::db::DbId,
     user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
 ) -> Option<String> {
     let persona = fetch_user_persona(persona_id, user_id, conn)?;
     let sp_bytes_vec = persona.system_prompt.as_ref()?;
@@ -142,17 +146,16 @@ fn extract_persona_system_prompt(
 }
 
 fn fetch_user_persona(
-    persona_id: Uuid,
-    user_id: Uuid,
-    conn: &mut PgConnection,
+    persona_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+    conn: &mut crate::DbConnection,
 ) -> Option<crate::models::user_personas::UserPersona> {
     use crate::schema::user_personas;
 
     match user_personas::table
         .filter(user_personas::id.eq(persona_id))
         .filter(user_personas::user_id.eq(user_id))
-        .select(crate::models::user_personas::UserPersona::as_select())
-        .first::<crate::models::user_personas::UserPersona>(conn)
+        .first(conn)
         .optional()
     {
         Ok(Some(persona)) => Some(persona),
@@ -167,7 +170,10 @@ fn fetch_user_persona(
     }
 }
 
-fn process_decrypted_bytes(persona_id: Uuid, decrypted_bytes: Vec<u8>) -> Option<String> {
+fn process_decrypted_bytes(
+    persona_id: crate::db::DbId,
+    decrypted_bytes: Vec<u8>,
+) -> Option<String> {
     match String::from_utf8(decrypted_bytes) {
         Ok(decrypted_sp_str) => {
             if decrypted_sp_str.trim().is_empty() {
@@ -186,7 +192,7 @@ fn process_decrypted_bytes(persona_id: Uuid, decrypted_bytes: Vec<u8>) -> Option
 }
 
 fn decrypt_persona_system_prompt(
-    persona_id: Uuid,
+    persona_id: crate::db::DbId,
     sp_bytes_vec: &[u8],
     sp_nonce_vec: &[u8],
     dek_arc: &Arc<SecretBox<Vec<u8>>>,
@@ -202,7 +208,10 @@ fn decrypt_persona_system_prompt(
     }
 }
 
-fn extract_plaintext_system_prompt(persona_id: Uuid, sp_bytes_vec: &[u8]) -> Option<String> {
+fn extract_plaintext_system_prompt(
+    persona_id: crate::db::DbId,
+    sp_bytes_vec: &[u8],
+) -> Option<String> {
     match String::from_utf8(sp_bytes_vec.to_vec()) {
         Ok(plaintext_sp_str) => {
             if plaintext_sp_str.trim().is_empty() {
@@ -223,10 +232,10 @@ fn extract_plaintext_system_prompt(persona_id: Uuid, sp_bytes_vec: &[u8]) -> Opt
 /// Helper function to determine system prompt from character or persona
 fn determine_system_prompt(
     character: &Character,
-    persona_id: Option<Uuid>,
-    user_id: Uuid,
+    persona_id: Option<crate::db::DbId>,
+    user_id: crate::db::DbId,
     user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
-    conn: &mut PgConnection,
+    conn: &mut crate::DbConnection,
 ) -> Option<String> {
     // Try persona first if available
     if let Some(pid) = persona_id {
@@ -269,15 +278,14 @@ fn determine_system_prompt(
 
 /// Validates character ownership and retrieves character data
 fn validate_and_get_character(
-    character_id: Uuid,
-    user_id: Uuid,
-    transaction_conn: &mut PgConnection,
+    character_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<Character, AppError> {
     info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
     let character: Character = characters::table
         .filter(characters::id.eq(character_id))
-        .select(Character::as_select())
-        .first::<Character>(transaction_conn)
+        .first(transaction_conn)
         .map_err(|e| match e {
             DieselError::NotFound => AppError::NotFound("Character not found".into()),
             _ => AppError::DatabaseQueryError(e.to_string()),
@@ -309,10 +317,10 @@ fn sanitize_character_name(character: &Character) -> Result<String, AppError> {
 fn encrypt_session_data(
     sanitized_character_name: &str,
     character: &Character,
-    effective_active_persona_id: Option<Uuid>,
-    user_id: Uuid,
+    effective_active_persona_id: Option<crate::db::DbId>,
+    user_id: crate::db::DbId,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<EncryptedSessionData, AppError> {
     // Create and encrypt session title
     let session_title_for_encryption = format!("Chat with {sanitized_character_name}");
@@ -355,10 +363,10 @@ fn encrypt_session_data(
 /// Encrypts session data for assistant mode
 fn encrypt_assistant_session_data(
     session_title: &str,
-    _effective_active_persona_id: Option<Uuid>,
-    _user_id: Uuid,
+    _effective_active_persona_id: Option<crate::db::DbId>,
+    _user_id: crate::db::DbId,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
-    _transaction_conn: &mut PgConnection,
+    _transaction_conn: &mut crate::DbConnection,
 ) -> Result<EncryptedSessionData, AppError> {
     // Encrypt session title
     let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
@@ -387,10 +395,10 @@ fn encrypt_assistant_session_data(
 /// Encrypts session data for RPG mode
 fn encrypt_rpg_session_data(
     session_title: &str,
-    _effective_active_persona_id: Option<Uuid>,
-    _user_id: Uuid,
+    _effective_active_persona_id: Option<crate::db::DbId>,
+    _user_id: crate::db::DbId,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
-    _transaction_conn: &mut PgConnection,
+    _transaction_conn: &mut crate::DbConnection,
 ) -> Result<EncryptedSessionData, AppError> {
     // Encrypt session title
     let (encrypted_title_bytes, title_nonce_bytes) = crate::crypto::encrypt_gcm(
@@ -418,64 +426,115 @@ fn encrypt_rpg_session_data(
 
 /// Parameters for inserting a chat session
 struct ChatSessionInsertParams {
-    new_session_id: Uuid,
-    user_id: Uuid,
-    character_id: Option<Uuid>,
+    new_session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+    character_id: Option<crate::db::DbId>,
     chat_mode: ChatMode,
     encrypted_title_bytes: Vec<u8>,
     title_nonce_bytes: Vec<u8>,
     encrypted_system_prompt_bytes: Option<Vec<u8>>,
     sp_nonce_bytes: Option<Vec<u8>>,
-    effective_active_persona_id: Option<Uuid>,
+    effective_active_persona_id: Option<crate::db::DbId>,
     default_model_name: String,
     default_history_management_strategy: String,
     default_history_management_limit: i32,
-    player_chronicle_id: Option<Uuid>,
+    player_chronicle_id: Option<crate::db::DbId>,
     prompt_template_id: String,
 }
 
 /// Inserts the chat session into the database
 fn insert_chat_session(
     params: ChatSessionInsertParams,
-    transaction_conn: &mut PgConnection,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
-    diesel::insert_into(chat_sessions::table)
-        .values((
-            chat_sessions::id.eq(params.new_session_id),
-            chat_sessions::user_id.eq(params.user_id),
-            chat_sessions::character_id.eq(params.character_id),
-            chat_sessions::chat_mode.eq(params.chat_mode),
-            chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
-            chat_sessions::title_nonce.eq(params.title_nonce_bytes),
-            chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
-            chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
-            chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
-            chat_sessions::model_name.eq(params.default_model_name),
-            chat_sessions::history_management_strategy
-                .eq(params.default_history_management_strategy),
-            chat_sessions::history_management_limit.eq(params.default_history_management_limit),
-            chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
-            chat_sessions::prompt_template_id.eq(params.prompt_template_id),
-        ))
-        .returning(Chat::as_returning())
-        .get_result(transaction_conn)
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    #[cfg(feature = "postgres-backend")]
+    {
+        diesel::insert_into(chat_sessions::table)
+            .values((
+                chat_sessions::id.eq(params.new_session_id),
+                chat_sessions::user_id.eq(params.user_id),
+                chat_sessions::character_id.eq(params.character_id),
+                chat_sessions::chat_mode.eq(params.chat_mode),
+                chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
+                chat_sessions::title_nonce.eq(params.title_nonce_bytes),
+                chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
+                chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
+                chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
+                chat_sessions::model_name.eq(params.default_model_name),
+                chat_sessions::history_management_strategy
+                    .eq(params.default_history_management_strategy),
+                chat_sessions::history_management_limit.eq(params.default_history_management_limit),
+                chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
+                chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+            ))
+            .returning(Chat::as_returning())
+            .get_result(transaction_conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+    }
+
+    #[cfg(feature = "sqlite-backend")]
+    {
+        use diesel::prelude::*;
+        tracing::info!("Inserting new chat session with payment fields: total_credits_used=0, total_actual_cost=0.0, total_modified_cost=0.0, total_credit_cost=0, total_actual_charge=0.0");
+
+        let rows_inserted = diesel::insert_into(chat_sessions::table)
+            .values((
+                chat_sessions::id.eq(params.new_session_id),
+                chat_sessions::user_id.eq(params.user_id),
+                chat_sessions::character_id.eq(params.character_id),
+                chat_sessions::chat_mode.eq(params.chat_mode),
+                chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
+                chat_sessions::title_nonce.eq(params.title_nonce_bytes),
+                chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
+                chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
+                chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
+                chat_sessions::model_name.eq(params.default_model_name),
+                chat_sessions::history_management_strategy
+                    .eq(params.default_history_management_strategy),
+                chat_sessions::history_management_limit.eq(params.default_history_management_limit),
+                chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
+                chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+                // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
+                chat_sessions::total_prompt_tokens.eq(0),
+                chat_sessions::total_completion_tokens.eq(0),
+                chat_sessions::estimated_cost_cents.eq(0),
+                chat_sessions::tokens_counted_at.eq(chrono::Utc::now().naive_utc()),
+                chat_sessions::total_credits_used.eq(0),
+                chat_sessions::total_actual_cost.eq(0.0),
+                chat_sessions::total_modified_cost.eq(0.0),
+                chat_sessions::total_credit_cost.eq(0),
+                chat_sessions::total_actual_charge.eq(0.0),
+                chat_sessions::created_at.eq(chrono::Utc::now().naive_utc()),
+                chat_sessions::updated_at.eq(chrono::Utc::now().naive_utc()),
+                chat_sessions::stop_sequences.eq(crate::models::OptionalStringArray(None)),
+            ))
+            .execute(transaction_conn)
+            .map_err(|e| {
+                tracing::error!("Failed to insert chat session: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        tracing::info!(
+            "Successfully inserted chat session, rows affected: {}",
+            rows_inserted
+        );
+    }
 
     Ok(())
 }
 
 /// Validates that a lorebook exists and is owned by the specified user
 fn validate_lorebook_ownership(
-    lorebook_id: Uuid,
-    user_id: Uuid,
-    transaction_conn: &mut PgConnection,
+    lorebook_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     use crate::schema::lorebooks;
 
     let lorebook_user_id = lorebooks::table
         .filter(lorebooks::id.eq(lorebook_id))
         .select(lorebooks::user_id)
-        .first::<Uuid>(transaction_conn)
+        .first::<crate::db::DbId>(transaction_conn)
         .optional()
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -499,11 +558,11 @@ fn validate_lorebook_ownership(
 /// and should not have explicit entries in `chat_session_lorebooks` unless
 /// the user specifically adds them to this chat later.
 fn associate_lorebooks(
-    new_session_id: Uuid,
-    user_id: Uuid,
-    _character_id: Uuid, // Not strictly needed if we only handle explicit IDs here
-    explicit_lorebook_ids: Option<Vec<Uuid>>,
-    transaction_conn: &mut PgConnection,
+    new_session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
+    _character_id: crate::db::DbId, // Not strictly needed if we only handle explicit IDs here
+    explicit_lorebook_ids: Option<Vec<crate::db::DbId>>,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     if let Some(explicit_ids) = explicit_lorebook_ids {
         if !explicit_ids.is_empty() {
@@ -543,24 +602,167 @@ fn associate_lorebooks(
 
 /// Fetches the fully created session from the database
 fn fetch_created_session(
-    new_session_id: Uuid,
-    transaction_conn: &mut PgConnection,
-) -> Result<Chat, AppError> {
-    chat_sessions::table
+    new_session_id: crate::db::DbId,
+    transaction_conn: &mut crate::DbConnection,
+) -> Result<ChatSessionQuery, AppError> {
+    tracing::info!(
+        "Attempting to fetch created session with ID: {}",
+        new_session_id
+    );
+
+    // DEBUG: Check non-nullable fields in groups to identify which is NULL
+    use diesel::prelude::*;
+
+    // Check basic required fields FIRST
+    let basic_check: Result<(crate::db::DbId, crate::db::DbId, String, String), _> =
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(&new_session_id))
+            .select((
+                chat_sessions::id,
+                chat_sessions::user_id,
+                chat_sessions::model_name,
+                chat_sessions::chat_mode,
+            ))
+            .first::<(crate::db::DbId, crate::db::DbId, String, String)>(transaction_conn);
+
+    if let Err(ref e) = basic_check {
+        tracing::error!(
+            "❌ BASIC FIELDS (id/user_id/model_name/chat_mode) NULL: {:?}",
+            e
+        );
+    } else {
+        tracing::info!("✓ basic fields (id/user_id/model_name/chat_mode) OK");
+    }
+
+    // Check stop_sequences specifically
+    let stop_seq_check: Result<crate::models::OptionalStringArray, _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select(chat_sessions::stop_sequences)
+        .first::<crate::models::OptionalStringArray>(transaction_conn);
+
+    if let Err(ref e) = stop_seq_check {
+        tracing::error!("❌ STOP_SEQUENCES FIELD NULL OR INVALID: {:?}", e);
+    } else {
+        tracing::info!(
+            "✓ stop_sequences field OK: {:?}",
+            stop_seq_check.as_ref().unwrap()
+        );
+    }
+
+    // Check history management fields
+    let history_check: Result<(String, i32), _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::history_management_strategy,
+            chat_sessions::history_management_limit,
+        ))
+        .first::<(String, i32)>(transaction_conn);
+
+    if let Err(ref e) = history_check {
+        tracing::error!("❌ history_management fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ history_management fields OK");
+    }
+
+    // Check token/cost tracking fields
+    let token_check: Result<(i32, i32, i32, crate::db::DbDecimal), _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::total_prompt_tokens,
+            chat_sessions::total_completion_tokens,
+            chat_sessions::estimated_cost_cents,
+            chat_sessions::total_credits_used,
+        ))
+        .first::<(i32, i32, i32, crate::db::DbDecimal)>(transaction_conn);
+
+    if let Err(ref e) = token_check {
+        tracing::error!("❌ token/cost fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ token/cost fields OK");
+    }
+
+    // Check timestamp fields
+    let timestamp_check: Result<
+        (
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+        ),
+        _,
+    > = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::created_at,
+            chat_sessions::updated_at,
+            chat_sessions::tokens_counted_at,
+        ))
+        .first::<(
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+            crate::db::DbTimestamp,
+        )>(transaction_conn);
+
+    if let Err(ref e) = timestamp_check {
+        tracing::error!("❌ timestamp fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ timestamp fields OK");
+    }
+
+    // Check decimal fields
+    let decimal_check: Result<
+        (
+            crate::db::DbDecimal,
+            crate::db::DbDecimal,
+            i32,
+            crate::db::DbDecimal,
+        ),
+        _,
+    > = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::total_actual_cost,
+            chat_sessions::total_modified_cost,
+            chat_sessions::total_credit_cost,
+            chat_sessions::total_actual_charge,
+        ))
+        .first::<(
+            crate::db::DbDecimal,
+            crate::db::DbDecimal,
+            i32,
+            crate::db::DbDecimal,
+        )>(transaction_conn);
+
+    if let Err(ref e) = decimal_check {
+        tracing::error!("❌ decimal fields NULL: {:?}", e);
+    } else {
+        tracing::info!("✓ decimal fields OK");
+    }
+
+    let result = chat_sessions::table
         .filter(chat_sessions::id.eq(new_session_id))
-        .select(Chat::as_select())
-        .first(transaction_conn)
-        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        .select(ChatSessionQuery::as_select())
+        .first::<ChatSessionQuery>(transaction_conn)
+        .map_err(|e| {
+            tracing::error!("Failed to fetch created session: {}", e);
+            tracing::error!("Diesel error details: {:?}", e);
+            AppError::DatabaseQueryError(format!("Failed to fetch created session: {}", e))
+        });
+
+    if result.is_ok() {
+        tracing::info!("Successfully fetched created session");
+    }
+
+    result
 }
 
 /// Creates a new chat session in the database
 fn create_session_in_transaction(
-    transaction_conn: &mut PgConnection,
-    user_id: Uuid,
-    character_id: Option<Uuid>,
+    transaction_conn: &mut crate::DbConnection,
+    user_id: crate::db::DbId,
+    character_id: Option<crate::db::DbId>,
     chat_mode: ChatMode,
-    active_custom_persona_id: Option<Uuid>,
-    lorebook_ids: Option<Vec<Uuid>>,
+    active_custom_persona_id: Option<crate::db::DbId>,
+    lorebook_ids: Option<Vec<crate::db::DbId>>,
     user_dek_secret_box: Option<&Arc<SecretBox<Vec<u8>>>>,
     default_model_name: String,
     default_history_management_strategy: String,
@@ -660,7 +862,7 @@ fn create_session_in_transaction(
         }
     };
 
-    let new_session_id = Uuid::new_v4();
+    let new_session_id: crate::db::DbId = DbId::new().into();
 
     // Chronicles are now created when the first message is sent, not at session creation
     let chronicle_id = None;
@@ -711,7 +913,7 @@ fn create_session_in_transaction(
 /// Processes the first message for a newly created session
 async fn process_first_message(
     state: Arc<AppState>,
-    created_session: &Chat,
+    created_session: &ChatSessionQuery,
     first_mes_ciphertext_opt: Option<Vec<u8>>,
     first_mes_nonce_opt: Option<Vec<u8>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
@@ -773,17 +975,26 @@ async fn process_first_message(
     Ok(())
 }
 
-/// Creates a new chat session, verifies character ownership, and adds the character's first message if available.
-#[instrument(skip(state, user_dek_secret_box), err)]
 pub async fn create_session_and_maybe_first_message(
     state: Arc<AppState>,
-    user_id: Uuid,
-    character_id: Option<Uuid>,
+    user_id: crate::db::DbId,
+    character_id: Option<crate::db::DbId>,
     chat_mode: ChatMode,
-    active_custom_persona_id: Option<Uuid>,
-    lorebook_ids: Option<Vec<Uuid>>,
+    active_custom_persona_id: Option<crate::db::DbId>,
+    lorebook_ids: Option<Vec<crate::db::DbId>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
-) -> Result<Chat, AppError> {
+) -> Result<ChatSessionQuery, AppError> {
+    // Log function entry with parameters
+    info!(
+        %user_id,
+        character_id = ?character_id,
+        chat_mode = ?chat_mode,
+        active_custom_persona_id = ?active_custom_persona_id,
+        lorebook_count = lorebook_ids.as_ref().map(|ids| ids.len()).unwrap_or(0),
+        has_dek = user_dek_secret_box.is_some(),
+        "create_session_and_maybe_first_message: Entry"
+    );
+
     // Load user settings to get defaults for the new chat session
     // This will auto-create defaults if user has no settings yet
     let user_settings = crate::services::UserSettingsService::get_user_settings(
@@ -814,8 +1025,8 @@ pub async fn create_session_and_maybe_first_message(
             preferred_local_model: None,
             local_llm_enabled: Some(false),
             local_model_preferences: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         }
     });
 
@@ -826,14 +1037,25 @@ pub async fn create_session_and_maybe_first_message(
     let default_history_management_strategy = "message_window".to_string(); // Not yet in user settings
     let default_history_management_limit = 20; // Not yet in user settings
 
+    info!(
+        %user_id,
+        default_model = %default_model_name,
+        history_strategy = %default_history_management_strategy,
+        history_limit = default_history_management_limit,
+        "User settings loaded successfully"
+    );
+
     let pool: DbPool = state.pool.clone();
-    let conn = pool.get().await?;
     // Clone user_dek_secret_box and lorebook_ids for use inside the 'move' closure
     let user_dek_for_closure = user_dek_secret_box.clone();
     let lorebook_ids_for_closure = lorebook_ids.clone();
-    let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) = conn
-        .interact(move |conn| {
+
+    info!(%user_id, "Starting database transaction for session creation");
+
+    let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) =
+        crate::db::with_conn(&pool, move |conn| {
             conn.transaction(|transaction_conn| {
+                info!("Inside transaction - calling create_session_in_transaction");
                 create_session_in_transaction(
                     transaction_conn,
                     user_id,
@@ -848,44 +1070,67 @@ pub async fn create_session_and_maybe_first_message(
                 )
             })
         })
-        .await??;
+        .await
+        .map_err(|e| {
+            error!(%user_id, error = ?e, "Database transaction failed during session creation");
+            e
+        })?;
+
+    info!(
+        session_id = %created_session.id,
+        has_first_message = first_mes_ciphertext_opt.is_some(),
+        "Session created successfully, transaction committed"
+    );
 
     // Process first message if available
-    process_first_message(
-        state,
-        &created_session,
-        first_mes_ciphertext_opt,
-        first_mes_nonce_opt,
-        user_dek_secret_box,
-    )
-    .await?;
+    if first_mes_ciphertext_opt.is_some() {
+        info!(session_id = %created_session.id, "Processing first message");
+        process_first_message(
+            state,
+            &created_session,
+            first_mes_ciphertext_opt,
+            first_mes_nonce_opt,
+            user_dek_secret_box,
+        )
+        .await
+        .map_err(|e| {
+            error!(session_id = %created_session.id, error = ?e, "Failed to process first message");
+            e
+        })?;
+        info!(session_id = %created_session.id, "First message processed successfully");
+    } else {
+        info!(session_id = %created_session.id, "No first message to process");
+    }
 
+    info!(session_id = %created_session.id, "create_session_and_maybe_first_message: Success");
     Ok(created_session)
 }
 /// Lists chat sessions for a given user.
 #[instrument(skip(pool), err)]
-pub async fn list_sessions_for_user(pool: &DbPool, user_id: Uuid) -> Result<Vec<Chat>, AppError> {
+pub async fn list_sessions_for_user(
+    pool: &DbPool,
+    user_id: crate::db::DbId,
+) -> Result<Vec<ChatSessionQuery>, AppError> {
     // ChatSession is aliased as Chat
-    let conn = pool.get().await?;
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         chat_sessions::table
             .filter(chat_sessions::user_id.eq(user_id))
-            .select(Chat::as_select()) // ChatSession is aliased as Chat
             .order(chat_sessions::updated_at.desc())
-            .load::<Chat>(conn) // ChatSession is aliased as Chat
+            .select(ChatSessionQuery::as_select())
+            .load::<ChatSessionQuery>(conn) // ChatSession is aliased as Chat
             .map_err(|e| {
                 error!("Failed to load chat sessions for user {}: {}", user_id, e);
                 AppError::DatabaseQueryError(e.to_string())
             })
     })
-    .await?
+    .await
 }
 /// Validates session ownership
 fn validate_session_ownership(
-    session: Chat,
-    user_id: Uuid,
-    session_id: Uuid,
-) -> Result<Chat, AppError> {
+    session: ChatSessionQuery,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
+) -> Result<ChatSessionQuery, AppError> {
     if session.user_id == user_id {
         info!(%session_id, %user_id, "Session found and ownership verified");
         Ok(session)
@@ -901,16 +1146,15 @@ fn validate_session_ownership(
 #[instrument(skip(pool), err)]
 pub async fn get_chat_session_by_id(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
-) -> Result<Chat, AppError> {
-    let conn = pool.get().await?;
-    conn.interact(move |conn| {
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
+) -> Result<ChatSessionQuery, AppError> {
+    crate::db::with_conn(pool, move |conn| {
         info!(%session_id, %user_id, "Attempting to fetch chat session details by ID");
         let session_result = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
-            .select(Chat::as_select())
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .optional()?;
 
         session_result.map_or_else(
@@ -923,30 +1167,29 @@ pub async fn get_chat_session_by_id(
             |session| validate_session_ownership(session, user_id, session_id),
         )
     })
-    .await?
+    .await
 }
 
 /// Associate a chat session with a chronicle
 #[instrument(skip(pool), err)]
 pub async fn associate_chat_with_chronicle(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
-    chronicle_id: Uuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
+    chronicle_id: crate::db::DbId,
 ) -> Result<(), AppError> {
     info!(
         %session_id, %user_id, %chronicle_id,
         "Associating chat session with chronicle"
     );
 
-    let conn = pool.get().await?;
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         // First, verify the session belongs to the user
         let session = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .filter(chat_sessions::user_id.eq(user_id))
-            .select(Chat::as_select())
-            .first::<Chat>(conn)
+            .select(ChatSessionQuery::as_select())
+            .first::<ChatSessionQuery>(conn)
             .optional()?;
 
         match session {
@@ -970,5 +1213,5 @@ pub async fn associate_chat_with_chronicle(
             }
         }
     })
-    .await?
+    .await
 }

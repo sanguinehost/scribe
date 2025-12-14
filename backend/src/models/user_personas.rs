@@ -1,7 +1,6 @@
-use chrono::{DateTime, Utc};
+use crate::db::{DbBlob, DbId, DbTimestamp};
 use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::errors::AppError;
 use crate::models::users::User;
@@ -36,33 +35,41 @@ struct DecryptedPersonaFields {
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::user_personas)]
 #[diesel(treat_none_as_null = true)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct UserPersona {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub name: String,                               // In schema.rs: Varchar
-    pub description: Vec<u8>,                       // In schema.rs: Bytea (NOT NULL)
-    pub spec: Option<String>,                       // In schema.rs: Nullable<Varchar>
-    pub spec_version: Option<String>,               // In schema.rs: Nullable<Varchar>
-    pub personality: Option<Vec<u8>>,               // In schema.rs: Nullable<Bytea>
-    pub scenario: Option<Vec<u8>>,                  // In schema.rs: Nullable<Bytea>
-    pub first_mes: Option<Vec<u8>>,                 // In schema.rs: Nullable<Bytea>
-    pub mes_example: Option<Vec<u8>>,               // In schema.rs: Nullable<Bytea>
-    pub system_prompt: Option<Vec<u8>>,             // In schema.rs: Nullable<Bytea>
-    pub post_history_instructions: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea>
-    pub tags: Option<Vec<Option<String>>>,          // In schema.rs: Nullable<Array<Nullable<Text>>>
-    pub avatar: Option<String>,                     // In schema.rs: Nullable<Varchar>
+    pub id: DbId,
+    pub user_id: DbId,
+    pub name: String,                              // In schema.rs: Varchar
+    pub description: DbBlob,                       // In schema.rs: Bytea (NOT NULL)
+    pub spec: Option<String>,                      // In schema.rs: Nullable<Varchar>
+    pub spec_version: Option<String>,              // In schema.rs: Nullable<Varchar>
+    pub personality: Option<DbBlob>,               // In schema.rs: Nullable<Bytea>
+    pub scenario: Option<DbBlob>,                  // In schema.rs: Nullable<Bytea>
+    pub first_mes: Option<DbBlob>,                 // In schema.rs: Nullable<Bytea>
+    pub mes_example: Option<DbBlob>,               // In schema.rs: Nullable<Bytea>
+    pub system_prompt: Option<DbBlob>,             // In schema.rs: Nullable<Bytea>
+    pub post_history_instructions: Option<DbBlob>, // In schema.rs: Nullable<Bytea>
+    pub tags: crate::models::OptionalStringArray,  // In schema.rs: Nullable<Array<Nullable<Text>>>
+    pub avatar: Option<String>,                    // In schema.rs: Nullable<Varchar>
 
     // Nonces
-    pub description_nonce: Option<Vec<u8>>, // In schema.rs: Nullable<Bytea> - but tied to non-nullable description
-    pub personality_nonce: Option<Vec<u8>>,
-    pub scenario_nonce: Option<Vec<u8>>,
-    pub first_mes_nonce: Option<Vec<u8>>,
-    pub mes_example_nonce: Option<Vec<u8>>,
-    pub system_prompt_nonce: Option<Vec<u8>>,
-    pub post_history_instructions_nonce: Option<Vec<u8>>,
+    pub description_nonce: Option<DbBlob>, // In schema.rs: Nullable<Bytea> - but tied to non-nullable description
+    pub personality_nonce: Option<DbBlob>,
+    pub scenario_nonce: Option<DbBlob>,
+    pub first_mes_nonce: Option<DbBlob>,
+    pub mes_example_nonce: Option<DbBlob>,
+    pub system_prompt_nonce: Option<DbBlob>,
+    pub post_history_instructions_nonce: Option<DbBlob>,
 
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for UserPersona {
@@ -148,8 +155,8 @@ impl std::fmt::Debug for UserPersona {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct UserPersonaDataForClient {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: DbId,
+    pub user_id: DbId,
     pub name: String,
     pub description: String, // Decrypted
     pub spec: Option<String>,
@@ -160,10 +167,10 @@ pub struct UserPersonaDataForClient {
     pub mes_example: Option<String>,               // Decrypted
     pub system_prompt: Option<String>,             // Decrypted
     pub post_history_instructions: Option<String>, // Decrypted
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub avatar: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl UserPersona {
@@ -247,43 +254,45 @@ impl UserPersona {
             personality: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.personality.clone(),
-                self.personality_nonce.clone(),
+                self.personality.clone().map(|b| b.into()),
+                self.personality_nonce.clone().map(|b| b.into()),
                 "personality",
             )?,
             scenario: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.scenario.clone(),
-                self.scenario_nonce.clone(),
+                self.scenario.clone().map(|b| b.into()),
+                self.scenario_nonce.clone().map(|b| b.into()),
                 "scenario",
             )?,
             first_mes: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.first_mes.clone(),
-                self.first_mes_nonce.clone(),
+                self.first_mes.clone().map(|b| b.into()),
+                self.first_mes_nonce.clone().map(|b| b.into()),
                 "first_mes",
             )?,
             mes_example: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.mes_example.clone(),
-                self.mes_example_nonce.clone(),
+                self.mes_example.clone().map(|b| b.into()),
+                self.mes_example_nonce.clone().map(|b| b.into()),
                 "mes_example",
             )?,
             system_prompt: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.system_prompt.clone(),
-                self.system_prompt_nonce.clone(),
+                self.system_prompt.clone().map(|b| b.into()),
+                self.system_prompt_nonce.clone().map(|b| b.into()),
                 "system_prompt",
             )?,
             post_history_instructions: Self::decrypt_optional_field(
                 encryption_service,
                 dek,
-                self.post_history_instructions.clone(),
-                self.post_history_instructions_nonce.clone(),
+                self.post_history_instructions.clone().map(|b| b.into()),
+                self.post_history_instructions_nonce
+                    .clone()
+                    .map(|b| b.into()),
                 "post_history_instructions",
             )?,
         })
@@ -405,7 +414,7 @@ pub struct CreateUserPersonaDto {
     pub mes_example: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: Option<Vec<String>>,
     pub avatar: Option<String>,
 }
 
@@ -421,21 +430,21 @@ pub struct UpdateUserPersonaDto {
     pub mes_example: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: Option<Vec<String>>,
     pub avatar: Option<String>,
 }
 
 // TODO: Implement custom Debug formatting to redact sensitive fields
 // TODO: Add CreateUserPersonaDto and UpdateUserPersonaDto
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use crate::crypto;
-    use chrono::Utc;
+    use crate::db::DbId;
+    use crate::db::{DbBlob, DbId, DbTimestamp};
     use secrecy::SecretBox;
     use serde_json;
-    use uuid::Uuid;
 
     fn generate_dummy_dek_for_persona_tests() -> SecretBox<Vec<u8>> {
         // Use a fixed, known key for reproducible tests if needed, or random for general tests.
@@ -446,13 +455,13 @@ mod tests {
 
     fn create_dummy_user_persona_encrypted() -> UserPersona {
         UserPersona {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Test Persona".to_string(),
-            description: vec![1, 2, 3], // Dummy encrypted data
+            description: DbBlob::from(vec![1, 2, 3]), // Dummy encrypted data
             spec: Some("user_persona_v1".to_string()),
             spec_version: Some("1.0.0".to_string()),
-            personality: Some(vec![4, 5, 6]),
+            personality: Some(DbBlob::from(vec![4, 5, 6])),
             scenario: None,
             first_mes: None,
             mes_example: None,
@@ -460,15 +469,15 @@ mod tests {
             post_history_instructions: None,
             tags: Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]),
             avatar: Some("avatar.png".to_string()),
-            description_nonce: Some(vec![7, 8, 9]),
-            personality_nonce: Some(vec![10, 11, 12]),
+            description_nonce: Some(DbBlob::from(vec![7, 8, 9])),
+            personality_nonce: Some(DbBlob::from(vec![10, 11, 12])),
             scenario_nonce: None,
             first_mes_nonce: None,
             mes_example_nonce: None,
             system_prompt_nonce: None,
             post_history_instructions_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
         }
     }
 
@@ -482,8 +491,8 @@ mod tests {
 
     fn create_dummy_user_persona_data_for_client() -> UserPersonaDataForClient {
         UserPersonaDataForClient {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Test Persona Client".to_string(),
             description: "This is a test description.".to_string(),
             spec: Some("user_persona_v1_client".to_string()),
@@ -496,8 +505,8 @@ mod tests {
             post_history_instructions: None,
             tags: Some(vec![Some("client_tag1".to_string())]),
             avatar: Some("client_avatar.png".to_string()),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
         }
     }
 
@@ -521,15 +530,15 @@ mod tests {
         let (pers_ct, pers_n) = crypto::encrypt_gcm(original_personality.as_bytes(), dek).unwrap();
 
         let persona = UserPersona {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Encrypted Persona".to_string(),
-            description: desc_ct,
-            description_nonce: Some(desc_n),
+            description: DbBlob::from(desc_ct),
+            description_nonce: Some(DbBlob::from(desc_n)),
             spec: Some("spec_enc".to_string()),
             spec_version: Some("1.0_enc".to_string()),
-            personality: Some(pers_ct),
-            personality_nonce: Some(pers_n),
+            personality: Some(DbBlob::from(pers_ct)),
+            personality_nonce: Some(DbBlob::from(pers_n)),
             scenario: None, // Test with a None field too
             scenario_nonce: None,
             first_mes: None,
@@ -540,10 +549,10 @@ mod tests {
             system_prompt_nonce: None,
             post_history_instructions: None,
             post_history_instructions_nonce: None,
-            tags: None,
+            tags: None.into(),
             avatar: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
         };
 
         (persona, original_description, original_personality)

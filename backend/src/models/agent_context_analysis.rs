@@ -1,13 +1,12 @@
 use crate::crypto;
+use crate::db::DbTimestamp;
 use crate::errors::AppError;
 use crate::schema::agent_context_analysis;
-use chrono::{DateTime, Utc};
+use crate::DbJson as JsonValue;
 use diesel::prelude::*;
 use diesel::{AsChangeset, Identifiable, Insertable, Queryable, Selectable};
 use secrecy::{ExposeSecret, SecretBox};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use uuid::Uuid;
 
 /// Mode of operation for the context enrichment agent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,11 +79,18 @@ impl std::str::FromStr for AnalysisStatus {
 /// AgentContextAnalysis represents stored agent analysis for a chat session
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = agent_context_analysis)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct AgentContextAnalysis {
-    pub id: Uuid,
-    pub chat_session_id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub chat_session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub analysis_type: String, // Will be converted to/from AnalysisType
     pub agent_reasoning: Option<String>, // Plaintext fallback (legacy)
     pub agent_reasoning_nonce: Option<Vec<u8>>,
@@ -98,23 +104,23 @@ pub struct AgentContextAnalysis {
     pub total_tokens_used: Option<i32>,
     pub execution_time_ms: Option<i32>,
     pub model_used: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
-    pub message_id: Uuid, // Link to specific message this analysis is for (REQUIRED)
-    pub assistant_message_id: Option<Uuid>, // Link to assistant message (set after assistant responds)
-    pub status: String,                     // Will be converted to/from AnalysisStatus
+    pub created_at: Option<DbTimestamp>,
+    pub updated_at: Option<DbTimestamp>,
+    pub message_id: crate::db::DbId, // Link to specific message this analysis is for (REQUIRED)
+    pub assistant_message_id: Option<crate::db::DbId>, // Link to assistant message (set after assistant responds)
+    pub status: String,                                // Will be converted to/from AnalysisStatus
     pub error_message: Option<String>,
     pub retry_count: i32,
-    pub superseded_at: Option<DateTime<Utc>>,
+    pub superseded_at: Option<DbTimestamp>,
 }
 
 impl AgentContextAnalysis {
     /// Fetch active (non-superseded) agent analysis for a session and type
     pub fn get_for_session(
-        conn: &mut PgConnection,
-        session_id: Uuid,
+        conn: &mut crate::DbConnection,
+        session_id: crate::db::DbId,
         analysis_type: AnalysisType,
-        message_id: Uuid,
+        message_id: crate::db::DbId,
     ) -> Result<Option<Self>, AppError> {
         use crate::schema::agent_context_analysis::dsl;
 
@@ -126,6 +132,7 @@ impl AgentContextAnalysis {
             .filter(dsl::analysis_type.eq(analysis_type_str))
             .filter(dsl::message_id.eq(message_id))
             .filter(dsl::superseded_at.is_null())
+            .select(Self::as_select())
             .first::<Self>(conn)
             .optional()
             .map_err(|e| {
@@ -145,8 +152,8 @@ impl AgentContextAnalysis {
 
     /// Mark failed/partial analyses as superseded for a session
     pub fn supersede_failed_analyses(
-        conn: &mut PgConnection,
-        session_id: Uuid,
+        conn: &mut crate::DbConnection,
+        session_id: crate::db::DbId,
         analysis_type: AnalysisType,
     ) -> Result<usize, AppError> {
         use crate::schema::agent_context_analysis::dsl;
@@ -175,8 +182,8 @@ impl AgentContextAnalysis {
 
     /// Update the status of an analysis
     pub fn update_status(
-        conn: &mut PgConnection,
-        analysis_id: Uuid,
+        conn: &mut crate::DbConnection,
+        analysis_id: crate::db::DbId,
         status: AnalysisStatus,
         error_message: Option<String>,
     ) -> Result<(), AppError> {
@@ -201,9 +208,9 @@ impl AgentContextAnalysis {
 
     /// Update the assistant_message_id for this analysis
     pub fn update_assistant_message_id(
-        conn: &mut PgConnection,
-        analysis_id: Uuid,
-        assistant_message_id: Uuid,
+        conn: &mut crate::DbConnection,
+        analysis_id: crate::db::DbId,
+        assistant_message_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         use crate::schema::agent_context_analysis::dsl;
         use diesel::prelude::*;
@@ -338,9 +345,17 @@ impl AgentContextAnalysis {
 /// Insertable struct for creating new agent context analysis records
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize)]
 #[diesel(table_name = agent_context_analysis)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewAgentContextAnalysis {
-    pub chat_session_id: Uuid,
-    pub user_id: Uuid,
+    pub chat_session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub analysis_type: String,
     pub agent_reasoning: Option<String>,
     pub agent_reasoning_nonce: Option<Vec<u8>>,
@@ -354,19 +369,19 @@ pub struct NewAgentContextAnalysis {
     pub total_tokens_used: Option<i32>,
     pub execution_time_ms: Option<i32>,
     pub model_used: Option<String>,
-    pub message_id: Uuid, // Link to specific message this analysis is for (REQUIRED)
-    pub assistant_message_id: Option<Uuid>, // Link to assistant message (set after assistant responds)
+    pub message_id: crate::db::DbId, // Link to specific message this analysis is for (REQUIRED)
+    pub assistant_message_id: Option<crate::db::DbId>, // Link to assistant message (set after assistant responds)
     pub status: String,
     pub error_message: Option<String>,
     pub retry_count: i32,
-    pub superseded_at: Option<DateTime<Utc>>,
+    pub superseded_at: Option<DbTimestamp>,
 }
 
 impl NewAgentContextAnalysis {
     /// Create a new agent context analysis with encrypted fields
     pub fn new_encrypted(
-        chat_session_id: Uuid,
-        user_id: Uuid,
+        chat_session_id: crate::db::DbId,
+        user_id: crate::db::DbId,
         analysis_type: AnalysisType,
         agent_reasoning: &str,
         planned_searches: &JsonValue,
@@ -377,7 +392,7 @@ impl NewAgentContextAnalysis {
         execution_time_ms: u64,
         model_used: &str,
         dek: &SecretBox<Vec<u8>>,
-        message_id: Uuid, // Required message ID to link analysis to specific message
+        message_id: crate::db::DbId, // Required message ID to link analysis to specific message
     ) -> Result<Self, AppError> {
         // Encrypt sensitive text fields
         let (encrypted_reasoning, reasoning_nonce) = if !agent_reasoning.is_empty() {
@@ -462,10 +477,10 @@ pub struct UpdateAgentContextAnalysis {
     pub total_tokens_used: Option<i32>,
     pub execution_time_ms: Option<i32>,
     pub model_used: Option<String>,
-    pub updated_at: Option<DateTime<Utc>>,
-    pub assistant_message_id: Option<Option<Uuid>>, // Option<Option> to allow setting NULL or a value
+    pub updated_at: Option<DbTimestamp>,
+    pub assistant_message_id: Option<Option<crate::db::DbId>>, // Option<Option> to allow setting NULL or a value
     pub status: Option<String>,
     pub error_message: Option<Option<String>>, // Option<Option> to allow setting NULL or a value
     pub retry_count: Option<i32>,
-    pub superseded_at: Option<Option<DateTime<Utc>>>, // Option<Option> to allow setting NULL or a value
+    pub superseded_at: Option<Option<DbTimestamp>>, // Option<Option> to allow setting NULL or a value
 }

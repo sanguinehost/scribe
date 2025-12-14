@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 //! Integration tests for agentic lorebook API endpoints
 //!
@@ -80,7 +81,7 @@ fn insert_test_user_with_password(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
     diesel::insert_into(users::table)
         .values(&new_user)
@@ -894,8 +895,8 @@ mod extract_from_chat_api_tests {
                 message_type: message_role,
                 content: content_ciphertext,
                 content_nonce: Some(content_nonce),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 role: Some(role.to_string()),
                 parts: None,
                 attachments: None,

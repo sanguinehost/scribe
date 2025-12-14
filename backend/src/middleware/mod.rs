@@ -1,6 +1,7 @@
 // backend/src/middleware/mod.rs
 // Middleware modules
 
+pub mod auth_middleware;
 pub mod llm_security;
 pub mod plan_enforcement;
 pub mod rate_limit;
@@ -21,3 +22,5 @@ pub use llm_security::{
 pub use plan_enforcement::{
     plan_enforcement_middleware, with_enforcement_config, EnforcementConfig,
 };
+
+pub use auth_middleware::unified_login_required;

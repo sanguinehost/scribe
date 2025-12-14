@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/chronicle_re_chronicle_api_tests.rs
 

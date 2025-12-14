@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for the enhanced health check endpoint
 
 use axum::{

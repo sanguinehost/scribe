@@ -118,7 +118,7 @@ impl FullCharacterOutput {
 }
 
 /// Helper functions for creating JSON schemas for structured output
-pub fn get_field_generation_schema() -> serde_json::Value {
+pub fn get_field_generation_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -142,10 +142,10 @@ pub fn get_field_generation_schema() -> serde_json::Value {
             }
         },
         "required": ["content", "style_applied"]
-    })
+    }).into()
 }
 
-pub fn get_full_character_schema() -> serde_json::Value {
+pub fn get_full_character_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -199,9 +199,10 @@ pub fn get_full_character_schema() -> serde_json::Value {
         },
         "required": ["name", "description", "first_mes", "tags"]
     })
+    .into()
 }
 
-pub fn get_enhancement_schema() -> serde_json::Value {
+pub fn get_enhancement_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -229,9 +230,10 @@ pub fn get_enhancement_schema() -> serde_json::Value {
         },
         "required": ["enhanced_content", "changes_made", "improvement_reasoning"]
     })
+    .into()
 }
 
-pub fn get_style_analysis_schema() -> serde_json::Value {
+pub fn get_style_analysis_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -263,6 +265,7 @@ pub fn get_style_analysis_schema() -> serde_json::Value {
         },
         "required": ["detected_style", "confidence"]
     })
+    .into()
 }
 
 // ============================================================================
@@ -340,7 +343,7 @@ impl BatchLorebookEntriesOutput {
 }
 
 /// JSON schema for single lorebook entry generation
-pub fn get_lorebook_entry_schema() -> serde_json::Value {
+pub fn get_lorebook_entry_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -369,11 +372,11 @@ pub fn get_lorebook_entry_schema() -> serde_json::Value {
             }
         },
         "required": ["name", "content", "keys"]
-    })
+    }).into()
 }
 
 /// JSON schema for batch lorebook entries generation
-pub fn get_batch_lorebook_entries_schema() -> serde_json::Value {
+pub fn get_batch_lorebook_entries_schema() -> crate::DbJson {
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -420,5 +423,5 @@ pub fn get_batch_lorebook_entries_schema() -> serde_json::Value {
             }
         },
         "required": ["entries"]
-    })
+    }).into()
 }

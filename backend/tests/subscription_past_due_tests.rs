@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for subscription past_due and grace period functionality
 //!
 //! These tests verify:

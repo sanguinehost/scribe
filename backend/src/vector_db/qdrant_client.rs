@@ -15,7 +15,6 @@ use qdrant_client::Qdrant;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 // Constants
 pub const DEFAULT_COLLECTION_NAME: &str = "scribe_embeddings";
@@ -708,9 +707,9 @@ impl QdrantClientService {
 ///
 /// Returns an error if the payload is not a valid JSON object or if serialization fails
 pub fn create_qdrant_point(
-    id: Uuid,
+    id: crate::db::DbId,
     vector: Vec<f32>,
-    payload: Option<serde_json::Value>,
+    payload: Option<crate::DbJson>,
 ) -> Result<PointStruct, AppError> {
     // Convert Option<serde_json::Value> to HashMap<String, qdrant_client::qdrant::Value>
     let qdrant_payload: std::collections::HashMap<String, Value> = match payload {
@@ -723,7 +722,7 @@ pub fn create_qdrant_point(
                 ));
             }
             // Convert serde_json::Value to the target HashMap type
-            serde_json::from_value(json_value).map_err(|e| {
+            serde_json::from_value(json_value.clone().into()).map_err(|e| {
                 error!(error = %e, "Failed to deserialize JSON payload into Qdrant Value map");
                 AppError::SerializationError(format!(
                     "Failed to deserialize payload for Qdrant: {e}"
@@ -745,7 +744,7 @@ pub fn create_qdrant_point(
 
 // Add a helper function to create a filter for message_id
 #[must_use]
-pub fn create_message_id_filter(message_id: Uuid) -> Filter {
+pub fn create_message_id_filter(message_id: crate::db::DbId) -> Filter {
     Filter {
         must: vec![Condition {
             condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -940,10 +939,11 @@ impl QdrantClientServiceTrait for QdrantClientService {
 }
 
 // --- Unit/Integration Tests
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::db::DbId;
     use dotenvy::dotenv;
     use qdrant_client::qdrant::point_id::PointIdOptions;
     use qdrant_client::qdrant::r#match::MatchValue; // Corrected import
@@ -980,7 +980,7 @@ mod tests {
         let unique_collection_name = collection_name.unwrap_or_else(|| {
             format!(
                 "test_collection_{}",
-                Uuid::new_v4().to_string().replace('-', "_")
+                DbId::new().to_string().replace('-', "_")
             )
         });
         config.qdrant_collection_name = unique_collection_name.clone();
@@ -1029,12 +1029,12 @@ mod tests {
 
     #[test]
     fn test_create_qdrant_point_with_payload() {
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.1, 0.2, 0.3];
-        let payload = json!({
+        let payload = crate::DbJson::from(json!({
             "key": "value",
             "number": 123
-        });
+        }));
 
         let result = create_qdrant_point(id, vector.clone(), Some(payload));
         assert!(result.is_ok());
@@ -1071,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_create_qdrant_point_without_payload() {
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.4, 0.5];
 
         let result = create_qdrant_point(id, vector.clone(), None);
@@ -1085,9 +1085,9 @@ mod tests {
 
     #[test]
     fn test_create_qdrant_point_payload_not_object() {
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.6];
-        let payload = json!("this is just a string"); // Not a JSON object
+        let payload = crate::DbJson::from(json!("this is just a string")); // Not a JSON object
 
         let result = create_qdrant_point(id, vector, Some(payload));
         assert!(result.is_err());
@@ -1106,12 +1106,12 @@ mod tests {
         // if we were using a specific struct type here. Since we deserialize to HashMap<String, Value>,
         // most valid JSON objects should work unless they contain types Value can't represent directly.
         // Let's use a nested structure.
-        let id = Uuid::new_v4();
+        let id = DbId::new();
         let vector = vec![0.7, 0.8];
-        let payload = json!({
+        let payload = crate::DbJson::from(json!({
             "nested": { "a": 1 },
             "array": [1, 2, 3]
-        });
+        }));
 
         let result = create_qdrant_point(id, vector, Some(payload));
         assert!(result.is_ok()); // Should be Ok because HashMap<String, Value> can handle nested objects/arrays
@@ -1188,22 +1188,22 @@ mod tests {
         let embedding_dim = usize::try_from(service.embedding_dimension)
             .expect("embedding dimension should fit in usize");
 
-        let point_id_1 = Uuid::new_v4();
+        let point_id_1 = DbId::new();
         // Use slightly more distinct vectors for testing
         let mut rng1 = StdRng::seed_from_u64(42); // Seeded RNG for reproducibility
                                                   // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
         let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.random::<f32>()).collect();
 
-        let payload_1 = json!({"test_key": "value1"});
+        let payload_1 = crate::DbJson::from(json!({"test_key": "value1"}));
         let point_1 = create_qdrant_point(point_id_1, vector_1.clone(), Some(payload_1.clone()))
             .expect("Failed to create point 1");
 
-        let point_id_2 = Uuid::new_v4();
+        let point_id_2 = DbId::new();
         // Use a different seed or different generation logic for vector_2
         let mut rng2 = StdRng::seed_from_u64(99);
         let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.random::<f32>()).collect();
 
-        let payload_2 = json!({"test_key": "value2"});
+        let payload_2 = crate::DbJson::from(json!({"test_key": "value2"}));
         let point_2 = create_qdrant_point(point_id_2, vector_2.clone(), Some(payload_2.clone()))
             .expect("Failed to create point 2");
 
@@ -1276,11 +1276,12 @@ mod tests {
         let embedding_dim = usize::try_from(service.embedding_dimension)
             .expect("embedding dimension should fit in usize");
 
-        let point_id_filter = Uuid::new_v4();
+        let point_id_filter = DbId::new();
         let mut rng3 = StdRng::seed_from_u64(123);
         let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.random::<f32>()).collect();
 
-        let payload_filter = json!({"filter_key": "target_value", "other": "data1"});
+        let payload_filter =
+            crate::DbJson::from(json!({"filter_key": "target_value", "other": "data1"}));
         let point_filter = create_qdrant_point(
             point_id_filter,
             vector_filter.clone(),
@@ -1288,11 +1289,12 @@ mod tests {
         )
         .expect("Failed to create filter point");
 
-        let point_id_other = Uuid::new_v4();
+        let point_id_other = DbId::new();
         let mut rng4 = StdRng::seed_from_u64(456);
         let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.random::<f32>()).collect();
 
-        let payload_other = json!({"filter_key": "different_value", "other": "data2"});
+        let payload_other =
+            crate::DbJson::from(json!({"filter_key": "different_value", "other": "data2"}));
         let point_other = create_qdrant_point(
             point_id_other,
             vector_other.clone(),
@@ -1388,5 +1390,116 @@ mod tests {
         // Clean up the test collection
         cleanup_test_collection(&service).await;
         drop(service);
+    }
+}
+
+// ============================================================================
+// No-Op Implementation for Embedded Vector Mode (Desktop)
+// ============================================================================
+
+// Make NoOpQdrantService available when embedded-vector is enabled OR when neither vector feature is enabled
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
+#[derive(Clone)]
+pub struct NoOpQdrantService;
+
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
+impl NoOpQdrantService {
+    pub async fn new(_config: Arc<Config>) -> Result<Self, AppError> {
+        tracing::info!("Using no-op Qdrant service for desktop/embedded-vector mode");
+        Ok(NoOpQdrantService)
+    }
+}
+
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
+#[async_trait]
+impl QdrantClientServiceTrait for NoOpQdrantService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: ensure_collection_exists (no-op)");
+        Ok(())
+    }
+
+    async fn store_points(&self, _points: Vec<PointStruct>) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: store_points (no-op)");
+        Ok(())
+    }
+
+    async fn search_points(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points (no-op)");
+        Ok(vec![])
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points_with_threshold (no-op)");
+        Ok(vec![])
+    }
+
+    async fn hybrid_search(
+        &self,
+        _vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        _limit: u64,
+        _filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: hybrid_search (no-op)");
+        Ok(vec![])
+    }
+
+    async fn retrieve_points(
+        &self,
+        _filter: Option<Filter>,
+        _limit: u64,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: retrieve_points (no-op)");
+        Ok(vec![])
+    }
+
+    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points (no-op)");
+        Ok(())
+    }
+
+    async fn delete_points_by_filter(&self, _filter: Filter) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points_by_filter (no-op)");
+        Ok(())
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: update_collection_settings (no-op)");
+        Ok(())
+    }
+
+    async fn get_point_by_id(
+        &self,
+        _point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: get_point_by_id (no-op)");
+        Ok(None)
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: health_check (no-op)");
+        Ok(())
     }
 }

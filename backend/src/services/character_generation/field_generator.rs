@@ -200,7 +200,7 @@ impl FieldGenerator {
     pub async fn generate_field(
         &self,
         request: FieldGenerationRequest,
-        user_id: uuid::Uuid,
+        user_id: crate::db::DbId,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<FieldGenerationResult, AppError> {
         let start_time = Instant::now();
@@ -237,8 +237,8 @@ impl FieldGenerator {
             .await?;
 
         // Parse the structured output
-        let mut field_output: CharacterFieldOutput = serde_json::from_value(generated_output)
-            .map_err(|e| {
+        let mut field_output: CharacterFieldOutput =
+            serde_json::from_value(generated_output.clone().into()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse field generation output: {}",
                     e
@@ -270,7 +270,7 @@ impl FieldGenerator {
             generation_time_ms: generation_time.as_millis() as u64,
             style_detected: Some(style.clone()),
             model_used: self.state.config.token_counter_default_model.clone(),
-            timestamp: chrono::Utc::now(),
+            timestamp: chrono::Utc::now().into(),
             debug_info: Some(full_debug_info),
         };
 
@@ -432,7 +432,7 @@ Show different scenarios, moods, or personality aspects."#
     async fn build_field_generation_user_message(
         &self,
         request: &FieldGenerationRequest,
-        user_id: uuid::Uuid,
+        user_id: crate::db::DbId,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<String, AppError> {
         let mut message = String::new();
@@ -621,7 +621,7 @@ Show different scenarios, moods, or personality aspects."#
     async fn build_field_generation_user_message_with_debug(
         &self,
         request: &FieldGenerationRequest,
-        user_id: uuid::Uuid,
+        user_id: crate::db::DbId,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<(String, DebugInfo), AppError> {
         let mut message = String::new();
@@ -778,8 +778,8 @@ Show different scenarios, moods, or personality aspects."#
     /// Query lorebook for relevant context based on the character generation request (with debug info)
     async fn query_lorebook_context_with_debug(
         &self,
-        user_id: uuid::Uuid,
-        lorebook_id: uuid::Uuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         request: &FieldGenerationRequest,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<LorebookQueryResult, AppError> {
@@ -887,8 +887,8 @@ Show different scenarios, moods, or personality aspects."#
     /// Query lorebook for relevant context based on the character generation request
     async fn query_lorebook_context(
         &self,
-        user_id: uuid::Uuid,
-        lorebook_id: uuid::Uuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         request: &FieldGenerationRequest,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<Option<String>, AppError> {
@@ -1036,9 +1036,9 @@ Show different scenarios, moods, or personality aspects."#
         &self,
         system_prompt: &str,
         messages: &[GenAiChatMessage],
-        schema: &serde_json::Value,
+        schema: &crate::DbJson,
         request: &FieldGenerationRequest,
-    ) -> Result<serde_json::Value, AppError> {
+    ) -> Result<crate::DbJson, AppError> {
         use genai::chat::{
             ChatOptions as GenAiChatOptions, ChatResponseFormat, ChatRole, JsonSchemaSpec,
         };
@@ -1195,7 +1195,7 @@ Show different scenarios, moods, or personality aspects."#
     fn process_chat_response(
         &self,
         chat_response: genai::chat::ChatResponse,
-    ) -> Result<serde_json::Value, AppError> {
+    ) -> Result<crate::DbJson, AppError> {
         debug!("Processing chat response");
 
         // Try the same approach as main chat generation - access contents directly
@@ -1222,7 +1222,7 @@ Show different scenarios, moods, or personality aspects."#
         );
 
         // Parse the structured JSON response
-        match serde_json::from_str::<serde_json::Value>(&response_text) {
+        match serde_json::from_str::<crate::DbJson>(&response_text) {
             Ok(json) => {
                 debug!("Successfully parsed structured JSON response");
                 Ok(json)
@@ -1238,7 +1238,8 @@ Show different scenarios, moods, or personality aspects."#
                     "reasoning": "Generated as plain text response due to JSON parsing failure",
                     "style_applied": "auto",
                     "quality_score": 7
-                }))
+                })
+                .into())
             }
         }
     }
@@ -1375,8 +1376,8 @@ Provide a detailed analysis including:
             .await?;
 
         // Parse the structured output
-        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output)
-            .map_err(|e| {
+        let style_analysis: StyleAnalysisOutput =
+            serde_json::from_value(generated_output.clone().into()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse style analysis output: {}",
                     e

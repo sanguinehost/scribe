@@ -1,0 +1,70 @@
+[package]
+name = "scribe-desktop"
+version = "0.1.0"
+description = "Scribe Desktop - A standalone desktop application for character-based AI conversations"
+authors = ["Sanguine Software"]
+license = "MIT"
+repository = "https://github.com/sanguinehost/scribe"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "scribe_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.4.1", features = ["codegen"] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.9.5", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-store = "2"
+tauri-plugin-fs = "2"
+
+# Async runtime for embedded backend
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for custom protocol handler (uses native-tls to avoid aws-lc-sys GCC issues)
+# CRITICAL FIX: Added "blocking" feature for synchronous health check
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream", "cookies", "blocking"] }
+
+# SSE (Server-Sent Events) parsing for streaming chat responses
+eventsource-stream = "0.2"
+futures-util = "0.3"
+
+# Cookie management for session persistence
+parking_lot = "0.12"
+once_cell = "1.20"
+url = "2.5"
+
+# Server dependencies
+axum-server = { version = "0.6", features = ["tls-rustls"] }
+anyhow = "1"
+tracing = "0.1"
+
+# Cryptographic randomness for session key generation
+rand = "0.8"
+
+# Elliptic curve cryptography for P-256 ECDSA (challenge-response auth)
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+
+# Base64 encoding for DEK storage
+base64 = "0.21"
+
+# Hex encoding for signature transmission
+hex = "0.4"
+
+# Cross-platform user directories
+dirs = "5.0"
+
+# Database migration support
+diesel = { version = "2.3", default-features = false, features = ["sqlite"] }
+diesel_migrations = { version = "2.3", default-features = false, features = ["sqlite"] }
+
+# Workspace dependencies
+scribe-backend = { path = "../backend", default-features = false, features = ["desktop"] }
+tauri-plugin-upload = "2.3.2"

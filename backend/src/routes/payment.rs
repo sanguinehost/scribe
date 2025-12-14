@@ -70,8 +70,8 @@ pub struct SubscriptionResponse {
 #[derive(Serialize, Clone)]
 pub struct UsageLimitsResponse {
     pub tokens_used_total: i32,
-    pub period_start: chrono::DateTime<chrono::Utc>,
-    pub period_end: chrono::DateTime<chrono::Utc>,
+    pub period_start: crate::DbTimestamp,
+    pub period_end: crate::DbTimestamp,
     pub is_unlimited: bool,
     // Daily usage fields
     pub daily_message_count: Option<i32>,
@@ -173,20 +173,20 @@ pub struct CreditBalanceResponse {
     pub balance: i32,
     pub lifetime_earned: i32,
     pub lifetime_spent: i32,
-    pub last_monthly_grant: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_monthly_grant: Option<crate::DbTimestamp>,
 }
 
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct CreditTransactionResponse {
-    pub id: Uuid,
+    pub id: crate::db::DbId,
     pub amount: i32,
     pub balance_after: i32,
     pub transaction_type: String,
-    pub description: String,                 // Decrypted
-    pub metadata: Option<serde_json::Value>, // Decrypted
+    pub description: String,             // Decrypted
+    pub metadata: Option<crate::DbJson>, // Decrypted
     pub reference_id: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: crate::DbTimestamp,
 }
 
 #[cfg(feature = "payment")]
@@ -218,16 +218,16 @@ pub struct TransactionListQuery {
 #[cfg(feature = "payment")]
 #[derive(Serialize)]
 pub struct PaymentTransactionResponse {
-    pub id: Uuid,
+    pub id: crate::db::DbId,
     pub paddle_transaction_id: String,
     pub status: String,
     pub total_cents: i32,
     pub currency_code: Option<String>,
     pub customer_data: crate::models::payment::CustomerData, // DECRYPTED
-    pub items: serde_json::Value,
-    pub billed_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub items: crate::DbJson,
+    pub billed_at: Option<crate::DbTimestamp>,
+    pub completed_at: Option<crate::DbTimestamp>,
+    pub created_at: Option<crate::DbTimestamp>,
 }
 
 /// Helper function to decrypt and convert PaymentTransaction to response DTO
@@ -273,7 +273,7 @@ pub async fn get_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -430,8 +430,10 @@ pub async fn get_subscription(
                 // Fallback to default values without usage data
                 Some(UsageLimitsResponse {
                     tokens_used_total: 0, // Unknown usage, default to 0
-                    period_start: chrono::Utc::now(),
-                    period_end: chrono::Utc::now() + chrono::Duration::days(30),
+                    period_start: crate::DbTimestamp::now(),
+                    period_end: crate::DbTimestamp::from_datetime(
+                        chrono::Utc::now() + chrono::Duration::days(30),
+                    ),
                     is_unlimited: features.monthly_token_limit.is_none(),
                     daily_message_count: Some(daily_message_count),
                     is_throttled: Some(is_throttled),
@@ -523,7 +525,7 @@ pub async fn get_usage(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -589,8 +591,10 @@ pub async fn get_usage(
             // Fallback to safe defaults
             Ok(Json(UsageLimitsResponse {
                 tokens_used_total: 0,
-                period_start: chrono::Utc::now(),
-                period_end: chrono::Utc::now() + chrono::Duration::days(30),
+                period_start: crate::DbTimestamp::now(),
+                period_end: crate::DbTimestamp::from_datetime(
+                    chrono::Utc::now() + chrono::Duration::days(30),
+                ),
                 is_unlimited: false,
                 daily_message_count: Some(daily_message_count),
                 is_throttled: Some(is_throttled),
@@ -652,7 +656,7 @@ pub async fn create_payment(
     );
 
     tracing::debug!("Getting database connection");
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to get database connection");
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -754,7 +758,7 @@ pub async fn verify_transaction(
     Path(transaction_id): Path<String>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<crate::DbJson>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -803,6 +807,7 @@ pub async fn verify_transaction(
             payment_transactions
                 .filter(paddle_transaction_id.eq(&transaction_id_for_db))
                 .filter(user_id.eq(&user_id_for_check))
+                .select(PaymentTransaction::as_select())
                 .first::<PaymentTransaction>(conn)
                 .optional()
         })
@@ -1075,6 +1080,7 @@ pub async fn verify_transaction(
                         payment_transactions
                             .filter(paddle_transaction_id.eq(&transaction_id_for_check))
                             .filter(status.eq("completed"))
+                            .select(PaymentTransaction::as_select())
                             .first::<PaymentTransaction>(conn)
                             .optional()
                     })
@@ -1310,7 +1316,7 @@ pub async fn preview_order(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -1394,7 +1400,7 @@ pub async fn create_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -1554,7 +1560,7 @@ pub async fn paddle_webhook(
 
         // Log security event for attack detection
         let security_event = SecurityEvent::WebhookSignatureFailure {
-            timestamp: chrono::Utc::now(),
+            timestamp: crate::DbTimestamp::now(),
             ip_address: client_ip.clone(),
             endpoint: "/webhook/paddle".to_string(),
             user_agent: headers
@@ -1575,7 +1581,7 @@ pub async fn paddle_webhook(
     let audit_service = PaymentAuditService::new();
 
     // 4. Try to parse as generic JSON first to see the structure
-    match serde_json::from_slice::<serde_json::Value>(&body) {
+    match serde_json::from_slice::<crate::DbJson>(&body) {
         Ok(raw_json) => {
             // Log sanitized structure (removes PII)
             let sanitized_json = sanitize_json_value(&raw_json);
@@ -1952,7 +1958,7 @@ async fn process_transaction_completed(
         .get("custom_data")
         .and_then(|cd| cd.get("user_id"))
         .and_then(|v| v.as_str())
-        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+        .and_then(|s| crate::db::DbId::parse_str(s).ok());
     if let Some(ref uid) = custom_data_user_id {
         tracing::debug!(
             custom_data_user_id = %uid,
@@ -1981,53 +1987,55 @@ async fn process_transaction_completed(
     use diesel::prelude::*;
 
     let user_id = conn
-        .interact(move |conn| -> Result<uuid::Uuid, diesel::result::Error> {
-            // Try to find user from existing subscriptions
-            if let Ok(subscription) = subscriptions::table
-                .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(subscriptions::user_id)
-                .first::<uuid::Uuid>(conn)
-            {
-                tracing::debug!("Found user from existing subscription");
-                return Ok(subscription);
-            }
-
-            // Try to find user from payment transactions
-            if let Ok(transaction) = payment_transactions::table
-                .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(payment_transactions::user_id)
-                .first::<uuid::Uuid>(conn)
-            {
-                tracing::debug!("Found user from payment transaction");
-                return Ok(transaction);
-            }
-
-            // Fallback: Try to find user by email
-            if let Some(ref email) = customer_email_for_closure {
-                if let Ok(user) = users::table
-                    .filter(users::email.eq(email))
-                    .select(users::id)
-                    .first::<uuid::Uuid>(conn)
+        .interact(
+            move |conn| -> Result<crate::db::DbId, diesel::result::Error> {
+                // Try to find user from existing subscriptions
+                if let Ok(subscription) = subscriptions::table
+                    .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(subscriptions::user_id)
+                    .first::<crate::db::DbId>(conn)
                 {
-                    tracing::debug!("Found user by email fallback");
-                    return Ok(user);
+                    tracing::debug!("Found user from existing subscription");
+                    return Ok(subscription);
                 }
-            }
 
-            // Fallback: Try to find user by custom_data.user_id
-            if let Some(user_id) = custom_data_user_id_for_closure {
-                if let Ok(user) = users::table
-                    .filter(users::id.eq(user_id))
-                    .select(users::id)
-                    .first::<uuid::Uuid>(conn)
+                // Try to find user from payment transactions
+                if let Ok(transaction) = payment_transactions::table
+                    .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(payment_transactions::user_id)
+                    .first::<crate::db::DbId>(conn)
                 {
-                    tracing::debug!("Found user by custom_data.user_id fallback");
-                    return Ok(user);
+                    tracing::debug!("Found user from payment transaction");
+                    return Ok(transaction);
                 }
-            }
 
-            Err(diesel::result::Error::NotFound)
-        })
+                // Fallback: Try to find user by email
+                if let Some(ref email) = customer_email_for_closure {
+                    if let Ok(user) = users::table
+                        .filter(users::email.eq(email))
+                        .select(users::id)
+                        .first::<crate::db::DbId>(conn)
+                    {
+                        tracing::debug!("Found user by email fallback");
+                        return Ok(user);
+                    }
+                }
+
+                // Fallback: Try to find user by custom_data.user_id
+                if let Some(user_id) = custom_data_user_id_for_closure {
+                    if let Ok(user) = users::table
+                        .filter(users::id.eq(user_id))
+                        .select(users::id)
+                        .first::<crate::db::DbId>(conn)
+                    {
+                        tracing::debug!("Found user by custom_data.user_id fallback");
+                        return Ok(user);
+                    }
+                }
+
+                Err(diesel::result::Error::NotFound)
+            },
+        )
         .await
         .map_err(|e| {
             tracing::error!("Step 2 FAILED: Database interaction error: {}", e);
@@ -2197,13 +2205,13 @@ async fn process_transaction_completed(
             .get("billed_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
+            .map(|dt| crate::DbTimestamp::from_datetime(dt.with_timezone(&chrono::Utc)));
 
         let completed_at = transaction_data
             .get("created_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
+            .map(|dt| crate::DbTimestamp::from_datetime(dt.with_timezone(&chrono::Utc)));
 
         let new_transaction = NewPaymentTransaction {
             paddle_transaction_id: transaction_id.clone(),
@@ -2441,6 +2449,7 @@ async fn process_transaction_completed(
                 dsl::credit_packages
                     .filter(dsl::paddle_price_id.eq(&price_data_for_credit_check))
                     .filter(dsl::active.eq(true))
+                    .select(CreditPackage::as_select())
                     .first::<CreditPackage>(conn)
                     .optional()
             })
@@ -2569,7 +2578,7 @@ async fn process_transaction_completed(
             existing.has_ever_paid.or(Some(false))
         };
         let first_payment_date_for_update = if is_trial_to_paid {
-            Some(chrono::Utc::now())
+            Some(crate::DbTimestamp::now())
         } else {
             existing.first_payment_date
         };
@@ -2929,7 +2938,7 @@ async fn process_subscription_created(
 
     // Find user by paddle_customer_id or email
     tracing::debug!("Step 7: Getting database connection from pool");
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
         AppError::DbPoolError(e.to_string())
     })?;
@@ -2947,41 +2956,43 @@ async fn process_subscription_created(
     use diesel::prelude::*;
 
     let user_id = conn
-        .interact(move |conn| -> Result<uuid::Uuid, diesel::result::Error> {
-            // Try to find user from existing subscriptions
-            if let Ok(subscription) = subscriptions::table
-                .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(subscriptions::user_id)
-                .first::<uuid::Uuid>(conn)
-            {
-                tracing::debug!("Found user from existing subscription");
-                return Ok(subscription);
-            }
-
-            // Try to find user from payment transactions
-            if let Ok(transaction) = payment_transactions::table
-                .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
-                .select(payment_transactions::user_id)
-                .first::<uuid::Uuid>(conn)
-            {
-                tracing::debug!("Found user from payment transaction");
-                return Ok(transaction);
-            }
-
-            // Fallback: Try to find user by email
-            if let Some(ref email) = customer_email_for_closure {
-                if let Ok(user) = users::table
-                    .filter(users::email.eq(email))
-                    .select(users::id)
-                    .first::<uuid::Uuid>(conn)
+        .interact(
+            move |conn| -> Result<crate::db::DbId, diesel::result::Error> {
+                // Try to find user from existing subscriptions
+                if let Ok(subscription) = subscriptions::table
+                    .filter(subscriptions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(subscriptions::user_id)
+                    .first::<crate::db::DbId>(conn)
                 {
-                    tracing::debug!("Found user by email fallback");
-                    return Ok(user);
+                    tracing::debug!("Found user from existing subscription");
+                    return Ok(subscription);
                 }
-            }
 
-            Err(diesel::result::Error::NotFound)
-        })
+                // Try to find user from payment transactions
+                if let Ok(transaction) = payment_transactions::table
+                    .filter(payment_transactions::paddle_customer_id.eq(&customer_id_for_closure))
+                    .select(payment_transactions::user_id)
+                    .first::<crate::db::DbId>(conn)
+                {
+                    tracing::debug!("Found user from payment transaction");
+                    return Ok(transaction);
+                }
+
+                // Fallback: Try to find user by email
+                if let Some(ref email) = customer_email_for_closure {
+                    if let Ok(user) = users::table
+                        .filter(users::email.eq(email))
+                        .select(users::id)
+                        .first::<crate::db::DbId>(conn)
+                    {
+                        tracing::debug!("Found user by email fallback");
+                        return Ok(user);
+                    }
+                }
+
+                Err(diesel::result::Error::NotFound)
+            },
+        )
         .await
         .map_err(|e| {
             tracing::error!("Step 8 FAILED: Database interaction error: {}", e);
@@ -3035,7 +3046,7 @@ async fn process_subscription_created(
 
     // Check for existing active subscription to prevent duplicates
     tracing::debug!("Step 10: Checking for existing active subscription");
-    let conn_duplicate_check = app_state.pool.get().await.map_err(|e| {
+    let conn_duplicate_check = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!(
             "Step 10 FAILED: Failed to get DB connection for duplicate check: {}",
             e
@@ -3095,7 +3106,7 @@ async fn process_subscription_created(
             plan_type,
             subscription_id
         );
-        let conn = app_state.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for update: {}",
                 e
@@ -3200,7 +3211,7 @@ async fn process_subscription_created(
             (*app_state.encryption_service).clone(),
         );
 
-        let conn = app_state.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for create: {}",
                 e
@@ -3342,7 +3353,7 @@ async fn process_subscription_updated(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
                 .select(crate::models::payment::Subscription::as_select())
-                .first::<crate::models::payment::Subscription>(conn)
+                .first(conn)
                 .optional()
         })
         .await
@@ -3370,10 +3381,15 @@ async fn process_subscription_updated(
 
         // Prepare date fields for the closure
         // Keep existing values if not provided in webhook
-        let trial_end_for_update = trial_end.or(subscription.trial_end);
-        let period_start_for_update =
-            current_period_start.unwrap_or(subscription.current_period_start);
-        let period_end_for_update = current_period_end.unwrap_or(subscription.current_period_end);
+        let trial_end_for_update = trial_end
+            .map(crate::DbTimestamp::from_datetime)
+            .or(subscription.trial_end);
+        let period_start_for_update = current_period_start
+            .map(crate::DbTimestamp::from_datetime)
+            .unwrap_or(subscription.current_period_start);
+        let period_end_for_update = current_period_end
+            .map(crate::DbTimestamp::from_datetime)
+            .unwrap_or(subscription.current_period_end);
 
         // Detect trial-to-paid conversion and set payment tracking fields
         // When status transitions from "trialing" to "active", this is the first payment
@@ -3401,17 +3417,18 @@ async fn process_subscription_updated(
         let status_for_update = status.clone();
 
         // Calculate grace_period_end if status is past_due
-        let grace_period_end_for_update: Option<chrono::DateTime<chrono::Utc>> =
-            if status == "past_due" {
-                let grace_period_days = app_state.config.payment.grace_period_days as i64;
-                Some(chrono::Utc::now() + chrono::Duration::days(grace_period_days))
-            } else if status == "active" {
-                // Clear grace_period_end when subscription becomes active again
-                None
-            } else {
-                // Keep existing value - we'll handle this by not updating the field
-                subscription.grace_period_end
-            };
+        let grace_period_end_for_update: Option<crate::DbTimestamp> = if status == "past_due" {
+            let grace_period_days = app_state.config.payment.grace_period_days as i64;
+            Some(crate::DbTimestamp::from_datetime(
+                chrono::Utc::now() + chrono::Duration::days(grace_period_days),
+            ))
+        } else if status == "active" {
+            // Clear grace_period_end when subscription becomes active again
+            None
+        } else {
+            // Keep existing value - we'll handle this by not updating the field
+            subscription.grace_period_end
+        };
 
         let updated_subscription = conn
             .interact(move |conn| {
@@ -3470,10 +3487,10 @@ async fn process_subscription_updated(
                                 // Determine upgrade or downgrade
                                 match is_higher_tier(&new_plan, old_plan) {
                                     Ok(is_upgrade) => {
-                                        let conn =
-                                            app_state.pool.get().await.map_err(|e| {
-                                                AppError::DbPoolError(e.to_string())
-                                            })?;
+                                        let mut conn =
+                                            crate::db::get_conn(&app_state.pool).await.map_err(
+                                                |e| AppError::DbPoolError(e.to_string()),
+                                            )?;
 
                                         let credit_service =
                                             Arc::new(CreditService::new(app_state.config.clone()));
@@ -3660,7 +3677,7 @@ fn map_price_id_to_plan(
         AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
     })?;
 
-    let tiers: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+    let tiers: crate::DbJson = serde_json::from_str(&config_str).map_err(|e| {
         AppError::ConfigurationError(format!("Invalid subscription config JSON: {}", e))
     })?;
 
@@ -3724,7 +3741,7 @@ fn calculate_credit_difference(
         AppError::ConfigurationError(format!("Failed to load subscription config: {}", e))
     })?;
 
-    let tiers: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+    let tiers: crate::DbJson = serde_json::from_str(&config_str).map_err(|e| {
         AppError::ConfigurationError(format!("Invalid subscription config JSON: {}", e))
     })?;
 
@@ -3784,7 +3801,7 @@ fn handle_plan_upgrade(
         .set((
             plan_type.eq(new_plan),
             scheduled_plan_change.eq::<Option<String>>(None),
-            scheduled_change_date.eq::<Option<chrono::DateTime<chrono::Utc>>>(None),
+            scheduled_change_date.eq::<Option<crate::DbTimestamp>>(None),
             updated_at.eq(chrono::Utc::now()),
         ))
         .execute(conn)
@@ -3904,7 +3921,7 @@ async fn process_subscription_cancelled(
                     subscriptions::paddle_subscription_id.eq(&paddle_subscription_id_for_closure),
                 )
                 .select(crate::models::payment::Subscription::as_select())
-                .first::<crate::models::payment::Subscription>(conn)
+                .first(conn)
                 .optional()
         })
         .await
@@ -3995,7 +4012,7 @@ pub async fn get_credit_balance(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4030,7 +4047,7 @@ pub async fn purchase_credits(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get credit package details
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4102,7 +4119,7 @@ pub async fn purchase_credits(
 pub async fn get_credit_packages(
     State(app_state): State<AppState>,
 ) -> Result<Json<CreditPackagesResponse>, AppError> {
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4114,6 +4131,7 @@ pub async fn get_credit_packages(
             dsl::credit_packages
                 .filter(dsl::active.eq(true))
                 .order(dsl::credits.asc())
+                .select(CreditPackage::as_select())
                 .load::<CreditPackage>(conn)
         })
         .await
@@ -4136,7 +4154,7 @@ pub async fn get_credit_transactions(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4192,7 +4210,9 @@ pub async fn get_credit_transactions(
             description,
             metadata,
             reference_id: transaction.reference_id,
-            created_at: transaction.created_at.unwrap_or_else(chrono::Utc::now),
+            created_at: transaction
+                .created_at
+                .unwrap_or_else(crate::DbTimestamp::now),
         });
     }
 
@@ -4220,7 +4240,7 @@ pub async fn get_payment_transactions(
             AppError::ConfigurationError("Payment data encryption key not configured".to_string())
         })?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4240,6 +4260,7 @@ pub async fn get_payment_transactions(
                 .order(created_at.desc())
                 .limit(limit)
                 .offset(offset)
+                .select(PaymentTransaction::as_select())
                 .load::<PaymentTransaction>(conn)
         })
         .await
@@ -4270,7 +4291,7 @@ pub async fn get_payment_transactions(
 /// Get a single payment transaction by ID
 #[cfg(feature = "payment")]
 pub async fn get_payment_transaction(
-    Path(transaction_id): Path<Uuid>,
+    Path(transaction_id): Path<crate::db::DbId>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
 ) -> Result<Json<PaymentTransactionResponse>, AppError> {
@@ -4288,7 +4309,7 @@ pub async fn get_payment_transaction(
             AppError::ConfigurationError("Payment data encryption key not configured".to_string())
         })?;
 
-    let conn = app_state.pool.get().await.map_err(|e| {
+    let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
@@ -4304,6 +4325,7 @@ pub async fn get_payment_transaction(
             payment_transactions
                 .filter(id.eq(transaction_id))
                 .filter(user_id.eq(user_id))
+                .select(PaymentTransaction::as_select())
                 .first::<PaymentTransaction>(conn)
         })
         .await
@@ -4333,7 +4355,7 @@ pub async fn get_payment_transaction(
 #[cfg(feature = "payment")]
 pub async fn get_model_costs(
     State(_app_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<crate::DbJson>, AppError> {
     use std::fs;
 
     // Load the subscription tiers configuration
@@ -4342,7 +4364,7 @@ pub async fn get_model_costs(
         AppError::InternalServerErrorGeneric(format!("Failed to read config: {}", e))
     })?;
 
-    let config: serde_json::Value = serde_json::from_str(&config_str).map_err(|e| {
+    let config: crate::DbJson = serde_json::from_str(&config_str).map_err(|e| {
         AppError::InternalServerErrorGeneric(format!("Failed to parse config: {}", e))
     })?;
 

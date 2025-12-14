@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 /// Tests for token pricing calculations to ensure correct per-1M pricing with markup
 ///
 /// This test suite verifies:

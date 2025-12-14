@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 /// Payment System Audit Logging and Security Tests
 ///
 /// This test suite verifies comprehensive audit logging for:

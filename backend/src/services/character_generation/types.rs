@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Supported character field types for generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,7 +117,7 @@ pub struct FieldGenerationRequest {
     pub user_prompt: String,
     pub character_context: Option<CharacterContext>,
     pub generation_options: Option<GenerationOptions>,
-    pub lorebook_id: Option<Uuid>, // Optional lorebook to query for relevant context
+    pub lorebook_id: Option<crate::db::DbId>, // Optional lorebook to query for relevant context
 }
 
 /// Request for generating a complete character
@@ -191,7 +190,7 @@ pub struct GenerationMetadata {
     pub generation_time_ms: u64,
     pub style_detected: Option<DescriptionStyle>,
     pub model_used: String,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub timestamp: crate::DbTimestamp,
     pub debug_info: Option<GenerationDebugInfo>,
 }
 
@@ -248,7 +247,7 @@ pub enum GenerationStrategy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterGenerationToolCall {
     pub tool_name: String,
-    pub parameters: serde_json::Value,
+    pub parameters: crate::DbJson,
     pub request_id: Option<String>,
 }
 
@@ -256,7 +255,7 @@ pub struct CharacterGenerationToolCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterGenerationToolResponse {
     pub success: bool,
-    pub result: Option<serde_json::Value>,
+    pub result: Option<crate::DbJson>,
     pub error: Option<String>,
     pub request_id: Option<String>,
 }
@@ -312,7 +311,7 @@ pub struct ApiGenerationRequest {
     /// Temperature for generation (0.0-1.0)
     pub temperature: Option<f32>,
     /// Lorebook ID for context retrieval
-    pub lorebook_id: Option<Uuid>,
+    pub lorebook_id: Option<crate::db::DbId>,
 }
 
 /// Unified generation response matching character-editor's API
@@ -528,7 +527,7 @@ pub struct LorebookGenerationRequest {
     /// World context or existing lorebook entries to maintain consistency
     pub world_context: Option<String>,
     /// Optional existing lorebook ID to query for related entries
-    pub lorebook_id: Option<Uuid>,
+    pub lorebook_id: Option<crate::db::DbId>,
     /// Maximum tokens for generation
     pub max_tokens: Option<u32>,
     /// Temperature for generation (0.0-1.0)
@@ -552,7 +551,7 @@ pub struct BatchLorebookGenerationRequest {
     /// World context or existing lorebook entries to maintain consistency
     pub world_context: Option<String>,
     /// Optional existing lorebook ID to query for related entries
-    pub lorebook_id: Option<Uuid>,
+    pub lorebook_id: Option<crate::db::DbId>,
     /// Maximum tokens for generation
     pub max_tokens: Option<u32>,
     /// Temperature for generation (0.0-1.0)

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 /// End-to-End Subscription Flow Integration Tests
 ///
 /// Tests the complete subscription lifecycle from Paddle webhooks

@@ -2,16 +2,28 @@
 	import { goto as _goto } from '$app/navigation';
 	import { getIsAuthenticated, getIsLoadingAuth } from '$lib/auth.svelte';
 	import { Loader } from 'lucide-svelte';
+	import { untrack } from 'svelte';
 
 	let { children, redirectTo = '/signin' } = $props<{
 		children?: unknown;
 		redirectTo?: string;
 	}>();
 
+	// CRITICAL FIX: Prevent infinite loop - track redirect state
+	let hasRedirected = $state(false);
+
 	// Redirect to signin if not authenticated
 	$effect(() => {
-		if (!getIsAuthenticated() && !getIsLoadingAuth()) {
-			_goto(redirectTo);
+		const authenticated = getIsAuthenticated();
+		const loading = getIsLoadingAuth();
+
+		if (!authenticated && !loading && !hasRedirected) {
+			console.log('[ProtectedRoute] Redirecting unauthenticated user to', redirectTo);
+			// Use untrack to prevent navigation from triggering $effect again
+			untrack(() => {
+				hasRedirected = true;
+				_goto(redirectTo);
+			});
 		}
 	});
 </script>

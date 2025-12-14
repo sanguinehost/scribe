@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use crate::state::AppState;
 use axum::{extract::State, Json};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -40,7 +40,7 @@ pub struct HealthCheckResponse {
     pub status: ComponentStatus,
     pub version: String,
     pub components: HashMap<String, ComponentHealthInfo>,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: crate::DbTimestamp,
 }
 
 impl HealthCheckResponse {
@@ -49,7 +49,7 @@ impl HealthCheckResponse {
             status: ComponentStatus::Ok,
             version: env!("CARGO_PKG_VERSION").to_string(),
             components: HashMap::new(),
-            timestamp: Utc::now(),
+            timestamp: Utc::now().into(),
         }
     }
 
@@ -162,13 +162,7 @@ pub async fn health_check(
 async fn check_database_health(
     state: &AppState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let conn = state
-        .pool
-        .get()
-        .await
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-
-    conn.interact(move |conn| {
+    crate::db::with_conn(&state.pool, move |conn| {
         use diesel::sql_query;
         use diesel::sql_types::Integer;
         use diesel::RunQueryDsl;
@@ -182,19 +176,15 @@ async fn check_database_health(
         sql_query("SELECT 1 as _result")
             .get_result::<HealthCheck>(conn)
             .map(|_| ())
-            .map_err(|e| format!("Database health check failed: {}", e))
+            .map_err(|e| {
+                crate::errors::AppError::DatabaseQueryError(format!(
+                    "Database health check failed: {}",
+                    e
+                ))
+            })
     })
     .await
-    .map_err(|e| {
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e.to_string(),
-        )) as Box<dyn std::error::Error + Send + Sync>
-    })?
-    .map_err(|e| {
-        Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
-            as Box<dyn std::error::Error + Send + Sync>
-    })
+    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }
 
 /// Check Qdrant connectivity by checking if the service is available

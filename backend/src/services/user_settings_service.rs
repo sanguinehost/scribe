@@ -1,6 +1,5 @@
 use diesel::{prelude::*, OptionalExtension};
 use tracing::{info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     config::Config,
@@ -9,7 +8,6 @@ use crate::{
     schema::user_settings,
     state::DbPool,
 };
-use bigdecimal::BigDecimal;
 
 pub struct UserSettingsService;
 
@@ -18,23 +16,21 @@ impl UserSettingsService {
     #[instrument(skip(pool), err)]
     pub async fn get_user_settings(
         pool: &DbPool,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         config: &Config,
     ) -> Result<UserSettingsResponse, AppError> {
-        let conn = pool.get().await?;
-
         // Clone config values we need to move into the closure
         let default_model = config.token_counter_default_model.clone();
         let context_total_limit = config.context_total_token_limit as i32;
         let context_history_budget = config.context_recent_history_token_budget as i32;
         let context_rag_budget = config.context_rag_token_budget as i32;
 
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             // Check if user settings exist using a simple query
             let settings_exist = user_settings::table
                 .filter(user_settings::user_id.eq(user_id))
                 .select(user_settings::id)
-                .first::<uuid::Uuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -62,11 +58,11 @@ impl UserSettingsService {
                         ))
                         .first::<(
                             Option<String>,
-                            Option<BigDecimal>,
+                            Option<crate::db::DbDecimal>,
                             Option<i32>,
-                            Option<BigDecimal>,
-                            Option<BigDecimal>,
-                            Option<BigDecimal>,
+                            Option<crate::db::DbDecimal>,
+                            Option<crate::db::DbDecimal>,
+                            Option<crate::db::DbDecimal>,
                             Option<i32>,
                             Option<i32>,
                             Option<i32>,
@@ -79,34 +75,112 @@ impl UserSettingsService {
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                    let (timestamps, ui_settings, local_settings) = user_settings::table
-                        .filter(user_settings::user_id.eq(user_id))
-                        .select((
-                            (user_settings::created_at, user_settings::updated_at),
-                            (
-                                user_settings::notifications_enabled,
-                                user_settings::typing_speed,
-                            ),
-                            (
-                                user_settings::preferred_local_model,
-                                user_settings::local_llm_enabled,
-                                user_settings::local_model_preferences,
-                            ),
-                        ))
-                        .first::<(
-                            (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>),
-                            (Option<bool>, Option<i32>),
-                            (Option<String>, Option<bool>, Option<serde_json::Value>),
-                        )>(conn)
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    #[cfg(feature = "sqlite-backend")]
+                    let (
+                        created_at,
+                        updated_at,
+                        notifications_enabled,
+                        typing_speed,
+                        preferred_local_model,
+                        local_llm_enabled,
+                        local_model_preferences_json,
+                    ) = {
+                        let (timestamps, ui_settings, local_settings) = user_settings::table
+                            .filter(user_settings::user_id.eq(user_id))
+                            .select((
+                                (user_settings::created_at, user_settings::updated_at),
+                                (
+                                    user_settings::notifications_enabled,
+                                    user_settings::typing_speed,
+                                ),
+                                (
+                                    user_settings::preferred_local_model,
+                                    user_settings::local_llm_enabled,
+                                    user_settings::local_model_preferences,
+                                ),
+                            ))
+                            .first::<(
+                                (crate::DbTimestamp, crate::DbTimestamp),
+                                (Option<bool>, Option<i32>),
+                                (Option<String>, Option<bool>, Option<String>),
+                            )>(conn)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                        // Convert local_model_preferences String to DbJson for SQLite compatibility
+                        let local_model_preferences_json = local_settings
+                            .2
+                            .map(|s| {
+                                serde_json::from_str::<serde_json::Value>(&s)
+                                    .map(|v| crate::DbJson::new(v))
+                            })
+                            .transpose()
+                            .map_err(|e| {
+                                AppError::DatabaseQueryError(format!(
+                                    "Failed to parse local_model_preferences JSON: {}",
+                                    e
+                                ))
+                            })?;
+
+                        (
+                            timestamps.0,
+                            timestamps.1,
+                            ui_settings.0,
+                            ui_settings.1,
+                            local_settings.0,
+                            local_settings.1,
+                            local_model_preferences_json,
+                        )
+                    };
+
+                    #[cfg(feature = "postgres-backend")]
+                    let (
+                        created_at,
+                        updated_at,
+                        notifications_enabled,
+                        typing_speed,
+                        preferred_local_model,
+                        local_llm_enabled,
+                        local_model_preferences_json,
+                    ) = {
+                        let (timestamps, ui_settings, local_settings) = user_settings::table
+                            .filter(user_settings::user_id.eq(user_id))
+                            .select((
+                                (user_settings::created_at, user_settings::updated_at),
+                                (
+                                    user_settings::notifications_enabled,
+                                    user_settings::typing_speed,
+                                ),
+                                (
+                                    user_settings::preferred_local_model,
+                                    user_settings::local_llm_enabled,
+                                    user_settings::local_model_preferences,
+                                ),
+                            ))
+                            .first::<(
+                                (crate::DbTimestamp, crate::DbTimestamp),
+                                (Option<bool>, Option<i32>),
+                                (Option<String>, Option<bool>, Option<serde_json::Value>),
+                            )>(conn)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                        (
+                            timestamps.0,
+                            timestamps.1,
+                            ui_settings.0,
+                            ui_settings.1,
+                            local_settings.0,
+                            local_settings.1,
+                            local_settings.2,
+                        )
+                    };
 
                     let response = UserSettingsResponse {
                         default_model_name: settings.0,
-                        default_temperature: settings.1,
+                        default_temperature: settings.1.map(Into::into),
                         default_max_output_tokens: settings.2,
-                        default_frequency_penalty: settings.3,
-                        default_presence_penalty: settings.4,
-                        default_top_p: settings.5,
+                        default_frequency_penalty: settings.3.map(Into::into),
+                        default_presence_penalty: settings.4.map(Into::into),
+                        default_top_p: settings.5.map(Into::into),
                         default_top_k: settings.6,
                         default_seed: settings.7,
                         default_gemini_thinking_budget: settings.8,
@@ -116,13 +190,13 @@ impl UserSettingsService {
                         default_context_rag_budget: settings.12,
                         auto_save_chats: settings.13,
                         theme: settings.14,
-                        notifications_enabled: ui_settings.0,
-                        typing_speed: ui_settings.1,
-                        preferred_local_model: local_settings.0,
-                        local_llm_enabled: local_settings.1,
-                        local_model_preferences: local_settings.2,
-                        created_at: timestamps.0,
-                        updated_at: timestamps.1,
+                        notifications_enabled,
+                        typing_speed,
+                        preferred_local_model,
+                        local_llm_enabled,
+                        local_model_preferences: local_model_preferences_json,
+                        created_at,
+                        updated_at,
                     };
 
                     info!(%user_id, "Found existing user settings");
@@ -133,34 +207,48 @@ impl UserSettingsService {
                     // Use raw SQL to avoid Diesel tuple size limit
                     use diesel::sql_query;
 
+                    // Generate ID for the new user_settings record
+                    let settings_id = crate::db::DbId::new();
+
                     // First, insert with raw SQL without returning
-                    sql_query(
+                    let query = sql_query(
                         r#"
                         INSERT INTO user_settings (
-                            user_id, default_model_name, default_context_total_token_limit,
+                            id, user_id, default_model_name, default_context_total_token_limit,
                             default_context_recent_history_budget, default_context_rag_budget,
                             auto_save_chats, theme, notifications_enabled, typing_speed,
-                            local_llm_enabled
+                            local_llm_enabled, local_model_preferences
                         ) VALUES (
-                            $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
+                            $1, $2, $3, $4, $5, $6, TRUE, 'system', TRUE, 30, FALSE, '{}'
                         )
                         "#,
-                    )
-                    .bind::<diesel::sql_types::Uuid, _>(user_id)
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
-                        default_model.clone(),
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_total_limit,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_history_budget,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_rag_budget,
-                    ))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    );
+
+                    #[cfg(feature = "postgres-backend")]
+                    let query = query
+                        .bind::<diesel::sql_types::Uuid, _>(settings_id)
+                        .bind::<diesel::sql_types::Uuid, _>(user_id);
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let query = query
+                        .bind::<diesel::sql_types::Text, _>(settings_id)
+                        .bind::<diesel::sql_types::Text, _>(user_id);
+
+                    query
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
+                            default_model.clone(),
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_total_limit,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_history_budget,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_rag_budget,
+                        ))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     // Then retrieve using a simple query
                     let created_settings = user_settings::table
@@ -188,10 +276,13 @@ impl UserSettingsService {
                             Option<bool>,
                             Option<i32>,
                             Option<bool>,
-                            chrono::DateTime<chrono::Utc>,
-                            chrono::DateTime<chrono::Utc>,
+                            crate::DbTimestamp,
+                            crate::DbTimestamp,
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                    let created_at = created_settings.9;
+                    let updated_at = created_settings.10;
 
                     // Manually construct the response
                     let response = UserSettingsResponse {
@@ -215,8 +306,8 @@ impl UserSettingsService {
                         preferred_local_model: None,
                         local_llm_enabled: created_settings.8,
                         local_model_preferences: None,
-                        created_at: created_settings.9,
-                        updated_at: created_settings.10,
+                        created_at,
+                        updated_at,
                     };
 
                     info!(%user_id, "Created default user settings");
@@ -224,31 +315,29 @@ impl UserSettingsService {
                 }
             }
         })
-        .await?
+        .await
     }
 
     /// Updates user settings for a specific user
     #[instrument(skip(pool), err)]
     pub async fn update_user_settings(
         pool: &DbPool,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         update_request: UpdateUserSettingsRequest,
         config: &Config,
     ) -> Result<UserSettingsResponse, AppError> {
-        let conn = pool.get().await?;
-
         // Clone config values we need to move into the closure
         let default_model = config.token_counter_default_model.clone();
         let context_total_limit = config.context_total_token_limit as i32;
         let context_history_budget = config.context_recent_history_token_budget as i32;
         let context_rag_budget = config.context_rag_token_budget as i32;
 
-        conn.interact(move |conn| {
+        crate::db::with_conn(pool, move |conn| {
             // Check if user settings exist, create if needed
             let settings_id = user_settings::table
                 .filter(user_settings::user_id.eq(user_id))
                 .select(user_settings::id)
-                .first::<uuid::Uuid>(conn)
+                .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -257,7 +346,7 @@ impl UserSettingsService {
                 None => {
                     // Create default settings first using raw SQL
                     use diesel::sql_query;
-                    sql_query(
+                    let query = sql_query(
                         r#"
                         INSERT INTO user_settings (
                             user_id, default_model_name, default_context_total_token_limit,
@@ -268,28 +357,35 @@ impl UserSettingsService {
                             $1, $2, $3, $4, $5, TRUE, 'system', TRUE, 30, FALSE
                         )
                         "#,
-                    )
-                    .bind::<diesel::sql_types::Uuid, _>(user_id)
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
-                        default_model.clone(),
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_total_limit,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_history_budget,
-                    ))
-                    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
-                        context_rag_budget,
-                    ))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    );
+
+                    #[cfg(feature = "postgres-backend")]
+                    let query = query.bind::<diesel::sql_types::Uuid, _>(user_id);
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let query = query.bind::<diesel::sql_types::Text, _>(user_id);
+
+                    query
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(Some(
+                            default_model.clone(),
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_total_limit,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_history_budget,
+                        ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
+                            context_rag_budget,
+                        ))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     // Get the ID of the newly created settings
                     user_settings::table
                         .filter(user_settings::user_id.eq(user_id))
                         .select(user_settings::id)
-                        .first::<uuid::Uuid>(conn)
+                        .first::<crate::db::DbId>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
                 }
             };
@@ -361,11 +457,11 @@ impl UserSettingsService {
                 ))
                 .first::<(
                     Option<String>,
-                    Option<BigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
                     Option<i32>,
                     Option<i32>,
@@ -378,34 +474,111 @@ impl UserSettingsService {
                 )>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-            let (timestamps, ui_settings, local_settings) = user_settings::table
-                .filter(user_settings::id.eq(settings_id))
-                .select((
-                    (user_settings::created_at, user_settings::updated_at),
-                    (
-                        user_settings::notifications_enabled,
-                        user_settings::typing_speed,
-                    ),
-                    (
-                        user_settings::preferred_local_model,
-                        user_settings::local_llm_enabled,
-                        user_settings::local_model_preferences,
-                    ),
-                ))
-                .first::<(
-                    (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>),
-                    (Option<bool>, Option<i32>),
-                    (Option<String>, Option<bool>, Option<serde_json::Value>),
-                )>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            #[cfg(feature = "sqlite-backend")]
+            let (
+                created_at,
+                updated_at,
+                notifications_enabled,
+                typing_speed,
+                preferred_local_model,
+                local_llm_enabled,
+                local_model_preferences_json,
+            ) = {
+                let (timestamps, ui_settings, local_settings) = user_settings::table
+                    .filter(user_settings::id.eq(settings_id))
+                    .select((
+                        (user_settings::created_at, user_settings::updated_at),
+                        (
+                            user_settings::notifications_enabled,
+                            user_settings::typing_speed,
+                        ),
+                        (
+                            user_settings::preferred_local_model,
+                            user_settings::local_llm_enabled,
+                            user_settings::local_model_preferences,
+                        ),
+                    ))
+                    .first::<(
+                        (crate::DbTimestamp, crate::DbTimestamp),
+                        (Option<bool>, Option<i32>),
+                        (Option<String>, Option<bool>, Option<String>),
+                    )>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                // Convert local_model_preferences String to DbJson for SQLite compatibility
+                let local_model_preferences_json = local_settings
+                    .2
+                    .map(|s| {
+                        serde_json::from_str::<serde_json::Value>(&s).map(|v| crate::DbJson::new(v))
+                    })
+                    .transpose()
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to parse local_model_preferences JSON: {}",
+                            e
+                        ))
+                    })?;
+
+                (
+                    timestamps.0,
+                    timestamps.1,
+                    ui_settings.0,
+                    ui_settings.1,
+                    local_settings.0,
+                    local_settings.1,
+                    local_model_preferences_json,
+                )
+            };
+
+            #[cfg(feature = "postgres-backend")]
+            let (
+                created_at,
+                updated_at,
+                notifications_enabled,
+                typing_speed,
+                preferred_local_model,
+                local_llm_enabled,
+                local_model_preferences_json,
+            ) = {
+                let (timestamps, ui_settings, local_settings) = user_settings::table
+                    .filter(user_settings::id.eq(settings_id))
+                    .select((
+                        (user_settings::created_at, user_settings::updated_at),
+                        (
+                            user_settings::notifications_enabled,
+                            user_settings::typing_speed,
+                        ),
+                        (
+                            user_settings::preferred_local_model,
+                            user_settings::local_llm_enabled,
+                            user_settings::local_model_preferences,
+                        ),
+                    ))
+                    .first::<(
+                        (crate::DbTimestamp, crate::DbTimestamp),
+                        (Option<bool>, Option<i32>),
+                        (Option<String>, Option<bool>, Option<serde_json::Value>),
+                    )>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                (
+                    timestamps.0,
+                    timestamps.1,
+                    ui_settings.0,
+                    ui_settings.1,
+                    local_settings.0,
+                    local_settings.1,
+                    local_settings.2,
+                )
+            };
 
             let updated_settings = UserSettingsResponse {
                 default_model_name: settings.0,
-                default_temperature: settings.1,
+                default_temperature: settings.1.map(Into::into),
                 default_max_output_tokens: settings.2,
-                default_frequency_penalty: settings.3,
-                default_presence_penalty: settings.4,
-                default_top_p: settings.5,
+                default_frequency_penalty: settings.3.map(Into::into),
+                default_presence_penalty: settings.4.map(Into::into),
+                default_top_p: settings.5.map(Into::into),
                 default_top_k: settings.6,
                 default_seed: settings.7,
                 default_gemini_thinking_budget: settings.8,
@@ -415,27 +588,28 @@ impl UserSettingsService {
                 default_context_rag_budget: settings.12,
                 auto_save_chats: settings.13,
                 theme: settings.14,
-                notifications_enabled: ui_settings.0,
-                typing_speed: ui_settings.1,
-                preferred_local_model: local_settings.0,
-                local_llm_enabled: local_settings.1,
-                local_model_preferences: local_settings.2,
-                created_at: timestamps.0,
-                updated_at: timestamps.1,
+                notifications_enabled,
+                typing_speed,
+                preferred_local_model,
+                local_llm_enabled,
+                local_model_preferences: local_model_preferences_json,
+                created_at,
+                updated_at,
             };
 
             info!(%user_id, "Updated user settings");
             Ok(updated_settings)
         })
-        .await?
+        .await
     }
 
     /// Deletes user settings for a specific user (resets to system defaults)
     #[instrument(skip(pool), err)]
-    pub async fn delete_user_settings(pool: &DbPool, user_id: Uuid) -> Result<(), AppError> {
-        let conn = pool.get().await?;
-
-        conn.interact(move |conn| {
+    pub async fn delete_user_settings(
+        pool: &DbPool,
+        user_id: crate::db::DbId,
+    ) -> Result<(), AppError> {
+        crate::db::with_conn(pool, move |conn| {
             let deleted_count =
                 diesel::delete(user_settings::table.filter(user_settings::user_id.eq(user_id)))
                     .execute(conn)
@@ -449,6 +623,6 @@ impl UserSettingsService {
 
             Ok(())
         })
-        .await?
+        .await
     }
 }

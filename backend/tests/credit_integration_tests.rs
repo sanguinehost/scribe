@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for credit system with other services
 //!
 //! Tests interactions between credit system, subscriptions,

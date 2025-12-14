@@ -1,14 +1,14 @@
+use crate::db::DbId;
+use crate::db::DbJson; // Using DbJson for flexibility in extensions and mixed types like id
+use crate::db::DbTimestamp;
+use crate::db::Json;
 use crate::models::characters::Character;
 use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
 use crate::models::lorebooks::Lorebook; // Import the new Lorebook
 use chrono::{DateTime, Utc}; // Add DateTime and Utc
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel_json::Json;
 use serde::{Deserialize, Serialize}; // Added Deserializer
-use serde_json::Value; // Using Value for flexibility in extensions and mixed types like id
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use uuid::Uuid; // <-- Add Uuid import // Alias serde_json::Value // Add use statement for canonical Character struct
 
 // Main Character Card Structure (V3)
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -155,11 +155,12 @@ pub struct CharacterCardDataV3 {
     #[serde(default)]
     pub character_version: String,
     #[serde(default)]
-    pub extensions: HashMap<String, Value>,
+    pub extensions: HashMap<String, serde_json::Value>,
 
     // --- V2 fields changed/clarified in V3 ---
     // `creator_notes`: Already included above, V3 clarifies multilingual handling.
-    pub character_book: Option<serde_json::Value>, // Use Value for flexible parsing
+    #[serde(alias = "world_info")]
+    pub character_book: Option<crate::db::DbJson>, // Use DbJson for flexible parsing
 
     // --- New Fields in V3 ---
     pub assets: Option<Vec<Asset>>,
@@ -454,8 +455,17 @@ use crate::schema::character_assets;
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
 #[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewCharacter {
-    pub user_id: Uuid,
+    pub id: Option<crate::db::DbId>,
+    pub user_id: crate::db::DbId,
     pub spec: String,
     pub spec_version: String,
     pub name: String,
@@ -475,17 +485,17 @@ pub struct NewCharacter {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub alternate_greetings: crate::models::OptionalStringArray,
     pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<Json<JsonValue>>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
-    pub creation_date: Option<DateTime<Utc>>,
-    pub modification_date: Option<DateTime<Utc>>,
-    pub extensions: Option<Json<JsonValue>>, // Added extensions field
+    pub creator_notes_multilingual: Option<DbJson>,
+    pub source: crate::models::OptionalStringArray,
+    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub creation_date: Option<DbTimestamp>,
+    pub modification_date: Option<DbTimestamp>,
+    pub extensions: Option<DbJson>, // Added extensions field
     // Fields from Character struct that are also in NewCharacter based on schema.rs and common use
     pub persona: Option<Vec<u8>>,
     pub persona_nonce: Option<Vec<u8>>,
@@ -507,7 +517,7 @@ pub struct NewCharacter {
     pub favorite: Option<bool>,
     pub first_message_visibility: Option<String>,
     // height: Option<BigDecimal>,
-    // last_activity: Option<DateTime<Utc>>,
+    // last_activity: Option<DbTimestamp>,
     pub migrated_from: Option<String>,
     pub model_prompt: Option<Vec<u8>>,
     pub model_prompt_nonce: Option<Vec<u8>>,
@@ -520,9 +530,9 @@ pub struct NewCharacter {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
+    pub system_tags: crate::models::OptionalStringArray,
     pub token_budget: Option<i32>,
-    pub usage_hints: Option<Json<JsonValue>>,
+    pub usage_hints: Option<DbJson>,
     pub user_persona: Option<Vec<u8>>,
     pub user_persona_nonce: Option<Vec<u8>>,
     pub user_persona_visibility: Option<String>,
@@ -536,14 +546,14 @@ pub struct NewCharacter {
     pub depth_prompt: Option<Vec<u8>>,
     pub depth_prompt_depth: Option<i32>,
     pub depth_prompt_role: Option<String>,
-    pub talkativeness: Option<bigdecimal::BigDecimal>,
+    pub talkativeness: Option<crate::db::DbDecimal>,
     pub depth_prompt_ciphertext: Option<Vec<u8>>,
     pub depth_prompt_nonce: Option<Vec<u8>>,
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DateTime<Utc>>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
+    pub updated_at: Option<DbTimestamp>,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -636,7 +646,7 @@ use crate::services::character_parser::ParsedCharacterCard;
 
 impl NewCharacter {
     // Add user_id parameter
-    fn from_v3_card(data_v3_card: &CharacterCardV3, user_id: Uuid) -> Self {
+    fn from_v3_card(data_v3_card: &CharacterCardV3, user_id: crate::db::DbId) -> Self {
         // --- Handling V3 Card ---
         // Extract spec and version
         let spec = data_v3_card.spec.clone();
@@ -664,28 +674,30 @@ impl NewCharacter {
         // Convert timestamps
         let creation_date_ts = data
             .creation_date
-            .and_then(|ts| DateTime::from_timestamp(ts, 0));
+            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+            .map(|dt| dt.into());
         let modification_date_ts = data
             .modification_date
-            .and_then(|ts| DateTime::from_timestamp(ts, 0));
+            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+            .map(|dt| dt.into());
 
         // Convert HashMaps to JsonValue for JSONB fields
         let creator_notes_multilingual_json = data
             .creator_notes_multilingual
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok()) // Convert HashMap to JsonValue
-            .filter(|v| !v.is_null())
-            .map(Json); // Wrap Option<Value> in Json for Option<Json<Value>> type
+            .filter(|v| !v.is_null()); // DbJson is already serde_json::Value, no wrapping needed
 
         let extensions_json = data
-            .extensions // data.extensions is HashMap<String, Value>
+            .extensions // data.extensions is HashMap<String, serde_json::Value>
             .clone()
             .into_iter()
+            .map(|(k, v)| (k, v.into()))
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let extensions_option_json = if extensions_json.is_empty() {
             None
         } else {
-            Some(Json(serde_json::Value::Object(extensions_json.clone()))) // Wrap Value in Json for Option<Json<Value>>
+            Some(serde_json::Value::Object(extensions_json.clone())) // DbJson is already serde_json::Value
         };
 
         // Extract SillyTavern v3 fields from extensions
@@ -694,7 +706,8 @@ impl NewCharacter {
             .get("talkativeness")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<f64>().ok())
-            .and_then(|f| bigdecimal::BigDecimal::try_from(f).ok());
+            .and_then(|f| bigdecimal::BigDecimal::try_from(f).ok())
+            .map(|bd| bd.into());
 
         let fav = data.extensions.get("fav").and_then(|v| v.as_bool());
 
@@ -737,6 +750,7 @@ impl NewCharacter {
 
         Self {
             // Changed from NewCharacter
+            id: None,
             user_id,                                     // Use passed user_id
             name: data.name.clone().unwrap_or_default(), // V3 name is Option<String>, DB needs String
             // Wrap non-optional V3 strings in Some() for DB Option<String>, filter empty
@@ -791,18 +805,18 @@ impl NewCharacter {
             creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             // Use converted vecs
-            alternate_greetings,
-            tags,
+            alternate_greetings: alternate_greetings.into(),
+            tags: tags.into(),
             spec,         // Use extracted spec
             spec_version, // Use extracted spec_version
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-            source,                  // Already converted to Option<Vec<Option<String>>>>
-            group_only_greetings,    // Already Option<Vec<Option<String>>>
-            creation_date: creation_date_ts, // Already Option<DateTime<Utc>>
-            modification_date: modification_date_ts, // Already Option<DateTime<Utc>>
-            extensions: extensions_option_json, // Assign the calculated extensions
+            source: source.into(),   // Already converted to Option<Vec<Option<String>>>>
+            group_only_greetings: group_only_greetings.into(), // Already Option<Vec<Option<String>>>
+            creation_date: creation_date_ts,                   // Already Option<DbTimestamp>
+            modification_date: modification_date_ts,           // Already Option<DbTimestamp>
+            extensions: extensions_option_json,                // Assign the calculated extensions
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -828,7 +842,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: None.into(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -853,7 +867,7 @@ impl NewCharacter {
         }
     }
 
-    fn from_v2_fallback(data: &CharacterCardDataV3, user_id: Uuid) -> Self {
+    fn from_v2_fallback(data: &CharacterCardDataV3, user_id: crate::db::DbId) -> Self {
         let description = if data.description.is_empty() {
             None
         } else {
@@ -896,6 +910,7 @@ impl NewCharacter {
         };
 
         Self {
+            id: None,
             user_id,
             name: data.name.clone().unwrap_or_default(),
             description,
@@ -906,12 +921,13 @@ impl NewCharacter {
             creator_notes,
             system_prompt,
             post_history_instructions,
-            tags: if data.tags.is_empty() {
+            tags: (if data.tags.is_empty() {
                 None
             } else {
                 Some(data.tags.clone().into_iter().map(Some).collect())
-            },
-            alternate_greetings: if data.alternate_greetings.is_empty() {
+            })
+            .into(),
+            alternate_greetings: (if data.alternate_greetings.is_empty() {
                 None
             } else {
                 Some(
@@ -921,13 +937,14 @@ impl NewCharacter {
                         .map(Some)
                         .collect(),
                 )
-            },
+            })
+            .into(),
             extensions: if data.extensions.is_empty() {
                 None
             } else {
-                Some(diesel_json::Json(serde_json::Value::Object(
+                Some(crate::db::DbJson::Object(
                     data.extensions.clone().into_iter().collect(),
-                )))
+                ))
             },
             spec: "chara_card_v2".to_string(), // V2 spec identifier
             spec_version: "2.0".to_string(),   // V2 version
@@ -943,10 +960,10 @@ impl NewCharacter {
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             nickname: None, // V2 doesn't have nickname
             // V2 specific fields, map to V3 equivalents or default
-            source: None,                     // V2 doesn't have a direct source field
-            group_only_greetings: None,       // V2 doesn't have this
-            creation_date: None,              // V2 doesn't have this
-            modification_date: None,          // V2 doesn't have this
+            source: None.into(), // V2 doesn't have a direct source field
+            group_only_greetings: None.into(), // V2 doesn't have this
+            creation_date: None, // V2 doesn't have this
+            modification_date: None, // V2 doesn't have this
             creator_notes_multilingual: None, // V2 doesn't have this
             persona: None,
             persona_nonce: None,
@@ -973,7 +990,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: None.into(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -999,7 +1016,7 @@ impl NewCharacter {
     }
 
     #[must_use]
-    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: Uuid) -> Self {
+    pub fn from_parsed_card(parsed: &ParsedCharacterCard, user_id: crate::db::DbId) -> Self {
         match parsed {
             ParsedCharacterCard::V3(data_v3_card) => Self::from_v3_card(data_v3_card, user_id),
             ParsedCharacterCard::V2Fallback(data) => Self::from_v2_fallback(data, user_id),
@@ -1010,10 +1027,20 @@ impl NewCharacter {
 #[derive(Queryable, Selectable, Identifiable, Associations, Serialize)]
 #[diesel(table_name = character_assets)]
 #[diesel(belongs_to(Character))] // Foreign key character_id -> characters(id)
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct CharacterAsset {
+    #[cfg(feature = "postgres-backend")]
     pub id: i32,
-    #[diesel(deserialize_as = Uuid)]
-    pub character_id: Uuid, // Changed from i32
+    #[cfg(feature = "sqlite-backend")]
+    pub id: crate::db::DbId,
+    pub character_id: crate::db::DbId, // Changed from i32
     #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
     pub asset_type: String, // Renamed from `type_` to match DB column
     pub uri: String,
@@ -1036,10 +1063,21 @@ impl std::fmt::Debug for CharacterAsset {
 
 #[derive(Insertable)]
 #[diesel(table_name = character_assets)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewCharacterAsset {
-    #[diesel(serialize_as = Uuid)]
-    pub character_id: Uuid, // Changed from i32
-    pub asset_type: String, // Renamed from `type_`
+    #[cfg(feature = "postgres-backend")]
+    pub id: Option<i32>,
+    #[cfg(feature = "sqlite-backend")]
+    pub id: Option<crate::db::DbId>,
+    pub character_id: crate::db::DbId, // Changed from i32
+    pub asset_type: String,            // Renamed from `type_`
     pub uri: String,
     pub name: String,
     pub ext: String,
@@ -1060,7 +1098,8 @@ impl std::fmt::Debug for NewCharacterAsset {
 // --- Unit tests ---
 #[cfg(test)]
 mod tests {
-    use super::*; // Import items from the parent module
+    use super::*;
+    use crate::db::DbId; // Import items from the parent module
 
     // --- Tests for parse_decorators_from_content (moved from tests/character_card_tests.rs) ---
 
@@ -1345,7 +1384,7 @@ mod tests {
 
         // NewCharacter (needs user_id)
         let new_char = NewCharacter {
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             ..Default::default()
         };
         let _ = format!("{new_char:?}");
@@ -1353,7 +1392,7 @@ mod tests {
         // CharacterAsset (needs id, character_id)
         let char_asset = CharacterAsset {
             id: 1,
-            character_id: Uuid::new_v4(),
+            character_id: DbId::new(),
             asset_type: "image".to_string(),
             uri: "uri".to_string(),
             name: "name".to_string(),
@@ -1363,7 +1402,7 @@ mod tests {
 
         // NewCharacterAsset (needs character_id)
         let new_char_asset = NewCharacterAsset {
-            character_id: Uuid::new_v4(),
+            character_id: DbId::new(),
             asset_type: "image".to_string(),
             uri: "uri".to_string(),
             name: "name".to_string(),
@@ -1397,7 +1436,7 @@ mod tests {
 
     #[test]
     fn test_from_parsed_card_v3_fields() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let data_v3 = CharacterCardDataV3 {
             name: Some("Test V3".to_string()),
             tags: vec!["tag1".to_string(), "tag2".to_string()],
@@ -1411,7 +1450,7 @@ mod tests {
             )])),
             extensions: HashMap::from([(
                 "ext_key".to_string(),
-                serde_json::Value::String("ext_val".to_string()),
+                crate::db::DbJson::String("ext_val".to_string()),
             )]),
             ..Default::default()
         };
@@ -1473,7 +1512,7 @@ mod tests {
 
     #[test]
     fn test_from_parsed_card_v2_fallback_fields() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         // Create a CharacterCardDataV3 instance populated with V2-like data
         let data_v2_as_v3 = CharacterCardDataV3 {
             name: Some("Test V2".to_string()),

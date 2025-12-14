@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/chronicle_service_tests.rs
 
@@ -7,6 +8,7 @@ use chrono::Utc;
 use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use scribe_backend::{
     crypto,
+    db::DbId,
     models::{
         chronicle::{CreateChronicleRequest, UpdateChronicleRequest},
         chronicle_event::{CreateEventRequest, EventFilter, EventSource},
@@ -84,6 +86,7 @@ mod unit_tests {
             ]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         assert_eq!(request.event_type, "CHARACTER_INTERACTION");
@@ -138,7 +141,7 @@ mod integration_tests {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: Utc::now(),
+            token_usage_updated_at: Utc::now().into(),
         };
 
         let user_db: UserDbQuery = diesel::insert_into(users::table)
@@ -309,6 +312,7 @@ mod integration_tests {
             keywords: Some(vec!["village".to_string(), "fog".to_string()]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let created_event = chronicle_service
@@ -330,6 +334,7 @@ mod integration_tests {
             keywords: Some(vec!["combat".to_string(), "bandits".to_string()]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let event2 = chronicle_service
@@ -431,6 +436,7 @@ mod integration_tests {
                 keywords: None,
                 timestamp_iso8601: None,
                 chat_session_id: None,
+                message_variant_id: None,
             };
 
             chronicle_service
@@ -548,6 +554,7 @@ mod integration_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let result = chronicle_service
@@ -590,6 +597,7 @@ mod integration_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let event = chronicle_service
@@ -648,6 +656,7 @@ mod integration_tests {
             keywords: Some(vec!["secret".to_string(), "hidden cave".to_string()]),
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let encrypted_event = chronicle_service
@@ -684,6 +693,7 @@ mod integration_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let unencrypted_event = chronicle_service

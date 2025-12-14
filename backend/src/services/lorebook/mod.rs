@@ -1,4 +1,8 @@
-use crate::PgPool;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
+
+use crate::db::DbPool;
 use crate::{
     auth::user_store::Backend as AuthBackend,
     errors::AppError,
@@ -25,12 +29,29 @@ use crate::{
 };
 use axum_login::AuthSession;
 use chrono::Utc;
-use diesel::result::{DatabaseErrorKind, Error as DieselError}; // Added for specific error handling
+// Added for specific error handling
 use diesel::{prelude::*, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
-use uuid::Uuid;
+
+/// Helper to insert lorebook and query it back (avoids E0275 Sized overflow)
+#[cfg(feature = "sqlite-backend")]
+fn insert_lorebook_sync(
+    conn: &mut crate::db::DbConnection,
+    new_lorebook: &crate::models::NewLorebook,
+) -> Result<Lorebook, diesel::result::Error> {
+    use diesel::prelude::*;
+
+    diesel::insert_into(lorebooks::table)
+        .values(new_lorebook)
+        .execute(conn)?;
+
+    lorebooks::table
+        .find(new_lorebook.id)
+        .first::<Lorebook>(conn)
+}
+
 impl From<crate::models::lorebook_dtos::ScribeMinimalLorebook> for CreateLorebookPayload {
     fn from(val: crate::models::lorebook_dtos::ScribeMinimalLorebook) -> Self {
         Self {
@@ -42,7 +63,7 @@ impl From<crate::models::lorebook_dtos::ScribeMinimalLorebook> for CreateLoreboo
 
 #[derive(Clone)]
 pub struct LorebookService {
-    pool: PgPool,
+    pool: DbPool,
     // TODO: Remove once encryption is implemented for lorebooks
     encryption_service: Arc<EncryptionService>, // Store as Arc
     qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Added for vector cleanup
@@ -63,7 +84,7 @@ pub use helpers::get_user_from_session;
 impl LorebookService {
     #[must_use]
     pub fn new(
-        pool: PgPool,
+        pool: DbPool,
         encryption_service: Arc<EncryptionService>,
         qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     ) -> Self {
@@ -79,15 +100,15 @@ impl LorebookService {
     /// This bypasses the normal AuthSession requirement for testing purposes
     pub async fn list_lorebook_entries_for_test(
         &self,
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
     ) -> Result<Vec<LorebookEntrySummaryResponse>, AppError> {
         debug!(
             "Attempting to list lorebook entries for test (user: {}, lorebook: {})",
             user_id, lorebook_id
         );
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -173,36 +194,45 @@ impl LorebookService {
     /// This bypasses the normal AuthSession requirement for testing purposes
     pub async fn create_lorebook_for_test(
         &self,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         payload: CreateLorebookPayload,
     ) -> Result<LorebookResponse, AppError> {
         debug!("Attempting to create lorebook for test (user: {})", user_id);
 
-        let new_lorebook_id = Uuid::new_v4();
+        let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id,
             name: payload.name.clone(),
             description: payload.description.clone(),
             source_format: "scribe_v1".to_string(),
             is_public: false, // Default for tests
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
+        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let lorebook = conn
             .interact(move |conn_sync| {
                 use diesel::RunQueryDsl;
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook_db)
-                    .returning(Lorebook::as_returning())
-                    .get_result(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .returning(Lorebook::as_returning())
+                        .get_result(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    insert_lorebook_sync(conn_sync, &new_lorebook_db)
+                }
             })
             .await
             .map_err(|e| {
@@ -235,8 +265,8 @@ impl LorebookService {
     /// This bypasses the normal AuthSession requirement for testing purposes
     pub async fn create_lorebook_entry_for_test(
         &self,
-        user_id: Uuid,
-        lorebook_id: Uuid,
+        user_id: crate::db::DbId,
+        lorebook_id: crate::db::DbId,
         payload: CreateLorebookEntryPayload,
         user_dek: &SecretBox<Vec<u8>>,
     ) -> Result<LorebookEntryResponse, AppError> {
@@ -245,7 +275,7 @@ impl LorebookService {
             user_id, lorebook_id
         );
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
@@ -317,10 +347,10 @@ impl LorebookService {
         };
 
         let current_time = Utc::now();
-        let new_entry_id = Uuid::new_v4();
+        let new_entry_id = DbId::new();
 
         let new_entry_db = crate::models::NewLorebookEntry {
-            id: new_entry_id,
+            id: new_entry_id.into(),
             lorebook_id,
             user_id,
             original_sillytavern_uid: None,
@@ -339,13 +369,14 @@ impl LorebookService {
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: Some(payload.entry_title.clone()),
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
         // 3. Insert into database
-        let lorebook_entry = conn
-            .interact(move |conn_sync| {
+        #[cfg(feature = "postgres-backend")]
+        let lorebook_entry = {
+            conn.interact(move |conn_sync| {
                 use crate::schema::lorebook_entries;
                 use diesel::RunQueryDsl;
                 diesel::insert_into(lorebook_entries::table)
@@ -366,7 +397,39 @@ impl LorebookService {
             .map_err(|e| {
                 error!("Failed to create lorebook entry for test: {:?}", e);
                 AppError::DatabaseQueryError(format!("Failed to create lorebook entry: {e}"))
-            })?;
+            })?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let lorebook_entry = {
+            use crate::schema::lorebook_entries;
+            use diesel::prelude::*;
+
+            // SQLite doesn't support RETURNING, so we insert and query back by ID
+            let entry_id_clone = new_entry_db.id;
+
+            crate::db::with_conn(&self.pool, move |conn_sync| {
+                diesel::insert_into(lorebook_entries::table)
+                    .values(&new_entry_db)
+                    .execute(conn_sync)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create lorebook entry: {e}"
+                        ))
+                    })?;
+
+                lorebook_entries::table
+                    .find(entry_id_clone)
+                    .select(LorebookEntry::as_select())
+                    .first::<LorebookEntry>(conn_sync)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to query lorebook entry after insert: {e}"
+                        ))
+                    })
+            })
+            .await?
+        };
 
         // 4. Return response (simplified for test - we'll just return basic info)
         Ok(LorebookEntryResponse {

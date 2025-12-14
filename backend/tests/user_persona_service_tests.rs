@@ -1,5 +1,5 @@
+#![cfg(feature = "postgres-backend")]
 // backend/tests/user_persona_service_tests.rs
-
 #![cfg(test)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::items_after_statements)]
@@ -15,6 +15,7 @@ use diesel::prelude::*; // For direct DB queries
 use scribe_backend::schema::users::dsl as users_dsl;
 use scribe_backend::state::DbPool; // Make sure DbPool is in scope
 use scribe_backend::{
+    db::DbId,
     errors::AppError,
     // state::DbPool, // Marked as unused
     models::{

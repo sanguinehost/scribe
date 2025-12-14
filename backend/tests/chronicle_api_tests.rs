@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/chronicle_api_tests.rs
 
@@ -353,6 +354,7 @@ mod api_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let create_event_response = test_app
@@ -553,6 +555,7 @@ mod api_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let unauthorized_event_response = test_app
@@ -667,6 +670,7 @@ mod api_tests {
             keywords: None,
             timestamp_iso8601: None,
             chat_session_id: None,
+            message_variant_id: None,
         };
 
         let event_response = test_app

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agentic_realtime_extraction_tests.rs
 //
@@ -59,7 +60,7 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
 
     let user_db: UserDbQuery = conn
@@ -126,7 +127,7 @@ fn create_chat_message(
         message_type: role,
         content: encrypted_content,
         content_nonce: Some(nonce),
-        created_at: Utc::now(),
+        created_at: Utc::now().into(),
         user_id,
         prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {

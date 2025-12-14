@@ -1,15 +1,15 @@
 // backend/src/models/characters.rs
+use crate::db::DbId;
+use crate::db::DbJson;
+use crate::db::DbTimestamp;
 use crate::errors::AppError;
-use bigdecimal::BigDecimal;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
-use diesel_json::Json;
 use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use uuid::Uuid; // For error handling
+use serde::{Deserialize, Serialize}; // For error handling
 
 use crate::models::users::User;
+use crate::models::OptionalStringArray;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
 // For encryption/decryption
@@ -32,9 +32,17 @@ use crate::services::encryption_service::EncryptionService; // Added
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]
 #[diesel(treat_none_as_null = true)] // Added for AsChangeset with Option fields
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct Character {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub spec: String,
     pub spec_version: String,
     pub name: String,
@@ -46,18 +54,18 @@ pub struct Character {
     pub creator_notes: Option<Vec<u8>>,
     pub system_prompt: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<Option<String>>>,
+    pub alternate_greetings: crate::models::OptionalStringArray,
     pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<serde_json::Value>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
-    pub creation_date: Option<DateTime<Utc>>,
-    pub modification_date: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub creator_notes_multilingual: Option<crate::db::DbJson>,
+    pub source: crate::models::OptionalStringArray,
+    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub creation_date: Option<DbTimestamp>,
+    pub modification_date: Option<DbTimestamp>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub persona: Option<Vec<u8>>,
     pub world_scenario: Option<Vec<u8>>,
     pub avatar: Option<String>,
@@ -65,34 +73,34 @@ pub struct Character {
     pub greeting: Option<Vec<u8>>,
     pub definition: Option<Vec<u8>>,
     pub default_voice: Option<String>,
-    pub extensions: Option<serde_json::Value>,
-    pub data_id: Option<i32>,
+    pub extensions: Option<crate::db::DbJson>,
+    pub data_id: Option<crate::db::DbInt>,
     pub category: Option<String>,
     pub definition_visibility: Option<String>,
-    pub depth: Option<i32>,
+    pub depth: Option<crate::db::DbInt>,
     pub example_dialogue: Option<Vec<u8>>,
     pub favorite: Option<bool>,
     pub first_message_visibility: Option<String>,
-    pub height: Option<BigDecimal>,
-    pub last_activity: Option<DateTime<Utc>>,
+    pub height: Option<crate::db::DbDecimal>,
+    pub last_activity: Option<DbTimestamp>,
     pub migrated_from: Option<String>,
     pub model_prompt: Option<Vec<u8>>,
     pub model_prompt_visibility: Option<String>,
-    pub model_temperature: Option<BigDecimal>,
-    pub num_interactions: Option<i64>,
-    pub permanence: Option<BigDecimal>,
+    pub model_temperature: Option<crate::db::DbDecimal>,
+    pub num_interactions: Option<crate::db::DbInt>,
+    pub permanence: Option<crate::db::DbDecimal>,
     pub persona_visibility: Option<String>,
-    pub revision: Option<i32>,
+    pub revision: Option<crate::db::DbInt>,
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
-    pub token_budget: Option<i32>,
-    pub usage_hints: Option<serde_json::Value>,
+    pub system_tags: crate::models::OptionalStringArray,
+    pub token_budget: Option<crate::db::DbInt>,
+    pub usage_hints: Option<crate::db::DbJson>,
     pub user_persona: Option<Vec<u8>>,
     pub user_persona_visibility: Option<String>,
     pub visibility: Option<String>,
-    pub weight: Option<BigDecimal>,
+    pub weight: Option<crate::db::DbDecimal>,
     pub world_scenario_visibility: Option<String>,
     pub description_nonce: Option<Vec<u8>>,
     pub personality_nonce: Option<Vec<u8>>,
@@ -114,9 +122,9 @@ pub struct Character {
     pub creator_comment: Option<Vec<u8>>,
     pub creator_comment_nonce: Option<Vec<u8>>,
     pub depth_prompt: Option<Vec<u8>>,
-    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_depth: Option<crate::db::DbInt>,
     pub depth_prompt_role: Option<String>,
-    pub talkativeness: Option<BigDecimal>,
+    pub talkativeness: Option<crate::db::DbDecimal>,
     pub depth_prompt_ciphertext: Option<Vec<u8>>,
     pub depth_prompt_nonce: Option<Vec<u8>>,
     pub world_ciphertext: Option<Vec<u8>>,
@@ -475,7 +483,7 @@ impl Character {
 
         // Attempt to convert avatar string to UUID if present
         if let Some(avatar_str) = &self.avatar {
-            if let Ok(uuid) = Uuid::parse_str(avatar_str) {
+            if let Ok(uuid) = DbId::parse_str(avatar_str) {
                 client_char.avatar_id = Some(uuid);
             }
         }
@@ -597,7 +605,7 @@ impl Character {
     pub fn into_decrypted_for_client(
         self,
         dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_ids: Vec<Uuid>,
+        lorebook_ids: Vec<crate::db::DbId>,
     ) -> Result<CharacterDataForClient, AppError> {
         let decrypted_fields = self.decrypt_character_fields(dek)?;
         Ok(self.build_client_character(decrypted_fields, lorebook_ids))
@@ -748,7 +756,7 @@ impl Character {
     fn build_client_character(
         self,
         decrypted_fields: DecryptedCharacterFields,
-        lorebook_ids: Vec<Uuid>,
+        lorebook_ids: Vec<crate::db::DbId>,
     ) -> CharacterDataForClient {
         let default_empty_string_if_none =
             |opt: Option<String>| -> Option<String> { opt.or_else(|| Some(String::new())) };
@@ -767,11 +775,12 @@ impl Character {
             creator_notes: decrypted_fields.creator_notes,
             system_prompt: decrypted_fields.system_prompt,
             post_history_instructions: decrypted_fields.post_history_instructions,
-            tags: self.tags.or_else(|| Some(Vec::new())),
+            tags: OptionalStringArray(self.tags.0.or_else(|| Some(Vec::new()))),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
             alternate_greetings: self
                 .alternate_greetings
+                .0
                 .map(|greetings| {
                     greetings
                         .into_iter()
@@ -782,30 +791,27 @@ impl Character {
             nickname: default_empty_string_if_none(self.nickname),
             creator_notes_multilingual: self
                 .creator_notes_multilingual
-                .map(Json)
-                .or_else(|| Some(Json(serde_json::json!({})))),
-            source: self.source.or_else(|| Some(Vec::new())),
-            group_only_greetings: self.group_only_greetings.or_else(|| Some(Vec::new())),
+                .or_else(|| Some(serde_json::json!({}).into())),
+            source: OptionalStringArray(self.source.0.or_else(|| Some(Vec::new()))),
+            group_only_greetings: OptionalStringArray(
+                self.group_only_greetings.0.or_else(|| Some(Vec::new())),
+            ),
             creation_date: self.creation_date,
             modification_date: self.modification_date,
             created_at: self.created_at,
             updated_at: self.updated_at,
             persona: decrypted_fields.persona,
             world_scenario: decrypted_fields.world_scenario,
-            avatar: self.avatar.and_then(|asset_id_str| {
-                asset_id_str
-                    .parse::<i32>()
-                    .ok()
-                    .map(|asset_id| format!("/api/characters/{}/assets/{}", self.id, asset_id))
-            }),
+            avatar: self
+                .avatar
+                .map(|asset_id_str| format!("/api/characters/{}/assets/{}", self.id, asset_id_str)),
             chat: default_empty_string_if_none(self.chat),
             greeting: decrypted_fields.greeting,
             definition: decrypted_fields.definition,
             default_voice: default_empty_string_if_none(self.default_voice),
             extensions: self
                 .extensions
-                .map(Json)
-                .or_else(|| Some(Json(serde_json::json!({})))),
+                .or_else(|| Some(serde_json::json!({}).into())),
             data_id: self.data_id,
             category: default_empty_string_if_none(self.category),
             definition_visibility: default_empty_string_if_none(self.definition_visibility),
@@ -826,12 +832,11 @@ impl Character {
             sharing_visibility: default_empty_string_if_none(self.sharing_visibility),
             status: default_empty_string_if_none(self.status),
             system_prompt_visibility: default_empty_string_if_none(self.system_prompt_visibility),
-            system_tags: self.system_tags.or_else(|| Some(Vec::new())),
+            system_tags: OptionalStringArray(self.system_tags.0.or_else(|| Some(Vec::new()))),
             token_budget: self.token_budget,
             usage_hints: self
                 .usage_hints
-                .map(Json)
-                .or_else(|| Some(Json(serde_json::json!({})))),
+                .or_else(|| Some(serde_json::json!({}).into())),
             user_persona: decrypted_fields.user_persona,
             user_persona_visibility: default_empty_string_if_none(self.user_persona_visibility),
             visibility: default_empty_string_if_none(self.visibility),
@@ -854,8 +859,8 @@ impl Character {
 // Fields that are encrypted in the DB should be String here (decrypted form).
 #[derive(Serialize, Deserialize, Clone, PartialEq)] // Removed Debug
 pub struct CharacterDataForClient {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub spec: String,
     pub spec_version: String,
     pub name: String,
@@ -867,18 +872,18 @@ pub struct CharacterDataForClient {
     pub creator_notes: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: Option<Vec<Option<String>>>,
+    pub tags: crate::models::OptionalStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
     pub alternate_greetings: Option<Vec<String>>,
     pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<Json<JsonValue>>,
-    pub source: Option<Vec<Option<String>>>,
-    pub group_only_greetings: Option<Vec<Option<String>>>,
-    pub creation_date: Option<DateTime<Utc>>,
-    pub modification_date: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub creator_notes_multilingual: Option<DbJson>,
+    pub source: crate::models::OptionalStringArray,
+    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub creation_date: Option<DbTimestamp>,
+    pub modification_date: Option<DbTimestamp>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub persona: Option<String>,
     pub world_scenario: Option<String>,
     pub avatar: Option<String>,
@@ -886,44 +891,44 @@ pub struct CharacterDataForClient {
     pub greeting: Option<String>,
     pub definition: Option<String>,
     pub default_voice: Option<String>,
-    pub extensions: Option<Json<JsonValue>>,
-    pub data_id: Option<i32>,
+    pub extensions: Option<DbJson>,
+    pub data_id: Option<crate::db::DbInt>,
     pub category: Option<String>,
     pub definition_visibility: Option<String>,
-    pub depth: Option<i32>,
+    pub depth: Option<crate::db::DbInt>,
     pub example_dialogue: Option<String>,
     pub favorite: Option<bool>,
     pub first_message_visibility: Option<String>,
-    pub height: Option<BigDecimal>,
-    pub last_activity: Option<DateTime<Utc>>,
+    pub height: Option<crate::db::DbDecimal>,
+    pub last_activity: Option<DbTimestamp>,
     pub migrated_from: Option<String>,
     pub model_prompt: Option<String>,
     pub model_prompt_visibility: Option<String>,
-    pub model_temperature: Option<BigDecimal>,
-    pub num_interactions: Option<i64>,
-    pub permanence: Option<BigDecimal>,
+    pub model_temperature: Option<crate::db::DbDecimal>,
+    pub num_interactions: Option<crate::db::DbInt>,
+    pub permanence: Option<crate::db::DbDecimal>,
     pub persona_visibility: Option<String>,
-    pub revision: Option<i32>,
+    pub revision: Option<crate::db::DbInt>,
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: Option<Vec<Option<String>>>,
-    pub token_budget: Option<i32>,
-    pub usage_hints: Option<Json<JsonValue>>,
+    pub system_tags: crate::models::OptionalStringArray,
+    pub token_budget: Option<crate::db::DbInt>,
+    pub usage_hints: Option<DbJson>,
     pub user_persona: Option<String>,
     pub user_persona_visibility: Option<String>,
     pub visibility: Option<String>,
-    pub weight: Option<BigDecimal>,
+    pub weight: Option<crate::db::DbDecimal>,
     pub world_scenario_visibility: Option<String>,
     pub fav: Option<bool>,
     pub world: Option<String>,
     pub creator_comment: Option<String>,
     pub depth_prompt: Option<String>,
-    pub depth_prompt_depth: Option<i32>,
+    pub depth_prompt_depth: Option<crate::db::DbInt>,
     pub depth_prompt_role: Option<String>,
-    pub talkativeness: Option<BigDecimal>,
-    pub lorebook_id: Option<Uuid>, // Deprecated - for backward compatibility
-    pub lorebook_ids: Vec<Uuid>,   // Multiple lorebooks support
+    pub talkativeness: Option<crate::db::DbDecimal>,
+    pub lorebook_id: Option<crate::db::DbId>, // Deprecated - for backward compatibility
+    pub lorebook_ids: Vec<crate::db::DbId>,   // Multiple lorebooks support
 }
 
 impl std::fmt::Debug for CharacterDataForClient {
@@ -1161,8 +1166,8 @@ impl<'a> From<&'a ParsedCharacterCard> for UpdatableCharacter<'a> {
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = characters)]
 pub struct CharacterMetadata {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub name: String,
     pub description: Option<Vec<u8>>,
     pub description_nonce: Option<Vec<u8>>,
@@ -1175,8 +1180,8 @@ pub struct CharacterMetadata {
     pub creator_comment: Option<Vec<u8>>,
     pub creator_comment_nonce: Option<Vec<u8>>,
     pub first_mes: Option<Vec<u8>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for CharacterMetadata {
@@ -1252,9 +1257,9 @@ impl CharacterMetadata {
 pub fn create_dummy_character() -> Character {
     // Made pub for potential use in other tests
     let now = Utc::now();
-    let user_uuid = Uuid::new_v4();
+    let user_uuid = DbId::new();
     Character {
-        id: Uuid::new_v4(),
+        id: DbId::new(),
         user_id: user_uuid,
         spec: "chara_card_v3_spec".to_string(),
         spec_version: "1.0.0".to_string(),
@@ -1267,18 +1272,18 @@ pub fn create_dummy_character() -> Character {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: None.into(),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: None.into(),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: None.into(),
+        group_only_greetings: None.into(),
         creation_date: None,
         modification_date: None,
-        created_at: now,
-        updated_at: now,
+        created_at: now.into(),
+        updated_at: now.into(),
         persona: None,
         world_scenario: None,
         avatar: None,
@@ -1307,7 +1312,7 @@ pub fn create_dummy_character() -> Character {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: None.into(),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1348,19 +1353,19 @@ pub fn create_dummy_character() -> Character {
 // Client-side Character representation (for JSON responses)
 #[derive(Serialize, Deserialize, Clone)] // Removed Debug
 pub struct ClientCharacter {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub name: String,
     pub description: String,
     pub concept: String,
     pub voice_instructions: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub is_favorite: bool,
     pub category: String,
-    pub chat_history_limit: i32,
+    pub chat_history_limit: crate::db::DbInt,
     pub system_prompt: String,
-    pub avatar_id: Option<Uuid>,
+    pub avatar_id: Option<crate::db::DbId>,
 }
 
 impl std::fmt::Debug for ClientCharacter {
@@ -1383,11 +1388,13 @@ impl std::fmt::Debug for ClientCharacter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::models::character_card::{CharacterCardDataV3, CharacterCardV3};
     use crate::services::character_parser::ParsedCharacterCard;
+    use chrono::Utc;
     use ring::rand::{SecureRandom, SystemRandom};
     use secrecy::SecretBox; // For testing encryption/decryption - Corrected import // For generating a dummy DEK
     use std::collections::HashMap;
@@ -1578,7 +1585,7 @@ mod tests {
                 assets: None,
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
+                source: None.into(),
                 group_only_greetings: Vec::default(),
                 creation_date: None,
                 modification_date: None,
@@ -1659,8 +1666,8 @@ mod tests {
     #[test]
     fn test_character_metadata_serde() {
         let dt = Utc::now();
-        let uuid = Uuid::new_v4();
-        let user_uuid = Uuid::new_v4();
+        let uuid = DbId::new();
+        let user_uuid = DbId::new();
 
         let metadata = CharacterMetadata {
             id: uuid,
@@ -1695,7 +1702,7 @@ mod tests {
         assert_eq!(metadata.name, deserialized_metadata.name);
         assert_eq!(metadata.description, deserialized_metadata.description);
         assert_eq!(metadata.first_mes, deserialized_metadata.first_mes);
-        // Note: Comparing DateTime<Utc> directly might be flaky due to precision differences
+        // Note: Comparing DbTimestamp directly might be flaky due to precision differences
         // after serialization/deserialization. Comparing timestamps is safer.
         assert_eq!(
             metadata.created_at.timestamp_millis(),

@@ -314,12 +314,18 @@
 			<div class="flex h-10 flex-row items-center justify-between md:h-[34px]">
 				<a
 					href="/"
-					onclick={() => {
+					onclick={(_e) => {
+						// Allow default navigation to / but ensure state is cleared
 						context.setOpenMobile(false);
 						selectedCharacterStore.clear(); // Clear any selected character
 						selectedPersonaStore.clear(); // Clear any selected persona
 						selectedLorebookStore.clear(); // Clear any selected lorebook
 						selectedChronicleStore.clear(); // Clear any selected chronicle
+
+						// Also hide settings if they are open, to ensure Overview is visible
+						if (settingsStore.isVisible) {
+							settingsStore.hide();
+						}
 					}}
 					class="flex flex-row items-center gap-3"
 				>

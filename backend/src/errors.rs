@@ -13,6 +13,7 @@ use crate::auth::user_store::Backend as AuthBackend;
 use crate::services::character_parser::ParserError as CharacterParserError;
 use anyhow::Error as AnyhowError;
 use bcrypt; // Use bcrypt directly
+#[cfg(feature = "postgres-backend")]
 use deadpool_diesel::PoolError as DeadpoolDieselPoolError;
 use diesel::result::Error as DieselError;
 use std::time::Duration; // Add this import
@@ -74,6 +75,9 @@ pub enum AppError {
 
     #[error("Service Unavailable: {0}")]
     ServiceUnavailable(String), // For service unavailability
+
+    #[error("Operation timed out: {0}")]
+    TimeoutError(String), // For operations that exceed their time limit
 
     #[error("Invalid credentials")]
     InvalidCredentials, // Specific auth error
@@ -302,7 +306,8 @@ impl From<DieselError> for AuthBackendError {
     }
 }
 
-// If UserStore directly interacts with the pool and can return PoolError
+// If UserStore directly interacts with the pool and can return PoolError (PostgreSQL only)
+#[cfg(feature = "postgres-backend")]
 impl From<DeadpoolDieselPoolError> for AuthBackendError {
     fn from(err: DeadpoolDieselPoolError) -> Self {
         Self::DbPoolError(err.to_string())
@@ -389,6 +394,7 @@ impl AppError {
             // Gateway/External Service Errors
             Self::BadGateway(_) => "BAD_GATEWAY",
             Self::ServiceUnavailable(_) => "SERVICE_UNAVAILABLE",
+            Self::TimeoutError(_) => "TIMEOUT_ERROR",
             Self::RateLimited(_) => "RATE_LIMITED",
             Self::HttpRequestError(_) => "HTTP_REQUEST_ERROR",
             Self::HttpMiddlewareError(_) => "HTTP_MIDDLEWARE_ERROR",
@@ -435,7 +441,7 @@ impl AppError {
         // Convert validation errors to JSON
         let mut error_details = serde_json::Map::new();
         for (field, errors) in validation_errors.field_errors() {
-            let field_errors: Vec<serde_json::Value> = errors
+            let field_errors: Vec<crate::DbJson> = errors
                 .iter()
                 .map(|error| {
                     let mut err_map = serde_json::Map::new();
@@ -452,7 +458,7 @@ impl AppError {
                     if !params.is_empty() {
                         err_map.insert("params".to_string(), json!(params));
                     }
-                    json!(err_map)
+                    json!(err_map).into()
                 })
                 .collect();
             error_details.insert(field.to_string(), json!(field_errors));
@@ -556,6 +562,7 @@ impl AppError {
             error,
             Self::BadGateway(_)
                 | Self::ServiceUnavailable(_)
+                | Self::TimeoutError(_)
                 | Self::GenerationError(_)
                 | Self::EmbeddingError(_)
                 | Self::VectorDbError(_)
@@ -733,6 +740,11 @@ impl AppError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("Service Unavailable: {msg}"),
                 msg,
+            ),
+            Self::TimeoutError(msg) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                format!("Operation timed out: {msg}"),
+                "The operation timed out. Please try again.".to_string(),
             ),
             Self::GenerationError(e) => (
                 StatusCode::BAD_GATEWAY,
@@ -1123,24 +1135,28 @@ impl From<diesel::result::Error> for AppError {
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool_diesel::PoolError> for AppError {
     fn from(err: deadpool_diesel::PoolError) -> Self {
         Self::DbPoolError(err.to_string())
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool::managed::PoolError<deadpool_diesel::PoolError>> for AppError {
     fn from(err: deadpool::managed::PoolError<deadpool_diesel::PoolError>) -> Self {
         Self::DbManagedPoolError(err.to_string())
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool::managed::BuildError> for AppError {
     fn from(err: deadpool::managed::BuildError) -> Self {
         Self::DbPoolBuildError(err.to_string())
     }
 }
 
+#[cfg(feature = "postgres-backend")]
 impl From<deadpool_diesel::InteractError> for AppError {
     fn from(err: deadpool_diesel::InteractError) -> Self {
         Self::DbInteractError(err.to_string())
@@ -1202,7 +1218,7 @@ impl From<genai::Error> for AppError {
                 if let Some(end_idx) = json_part.rfind('}') {
                     let json_str = &json_part[..=end_idx];
 
-                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Ok(json_value) = serde_json::from_str::<crate::DbJson>(json_str) {
                         if let Some(retry_info) = json_value["error"]["details"]
                             .as_array()
                             .and_then(|details| {
@@ -1288,7 +1304,10 @@ impl From<crate::auth::AuthError> for AppError {
             } // This remains, not PasswordProcessingError, as From<AuthError> is generic
             crate::auth::AuthError::UserNotFound => Self::UserNotFound,
             crate::auth::AuthError::DatabaseError(msg) => Self::DatabaseQueryError(msg),
+            #[cfg(feature = "postgres-backend")]
             crate::auth::AuthError::PoolError(e) => Self::DbPoolError(e.to_string()),
+            #[cfg(feature = "sqlite-backend")]
+            crate::auth::AuthError::PoolErrorSqlite(s) => Self::DbPoolError(s),
             crate::auth::AuthError::InteractError(s) => Self::DbInteractError(s),
             crate::auth::AuthError::CryptoOperationFailed(crypto_err) => {
                 Self::InternalServerErrorGeneric(format!(
@@ -1365,18 +1384,23 @@ mod tests {
         let app_error_dbe: AppError = auth_error_dbe.into();
         assert!(matches!(app_error_dbe, AppError::DatabaseQueryError(s) if s == db_err_str));
 
-        let pool_err = deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
-        let pool_err_str = pool_err.to_string();
-        let auth_error_pool = crate::auth::AuthError::PoolError(pool_err);
-        let app_error_pool: AppError = auth_error_pool.into();
-        assert!(matches!(app_error_pool, AppError::DbPoolError(s) if s == pool_err_str));
+        #[cfg(feature = "postgres-backend")]
+        {
+            let pool_err =
+                deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
+            let pool_err_str = pool_err.to_string();
+            let auth_error_pool = crate::auth::AuthError::PoolError(pool_err);
+            let app_error_pool: AppError = auth_error_pool.into();
+            assert!(matches!(app_error_pool, AppError::DbPoolError(s) if s == pool_err_str));
 
-        let interact_err_str = "interact error".to_string();
-        let auth_error_interact = crate::auth::AuthError::InteractError(interact_err_str.clone());
-        let app_error_interact: AppError = auth_error_interact.into();
-        assert!(
-            matches!(app_error_interact, AppError::DbInteractError(s) if s == interact_err_str)
-        );
+            let interact_err_str = "interact error".to_string();
+            let auth_error_interact =
+                crate::auth::AuthError::InteractError(interact_err_str.clone());
+            let app_error_interact: AppError = auth_error_interact.into();
+            assert!(
+                matches!(app_error_interact, AppError::DbInteractError(s) if s == interact_err_str)
+            );
+        }
     }
 
     // --- Tests for AppError IntoResponse arms ---
@@ -1469,6 +1493,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_pool_error_response() {
         let pool_error =
             deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
@@ -1480,6 +1505,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_managed_pool_error_response() {
         let inner_pool_error =
             deadpool_diesel::PoolError::Timeout(deadpool::managed::TimeoutType::Create);
@@ -1493,6 +1519,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_pool_build_error_response() {
         // Use the corrected way to create BuildError
         let build_error = deadpool::managed::BuildError::NoRuntimeSpecified;
@@ -1504,6 +1531,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "postgres-backend")]
     async fn test_db_interact_error_response() {
         let interact_error = deadpool_diesel::InteractError::Aborted;
         let error: AppError = interact_error.into();

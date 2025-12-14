@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Test that context enrichment searches are properly scoped by session/chronicle
 //! This is a basic compilation test to verify the new chronicle_id filtering is integrated
 

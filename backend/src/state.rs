@@ -1,7 +1,6 @@
-// Use deadpool-diesel types for async pooling
+// Use deadpool-diesel types for async pooling (PostgreSQL only)
 // Import auth module
 // Import AuthError enum
-use deadpool_diesel::postgres::Pool as DeadpoolPool;
 // Removed AppError import as it's not directly used here
 use crate::config::Config; // Use Config instead
                            // use genai::Client as GeminiApiClient; // Remove Gemini client for now
@@ -16,6 +15,7 @@ use crate::services::embeddings::EmbeddingPipelineServiceTrait;
 // use crate::vector_db::QdrantClientService;
 use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
+use crate::auth::token_service::TokenService; // Added for token-based authentication
 use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
@@ -31,11 +31,12 @@ use crate::services::narrative_intelligence_service::NarrativeIntelligenceServic
 use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
 use crate::services::EmailService; // For email service
 use std::fmt;
-use uuid::Uuid; // For embedding_call_tracker // For manual Debug impl
+// For embedding_call_tracker // For manual Debug impl
 
 // --- DB Connection Pool Type ---
-pub type DbPool = DeadpoolPool;
-// Note: deadpool::Pool is already Cloneable.
+// Use the backend-agnostic pool type from the db module
+pub use crate::db::DbPool;
+// Note: Both deadpool::Pool (PostgreSQL) and r2d2::Pool (SQLite) are Cloneable.
 
 /// Configuration for `AppState` services to reduce constructor arguments
 pub struct AppStateServices {
@@ -49,6 +50,7 @@ pub struct AppStateServices {
     pub encryption_service: Arc<EncryptionService>,
     pub lorebook_service: Arc<LorebookService>,
     pub auth_backend: Arc<AuthBackend>,
+    pub token_service: Option<Arc<TokenService>>, // Added for token-based authentication
     pub email_service: Arc<dyn EmailService + Send + Sync>,
     pub ai_client_factory: Arc<AiClientFactory>,
     pub rate_limiter: Arc<LlmRateLimiter>,
@@ -63,7 +65,7 @@ pub struct AppStateServices {
 // --- Shared application state ---
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: DeadpoolPool,
+    pub pool: DbPool,
     // Change to Arc<Config> and make public
     pub config: Arc<Config>,
     // Remove gemini_client field for now
@@ -79,11 +81,12 @@ pub struct AppState {
     pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
     pub user_persona_service: Arc<UserPersonaService>,   // <<< ADDED THIS FIELD
     // Remove #[cfg(test)]
-    pub embedding_call_tracker: Arc<TokioMutex<Vec<Uuid>>>, // Track message IDs for embedding calls
-    pub token_counter: Arc<HybridTokenCounter>,             // Added for token counting
+    pub embedding_call_tracker: Arc<TokioMutex<Vec<crate::db::DbId>>>, // Track message IDs for embedding calls
+    pub token_counter: Arc<HybridTokenCounter>,                        // Added for token counting
     pub encryption_service: Arc<EncryptionService>, // Added for lorebook and other encryption needs
     pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
     pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
+    pub token_service: Option<Arc<TokenService>>,   // Added for token-based authentication
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub ai_client_factory: Arc<AiClientFactory>,    // Added for dynamic AI client selection
     pub rate_limiter: Arc<LlmRateLimiter>,          // Added for rate limiting
@@ -101,7 +104,7 @@ impl fmt::Debug for AppState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug_struct = f.debug_struct("AppState");
         debug_struct
-            .field("pool", &"<DeadpoolPool>") // Placeholder for pool
+            .field("pool", &"<DbPool>") // Placeholder for pool
             .field("config", &self.config) // Config should be Debug
             .field("ai_client", &"<Arc<dyn AiClient>>")
             .field("embedding_client", &"<Arc<dyn EmbeddingClient>>")
@@ -112,11 +115,15 @@ impl fmt::Debug for AppState {
             )
             .field("chat_override_service", &"<Arc<ChatOverrideService>>") // <<< ADDED THIS LINE FOR DEBUG
             .field("user_persona_service", &"<Arc<UserPersonaService>>") // <<< ADDED THIS LINE FOR DEBUG
-            .field("embedding_call_tracker", &"<Arc<TokioMutex<Vec<Uuid>>>>") // Or try to debug its contents if safe
+            .field(
+                "embedding_call_tracker",
+                &"<Arc<TokioMutex<Vec<crate::db::DbId>>>>",
+            ) // Or try to debug its contents if safe
             .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
             .field("encryption_service", &"<Arc<EncryptionService>>") // Added
             .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
             .field("auth_backend", &"<Arc<AuthBackend>>") // Added
+            .field("token_service", &"<Option<Arc<TokenService>>>") // Added for token auth
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
             .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
@@ -149,7 +156,7 @@ impl fmt::Debug for AppState {
 impl AppState {
     /// Create new `AppState` with reduced constructor arguments
     #[must_use]
-    pub fn new(pool: DeadpoolPool, config: Arc<Config>, services: AppStateServices) -> Self {
+    pub fn new(pool: DbPool, config: Arc<Config>, services: AppStateServices) -> Self {
         Self {
             pool,
             config,
@@ -164,6 +171,7 @@ impl AppState {
             encryption_service: services.encryption_service,
             lorebook_service: services.lorebook_service,
             auth_backend: services.auth_backend,
+            token_service: services.token_service,
             email_service: services.email_service,
             ai_client_factory: services.ai_client_factory,
             rate_limiter: services.rate_limiter,

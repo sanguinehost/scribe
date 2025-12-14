@@ -76,7 +76,7 @@ export const subscriptionStore = {
 		if (_subscription?.plan_type) {
 			// Handle 'pro' -> 'premium' mapping for legacy subscriptions
 			const planType = _subscription.plan_type === 'pro' ? 'premium' : _subscription.plan_type;
-			logger.debug('Plan Type Mapping:', {
+			logger.debug('subscription-store', 'Plan Type Mapping:', {
 				originalPlanType: _subscription.plan_type,
 				mappedPlanType: planType,
 				subscriptionId: _subscription.id
@@ -108,7 +108,7 @@ export const subscriptionStore = {
 
 	get daysUntilRenewal(): number {
 		if (!_subscription) {
-			logger.debug('[DAYS_UNTIL_RENEWAL] No subscription found, returning 0');
+			logger.debug('subscription-store', '[DAYS_UNTIL_RENEWAL] No subscription found, returning 0');
 			return 0;
 		}
 
@@ -119,7 +119,10 @@ export const subscriptionStore = {
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-			logger.debug('[DAYS_UNTIL_RENEWAL] Cancelled trial:', daysUntilRenewal, 'days');
+			logger.debug(
+				'subscription-store',
+				`[DAYS_UNTIL_RENEWAL] Cancelled trial: ${daysUntilRenewal} days`
+			);
 
 			return daysUntilRenewal;
 		}
@@ -131,14 +134,20 @@ export const subscriptionStore = {
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-			logger.debug('[DAYS_UNTIL_RENEWAL] Active trial:', daysUntilRenewal, 'days');
+			logger.debug(
+				'subscription-store',
+				`[DAYS_UNTIL_RENEWAL] Active trial: ${daysUntilRenewal} days`
+			);
 
 			return daysUntilRenewal;
 		}
 
 		// For regular subscriptions, use current_period_end
 		if (!_subscription.current_period_end) {
-			logger.debug('[DAYS_UNTIL_RENEWAL] No current_period_end found, returning 0');
+			logger.debug(
+				'subscription-store',
+				'[DAYS_UNTIL_RENEWAL] No current_period_end found, returning 0'
+			);
 			return 0;
 		}
 		const renewalDate = new Date(_subscription.current_period_end);
@@ -146,7 +155,10 @@ export const subscriptionStore = {
 		const diffTime = renewalDate.getTime() - now.getTime();
 		const daysUntilRenewal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-		logger.debug('[DAYS_UNTIL_RENEWAL] Regular subscription:', daysUntilRenewal, 'days');
+		logger.debug(
+			'subscription-store',
+			`[DAYS_UNTIL_RENEWAL] Regular subscription: ${daysUntilRenewal} days`
+		);
 
 		return daysUntilRenewal;
 	},
@@ -180,7 +192,7 @@ export const subscriptionStore = {
 		const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
 		// Debug logging to trace the calculation
-		logger.debug('[TRIAL_DAYS] Trial days remaining:', daysRemaining);
+		logger.debug('subscription-store', `[TRIAL_DAYS] Trial days remaining: ${daysRemaining}`);
 
 		return daysRemaining;
 	},
@@ -250,10 +262,8 @@ export const subscriptionStore = {
 	async refresh(force: boolean = false): Promise<void> {
 		if (!_browser || !ENABLE_PAYMENTS) {
 			logger.debug(
-				'🔄 [FRONTEND_SUBSCRIPTION] Skipping refresh: browser=',
-				_browser,
-				'payments_enabled=',
-				ENABLE_PAYMENTS
+				'subscription-store',
+				`🔄 [FRONTEND_SUBSCRIPTION] Skipping refresh: browser=${_browser} payments_enabled=${ENABLE_PAYMENTS}`
 			);
 			return;
 		}
@@ -262,7 +272,7 @@ export const subscriptionStore = {
 		const now = Date.now();
 		const cacheAge = now - _lastFetch;
 		if (!force && cacheAge < CACHE_DURATION) {
-			logger.debug('[FRONTEND_SUBSCRIPTION] Using cached data:', {
+			logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Using cached data:', {
 				cacheAge: `${Math.round(cacheAge / 1000)}s`,
 				cacheLimit: `${CACHE_DURATION / 1000}s`,
 				lastFetch: new Date(_lastFetch).toISOString()
@@ -270,7 +280,7 @@ export const subscriptionStore = {
 			return;
 		}
 
-		logger.debug('[FRONTEND_SUBSCRIPTION] Starting subscription refresh:', {
+		logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Starting subscription refresh:', {
 			forced: force,
 			cacheAge: `${Math.round(cacheAge / 1000)}s`,
 			currentSubscription: _subscription
@@ -286,20 +296,24 @@ export const subscriptionStore = {
 		_error = null;
 
 		try {
-			logger.debug('[FRONTEND_SUBSCRIPTION] Calling API...');
+			logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Calling API...');
 			const result = await _apiClient.getSubscription();
 
 			if (result.isOk()) {
-				logger.debug('[FRONTEND_SUBSCRIPTION] API call SUCCESS - Raw response:', {
-					subscription: result.value.subscription,
-					plan_features: result.value.plan_features,
-					usage_limits: result.value.usage_limits,
-					customer_portal_url: result.value.customer_portal_url
-				});
+				logger.debug(
+					'subscription-store',
+					'[FRONTEND_SUBSCRIPTION] API call SUCCESS - Raw response:',
+					{
+						subscription: result.value.subscription,
+						plan_features: result.value.plan_features,
+						usage_limits: result.value.usage_limits,
+						customer_portal_url: result.value.customer_portal_url
+					}
+				);
 
 				// Log specific details about plan type mapping
 				if (result.value.subscription) {
-					logger.debug('[FRONTEND_SUBSCRIPTION] Subscription details:', {
+					logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Subscription details:', {
 						id: result.value.subscription.id,
 						plan_type: result.value.subscription.plan_type,
 						status: result.value.subscription.status,
@@ -310,21 +324,27 @@ export const subscriptionStore = {
 						cancel_at_period_end: result.value.subscription.cancel_at_period_end
 					});
 				} else {
-					logger.debug('[FRONTEND_SUBSCRIPTION] No subscription found in response');
+					logger.debug(
+						'subscription-store',
+						'[FRONTEND_SUBSCRIPTION] No subscription found in response'
+					);
 				}
 
 				if (result.value.plan_features) {
-					logger.debug('[FRONTEND_SUBSCRIPTION] Plan features:', {
+					logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Plan features:', {
 						plan_type: result.value.plan_features.plan_type,
 						display_name: result.value.plan_features.display_name,
 						description: result.value.plan_features.description
 					});
 				} else {
-					logger.debug('[FRONTEND_SUBSCRIPTION] No plan features found in response');
+					logger.debug(
+						'subscription-store',
+						'[FRONTEND_SUBSCRIPTION] No plan features found in response'
+					);
 				}
 
 				if (result.value.usage_limits) {
-					logger.debug('[FRONTEND_SUBSCRIPTION] Usage limits:', {
+					logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Usage limits:', {
 						daily_message_count: result.value.usage_limits.daily_message_count,
 						is_throttled: result.value.usage_limits.is_throttled,
 						throttle_delay: result.value.usage_limits.throttle_delay
@@ -352,17 +372,23 @@ export const subscriptionStore = {
 				// Log state changes
 				if (previousSubscription) {
 					if (statusChanged || planChanged || subscriptionIdChanged) {
-						logger.debug('[FRONTEND_SUBSCRIPTION] SUBSCRIPTION STATE CHANGED:', {
-							statusChanged: statusChanged ? `${previousStatus} → ${_subscription?.status}` : false,
-							planChanged: planChanged ? `${previousPlan} → ${_subscription?.plan_type}` : false,
-							subscriptionIdChanged: subscriptionIdChanged
-								? `${previousPaddleSubId} → ${_subscription?.paddle_subscription_id}`
-								: false,
-							timestamp: new Date().toISOString()
-						});
+						logger.debug(
+							'subscription-store',
+							'[FRONTEND_SUBSCRIPTION] SUBSCRIPTION STATE CHANGED:',
+							{
+								statusChanged: statusChanged
+									? `${previousStatus} → ${_subscription?.status}`
+									: false,
+								planChanged: planChanged ? `${previousPlan} → ${_subscription?.plan_type}` : false,
+								subscriptionIdChanged: subscriptionIdChanged
+									? `${previousPaddleSubId} → ${_subscription?.paddle_subscription_id}`
+									: false,
+								timestamp: new Date().toISOString()
+							}
+						);
 					}
 				} else if (_subscription) {
-					logger.debug('[FRONTEND_SUBSCRIPTION] NEW SUBSCRIPTION DETECTED:', {
+					logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] NEW SUBSCRIPTION DETECTED:', {
 						id: _subscription.id,
 						status: _subscription.status,
 						plan_type: _subscription.plan_type,
@@ -379,9 +405,8 @@ export const subscriptionStore = {
 					(!previousSubscription && _subscription)
 				) {
 					logger.debug(
-						'🔄 [FRONTEND_SUBSCRIPTION] Notifying',
-						_changeCallbacks.length,
-						'listeners of subscription change'
+						'subscription-store',
+						`🔄 [FRONTEND_SUBSCRIPTION] Notifying ${_changeCallbacks.length} listeners of subscription change`
 					);
 
 					const changeData = {
@@ -395,10 +420,17 @@ export const subscriptionStore = {
 					// Call all registered callbacks
 					_changeCallbacks.forEach((callback, index) => {
 						try {
-							logger.debug('[FRONTEND_SUBSCRIPTION] Calling listener', index + 1);
+							logger.debug(
+								'subscription-store',
+								`[FRONTEND_SUBSCRIPTION] Calling listener ${index + 1}`
+							);
 							callback(changeData);
 						} catch (error) {
-							logger.error('[FRONTEND_SUBSCRIPTION] Error in change callback:', error);
+							logger.error(
+								'subscription-store',
+								'[FRONTEND_SUBSCRIPTION] Error in change callback:',
+								error as Error
+							);
 						}
 					});
 				}
@@ -408,7 +440,7 @@ export const subscriptionStore = {
 				const isSubscribed = subscriptionStore.isSubscribed;
 				const displayName = subscriptionStore.getPlanDisplayName();
 
-				logger.debug('[FRONTEND_SUBSCRIPTION] Final store state:', {
+				logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Final store state:', {
 					rawPlanType: _subscription?.plan_type,
 					normalizedCurrentPlan: currentPlan,
 					status: _subscription?.status,
@@ -424,9 +456,10 @@ export const subscriptionStore = {
 				if (_subscription?.status === 'active' || _subscription?.status === 'trialing') {
 					if (currentPlan === 'premium' || displayName === 'Premium') {
 						logger.debug(
+							'subscription-store',
 							'🔄 [FRONTEND_SUBSCRIPTION] ⚠️  POTENTIAL ISSUE DETECTED: Still showing Premium despite cancelled subscription'
 						);
-						logger.debug('[FRONTEND_SUBSCRIPTION] Debug info:', {
+						logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Debug info:', {
 							subscriptionId: _subscription.id,
 							status: _subscription.status,
 							planType: _subscription.plan_type,
@@ -437,18 +470,22 @@ export const subscriptionStore = {
 					}
 				}
 			} else {
-				logger.error('[FRONTEND_SUBSCRIPTION] API call FAILED:', {
+				logger.error('subscription-store', '[FRONTEND_SUBSCRIPTION] API call FAILED:', {
 					error: result.error,
 					message: result.error.message
 				});
 				_error = result.error.message || 'Failed to fetch subscription data';
 			}
 		} catch (error) {
-			logger.error('[FRONTEND_SUBSCRIPTION] Exception during refresh:', error);
+			logger.error(
+				'subscription-store',
+				'[FRONTEND_SUBSCRIPTION] Exception during refresh:',
+				error as Error
+			);
 			_error = error instanceof Error ? error.message : 'Unknown error occurred';
 		} finally {
 			_loading = false;
-			logger.debug('[FRONTEND_SUBSCRIPTION] Refresh completed:', {
+			logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Refresh completed:', {
 				success: !_error,
 				error: _error,
 				timestamp: new Date().toISOString()
@@ -507,7 +544,7 @@ export const subscriptionStore = {
 	 * Clear cache to force next refresh to fetch fresh data
 	 */
 	clearCache(): void {
-		logger.debug('[FRONTEND_SUBSCRIPTION] Cache cleared');
+		logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Cache cleared');
 		_lastFetch = 0;
 	},
 
@@ -519,9 +556,8 @@ export const subscriptionStore = {
 	onSubscriptionChange(callback: SubscriptionChangeCallback): () => void {
 		_changeCallbacks.push(callback);
 		logger.debug(
-			'🔄 [FRONTEND_SUBSCRIPTION] Registered change callback (total:',
-			_changeCallbacks.length,
-			')'
+			'subscription-store',
+			`🔄 [FRONTEND_SUBSCRIPTION] Registered change callback (total: ${_changeCallbacks.length})`
 		);
 
 		// Return unsubscribe function
@@ -530,9 +566,8 @@ export const subscriptionStore = {
 			if (index > -1) {
 				_changeCallbacks.splice(index, 1);
 				logger.debug(
-					'🔄 [FRONTEND_SUBSCRIPTION] Unregistered change callback (remaining:',
-					_changeCallbacks.length,
-					')'
+					'subscription-store',
+					`🔄 [FRONTEND_SUBSCRIPTION] Unregistered change callback (remaining: ${_changeCallbacks.length})`
 				);
 			}
 		};
@@ -558,7 +593,9 @@ export const subscriptionStore = {
 		let displayName: string;
 
 		if (_planFeatures?.display_name) {
-			logger.debug('Using plan features display name:', _planFeatures.display_name);
+			logger.debug('subscription-store', 'Using plan features display name:', {
+				displayName: _planFeatures.display_name
+			});
 			displayName = _planFeatures.display_name;
 		} else {
 			// Fallback based on plan type
@@ -589,7 +626,7 @@ export const subscriptionStore = {
 			}
 		}
 
-		logger.debug('Final display name:', {
+		logger.debug('subscription-store', 'Final display name:', {
 			currentPlan: subscriptionStore.currentPlan,
 			displayName,
 			planFeatures: _planFeatures

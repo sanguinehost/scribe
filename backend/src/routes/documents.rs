@@ -1,4 +1,14 @@
+//! Legacy document routes (PostgreSQL only)
+//!
+//! These routes handle old_documents and old_suggestions tables which only exist
+//! in the PostgreSQL schema. They are not available in the SQLite/desktop build.
+
+#![cfg(feature = "postgres-backend")]
+
 use crate::auth::user_store::Backend as AuthBackend;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::{DbId, DbTimestamp};
 use crate::errors::AppError;
 use crate::models::documents::{
     CreateDocumentRequest, CreateSuggestionRequest, Document, DocumentResponse, NewDocument,
@@ -15,7 +25,6 @@ use axum::{
 use axum_login::AuthSession; // Removed AuthUser
 use chrono::Utc;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper}; // Specific diesel imports
-use uuid::Uuid;
 
 // Shorthand for auth session
 type CurrentAuthSession = AuthSession<AuthBackend>;
@@ -48,8 +57,8 @@ async fn create_document_handler(
     let pool = state.pool.clone();
 
     let new_document = NewDocument {
-        id: Uuid::new_v4(),
-        created_at: Utc::now(),
+        id: DbId::new(),
+        created_at: DbTimestamp::now(),
         title: payload.title,
         content: payload.content,
         kind: payload.kind,
@@ -86,7 +95,7 @@ async fn create_document_handler(
 async fn get_documents_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -101,6 +110,7 @@ async fn get_documents_by_id_handler(
             let documents = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(id)) // Use old_documents
                 .order_by(crate::schema::old_documents::dsl::created_at.asc()) // Use old_documents
+                .select(Document::as_select())
                 .load::<Document>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
 
@@ -137,7 +147,7 @@ async fn get_documents_by_id_handler(
 async fn get_document_by_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -152,6 +162,7 @@ async fn get_document_by_id_handler(
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(id)) // Use old_documents
                 .order_by(crate::schema::old_documents::dsl::created_at.desc()) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
 
@@ -181,7 +192,7 @@ async fn get_document_by_id_handler(
 async fn delete_documents_by_id_after_timestamp_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path((id, timestamp)): Path<(Uuid, String)>,
+    Path((id, timestamp)): Path<(crate::db::DbId, String)>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -200,6 +211,7 @@ async fn delete_documents_by_id_after_timestamp_handler(
         .interact(move |conn| {
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(id)) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
@@ -270,6 +282,7 @@ async fn create_suggestion_handler(
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(document_id)) // Use old_documents
                 .filter(crate::schema::old_documents::dsl::created_at.eq(document_created_at)) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
@@ -290,7 +303,7 @@ async fn create_suggestion_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
 
     let new_suggestion = NewSuggestion {
-        id: Uuid::new_v4(),
+        id: DbId::new(),
         document_id: payload.document_id,
         document_created_at: payload.document_created_at,
         original_text: payload.original_text,
@@ -298,7 +311,7 @@ async fn create_suggestion_handler(
         description: payload.description,
         is_resolved: false,
         user_id: user.id,
-        created_at: Utc::now(),
+        created_at: DbTimestamp::now(),
     };
 
     let suggestion = pool
@@ -322,7 +335,7 @@ async fn create_suggestion_handler(
 async fn get_suggestions_by_document_id_handler(
     auth_session: CurrentAuthSession,
     State(state): State<AppState>,
-    Path(document_id): Path<Uuid>,
+    Path(document_id): Path<crate::db::DbId>,
 ) -> Result<impl IntoResponse, AppError> {
     let user = auth_session
         .user
@@ -336,6 +349,7 @@ async fn get_suggestions_by_document_id_handler(
         .interact(move |conn| {
             let document = crate::schema::old_documents::table // Use old_documents
                 .filter(crate::schema::old_documents::dsl::id.eq(document_id)) // Use old_documents
+                .select(Document::as_select())
                 .first::<Document>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?; // Added .to_string()
@@ -363,6 +377,7 @@ async fn get_suggestions_by_document_id_handler(
         .interact(move |conn| {
             crate::schema::old_suggestions::table // Use old_suggestions
                 .filter(crate::schema::old_suggestions::dsl::document_id.eq(document_id)) // Use old_suggestions
+                .select(Suggestion::as_select())
                 .load::<Suggestion>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string())) // Added .to_string()
         })

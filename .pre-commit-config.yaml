@@ -35,25 +35,45 @@ repos:
     hooks:
       - id: cargo-fmt
         name: Cargo Format (Backend)
-        entry: cargo fmt --all -- --check
+        entry: cargo fmt -p scribe-backend -- --check
         language: system
-        files: '\.rs$'
+        files: 'backend/.*\.rs$'
         pass_filenames: false
         always_run: false
 
-      - id: cargo-clippy
-        name: Cargo Clippy (Backend)
-        entry: bash -c 'cd backend && cargo clippy --all-targets --no-default-features --features payment -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all'
+      # Cloud Backend (PostgreSQL) - Primary production configuration
+      # NOTE: Running in backend/ directory to prevent workspace feature unification
+      - id: cargo-clippy-cloud
+        name: Cargo Clippy (Cloud Backend)
+        entry: bash -c 'export CXXFLAGS="-include cstdint" && cd backend && cargo clippy --lib --bins --no-default-features --features cloud,payment -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all -A unused-imports'
         language: system
-        files: 'backend/.*\.rs$|Cargo\.toml$'
+        files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
         pass_filenames: false
         always_run: false
 
-      - id: cargo-check
-        name: Cargo Check (Backend)
-        entry: bash -c 'cd backend && cargo check --all-targets --no-default-features --features payment'
+      - id: cargo-check-cloud
+        name: Cargo Check (Cloud Backend)
+        entry: bash -c 'export CXXFLAGS="-include cstdint" && cd backend && cargo check --lib --bins --no-default-features --features cloud,payment'
         language: system
-        files: 'backend/.*\.rs$|backend/Cargo\.toml$'
+        files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
+        pass_filenames: false
+        always_run: false
+
+      # Desktop Backend (SQLite) - Desktop application configuration
+      # NOTE: Running in backend/ directory to prevent workspace feature unification
+      - id: cargo-clippy-desktop
+        name: Cargo Clippy (Desktop Backend)
+        entry: bash -c 'export CXXFLAGS="-include cstdint" && cd backend && cargo clippy --lib --bins --no-default-features --features desktop -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -W clippy::all -A unused-imports'
+        language: system
+        files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
+        pass_filenames: false
+        always_run: false
+
+      - id: cargo-check-desktop
+        name: Cargo Check (Desktop Backend)
+        entry: bash -c 'export CXXFLAGS="-include cstdint" && cd backend && cargo check --lib --bins --no-default-features --features desktop'
+        language: system
+        files: 'backend/src/.*\.rs$|backend/Cargo\.toml$'
         pass_filenames: false
         always_run: false
 

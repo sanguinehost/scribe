@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agentic_persona_integration_tests.rs
 
@@ -95,7 +96,7 @@ async fn create_test_user_with_persona(
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: Utc::now(),
+        token_usage_updated_at: Utc::now().into(),
     };
 
     let user_db: UserDbQuery = conn
@@ -192,7 +193,7 @@ fn create_lucas_roleplay_messages(
             message_type: message_role,
             content: encrypted_content,
             content_nonce: Some(nonce),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(50),
             completion_tokens: Some(200),

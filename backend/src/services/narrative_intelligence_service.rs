@@ -9,10 +9,11 @@
 //! Design for scale: Currently handles 1:1 chat processing but architected to eventually
 //! handle thousands/millions of events via batch processing and event queues.
 
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,
@@ -207,9 +208,9 @@ impl NarrativeIntelligenceService {
     ))]
     pub async fn process_conversation_context(
         &self,
-        user_id: Uuid,
-        session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         recent_messages: &[ChatMessage],
         existing_rag_context: &[RetrievedChunk],
         session_dek: &SessionDek,
@@ -233,6 +234,8 @@ impl NarrativeIntelligenceService {
             messages_to_analyze.len(),
             existing_rag_context.len()
         );
+
+        info!("NARRATIVE_DEBUG: process_conversation_context called with user_id: {}, session_id: {}, chronicle_id: {:?}", user_id, session_id, chronicle_id);
 
         // Retrieve user's persona context for narrative intelligence
         let persona_context = self
@@ -295,9 +298,9 @@ impl NarrativeIntelligenceService {
     /// It's designed specifically for the re-chronicle feature.
     pub async fn process_chat_history_batch(
         &self,
-        user_id: Uuid,
-        session_id: Uuid,
-        chronicle_id: Option<Uuid>,
+        user_id: crate::db::DbId,
+        session_id: crate::db::DbId,
+        chronicle_id: Option<crate::db::DbId>,
         messages: Vec<ChatMessage>,
         session_dek: &SessionDek,
     ) -> Result<NarrativeProcessingResult, AppError> {
@@ -394,9 +397,9 @@ impl NarrativeIntelligenceService {
     #[allow(dead_code)]
     pub fn should_process_session(
         &self,
-        _user_id: Uuid,
-        _session_id: Uuid,
-        _chronicle_id: Option<Uuid>,
+        _user_id: crate::db::DbId,
+        _session_id: crate::db::DbId,
+        _chronicle_id: Option<crate::db::DbId>,
     ) -> bool {
         // TODO: Add per-user/session configuration
         // For now, just use global config
@@ -544,15 +547,11 @@ impl NarrativeIntelligenceService {
     /// Retrieve the user's current persona context for narrative intelligence
     async fn get_user_persona_context(
         &self,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         session_dek: &SessionDek,
     ) -> Result<UserPersonaContext, AppError> {
         // Get the user from the database to access their default_persona_id
-        let pool = self.app_state.pool.clone();
-        let conn = pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+        let mut conn = crate::db::get_conn(&self.app_state.pool).await?;
 
         let user_db = conn
             .interact(move |db_conn| {

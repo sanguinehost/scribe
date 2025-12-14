@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 //! Comprehensive tests for Chat Modes functionality

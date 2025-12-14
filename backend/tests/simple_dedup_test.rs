@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Simple Chronicle Event Deduplication Test
 
 use serde_json;
@@ -58,6 +59,7 @@ async fn test_simple_deduplication() {
         keywords: None,
         timestamp_iso8601: None,
         chat_session_id: None,
+        message_variant_id: None,
     };
 
     let first_event = chronicle_service

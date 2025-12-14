@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 // backend/tests/agent_runner_unit_tests.rs
 //
@@ -7,6 +8,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    db::DbId,
     models::chats::{ChatMessage, MessageRole},
     services::agentic::factory::AgenticNarrativeFactory,
     test_helpers::{MockAiClient, TestDataGuard},
@@ -120,7 +122,7 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
             message_type: role,
             content: content.as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
-            created_at: Utc::now(),
+            created_at: Utc::now().into(),
             user_id,
             prompt_tokens: Some(20),
             completion_tokens: Some(if i % 2 == 0 { 0 } else { 30 }),
@@ -291,7 +293,7 @@ mod agent_runner_conversation_tests {
                 message_type: MessageRole::System,
                 content: "System: You are a helpful assistant.".as_bytes().to_vec(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 user_id,
                 prompt_tokens: Some(10),
                 completion_tokens: Some(0),
@@ -311,7 +313,7 @@ mod agent_runner_conversation_tests {
                 message_type: MessageRole::User,
                 content: "User: What's the weather like?".as_bytes().to_vec(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 user_id,
                 prompt_tokens: Some(8),
                 completion_tokens: Some(0),
@@ -333,7 +335,7 @@ mod agent_runner_conversation_tests {
                     .as_bytes()
                     .to_vec(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 user_id,
                 prompt_tokens: Some(15),
                 completion_tokens: Some(12),
@@ -434,7 +436,7 @@ mod agent_runner_conversation_tests {
                 message_type: MessageRole::User,
                 content: "I&apos;m testing &quot;HTML entities&quot; like &lt;brackets&gt; &amp; ampersands.".as_bytes().to_vec(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 user_id,
                 prompt_tokens: Some(15),
                 completion_tokens: Some(0),
@@ -454,7 +456,7 @@ mod agent_runner_conversation_tests {
                 message_type: MessageRole::Assistant,
                 content: "I understand you&apos;re testing HTML entities. They should be converted to normal characters.".as_bytes().to_vec(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
-                created_at: Utc::now(),
+                created_at: Utc::now().into(),
                 user_id,
                 prompt_tokens: Some(18),
                 completion_tokens: Some(20),
@@ -763,7 +765,7 @@ mod agent_runner_duplicate_prevention_tests {
         ChatMessage {
             id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             message_type,
             content: encrypted_content,
             content_nonce: Some(content_nonce),

@@ -1,8 +1,14 @@
 #![allow(clippy::literal_string_with_formatting_args)]
+#![recursion_limit = "1024"]
 pub mod auth;
 pub mod config;
 pub mod crypto;
+pub mod db;
+#[cfg(feature = "desktop")]
+pub mod desktop;
 pub mod errors;
+pub mod extractors;
+pub mod features;
 pub mod llm;
 pub mod logging;
 pub mod metrics;
@@ -19,10 +25,19 @@ pub mod state_builder;
 pub mod text_processing;
 pub mod vector_db;
 
-use deadpool_diesel::postgres::Pool as DeadpoolPool;
+// Re-export database pool type from db module
+// This provides a backend-agnostic pool type that resolves to:
+// - PostgreSQL pool in cloud mode (postgres-backend feature)
+// - SQLite pool in desktop mode (sqlite-backend feature)
+pub use db::DbPool;
 
-// Define PgPool type alias here for library-wide use
-pub type PgPool = DeadpoolPool;
+// Re-export database type aliases for use in models
+// These resolve to native types for PostgreSQL or newtype wrappers for SQLite
+pub use db::{DbBigDecimal, DbBlob, DbConnection, DbDecimal, DbId, DbInt, DbJson, DbTimestamp};
+
+// Maintain backward compatibility with existing code that uses PgPool
+// TODO: Gradually migrate all code to use DbPool directly
+pub type PgPool = DbPool;
 
 // You might add common error types or other shared utilities here later.
 

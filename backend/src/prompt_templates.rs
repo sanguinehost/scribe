@@ -296,8 +296,9 @@ impl TemplateManager {
 
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
-    fn sanitize_context(&self, value: serde_json::Value, skip_keys: &[&str]) -> serde_json::Value {
-        match value {
+    fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
+        let value_inner: serde_json::Value = value.clone().into();
+        match &value_inner {
             serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
                 let sanitized = s
@@ -317,35 +318,40 @@ impl TemplateManager {
                 // Limit length to prevent memory exhaustion
                 if sanitized.len() > 10000 {
                     serde_json::Value::String(format!("{}...[truncated]", &sanitized[..10000]))
+                        .into()
                 } else {
-                    serde_json::Value::String(sanitized)
+                    serde_json::Value::String(sanitized).into()
                 }
             }
             serde_json::Value::Array(arr) => {
                 serde_json::Value::Array(
-                    arr.into_iter()
+                    arr.iter()
                         .take(100) // Limit array size
-                        .map(|v| self.sanitize_context(v, skip_keys))
+                        .map(|v| self.sanitize_context(v.clone().into(), skip_keys))
+                        .map(|v| v.into())
                         .collect(),
                 )
+                .into()
             }
             serde_json::Value::Object(obj) => {
                 serde_json::Value::Object(
-                    obj.into_iter()
+                    obj.iter()
                         .take(100) // Limit object size
                         .map(|(k, v)| {
                             if skip_keys.contains(&k.as_str()) {
                                 // Don't sanitize template sections - they need Jinja2 syntax
-                                (k, v)
+                                (k.clone(), v.clone())
                             } else {
-                                (k, self.sanitize_context(v, skip_keys))
+                                let sanitized = self.sanitize_context(v.clone().into(), skip_keys);
+                                (k.clone(), sanitized.into())
                             }
                         })
                         .collect(),
                 )
+                .into()
             }
             // Numbers, booleans, and null are safe
-            other => other,
+            _ => value,
         }
     }
 
@@ -361,11 +367,7 @@ impl TemplateManager {
     /// * `template_id` - The ID of the template to render
     /// * `context` - The context data for rendering
     /// * `style` - Optional narrative style variables (tense, narration, perspective, length)
-    pub fn render(
-        &self,
-        template_id: &str,
-        context: serde_json::Value,
-    ) -> Result<String, AppError> {
+    pub fn render(&self, template_id: &str, context: crate::DbJson) -> Result<String, AppError> {
         self.render_with_style(template_id, context, None)
     }
 
@@ -373,7 +375,7 @@ impl TemplateManager {
     pub fn render_with_style(
         &self,
         template_id: &str,
-        context: serde_json::Value,
+        context: crate::DbJson,
         style: Option<NarrativeStyle>,
     ) -> Result<String, AppError> {
         // Validate template_id format for security
@@ -403,8 +405,9 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let mut context_map: serde_json::Map<String, serde_json::Value> = match context {
-            serde_json::Value::Object(map) => map,
+        let context_value: &serde_json::Value = &context.clone().into();
+        let mut context_map: serde_json::Map<String, serde_json::Value> = match context_value {
+            serde_json::Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
         };
 
@@ -447,7 +450,7 @@ impl TemplateManager {
             match temp_env.add_template("temp", section_content) {
                 Ok(()) => {
                     if let Ok(temp_template) = temp_env.get_template("temp") {
-                        match temp_template.render(serde_json::Value::Object(context_map.clone())) {
+                        match temp_template.render(crate::DbJson::Object(context_map.clone())) {
                             Ok(rendered_content) => {
                                 debug!(
                                     section = section_name,
@@ -487,7 +490,7 @@ impl TemplateManager {
             serde_json::to_value(&rendered_sections).unwrap_or(serde_json::Value::Null),
         );
 
-        let enhanced_context = serde_json::Value::Object(context_map);
+        let enhanced_context = crate::DbJson::Object(context_map);
 
         // Sanitize context to prevent template injection, but skip the 'self' key containing template sections
         let sanitized_context = self.sanitize_context(enhanced_context, &["self"]);
@@ -533,7 +536,7 @@ pub static TEMPLATE_MANAGER: Lazy<TemplateManager> = Lazy::new(|| {
     manager
 });
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
     use serde_json::json;

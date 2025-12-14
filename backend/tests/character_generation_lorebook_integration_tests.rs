@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode},
@@ -358,7 +359,7 @@ async fn test_alternate_greeting_generation_with_lorebook() {
         metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
             original_lorebook_entry_id: Uuid::new_v4(),
             lorebook_id: Uuid::parse_str(lorebook_id).unwrap(),
-            user_id: Uuid::new_v4(),
+            user_id: DbId::new(),
             chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
             entry_title: Some("Mystic Academy Library".to_string()),
             keywords: Some(vec!["library".to_string(), "academy".to_string(), "study".to_string()]),

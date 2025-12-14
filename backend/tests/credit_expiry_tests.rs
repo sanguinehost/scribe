@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #[cfg(all(test, feature = "payment"))]
 mod credit_expiry_tests {
     //! Credit Expiry Tests - IMPLEMENTATION REQUIRED

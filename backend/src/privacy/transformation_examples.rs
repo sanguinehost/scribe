@@ -12,7 +12,7 @@ pub mod ai_client_factory_transformation {
     use uuid::Uuid;
 
     pub fn show_transformation() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
 
         println!("=== AI Client Factory Transformation ===\n");
 
@@ -44,9 +44,9 @@ pub mod chat_routes_transformation {
     use uuid::Uuid;
 
     pub fn show_transformation() {
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let character_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
+        let character_id = DbId::new();
 
         println!("=== Chat Routes Transformation ===\n");
 
@@ -80,7 +80,7 @@ pub mod chat_generation_transformation {
     use uuid::Uuid;
 
     pub fn show_transformation() {
-        let session_id = Uuid::new_v4();
+        let session_id = DbId::new();
 
         println!("=== Chat Generation Transformation ===\n");
 
@@ -114,7 +114,7 @@ pub mod llm_security_transformation {
     use uuid::Uuid;
 
     pub fn show_transformation() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
 
         println!("=== LLM Security Middleware Transformation ===\n");
 

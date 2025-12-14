@@ -18,6 +18,7 @@ pub mod payment_test_helpers {
         },
         services::payment::CreditService,
         test_helpers::TestApp,
+        DbId,
     };
     use chrono::Utc;
     use diesel::{PgConnection, RunQueryDsl, SelectableHelper};
@@ -43,8 +44,8 @@ pub mod payment_test_helpers {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let username = format!("testuser_{}", Uuid::new_v4());
-        let email = format!("test_{}@example.com", Uuid::new_v4());
+        let username = format!("testuser_{}", DbId::new());
+        let email = format!("test_{}@example.com", DbId::new());
         let password = "test_password_123";
 
         // Generate password hash synchronously
@@ -77,8 +78,8 @@ pub mod payment_test_helpers {
             password_hash,
             email,
             kek_salt,
-            encrypted_dek: encrypted_dek_bytes,
-            dek_nonce: dek_nonce_bytes,
+            encrypted_dek: crate::DbBlob::from_bytes(encrypted_dek_bytes),
+            dek_nonce: crate::DbBlob::from_bytes(dek_nonce_bytes),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
@@ -88,13 +89,13 @@ pub mod payment_test_helpers {
             total_completion_tokens: 0,
             total_token_cost_cents: 0,
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: crate::DbTimestamp::now(),
         };
 
         let user_from_db: UserDbQuery = diesel::insert_into(users::table)
             .values(&new_user)
             .returning(UserDbQuery::as_returning())
-            .get_result::<UserDbQuery>(conn)
+            .get_result(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         // Convert UserDbQuery to User
@@ -106,6 +107,7 @@ pub mod payment_test_helpers {
         let character_name = "Test Character".to_string();
 
         let new_character = NewCharacter {
+            id: Some(DbId::new()),
             user_id: user.id,
             name: character_name.clone(),
             description: Some(format!("Test description for {}", character_name).into_bytes()),
@@ -119,14 +121,14 @@ pub mod payment_test_helpers {
             world_scenario: Some(format!("Testing environment").into_bytes()),
             avatar: None,
             chat: None,
-            created_at: Some(now),
-            updated_at: Some(now),
-            creation_date: Some(now),
-            modification_date: Some(now),
+            created_at: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
+            updated_at: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
+            creation_date: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
+            modification_date: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
             creator_notes_multilingual: None,
             nickname: None,
             personality: None,
-            tags: None,
+            tags: crate::db::unified_types::DbStringArray::empty(),
             greeting_nonce: None,
             definition: None,
             default_voice: None,
@@ -143,7 +145,7 @@ pub mod payment_test_helpers {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: crate::db::unified_types::DbStringArray::empty(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -168,10 +170,10 @@ pub mod payment_test_helpers {
             first_mes: None,
             creator_notes: None,
             system_prompt: None,
-            alternate_greetings: None,
+            alternate_greetings: crate::db::unified_types::DbStringArray::empty(),
             creator: None,
-            source: None,
-            group_only_greetings: None,
+            source: crate::db::unified_types::DbStringArray::empty(),
+            group_only_greetings: crate::db::unified_types::DbStringArray::empty(),
             fav: None,
             world: None,
             creator_comment: None,
@@ -212,7 +214,7 @@ pub mod payment_test_helpers {
     /// Adds credits to a user using the credit service with proper connection handling
     pub async fn add_credits_to_user(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         amount: i32,
         description: &str,
     ) -> Result<CreditBalance, AppError> {
@@ -241,7 +243,7 @@ pub mod payment_test_helpers {
     /// Gets the credit balance for a user
     pub async fn get_user_credit_balance(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -257,7 +259,7 @@ pub mod payment_test_helpers {
     /// Gets transaction history for a user
     pub async fn get_user_transaction_history(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<Vec<CreditTransaction>, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -273,7 +275,7 @@ pub mod payment_test_helpers {
     /// Initializes user credits account
     pub async fn initialize_user_credits(
         app: &TestApp,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<CreditBalance, AppError> {
         let credit_service = CreditService::new(app.config.clone());
 
@@ -292,7 +294,7 @@ pub mod payment_test_helpers {
         session_key: &str,
         method: &str,
         path: &str,
-        payload: Option<serde_json::Value>,
+        payload: Option<crate::DbJson>,
     ) -> Result<reqwest::Response, reqwest::Error> {
         let client = Client::new();
         let url = format!("{}{}", app.address, path);
@@ -481,10 +483,10 @@ pub mod payment_test_helpers {
     /// Generate unique test IDs for various entities
     pub fn generate_test_ids() -> TestIds {
         TestIds {
-            event_id: format!("evt_test_{}", uuid::Uuid::new_v4()),
-            customer_id: format!("cus_test_{}", uuid::Uuid::new_v4()),
-            subscription_id: format!("sub_test_{}", uuid::Uuid::new_v4()),
-            transaction_id: format!("txn_test_{}", uuid::Uuid::new_v4()),
+            event_id: format!("evt_test_{}", crate::db::DbId::new_v4()),
+            customer_id: format!("cus_test_{}", crate::db::DbId::new_v4()),
+            subscription_id: format!("sub_test_{}", crate::db::DbId::new_v4()),
+            transaction_id: format!("txn_test_{}", crate::db::DbId::new_v4()),
         }
     }
 
@@ -592,6 +594,8 @@ pub mod payment_test_helpers {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::db::DbId;
+        use chrono::Utc;
 
         #[test]
         fn test_webhook_signature_generation() {

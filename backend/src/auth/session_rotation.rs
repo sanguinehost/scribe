@@ -53,7 +53,7 @@ pub async fn session_rotation_middleware(
 /// Extend session expiry by saving it (resets OnInactivity timer)
 async fn extend_session_expiry(session: &Session) -> Result<bool, tower_sessions::session::Error> {
     // Update the last save timestamp
-    let now = Utc::now();
+    let now = Utc::now().into();
     set_last_save_time(session, now).await?;
 
     // Save the session to extend its expiry time
@@ -84,7 +84,7 @@ async fn should_rotate_session(session: &Session) -> bool {
         }
         Ok(None) => {
             // No last rotation time recorded, set it now and don't rotate
-            if let Err(e) = set_last_rotation_time(session, Utc::now()).await {
+            if let Err(e) = set_last_rotation_time(session, Utc::now().into()).await {
                 warn!(session_id = ?session.id(), error = ?e, "Failed to set initial rotation time");
             }
             false
@@ -104,7 +104,7 @@ async fn rotate_session_if_needed(
     session.cycle_id().await?;
 
     // Update the last rotation time
-    set_last_rotation_time(session, Utc::now()).await?;
+    set_last_rotation_time(session, Utc::now().into()).await?;
 
     // Save the session to ensure changes are persisted
     session.save().await?;
@@ -115,10 +115,10 @@ async fn rotate_session_if_needed(
 /// Get the last rotation time from the session
 async fn get_last_rotation_time(
     session: &Session,
-) -> Result<Option<DateTime<Utc>>, tower_sessions::session::Error> {
+) -> Result<Option<crate::DbTimestamp>, tower_sessions::session::Error> {
     match session.get::<String>(LAST_ROTATION_KEY).await? {
         Some(time_str) => match DateTime::parse_from_rfc3339(&time_str) {
-            Ok(dt) => Ok(Some(dt.with_timezone(&Utc))),
+            Ok(dt) => Ok(Some(dt.with_timezone(&Utc).into())),
             Err(e) => {
                 warn!(session_id = ?session.id(), error = ?e, "Failed to parse last rotation time");
                 Ok(None)
@@ -131,7 +131,7 @@ async fn get_last_rotation_time(
 /// Set the last rotation time in the session
 async fn set_last_rotation_time(
     session: &Session,
-    time: DateTime<Utc>,
+    time: crate::DbTimestamp,
 ) -> Result<(), tower_sessions::session::Error> {
     let time_str = time.to_rfc3339();
     session.insert(LAST_ROTATION_KEY, time_str).await
@@ -140,15 +140,16 @@ async fn set_last_rotation_time(
 /// Set the last save time in the session
 async fn set_last_save_time(
     session: &Session,
-    time: DateTime<Utc>,
+    time: crate::DbTimestamp,
 ) -> Result<(), tower_sessions::session::Error> {
     let time_str = time.to_rfc3339();
     session.insert(LAST_SAVE_KEY, time_str).await
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use std::sync::Arc;
     use tower_sessions::MemoryStore;
 

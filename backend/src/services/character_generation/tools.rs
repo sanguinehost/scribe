@@ -30,7 +30,7 @@ impl CharacterGenerationTool {
     pub async fn execute_tool_call(
         &self,
         call: CharacterGenerationToolCall,
-        user_id: uuid::Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<CharacterGenerationToolResponse, AppError> {
         info!("Executing character generation tool: {}", call.tool_name);
 
@@ -66,67 +66,71 @@ impl CharacterGenerationTool {
     /// Handle field generation tool call
     async fn handle_generate_field(
         &self,
-        parameters: serde_json::Value,
-        user_id: uuid::Uuid,
-    ) -> Result<serde_json::Value, AppError> {
-        let request: FieldGenerationRequest = serde_json::from_value(parameters).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid field generation parameters: {}", e))
-        })?;
+        parameters: crate::DbJson,
+        user_id: crate::db::DbId,
+    ) -> Result<crate::DbJson, AppError> {
+        let request: FieldGenerationRequest = serde_json::from_value(parameters.clone().into())
+            .map_err(|e| {
+                AppError::InvalidInput(format!("Invalid field generation parameters: {}", e))
+            })?;
 
         let result = self
             .field_generator
             .generate_field(request, user_id, None)
             .await?;
-        Ok(serde_json::to_value(result)?)
+        Ok(serde_json::to_value(result)?.into())
     }
 
     /// Handle full character creation tool call
     async fn handle_create_character(
         &self,
-        parameters: serde_json::Value,
-        user_id: uuid::Uuid,
-    ) -> Result<serde_json::Value, AppError> {
-        let request: FullCharacterRequest = serde_json::from_value(parameters).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid character creation parameters: {}", e))
-        })?;
+        parameters: crate::DbJson,
+        user_id: crate::db::DbId,
+    ) -> Result<crate::DbJson, AppError> {
+        let request: FullCharacterRequest = serde_json::from_value(parameters.clone().into())
+            .map_err(|e| {
+                AppError::InvalidInput(format!("Invalid character creation parameters: {}", e))
+            })?;
 
         let result = self
             .full_character_generator
             .generate_character(request, user_id)
             .await?;
-        Ok(serde_json::to_value(result)?)
+        Ok(serde_json::to_value(result)?.into())
     }
 
     /// Handle field enhancement tool call
     async fn handle_enhance_field(
         &self,
-        parameters: serde_json::Value,
-        user_id: uuid::Uuid,
-    ) -> Result<serde_json::Value, AppError> {
-        let request: EnhancementRequest = serde_json::from_value(parameters).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e))
-        })?;
+        parameters: crate::DbJson,
+        user_id: crate::db::DbId,
+    ) -> Result<crate::DbJson, AppError> {
+        let request: EnhancementRequest = serde_json::from_value(parameters.clone().into())
+            .map_err(|e| {
+                AppError::InvalidInput(format!("Invalid enhancement parameters: {}", e))
+            })?;
 
         let result = self
             .enhancement_service
             .enhance_field(request, user_id)
             .await?;
-        Ok(serde_json::to_value(result)?)
+        Ok(serde_json::to_value(result)?.into())
     }
 
     /// Handle style analysis tool call
     async fn handle_analyze_style(
         &self,
-        parameters: serde_json::Value,
-    ) -> Result<serde_json::Value, AppError> {
+        parameters: crate::DbJson,
+    ) -> Result<crate::DbJson, AppError> {
         #[derive(Deserialize)]
         struct StyleAnalysisParams {
             content: String,
         }
 
-        let params: StyleAnalysisParams = serde_json::from_value(parameters).map_err(|e| {
-            AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e))
-        })?;
+        let params: StyleAnalysisParams = serde_json::from_value(parameters.clone().into())
+            .map_err(|e| {
+                AppError::InvalidInput(format!("Invalid style analysis parameters: {}", e))
+            })?;
 
         // Simplified style analysis - could be enhanced with ML or more sophisticated analysis
         let detected_style = self.detect_style(&params.content);
@@ -140,7 +144,7 @@ impl CharacterGenerationTool {
             "recommendations": self.get_style_recommendations(&detected_style)
         });
 
-        Ok(result)
+        Ok(result.into())
     }
 
     /// Detect the style of given content
@@ -280,7 +284,7 @@ impl CharacterGenerationTool {
     }
 
     /// Get available tool definitions for ScribeAssistant
-    pub fn get_tool_definitions() -> Vec<serde_json::Value> {
+    pub fn get_tool_definitions() -> Vec<crate::DbJson> {
         vec![
             serde_json::json!({
                 "name": "generate_character_field",
@@ -316,7 +320,7 @@ impl CharacterGenerationTool {
                     },
                     "required": ["field", "user_prompt"]
                 }
-            }),
+            }).into(),
             serde_json::json!({
                 "name": "create_full_character",
                 "description": "Create a complete character from a concept description",
@@ -342,7 +346,7 @@ impl CharacterGenerationTool {
                     },
                     "required": ["concept"]
                 }
-            }),
+            }).into(),
             serde_json::json!({
                 "name": "enhance_character_field",
                 "description": "Improve existing character field content",
@@ -374,7 +378,7 @@ impl CharacterGenerationTool {
                     },
                     "required": ["field", "current_content", "enhancement_instructions"]
                 }
-            }),
+            }).into(),
         ]
     }
 }

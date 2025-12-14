@@ -26,7 +26,7 @@ impl FullCharacterGenerator {
     pub async fn generate_character(
         &self,
         request: FullCharacterRequest,
-        user_id: uuid::Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<FullCharacterResult, AppError> {
         let start_time = Instant::now();
 
@@ -175,7 +175,7 @@ impl FullCharacterGenerator {
             generation_time_ms: generation_time.as_millis() as u64,
             style_detected: Some(description_result.style_used),
             model_used: self.state.config.token_counter_default_model.clone(),
-            timestamp: chrono::Utc::now(),
+            timestamp: chrono::Utc::now().into(),
             debug_info: None, // No debug info for full character generation yet
         };
 
@@ -204,7 +204,7 @@ impl FullCharacterGenerator {
         &self,
         description: &str,
         concept: &str,
-        user_id: uuid::Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<String, AppError> {
         // Simple name extraction - look for common patterns
         // This could be enhanced with better NLP or structured generation

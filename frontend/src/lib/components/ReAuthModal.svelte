@@ -14,14 +14,22 @@
 	import { AlertCircle } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
-	export let open = false;
-	export let reason: 'dek_missing' | 'session_expired' = 'dek_missing';
-	export let onSuccess: (() => void) | undefined = undefined;
+	// Svelte 5 runes mode: Use $props() instead of export let
+	let {
+		open = $bindable(false),
+		reason = 'dek_missing',
+		onSuccess
+	}: {
+		open?: boolean;
+		reason?: 'dek_missing' | 'session_expired';
+		onSuccess?: () => void;
+	} = $props();
 
-	let password = '';
-	let loading = false;
-	let error: string | null = null;
-	let identifier = '';
+	// CRITICAL: Internal state must use $state() for reactivity
+	let password = $state('');
+	let loading = $state(false);
+	let error = $state<string | null>(null);
+	let identifier = $state('');
 
 	// Load current user email/username from localStorage or session
 	onMount(async () => {

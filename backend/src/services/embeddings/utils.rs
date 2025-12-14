@@ -1,7 +1,7 @@
+use crate::db::DbId;
 use crate::errors::AppError;
 use qdrant_client::qdrant::Value as QdrantValue;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 /// Extracts a string value from Qdrant payload
 pub fn extract_string_from_payload(
@@ -28,9 +28,9 @@ pub fn extract_uuid_from_payload(
     payload: &HashMap<String, QdrantValue>,
     field_name: &str,
     context: &str,
-) -> Result<Uuid, AppError> {
+) -> Result<crate::db::DbId, AppError> {
     let uuid_str = extract_string_from_payload(payload, field_name, context)?;
-    Uuid::parse_str(&uuid_str).map_err(|e| {
+    DbId::parse_str(&uuid_str).map(|id| id.into()).map_err(|e| {
         AppError::SerializationError(format!(
             "Failed to parse '{field_name}' as UUID in {context}: {e}"
         ))

@@ -2,25 +2,25 @@
 ///
 /// This file demonstrates the before/after of updating logging statements
 /// to protect user privacy while maintaining debuggability.
+use crate::db::DbId;
 use crate::privacy::logging::{
     loggable_session_id, loggable_user_id, sanitize_content, sanitize_system_prompt,
 };
 use crate::{privacy_debug, privacy_error, privacy_info, privacy_warn};
-use uuid::Uuid;
 
 /// Example 1: AI Client Factory logging transformation
 pub mod ai_client_factory_example {
     use super::*;
 
     pub fn demonstrate_user_logging_transformation() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
 
         // BEFORE: Logs actual user ID
         // warn!(%user_id, error = ?e, "Failed to get user settings, using fallback client");
 
         // AFTER: Logs obfuscated user ID
         privacy_warn!(
-            user_id = %loggable_user_id(user_id),
+            user_id = %loggable_user_id(user_id.into()),
             error = "connection_timeout", // Sanitized error message
             "Failed to get user settings, using fallback client"
         );
@@ -30,7 +30,7 @@ pub mod ai_client_factory_example {
 
         // AFTER: Privacy-safe logging
         privacy_info!(
-            user_id = %loggable_user_id(user_id),
+            user_id = %loggable_user_id(user_id.into()),
             "Created local LLM client for user"
         );
     }
@@ -41,7 +41,7 @@ pub mod chat_generation_example {
     use super::*;
 
     pub fn demonstrate_chat_logging_transformation() {
-        let session_id = Uuid::new_v4();
+        let session_id = DbId::new();
         let user_content = "Tell me about quantum physics";
         let system_prompt = "You are a helpful AI assistant...";
 
@@ -50,7 +50,7 @@ pub mod chat_generation_example {
 
         // AFTER: Privacy-safe session logging
         privacy_debug!(
-            session_id = %loggable_session_id(session_id),
+            session_id = %loggable_session_id(session_id.into()),
             content = %sanitize_content(user_content),
             "Processing chat request"
         );
@@ -71,8 +71,8 @@ pub mod admin_routes_example {
     use super::*;
 
     pub fn demonstrate_admin_logging_transformation() {
-        let user_id = Uuid::new_v4();
-        let admin_user_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let admin_user_id = DbId::new();
         let _username = "john.doe";
 
         // BEFORE: Logs actual user IDs and username
@@ -80,7 +80,7 @@ pub mod admin_routes_example {
 
         // AFTER: Privacy-safe admin logging
         privacy_debug!(
-            user_id = %loggable_user_id(user_id),
+            user_id = %loggable_user_id(user_id.into()),
             username = "<username-redacted>", // Always redact usernames
             "User has Administrator role, access granted"
         );
@@ -90,8 +90,8 @@ pub mod admin_routes_example {
 
         // AFTER: Both IDs obfuscated
         privacy_info!(
-            admin_user_id = %loggable_user_id(admin_user_id),
-            target_user_id = %loggable_user_id(user_id),
+            admin_user_id = %loggable_user_id(admin_user_id.into()),
+            target_user_id = %loggable_user_id(user_id.into()),
             "Admin locking user account"
         );
     }
@@ -103,8 +103,8 @@ pub mod request_correlation_example {
     use crate::privacy::PrivacyContext;
 
     pub fn demonstrate_request_correlation() {
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
 
         // Create privacy context for request
         let privacy_ctx = PrivacyContext::new(crate::privacy::PrivacyConfig::default());
@@ -116,13 +116,13 @@ pub mod request_correlation_example {
         // AFTER: Request correlation with privacy
         privacy_info!(
             request_id = %privacy_ctx.request_id(),
-            user_id = %privacy_ctx.obfuscate_user_id(user_id),
+            user_id = %privacy_ctx.obfuscate_user_id(user_id.into()),
             "Processing request for user"
         );
 
         privacy_debug!(
             request_id = %privacy_ctx.request_id(),
-            session_id = %privacy_ctx.obfuscate_session_id(session_id),
+            session_id = %privacy_ctx.obfuscate_session_id(session_id.into()),
             "Session processing message"
         );
     }
@@ -133,8 +133,8 @@ pub mod error_handling_example {
     use super::*;
 
     pub fn demonstrate_error_logging_transformation() {
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
 
         // BEFORE: Potentially exposes user data in error messages
         // error!(
@@ -147,8 +147,8 @@ pub mod error_handling_example {
 
         // AFTER: Privacy-safe error logging
         privacy_error!(
-            user_id = %loggable_user_id(user_id),
-            session_id = %loggable_session_id(session_id),
+            user_id = %loggable_user_id(user_id.into()),
+            session_id = %loggable_session_id(session_id.into()),
             error_type = "database_query_failed",
             error_code = "PG_CONNECTION_TIMEOUT", // Sanitized error details
             "Database query failed"
@@ -161,7 +161,7 @@ pub mod auth_example {
     use super::*;
 
     pub fn demonstrate_auth_logging_transformation() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let _email = "user@example.com";
         let _ip_address = "192.168.1.100";
 
@@ -170,7 +170,7 @@ pub mod auth_example {
 
         // AFTER: Privacy-safe authentication logging
         privacy_info!(
-            user_id = %loggable_user_id(user_id),
+            user_id = %loggable_user_id(user_id.into()),
             email = "<email-redacted>",
             ip = "<ip-redacted>", // IP addresses are PII
             login_success = true,
@@ -225,8 +225,8 @@ pub fn show_transformation_patterns() {
 
 /// Demonstrates output format differences
 pub fn demonstrate_log_output_differences() {
-    let _user_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-    let _session_id = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+    let _user_id = DbId::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let _session_id = DbId::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
 
     println!("=== Log Output Format Comparison ===\n");
 
@@ -259,10 +259,11 @@ pub fn demonstrate_log_output_differences() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_user_id_obfuscation_consistency() {
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         let loggable1 = loggable_user_id(user_id);
         let loggable2 = loggable_user_id(user_id);
 
@@ -293,8 +294,8 @@ mod tests {
 
     #[test]
     fn test_different_ids_produce_different_hashes() {
-        let user_id1 = Uuid::new_v4();
-        let user_id2 = Uuid::new_v4();
+        let user_id1 = DbId::new();
+        let user_id2 = DbId::new();
 
         let loggable1 = loggable_user_id(user_id1);
         let loggable2 = loggable_user_id(user_id2);

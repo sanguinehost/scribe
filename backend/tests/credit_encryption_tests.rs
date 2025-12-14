@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(feature = "payment")]
 
 use diesel::prelude::*;

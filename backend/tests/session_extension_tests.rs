@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use diesel::prelude::*;

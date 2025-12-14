@@ -5,6 +5,7 @@
 //! processing while maintaining local subscription state.
 
 #[cfg(feature = "payment")]
+use crate::db::DbId;
 use crate::{
     config::Config,
     errors::AppError,
@@ -42,7 +43,7 @@ impl SubscriptionService {
     pub async fn create_subscription(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         plan_type: &str,
         paddle_customer_id: Option<String>,
         paddle_subscription_id: Option<String>,
@@ -62,7 +63,7 @@ impl SubscriptionService {
     pub fn create_subscription_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
         plan_type: &str,
         paddle_customer_id: Option<String>,
         paddle_subscription_id: Option<String>,
@@ -86,16 +87,16 @@ impl SubscriptionService {
         };
 
         let new_subscription = NewSubscription {
-            id: Uuid::new_v4(),
+            id: DbId::new(),
             user_id,
             paddle_customer_id,
             paddle_subscription_id,
             plan_type: plan_type.to_string(),
             status,
-            current_period_start: period_start,
-            current_period_end: period_end,
+            current_period_start: crate::DbTimestamp::from_datetime(period_start),
+            current_period_end: crate::DbTimestamp::from_datetime(period_end),
             cancel_at_period_end: Some(false),
-            trial_end,
+            trial_end: trial_end.map(crate::DbTimestamp::from_datetime),
             credits_allocated_this_period: Some(false),
             soft_limit_override: None,
             last_credit_grant: None,
@@ -103,7 +104,7 @@ impl SubscriptionService {
             first_payment_date: None,
             has_ever_paid: Some(false),
             cancellation_date: None,
-            trial_start_date: trial_end.map(|_| now),
+            trial_start_date: trial_end.map(|_| crate::DbTimestamp::from_datetime(now)),
             last_payment_date: None,
             grace_period_end: None,
             scheduled_plan_change: None,
@@ -123,7 +124,7 @@ impl SubscriptionService {
     pub async fn get_user_subscription(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<Option<Subscription>, AppError> {
         self.get_user_subscription_sync(conn, user_id)
     }
@@ -132,7 +133,7 @@ impl SubscriptionService {
     pub fn get_user_subscription_sync(
         &self,
         conn: &mut PgConnection,
-        user_id: Uuid,
+        user_id: crate::db::DbId,
     ) -> Result<Option<Subscription>, AppError> {
         // Get the most recent subscription for this user
         // Include cancelled trials so we can check if they've expired
@@ -170,8 +171,8 @@ impl SubscriptionService {
             }
 
             // Check if subscription is past its current period end
-            if sub.current_period_end < now {
-                let days_overdue = (now.signed_duration_since(sub.current_period_end)).num_days();
+            if sub.current_period_end < crate::DbTimestamp::from_datetime(now) {
+                let days_overdue = (now.signed_duration_since(*sub.current_period_end)).num_days();
 
                 // If past grace period, treat as cancelled
                 if days_overdue > grace_period_days {
@@ -194,7 +195,9 @@ impl SubscriptionService {
             }
 
             // Check if subscription is marked to cancel at period end and period has ended
-            if sub.cancel_at_period_end.unwrap_or(false) && sub.current_period_end < now {
+            if sub.cancel_at_period_end.unwrap_or(false)
+                && sub.current_period_end < crate::DbTimestamp::from_datetime(now)
+            {
                 tracing::info!(
                     "Subscription {} for user {} was marked to cancel at period end and period has ended",
                     sub.id,
@@ -211,7 +214,7 @@ impl SubscriptionService {
     pub async fn get_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::db::DbId,
     ) -> Result<Option<Subscription>, AppError> {
         let subscription = subscriptions::table
             .find(subscription_id)
@@ -243,7 +246,7 @@ impl SubscriptionService {
     pub async fn update_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::db::DbId,
         updates: UpdateSubscription,
     ) -> Result<Subscription, AppError> {
         let update_data = updates;
@@ -262,7 +265,7 @@ impl SubscriptionService {
     pub async fn cancel_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::db::DbId,
         immediate: bool,
     ) -> Result<Subscription, AppError> {
         let updates = if immediate {
@@ -286,7 +289,7 @@ impl SubscriptionService {
     pub async fn reactivate_subscription(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
+        subscription_id: crate::db::DbId,
     ) -> Result<Subscription, AppError> {
         let updates = UpdateSubscription {
             status: Some(SubscriptionStatus::Active.to_string()),
@@ -302,9 +305,9 @@ impl SubscriptionService {
     pub async fn update_subscription_period(
         &self,
         conn: &mut PgConnection,
-        subscription_id: Uuid,
-        period_start: DateTime<Utc>,
-        period_end: DateTime<Utc>,
+        subscription_id: crate::db::DbId,
+        period_start: crate::DbTimestamp,
+        period_end: crate::DbTimestamp,
     ) -> Result<Subscription, AppError> {
         let updates = UpdateSubscription {
             current_period_start: Some(period_start),
@@ -329,7 +332,7 @@ impl SubscriptionService {
     /// Check if subscription is in trial period
     pub fn is_trial_active(&self, subscription: &Subscription) -> bool {
         if let Some(trial_end) = subscription.trial_end {
-            trial_end > Utc::now()
+            trial_end > crate::DbTimestamp::now()
         } else {
             false
         }
@@ -344,7 +347,7 @@ impl SubscriptionService {
 
         // If there's no trial_end, it's not a trial
         if let Some(trial_end) = subscription.trial_end {
-            trial_end < Utc::now()
+            trial_end < crate::DbTimestamp::now()
         } else {
             false
         }
@@ -367,6 +370,7 @@ impl SubscriptionService {
     ) -> Result<Option<PlanFeatures>, AppError> {
         let features = plan_features::table
             .find(plan_type)
+            .select(PlanFeatures::as_select())
             .first::<PlanFeatures>(conn)
             .optional()
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -381,6 +385,7 @@ impl SubscriptionService {
     ) -> Result<Vec<PlanFeatures>, AppError> {
         let plans = plan_features::table
             .order(plan_features::price_cents.asc().nulls_first())
+            .select(PlanFeatures::as_select())
             .load::<PlanFeatures>(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -393,8 +398,8 @@ impl SubscriptionService {
         conn: &mut PgConnection,
         paddle_subscription_id: &str,
         status: &str,
-        period_start: Option<DateTime<Utc>>,
-        period_end: Option<DateTime<Utc>>,
+        period_start: Option<crate::DbTimestamp>,
+        period_end: Option<crate::DbTimestamp>,
         plan_id: Option<&str>,
     ) -> Result<Option<Subscription>, AppError> {
         if let Some(subscription) = self

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // Simplified tests - these large functions have been broken down from 430+ lines
 // into focused, single-purpose tests
 

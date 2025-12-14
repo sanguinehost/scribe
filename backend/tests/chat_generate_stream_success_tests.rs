@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use axum::{
@@ -128,8 +129,8 @@ async fn create_test_character_and_session(
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "gemini-2.5-flash".to_string(),
@@ -411,8 +412,8 @@ async fn test_first_mes_included_in_history() {
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
                 title_nonce: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
                 model_name: "test-model".to_string(),

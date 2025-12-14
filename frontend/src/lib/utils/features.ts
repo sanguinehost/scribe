@@ -10,7 +10,8 @@ import {
 	PUBLIC_ENABLE_LOCAL_LLM,
 	PUBLIC_ENABLE_PAYMENTS,
 	PUBLIC_ENABLE_CREDITS,
-	PUBLIC_ENABLE_SOFT_LIMITS
+	PUBLIC_ENABLE_SOFT_LIMITS,
+	PUBLIC_API_URL
 } from '$env/static/public';
 
 /**
@@ -70,4 +71,34 @@ export const PAYMENT_FEATURES = {
  */
 export function isFeatureEnabled(feature: keyof typeof FEATURES): boolean {
 	return FEATURES[feature];
+}
+
+/**
+ * Runtime check for desktop mode (Tauri)
+ *
+ * Desktop mode is detected by checking if the API URL uses the custom scribe:// protocol
+ * which is only configured for desktop builds (see .env.production.desktop)
+ *
+ * @returns true if running in Tauri desktop app, false if running in browser
+ */
+export function isDesktopMode(): boolean {
+	// Check if we're in a browser environment first
+	if (typeof window === 'undefined') {
+		return false;
+	}
+
+	// Primary check: Desktop builds use scribe://localhost as API URL
+	// Cloud builds use https://... or relative URLs
+	const usesCustomProtocol = PUBLIC_API_URL?.startsWith('scribe://');
+
+	// Fallback checks for additional validation
+	const hasTauriApi = typeof window.__TAURI__ !== 'undefined';
+
+	// Check for scribe:// custom protocol in window location
+	const hasCustomProtocolInLocation =
+		typeof window.location !== 'undefined' && window.location.protocol === 'scribe:';
+
+	// Desktop mode is true if any desktop indicator is present
+	const result = usesCustomProtocol || hasTauriApi || hasCustomProtocolInLocation;
+	return result;
 }

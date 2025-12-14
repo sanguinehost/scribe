@@ -303,271 +303,269 @@
 	});
 </script>
 
-<Tooltip.Provider>
-	<div
-		bind:this={containerRef}
-		class="flex min-w-0 flex-1 flex-col gap-6 overflow-y-scroll {(_mounted &&
-			messages.length === 0) ||
-		settingsStore.isVisible
-			? ''
-			: 'pt-4'}"
-		data-messages-container
-		use:infiniteScroll={{
-			threshold: 200,
-			debounce: 300
-		}}
-	>
-		<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
-		{#if settingsStore.isVisible || settingsStore.isTransitioning}
-			<div class="relative flex flex-1 items-center justify-center">
-				<div
-					class="settings-content-view w-full"
-					class:active={settingsStore.isVisible}
-					class:inactive={!settingsStore.isVisible}
-				>
-					<div
-						class="settings-view-content"
-						in:fade={{ duration: 400 }}
-						out:fade={{ duration: 300 }}
-					>
-						{#if settingsStore.viewMode === 'consolidated'}
-							<Settings />
-						{:else}
-							<SettingsOverview />
-						{/if}
+<div
+	bind:this={containerRef}
+	class="relative flex min-w-0 flex-1 flex-col overflow-y-scroll {(_mounted &&
+		messages.length === 0) ||
+	settingsStore.isVisible
+		? ''
+		: 'pt-4'}"
+	data-messages-container
+	use:infiniteScroll={{
+		threshold: 200,
+		debounce: 300
+	}}
+>
+	<!-- Settings Panel - shows if store.isVisible is true, regardless of message count -->
+	{#if settingsStore.isVisible || settingsStore.isTransitioning}
+		<div class="relative flex flex-1 items-center justify-center">
+			<div
+				class="settings-content-view w-full"
+				class:active={settingsStore.isVisible}
+				class:inactive={!settingsStore.isVisible}
+			>
+				<div class="settings-view-content" in:fade={{ duration: 400 }} out:fade={{ duration: 300 }}>
+					{#if settingsStore.viewMode === 'consolidated'}
+						<Settings />
+					{:else}
+						<SettingsOverview />
+					{/if}
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible AND not transitioning) -->
+	{#if _mounted && messages.length === 0 && !settingsStore.isVisible && !settingsStore.isTransitioning}
+		<div class="relative flex flex-1">
+			<!-- Apply same smooth transition approach as sidebar -->
+			<div
+				class="main-content-view"
+				class:active={selectedCharacterId}
+				class:inactive={!selectedCharacterId}
+			>
+				{#if selectedCharacterId}
+					<CharacterOverview characterId={selectedCharacterId} />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+				class:inactive={!selectedChronicleStore.selectedChronicleId || selectedCharacterId}
+			>
+				{#if selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+					<ChronicleOverview chronicleId={selectedChronicleStore.selectedChronicleId} />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedChronicleStore.isShowingList &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedCharacterId}
+				class:inactive={!selectedChronicleStore.isShowingList ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedCharacterId}
+			>
+				{#if selectedChronicleStore.isShowingList && !selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+					<ChroniclesListOverview />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedChronicleStore.isCreating &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedCharacterId}
+				class:inactive={!selectedChronicleStore.isCreating ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedCharacterId}
+			>
+				{#if selectedChronicleStore.isCreating && !selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
+					<ChronicleCreation />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedPersonaStore.viewMode === 'creating' &&
+					!selectedCharacterId &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedChronicleStore.isShowingList &&
+					!selectedChronicleStore.isCreating}
+				class:inactive={selectedPersonaStore.viewMode !== 'creating' ||
+					selectedCharacterId ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedChronicleStore.isShowingList ||
+					selectedChronicleStore.isCreating}
+			>
+				{#if selectedPersonaStore.viewMode === 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
+					<PersonaEditor />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedPersonaStore.personaId &&
+					selectedPersonaStore.viewMode !== 'creating' &&
+					!selectedCharacterId &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedChronicleStore.isShowingList &&
+					!selectedChronicleStore.isCreating}
+				class:inactive={!selectedPersonaStore.personaId ||
+					selectedPersonaStore.viewMode === 'creating' ||
+					selectedCharacterId ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedChronicleStore.isShowingList ||
+					selectedChronicleStore.isCreating}
+			>
+				{#if selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
+					<PersonaOverview personaId={selectedPersonaStore.personaId} />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedLorebookStore.viewMode === 'detail' &&
+					selectedLorebookStore.lorebookId &&
+					!selectedCharacterId &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedChronicleStore.isShowingList &&
+					!selectedChronicleStore.isCreating &&
+					!selectedPersonaStore.personaId &&
+					selectedPersonaStore.viewMode !== 'creating'}
+				class:inactive={selectedLorebookStore.viewMode !== 'detail' ||
+					!selectedLorebookStore.lorebookId ||
+					selectedCharacterId ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedChronicleStore.isShowingList ||
+					selectedChronicleStore.isCreating ||
+					selectedPersonaStore.personaId ||
+					selectedPersonaStore.viewMode === 'creating'}
+			>
+				{#if selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					<LorebookDetailOverview lorebookId={selectedLorebookStore.lorebookId} />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={selectedLorebookStore.viewMode === 'list' &&
+					!selectedCharacterId &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedChronicleStore.isShowingList &&
+					!selectedChronicleStore.isCreating &&
+					!selectedPersonaStore.personaId &&
+					selectedPersonaStore.viewMode !== 'creating'}
+				class:inactive={selectedLorebookStore.viewMode !== 'list' ||
+					selectedCharacterId ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedChronicleStore.isShowingList ||
+					selectedChronicleStore.isCreating ||
+					selectedPersonaStore.personaId ||
+					selectedPersonaStore.viewMode === 'creating'}
+			>
+				{#if selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
+					<LorebookOverview />
+				{/if}
+			</div>
+			<div
+				class="main-content-view"
+				class:active={!selectedCharacterId &&
+					!selectedChronicleStore.selectedChronicleId &&
+					!selectedChronicleStore.isShowingList &&
+					!selectedChronicleStore.isCreating &&
+					!selectedPersonaStore.personaId &&
+					selectedPersonaStore.viewMode !== 'creating' &&
+					selectedLorebookStore.viewMode === 'none'}
+				class:inactive={selectedCharacterId ||
+					selectedChronicleStore.selectedChronicleId ||
+					selectedChronicleStore.isShowingList ||
+					selectedChronicleStore.isCreating ||
+					selectedPersonaStore.personaId ||
+					selectedPersonaStore.viewMode === 'creating' ||
+					selectedLorebookStore.viewMode !== 'none'}
+			>
+				{#if !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
+					<Overview />
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	<Tooltip.Provider>
+		<div class="flex flex-col gap-6">
+			<!-- Loading indicator for loading more messages -->
+			{#if isLoadingMore && hasMoreMessages}
+				<div class="flex justify-center py-4">
+					<div class="flex items-center gap-2 text-muted-foreground">
+						<Loader2 class="h-4 w-4 animate-spin" />
+						<span class="text-sm">Loading older messages...</span>
 					</div>
 				</div>
-			</div>
-		{/if}
-
-		<!-- Empty Chat Placeholders (only if chat is empty AND settings are NOT visible AND not transitioning) -->
-		{#if _mounted && messages.length === 0 && !settingsStore.isVisible && !settingsStore.isTransitioning}
-			<div class="relative flex flex-1">
-				<!-- Apply same smooth transition approach as sidebar -->
-				<div
-					class="main-content-view"
-					class:active={selectedCharacterId}
-					class:inactive={!selectedCharacterId}
-				>
-					{#if selectedCharacterId}
-						<CharacterOverview characterId={selectedCharacterId} />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
-					class:inactive={!selectedChronicleStore.selectedChronicleId || selectedCharacterId}
-				>
-					{#if selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
-						<ChronicleOverview chronicleId={selectedChronicleStore.selectedChronicleId} />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedChronicleStore.isShowingList &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedCharacterId}
-					class:inactive={!selectedChronicleStore.isShowingList ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedCharacterId}
-				>
-					{#if selectedChronicleStore.isShowingList && !selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
-						<ChroniclesListOverview />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedChronicleStore.isCreating &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedCharacterId}
-					class:inactive={!selectedChronicleStore.isCreating ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedCharacterId}
-				>
-					{#if selectedChronicleStore.isCreating && !selectedChronicleStore.selectedChronicleId && !selectedCharacterId}
-						<ChronicleCreation />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedPersonaStore.viewMode === 'creating' &&
-						!selectedCharacterId &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedChronicleStore.isShowingList &&
-						!selectedChronicleStore.isCreating}
-					class:inactive={selectedPersonaStore.viewMode !== 'creating' ||
-						selectedCharacterId ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedChronicleStore.isShowingList ||
-						selectedChronicleStore.isCreating}
-				>
-					{#if selectedPersonaStore.viewMode === 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
-						<PersonaEditor />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedPersonaStore.personaId &&
-						selectedPersonaStore.viewMode !== 'creating' &&
-						!selectedCharacterId &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedChronicleStore.isShowingList &&
-						!selectedChronicleStore.isCreating}
-					class:inactive={!selectedPersonaStore.personaId ||
-						selectedPersonaStore.viewMode === 'creating' ||
-						selectedCharacterId ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedChronicleStore.isShowingList ||
-						selectedChronicleStore.isCreating}
-				>
-					{#if selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating}
-						<PersonaOverview personaId={selectedPersonaStore.personaId} />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedLorebookStore.viewMode === 'detail' &&
-						selectedLorebookStore.lorebookId &&
-						!selectedCharacterId &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedChronicleStore.isShowingList &&
-						!selectedChronicleStore.isCreating &&
-						!selectedPersonaStore.personaId &&
-						selectedPersonaStore.viewMode !== 'creating'}
-					class:inactive={selectedLorebookStore.viewMode !== 'detail' ||
-						!selectedLorebookStore.lorebookId ||
-						selectedCharacterId ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedChronicleStore.isShowingList ||
-						selectedChronicleStore.isCreating ||
-						selectedPersonaStore.personaId ||
-						selectedPersonaStore.viewMode === 'creating'}
-				>
-					{#if selectedLorebookStore.viewMode === 'detail' && selectedLorebookStore.lorebookId && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
-						<LorebookDetailOverview lorebookId={selectedLorebookStore.lorebookId} />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={selectedLorebookStore.viewMode === 'list' &&
-						!selectedCharacterId &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedChronicleStore.isShowingList &&
-						!selectedChronicleStore.isCreating &&
-						!selectedPersonaStore.personaId &&
-						selectedPersonaStore.viewMode !== 'creating'}
-					class:inactive={selectedLorebookStore.viewMode !== 'list' ||
-						selectedCharacterId ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedChronicleStore.isShowingList ||
-						selectedChronicleStore.isCreating ||
-						selectedPersonaStore.personaId ||
-						selectedPersonaStore.viewMode === 'creating'}
-				>
-					{#if selectedLorebookStore.viewMode === 'list' && !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating'}
-						<LorebookOverview />
-					{/if}
-				</div>
-				<div
-					class="main-content-view"
-					class:active={!selectedCharacterId &&
-						!selectedChronicleStore.selectedChronicleId &&
-						!selectedChronicleStore.isShowingList &&
-						!selectedChronicleStore.isCreating &&
-						!selectedPersonaStore.personaId &&
-						selectedPersonaStore.viewMode !== 'creating' &&
-						selectedLorebookStore.viewMode === 'none'}
-					class:inactive={selectedCharacterId ||
-						selectedChronicleStore.selectedChronicleId ||
-						selectedChronicleStore.isShowingList ||
-						selectedChronicleStore.isCreating ||
-						selectedPersonaStore.personaId ||
-						selectedPersonaStore.viewMode === 'creating' ||
-						selectedLorebookStore.viewMode !== 'none'}
-				>
-					{#if !selectedCharacterId && !selectedChronicleStore.selectedChronicleId && !selectedChronicleStore.isShowingList && !selectedChronicleStore.isCreating && !selectedPersonaStore.personaId && selectedPersonaStore.viewMode !== 'creating' && selectedLorebookStore.viewMode === 'none'}
-						<Overview />
-					{/if}
-				</div>
-			</div>
-		{/if}
-
-		<!-- Loading indicator for loading more messages -->
-		{#if isLoadingMore && hasMoreMessages}
-			<div class="flex justify-center py-4">
-				<div class="flex items-center gap-2 text-muted-foreground">
-					<Loader2 class="h-4 w-4 animate-spin" />
-					<span class="text-sm">Loading older messages...</span>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Soft Limit Warning (feature-gated) -->
-		{#if $shouldShowSoftLimitWarning && messages.length > 0}
-			<div class="px-4 py-2">
-				<SoftLimitWarning
-					softLimitStatus={$usageStore.softLimitStatus}
-					compact={false}
-					showUpgradeButton={true}
-					onUpgrade={() => {
-						// Navigate to upgrade page - could be implemented later
-						console.log('Navigate to upgrade');
-					}}
-				/>
-			</div>
-		{/if}
-
-		{#each messages as message, index (message.id)}
-			{#if isFirstMessage(message, index) && character}
-				<FirstMessage
-					{message}
-					_readonly={readonly}
-					loading={false}
-					alternateGreetings={character.alternate_greetings || undefined}
-					{currentGreetingIndex}
-					on:greetingChanged={handleGreetingChanged}
-					{character}
-					_user={user}
-					{substituteTemplateVariables}
-					{userPersonaName}
-				/>
-			{:else}
-				{@const currentIndex = message.current_variant_index ?? 0}
-				{@const variantCount = message.variant_count ?? 0}
-				{@const hasVariants = variantCount > 0}
-				{@const variantInfo = hasVariants
-					? { current: currentIndex + 1, total: variantCount }
-					: null}
-
-				<Message
-					{message}
-					{readonly}
-					{loading}
-					{user}
-					{character}
-					{chat}
-					{hasVariants}
-					{variantInfo}
-					{onRetryMessage}
-					{onRetryFailedMessage}
-					{onEditMessage}
-					{onSaveEditedMessage}
-					{onDeleteMessage}
-					{onPreviousVariant}
-					{onNextVariant}
-					{substituteTemplateVariables}
-					{userPersonaName}
-				/>
 			{/if}
-		{/each}
 
-		{#if loading && messages.length > 0 && messages[messages.length - 1].message_type === 'User'}
-			<ThinkingMessage />
-		{/if}
+			<!-- Soft Limit Warning (feature-gated) -->
+			{#if $shouldShowSoftLimitWarning && messages.length > 0}
+				<div class="px-4 py-2">
+					<SoftLimitWarning
+						softLimitStatus={$usageStore.softLimitStatus}
+						compact={false}
+						showUpgradeButton={true}
+						onUpgrade={() => {
+							// Navigate to upgrade page - could be implemented later
+							console.log('Navigate to upgrade');
+						}}
+					/>
+				</div>
+			{/if}
 
-		<div bind:this={endRef} class="min-h-[24px] min-w-[24px] shrink-0"></div>
-	</div>
-</Tooltip.Provider>
+			{#each messages as message, index (message.id)}
+				{#if isFirstMessage(message, index) && character}
+					<FirstMessage
+						{message}
+						_readonly={readonly}
+						loading={false}
+						alternateGreetings={character.alternate_greetings || undefined}
+						{currentGreetingIndex}
+						on:greetingChanged={handleGreetingChanged}
+						{character}
+						_user={user}
+						{substituteTemplateVariables}
+						{userPersonaName}
+					/>
+				{:else}
+					{@const currentIndex = message.current_variant_index ?? 0}
+					{@const variantCount = message.variant_count ?? 0}
+					{@const hasVariants = variantCount > 0}
+					{@const variantInfo = hasVariants
+						? { current: currentIndex + 1, total: variantCount }
+						: null}
+
+					<Message
+						{message}
+						{readonly}
+						{loading}
+						{user}
+						{character}
+						{chat}
+						{hasVariants}
+						{variantInfo}
+						{onRetryMessage}
+						{onRetryFailedMessage}
+						{onEditMessage}
+						{onSaveEditedMessage}
+						{onDeleteMessage}
+						{onPreviousVariant}
+						{onNextVariant}
+						{substituteTemplateVariables}
+						{userPersonaName}
+					/>
+				{/if}
+			{/each}
+
+			{#if loading && messages.length > 0 && messages[messages.length - 1].message_type === 'User'}
+				<ThinkingMessage />
+			{/if}
+
+			<div bind:this={endRef} class="min-h-[24px] min-w-[24px] shrink-0"></div>
+		</div>
+	</Tooltip.Provider>
+</div>
 
 <style>
 	.main-content-view {

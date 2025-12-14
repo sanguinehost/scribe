@@ -1,8 +1,10 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
 use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use scribe_backend::{
+    db::DbId,
     models::{
         chats::{Chat, MessageRole, NewChat, NewChatMessage},
         AgentContextAnalysis,

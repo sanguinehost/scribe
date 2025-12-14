@@ -2,7 +2,10 @@
 	import { onMount } from 'svelte';
 	import { browser as _browser } from '$app/environment';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { PUBLIC_PADDLE_CLIENT_SIDE_TOKEN } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
+
+	// Use dynamic import to avoid build-time requirement for Paddle token
+	const PUBLIC_PADDLE_CLIENT_SIDE_TOKEN = env.PUBLIC_PADDLE_CLIENT_SIDE_TOKEN;
 
 	let paddleLoaded = false;
 	let paddleError: string | null = null;

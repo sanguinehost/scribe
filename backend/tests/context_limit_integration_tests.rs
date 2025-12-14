@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 // backend/tests/context_limit_integration_tests.rs
 // Tests to verify that user-configured context limits are properly integrated with security
 

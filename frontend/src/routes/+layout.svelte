@@ -9,22 +9,34 @@
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import {
 		initializeAuth,
-		setAuthenticated,
 		setUnauthenticated,
-		getIsAuthenticated
+		setAuthenticated,
+		getIsAuthenticated,
+		getCurrentUser,
+		setAuthReady
 	} from '$lib/auth.svelte'; // Import from new auth store
 	import { goto as _goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types';
 	import ReAuthModal from '$lib/components/ReAuthModal.svelte';
 
-	let { data, children } = $props<{ data: { user?: User | null }; children: unknown }>();
+	let { children } = $props<{ data?: { user?: User | null }; children: unknown }>();
+
+	// Public routes that don't require authentication
+	const publicRoutes = ['/welcome', '/signin', '/signup', '/pricing', '/verify-email'];
+	const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
 
 	// Re-authentication modal state
 	let showReAuthModal = $state(false);
 	let reAuthReason = $state<'dek_missing' | 'session_expired'>('dek_missing');
 	let reAuthModalShownOnce = $state(false); // Prevent duplicate modals
+
+	// CRITICAL FIX: Simple boolean flag for app ready state
+	// This creates a clear reactive dependency that Svelte 5 can track
+	// (getter functions in conditionals don't create subscriptions when condition is initially false)
+	let isAppReady = $state(false);
 
 	// Initialize settings store
 	const settingsStore = new SettingsStore();
@@ -59,29 +71,384 @@
 			});
 	}
 
-	// Initialize new auth store with server data if available, then run client-side initialization.
-	// This $effect runs when `data.user` changes or on component initialization.
-	$effect(() => {
-		if (data.user) {
-			setAuthenticated(data.user);
-		}
-		// User data logging removed to prevent sensitive information exposure
-	});
-
 	onMount(() => {
-		// Initialize auth asynchronously without blocking mount
-		(async () => {
-			// initializeAuth will attempt to fetch the user if not already set by server data,
-			// or if we want to re-verify on client-side navigation to a page with this layout.
-			// It's designed to be safe to call even if already authenticated.
-			await initializeAuth();
+		console.log('[STEP 1] onMount started');
 
-			// Initialize subscription store after auth is ready and payments are enabled
-			if (ENABLE_PAYMENTS && getIsAuthenticated()) {
-				subscriptionStore.initialize();
-			}
-			// Initialization logging removed for production
-		})();
+		// Run async initialization in IIFE
+		(async () => {
+			// TEMPORARILY DISABLED - Testing if logger init causes the freeze
+			// if (import.meta.env.PUBLIC_ENVIRONMENT === 'desktop') {
+			// 	console.log('[STEP 1.5] Initializing desktop logger...');
+			// 	try {
+			// 		const { initDesktopLogger } = await import('$lib/utils/desktop-logger');
+			// 		const success = await initDesktopLogger();
+			// 		if (success) {
+			// 			console.log('[STEP 1.6] Desktop logger initialized - all logs now forwarded to backend');
+			// 		} else {
+			// 			console.warn('[STEP 1.6] Desktop logger failed - using native console only');
+			// 		}
+			// 	} catch (e) {
+			// 		console.error('[STEP 1.6] Failed to init desktop logger:', e);
+			// 	}
+			// }
+			console.log(
+				'[STEP 1.5] Logger init DISABLED for testing - checking if this was causing freeze'
+			);
+
+			// Helper function to hide the loading overlay from app.html
+			const hideLoadingOverlay = () => {
+				console.log('[+layout.svelte] Hiding loading overlay');
+				const overlay = document.getElementById('loading-overlay');
+				if (overlay) {
+					overlay.classList.add('hidden');
+					// Remove from DOM after transition completes
+					setTimeout(() => overlay.remove(), 600);
+				}
+			};
+
+			// CRITICAL: Failsafe to ALWAYS hide overlay after 5 seconds, no matter what
+			const failsafeTimeout = setTimeout(() => {
+				console.error('[+layout.svelte] Failsafe triggered - hiding overlay after timeout');
+				hideLoadingOverlay();
+			}, 5000);
+
+			// Helper to add timeout to any promise
+			const withTimeout = <T,>(
+				promise: Promise<T>,
+				timeoutMs: number,
+				operation: string
+			): Promise<T> => {
+				return Promise.race([
+					promise,
+					new Promise<T>((_, reject) =>
+						setTimeout(
+							() => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
+							timeoutMs
+						)
+					)
+				]);
+			};
+
+			// NOTE: Tauri log API attempts removed - was causing hangs and not working properly
+			// All logging now goes to console.log which is captured by backend in desktop mode
+			// Variable kept for potential future use
+			let _tauriLog: unknown = null;
+
+			// CRITICAL FIX: Wrap entire initialization IIFE with hard timeout at Promise level
+			// This catches Rust-level hangs that prevent JS setTimeout from firing
+			console.log('[STEP 4] Starting main initialization with hard timeout wrapper');
+			const initPromise = (async () => {
+				try {
+					console.log('[STEP 5] Importing isDesktopMode...');
+					const { isDesktopMode } = await import('$lib/utils/features');
+					console.log('[STEP 6] isDesktopMode imported');
+
+					console.log('[STEP 7] Importing apiClient...');
+					const { apiClient } = await import('$lib/api');
+					console.log('[STEP 8] apiClient imported');
+
+					const log = async (msg: string) => {
+						console.log(msg);
+					};
+					const logError = async (msg: string) => {
+						console.error(msg);
+					};
+
+					// NOTE: Token persistence check removed - the main desktop init flow handles all auth
+					// This simplifies the logic and ensures auto-login always runs when needed
+
+					if (isDesktopMode()) {
+						log('[STEP 9] Desktop mode detected, initializing...');
+
+						// CRITICAL: Backend health check BEFORE making any API calls
+						// If backend/protocol handler isn't ready, fail fast instead of hanging
+						log('[STEP 10] Checking backend health...');
+						try {
+							const healthCheckStart = Date.now();
+							const healthResult = await withTimeout(
+								fetch('scribe://localhost/api/health', { method: 'GET' }),
+								2000,
+								'Backend health check'
+							);
+							const healthCheckDuration = Date.now() - healthCheckStart;
+							if (healthResult.ok) {
+								log(`[STEP 11] ✓ Backend health check passed (${healthCheckDuration}ms)`);
+							} else {
+								logError(`[STEP 11] ✗ Backend health check failed: ${healthResult.status}`);
+								throw new Error(`Backend health check failed with status ${healthResult.status}`);
+							}
+						} catch (healthError) {
+							logError(`[STEP 11] ✗ Backend health check error: ${healthError}`);
+							setUnauthenticated();
+							isAppReady = true; // CRITICAL: Set flag so error states can render
+							hideLoadingOverlay();
+							// Show error to user
+							console.error(
+								'[+layout.svelte] Backend is not responding. Please restart the application.'
+							);
+							alert('Backend is not responding. Please restart the application.');
+							return;
+						}
+
+						// Get desktop config
+						log('[STEP 12] Getting desktop config...');
+						const configResult = await apiClient.getDesktopConfig();
+						log('[STEP 13] Desktop config request completed');
+
+						if (configResult.isOk()) {
+							const config = configResult.value;
+							log(`[STEP 14] Desktop config loaded: ${JSON.stringify(config)}`);
+
+							// Redirect to welcome if setup not complete
+							if (!config.setup_complete && window.location.pathname !== '/welcome') {
+								log('[STEP 15] Setup not complete, redirecting to /welcome');
+								isAppReady = true; // CRITICAL: Set flag so /welcome page can render
+								hideLoadingOverlay();
+								_goto('/welcome');
+								return;
+							}
+
+							// Auto-login for Quick Start mode
+							if (config.setup_complete && config.auth_mode === 'quick_start') {
+								log('[STEP 15.5] Quick Start mode - checking for stored credentials first...');
+
+								// CRITICAL: Check for stored tokens BEFORE auto-login
+								// This enables session persistence across app restarts
+								try {
+									const storedTokensResult = await withTimeout(
+										apiClient.checkStoredTokens(),
+										3000,
+										'Check stored tokens'
+									);
+
+									if (storedTokensResult.isOk() && storedTokensResult.value) {
+										log('[STEP 15.6] ✓ Found stored credentials, validating with backend...');
+
+										// Tokens loaded into memory - validate by fetching user data
+										await withTimeout(initializeAuth(true), 8000, 'Validate stored tokens');
+
+										const authenticatedUser = getCurrentUser();
+										if (authenticatedUser) {
+											log('[STEP 15.7] ✓ Stored tokens are VALID - user authenticated');
+											setAuthReady(true);
+											setAuthenticated(authenticatedUser);
+
+											// Initialize subscription store
+											if (ENABLE_PAYMENTS) {
+												subscriptionStore.initialize();
+											}
+
+											isAppReady = true;
+											hideLoadingOverlay();
+											log('[STEP 15.8] ✓ Session restored - SKIPPING auto-login');
+											return; // Skip auto-login entirely
+										} else {
+											logError('[STEP 15.7] ✗ Validation failed - no user returned');
+											log('[STEP 15.8] Clearing invalid tokens...');
+											await apiClient.clearDesktopTokens();
+										}
+									} else {
+										log('[STEP 15.6] No stored credentials found');
+									}
+								} catch (tokenError) {
+									logError(`[STEP 15.6] ✗ Token check/validation failed: ${tokenError}`);
+									log('[STEP 15.7] Clearing any partial tokens...');
+									try {
+										await apiClient.clearDesktopTokens();
+									} catch (e) {
+										logError(`[STEP 15.8] ✗ Failed to clear tokens: ${e}`);
+									}
+								}
+
+								// Only attempt auto-login if stored tokens were invalid/missing
+								log('[STEP 16] No valid stored credentials - attempting Quick Start auto-login...');
+
+								const autoLoginResult = await apiClient.desktopAutoLogin();
+								log('[STEP 17] Auto-login request completed');
+
+								if (autoLoginResult.isOk()) {
+									const tokenData = autoLoginResult.value;
+									log('[STEP 18] ✓ Auto-login successful');
+
+									// Save tokens to Tauri secure storage
+									try {
+										log('[STEP 19] Importing Tauri invoke...');
+										const { invoke } = await import('@tauri-apps/api/core');
+										log('[STEP 20] Saving tokens to secure storage...');
+										await invoke('save_tokens', {
+											tokens: {
+												accessToken: tokenData.access_token,
+												refreshToken: tokenData.refresh_token,
+												expiresIn: tokenData.expires_in
+											}
+										});
+										log('[STEP 21] ✓ JWT tokens saved');
+
+										// Save DEK if present (Quick Start mode)
+										if (tokenData.dek) {
+											log('[STEP 22] Saving DEK to secure storage...');
+											await invoke('save_local_dek', { dek: tokenData.dek });
+											log('[STEP 23] ✓ DEK saved to secure storage');
+										}
+										// CRITICAL: Reload tokens/DEK into desktopAuth in-memory cache
+										// This ensures subsequent API calls have authentication headers
+										log('[STEP 24] Reloading credentials into memory...');
+										await withTimeout(
+											apiClient.reinitializeDesktopAuth(),
+											5000,
+											'Reinitialize desktop auth'
+										);
+										log('[STEP 25] ✓ Credentials reloaded into memory');
+
+										// Now initialize auth to populate auth store with user data
+										// Add explicit timeout to prevent UI freeze if backend is slow/offline
+										log('[STEP 26] Initializing auth store (fetching user data)...');
+										try {
+											await withTimeout(initializeAuth(true), 8000, 'Initialize auth');
+											log('[STEP 27] ✓ Auth initialization successful');
+											// CRITICAL: Set auth ready flag BEFORE hiding overlay
+											// This signals child components that auth is complete and tokens are loaded
+											setAuthReady(true);
+											log('[STEP 27a] ✓ Auth ready flag set - safe to render child components');
+										} catch (authError) {
+											logError(`[STEP 27] ✗ Auth initialization failed or timed out: ${authError}`);
+											// Auth init failed but we have tokens saved - app can still work
+											// Set unauthenticated state so app doesn't hang waiting for user data
+											setUnauthenticated();
+											setAuthReady(false); // Auth not ready if initialization failed
+										}
+
+										// Initialize subscription store after auth is ready
+										if (ENABLE_PAYMENTS && getIsAuthenticated()) {
+											log('[STEP 28] Initializing subscription store...');
+											try {
+												subscriptionStore.initialize();
+												log('[STEP 29] ✓ Subscription store initialized');
+											} catch (subError) {
+												logError(`[STEP 29] ✗ Subscription store init failed: ${subError}`);
+												// Non-fatal - app can continue without subscription data
+											}
+										}
+
+										// Hide loading overlay - auth is complete
+										log('[STEP 30] ✓ Auth complete (Quick Start auto-login)');
+										isAppReady = true; // CRITICAL: Set flag to trigger reactive re-render
+										log('[STEP 30a] ✓ App ready flag set - UI will now show');
+										hideLoadingOverlay();
+									} catch (saveError) {
+										logError(`[STEP 31] ✗ Failed during token save/auth: ${saveError}`);
+										// Token save or auth initialization failed - redirect to welcome to retry setup
+										isAppReady = true; // CRITICAL: Set flag so /welcome page can render
+										hideLoadingOverlay();
+										_goto('/welcome');
+									}
+								} else {
+									logError(`[STEP 32] ✗ Auto-login failed: ${autoLoginResult.error}`);
+									// Auto-login failed - redirect to welcome to retry setup
+									isAppReady = true; // CRITICAL: Set flag so /welcome page can render
+									hideLoadingOverlay();
+									_goto('/welcome');
+								}
+							} else {
+								// For non-Quick-Start modes, run normal auth init
+								log('[+layout.svelte] Non-Quick-Start mode, running normal auth init');
+								try {
+									await withTimeout(initializeAuth(), 8000, 'Initialize auth (non-Quick-Start)');
+									log('[+layout.svelte] Auth initialization successful');
+									setAuthReady(true);
+									log('[+layout.svelte] Auth ready flag set - safe to render child components');
+								} catch (authError) {
+									logError(
+										`[+layout.svelte] Auth initialization failed or timed out: ${authError}`
+									);
+									setUnauthenticated();
+									setAuthReady(false);
+								}
+
+								if (ENABLE_PAYMENTS && getIsAuthenticated()) {
+									try {
+										subscriptionStore.initialize();
+									} catch (subError) {
+										logError(`[+layout.svelte] Subscription store init failed: ${subError}`);
+									}
+								}
+
+								// Hide loading overlay
+								log('[+layout.svelte] Auth init complete (non-Quick-Start desktop)');
+								isAppReady = true; // CRITICAL: Set flag to trigger reactive re-render
+								log('[+layout.svelte] App ready flag set - UI will now show');
+								hideLoadingOverlay();
+							}
+						} else {
+							logError(`[+layout.svelte] Failed to get desktop config: ${configResult.error}`);
+							// Config load failed - redirect to welcome
+							isAppReady = true; // CRITICAL: Set flag so /welcome page can render
+							hideLoadingOverlay();
+							_goto('/welcome');
+						}
+					} else {
+						// Non-desktop mode (web/cloud) - run normal auth init
+						log('[+layout.svelte] Web/cloud mode, running normal auth init');
+						try {
+							await withTimeout(initializeAuth(), 8000, 'Initialize auth (web/cloud)');
+							log('[+layout.svelte] Auth initialization successful');
+							setAuthReady(true);
+							log('[+layout.svelte] Auth ready flag set - safe to render child components');
+						} catch (authError) {
+							logError(`[+layout.svelte] Auth initialization failed or timed out: ${authError}`);
+							setUnauthenticated();
+							setAuthReady(false);
+						}
+
+						if (ENABLE_PAYMENTS && getIsAuthenticated()) {
+							try {
+								subscriptionStore.initialize();
+							} catch (subError) {
+								logError(`[+layout.svelte] Subscription store init failed: ${subError}`);
+							}
+						}
+
+						// Hide loading overlay
+						log('[+layout.svelte] Auth init complete (web/cloud mode)');
+						isAppReady = true; // CRITICAL: Set flag to trigger reactive re-render
+						log('[+layout.svelte] App ready flag set - UI will now show');
+						hideLoadingOverlay();
+					}
+				} catch (error) {
+					console.error(`[CRITICAL ERROR] Initialization error at unknown step: ${error}`);
+					console.error('[+layout.svelte] Fatal initialization error:', error);
+					// Force auth to non-loading state so app becomes usable even if init fails
+					setUnauthenticated();
+					isAppReady = true; // CRITICAL: Set flag so error states can render
+				} finally {
+					// CRITICAL: Always hide overlay and clear failsafe, even if initialization fails
+					console.log('[FINALLY] Cleaning up initialization');
+					clearTimeout(failsafeTimeout);
+					hideLoadingOverlay();
+				}
+			})();
+
+			// CRITICAL FIX: Hard timeout wrapper at Promise level
+			// If initPromise doesn't resolve in 8 seconds, force cleanup and show error
+			// This catches Rust-level hangs that prevent JS event loop from processing
+			Promise.race([
+				initPromise,
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error('Initialization IIFE timed out after 8 seconds')), 8000)
+				)
+			]).catch((error) => {
+				console.error('[TIMEOUT] Initialization IIFE did not complete:', error);
+				console.error('[TIMEOUT] Forcing overlay hide and showing error to user');
+				clearTimeout(failsafeTimeout);
+				hideLoadingOverlay();
+				setUnauthenticated();
+				isAppReady = true; // CRITICAL: Set flag so error states can render
+				// Show error to user
+				alert(
+					'Application initialization timed out. Please restart the application. If this problem persists, check the logs.'
+				);
+			});
+		})(); // End async IIFE
 
 		// Set up global listener for auth:invalidated events (for any legacy components)
 		const handleAuthInvalidated = () => {
@@ -191,11 +558,37 @@
 			reAuthModalShownOnce = true;
 		};
 
+		// Handle JWT token expiry in desktop mode
+		const handleTokenExpired = async (event: Event) => {
+			const customEvent = event as CustomEvent<{
+				reason: string;
+				endpoint: string;
+			}>;
+
+			console.error('[Layout] JWT token expired - redirecting to login', {
+				reason: customEvent.detail?.reason,
+				endpoint: customEvent.detail?.endpoint
+			});
+
+			// Clear auth state
+			setUnauthenticated();
+			setAuthReady(false);
+
+			// Show error message to user
+			toast.error('Your session has expired', {
+				description: 'Please log in again to continue.'
+			});
+
+			// Redirect to login page
+			await _goto('/login');
+		};
+
 		window.addEventListener('auth:connection-error', handleConnectionError);
 		window.addEventListener('auth:session-expired', handleSessionExpired);
 		window.addEventListener('auth:connection-restored', handleConnectionRestored);
 		window.addEventListener('auth:success', handleAuthSuccess);
 		window.addEventListener('auth:dek-missing', handleDekMissing);
+		window.addEventListener('auth:token-expired', handleTokenExpired);
 
 		// Set up periodic auth check to detect session expiry during active use
 		// Reduced from 5 minutes to 2 minutes for faster detection of invalidated sessions
@@ -262,6 +655,41 @@
 			reason={reAuthReason}
 			onSuccess={handleReAuthSuccess}
 		/>
-		{@render children()}
+		{#if isAppReady || isPublicRoute}
+			{@render children()}
+		{:else}
+			<div class="flex h-screen items-center justify-center">
+				<div class="loading-content">
+					<svg class="loading-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+						<circle
+							cx="50"
+							cy="50"
+							r="40"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="4"
+							opacity="0.2"
+						/>
+						<path
+							d="M50 10 A40 40 0 0 1 50 90"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="4"
+							stroke-linecap="round"
+						>
+							<animateTransform
+								attributeName="transform"
+								type="rotate"
+								from="0 50 50"
+								to="360 50 50"
+								dur="1s"
+								repeatCount="indefinite"
+							/>
+						</path>
+					</svg>
+					<div class="loading-text">Initializing...</div>
+				</div>
+			</div>
+		{/if}
 	</TooltipProvider>
 </ThemeProvider>

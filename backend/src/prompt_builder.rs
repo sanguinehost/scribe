@@ -15,7 +15,7 @@ use secrecy::ExposeSecret;
 use serde_json;
 use std::fmt::Write;
 use std::sync::Arc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
@@ -27,7 +27,7 @@ fn escape_xml(text: &str) -> String {
 }
 
 /// Replaces template variables {{char}} and {{user}} with actual names
-fn replace_template_variables(
+pub fn replace_template_variables(
     text: &str,
     character_name: Option<&str>,
     user_persona_name: Option<&str>,
@@ -840,7 +840,7 @@ fn build_rag_context_string(
                 &rag_item.metadata
             {
                 // Try to parse the text as JSON to extract rich chronicle data
-                if let Ok(event_data) = serde_json::from_str::<serde_json::Value>(&rag_item.text) {
+                if let Ok(event_data) = serde_json::from_str::<crate::DbJson>(&rag_item.text) {
                     write!(
                         rag_context,
                         "<chronicle_event type=\"{}\" timestamp=\"{}\"",
@@ -1226,11 +1226,11 @@ async fn build_final_prompt_strings(
         });
 
         if let Some(personality) = character_personality {
-            char_obj["personality"] = serde_json::Value::String(personality);
+            char_obj["personality"] = serde_json::Value::String(personality).into();
         }
 
         if let Some(description) = character_description {
-            char_obj["description"] = serde_json::Value::String(description);
+            char_obj["description"] = serde_json::Value::String(description).into();
         }
 
         template_context["char"] = char_obj;
@@ -1239,35 +1239,36 @@ async fn build_final_prompt_strings(
     // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
         template_context["persona_override"] =
-            serde_json::Value::String(calculation.persona_override_prompt_str.clone());
+            serde_json::Value::String(calculation.persona_override_prompt_str.clone()).into();
     }
 
     // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
         template_context["character_definition"] =
-            serde_json::Value::String(calculation.character_definition_str.clone());
+            serde_json::Value::String(calculation.character_definition_str.clone()).into();
     }
 
     // Add character details if available
     if !calculation.character_details_str.is_empty() {
         template_context["character_details"] =
-            serde_json::Value::String(calculation.character_details_str.clone());
+            serde_json::Value::String(calculation.character_details_str.clone()).into();
     }
 
     // Add RAG context if available
     if !enhanced_rag_context.is_empty() {
-        template_context["rag_context"] = serde_json::Value::String(enhanced_rag_context.clone());
+        template_context["rag_context"] =
+            serde_json::Value::String(enhanced_rag_context.clone()).into();
     }
 
     // Add agent context as separate template variable for sections list generation
     if let Some(agent_ctx) = agent_context {
-        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
+        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string()).into();
     }
 
     // Use render_with_style to inject narrative style variables into the template
     let final_system_prompt = TEMPLATE_MANAGER.render_with_style(
         template_id,
-        template_context,
+        template_context.into(),
         narrative_style.cloned(),
     )?;
 
@@ -1281,22 +1282,17 @@ async fn build_final_prompt_strings(
 
     // Format current user message with guidance if provided
     let mut final_user_message = current_user_message.clone();
-    if let MessageContent::Text(text_content) = final_user_message.content {
-        let mut formatted_content = String::new();
-
-        // Add the user input
-        formatted_content.push_str(&format!("**[User Input]**\n{}", text_content));
-
-        // Add guidance if provided
-        if let Some(guidance_text) = guidance {
-            formatted_content.push_str("\n\n**[Regeneration Guidance]**\n");
-            formatted_content.push_str(guidance_text);
+    if let Some(guidance_text) = guidance {
+        if !guidance_text.is_empty() {
+            if let MessageContent::Text(text_content) = &mut final_user_message.content {
+                text_content.push_str("\n\n(SYSTEM INSTRUCTION: ");
+                text_content.push_str(guidance_text);
+                text_content.push_str(")\n");
+            } else {
+                warn!("User message is not plain text, guidance not applied.");
+            }
         }
-
-        final_user_message.content = MessageContent::Text(formatted_content);
     } else {
-        // Handle other MessageContent variants if necessary, or log a warning
-        warn!("User message is not plain text, formatting not applied.");
     }
 
     final_message_list.push(final_user_message);
@@ -1360,10 +1356,11 @@ pub async fn build_final_llm_prompt(
 }
 
 // --- Unit Tests ---
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
 
     use crate::models::characters::CharacterMetadata;
+    use crate::DbId;
     use chrono::Utc;
     use uuid::Uuid;
 
@@ -1379,13 +1376,13 @@ mod tests {
     #[test]
     fn test_build_prompt_character_with_description() {
         let char_meta = CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Test Bot".to_string(),
             description: Some(b"A friendly test bot.".to_vec()),
             description_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             first_mes: Some(b"Bot greeting".to_vec()),
             personality: None,
             personality_nonce: None,
@@ -1412,13 +1409,13 @@ mod tests {
     #[test]
     fn test_build_prompt_character_no_description() {
         let char_meta = CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Minimal Bot".to_string(),
             description: None, // No description
             description_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             first_mes: None,
             personality: None,
             personality_nonce: None,
@@ -1441,13 +1438,13 @@ mod tests {
     #[test]
     fn test_build_prompt_character_empty_description() {
         let char_meta = CharacterMetadata {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "Silent Bot".to_string(),
             description: Some(b"".to_vec()), // Empty description
             description_nonce: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             first_mes: None,
             personality: None,
             personality_nonce: None,
@@ -1820,10 +1817,10 @@ mod tests {
             let rag_chunk = RetrievedChunk {
                 text: "Some context".to_string(),
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
-                    message_id: uuid::Uuid::new_v4(),
-                    session_id: uuid::Uuid::new_v4(),
+                    message_id: crate::db::DbId::new_v4(),
+                    session_id: crate::db::DbId::new_v4(),
                     chronicle_id: None,
-                    user_id: uuid::Uuid::new_v4(),
+                    user_id: crate::db::DbId::new_v4(),
                     speaker: "user".to_string(),
                     timestamp: chrono::Utc::now(),
                     text: "Some context".to_string(),
@@ -1924,7 +1921,7 @@ mod tests {
         );
 
         // Test JSON parsing of the event data
-        let parsed: serde_json::Value = serde_json::from_str(chronicle_event_json).unwrap();
+        let parsed: crate::DbJson = serde_json::from_str(chronicle_event_json).unwrap();
         assert_eq!(parsed["action"], "Agreed");
         assert_eq!(parsed["actors"][0]["id"], "sol");
         assert_eq!(parsed["valence"][0]["change"], 0.3);

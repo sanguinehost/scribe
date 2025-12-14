@@ -1,28 +1,43 @@
+use crate::db::DbTimestamp;
 use crate::schema::player_chronicles;
-use chrono::{DateTime, Utc};
 use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 /// PlayerChronicle represents a story container that groups related chat sessions and events
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = player_chronicles)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct PlayerChronicle {
-    pub id: Uuid,
-    pub user_id: Uuid,
+    pub id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 /// NewPlayerChronicle for creating new chronicles
 #[derive(Debug, Clone, Insertable, Serialize, Deserialize, Validate)]
 #[diesel(table_name = player_chronicles)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewPlayerChronicle {
-    pub user_id: Uuid,
+    pub id: Option<crate::db::DbId>,
+    pub user_id: crate::db::DbId,
     #[validate(length(
         min = 1,
         max = 255,
@@ -96,7 +111,8 @@ pub struct UpdateChronicleRequest {
 impl From<CreateChronicleRequest> for NewPlayerChronicle {
     fn from(request: CreateChronicleRequest) -> Self {
         Self {
-            user_id: Uuid::nil(), // Will be set by the service
+            id: None,
+            user_id: crate::db::DbId::nil(), // Will be set by the service
             name: request.name,
             description: request.description,
         }

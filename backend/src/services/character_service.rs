@@ -1,16 +1,19 @@
+use crate::db::{DbId, DbTimestamp};
 use std::sync::Arc;
 
+use crate::db::DbPool; // Changed from sqlx::PgPool
 use chrono::{DateTime, Utc}; // For timestamps
-use deadpool_diesel::postgres::Pool as DeadpoolPgPool; // Changed from sqlx::PgPool
 use secrecy::ExposeSecret; // For DEK
 use tracing::{info, instrument, warn};
-use uuid::Uuid; // For logging
+// For logging
 
 use crate::auth::session_dek::SessionDek;
+// Backend-agnostic Json<T> wrapper for Diesel models
 use crate::errors::AppError;
 use crate::models::character_card::NewCharacter;
 use crate::models::character_dto::{CharacterCreateDto, CharacterUpdateDto}; // Added CharacterUpdateDto
 use crate::models::characters::{Character, CharacterDataForClient};
+use crate::models::OptionalStringArray;
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
@@ -18,7 +21,6 @@ use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl,
     SelectableHelper,
 }; // For .values(), .returning(), .get_result(), etc.
-use diesel_json; // For Json<Value> type in Diesel models
 use serde_json; // For json!({}) macro
 
 /// Type alias for the complex return type of encrypted field operations
@@ -26,13 +28,13 @@ type EncryptedFieldResult = (Option<Vec<u8>>, Option<Vec<u8>>);
 
 #[derive(Clone)]
 pub struct CharacterService {
-    db_pool: DeadpoolPgPool, // Changed from sqlx::PgPool
+    db_pool: DbPool, // Changed from sqlx::PgPool
     encryption_service: Arc<EncryptionService>,
 }
 
 impl CharacterService {
     #[must_use]
-    pub fn new(db_pool: DeadpoolPgPool, encryption_service: Arc<EncryptionService>) -> Self {
+    pub fn new(db_pool: DbPool, encryption_service: Arc<EncryptionService>) -> Self {
         // Changed db_pool type
         Self {
             db_pool,
@@ -101,7 +103,7 @@ impl CharacterService {
     #[instrument(skip(self, create_dto, dek), err)]
     pub async fn create_character_manually(
         &self,
-        user_id_val: Uuid,
+        user_id_val: crate::db::DbId,
         create_dto: CharacterCreateDto,
         dek: &SessionDek,
     ) -> Result<CharacterDataForClient, AppError> {
@@ -143,6 +145,7 @@ impl CharacterService {
 
         // Create a NewCharacter from the DTO
         let mut new_character_for_db = NewCharacter {
+            id: None,
             user_id: user_id_val,
             name: create_dto
                 .name
@@ -165,11 +168,11 @@ impl CharacterService {
             system_prompt_nonce: system_prompt_nonce_enc,
             post_history_instructions: post_history_instructions_enc,
             post_history_instructions_nonce: post_history_instructions_nonce_enc,
-            tags: if create_dto.tags.is_empty() {
+            tags: OptionalStringArray(if create_dto.tags.is_empty() {
                 None
             } else {
                 Some(create_dto.tags.into_iter().map(Some).collect())
-            },
+            }),
             creator: if create_dto.creator.is_empty() {
                 None
             } else {
@@ -180,49 +183,54 @@ impl CharacterService {
             } else {
                 Some(create_dto.character_version)
             },
-            alternate_greetings: if create_dto.alternate_greetings.is_empty() {
-                None
-            } else {
-                Some(
-                    create_dto
-                        .alternate_greetings
-                        .into_iter()
-                        .map(Some)
-                        .collect(),
-                )
-            },
-            creator_notes_multilingual: create_dto
-                .creator_notes_multilingual
-                .map(|j| diesel_json::Json(j.0)),
+            alternate_greetings: OptionalStringArray(
+                if create_dto.alternate_greetings.is_empty() {
+                    None
+                } else {
+                    Some(
+                        create_dto
+                            .alternate_greetings
+                            .into_iter()
+                            .map(Some)
+                            .collect(),
+                    )
+                },
+            ),
+            creator_notes_multilingual: create_dto.creator_notes_multilingual,
             nickname: create_dto.nickname,
-            source: create_dto.source.and_then(|s_vec| {
+            source: OptionalStringArray(create_dto.source.and_then(|s_vec| {
                 if s_vec.is_empty() {
                     None
                 } else {
                     Some(s_vec.into_iter().map(Some).collect())
                 }
-            }),
-            group_only_greetings: if create_dto.group_only_greetings.is_empty() {
-                None
-            } else {
-                Some(
-                    create_dto
-                        .group_only_greetings
-                        .into_iter()
-                        .map(Some)
-                        .collect(),
-                )
-            },
+            })),
+            group_only_greetings: OptionalStringArray(
+                if create_dto.group_only_greetings.is_empty() {
+                    None
+                } else {
+                    Some(
+                        create_dto
+                            .group_only_greetings
+                            .into_iter()
+                            .map(Some)
+                            .collect(),
+                    )
+                },
+            ),
             creation_date: create_dto
                 .creation_date
-                .and_then(|ts| DateTime::from_timestamp(ts, 0)),
+                .and_then(|ts| DateTime::from_timestamp(ts, 0))
+                .map(|dt| dt.into()),
             modification_date: create_dto
                 .modification_date
-                .and_then(|ts| DateTime::from_timestamp(ts, 0)),
-            extensions: Some(create_dto.extensions.map_or_else(
-                || diesel_json::Json(serde_json::json!({})),
-                |j| diesel_json::Json(j.0),
-            )),
+                .and_then(|ts| DateTime::from_timestamp(ts, 0))
+                .map(|dt| dt.into()),
+            extensions: Some(
+                create_dto
+                    .extensions
+                    .unwrap_or_else(|| serde_json::json!({}).into()),
+            ),
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -248,7 +256,7 @@ impl CharacterService {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None,
+            system_tags: OptionalStringArray(None),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -261,15 +269,30 @@ impl CharacterService {
             creator_comment: None, // Will be encrypted below
             creator_comment_nonce: None,
             depth_prompt: None, // The raw text, will be used for encryption
-            depth_prompt_depth: create_dto.depth_prompt_depth,
+            depth_prompt_depth: create_dto.depth_prompt_depth.map(|d| {
+                #[cfg(feature = "postgres-backend")]
+                {
+                    d as i64
+                }
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    d as i32
+                }
+            }),
             depth_prompt_role: create_dto.depth_prompt_role.clone(),
             talkativeness: None, // Not supported yet (group chat feature)
             depth_prompt_ciphertext: None, // Will be encrypted below
             depth_prompt_nonce: None,
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
-            created_at: Some(Utc::now()),
-            updated_at: Some(Utc::now()),
+            #[cfg(feature = "postgres-backend")]
+            created_at: Some(DbTimestamp::from(Utc::now())),
+            #[cfg(feature = "postgres-backend")]
+            updated_at: Some(DbTimestamp::from(Utc::now())),
+            #[cfg(feature = "sqlite-backend")]
+            created_at: Utc::now().into(),
+            #[cfg(feature = "sqlite-backend")]
+            updated_at: Utc::now().into(),
         };
 
         // Encrypt SillyTavern v3 fields
@@ -305,44 +328,47 @@ impl CharacterService {
 
         info!(character_name = %new_character_for_db.name, user_id = %user_id_val, "Attempting to insert manually created character into DB for user");
 
-        let conn = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!("Failed to get DB connection from pool: {e}"))
-        })?;
-
-        let returned_id: Uuid = conn
-            .interact(move |conn_insert_block| {
+        #[cfg(feature = "postgres-backend")]
+        let returned_id: crate::db::DbId = {
+            crate::db::with_conn(&self.db_pool, move |conn_insert_block| {
                 diesel::insert_into(characters::table)
                     .values(new_character_for_db)
                     .returning(characters::id)
-                    .get_result::<Uuid>(conn_insert_block)
+                    .get_result::<crate::db::DbId>(conn_insert_block)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
             })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Insert interaction error: {e}"))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))?;
+            .await?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let returned_id: crate::db::DbId = {
+            use diesel::prelude::*;
+            // SQLite doesn't support RETURNING, so we generate UUID before insert
+            let generated_id = crate::db::DbId::new_v4();
+            let mut character_with_id = new_character_for_db;
+            character_with_id.id = Some(generated_id.into());
+
+            crate::db::with_conn(&self.db_pool, move |conn_insert_block| {
+                diesel::insert_into(characters::table)
+                    .values(&character_with_id)
+                    .execute(conn_insert_block)
+                    .map(|_| generated_id)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Insert DB error: {e}")))
+            })
+            .await?
+        };
 
         info!(character_id = %returned_id, "Character basic info returned after manual insertion");
 
         // Fetch the inserted character to return its full data
-        let conn_fetch = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for fetch: {e}"
-            ))
-        })?;
-
-        let inserted_character: Character = conn_fetch
-            .interact(move |conn_select_block| {
+        let inserted_character: Character =
+            crate::db::with_conn(&self.db_pool, move |conn_select_block| {
                 characters::table
                     .find(returned_id)
-                    .select(Character::as_select())
                     .get_result::<Character>(conn_select_block)
+                    .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))
             })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))?;
+            .await?;
 
         info!(character_id = %inserted_character.id, "Character manually created and saved (full data fetched)");
 
@@ -351,27 +377,20 @@ impl CharacterService {
         if let Some(world_id) = create_dto.world.as_ref() {
             if !world_id.is_empty() {
                 // Try to parse the world ID as a UUID
-                if let Ok(lorebook_uuid) = Uuid::parse_str(world_id) {
+                if let Ok(lorebook_uuid) = DbId::parse_str(world_id) {
                     // Verify lorebook exists and belongs to user
                     use crate::schema::lorebooks;
-                    let conn_check = self.db_pool.get().await.map_err(|e| {
-                        AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                    })?;
 
-                    let lorebook_exists = conn_check
-                        .interact(move |conn_sync| {
-                            lorebooks::table
-                                .filter(lorebooks::id.eq(lorebook_uuid))
-                                .filter(lorebooks::user_id.eq(user_id_val))
-                                .count()
-                                .get_result::<i64>(conn_sync)
-                                .map(|count| count > 0)
-                        })
-                        .await
-                        .map_err(|e| {
-                            AppError::DbInteractError(format!("DB interaction failed: {e}"))
-                        })?
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                        lorebooks::table
+                            .filter(lorebooks::id.eq(lorebook_uuid))
+                            .filter(lorebooks::user_id.eq(user_id_val))
+                            .count()
+                            .get_result::<i64>(conn_sync)
+                            .map(|count| count > 0)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                    })
+                    .await?;
 
                     if lorebook_exists {
                         // Create association
@@ -380,30 +399,22 @@ impl CharacterService {
 
                         let new_association = NewCharacterLorebook {
                             character_id: returned_id,
-                            lorebook_id: lorebook_uuid,
+                            lorebook_id: lorebook_uuid.into(),
                             user_id: user_id_val,
-                            created_at: Some(Utc::now()),
-                            updated_at: Some(Utc::now()),
+                            created_at: Some(DbTimestamp::from(Utc::now())),
+                            updated_at: Some(DbTimestamp::from(Utc::now())),
                         };
 
-                        let conn_insert = self.db_pool.get().await.map_err(|e| {
-                            AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                        })?;
-
-                        conn_insert
-                            .interact(move |conn_sync| {
-                                diesel::insert_into(character_lorebooks::table)
-                                    .values(&new_association)
-                                    .execute(conn_sync)
-                            })
-                            .await
-                            .map_err(|e| {
-                                AppError::DbInteractError(format!("DB interaction failed: {e}"))
-                            })?
-                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                        crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                            diesel::insert_into(character_lorebooks::table)
+                                .values(&new_association)
+                                .execute(conn_sync)
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                        })
+                        .await?;
 
                         info!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
-                        associated_lorebook_ids.push(lorebook_uuid);
+                        associated_lorebook_ids.push(lorebook_uuid.into());
                     } else {
                         warn!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Lorebook not found or not owned by user");
                     }
@@ -423,41 +434,30 @@ impl CharacterService {
     #[instrument(skip(self, update_dto, dek), err)]
     pub async fn update_character_details(
         &self,
-        character_id_to_update: Uuid,
-        user_id_val: Uuid, // For ownership check
+        character_id_to_update: crate::db::DbId,
+        user_id_val: crate::db::DbId, // For ownership check
         update_dto: CharacterUpdateDto,
         dek: &SessionDek,
     ) -> Result<CharacterDataForClient, AppError> {
         info!(character_id = %character_id_to_update, user_id = %user_id_val, "Attempting to update character in CharacterService");
 
         // Fetch the existing character from the database to verify ownership
-        let conn_fetch = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for fetch: {e}"
-            ))
-        })?;
-
-        let mut existing_character: Character = conn_fetch
-            .interact(move |conn_select_block| {
-                characters::table
-                    .filter(
-                        character_dsl_id
-                            .eq(character_id_to_update)
-                            .and(character_dsl_user_id.eq(user_id_val)),
-                    )
-                    .select(Character::as_select())
-                    .get_result::<Character>(conn_select_block)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}"))
-            })?
-            .map_err(|e| match e {
-                DieselError::NotFound => AppError::NotFound(format!(
-                    "Character {character_id_to_update} not found or not owned by user {user_id_val}"
-                )),
-                _ => AppError::DatabaseQueryError(format!("Fetch DB error: {e}")),
-            })?;
+        let mut existing_character: Character = crate::db::with_conn(&self.db_pool, move |conn_select_block| {
+            characters::table
+                .filter(
+                    character_dsl_id
+                        .eq(character_id_to_update)
+                        .and(character_dsl_user_id.eq(user_id_val)),
+                )
+                .get_result::<Character>(conn_select_block)
+                .map_err(|e| match e {
+                    DieselError::NotFound => AppError::NotFound(format!(
+                        "Character {character_id_to_update} not found or not owned by user {user_id_val}"
+                    )),
+                    _ => AppError::DatabaseQueryError(format!("Fetch DB error: {e}")),
+                })
+        })
+        .await?;
 
         info!(character_id = %character_id_to_update, "Found character to update, applying changes");
 
@@ -520,11 +520,11 @@ impl CharacterService {
 
         // Non-encrypted fields
         if let Some(tags_val) = update_dto.tags {
-            existing_character.tags = if tags_val.is_empty() {
+            existing_character.tags = OptionalStringArray(if tags_val.is_empty() {
                 None
             } else {
                 Some(tags_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(creator_val) = update_dto.creator {
             existing_character.creator = if creator_val.is_empty() {
@@ -541,40 +541,42 @@ impl CharacterService {
             };
         }
         if let Some(ag_val) = update_dto.alternate_greetings {
-            existing_character.alternate_greetings = if ag_val.is_empty() {
+            existing_character.alternate_greetings = OptionalStringArray(if ag_val.is_empty() {
                 None
             } else {
                 Some(ag_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(cnm_val) = update_dto.creator_notes_multilingual {
-            existing_character.creator_notes_multilingual = Some(cnm_val.0);
+            existing_character.creator_notes_multilingual = Some(cnm_val.clone());
         }
         if let Some(nick_val) = update_dto.nickname {
             existing_character.nickname = Some(nick_val);
         }
         if let Some(source_val) = update_dto.source {
-            existing_character.source = if source_val.is_empty() {
+            existing_character.source = OptionalStringArray(if source_val.is_empty() {
                 None
             } else {
                 Some(source_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(gog_val) = update_dto.group_only_greetings {
-            existing_character.group_only_greetings = if gog_val.is_empty() {
+            existing_character.group_only_greetings = OptionalStringArray(if gog_val.is_empty() {
                 None
             } else {
                 Some(gog_val.into_iter().map(Some).collect())
-            };
+            });
         }
         if let Some(cd_ts) = update_dto.creation_date {
-            existing_character.creation_date = DateTime::from_timestamp(cd_ts, 0);
+            existing_character.creation_date =
+                DateTime::from_timestamp(cd_ts, 0).map(|dt| dt.into());
         }
         if let Some(md_ts) = update_dto.modification_date {
-            existing_character.modification_date = DateTime::from_timestamp(md_ts, 0);
+            existing_character.modification_date =
+                DateTime::from_timestamp(md_ts, 0).map(|dt| dt.into());
         }
         if let Some(ext_val) = update_dto.extensions {
-            existing_character.extensions = Some(ext_val.0);
+            existing_character.extensions = Some(ext_val.clone());
         }
 
         // Handle SillyTavern v3 fields
@@ -599,7 +601,16 @@ impl CharacterService {
             }
         }
         if let Some(depth_prompt_depth_val) = update_dto.depth_prompt_depth {
-            existing_character.depth_prompt_depth = Some(depth_prompt_depth_val);
+            existing_character.depth_prompt_depth = {
+                #[cfg(feature = "postgres-backend")]
+                {
+                    Some(depth_prompt_depth_val as i64)
+                }
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    Some(depth_prompt_depth_val as i32)
+                }
+            };
         }
         if let Some(depth_prompt_role_val) = update_dto.depth_prompt_role {
             existing_character.depth_prompt_role = Some(depth_prompt_role_val);
@@ -627,53 +638,62 @@ impl CharacterService {
         }
 
         // Always update the 'updated_at' timestamp
-        existing_character.updated_at = Utc::now();
+        existing_character.updated_at = Utc::now().into();
         // Update modification_date if it wasn't explicitly provided in the DTO
         if update_dto.modification_date.is_none() {
-            existing_character.modification_date = Some(Utc::now());
+            existing_character.modification_date = Some(DbTimestamp::from(Utc::now()));
         }
 
         // Save the updated character
-        let conn_update = self.db_pool.get().await.map_err(|e| {
-            AppError::DbPoolError(format!(
-                "Failed to get DB connection from pool for update: {e}"
-            ))
-        })?;
+        let updated_character_db: Character =
+            crate::db::with_conn(&self.db_pool, move |conn_update_block| {
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::update(characters::table.find(character_id_to_update))
+                        .set(&existing_character)
+                        .returning(Character::as_select())
+                        .get_result::<Character>(conn_update_block)
+                        .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))
+                }
 
-        let updated_character_db: Character = conn_update
-            .interact(move |conn_update_block| {
-                diesel::update(characters::table.find(character_id_to_update))
-                    .set(&existing_character) // Pass the modified existing_character by reference
-                    .returning(Character::as_select())
-                    .get_result::<Character>(conn_update_block)
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    use diesel::prelude::*;
+                    diesel::update(characters::table.find(character_id_to_update))
+                        .set(&existing_character)
+                        .execute(conn_update_block)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!("Update DB error: {e}"))
+                        })?;
+
+                    // Query back the updated row
+                    characters::table
+                        .find(character_id_to_update)
+                        .first::<Character>(conn_update_block)
+                        .map_err(|e| {
+                            AppError::DatabaseQueryError(format!("Query after update error: {e}"))
+                        })
+                }
             })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("Update interaction error: {e}"))
-            })?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))?;
+            .await?;
 
         info!(character_id = %character_id_to_update, "Character updated successfully in CharacterService");
 
         // Fetch all existing lorebook associations for this character
         use crate::schema::character_lorebooks;
-        let conn_fetch_lorebooks = self
-            .db_pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(format!("Failed to get DB connection: {e}")))?;
 
-        let mut associated_lorebook_ids: Vec<Uuid> = conn_fetch_lorebooks
-            .interact(move |conn_sync| {
+        let mut associated_lorebook_ids: Vec<crate::db::DbId> =
+            crate::db::with_conn(&self.db_pool, move |conn_sync| {
                 character_lorebooks::table
                     .filter(character_lorebooks::character_id.eq(character_id_to_update))
                     .filter(character_lorebooks::user_id.eq(user_id_val))
                     .select(character_lorebooks::lorebook_id)
-                    .load::<Uuid>(conn_sync)
+                    .load::<crate::db::DbId>(conn_sync)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!("Failed to get lorebooks: {e}"))
+                    })
             })
-            .await
-            .map_err(|e| AppError::DbInteractError(format!("Failed to fetch lorebooks: {e}")))?
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get lorebooks: {e}")))?;
+            .await?;
 
         // Handle lorebook association if world field was updated
         if let Some(world_val) = update_dto.world.as_ref() {
@@ -681,48 +701,36 @@ impl CharacterService {
             // TODO: In the future, add a separate endpoint for managing multiple lorebooks
 
             // First, remove any existing lorebook associations for this character
-            let conn_delete =
-                self.db_pool.get().await.map_err(|e| {
-                    AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                })?;
-
-            let _ = conn_delete
-                .interact(move |conn_sync| {
-                    diesel::delete(
-                        character_lorebooks::table
-                            .filter(character_lorebooks::character_id.eq(character_id_to_update))
-                            .filter(character_lorebooks::user_id.eq(user_id_val)),
-                    )
-                    .execute(conn_sync)
-                })
-                .await;
+            let _ = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                diesel::delete(
+                    character_lorebooks::table
+                        .filter(character_lorebooks::character_id.eq(character_id_to_update))
+                        .filter(character_lorebooks::user_id.eq(user_id_val)),
+                )
+                .execute(conn_sync)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await;
 
             // Clear the existing associations
             associated_lorebook_ids.clear();
 
             // If a new world ID is provided, create the association
             if !world_val.is_empty() {
-                if let Ok(lorebook_uuid) = Uuid::parse_str(world_val) {
+                if let Ok(lorebook_uuid) = DbId::parse_str(world_val) {
                     // Verify lorebook exists and belongs to user
                     use crate::schema::lorebooks;
-                    let conn_check = self.db_pool.get().await.map_err(|e| {
-                        AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                    })?;
 
-                    let lorebook_exists = conn_check
-                        .interact(move |conn_sync| {
-                            lorebooks::table
-                                .filter(lorebooks::id.eq(lorebook_uuid))
-                                .filter(lorebooks::user_id.eq(user_id_val))
-                                .count()
-                                .get_result::<i64>(conn_sync)
-                                .map(|count| count > 0)
-                        })
-                        .await
-                        .map_err(|e| {
-                            AppError::DbInteractError(format!("DB interaction failed: {e}"))
-                        })?
-                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    let lorebook_exists = crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                        lorebooks::table
+                            .filter(lorebooks::id.eq(lorebook_uuid))
+                            .filter(lorebooks::user_id.eq(user_id_val))
+                            .count()
+                            .get_result::<i64>(conn_sync)
+                            .map(|count| count > 0)
+                            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                    })
+                    .await?;
 
                     if lorebook_exists {
                         // Create association
@@ -730,27 +738,23 @@ impl CharacterService {
 
                         let new_association = NewCharacterLorebook {
                             character_id: character_id_to_update,
-                            lorebook_id: lorebook_uuid,
+                            lorebook_id: lorebook_uuid.into(),
                             user_id: user_id_val,
-                            created_at: Some(Utc::now()),
-                            updated_at: Some(Utc::now()),
+                            created_at: Some(DbTimestamp::from(Utc::now())),
+                            updated_at: Some(DbTimestamp::from(Utc::now())),
                         };
 
-                        let conn_insert = self.db_pool.get().await.map_err(|e| {
-                            AppError::DbPoolError(format!("Failed to get DB connection: {e}"))
-                        })?;
-
-                        match conn_insert
-                            .interact(move |conn_sync| {
-                                diesel::insert_into(character_lorebooks::table)
-                                    .values(&new_association)
-                                    .execute(conn_sync)
-                            })
-                            .await
+                        match crate::db::with_conn(&self.db_pool, move |conn_sync| {
+                            diesel::insert_into(character_lorebooks::table)
+                                .values(&new_association)
+                                .execute(conn_sync)
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                        })
+                        .await
                         {
                             Ok(_) => {
                                 info!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
-                                associated_lorebook_ids.push(lorebook_uuid);
+                                associated_lorebook_ids.push(lorebook_uuid.into());
                             }
                             Err(e) => {
                                 warn!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, error = %e, "Failed to associate lorebook with character");

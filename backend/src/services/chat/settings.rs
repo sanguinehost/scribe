@@ -1,16 +1,14 @@
-use bigdecimal::BigDecimal;
 // use chrono::Utc; // Likely unused after removing updated_at from changeset directly
 use diesel::{
     AsChangeset, Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
 };
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
-use uuid::Uuid;
 
 use crate::{
     crypto::{decrypt_gcm, encrypt_gcm},
     errors::AppError,
-    models::chats::{ChatSettingsResponse, SettingsTuple, UpdateChatSettingsRequest},
+    models::chats::{ChatSettingsResponse, UpdateChatSettingsRequest},
     schema::chat_sessions,
     state::DbPool, // Corrected DbPool import
 };
@@ -70,12 +68,12 @@ impl<T> From<NullableEncryptedField<T>> for Option<Option<T>> {
 struct ChatSessionUpdateBuilder {
     system_prompt_ciphertext: NullableEncryptedField<Vec<u8>>,
     system_prompt_nonce: NullableEncryptedField<Vec<u8>>,
-    temperature: DatabaseUpdate<BigDecimal>,
+    temperature: DatabaseUpdate<crate::db::DbDecimal>,
     max_output_tokens: DatabaseUpdate<i32>,
-    frequency_penalty: DatabaseUpdate<BigDecimal>,
-    presence_penalty: DatabaseUpdate<BigDecimal>,
+    frequency_penalty: DatabaseUpdate<crate::db::DbDecimal>,
+    presence_penalty: DatabaseUpdate<crate::db::DbDecimal>,
     top_k: DatabaseUpdate<i32>,
-    top_p: DatabaseUpdate<BigDecimal>,
+    top_p: DatabaseUpdate<crate::db::DbDecimal>,
     seed: DatabaseUpdate<i32>,
     stop_sequences: DatabaseUpdate<Vec<String>>,
     history_management_strategy: DatabaseUpdate<String>,
@@ -84,11 +82,11 @@ struct ChatSessionUpdateBuilder {
     model_provider: DatabaseUpdate<String>,
     gemini_thinking_budget: DatabaseUpdate<i32>,
     gemini_enable_code_execution: DatabaseUpdate<bool>,
-    player_chronicle_id: DatabaseUpdate<Option<Uuid>>,
+    player_chronicle_id: DatabaseUpdate<Option<crate::db::DbId>>,
     agent_mode: DatabaseUpdate<String>,
-    active_custom_persona_id: DatabaseUpdate<Option<Uuid>>,
+    active_custom_persona_id: DatabaseUpdate<Option<crate::db::DbId>>,
     prompt_template_id: DatabaseUpdate<String>,
-    updated_at: DatabaseUpdate<chrono::DateTime<chrono::Utc>>,
+    updated_at: DatabaseUpdate<crate::DbTimestamp>,
 }
 
 impl ChatSessionUpdateBuilder {
@@ -125,7 +123,9 @@ impl ChatSessionUpdateBuilder {
                 _ => None,
             },
             stop_sequences: match self.stop_sequences {
-                DatabaseUpdate::SetValue(v) => Some(v),
+                DatabaseUpdate::SetValue(v) => {
+                    Some(crate::models::OptionalStringArray::from_vec_string(v))
+                }
                 _ => None,
             },
             history_management_strategy: match self.history_management_strategy {
@@ -214,36 +214,36 @@ struct ChatSessionUpdateChangeset {
     system_prompt_ciphertext: Option<Option<Vec<u8>>>,
     /// Encrypted system prompt nonce - uses Option<Option<T>> pattern for nullable fields
     system_prompt_nonce: Option<Option<Vec<u8>>>,
-    temperature: Option<BigDecimal>,
+    temperature: Option<crate::db::DbDecimal>,
     max_output_tokens: Option<i32>,
-    frequency_penalty: Option<BigDecimal>,
-    presence_penalty: Option<BigDecimal>,
+    frequency_penalty: Option<crate::db::DbDecimal>,
+    presence_penalty: Option<crate::db::DbDecimal>,
     top_k: Option<i32>,
-    top_p: Option<BigDecimal>,
+    top_p: Option<crate::db::DbDecimal>,
     seed: Option<i32>,
-    stop_sequences: Option<Vec<String>>,
+    stop_sequences: Option<crate::models::OptionalStringArray>,
     history_management_strategy: Option<String>,
     history_management_limit: Option<i32>,
     model_name: Option<String>,
     model_provider: Option<String>,
     gemini_thinking_budget: Option<i32>,
     gemini_enable_code_execution: Option<bool>,
-    player_chronicle_id: Option<Option<Uuid>>,
+    player_chronicle_id: Option<Option<crate::db::DbId>>,
     agent_mode: Option<String>,
-    active_custom_persona_id: Option<Option<Uuid>>,
+    active_custom_persona_id: Option<Option<crate::db::DbId>>,
     prompt_template_id: Option<String>,
-    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_at: Option<crate::DbTimestamp>,
 }
 /// Verifies session ownership and returns the owner ID
 fn verify_session_ownership(
-    conn: &mut diesel::PgConnection,
-    session_id: Uuid,
-    user_id: Uuid,
+    conn: &mut crate::DbConnection,
+    session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<(), AppError> {
     let owner_id_result = chat_sessions::table
         .filter(chat_sessions::id.eq(session_id))
         .select(chat_sessions::user_id)
-        .first::<Uuid>(conn)
+        .first::<crate::db::DbId>(conn)
         .optional()
         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -267,8 +267,8 @@ fn decrypt_system_prompt(
     ciphertext: Option<&Vec<u8>>,
     nonce: Option<&Vec<u8>>,
     user_dek: Option<&SecretBox<Vec<u8>>>,
-    session_id: Uuid,
-    user_id: Uuid,
+    session_id: crate::db::DbId,
+    user_id: crate::db::DbId,
 ) -> Result<Option<String>, AppError> {
     info!(%session_id, %user_id,
           has_ciphertext = ciphertext.is_some(),
@@ -318,21 +318,22 @@ fn decrypt_system_prompt(
     }
 }
 
-/// Gets chat settings for a specific session, verifying ownership.
-#[instrument(skip(pool, user_dek), err)]
 pub async fn get_session_settings(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<ChatSettingsResponse, AppError> {
-    let conn = pool.get().await?;
     let user_dek_cloned = user_dek.map(|dek| SecretBox::new(Box::new(dek.expose_secret().clone())));
 
-    conn.interact(move |conn| {
+    crate::db::with_conn(pool, move |conn| {
         verify_session_ownership(conn, session_id, user_id)?;
         info!(%session_id, %user_id, "Fetching settings for owned session");
-        let settings_tuple = chat_sessions::table
+
+        // Split into five queries to avoid Diesel's CompatibleType limit
+        // Complex array types must be queried separately
+        // Query 1: First 9 simple fields
+        let settings_part1 = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
                 chat_sessions::system_prompt_ciphertext,
@@ -344,23 +345,106 @@ pub async fn get_session_settings(
                 chat_sessions::top_k,
                 chat_sessions::top_p,
                 chat_sessions::seed,
-                chat_sessions::stop_sequences,
+            ))
+            .first::<(
+                Option<Vec<u8>>,
+                Option<Vec<u8>>,
+                Option<crate::db::DbDecimal>,
+                Option<i32>,
+                Option<crate::db::DbDecimal>,
+                Option<crate::db::DbDecimal>,
+                Option<i32>,
+                Option<crate::db::DbDecimal>,
+                Option<i32>,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 1 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Query 2: stop_sequences (complex array type)
+        // DbStringArray already wraps Option internally, so don't use Option<DbStringArray>
+        let stop_sequences = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select(chat_sessions::stop_sequences)
+            .first::<crate::db::DbStringArray>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch stop_sequences after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Query 3: 3 simple fields
+        let settings_part3 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
                 chat_sessions::history_management_strategy,
                 chat_sessions::history_management_limit,
                 chat_sessions::model_name,
+            ))
+            .first::<(
+                String,
+                i32,
+                String,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 3 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Query 4: 4 fields
+        let settings_part4 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
                 chat_sessions::gemini_thinking_budget,
                 chat_sessions::gemini_enable_code_execution,
                 chat_sessions::player_chronicle_id,
                 chat_sessions::agent_mode,
-                chat_sessions::active_custom_persona_id,
-                chat_sessions::prompt_template_id,
             ))
-            .first::<SettingsTuple>(conn)
+            .first::<(
+                Option<i32>,
+                Option<bool>,
+                Option<crate::db::DbId>,
+                Option<String>,
+            )>(conn)
             .map_err(|e| {
-                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings after ownership check");
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 4 after ownership check");
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
+        // Query 5: Remaining 2 fields
+        #[cfg(feature = "postgres-backend")]
+        let settings_part5 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
+                chat_sessions::active_custom_persona_id,
+                chat_sessions::prompt_template_id,
+            ))
+            .first::<(
+                Option<crate::db::DbId>,
+                String,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 5 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let settings_part5 = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select((
+                chat_sessions::active_custom_persona_id,
+                chat_sessions::prompt_template_id,
+            ))
+            .first::<(
+                Option<crate::db::DbId>,
+                String,
+            )>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch settings part 5 after ownership check");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        // Destructure all query results
         let (
             system_prompt_ciphertext,
             system_prompt_nonce,
@@ -371,17 +455,25 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences,
+        ) = settings_part1;
+
+        let (
             history_management_strategy,
             history_management_limit,
             model_name,
+        ) = settings_part3;
+
+        let (
             gemini_thinking_budget,
             gemini_enable_code_execution,
             player_chronicle_id,
             agent_mode,
+        ) = settings_part4;
+
+        let (
             active_custom_persona_id,
             prompt_template_id,
-        ) = settings_tuple;
+        ) = settings_part5;
 
         let decrypted_system_prompt = decrypt_system_prompt(
             system_prompt_ciphertext.as_ref(),
@@ -405,10 +497,10 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences,
+            stop_sequences: stop_sequences.into(),
             history_management_strategy,
             history_management_limit,
-            model_name,
+            model_name: Some(model_name),
             gemini_thinking_budget,
             gemini_enable_code_execution,
             chronicle_id: player_chronicle_id,
@@ -424,7 +516,7 @@ pub async fn get_session_settings(
 
         Ok(response)
     })
-    .await?
+    .await
 }
 /// Handles system prompt encryption for update
 fn handle_system_prompt_update(
@@ -484,9 +576,22 @@ fn apply_payload_to_builder(
     if let Some(s) = payload.seed {
         update_builder.seed = DatabaseUpdate::SetValue(s);
     }
-    if let Some(ss_option_vec) = payload.stop_sequences {
-        update_builder.stop_sequences =
-            DatabaseUpdate::SetValue(ss_option_vec.into_iter().flatten().collect());
+    #[cfg(feature = "postgres-backend")]
+    {
+        if let Some(stop_seqs) = payload.stop_sequences {
+            if let Some(inner_vec) = stop_seqs.0 {
+                update_builder.stop_sequences =
+                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+            }
+        }
+    }
+
+    #[cfg(feature = "sqlite-backend")]
+    {
+        if let Some(inner_vec) = payload.stop_sequences.0 {
+            update_builder.stop_sequences =
+                DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+        }
     }
     if let Some(hist_strat) = payload.history_management_strategy {
         update_builder.history_management_strategy = DatabaseUpdate::SetValue(hist_strat);
@@ -534,12 +639,12 @@ fn apply_payload_to_builder(
 /// Executes the database update if there are changes
 fn execute_update(
     update_builder: ChatSessionUpdateBuilder,
-    session_id: Uuid,
-    transaction_conn: &mut diesel::PgConnection,
+    session_id: crate::db::DbId,
+    transaction_conn: &mut crate::DbConnection,
 ) -> Result<(), AppError> {
     if update_builder.has_changes() {
         let mut builder = update_builder;
-        builder.updated_at = DatabaseUpdate::SetValue(chrono::Utc::now());
+        builder.updated_at = DatabaseUpdate::SetValue(chrono::Utc::now().into());
         let changeset = builder.build();
         diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
             .set(&changeset)
@@ -559,16 +664,15 @@ fn execute_update(
 #[instrument(skip(pool, payload), err)]
 pub async fn update_session_settings(
     pool: &DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     payload: UpdateChatSettingsRequest,
     user_dek: Option<&SecretBox<Vec<u8>>>,
 ) -> Result<ChatSettingsResponse, AppError> {
-    let conn = pool.get().await?;
     let user_dek_owned_opt: Option<SecretBox<Vec<u8>>> =
         user_dek.map(|dek_ref| SecretBox::new(Box::new(dek_ref.expose_secret().clone())));
 
-    conn.interact(move |conn_interaction| {
+    crate::db::with_conn(pool, move |conn_interaction| {
         conn_interaction.transaction::<_, AppError, _>(|transaction_conn| {
             verify_session_ownership(transaction_conn, session_id, user_id)?;
 
@@ -578,7 +682,7 @@ pub async fn update_session_settings(
             Ok(())
         })
     })
-    .await??;
+    .await?;
 
     get_session_settings(pool, user_id, session_id, user_dek).await
 }

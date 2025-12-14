@@ -1,23 +1,22 @@
+use crate::db::DbTimestamp;
 use crate::schema::chat_character_overrides;
-use chrono::{DateTime, Utc};
 use diesel::{AsChangeset, Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use uuid::Uuid;
 
 #[derive(Queryable, Selectable, Identifiable, AsChangeset, Serialize, Deserialize)]
 #[diesel(table_name = chat_character_overrides)]
 #[diesel(primary_key(id))]
 pub struct ChatCharacterOverride {
-    pub id: Uuid,
-    pub chat_session_id: Uuid,
-    pub original_character_id: Uuid,
+    pub id: crate::db::DbId,
+    pub chat_session_id: crate::db::DbId,
+    pub original_character_id: crate::db::DbId,
     #[diesel(column_name = field_name)]
     pub field_name: String,
     pub overridden_value: Vec<u8>,
     pub overridden_value_nonce: Vec<u8>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 // Custom Debug implementation to redact sensitive fields
@@ -38,10 +37,18 @@ impl fmt::Debug for ChatCharacterOverride {
 
 #[derive(Insertable, Serialize, Deserialize, Debug)]
 #[diesel(table_name = chat_character_overrides)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewChatCharacterOverride {
-    pub id: Uuid,
-    pub chat_session_id: Uuid,
-    pub original_character_id: Uuid,
+    pub id: crate::db::DbId,
+    pub chat_session_id: crate::db::DbId,
+    pub original_character_id: crate::db::DbId,
     pub field_name: String,
     pub overridden_value: Vec<u8>,
     pub overridden_value_nonce: Vec<u8>,

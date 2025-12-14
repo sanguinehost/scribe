@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 //! Integration tests for agentic lorebook tools (CreateBatchLorebookEntriesTool and AnalyzeLorebookTool)
 //!

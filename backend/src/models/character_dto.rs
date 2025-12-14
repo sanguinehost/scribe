@@ -1,8 +1,7 @@
 // backend/src/models/character_dto.rs
 
-use diesel_json::Json;
+use crate::db::DbJson;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 /// DTO for character creation requests
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,7 +33,7 @@ pub struct CharacterCreateDto {
     #[serde(default)]
     pub alternate_greetings: Vec<String>,
     #[serde(default)]
-    pub creator_notes_multilingual: Option<Json<JsonValue>>,
+    pub creator_notes_multilingual: Option<DbJson>,
     #[serde(default)]
     pub nickname: Option<String>,
     #[serde(default)]
@@ -46,7 +45,7 @@ pub struct CharacterCreateDto {
     #[serde(default)]
     pub modification_date: Option<i64>,
     #[serde(default)]
-    pub extensions: Option<Json<JsonValue>>,
+    pub extensions: Option<DbJson>,
 
     // SillyTavern v3 fields
     #[serde(default)]
@@ -80,13 +79,13 @@ pub struct CharacterUpdateDto {
     pub creator: Option<String>,
     pub character_version: Option<String>,
     pub alternate_greetings: Option<Vec<String>>,
-    pub creator_notes_multilingual: Option<Json<JsonValue>>,
+    pub creator_notes_multilingual: Option<DbJson>,
     pub nickname: Option<String>,
     pub source: Option<Vec<String>>,
     pub group_only_greetings: Option<Vec<String>>,
     pub creation_date: Option<i64>,
     pub modification_date: Option<i64>,
-    pub extensions: Option<Json<JsonValue>>,
+    pub extensions: Option<DbJson>,
 
     // SillyTavern v3 fields
     pub fav: Option<bool>,

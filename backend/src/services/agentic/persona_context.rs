@@ -2,13 +2,12 @@
 
 use crate::models::user_personas::UserPersonaDataForClient;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Context information about a user's persona for narrative intelligence processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPersonaContext {
     /// The persona ID
-    pub id: Uuid,
+    pub id: crate::db::DbId,
     /// The name of the persona (e.g., "Lucas")
     pub name: String,
     /// Detailed description of the persona
@@ -22,7 +21,7 @@ pub struct UserPersonaContext {
 impl UserPersonaContext {
     /// Create a new UserPersonaContext
     pub fn new(
-        id: Uuid,
+        id: crate::db::DbId,
         name: String,
         description: Option<String>,
         personality: Option<String>,
@@ -74,13 +73,15 @@ impl From<UserPersonaDataForClient> for UserPersonaContext {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
+    use chrono::Utc;
 
     #[test]
     fn test_persona_context_creation() {
-        let persona_id = Uuid::new_v4();
+        let persona_id = DbId::new();
         let context = UserPersonaContext::new(
             persona_id,
             "Lucas".to_string(),
@@ -97,7 +98,7 @@ mod tests {
     #[test]
     fn test_to_prompt_context() {
         let context = UserPersonaContext::new(
-            Uuid::new_v4(),
+            DbId::new(),
             "Lucas".to_string(),
             Some("A cybersecurity expert".to_string()),
             Some("Idealistic yet cynical".to_string()),
@@ -115,8 +116,8 @@ mod tests {
     #[test]
     fn test_from_user_persona_data() {
         let persona_data = UserPersonaDataForClient {
-            id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            id: DbId::new(),
+            user_id: DbId::new(),
             name: "TestUser".to_string(),
             description: "Test description".to_string(),
             spec: None,
@@ -141,8 +142,7 @@ mod tests {
 
     #[test]
     fn test_get_name_for_substitution() {
-        let context =
-            UserPersonaContext::new(Uuid::new_v4(), "Lucas".to_string(), None, None, None);
+        let context = UserPersonaContext::new(DbId::new(), "Lucas".to_string(), None, None, None);
 
         assert_eq!(context.get_name_for_substitution(), "Lucas");
     }

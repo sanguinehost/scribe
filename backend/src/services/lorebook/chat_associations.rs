@@ -1,12 +1,14 @@
 use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), chat_session_id = %chat_session_id))]
     pub async fn associate_lorebook_to_chat(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id: Uuid,
+        chat_session_id: crate::db::DbId,
         payload: AssociateLorebookToChatPayload,
         user_dek: Option<&SecretBox<Vec<u8>>>, // Added for entry decryption
         state: Arc<AppState>,                  // Added for embedding pipeline
@@ -19,7 +21,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let lorebook_id_to_associate = payload.lorebook_id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -34,6 +36,7 @@ impl LorebookService {
                 .select(Chat::as_select()) // Changed ChatSession to Chat
                 .first::<Chat>(conn_sync) // Changed ChatSession to Chat
                 .optional()
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| {
@@ -42,14 +45,7 @@ impl LorebookService {
                 e
             );
             AppError::DbInteractError(format!("DB interaction failed: {e}"))
-        })?
-        .map_err(|db_err| {
-            error!(
-                "Failed to query chat session [REDACTED_UUID]: {}",
-                db_err
-            );
-            AppError::DatabaseQueryError(db_err.to_string())
-        })?
+        })??
         .ok_or_else(|| {
             error!(
                 "Chat session [REDACTED_UUID] not found or user [REDACTED_UUID] does not have access."
@@ -69,6 +65,7 @@ impl LorebookService {
                     .select(lb_dsl::name)
                     .first::<String>(conn_sync)
                     .optional()
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
@@ -105,6 +102,7 @@ impl LorebookService {
                     .filter(cl_dsl::user_id.eq(current_user_id))
                     .count()
                     .get_result::<i64>(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
                     .map(|count| count > 0)
             })
             .await
@@ -144,7 +142,11 @@ impl LorebookService {
                         .filter(cclo_dsl::user_id.eq(user_id_clone_for_override))
                         .filter(cclo_dsl::action.eq("disable"));
 
-                    diesel::delete(target).execute(conn_sync)
+                    diesel::delete(target)
+                        .execute(conn_sync)
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 })
                 .await;
 
@@ -184,8 +186,8 @@ impl LorebookService {
             chat_session_id,
             lorebook_id: lorebook_id_to_associate_clone_for_insert,
             user_id: current_user_id_clone_for_insert,
-            created_at: Some(association_creation_time),
-            updated_at: Some(association_creation_time),
+            created_at: Some(association_creation_time.into()),
+            updated_at: Some(association_creation_time.into()),
         };
 
         conn.interact(move |conn_sync| {
@@ -199,21 +201,13 @@ impl LorebookService {
                     // However, explicitly setting it ensures the value is current if the trigger isn't comprehensive.
                     .set(csl_dsl::updated_at.eq(diesel::dsl::now))
                     .execute(conn_sync)
+                        .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
             error!("DB interaction failed while creating association between chat [REDACTED_UUID] and lorebook [REDACTED_UUID]: {}", e);
             AppError::DbInteractError(format!("DB interaction failed: {e}"))
-        })?
-        .map_err(|db_err: DieselError| { // Explicitly type db_err
-            error!("Failed to insert chat session lorebook association: {}", db_err); // No UUIDs here
-            match db_err {
-                DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
-                    AppError::Conflict("This lorebook is already associated with the chat session.".to_string())
-                }
-                _ => AppError::DatabaseQueryError(db_err.to_string()),
-            }
-        })?;
+        })??;
 
         info!(
             "Successfully associated lorebook [REDACTED_UUID] with chat session [REDACTED_UUID] for user [REDACTED_UUID]"
@@ -233,7 +227,7 @@ impl LorebookService {
                 lorebook_id: lorebook_id_to_associate,
                 user_id: current_user_id,
                 lorebook_name,
-                created_at: association_creation_time,
+                created_at: association_creation_time.into(),
             });
         };
 
@@ -247,6 +241,9 @@ impl LorebookService {
                         .filter(lorebook_entries::user_id.eq(user_id_for_fetch))
                         .select(LorebookEntry::as_select())
                         .load::<LorebookEntry>(conn_sync)
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })
                 }
             })
             .await;
@@ -412,7 +409,7 @@ impl LorebookService {
             lorebook_id: lorebook_id_to_associate,
             user_id: current_user_id,
             lorebook_name,
-            created_at: association_creation_time, // Use the time captured before DB interaction
+            created_at: association_creation_time.into(), // Use the time captured before DB interaction
         })
     }
 
@@ -420,7 +417,7 @@ impl LorebookService {
     pub async fn list_chat_lorebook_associations(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id_param: Uuid,
+        chat_session_id_param: crate::db::DbId,
     ) -> Result<Vec<ChatSessionLorebookAssociationResponse>, AppError> {
         debug!(
             chat_session_id = "[REDACTED_UUID]",
@@ -429,7 +426,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -441,8 +438,9 @@ impl LorebookService {
                 .filter(cs_dsl::id.eq(chat_session_id_param))
                 .filter(cs_dsl::user_id.eq(current_user_id))
                 .select(cs_dsl::id)
-                .first::<Uuid>(conn_sync)
+                .first::<crate::db::DbId>(conn_sync)
                 .optional()
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| {
@@ -451,14 +449,7 @@ impl LorebookService {
                 e
             );
             AppError::DbInteractError(format!("DB interaction failed: {e}"))
-        })?
-        .map_err(|db_err| {
-            error!(
-                "Failed to query chat session [REDACTED_UUID]: {}",
-                db_err
-            );
-            AppError::DatabaseQueryError(db_err.to_string())
-        })?
+        })??
         .ok_or_else(|| {
             error!(
                 "Chat session [REDACTED_UUID] not found or user [REDACTED_UUID] does not have access."
@@ -485,7 +476,8 @@ impl LorebookService {
                         l_dsl::name,         // lorebook name
                         csl_dsl::created_at, // association creation time
                     ))
-                    .load::<(Uuid, Uuid, Uuid, String, chrono::DateTime<Utc>)>(conn_sync)
+                    .load::<(crate::db::DbId, crate::db::DbId, crate::db::DbId, String, crate::DbTimestamp)>(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
@@ -524,7 +516,7 @@ impl LorebookService {
     pub async fn list_enhanced_chat_lorebook_associations(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id_param: Uuid,
+        chat_session_id_param: crate::db::DbId,
     ) -> Result<
         Vec<crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse>,
         AppError,
@@ -536,7 +528,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -549,8 +541,9 @@ impl LorebookService {
                     .filter(cs_dsl::id.eq(chat_session_id_param))
                     .filter(cs_dsl::user_id.eq(current_user_id))
                     .select((cs_dsl::id, cs_dsl::character_id))
-                    .first::<(Uuid, Option<Uuid>)>(conn_sync)
+                    .first::<(crate::db::DbId, Option<crate::db::DbId>)>(conn_sync)
                     .optional()
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
@@ -559,14 +552,7 @@ impl LorebookService {
                     e
                 );
                 AppError::DbInteractError(format!("DB interaction failed: {e}"))
-            })?
-            .map_err(|db_err| {
-                error!(
-                    "Failed to query chat session [REDACTED_UUID]: {}",
-                    db_err
-                );
-                AppError::DatabaseQueryError(db_err.to_string())
-            })?
+            })??
             .ok_or_else(|| {
                 error!(
                     "Chat session [REDACTED_UUID] not found or user [REDACTED_UUID] does not have access."
@@ -591,7 +577,10 @@ impl LorebookService {
                     .filter(csl_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .select((csl_dsl::lorebook_id, l_dsl::name, csl_dsl::created_at))
-                    .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?;
+                    .load::<(crate::db::DbId, String, crate::DbTimestamp)>(conn_sync)
+                    .map_err(|e: diesel::result::Error| {
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
 
                 // Get character-linked associations (only for character-based chats)
                 let character_associations = if let Some(char_id) = character_id {
@@ -600,7 +589,10 @@ impl LorebookService {
                         .filter(cl_dsl::character_id.eq(char_id))
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .select((cl_dsl::lorebook_id, l_dsl::name, cl_dsl::created_at))
-                        .load::<(Uuid, String, chrono::DateTime<Utc>)>(conn_sync)?
+                        .load::<(crate::db::DbId, String, crate::DbTimestamp)>(conn_sync)
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?
                 } else {
                     Vec::new()
                 };
@@ -610,13 +602,12 @@ impl LorebookService {
                     .filter(cclo_dsl::chat_session_id.eq(chat_session_id_param))
                     .filter(cclo_dsl::user_id.eq(current_user_id))
                     .select((cclo_dsl::lorebook_id, cclo_dsl::action))
-                    .load::<(Uuid, String)>(conn_sync)?;
+                    .load::<(crate::db::DbId, String)>(conn_sync)
+                    .map_err(|e: diesel::result::Error| {
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?;
 
-                Ok::<_, diesel::result::Error>((
-                    chat_associations,
-                    character_associations,
-                    overrides,
-                ))
+                Ok::<_, AppError>((chat_associations, character_associations, overrides))
             })
             .await
             .map_err(|e| {
@@ -685,11 +676,12 @@ impl LorebookService {
         }
 
         // 3. Build override map
-        let override_map: std::collections::HashMap<Uuid, String> = overrides.into_iter().collect();
+        let override_map: std::collections::HashMap<crate::db::DbId, String> =
+            overrides.into_iter().collect();
 
         // 4. Build a map to store unique lorebook associations, prioritizing chat-level
         let mut unique_associations: std::collections::HashMap<
-            Uuid,
+            crate::db::DbId,
             crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse,
         > = std::collections::HashMap::new();
 
@@ -740,14 +732,14 @@ impl LorebookService {
     pub async fn disassociate_lorebook_from_chat(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        chat_session_id_param: Uuid,
-        lorebook_id_param: Uuid,
+        chat_session_id_param: crate::db::DbId,
+        lorebook_id_param: crate::db::DbId,
     ) -> Result<(), AppError> {
         debug!("Attempting to disassociate lorebook [REDACTED_UUID] from chat [REDACTED_UUID]");
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -760,8 +752,9 @@ impl LorebookService {
                     .filter(cs_dsl::id.eq(chat_session_id_param))
                     .filter(cs_dsl::user_id.eq(current_user_id))
                     .select((cs_dsl::id, cs_dsl::character_id))
-                    .first::<(Uuid, Option<Uuid>)>(conn_sync)
+                    .first::<(crate::db::DbId, Option<crate::db::DbId>)>(conn_sync)
                     .optional()
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -785,7 +778,10 @@ impl LorebookService {
                     .filter(csl_dsl::lorebook_id.eq(lorebook_id_param))
                     .filter(csl_dsl::user_id.eq(current_user_id))
                     .count()
-                    .get_result::<i64>(conn_sync)?
+                    .get_result::<i64>(conn_sync)
+                    .map_err(|e: diesel::result::Error| {
+                        AppError::DatabaseQueryError(e.to_string())
+                    })?
                     > 0;
 
                 // Check if it's a character-level association (only for character-based chats)
@@ -795,20 +791,19 @@ impl LorebookService {
                         .filter(cl_dsl::lorebook_id.eq(lorebook_id_param))
                         .filter(cl_dsl::user_id.eq(current_user_id))
                         .count()
-                        .get_result::<i64>(conn_sync)?
+                        .get_result::<i64>(conn_sync)
+                        .map_err(|e: diesel::result::Error| {
+                            AppError::DatabaseQueryError(e.to_string())
+                        })?
                         > 0
                 } else {
                     false
                 };
 
-                Ok::<_, diesel::result::Error>((
-                    chat_association_exists,
-                    character_association_exists,
-                ))
+                Ok::<_, AppError>((chat_association_exists, character_association_exists))
             })
             .await
-            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
-            .map_err(|db_err| AppError::DatabaseQueryError(db_err.to_string()))?;
+            .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))??;
 
         let (is_chat_association, is_character_association) = association_info;
 
@@ -829,6 +824,7 @@ impl LorebookService {
                             .filter(csl_dsl::user_id.eq(current_user_id)),
                     )
                     .execute(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
                 })
                 .await
                 .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -866,6 +862,7 @@ impl LorebookService {
                             .filter(csl_dsl::user_id.eq(current_user_id)),
                     )
                     .execute(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
                 })
                 .await
                 .map_err(|e| AppError::DbInteractError(format!("DB interaction failed: {e}")))?
@@ -911,7 +908,7 @@ impl LorebookService {
     pub async fn list_associated_chat_sessions_for_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
-        lorebook_id_param: Uuid,
+        lorebook_id_param: crate::db::DbId,
         user_dek: Option<&SecretBox<Vec<u8>>>,
     ) -> Result<Vec<ChatSessionBasicInfo>, AppError> {
         debug!(
@@ -921,7 +918,7 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
         })?;
@@ -933,8 +930,9 @@ impl LorebookService {
                 .filter(l_dsl::id.eq(lorebook_id_param))
                 .filter(l_dsl::user_id.eq(current_user_id))
                 .select(l_dsl::id)
-                .first::<Uuid>(conn_sync)
+                .first::<crate::db::DbId>(conn_sync)
                 .optional()
+                .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| {
@@ -972,7 +970,8 @@ impl LorebookService {
                         cs_dsl::title_ciphertext, // chat_session title (encrypted)
                         cs_dsl::title_nonce,      // chat_session title nonce
                     ))
-                    .load::<(Uuid, Option<Vec<u8>>, Option<Vec<u8>>)>(conn_sync)
+                    .load::<(crate::db::DbId, Option<Vec<u8>>, Option<Vec<u8>>)>(conn_sync)
+                    .map_err(|e: diesel::result::Error| AppError::DatabaseQueryError(e.to_string()))
             })
             .await
             .map_err(|e| {
@@ -981,14 +980,7 @@ impl LorebookService {
                     e
                 );
                 AppError::DbInteractError(format!("DB interaction failed: {e}"))
-            })?
-            .map_err(|db_err| {
-                error!(
-                    "Failed to query associated chat sessions for lorebook [REDACTED_UUID]: {}",
-                    db_err
-                );
-                AppError::DatabaseQueryError(db_err.to_string())
-            })?;
+            })??;
 
         let dek_bytes = user_dek
             .ok_or_else(|| {

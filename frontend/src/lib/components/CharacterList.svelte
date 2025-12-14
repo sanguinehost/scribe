@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, untrack } from 'svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import type { ScribeCharacter as Character } from '$lib/types';
+	import { getIsAuthenticated, getIsAuthReady } from '$lib/auth.svelte';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
@@ -10,13 +11,13 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { slideAndFade } from '$lib/utils/transitions';
 
-	let characters: Character[] = [];
-	let isLoading = true;
-	let error: string | null = null;
-	let selectedCharacterId: string | null = null; // To track selection state for cards
-	let editingCharacter: Character | undefined = undefined; // The character being edited
-	let showEditor = false;
-	let showCreator = false;
+	let characters = $state<Character[]>([]);
+	let isLoading = $state(true);
+	let error = $state<string | null>(null);
+	let selectedCharacterId = $state<string | null>(null); // To track selection state for cards
+	let editingCharacter = $state<Character | undefined>(undefined); // The character being edited
+	let showEditor = $state(false);
+	let showCreator = $state(false);
 
 	const dispatch = createEventDispatcher();
 
@@ -44,15 +45,26 @@
 		}
 	}
 
-	// Only fetch on mount, not on every re-render
-	let hasFetched = false;
+	// Only fetch once when auth is ready
+	let hasFetched = $state(false);
 
-	onMount(async () => {
-		if (!hasFetched) {
-			await fetchCharacters(); // Call fetch function on mount
-			hasFetched = true;
+	// CRITICAL FIX: Use $effect to reactively track auth state
+	// This creates explicit subscriptions that trigger when auth becomes ready
+	// Use untrack() to prevent state modifications from creating new reactive dependencies
+	$effect(() => {
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		// Initial fetch when auth becomes ready
+		if (!hasFetched && authReady && authenticated) {
+			console.log('[CharacterList] Auth ready detected, fetching characters');
+			// Use untrack to prevent infinite loops from state modifications inside fetchCharacters
+			untrack(() => {
+				fetchCharacters();
+				hasFetched = true;
+			});
 		}
-	}); // Correctly closed onMount
+	});
 
 	// Expose a refresh function for the parent component
 	export async function refresh() {
@@ -81,11 +93,17 @@
 	}
 
 	// Handle when editor closes to refresh the character list
-	$: if (!showEditor && editingCharacter) {
-		// Refresh character list after editing
-		fetchCharacters();
-		editingCharacter = undefined;
-	}
+	$effect(() => {
+		// Watch for editor closing
+		if (!showEditor && editingCharacter) {
+			// Use untrack to prevent infinite loops from state modifications
+			untrack(() => {
+				// Refresh character list after editing
+				fetchCharacters();
+				editingCharacter = undefined;
+			});
+		}
+	});
 
 	function handleCreateClick() {
 		showCreator = true;

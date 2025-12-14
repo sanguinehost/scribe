@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use chrono::Utc;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{

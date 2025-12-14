@@ -1,6 +1,7 @@
+use crate::db::DbId;
 use std::{cmp::min, pin::Pin, sync::Arc};
 
-use bigdecimal::{BigDecimal, ToPrimitive};
+use bigdecimal::ToPrimitive;
 use diesel::{
     result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
 };
@@ -14,7 +15,6 @@ use genai::chat::{
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
 use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
-use uuid::Uuid;
 
 use crate::{
     errors::AppError,
@@ -81,8 +81,8 @@ use super::{
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
     state: Arc<AppState>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: crate::db::DbId,
+    session_id: crate::db::DbId,
     user_message_content: String,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
     frontend_history: Option<Vec<crate::models::chats::ApiChatMessage>>,
@@ -91,18 +91,16 @@ pub async fn get_session_data_for_generation(
     info!(target: "chat_service_persona_debug", %session_id, %user_id, "Entering get_session_data_for_generation.");
 
     // --- Determine Effective System Prompt & Lorebook IDs (Pre-Main-Interact) ---
-    let maybe_active_persona_id_from_session: Option<Uuid> = {
-        let conn_clone_for_persona_check = state.pool.get().await?;
-        conn_clone_for_persona_check
-            .interact(move |c| {
-                chat_sessions::table
-                    .filter(chat_sessions::id.eq(session_id))
-                    .filter(chat_sessions::user_id.eq(user_id))
-                    .select(chat_sessions::active_custom_persona_id)
-                    .first::<Option<Uuid>>(c)
-            })
-            .await??
-    };
+    let maybe_active_persona_id_from_session: Option<crate::db::DbId> =
+        crate::db::with_conn(&state.pool, move |c| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::active_custom_persona_id)
+                .first::<Option<crate::db::DbId>>(c)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
     info!(target: "chat_service_persona_debug", %session_id, ?maybe_active_persona_id_from_session, "Fetched active_custom_persona_id from session.");
 
     let mut effective_system_prompt: Option<String> = None;
@@ -111,31 +109,18 @@ pub async fn get_session_data_for_generation(
     if let Some(persona_id) = maybe_active_persona_id_from_session {
         if let Some(ref dek_arc_outer) = user_dek_secret_box {
             let user_for_service_call: crate::models::users::User = {
-                let conn_for_user_fetch = state
-                    .pool
-                    .get()
-                    .await
-                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                let user_db_query_result = conn_for_user_fetch
-                    .interact(move |c| {
-                        crate::schema::users::table
-                            .filter(crate::schema::users::id.eq(user_id))
-                            .select(crate::models::users::UserDbQuery::as_select())
-                            .first::<crate::models::users::UserDbQuery>(c)
-                    })
-                    .await
-                    .map_err(|e| {
-                        AppError::InternalServerErrorGeneric(format!(
-                            "DB interact error fetching user_db_query: {e}"
-                        ))
-                    })?;
-
-                let user_db_query = user_db_query_result.map_err(|e| {
-                    AppError::NotFound(format!(
-                        "UserDbQuery for user {} not found: {e}",
-                        loggable_user_id(user_id)
-                    ))
-                })?;
+                let user_db_query = crate::db::with_conn(&state.pool, move |c| {
+                    crate::schema::users::table
+                        .filter(crate::schema::users::id.eq(user_id))
+                        .first::<crate::models::users::UserDbQuery>(c)
+                        .map_err(|e| {
+                            AppError::NotFound(format!(
+                                "UserDbQuery for user {} not found: {e}",
+                                loggable_user_id(user_id)
+                            ))
+                        })
+                })
+                .await?;
                 user_db_query.into()
             };
             let dek_ref_for_service: Option<&SecretBox<Vec<u8>>> = Some(dek_arc_outer.as_ref());
@@ -222,18 +207,13 @@ pub async fn get_session_data_for_generation(
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
         agent_mode_from_session,       // The agent mode for context enrichment
     ) = {
-        let conn = state
-            .pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
         let frontend_history_for_interact = frontend_history.clone(); // Clone for closure
 
-        conn.interact(move |conn_interaction| {
+        crate::db::with_conn(&state.pool, move |conn_interaction| {
             // Split into two queries to respect Diesel's tuple size limitation
-            // Query 1: Basic session settings (15 fields)
+            // Query 1: Basic session settings (11 fields)
             let (
                 hist_strat,
                 hist_limit,
@@ -245,11 +225,7 @@ pub async fn get_session_data_for_generation(
                 freq_pen,
                 pres_pen,
                 top_k_val,
-                top_p_val,
-                seed_val,
-                stop_seqs,
                 model_n,
-                model_prov,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -264,27 +240,52 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::frequency_penalty,
                     chat_sessions::presence_penalty,
                     chat_sessions::top_k,
-                    chat_sessions::top_p,
-                    chat_sessions::seed,
-                    chat_sessions::stop_sequences,
                     chat_sessions::model_name,
-                    chat_sessions::model_provider,
                 ))
                 .first::<(
                     String,
                     i32,
-                    Option<Uuid>,
+                    Option<crate::db::DbId>,
                     Option<Vec<u8>>,
                     Option<Vec<u8>>,
-                    Option<BigDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<BigDecimal>,
-                    Option<BigDecimal>,
+                    Option<crate::db::DbDecimal>,
+                    Option<crate::db::DbDecimal>,
                     Option<i32>,
-                    Option<BigDecimal>,
-                    Option<i32>,
-                    Option<Vec<Option<String>>>,
                     String,
+                )>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            // Query 2: Additional session fields (5 fields)
+            let (
+                model_prov,
+                gem_think_budget,
+                gem_enable_code_exec,
+                player_chronicle_id,
+                agent_mode,
+            ) = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select((
+                    chat_sessions::model_provider,
+                    chat_sessions::gemini_thinking_budget,
+                    chat_sessions::gemini_enable_code_execution,
+                    chat_sessions::player_chronicle_id,
+                    chat_sessions::agent_mode,
+                ))
+                .first::<(
+                    Option<String>,
+                    Option<i32>,
+                    Option<bool>,
+                    Option<crate::db::DbId>,
                     Option<String>,
                 )>(conn_interaction)
                 .map_err(|e| match e {
@@ -296,20 +297,59 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
-            // Query 2: Additional session fields (4 fields)
-            let (gem_think_budget, gem_enable_code_exec, player_chronicle_id, agent_mode) =
-                chat_sessions::table
+            // Query 3a: top_p parameter
+            let top_p_val = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::top_p)
+                .first::<Option<crate::db::DbDecimal>>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            // Query 3b: seed parameter
+            let seed_val = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::seed)
+                .first::<Option<i32>>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            // Query 3c: stop_sequences parameter (Array<Nullable<Text>> => Option<Vec<Option<String>>>)
+            #[cfg(feature = "postgres-backend")]
+            let stop_seqs = chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::user_id.eq(user_id))
+                .select(chat_sessions::stop_sequences)
+                .first::<Option<Vec<Option<String>>>>(conn_interaction)
+                .map_err(|e| match e {
+                    DieselError::NotFound => {
+                        AppError::NotFound(format!("Chat session {session_id} not found"))
+                    }
+                    _ => AppError::DatabaseQueryError(format!(
+                        "Failed to query chat session {session_id}: {e}"
+                    )),
+                })?;
+
+            #[cfg(feature = "sqlite-backend")]
+            let stop_seqs = {
+                let optional_array = chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
                     .filter(chat_sessions::user_id.eq(user_id))
-                    .select((
-                        chat_sessions::gemini_thinking_budget,
-                        chat_sessions::gemini_enable_code_execution,
-                        chat_sessions::player_chronicle_id,
-                        chat_sessions::agent_mode,
-                    ))
-                    .first::<(Option<i32>, Option<bool>, Option<Uuid>, Option<String>)>(
-                        conn_interaction,
-                    )
+                    .select(chat_sessions::stop_sequences)
+                    .first::<crate::models::OptionalStringArray>(conn_interaction)
                     .map_err(|e| match e {
                         DieselError::NotFound => {
                             AppError::NotFound(format!("Chat session {session_id} not found"))
@@ -318,6 +358,8 @@ pub async fn get_session_data_for_generation(
                             "Failed to query chat session {session_id}: {e}"
                         )),
                     })?;
+                optional_array.0
+            };
 
             // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
             let char_id = sess_char_id.ok_or_else(|| {
@@ -342,24 +384,175 @@ pub async fn get_session_data_for_generation(
             let overrides_db: Vec<ChatCharacterOverride> = chat_character_overrides::table
                 .filter(chat_character_overrides::chat_session_id.eq(session_id))
                 .filter(chat_character_overrides::original_character_id.eq(char_id))
+                .select(ChatCharacterOverride::as_select())
                 .load::<ChatCharacterOverride>(conn_interaction)
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to query overrides: {e}"))
                 })?;
 
             // Only query database messages if no frontend history is provided
+            // Use ChatMessageQuery (11 fields) to avoid Diesel's CompatibleType limit
             let messages_raw_db: Vec<DbChatMessage> = if frontend_history_for_interact.is_none() {
-                chat_messages::table
-                    .filter(chat_messages::session_id.eq(session_id))
-                    .order(chat_messages::created_at.asc()) // Fetch in ascending order for correct processing later
-                    .select(DbChatMessage::as_select())
-                    .load::<DbChatMessage>(conn_interaction)
-                    .map_err(|e| {
-                        AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
-                    })?
+                // Split query execution into backend-conditional blocks
+                let mut query_result = {
+                    let query_base = chat_messages::table
+                        .filter(chat_messages::session_id.eq(session_id))
+                        .order(chat_messages::created_at.desc()) // Get newest first
+                        .limit(1000) // Limit to 1000 messages to prevent OOM
+                        .select((
+                            chat_messages::id,
+                            chat_messages::session_id,
+                            chat_messages::message_type,
+                            chat_messages::content,
+                            chat_messages::content_nonce,
+                            chat_messages::created_at,
+                            chat_messages::user_id,
+                            chat_messages::prompt_tokens,
+                            chat_messages::completion_tokens,
+                            chat_messages::model_name,
+                            chat_messages::status,
+                        ));
+
+                    #[cfg(feature = "postgres-backend")]
+                    {
+                        query_base.load::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            MessageRole,
+                            Vec<u8>,
+                            Option<Vec<u8>>,
+                            crate::db::DbTimestamp,
+                            crate::db::DbId,
+                            Option<i32>,
+                            Option<i32>,
+                            String,
+                            String,
+                        )>(conn_interaction)
+                    }
+
+                    #[cfg(feature = "sqlite-backend")]
+                    {
+                        query_base.load::<(
+                            crate::db::DbId,
+                            crate::db::DbId,
+                            MessageRole,
+                            Vec<u8>,
+                            Option<Vec<u8>>,
+                            crate::db::DbTimestamp,
+                            crate::db::DbId,
+                            Option<i32>,
+                            Option<i32>,
+                            String,
+                            String,
+                        )>(conn_interaction)
+                    }
+                }
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to load messages: {e}"))
+                })?;
+
+                // Reverse to get oldest first (ASC) order for processing
+                query_result.reverse();
+
+                #[cfg(feature = "sqlite-backend")]
+                let query_result = query_result
+                    .into_iter()
+                    .map(
+                        |(
+                            id,
+                            session_id,
+                            message_type,
+                            content,
+                            content_nonce,
+                            created_at,
+                            user_id,
+                            prompt_tokens,
+                            completion_tokens,
+                            model_name,
+                            status,
+                        )| {
+                            DbChatMessage {
+                                id,
+                                session_id,
+                                message_type,
+                                content,
+                                rag_embedding_id: None,
+                                content_nonce,
+                                created_at,
+                                updated_at: chrono::Utc::now().into(),
+                                user_id,
+                                role: None,
+                                parts: None,
+                                attachments: None,
+                                prompt_tokens,
+                                completion_tokens,
+                                model_name,
+                                status,
+                                raw_prompt_ciphertext: None,
+                                raw_prompt_nonce: None,
+                                error_message: None,
+                                superseded_at: None,
+                                variant_count: 0,
+                                current_variant_index: 0,
+                                credits_charged: 0,
+                                credits_cost: 0,    // SQLite: i32
+                                actual_cost: 0.0,   // SQLite: f64
+                                modified_cost: 0.0, // SQLite: f64
+                                credit_cost: 0,
+                                actual_charge: 0.0, // SQLite: f64
+                            }
+                        },
+                    )
+                    .collect();
+
+                #[cfg(feature = "postgres-backend")]
+                let query_result = query_result
+                    .into_iter()
+                    .map(
+                        |(
+                            id,
+                            session_id,
+                            message_type,
+                            content,
+                            content_nonce,
+                            created_at,
+                            user_id,
+                            prompt_tokens,
+                            completion_tokens,
+                            model_name,
+                            status,
+                        )| {
+                            DbChatMessage {
+                                id,
+                                session_id,
+                                message_type,
+                                content,
+                                content_nonce,
+                                created_at,
+                                user_id,
+                                prompt_tokens,
+                                completion_tokens,
+                                raw_prompt_ciphertext: None,
+                                raw_prompt_nonce: None,
+                                model_name,
+                                status,
+                                error_message: None,
+                                superseded_at: None,
+                                variant_count: 0,
+                                current_variant_index: 0,
+                                credits_charged: 0,
+                                credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                                actual_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                                modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                                credit_cost: 0,
+                                actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                            }
+                        },
+                    )
+                    .collect();
+
+                query_result
             } else {
-                // When frontend history is provided, we don't need database messages
-                // The frontend-filtered history will be converted later
                 Vec::new()
             };
 
@@ -463,12 +656,11 @@ pub async fn get_session_data_for_generation(
                 agent_mode,
             ))
         })
-        .await
-        .map_err(|e| AppError::DbInteractError(format!("Interact dispatch error: {e}")))??
+        .await?
     };
 
     // --- Retrieve Comprehensive Active Lorebook IDs (now that character_id is available) ---
-    let active_lorebook_ids_for_search: Option<Vec<Uuid>> = {
+    let active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>> = {
         let pool_clone_lore = state.pool.clone();
         let user_id_clone = user_id;
         let session_id_clone = session_id;
@@ -477,28 +669,20 @@ pub async fn get_session_data_for_generation(
             AppError::BadRequest("Character ID required for lorebook lookup".to_string())
         })?;
 
-        match pool_clone_lore
-            .get()
-            .await
-            .map_err(AppError::from)?
-            .interact(move |conn_lore| {
-                ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
-                    conn_lore,
-                    session_id_clone,
-                    character_id_clone,
-                    user_id_clone,
-                )
-                .map_err(AppError::from)
-            })
-            .await
+        match crate::db::with_conn(&pool_clone_lore, move |conn_lore| {
+            ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
+                conn_lore,
+                session_id_clone,
+                character_id_clone,
+                user_id_clone,
+            )
+            .map_err(AppError::from)
+        })
+        .await
         {
-            Ok(Ok(ids)) => ids,
-            Ok(Err(e)) => {
-                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs (DB error).");
-                None
-            }
+            Ok(opt_ids) => opt_ids,
             Err(e) => {
-                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs (InteractError).");
+                warn!(%session_id, error = %e, "Failed to get comprehensive active lorebook IDs");
                 None
             }
         }
@@ -547,31 +731,71 @@ pub async fn get_session_data_for_generation(
                     _ => MessageRole::User, // Default fallback
                 };
 
-                DbChatMessage {
-                    id: Uuid::new_v4(), // Generate temporary ID for frontend messages
-                    session_id,
-                    user_id,
-                    message_type: message_role,
-                    content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
-                    content_nonce: None, // No encryption for frontend-provided history
-                    created_at: chrono::Utc::now() - chrono::Duration::seconds(1000 - index as i64), // Fake timestamps
-                    prompt_tokens: None,
-                    completion_tokens: None,
-                    raw_prompt_ciphertext: None,
-                    raw_prompt_nonce: None,
-                    model_name: session_model_name_db.clone(), // Use session model for frontend-provided history
-                    status: "completed".to_string(), // Frontend-provided history is considered completed
-                    error_message: None,
-                    superseded_at: None,
-                    variant_count: 0,
-                    current_variant_index: 0,
-                    credits_charged: 0,
-                    credits_cost: bigdecimal::BigDecimal::from(0),
-                    // New cost tracking fields
-                    actual_cost: bigdecimal::BigDecimal::from(0),
-                    modified_cost: bigdecimal::BigDecimal::from(0),
-                    credit_cost: 0,
-                    actual_charge: bigdecimal::BigDecimal::from(0),
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    DbChatMessage {
+                        id: DbId::new().into(), // Generate temporary ID for frontend messages
+                        session_id,
+                        user_id,
+                        message_type: message_role,
+                        content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                        rag_embedding_id: None,
+                        content_nonce: None, // No encryption for frontend-provided history
+                        created_at: (chrono::Utc::now()
+                            - chrono::Duration::seconds(1000 - index as i64))
+                        .into(), // Fake timestamps
+                        updated_at: chrono::Utc::now().into(),
+                        role: None,
+                        parts: None,
+                        attachments: None,
+                        prompt_tokens: None,
+                        completion_tokens: None,
+                        raw_prompt_ciphertext: None,
+                        raw_prompt_nonce: None,
+                        model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
+                        status: "completed".to_string(), // Frontend-provided history is considered completed
+                        error_message: None,
+                        superseded_at: None,
+                        variant_count: 0,
+                        current_variant_index: 0,
+                        credits_charged: 0,
+                        credits_cost: 0,    // SQLite: i32
+                        actual_cost: 0.0,   // SQLite: f64
+                        modified_cost: 0.0, // SQLite: f64
+                        credit_cost: 0,
+                        actual_charge: 0.0, // SQLite: f64
+                    }
+                }
+
+                #[cfg(feature = "postgres-backend")]
+                {
+                    DbChatMessage {
+                        id: DbId::new().into(), // Generate temporary ID for frontend messages
+                        session_id,
+                        user_id,
+                        message_type: message_role,
+                        content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                        content_nonce: None, // No encryption for frontend-provided history
+                        created_at: (chrono::Utc::now()
+                            - chrono::Duration::seconds(1000 - index as i64))
+                        .into(), // Fake timestamps
+                        prompt_tokens: None,
+                        completion_tokens: None,
+                        raw_prompt_ciphertext: None,
+                        raw_prompt_nonce: None,
+                        model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
+                        status: "completed".to_string(), // Frontend-provided history is considered completed
+                        error_message: None,
+                        superseded_at: None,
+                        variant_count: 0,
+                        current_variant_index: 0,
+                        credits_charged: 0,
+                        credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                        actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
+                        modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                        credit_cost: 0,
+                        actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                    }
                 }
             })
             .collect()
@@ -638,18 +862,15 @@ pub async fn get_session_data_for_generation(
     // Enforce subscription tier's max_context_tokens limit
     #[cfg(feature = "payment")]
     {
-        let conn_for_plan_check = state.pool.get().await?;
         let subscription_service =
             SubscriptionService::new(state.config.as_ref().clone(), EncryptionService::new());
 
         // Get user's subscription
         let subscription_service_clone_1 = subscription_service.clone();
-        let user_subscription = conn_for_plan_check
-            .interact(move |conn| {
-                subscription_service_clone_1.get_user_subscription_sync(conn, user_id)
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        let user_subscription = crate::db::with_conn(&state.pool, move |conn| {
+            subscription_service_clone_1.get_user_subscription_sync(conn, user_id)
+        })
+        .await?;
 
         // Get plan features
         let plan_type = user_subscription
@@ -657,15 +878,12 @@ pub async fn get_session_data_for_generation(
             .map(|s| s.plan_type.clone())
             .unwrap_or_else(|| "free".to_string());
 
-        let conn_for_features = state.pool.get().await?;
         let subscription_service_clone_2 = subscription_service.clone();
         let plan_type_for_query = plan_type.clone();
-        let plan_features = conn_for_features
-            .interact(move |conn| {
-                subscription_service_clone_2.get_plan_features_sync(conn, &plan_type_for_query)
-            })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))??;
+        let plan_features = crate::db::with_conn(&state.pool, move |conn| {
+            subscription_service_clone_2.get_plan_features_sync(conn, &plan_type_for_query)
+        })
+        .await?;
 
         // Enforce max_context_tokens if set
         if let Some(max_tokens) = plan_features.and_then(|pf| pf.max_context_tokens) {
@@ -879,7 +1097,7 @@ pub async fn get_session_data_for_generation(
             {
                 Ok(mut older_chat_chunks) => {
                     info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                    let recent_message_ids: std::collections::HashSet<Uuid> =
+                    let recent_message_ids: std::collections::HashSet<crate::db::DbId> =
                         managed_recent_history.iter().map(|msg| msg.id).collect();
                     debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
@@ -967,7 +1185,7 @@ pub async fn get_session_data_for_generation(
 
             // Use the unified RAG selector to choose content within budget
             match rag_selector
-                .select_rag_content(combined_rag_candidates, Some(chrono::Utc::now()))
+                .select_rag_content(combined_rag_candidates, Some(chrono::Utc::now().into()))
                 .await
             {
                 Ok(selected_chunks) => {
@@ -1071,68 +1289,116 @@ pub async fn get_session_data_for_generation(
         }
 
         if let Some(content) = first_mes_content_to_add {
+            #[cfg(feature = "sqlite-backend")]
             let first_mes_db_chat_message = DbChatMessage {
-                id: Uuid::new_v4(),
+                id: DbId::new().into(),
                 session_id,
                 user_id,
                 message_type: MessageRole::Assistant,
                 content: content.into_bytes(), // Content is already decrypted String
+                rag_embedding_id: None,
                 content_nonce: None,
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
+                updated_at: chrono::Utc::now().into(),
+                role: None,
+                parts: None,
+                attachments: None,
                 prompt_tokens: None,
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
-                model_name: session_model_name_db.clone(), // Use session model for character first message
-                status: "completed".to_string(),           // First message is considered completed
+                model_name: session_model_name_db.to_string(), // Use session model for character first message
+                status: "completed".to_string(), // First message is considered completed
                 error_message: None,
                 superseded_at: None,
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: bigdecimal::BigDecimal::from(0),
-                // New cost tracking fields
-                actual_cost: bigdecimal::BigDecimal::from(0),
-                modified_cost: bigdecimal::BigDecimal::from(0),
+                credits_cost: 0,    // SQLite: i32
+                actual_cost: 0.0,   // SQLite: f64
+                modified_cost: 0.0, // SQLite: f64
                 credit_cost: 0,
-                actual_charge: bigdecimal::BigDecimal::from(0),
+                actual_charge: 0.0, // SQLite: f64
             };
+
+            #[cfg(feature = "postgres-backend")]
+            let first_mes_db_chat_message = DbChatMessage {
+                id: DbId::new().into(),
+                session_id,
+                user_id,
+                message_type: MessageRole::Assistant,
+                content: content.into_bytes(), // Content is already decrypted String
+                content_nonce: None,
+                created_at: chrono::Utc::now().into(),
+                prompt_tokens: None,
+                completion_tokens: None,
+                raw_prompt_ciphertext: None,
+                raw_prompt_nonce: None,
+                model_name: session_model_name_db.to_string(), // Use session model for character first message
+                status: "completed".to_string(), // First message is considered completed
+                error_message: None,
+                superseded_at: None,
+                variant_count: 0,
+                current_variant_index: 0,
+                credits_charged: 0,
+                credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
+                modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                credit_cost: 0,
+                actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+            };
+
             managed_recent_history.insert(0, first_mes_db_chat_message);
             info!(%session_id, "Prepended character's first_mes to managed_recent_history.");
         }
     }
 
     // --- Prepare User Message Struct ---
+    // Generate new ID for SQLite (no DEFAULT in schema)
+    let user_message_id = crate::db::DbId::new();
+
+    #[cfg(feature = "sqlite-backend")]
     let mut user_db_message_to_save = DbInsertableChatMessage::new(
+        user_message_id, // id field - CRITICAL for SQLite (7 args total)
         session_id,
         user_id,
         MessageRole::User,
         user_message_content_for_closure.into_bytes(),
         None,
-        session_model_name_db.clone(),
+        session_model_name_db.to_string(),
+    );
+
+    #[cfg(feature = "postgres-backend")]
+    let mut user_db_message_to_save = DbInsertableChatMessage::new(
+        session_id, // 6 args total - no id
+        user_id,
+        MessageRole::User,
+        user_message_content_for_closure.into_bytes(),
+        None,
+        session_model_name_db.to_string(),
     );
 
     user_db_message_to_save = user_db_message_to_save
         .with_role("user".to_string())
-        .with_parts(serde_json::json!([{"text": user_message_content}]))
+        .with_parts(serde_json::json!([{"text": user_message_content}]).into())
         .with_token_counts(user_prompt_tokens_val, None);
 
     // --- Construct Final Tuple ---
     Ok((
         managed_recent_history, // 0: managed_db_history (Vec<DbChatMessage> -> Vec<ChatMessage> in type alias)
         final_effective_system_prompt, // 1: system_prompt (Option<String>)
-        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<Uuid>>)
-        session_character_id_db, // 3: session_character_id (Option<Uuid>)
-        raw_character_system_prompt, // 4: raw_character_system_prompt (Option<String>)
-        session_temperature_db, // 5: temperature (Option<BigDecimal>)
-        session_max_output_tokens_db, // 6: max_output_tokens (Option<i32>)
-        session_frequency_penalty_db, // 7: frequency_penalty (Option<BigDecimal>)
-        session_presence_penalty_db, // 8: presence_penalty (Option<BigDecimal>)
-        session_top_k_db,       // 9: top_k (Option<i32>)
-        session_top_p_db,       // 10: top_p (Option<BigDecimal>)
-        session_seed_db,        // 11: seed (Option<i32>) - MOVED
-        session_model_name_db,  // 12: model_name (String) - MOVED
-        session_model_provider_db, // 13: model_provider (Option<String>) - NEW
+        active_lorebook_ids_for_search, // 2: active_lorebook_ids_for_search (Option<Vec<crate::db::DbId>>)
+        session_character_id_db,        // 3: session_character_id (Option<crate::db::DbId>)
+        raw_character_system_prompt,    // 4: raw_character_system_prompt (Option<String>)
+        session_temperature_db,         // 5: temperature (Option<crate::db::DbDecimal>)
+        session_max_output_tokens_db,   // 6: max_output_tokens (Option<i32>)
+        session_frequency_penalty_db,   // 7: frequency_penalty (Option<crate::db::DbDecimal>)
+        session_presence_penalty_db,    // 8: presence_penalty (Option<crate::db::DbDecimal>)
+        session_top_k_db,               // 9: top_k (Option<i32>)
+        session_top_p_db,               // 10: top_p (Option<crate::db::DbDecimal>)
+        session_seed_db,                // 11: seed (Option<i32>) - MOVED
+        session_model_name_db.to_string(), // 12: model_name (String) - MOVED
+        session_model_provider_db,      // 13: model_provider (Option<String>) - NEW
         // -- Gemini Specific Options --
         session_gemini_thinking_budget_db, // 14: gemini_thinking_budget (Option<i32>) - MOVED
         session_gemini_enable_code_execution_db, // 15: gemini_enable_code_execution (Option<bool>) - MOVED
@@ -1144,35 +1410,35 @@ pub async fn get_session_data_for_generation(
         history_management_strategy_db_val, // 19: history_management_strategy (String) - MOVED
         history_management_limit_db_val,    // 20: history_management_limit (i32) - MOVED
         user_persona_name,                  // 21: user_persona_name (Option<String>) - NEW
-        player_chronicle_id_from_session,   // 22: player_chronicle_id (Option<Uuid>) - NEW
-        agent_mode_from_session,            // 23: agent_mode (Option<String>) - NEW
+        player_chronicle_id_from_session, // 22: player_chronicle_id (Option<crate::db::DbId>) - NEW
+        agent_mode_from_session,          // 23: agent_mode (Option<String>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
 pub struct StreamAiParams {
     pub state: Arc<AppState>,
-    pub session_id: Uuid,
-    pub user_id: Uuid,
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId,
     pub incoming_genai_messages: Vec<GenAiChatMessage>, // MODIFIED: Changed type and name
     pub system_prompt: Option<String>,
-    pub temperature: Option<BigDecimal>,
+    pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
-    pub frequency_penalty: Option<BigDecimal>, // Mark as unused for now
-    pub presence_penalty: Option<BigDecimal>,  // Mark as unused for now
-    pub top_k: Option<i32>,                    // Mark as unused for now
-    pub top_p: Option<BigDecimal>,
+    pub frequency_penalty: Option<crate::db::DbDecimal>, // Mark as unused for now
+    pub presence_penalty: Option<crate::db::DbDecimal>,  // Mark as unused for now
+    pub top_k: Option<i32>,                              // Mark as unused for now
+    pub top_p: Option<crate::db::DbDecimal>,
     pub stop_sequences: Option<Vec<String>>, // New parameter
     pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
     pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
-    pub request_thinking: bool,            // New parameter
+    pub request_thinking: bool,                       // New parameter
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub character_name: Option<String>,    // For prefill generation
-    pub player_chronicle_id: Option<Uuid>, // For narrative processing
-    pub variant_of: Option<Uuid>, // If provided, create a variant of this message instead of new message
-    pub charge_credits: bool,     // Whether credits should be charged for this message
+    pub player_chronicle_id: Option<crate::db::DbId>, // For narrative processing
+    pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
+    pub charge_credits: bool,                // Whether credits should be charged for this message
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1224,9 +1490,9 @@ pub struct ExecChatWithRetryParams {
     pub model_provider: Option<String>,
     pub chat_request: genai::chat::ChatRequest,
     pub chat_options: Option<genai::chat::ChatOptions>,
-    pub session_id: Uuid,
-    pub user_id: Uuid,                     // Added for per-user AI client selection
-    pub character_name: Option<String>,    // For prefill generation
+    pub session_id: crate::db::DbId,
+    pub user_id: crate::db::DbId, // Added for per-user AI client selection
+    pub character_name: Option<String>, // For prefill generation
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
 }
 
@@ -1364,21 +1630,32 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             user_id: params.user_id,
             incoming_genai_messages: {
                 let mut messages_with_prefill = params.incoming_genai_messages.clone();
-                let prefill_content = if retry_count == 0 {
-                    // First attempt: use standard prefill
-                    create_standard_prefill(params.character_name.as_deref())
-                } else {
-                    // Retry attempts: use enhanced jailbreak prefill
-                    create_jailbreak_prefill(params.character_name.as_deref())
-                };
 
-                // Add fake assistant message with prefill for all attempts
-                let prefill_message = genai::chat::ChatMessage {
-                    role: genai::chat::ChatRole::Assistant,
-                    content: genai::chat::MessageContent::Text(prefill_content),
-                    options: None,
-                };
-                messages_with_prefill.push(prefill_message);
+                // Check if the last message is from User and contains guidance
+                let has_guidance = messages_with_prefill.last().map_or(false, |msg| {
+                    matches!(msg.role, genai::chat::ChatRole::User) &&
+                    matches!(&msg.content, genai::chat::MessageContent::Text(text) if text.contains("(SYSTEM INSTRUCTION:"))
+                });
+
+                if !has_guidance {
+                    let prefill_content = if retry_count == 0 {
+                        // First attempt: use standard prefill
+                        create_standard_prefill(params.character_name.as_deref())
+                    } else {
+                        // Retry attempts: use enhanced jailbreak prefill
+                        create_jailbreak_prefill(params.character_name.as_deref())
+                    };
+
+                    // Add fake assistant message with prefill for all attempts
+                    let prefill_message = genai::chat::ChatMessage {
+                        role: genai::chat::ChatRole::Assistant,
+                        content: genai::chat::MessageContent::Text(prefill_content),
+                        options: None,
+                    };
+                    messages_with_prefill.push(prefill_message);
+                } else {
+                    info!(session_id = %params.session_id, "Guidance detected in user message, skipping prefill injection to ensure adherence.");
+                }
                 messages_with_prefill
             },
             system_prompt: if retry_count == 0 {
@@ -1721,6 +1998,7 @@ pub async fn stream_ai_response_and_save_message(
                         } else {
                             trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (chat_service)");
                             let dek_ref_partial = Some(user_dek_arc_clone_partial.clone());
+                            debug!(session_id = %error_session_id_clone, content_len = partial_content_clone.len(), "Calling save_message for partial response");
                             match save_message(SaveMessageParams {
                                 state: state_for_partial_save,
                                 session_id: error_session_id_clone,
@@ -1757,7 +2035,8 @@ pub async fn stream_ai_response_and_save_message(
                     if detailed_error.contains("PropertyNotFound(\"/content/parts\")") && !accumulated_content.is_empty() {
                         warn!(session_id = %stream_session_id, content_length = accumulated_content.len(),
                               "PropertyNotFound error occurred but response appears complete. This may be a final API response parsing issue - treating as successful completion.");
-                        // Don't set error flag and don't send error event, let the stream complete normally
+                        // Reset error flag so [DONE] gets sent and message is saved as complete
+                        stream_error_occurred = false;
                         break;
                     }
 
@@ -1814,6 +2093,7 @@ pub async fn stream_ai_response_and_save_message(
 
                 let dek_ref_full = user_dek_arc_clone_full.clone();
                 info!(session_id = %full_session_id_clone, dek_available = true, "NARRATIVE_DEBUG: About to save message");
+                debug!(session_id = %full_session_id_clone, content_len = accumulated_content_clone.len(), "Calling save_message for full response");
 
                 match save_message(SaveMessageParams {
                     state: state_for_full_save.clone(),
@@ -1844,47 +2124,29 @@ pub async fn stream_ai_response_and_save_message(
                             let model_for_tracking = service_model_name_clone_full.clone();
                             let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0) as i64;
 
-                            // Get a connection from the pool for usage tracking
-                            match state_for_full_save.pool.get().await {
-                                Ok(conn) => {
-                                    let tracking_result = conn.interact(move |c| {
-                                        soft_limit_service.record_usage(
-                                            c,
-                                            user_id_for_tracking,
-                                            &model_for_tracking,
-                                            tokens_for_tracking,
-                                        )
-                                    }).await;
+                            // Track usage with unified database helper
+                            let tracking_result = crate::db::with_conn(&state_for_full_save.pool, move |c| {
+                                soft_limit_service.record_usage(
+                                    c,
+                                    user_id_for_tracking,
+                                    &model_for_tracking,
+                                    tokens_for_tracking,
+                                )
+                            }).await;
 
-                                    match tracking_result {
-                                        Ok(Ok(daily_usage)) => {
-                                            debug!(
-                                                session_id = %full_session_id_clone,
-                                                message_count = daily_usage.message_count,
-                                                "Successfully updated daily message count"
-                                            );
-                                        }
-                                        Ok(Err(e)) => {
-                                            warn!(
-                                                session_id = %full_session_id_clone,
-                                                error = ?e,
-                                                "Failed to update daily message count, but continuing"
-                                            );
-                                        }
-                                        Err(e) => {
-                                            warn!(
-                                                session_id = %full_session_id_clone,
-                                                error = ?e,
-                                                "Database interaction error during usage tracking, but continuing"
-                                            );
-                                        }
-                                    }
+                            match tracking_result {
+                                Ok(daily_usage) => {
+                                    debug!(
+                                        session_id = %full_session_id_clone,
+                                        message_count = daily_usage.message_count,
+                                        "Successfully updated daily message count"
+                                    );
                                 }
                                 Err(e) => {
                                     warn!(
                                         session_id = %full_session_id_clone,
                                         error = ?e,
-                                        "Failed to get database connection for usage tracking, but continuing"
+                                        "Failed to update daily message count, but continuing"
                                     );
                                 }
                             }
@@ -1900,14 +2162,35 @@ pub async fn stream_ai_response_and_save_message(
 
                         // Send token usage data through the channel
                         if let (Some(prompt_tokens), Some(completion_tokens)) = (saved_message.prompt_tokens, saved_message.completion_tokens) {
-                            info!(session_id = %full_session_id_clone, prompt_tokens = prompt_tokens, completion_tokens = completion_tokens, "Sending token usage through channel");
+                            info!(
+                                session_id = %full_session_id_clone,
+                                prompt_tokens = prompt_tokens,
+                                completion_tokens = completion_tokens,
+                                model_name = %service_model_name_clone_full,
+                                "About to send tokenUsage SSE event with values: prompt={}, completion={}, model={}",
+                                prompt_tokens,
+                                completion_tokens,
+                                service_model_name_clone_full
+                            );
                             let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
                                 prompt_tokens,
                                 completion_tokens,
                                 model_name: service_model_name_clone_full.clone(),
                             });
+                            info!(session_id = %full_session_id_clone, "TokenUsage SSE event sent successfully");
                         } else {
-                            warn!(session_id = %full_session_id_clone, "Token data not available in saved message");
+                            warn!(
+                                session_id = %full_session_id_clone,
+                                "Token data not available in saved message - prompt_tokens: {:?}, completion_tokens: {:?}, sending zeros",
+                                saved_message.prompt_tokens,
+                                saved_message.completion_tokens
+                            );
+                            // Still send the event with zeros to avoid timeout waiting for the event
+                            let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
+                                prompt_tokens: 0,
+                                completion_tokens: 0,
+                                model_name: service_model_name_clone_full.clone(),
+                            });
                         }
 
                         // --- Narrative Intelligence Processing (After Message Save) ---
@@ -1944,7 +2227,7 @@ pub async fn stream_ai_response_and_save_message(
                             // For now, use empty RAG context - this could be enhanced later to include relevant lorebook entries
                             let empty_rag_context: Vec<crate::services::embeddings::RetrievedChunk> = Vec::new();
 
-                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context");
+                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context. user_id: {}", full_user_id_clone);
 
                             match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_conversation_context(
                                 full_user_id_clone,
@@ -1995,22 +2278,52 @@ pub async fn stream_ai_response_and_save_message(
         }
 
         // Wait for token usage data from the spawned task and yield it with timeout
-        if !stream_error_occurred && !accumulated_content.is_empty() {
-            info!(session_id = %stream_session_id, "Waiting for token usage data from spawned task");
+        // CRITICAL DEBUG: Log the condition values to understand why events might be skipped
+        info!(
+            session_id = %stream_session_id,
+            stream_error_occurred = stream_error_occurred,
+            accumulated_content_empty = accumulated_content.is_empty(),
+            accumulated_content_len = accumulated_content.len(),
+            "Checking conditions before waiting for token data"
+        );
 
-            // Use timeout to prevent indefinite blocking
+        if !stream_error_occurred && !accumulated_content.is_empty() {
+            info!(session_id = %stream_session_id, "Waiting for message_saved and token_usage events from spawned task");
+
+            // CRITICAL: The spawned task sends TWO events through the channel:
+            // 1. MessageSaved event
+            // 2. TokenUsage event
+            // We need to receive BOTH events, not just one!
+
+            // Receive first event (MessageSaved)
             match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
-                Ok(Some(token_event)) => {
-                    info!(session_id = %stream_session_id, "Received token usage data, yielding to stream");
-                    yield Ok(token_event);
+                Ok(Some(event)) => {
+                    info!(session_id = %stream_session_id, event_type = ?event, "Received first event from spawned task (MessageSaved), yielding to stream");
+                    yield Ok(event);
                 }
                 Ok(None) => {
-                    warn!(session_id = %stream_session_id, "Token sender dropped without sending data");
-                    yield Ok(ScribeSseEvent::Error("Processing completed without token data".to_string()));
+                    warn!(session_id = %stream_session_id, "Channel closed without sending MessageSaved event");
+                    yield Ok(ScribeSseEvent::Error("Processing completed without message_saved event".to_string()));
                 }
                 Err(_) => {
-                    error!(session_id = %stream_session_id, "Timeout waiting for token usage data from spawned task");
+                    error!(session_id = %stream_session_id, "Timeout waiting for MessageSaved event from spawned task");
                     yield Ok(ScribeSseEvent::Error("Processing timeout - message may be incomplete".to_string()));
+                }
+            }
+
+            // Receive second event (TokenUsage)
+            match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
+                Ok(Some(event)) => {
+                    info!(session_id = %stream_session_id, event_type = ?event, "Received second event from spawned task (TokenUsage), yielding to stream");
+                    yield Ok(event);
+                }
+                Ok(None) => {
+                    warn!(session_id = %stream_session_id, "Channel closed without sending TokenUsage event");
+                    yield Ok(ScribeSseEvent::Error("Processing completed without token_usage event".to_string()));
+                }
+                Err(_) => {
+                    error!(session_id = %stream_session_id, "Timeout waiting for TokenUsage event from spawned task");
+                    yield Ok(ScribeSseEvent::Error("Processing timeout - token usage incomplete".to_string()));
                 }
             }
         }
@@ -2144,8 +2457,8 @@ fn build_raw_prompt_debug(
 /// Returns the selected variant content if current_variant_index > 0, otherwise original content
 async fn get_message_content_with_variant(
     message: &DbChatMessage,
-    pool: &deadpool_diesel::postgres::Pool,
-    user_id: Uuid,
+    pool: &crate::db::DbPool,
+    user_id: crate::db::DbId,
     dek: &secrecy::SecretBox<Vec<u8>>,
 ) -> Result<String, AppError> {
     if message.current_variant_index == 0 {
@@ -2180,21 +2493,17 @@ async fn get_message_content_with_variant(
         let message_id = message.id;
         let current_variant_index = message.current_variant_index;
 
-        let variant_opt = pool
-            .get()
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?
-            .interact(move |conn| {
-                message_variants::table
-                    .filter(message_variants::parent_message_id.eq(message_id))
-                    .filter(message_variants::user_id.eq(user_id))
-                    .filter(message_variants::variant_index.eq(current_variant_index))
-                    .first::<MessageVariant>(conn)
-                    .optional()
-            })
-            .await
-            .map_err(|e| AppError::DbInteractError(e.to_string()))?
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let variant_opt = crate::db::with_conn(pool, move |conn| {
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .filter(message_variants::user_id.eq(user_id))
+                .filter(message_variants::variant_index.eq(current_variant_index))
+                .select(MessageVariant::as_select())
+                .first::<MessageVariant>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
 
         if let Some(variant) = variant_opt {
             // Decrypt variant content

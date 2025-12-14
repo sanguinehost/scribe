@@ -4,6 +4,7 @@ use super::retrieval::{
 };
 use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
+use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::chats::ChatMessage;
 use crate::state::AppState;
@@ -17,7 +18,6 @@ use secrecy::ExposeSecret;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
-use uuid::Uuid;
 
 pub struct EmbeddingPipelineService {
     chunk_config: ChunkConfig, // Store chunking configuration
@@ -58,7 +58,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Fetch the session to get the chronicle_id
         let chronicle_id = match crate::services::chat::session_management::get_chat_session_by_id(
             &state.pool,
-            message.user_id,
+            message.user_id, // user_id is now NOT NULL
             message.session_id,
         )
         .await
@@ -220,7 +220,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 message_id: message.id,
                 session_id: message.session_id,
                 chronicle_id,             // Include the chronicle_id from the session
-                user_id: message.user_id, // Added user_id from the message
+                user_id: message.user_id, // user_id is now NOT NULL
                 speaker: speaker_str,
                 timestamp: message.created_at,
                 text: text_for_storage, // Placeholder when encrypted, plaintext otherwise
@@ -231,11 +231,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             };
 
             // 2c. Create Qdrant point
-            let point_id = Uuid::new_v4(); // Unique ID per chunk point
+            let point_id = DbId::new(); // Unique ID per chunk point
             let point = match create_qdrant_point(
-                point_id,
+                point_id.into(),
                 embedding_vector,
-                Some(serde_json::to_value(metadata)?),
+                Some(serde_json::to_value(metadata)?.into()),
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -427,11 +427,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             title_nonce,
         };
 
-        let point_id = Uuid::new_v4(); // Unique ID for the atomic lorebook entry
+        let point_id = DbId::new(); // Unique ID for the atomic lorebook entry
         let point = match create_qdrant_point(
-            point_id,
+            point_id.into(),
             embedding_vector,
-            Some(serde_json::to_value(metadata)?),
+            Some(serde_json::to_value(metadata)?.into()),
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -468,10 +468,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn retrieve_relevant_chunks(
         &self,
         state: Arc<AppState>,
-        user_id: Uuid,
-        session_id_for_chat_history: Option<Uuid>,
-        active_lorebook_ids_for_search: Option<Vec<Uuid>>,
-        chronicle_id_for_search: Option<Uuid>,
+        user_id: crate::db::DbId,
+        session_id_for_chat_history: Option<crate::db::DbId>,
+        active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>>,
+        chronicle_id_for_search: Option<crate::db::DbId>,
         query_text: &str,
         limit_per_source: u64,
         session_dek: Option<&crate::auth::SessionDek>,
@@ -844,10 +844,31 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                     );
                     for scored_point in search_results {
                         debug!(point_id = ?scored_point.id, score = scored_point.score, %user_id, %chronicle_id, "Processing chronicle point (RAG)");
-                        // Try to extract chunk_text from payload first, then fall back to metadata parsing
-                        let chunk_text = if let Some(text_value) =
-                            scored_point.payload.get("chunk_text")
+                        // Try to extract event_json from payload first (preferred for structured data),
+                        // then fall back to chunk_text, then metadata parsing
+                        let chunk_text = if let Some(json_value) =
+                            scored_point.payload.get("event_json")
                         {
+                            // Convert the Qdrant Value to serde_json::Value and then to string
+                            let json_val: serde_json::Value = json_value
+                                .clone()
+                                .try_into()
+                                .unwrap_or(serde_json::Value::Null);
+                            if !json_val.is_null() {
+                                json_val.to_string()
+                            } else if let Some(text_value) = scored_point.payload.get("chunk_text")
+                            {
+                                match text_value {
+                                    qdrant_client::qdrant::Value {
+                                        kind:
+                                            Some(qdrant_client::qdrant::value::Kind::StringValue(s)),
+                                    } => s.clone(),
+                                    _ => format!("[{}] Chronicle event", "Unknown"),
+                                }
+                            } else {
+                                format!("[{}] Chronicle event", "Unknown")
+                            }
+                        } else if let Some(text_value) = scored_point.payload.get("chunk_text") {
                             match text_value {
                                 qdrant_client::qdrant::Value {
                                     kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s)),
@@ -915,8 +936,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_message_chunks(
         &self,
         state: Arc<AppState>,
-        message_ids: Vec<Uuid>,
-        user_id: Uuid,
+        message_ids: Vec<crate::db::DbId>,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         if message_ids.is_empty() {
             return Ok(());
@@ -1014,8 +1035,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_lorebook_entry_chunks(
         &self,
         state: Arc<AppState>,
-        original_lorebook_entry_id: Uuid,
-        user_id: Uuid,
+        original_lorebook_entry_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         info!("Attempting to delete chunks for lorebook entry");
         let qdrant_service = state.qdrant_service.clone();
@@ -1082,6 +1103,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         event: crate::models::chronicle_event::ChronicleEvent,
         session_dek: Option<&crate::auth::session_dek::SessionDek>,
     ) -> Result<(), AppError> {
+        info!(
+            "process_and_embed_chronicle_event called for event_id: {}",
+            event.id
+        );
         info!(event_id = %event.id, chronicle_id = %event.chronicle_id, "Processing and embedding chronicle event");
 
         let embedding_client = state.embedding_client.clone();
@@ -1172,7 +1197,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         if let Some(chat_session_id) = event.chat_session_id {
-            event_json["chat_session_id"] = serde_json::Value::String(chat_session_id.to_string());
+            event_json["chat_session_id"] =
+                crate::DbJson::String(chat_session_id.to_string()).into();
         }
 
         // Encrypt content if SessionDek is available
@@ -1231,7 +1257,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         };
 
         // 2c. Create Qdrant point with proper metadata structure
-        let point_id = Uuid::new_v4(); // Unique ID for the atomic chronicle event
+        let point_id = DbId::new(); // Unique ID for the atomic chronicle event
 
         // Build the metadata JSON
         let mut metadata_json = serde_json::json!({
@@ -1254,7 +1280,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             metadata_json["chunk_text_nonce"] = serde_json::json!(nonce);
         }
 
-        let point = match create_qdrant_point(point_id, embedding_vector, Some(metadata_json)) {
+        let point = match create_qdrant_point(
+            point_id.into(),
+            embedding_vector,
+            Some(metadata_json.into()),
+        ) {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
@@ -1288,8 +1318,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_chronicle_event_chunks(
         &self,
         state: Arc<AppState>,
-        event_id: Uuid,
-        user_id: Uuid,
+        event_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         info!(
             "Attempting to delete chunks for chronicle event {}",
@@ -1362,8 +1392,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
     async fn delete_chronicle_events_by_chronicle_id(
         &self,
         state: Arc<AppState>,
-        chronicle_id: Uuid,
-        user_id: Uuid,
+        chronicle_id: crate::db::DbId,
+        user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         info!(
             "Attempting to delete all chronicle event chunks for chronicle {}",

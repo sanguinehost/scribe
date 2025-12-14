@@ -64,3 +64,16 @@ uploads/
 /models/
 .vercel
 terraform.tfstate
+
+# Tauri / Desktop
+/desktop/target/
+/desktop/dist/
+/desktop/WixTools/
+/frontend/build/
+
+# Sqlite database files
+*.sqlite
+*.db
+
+# Test database files (in-memory SQLite URIs that get materialized)
+backend/:memory:*

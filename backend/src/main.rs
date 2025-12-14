@@ -1,7 +1,7 @@
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
-use deadpool_diesel::postgres::{
-    Manager as DeadpoolManager, PoolConfig, Runtime as DeadpoolRuntime,
-};
+#[cfg(feature = "postgres-backend")]
+use deadpool_diesel::postgres::{Manager as DeadpoolManager, Runtime as DeadpoolRuntime};
+#[cfg(feature = "postgres-backend")]
 // Use the r2d2 Pool directly from deadpool_diesel
 use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -14,10 +14,16 @@ use anyhow::Context;
 use anyhow::Result;
 use scribe_backend::auth::session_store::DieselSessionStore;
 use scribe_backend::auth::user_store::Backend as AuthBackend;
+use scribe_backend::db::DbPool;
+#[cfg(feature = "desktop")]
+use scribe_backend::desktop; // Desktop mode initialization
 use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
+use scribe_backend::middleware::unified_login_required;
 use scribe_backend::routes::admin::admin_routes;
 use scribe_backend::routes::auth::auth_routes;
+#[cfg(feature = "postgres-backend")]
+use scribe_backend::routes::documents::document_routes;
 use scribe_backend::routes::health::health_check;
 #[cfg(feature = "payment")]
 use scribe_backend::routes::payment::{payment_routes, payment_webhook_routes};
@@ -27,7 +33,6 @@ use scribe_backend::routes::{
     chat::chat_routes,
     chats,
     chronicles,
-    documents::document_routes,
     generation_routes,                // Added for generation routes
     llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
@@ -37,12 +42,11 @@ use scribe_backend::routes::{
     user_settings_routes::user_settings_routes,
 };
 use scribe_backend::state::{AppState, AppStateServices};
-use scribe_backend::PgPool;
 use std::env; // Added for current_dir
 
 // Imports for axum-login and tower-sessions
-use axum_login::{login_required, AuthManagerLayerBuilder}; // Modified
-                                                           // Import SessionManagerLayer directly from tower_sessions
+use axum_login::AuthManagerLayerBuilder; // Modified
+                                         // Import SessionManagerLayer directly from tower_sessions
 use axum::extract::Request as AxumRequest;
 use axum::middleware::{self as axum_middleware, Next};
 use axum::response::Response as AxumResponse;
@@ -67,6 +71,14 @@ use scribe_backend::services::narrative_intelligence_service::NarrativeIntellige
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
+
+#[cfg(feature = "embedded-vector")]
+use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait;
+#[cfg(feature = "embedded-vector")]
+use scribe_backend::vector_db::LanceDbClient;
+#[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
+use scribe_backend::vector_db::NoOpQdrantService;
+#[cfg(feature = "remote-vector")]
 use scribe_backend::vector_db::QdrantClientService;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -77,9 +89,14 @@ use tower_governor::{
 };
 use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
+use tracing::{info, warn};
 
-// Define the embedded migrations macro
+// Define the embedded migrations macro - use different directories based on backend
+#[cfg(feature = "postgres-backend")]
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+#[cfg(feature = "sqlite-backend")]
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations_sqlite");
 
 // Generate or load certificate for cloud environments
 async fn load_cloud_certificate() -> Result<RustlsConfig> {
@@ -113,7 +130,7 @@ async fn load_cloud_certificate() -> Result<RustlsConfig> {
 
     // Get PEM-encoded certificate and private key
     let cert_pem = cert_key.cert.pem();
-    let key_pem = cert_key.key_pair.serialize_pem();
+    let key_pem = cert_key.signing_key.serialize_pem();
 
     tracing::info!("Self-signed certificate generated successfully");
 
@@ -151,6 +168,10 @@ async fn main() -> Result<()> {
     let pool = setup_database_pool(&config);
     run_migrations(&pool).await?;
 
+    // Initialize desktop mode if enabled (create default user for Quick Start)
+    #[cfg(feature = "desktop")]
+    initialize_desktop_mode(&pool).await?;
+
     let services = initialize_services(&config, &pool).await?;
 
     let (app_state, auth_layer) = setup_app_state_and_auth(&config, &pool, services)?;
@@ -183,10 +204,15 @@ fn initialize_runtime() {
     dotenvy::dotenv().ok();
     init_subscriber();
     tracing::info!("Starting Scribe backend server...");
+    tracing::info!(
+        "Build configuration: {}",
+        scribe_backend::features::feature_summary()
+    );
 }
 
 // Setup database pool
-fn setup_database_pool(config: &Config) -> PgPool {
+#[cfg(feature = "postgres-backend")]
+fn setup_database_pool(config: &Config) -> DbPool {
     let db_url = config
         .database_url
         .as_ref()
@@ -195,7 +221,7 @@ fn setup_database_pool(config: &Config) -> PgPool {
     let manager = DeadpoolManager::new(db_url, DeadpoolRuntime::Tokio1);
 
     // Configure pool size based on environment
-    let mut pool_config = PoolConfig::default();
+    let mut pool_config = deadpool_diesel::postgres::PoolConfig::default();
     let max_size = match config.environment.as_deref() {
         Some("development") => 50, // Local docker has max_connections = 200
         Some("staging") | Some("production") => 20, // Cloud RDS has ~90 total connections
@@ -204,7 +230,7 @@ fn setup_database_pool(config: &Config) -> PgPool {
     pool_config.max_size = max_size;
     pool_config.timeouts.wait = Some(std::time::Duration::from_secs(30)); // 30 second timeout
 
-    let pool: PgPool = DeadpoolPool::builder(manager)
+    let pool: DbPool = DeadpoolPool::builder(manager)
         .config(pool_config)
         .runtime(DeadpoolRuntime::Tokio1)
         .build()
@@ -216,8 +242,81 @@ fn setup_database_pool(config: &Config) -> PgPool {
     pool
 }
 
+#[cfg(feature = "sqlite-backend")]
+fn setup_database_pool(config: &Config) -> DbPool {
+    use diesel::prelude::*;
+    use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool};
+    use diesel::SqliteConnection;
+
+    let db_url = config
+        .database_url
+        .as_ref()
+        .expect("DATABASE_URL not set in config");
+
+    tracing::info!("🗄️  DATABASE_URL: {}", db_url);
+    tracing::info!("Connecting to SQLite database...");
+
+    // Verify database file exists
+    if let Some(db_path) = db_url.strip_prefix("sqlite://") {
+        let path = std::path::Path::new(db_path);
+        if path.exists() {
+            tracing::info!("✓ Database file exists at: {}", db_path);
+        } else {
+            tracing::warn!("⚠️  Database file does NOT exist yet at: {}", db_path);
+        }
+    }
+
+    // Connection customizer to enable WAL mode and set busy_timeout
+    // This fixes "database is locked" errors by allowing concurrent reads during writes
+    #[derive(Debug, Clone, Copy)]
+    struct SqliteCustomizer;
+
+    impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for SqliteCustomizer {
+        fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
+            // Enable WAL mode for better concurrency (allows concurrent reads during writes)
+            diesel::sql_query("PRAGMA journal_mode = WAL;")
+                .execute(conn)
+                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+
+            // Set busy_timeout to 10 seconds (connections will wait instead of failing immediately)
+            diesel::sql_query("PRAGMA busy_timeout = 10000;")
+                .execute(conn)
+                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+
+            // Enable foreign key constraints
+            diesel::sql_query("PRAGMA foreign_keys = ON;")
+                .execute(conn)
+                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+
+            Ok(())
+        }
+    }
+
+    let manager = ConnectionManager::<SqliteConnection>::new(db_url);
+
+    // Configure pool size based on environment
+    let max_size = match config.environment.as_deref() {
+        Some("development") => 50,
+        Some("staging") | Some("production") => 20,
+        _ => 20,
+    };
+
+    let pool = Pool::builder()
+        .max_size(max_size)
+        .connection_timeout(std::time::Duration::from_secs(30))
+        .connection_customizer(Box::new(SqliteCustomizer))
+        .build(manager)
+        .expect("Failed to create DB pool.");
+
+    tracing::info!(
+        "Database connection pool established with max_size: {}, WAL mode enabled, busy_timeout: 10s",
+        max_size
+    );
+    pool
+}
+
 // Initialize all services
-async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppStateServices> {
+async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppStateServices> {
     #[cfg(feature = "local-llm")]
     let mut llamacpp_server_manager: Option<
         Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>,
@@ -260,10 +359,47 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
         as Arc<dyn EmbeddingPipelineServiceTrait>;
 
-    // --- Initialize Qdrant Client Service ---
-    tracing::info!("Initializing Qdrant client service...");
-    let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
-    tracing::info!("Qdrant client service initialized.");
+    // --- Initialize Vector DB Service (Qdrant or No-Op) ---
+    #[cfg(feature = "remote-vector")]
+    let qdrant_service = {
+        tracing::info!("Initializing Qdrant client service (remote-vector mode)...");
+        let service = Arc::new(QdrantClientService::new(config.clone()).await?);
+        tracing::info!("Qdrant client service initialized.");
+        service
+            as Arc<
+                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
+                    + Send
+                    + Sync,
+            >
+    };
+
+    #[cfg(feature = "embedded-vector")]
+    let qdrant_service = {
+        tracing::info!("Initializing LanceDB vector service (embedded-vector mode)...");
+        let service = Arc::new(LanceDbClient::new(config.clone()).await?);
+        service.ensure_collection_exists().await?;
+        tracing::info!("LanceDB vector service initialized.");
+        service
+            as Arc<
+                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
+                    + Send
+                    + Sync,
+            >
+    };
+
+    // Fallback when neither remote-vector nor embedded-vector is enabled
+    #[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
+    let qdrant_service = {
+        tracing::info!("Initializing no-op vector service (no vector features enabled)...");
+        let service = Arc::new(NoOpQdrantService::new(config.clone()).await?);
+        tracing::info!("No-op vector service initialized.");
+        service
+            as Arc<
+                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
+                    + Send
+                    + Sync,
+            >
+    };
 
     // --- Initialize Lorebook Service (needs qdrant_service) ---
     let lorebook_service = Arc::new(LorebookService::new(
@@ -273,9 +409,21 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
     ));
 
     // --- Initialize Chronicle Service ---
-    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone(), ai_client_arc.clone()));
 
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
+
+    // --- Initialize Token Service ---
+    let token_service = if let Some(cookie_key) = config.cookie_signing_key.as_ref() {
+        // Use the cookie key directly as a string for JWT signing
+        info!("Initializing token service for JWT authentication");
+        Some(Arc::new(scribe_backend::auth::TokenService::new(
+            cookie_key,
+        )))
+    } else {
+        warn!("No cookie signing key available, token authentication will be disabled");
+        None
+    };
 
     // --- Initialize AI Client Factory ---
     let ai_client_factory = Arc::new(AiClientFactory::new(
@@ -358,6 +506,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &PgPool) -> Result<AppS
         encryption_service,
         lorebook_service,
         auth_backend,
+        token_service,
         email_service: {
             // Create email service based on environment
             let app_env = config.environment.as_deref().unwrap_or("development");
@@ -481,7 +630,7 @@ fn create_chunk_config(config: &Config) -> ChunkConfig {
 // Setup app state and authentication
 fn setup_app_state_and_auth(
     config: &Arc<Config>,
-    pool: &PgPool,
+    pool: &DbPool,
     services: AppStateServices,
 ) -> Result<(
     AppState,
@@ -520,7 +669,10 @@ fn setup_app_state_and_auth(
     let mut app_state = AppState::new(pool.clone(), config.clone(), services);
 
     // Initialize narrative intelligence service after AppState creation to avoid circular dependency
-    let chronicle_service = Arc::new(ChronicleService::new(pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        pool.clone(),
+        app_state.ai_client.clone(),
+    ));
     let narrative_intelligence_service =
         Arc::new(NarrativeIntelligenceService::for_production_with_deps(
             app_state.ai_client.clone(),
@@ -570,8 +722,12 @@ fn build_router(
         .nest(
             "/chronicles",
             chronicles::create_chronicles_router(app_state.clone()),
-        )
-        .nest("/documents", document_routes())
+        );
+
+    #[cfg(feature = "postgres-backend")]
+    let protected_api_routes = protected_api_routes.nest("/documents", document_routes());
+
+    let protected_api_routes = protected_api_routes
         .nest("/generation", generation_routes::router()) // AI generation routes
         .nest("/llm", llm_router()); // LLM management routes
 
@@ -589,16 +745,35 @@ fn build_router(
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads
-        .route_layer(login_required!(AuthBackend));
+        .route_layer(axum_middleware::from_fn_with_state(
+            app_state.clone(),
+            unified_login_required,
+        ));
 
     // Health endpoint - not rate limited for monitoring purposes
     let health_routes = Router::new()
         .route("/api/health", get(health_check))
         .with_state(app_state.clone());
 
-    // Rate-limited API routes (both public and protected, but excluding webhooks)
-    let rate_limited_api_routes = Router::new()
-        .nest("/auth", auth_routes()) // Auth routes under /api/auth
+    // Public auth routes (no authentication required) - rate limited
+    // NOTE: Auth layer provides session/auth_session extractors but doesn't enforce authentication
+    // The actual authentication requirement is enforced by protected routes or handler logic
+    let public_auth_routes = Router::new()
+        .nest("/auth", auth_routes()) // Auth routes under /api/auth (login, register, desktop config, auto-login, etc.)
+        .layer(auth_layer.clone()) // Auth layer for session/auth_session extractors
+        .layer(GovernorLayer {
+            config: std::sync::Arc::new(
+                GovernorConfigBuilder::default()
+                    .per_second(5000) // Very high rate for development - 1ms per request
+                    .burst_size(5000) // High burst capacity for rapid development requests
+                    .key_extractor(SmartIpKeyExtractor)
+                    .finish()
+                    .unwrap(),
+            ),
+        });
+
+    // Protected API routes - require authentication AND rate limited
+    let protected_rate_limited_routes = Router::new()
         .merge(protected_api_routes) // Protected routes under /api
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
@@ -622,36 +797,79 @@ fn build_router(
     tracing::info!("🎯 Webhook routes configured");
 
     // Configure CORS for the frontend
-    // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
-    // via Vercel's edge proxy, but they'll have the correct origin headers
-    let cors = CorsLayer::new()
-        .allow_origin([
-            "https://staging.scribe.sanguinehost.com".parse().unwrap(),
-            "https://scribe-frontend.vercel.app".parse().unwrap(),
-            "https://localhost:5173".parse().unwrap(),
-            "http://localhost:5173".parse().unwrap(),
-            "http://localhost:3000".parse().unwrap(),
-        ])
-        .allow_methods([
-            axum::http::Method::GET,
-            axum::http::Method::POST,
-            axum::http::Method::PUT,
-            axum::http::Method::DELETE,
-            axum::http::Method::OPTIONS,
-        ])
-        .allow_headers([
-            axum::http::header::CONTENT_TYPE,
-            axum::http::header::AUTHORIZATION,
-            axum::http::header::ACCEPT,
-            axum::http::header::CACHE_CONTROL,
-            axum::http::header::PRAGMA,
-        ])
-        .allow_credentials(true);
+    let cors = if app_state.config.environment.as_deref() == Some("desktop") {
+        // Desktop mode - allow any localhost/127.0.0.1 origin (safe for local-only desktop app)
+        // Tauri WebView uses random ports (e.g., http://127.0.0.1:1430), so we can't use static origins
+        use tower_http::cors::AllowOrigin;
+        tracing::info!("Configuring CORS for desktop mode with permissive localhost origins");
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::predicate(
+                |origin: &axum::http::HeaderValue, _parts| {
+                    let origin_str = origin.to_str().unwrap_or("");
+                    let is_allowed = origin_str.starts_with("http://localhost")
+                        || origin_str.starts_with("https://localhost")
+                        || origin_str.starts_with("http://127.0.0.1")
+                        || origin_str.starts_with("https://127.0.0.1")
+                        || origin_str.starts_with("tauri://localhost");
+                    if !is_allowed {
+                        tracing::debug!("CORS rejected origin: {}", origin_str);
+                    }
+                    is_allowed
+                },
+            ))
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+                axum::http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::ACCEPT,
+                axum::http::header::CACHE_CONTROL,
+                axum::http::header::PRAGMA,
+            ])
+            .allow_credentials(true)
+    } else {
+        // Cloud mode - strict origins
+        // With the proxy pattern, requests will appear to come from staging.scribe.sanguinehost.com
+        // via Vercel's edge proxy, but they'll have the correct origin headers
+        CorsLayer::new()
+            .allow_origin([
+                "https://staging.scribe.sanguinehost.com".parse().unwrap(),
+                "https://scribe-frontend.vercel.app".parse().unwrap(),
+                "https://localhost:5173".parse().unwrap(),
+                "http://localhost:5173".parse().unwrap(),
+                "http://localhost:3000".parse().unwrap(),
+                "tauri://localhost".parse().unwrap(), // Tauri desktop app origin (fallback)
+            ])
+            .allow_methods([
+                axum::http::Method::GET,
+                axum::http::Method::POST,
+                axum::http::Method::PUT,
+                axum::http::Method::DELETE,
+                axum::http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::ACCEPT,
+                axum::http::header::CACHE_CONTROL,
+                axum::http::header::PRAGMA,
+            ])
+            .allow_credentials(true)
+    };
 
-    // Build authenticated API routes with auth layer
-    let authenticated_api = Router::new()
-        .nest("/api", rate_limited_api_routes) // All authenticated API routes are rate limited
-        .layer(auth_layer) // Auth layer only on authenticated routes
+    // Build API routes with proper auth layering
+    // Public auth routes (no auth layer) + Protected routes (with auth layer)
+    let api_routes = Router::new()
+        .nest("/api", public_auth_routes) // Public auth routes - NO auth required
+        .nest(
+            "/api",
+            protected_rate_limited_routes.layer(auth_layer.clone()), // Auth layer ONLY on protected routes
+        )
         .with_state(app_state.clone());
 
     // Combine all routes
@@ -659,14 +877,14 @@ fn build_router(
     let final_router = {
         let base_router = Router::new()
             .merge(health_routes) // Health endpoint not rate limited
-            .merge(authenticated_api); // All authenticated API routes
+            .merge(api_routes); // All API routes (public + protected)
         base_router.merge(webhook_routes) // Webhook routes without auth
     };
 
     #[cfg(not(feature = "payment"))]
     let final_router = Router::new()
         .merge(health_routes) // Health endpoint not rate limited
-        .merge(authenticated_api); // All authenticated API routes
+        .merge(api_routes); // All API routes (public + protected)
 
     final_router
         .layer(cors)
@@ -724,6 +942,26 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                     .context("Failed to load TLS certificates from container files. Ensure certificates are mounted to /app/certs/")?
             }
         }
+        "desktop" => {
+            // For desktop mode, generate self-signed certificates in-memory
+            tracing::info!(
+                "Desktop environment detected, generating in-memory self-signed certificates"
+            );
+
+            let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+
+            let cert_key = generate_simple_self_signed(subject_alt_names)
+                .context("Failed to generate self-signed certificate for desktop mode")?;
+
+            let cert_pem = cert_key.cert.pem();
+            let key_pem = cert_key.signing_key.serialize_pem();
+
+            tracing::info!("Desktop self-signed certificate generated successfully");
+
+            RustlsConfig::from_pem(cert_pem.into_bytes(), key_pem.into_bytes())
+                .await
+                .context("Failed to create RustlsConfig from desktop certificate")?
+        }
         "local" | _ => {
             // For local development, support environment variable override for certificate paths
             let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) =
@@ -775,7 +1013,8 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
 }
 
 // Extracted migration logic
-async fn run_migrations(pool: &PgPool) -> Result<()> {
+#[cfg(feature = "postgres-backend")]
+async fn run_migrations(pool: &DbPool) -> Result<()> {
     tracing::info!("Attempting to run database migrations...");
     let conn = pool
         .get()
@@ -797,6 +1036,50 @@ async fn run_migrations(pool: &PgPool) -> Result<()> {
     })
     .await
     .map_err(|e| anyhow::anyhow!("Migration interact task failed: {}", e))??; // Propagate InteractError then inner Result
+    Ok(())
+}
+
+#[cfg(feature = "sqlite-backend")]
+async fn run_migrations(pool: &DbPool) -> Result<()> {
+    tracing::info!("Attempting to run database migrations...");
+    let mut conn = pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Failed to get connection for migration: {}", e))?;
+    match conn.run_pending_migrations(MIGRATIONS) {
+        Ok(versions) => {
+            if versions.is_empty() {
+                tracing::info!("No pending migrations found.");
+            } else {
+                tracing::info!("Successfully ran migrations: {:?}", versions);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("Failed to run database migrations: {:?}", e);
+            Err(anyhow::anyhow!("Migration diesel error: {:?}", e))
+        }
+    }
+}
+
+// Desktop mode initialization - verify desktop configuration
+#[cfg(feature = "desktop")]
+async fn initialize_desktop_mode(_pool: &DbPool) -> Result<()> {
+    tracing::info!("Initializing desktop mode...");
+
+    // Load and log desktop configuration status
+    let config = desktop::load_desktop_config()?;
+
+    tracing::info!(
+        "Desktop configuration loaded: setup_complete={}, auth_mode={:?}",
+        config.setup_complete,
+        config.auth_mode
+    );
+
+    // Note: User creation is handled by the /api/auth/desktop/setup endpoint
+    // on first run. This allows the setup flow to properly establish sessions
+    // and handle errors without chicken-and-egg initialization issues.
+
+    tracing::info!("Desktop mode initialization complete");
     Ok(())
 }
 

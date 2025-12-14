@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 /// Payment System Security Tests based on OWASP Top 10 (2021)
 ///
 /// This test suite verifies security requirements for the payment system including:

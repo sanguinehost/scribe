@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 use scribe_backend::services::tokenizer_service::TokenizerService;
 use std::path::PathBuf;
 

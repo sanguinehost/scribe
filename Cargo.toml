@@ -1,5 +1,5 @@
 [workspace]
-members = ["backend", "cli"]
+members = ["backend", "cli", "desktop"]
 resolver = "3"
 
 # Patch h2 to use v0.4.11 (0.4.12 has compilation bugs with stable and nightly Rust)

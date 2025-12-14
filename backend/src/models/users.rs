@@ -1,7 +1,8 @@
+use crate::db::{DbBlob, DbId, DbInt, DbTimestamp};
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use diesel::Insertable;
 use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
@@ -12,17 +13,21 @@ use tracing;
 use uuid::Uuid;
 
 // User role enum
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel_derive_enum::DbEnum))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    ExistingTypePath = "crate::schema::sql_types::UserRole"
 )]
-#[ExistingTypePath = "crate::schema::sql_types::UserRole"]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum UserRole {
     #[default]
-    #[db_rename = "User"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "User")]
     User,
-    #[db_rename = "Moderator"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "Moderator")]
     Moderator,
-    #[db_rename = "Administrator"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "Administrator")]
     Administrator,
 }
 
@@ -36,18 +41,85 @@ impl std::fmt::Display for UserRole {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel_derive_enum::DbEnum, Default,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel_derive_enum::DbEnum))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    ExistingTypePath = "crate::schema::sql_types::AccountStatus"
 )]
-#[ExistingTypePath = "crate::schema::sql_types::AccountStatus"]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum AccountStatus {
     #[default]
-    #[db_rename = "active"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "active")]
     Active,
-    #[db_rename = "locked"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "locked")]
     Locked,
-    #[db_rename = "pending"]
+    #[cfg_attr(feature = "postgres-backend", db_rename = "pending")]
     Pending,
+}
+
+// SQLite implementations for UserRole - store as TEXT
+#[cfg(feature = "sqlite-backend")]
+impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
+    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> diesel::deserialize::Result<Self> {
+        let text = <String as diesel::deserialize::FromSql<
+            diesel::sql_types::Text,
+            diesel::sqlite::Sqlite,
+        >>::from_sql(bytes)?;
+        match text.as_str() {
+            "User" => Ok(UserRole::User),
+            "Moderator" => Ok(UserRole::Moderator),
+            "Administrator" => Ok(UserRole::Administrator),
+            _ => Err("Invalid UserRole variant".into()),
+        }
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, diesel::sqlite::Sqlite>,
+    ) -> diesel::serialize::Result {
+        out.set_value(self.to_string());
+        Ok(diesel::serialize::IsNull::No)
+    }
+}
+
+// SQLite implementations for AccountStatus - store as TEXT
+#[cfg(feature = "sqlite-backend")]
+impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>
+    for AccountStatus
+{
+    fn from_sql(bytes: diesel::sqlite::SqliteValue) -> diesel::deserialize::Result<Self> {
+        let text = <String as diesel::deserialize::FromSql<
+            diesel::sql_types::Text,
+            diesel::sqlite::Sqlite,
+        >>::from_sql(bytes)?;
+        match text.as_str() {
+            "active" => Ok(AccountStatus::Active),
+            "locked" => Ok(AccountStatus::Locked),
+            "pending" => Ok(AccountStatus::Pending),
+            _ => Err("Invalid AccountStatus variant".into()),
+        }
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for AccountStatus {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, diesel::sqlite::Sqlite>,
+    ) -> diesel::serialize::Result {
+        let value = match self {
+            AccountStatus::Active => "active",
+            AccountStatus::Locked => "locked",
+            AccountStatus::Pending => "pending",
+        };
+        out.set_value(value);
+        Ok(diesel::serialize::IsNull::No)
+    }
 }
 
 // --- Newtype wrapper for DEK serialization ---
@@ -111,31 +183,41 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct UserDbQuery {
-    pub id: Uuid,
+    pub id: DbId,
     pub username: String,
     pub password_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
+    #[cfg(feature = "postgres-backend")]
     pub email: String,
+    #[cfg(feature = "sqlite-backend")]
+    pub email: Option<String>,
     pub kek_salt: String,
-    pub encrypted_dek: Vec<u8>,
-    pub encrypted_dek_by_recovery: Option<Vec<u8>>,
+    pub encrypted_dek: DbBlob,
+    pub encrypted_dek_by_recovery: Option<DbBlob>,
     pub recovery_kek_salt: Option<String>,
-    pub dek_nonce: Vec<u8>,
-    pub recovery_dek_nonce: Option<Vec<u8>>,
+    pub dek_nonce: DbBlob,
+    pub recovery_dek_nonce: Option<DbBlob>,
     pub role: UserRole,
     pub account_status: AccountStatus,
-    pub default_persona_id: Option<Uuid>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
-    pub total_token_cost_cents: i64,
-    pub tokens_last_reset_at: Option<DateTime<Utc>>,
-    pub token_usage_updated_at: DateTime<Utc>,
+    pub default_persona_id: Option<DbId>,
+    pub total_prompt_tokens: DbInt,
+    pub total_completion_tokens: DbInt,
+    pub total_token_cost_cents: DbInt,
+    pub tokens_last_reset_at: Option<DbTimestamp>,
+    pub token_usage_updated_at: DbTimestamp,
     pub cached_credit_balance: Option<i32>,
     pub cached_subscription_tier: Option<String>,
-    pub last_daily_usage_reset: Option<DateTime<Utc>>,
+    pub last_daily_usage_reset: Option<DbTimestamp>,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -180,22 +262,22 @@ impl std::fmt::Debug for UserDbQuery {
 #[diesel(table_name = users)] // Identifiable needs this to know the table for the ID.
 #[diesel(primary_key(id))] // Explicitly state primary key for Identifiable
 pub struct User {
-    pub id: Uuid,
+    pub id: DbId,
     pub username: String,
     pub email: String,
     #[serde(skip_serializing, skip_deserializing)]
     pub password_hash: String,
     pub kek_salt: String,
     #[serde(skip_serializing, skip_deserializing)]
-    pub encrypted_dek: Vec<u8>,
+    pub encrypted_dek: DbBlob,
     #[serde(skip_serializing, skip_deserializing)]
-    pub dek_nonce: Vec<u8>,
+    pub dek_nonce: DbBlob,
     #[serde(skip_serializing, skip_deserializing)]
-    pub encrypted_dek_by_recovery: Option<Vec<u8>>,
+    pub encrypted_dek_by_recovery: Option<DbBlob>,
     #[serde(skip_serializing, skip_deserializing)]
     pub recovery_kek_salt: Option<String>,
     #[serde(skip_serializing, skip_deserializing)]
-    pub recovery_dek_nonce: Option<Vec<u8>>,
+    pub recovery_dek_nonce: Option<DbBlob>,
 
     // DEK field now uses the newtype wrapper
     // THIS MUST NOT BE SERIALIZED INTO THE SESSION. IT IS CACHED SERVER-SIDE.
@@ -206,16 +288,16 @@ pub struct User {
     #[serde(skip_serializing, skip_deserializing)]
     pub recovery_phrase: Option<String>,
 
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
-    pub default_persona_id: Option<Uuid>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
-    pub total_token_cost_cents: i64,
-    pub tokens_last_reset_at: Option<DateTime<Utc>>,
-    pub token_usage_updated_at: DateTime<Utc>,
+    pub default_persona_id: Option<DbId>,
+    pub total_prompt_tokens: DbInt,
+    pub total_completion_tokens: DbInt,
+    pub total_token_cost_cents: DbInt,
+    pub tokens_last_reset_at: Option<DbTimestamp>,
+    pub token_usage_updated_at: DbTimestamp,
 }
 
 // Manual Debug implementation for User
@@ -329,7 +411,7 @@ impl Clone for User {
 }
 
 impl AuthUser for User {
-    type Id = Uuid;
+    type Id = crate::db::DbId;
 
     fn id(&self) -> Self::Id {
         self.id
@@ -344,23 +426,33 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewUser {
+    // Always provide explicit ID (required for SQLite, optional for PostgreSQL)
+    pub id: DbId,
     pub username: String,
     pub password_hash: String,
     pub email: String,
     pub kek_salt: String,
-    pub encrypted_dek: Vec<u8>,
-    pub encrypted_dek_by_recovery: Option<Vec<u8>>,
+    pub encrypted_dek: DbBlob,
+    pub encrypted_dek_by_recovery: Option<DbBlob>,
     pub recovery_kek_salt: Option<String>,
-    pub dek_nonce: Vec<u8>,
-    pub recovery_dek_nonce: Option<Vec<u8>>,
+    pub dek_nonce: DbBlob,
+    pub recovery_dek_nonce: Option<DbBlob>,
     pub role: UserRole,
     pub account_status: AccountStatus,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
-    pub total_token_cost_cents: i64,
-    pub tokens_last_reset_at: Option<DateTime<Utc>>,
-    pub token_usage_updated_at: DateTime<Utc>,
+    pub total_prompt_tokens: DbInt,
+    pub total_completion_tokens: DbInt,
+    pub total_token_cost_cents: DbInt,
+    pub tokens_last_reset_at: Option<DbTimestamp>,
+    pub token_usage_updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -404,7 +496,7 @@ mod tests {
     use chrono::Utc;
 
     struct TestUserParams<'a> {
-        id: Uuid,
+        id: crate::db::DbId,
         username: &'a str,
         password_hash: &'a str,
         email: &'a str,
@@ -416,7 +508,7 @@ mod tests {
         recovery_dek_nonce: Option<Vec<u8>>,
         dek: Option<SerializableSecretDek>,
         role: UserRole,
-        default_persona_id: Option<Uuid>,
+        default_persona_id: Option<crate::db::DbId>,
     }
 
     impl User {

@@ -1,29 +1,29 @@
 <script lang="ts">
-	// Removed Attachment import
 	import { toast } from 'svelte-sonner';
-	import { apiClient as _apiClient } from '$lib/api'; // Import apiClient
+	import { apiClient as _apiClient } from '$lib/api';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import ChatHeader from './chat-header.svelte';
-	import type { User, ScribeCharacter, Message } from '$lib/types.ts'; // Updated import path & Add ScribeCharacter
-	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types'; // Import Scribe types
+	import type { User, ScribeCharacter, Message } from '$lib/types.ts';
+	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types';
 	import type { UserPersona } from '$lib/types';
 	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import Messages from './messages.svelte';
 	import MultimodalInput from './multimodal-input.svelte';
-	import SuggestedActions from './suggested-actions.svelte'; // Import SuggestedActions
+	import SuggestedActions from './suggested-actions.svelte';
 	import ChatConfigSidebar from './chat-config-sidebar.svelte';
-	// Removed untrack import as we no longer use it
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import TokenUsageDisplay from './token-usage-display.svelte';
 	import { useTokenCounter } from '$lib/hooks/token-counter.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
+	import { desktopStreamingService } from '$lib/services/DesktopStreamingService.svelte';
+	import { isInDesktopMode } from '$lib/api/desktop-auth';
 	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
-	import { browser } from '$app/environment';
-	import { getCurrentUser } from '$lib/auth.svelte';
+	import { browser as _browser } from '$app/environment';
+	import { getCurrentUser, getIsAuthReady, getIsAuthenticated } from '$lib/auth.svelte';
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { UpgradePrompt } from './membership';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
@@ -33,7 +33,7 @@
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
-	// const streamingState = $derived(streamingService.getState());
+	// const streamingState = $derived(activeStreamingService.getState());
 
 	let {
 		user,
@@ -54,8 +54,8 @@
 	} = $props();
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
-	const selectedPersonaStore = SelectedPersonaStore.fromContext();
-	const settingsStore = SettingsStore.fromContext();
+	const _selectedPersonaStore = SelectedPersonaStore.fromContext();
+	const _settingsStore = SettingsStore.fromContext();
 
 	// State variables - use props directly for reactivity
 	// Note: In Svelte 5, props are already reactive, so we can use them directly
@@ -108,15 +108,20 @@
 	let showExtractDialog = $state(false);
 	let availableLorebooks = $state<Array<{ id: string; name: string }>>([]);
 
+	// Get the appropriate streaming service (desktop or web)
+	const activeStreamingService = $derived(
+		isInDesktopMode() ? desktopStreamingService : streamingService
+	);
+
 	// Load typing speed from user settings and sync with StreamingService
 	$effect(() => {
-		settingsStore.loadTypingSpeed();
+		_settingsStore.loadTypingSpeed();
 		// TODO: Animation speed will be handled in TypewriterMessage component
 	});
 
 	// Load saved chronicle preference from localStorage
 	$effect(() => {
-		if (browser) {
+		if (_browser) {
 			const saved = localStorage.getItem('chroniclePreference');
 			if (saved !== null) {
 				chroniclePreference = saved === 'true';
@@ -128,7 +133,7 @@
 	$effect(() => {
 		if (chat?.id) {
 			selectedCharacterStore.clear();
-			selectedPersonaStore.clear();
+			_selectedPersonaStore.clear();
 			// Reset explicit choice flag when switching to a new chat
 			hasExplicitChronicleChoice = false;
 		}
@@ -166,7 +171,7 @@
 		if (currentChatId !== previousChatId && (currentChatId || previousChatId)) {
 			// Clear messages for previous chat if switching chats
 			if (previousChatId && currentChatId !== previousChatId) {
-				streamingService.clearMessages();
+				activeStreamingService.clearMessages();
 
 				// Reset pagination state when switching chats
 				loadedMessagesBatches = [initialMessages];
@@ -226,7 +231,8 @@
 								displayedContent: greetingContent, // Show immediately for initial message
 								created_at: chat.created_at ?? new Date().toISOString(),
 								isAnimating: false, // Initial messages don't animate
-								current_variant_index: firstMessageVariantIndex
+								current_variant_index: firstMessageVariantIndex,
+								contentVersion: 0 // Initialize for Svelte 5 reactivity
 							}
 						];
 					} else {
@@ -234,12 +240,12 @@
 					}
 				} else {
 					// Flatten all loaded batches into a single array
-					const allLoadedMessages = loadedMessagesBatches.flat();
+					const allLoadedMessages = untrack(() => loadedMessagesBatches.flat());
 
 					console.log('🔄 Processing initial messages for chat:', {
 						currentChatId,
 						totalMessages: allLoadedMessages.length,
-						batchCount: loadedMessagesBatches.length
+						batchCount: untrack(() => loadedMessagesBatches.length)
 					});
 
 					// Log details of each message to identify duplicates
@@ -270,14 +276,15 @@
 								variant_count: msg.variant_count,
 								current_variant_index: msg.current_variant_index,
 								is_variant: msg.is_variant,
-								parent_message_id: msg.parent_message_id
+								parent_message_id: msg.parent_message_id,
+								contentVersion: 0 // Initialize for Svelte 5 reactivity
 							}) as StreamingMessage
 					);
 				}
 				// Clear and populate messages to ensure reactivity
-				streamingService.clearMessages();
+				activeStreamingService.clearMessages();
 				for (const message of newInitialMessages) {
-					streamingService.messages.push(message);
+					activeStreamingService.messages.push(message);
 				}
 
 				// Apply saved variant selection to the first assistant message (if it's a character greeting)
@@ -309,12 +316,12 @@
 							}
 
 							// Update the message content and variant index
-							const messageIndex = streamingService.messages.findIndex(
+							const messageIndex = activeStreamingService.messages.findIndex(
 								(msg) => msg.id === firstAssistantMessage.id
 							);
 							if (messageIndex !== -1) {
-								streamingService.messages[messageIndex] = {
-									...streamingService.messages[messageIndex],
+								activeStreamingService.messages[messageIndex] = {
+									...activeStreamingService.messages[messageIndex],
 									content: greetingContent || '',
 									displayedContent: greetingContent || '',
 									current_variant_index: variantIndex
@@ -340,7 +347,7 @@
 		return () => {
 			// Only clear if we actually had a chat
 			if (currentChatId) {
-				streamingService.clearMessages();
+				activeStreamingService.clearMessages();
 			}
 		};
 	});
@@ -348,9 +355,9 @@
 	// Sync loading state with StreamingService
 	// Include both SSE connection phase AND local animation phase
 	let isLoading = $derived(
-		streamingService.connectionStatus === 'connecting' ||
-			streamingService.connectionStatus === 'open' ||
-			streamingService.messages.some((msg) => msg.isAnimating === true)
+		activeStreamingService.connectionStatus === 'connecting' ||
+			activeStreamingService.connectionStatus === 'open' ||
+			activeStreamingService.messages.some((msg) => msg.isAnimating === true)
 	);
 
 	// Load more messages function for infinite scroll
@@ -381,7 +388,7 @@
 				console.log('📥 Loading more messages:', {
 					newMessagesCount: newMessages.length,
 					newCursor,
-					currentStreamingCount: streamingService.messages.length
+					currentStreamingCount: activeStreamingService.messages.length
 				});
 
 				// Log detailed message info to identify duplicates
@@ -445,7 +452,7 @@
 						distanceFromBottom
 					});
 
-					// Convert to StreamingMessage format and prepend to streaming service
+					// Convert to StreamingMessage format
 					const streamingMessages = convertedMessages.map(
 						(msg): StreamingMessage => ({
 							id: msg.id,
@@ -467,18 +474,65 @@
 							variant_count: msg.variant_count,
 							current_variant_index: msg.current_variant_index,
 							is_variant: msg.is_variant,
-							parent_message_id: msg.parent_message_id
+							parent_message_id: msg.parent_message_id,
+							contentVersion: 0 // Initialize for Svelte 5 reactivity
 						})
 					);
 
+					// Deduplication Logic: Check both ID and backend_id
+					const existingIds = new Set(activeStreamingService.messages.map((m) => m.id));
+					const existingBackendIds = new Set(
+						activeStreamingService.messages
+							.map((m) => m.backend_id)
+							.filter((id): id is string => !!id)
+					);
+
+					const uniqueNewMessages = streamingMessages.filter((msg) => {
+						const idExists = existingIds.has(msg.id);
+						const backendIdExists = msg.backend_id && existingBackendIds.has(msg.backend_id);
+						return !idExists && !backendIdExists;
+					});
+
+					// Handle "Empty Batch" Case (all messages were duplicates)
+					if (uniqueNewMessages.length === 0) {
+						console.log('⚠️ [loadMoreMessages] No new messages found after deduplication.');
+
+						// If we have more messages on the server but this batch was all duplicates,
+						// we MUST try the next batch immediately to avoid getting stuck.
+						if (hasMoreMessages) {
+							console.log('🔄 [loadMoreMessages] Automatically fetching next batch...');
+							// Release the lock briefly to allow the recursive call to proceed
+							isLoadingMore = false;
+							// We need to pass a retry count, but since we can't easily change the function signature
+							// without affecting the template, we'll just call it again.
+							// Ideally we should add a retryCount param to loadMoreMessages.
+							// For now, let's just return and let the user scroll again or rely on the infinite scroll
+							// to trigger again if we're still at the top?
+							// Actually, infinite scroll might not trigger if the content height didn't change.
+							// So explicit recursion is better.
+							await loadMoreMessages();
+							return;
+						}
+
+						suppressAutoScroll = false;
+						return;
+					}
+
+					console.log(
+						`✅ [loadMoreMessages] Prepending ${uniqueNewMessages.length} unique messages`
+					);
+
 					// Prepend the new messages to the beginning of the array (create new array reference)
-					streamingService.messages = [...streamingMessages, ...streamingService.messages];
+					activeStreamingService.messages = [
+						...uniqueNewMessages,
+						...activeStreamingService.messages
+					];
 
 					console.log('✅ Added messages to streaming service:', {
-						addedCount: streamingMessages.length,
-						newTotalCount: streamingService.messages.length,
-						firstNewMessage: streamingMessages[0]?.id,
-						lastNewMessage: streamingMessages[streamingMessages.length - 1]?.id
+						addedCount: uniqueNewMessages.length,
+						newTotalCount: activeStreamingService.messages.length,
+						firstNewMessage: uniqueNewMessages[0]?.id,
+						lastNewMessage: uniqueNewMessages[uniqueNewMessages.length - 1]?.id
 					});
 
 					// Add to loaded batches for tracking
@@ -533,11 +587,15 @@
 							variant_count: msg.variant_count,
 							current_variant_index: msg.current_variant_index,
 							is_variant: msg.is_variant,
-							parent_message_id: msg.parent_message_id
+							parent_message_id: msg.parent_message_id,
+							contentVersion: 0 // Initialize for Svelte 5 reactivity
 						})
 					);
 
-					streamingService.messages = [...streamingMessages, ...streamingService.messages];
+					activeStreamingService.messages = [
+						...streamingMessages,
+						...activeStreamingService.messages
+					];
 					loadedMessagesBatches.push(convertedMessages);
 				}
 
@@ -561,11 +619,11 @@
 
 	// Watch for streaming completion - DISABLED to prevent refresh issues
 	// $effect(() => {
-	// 	if (streamingService.connectionStatus === 'closed') {
+	// 	if (activeStreamingService.connectionStatus === 'closed') {
 	// 		console.log('✅ StreamingService connection completed (status: closed) - REFRESH DISABLED');
 	// 		// DISABLED: Force a re-render by updating the displayMessages derivation
 	// 		// The messages should already have loading: false set by finalizeMessage
-	// 		console.log('Current messages loading states:', streamingService.messages.map(m => ({ id: m.id, loading: m.loading })));
+	// 		console.log('Current messages loading states:', activeStreamingService.messages.map(m => ({ id: m.id, loading: m.loading })));
 	// 	}
 	// });
 
@@ -576,7 +634,7 @@
 	// Create a single, reactive source of truth for display messages with object identity preservation
 	let displayMessages = $derived.by(() => {
 		try {
-			const streamingMessages = streamingService.messages;
+			const streamingMessages = activeStreamingService.messages;
 			// Derived displayMessages calculation
 
 			// Check if messages array actually changed to avoid unnecessary work
@@ -607,6 +665,7 @@
 					!cached ||
 					cached.loading !== isAnimatingOrLoading ||
 					cached.content !== displayContent ||
+					cached.contentVersion !== msg.contentVersion || // CRITICAL: Detect streaming content updates
 					cached.prompt_tokens !== msg.prompt_tokens ||
 					cached.completion_tokens !== msg.completion_tokens ||
 					cached.error !== msg.error ||
@@ -631,6 +690,8 @@
 						completion_tokens: msg.completion_tokens,
 						model_name: msg.model_name,
 						backend_id: msg.backend_id,
+						// CRITICAL: Preserve contentVersion for Svelte 5 fine-grained reactivity
+						contentVersion: msg.contentVersion,
 						// Include variant metadata for proper UI display
 						variant_count: msg.variant_count,
 						current_variant_index: msg.current_variant_index,
@@ -970,23 +1031,46 @@
 	}
 
 	// Load personas when component mounts (regardless of chat)
+	// CRITICAL: Guard with auth checks and hasFetched flag to prevent infinite loop
+	let hasFetchedPersonas = $state(false);
 	$effect(() => {
-		loadAvailablePersonas();
-		loadUserPersona();
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		// Only fetch once when auth is ready
+		if (!hasFetchedPersonas && authReady && authenticated) {
+			console.log('[chat.svelte] Initial persona fetch - auth ready');
+			untrack(() => {
+				loadAvailablePersonas();
+				loadUserPersona();
+				hasFetchedPersonas = true;
+			});
+		}
 	});
 
 	// Load lorebooks when component mounts (for extraction dialog)
+	// CRITICAL: Guard with auth checks and hasFetched flag to prevent infinite loop
+	let hasFetchedLorebooks = $state(false);
 	$effect(() => {
-		async function loadLorebooks() {
-			await lorebookStore.loadLorebooks();
-			// Map lorebooks to simple format needed by dialog
-			// Use the getter directly, not .state.lorebooks
-			availableLorebooks = (lorebookStore.lorebooks || []).map((lb) => ({
-				id: lb.id,
-				name: lb.name
-			}));
+		const authReady = getIsAuthReady();
+		const authenticated = getIsAuthenticated();
+
+		if (!hasFetchedLorebooks && authReady && authenticated) {
+			console.log('[chat.svelte] Initial lorebooks fetch - auth ready');
+			untrack(() => {
+				async function loadLorebooks() {
+					await lorebookStore.loadLorebooks();
+					// Map lorebooks to simple format needed by dialog
+					// Use the getter directly, not .state.lorebooks
+					availableLorebooks = (lorebookStore.lorebooks || []).map((lb) => ({
+						id: lb.id,
+						name: lb.name
+					}));
+				}
+				loadLorebooks();
+				hasFetchedLorebooks = true;
+			});
 		}
-		loadLorebooks();
 	});
 
 	// Load agent mode when chat changes
@@ -1148,8 +1232,17 @@
 	// Check if this is the first user message in the chat
 	function isFirstUserMessage(): boolean {
 		// Check if there are any user messages in the current messages
-		const hasUserMessage = streamingService.messages.some((msg) => msg.sender === 'user');
-		return !hasUserMessage;
+		const userMessages = activeStreamingService.messages.filter((msg) => msg.sender === 'user');
+		console.log('🔍 [isFirstUserMessage] User messages found:', userMessages.length);
+		if (userMessages.length > 0) {
+			console.log(
+				'🔍 [isFirstUserMessage] First user message ID:',
+				userMessages[0].id,
+				'Content:',
+				userMessages[0].content.slice(0, 20)
+			);
+		}
+		return userMessages.length === 0;
 	}
 
 	// Template substitution for frontend preview - following character-overview.svelte pattern
@@ -1205,28 +1298,32 @@
 	}
 
 	// Handle chronicle opt-in choice
-	function handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
+	async function handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
 		// Mark that user made an explicit choice for this session
 		hasExplicitChronicleChoice = true;
 
-		if (rememberChoice && browser) {
+		if (rememberChoice && _browser) {
 			localStorage.setItem('chroniclePreference', String(enableChronicle));
 			chroniclePreference = enableChronicle;
 		}
 
-		showChronicleOptIn = false;
-
 		if (enableChronicle && chat?.id) {
 			// Create chronicle and associate with chat
-			createChronicleForChat();
+			await createChronicleForChat();
 		}
 
-		// Send the pending message
+		// Send the pending message first
 		if (pendingMessage) {
 			const message = pendingMessage;
 			pendingMessage = null;
 			sendMessageInternal(message);
 		}
+
+		// CRITICAL: Wait for next tick before closing dialog
+		// This ensures streaming service state updates happen first,
+		// preventing parent re-renders from resetting the dialog state
+		await tick();
+		showChronicleOptIn = false;
 	}
 
 	// Create chronicle and associate with current chat
@@ -1286,58 +1383,119 @@
 	}
 
 	async function sendMessage(content: string) {
-		// DEBUG: Add stack trace to identify unwanted calls
-		console.log('🚨🚨🚨 SENDMESSAGE START - content:', content.slice(0, 50) + '...');
-		console.log('🚨 sendMessage called with content:', content.slice(0, 50) + '...');
-		console.log('🚨 sendMessage STACK TRACE:', new Error().stack);
+		try {
+			// DEBUG: Add stack trace to identify unwanted calls
+			console.log(
+				'🚨🚨🚨 SENDMESSAGE START - content:',
+				content ? content.slice(0, 50) : 'UNDEFINED'
+			);
+			// console.log('🚨 sendMessage called with content:', content.slice(0, 50) + '...');
+			// console.log('🚨 sendMessage STACK TRACE:', new Error().stack);
 
-		dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
+			dynamicSuggestedActions = []; // Clear suggestions when a message (including a suggestion) is sent
 
-		if (!chat?.id || !user?.id) {
-			toast.error('Chat session or user information is missing.');
-			return;
-		}
+			// DIAGNOSTIC: Check all conditions
+			console.log('🔍 [sendMessage] chat?.id:', chat?.id);
+			console.log('🔍 [sendMessage] user?.id:', user?.id);
 
-		// Check if we need to show chronicle opt-in
-		// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+			if (!chat?.id || !user?.id) {
+				console.error('❌ [sendMessage] Missing chat.id or user.id - EARLY RETURN');
+				toast.error('Chat session or user information is missing.');
+				return;
+			}
+
+			console.log('✅ [sendMessage] chat and user IDs present');
+
+			// DIAGNOSTIC: Log chronicles state before checks
+			console.log('🔍 [sendMessage] chat.player_chronicle_id:', chat.player_chronicle_id);
+			// console.log('🔍 [sendMessage] isFirstUserMessage():', isFirstUserMessage()); // Moved down to avoid potential error
+			console.log('🔍 [sendMessage] chroniclePreference:', chroniclePreference);
+			console.log('🔍 [sendMessage] hasExplicitChronicleChoice:', hasExplicitChronicleChoice);
+
+			// Check if we need to show chronicle opt-in
+			// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+			const _isFirst = isFirstUserMessage();
+			const _userMsgCount = activeStreamingService.messages.filter(
+				(msg) => msg.sender === 'user'
+			).length;
+
+			// DEBUG: Always show toast with condition values
+			toast.info(
+				`Debug: First=${_isFirst} (${_userMsgCount}), ChronID=${chat.player_chronicle_id}, Pref=${chroniclePreference}, Expl=${hasExplicitChronicleChoice}`
+			);
+
+			// FORCE SHOW for debugging
+
+			/*
 		if (
 			!chat.player_chronicle_id &&
-			isFirstUserMessage() &&
+			_isFirst &&
 			chroniclePreference === null &&
 			!hasExplicitChronicleChoice
 		) {
+			console.log('📖 [sendMessage] SHOWING CHRONICLES OPT-IN DIALOG');
 			pendingMessage = content;
 			showChronicleOptIn = true;
 			return;
 		}
+		*/
 
-		// If user has a saved preference and no chronicle, handle it automatically
-		// BUT only if they haven't made an explicit choice for this session
-		if (
-			!chat.player_chronicle_id &&
-			isFirstUserMessage() &&
-			chroniclePreference === true &&
-			!hasExplicitChronicleChoice
-		) {
-			await createChronicleForChat();
+			console.log('✅ [sendMessage] Chronicles opt-in dialog check passed');
+
+			// If user has a saved preference and no chronicle, handle it automatically
+			// BUT only if they haven't made an explicit choice for this session
+			if (
+				!chat?.player_chronicle_id &&
+				isFirstUserMessage() &&
+				chroniclePreference === true &&
+				!hasExplicitChronicleChoice
+			) {
+				console.log('📖 [sendMessage] Auto-creating chronicle based on saved preference...');
+				try {
+					await createChronicleForChat();
+					console.log('✅ [sendMessage] Chronicle auto-created successfully');
+				} catch (error) {
+					console.error('❌ [sendMessage] Failed to auto-create chronicle:', error);
+					// Continue anyway - don't block message sending
+				}
+			}
+
+			console.log('🚀 [sendMessage] Calling sendMessageInternal()...');
+			sendMessageInternal(content);
+			console.log('✅ [sendMessage] sendMessageInternal() call completed');
+		} catch (err) {
+			console.error('🚨🚨🚨 CRITICAL ERROR IN SENDMESSAGE:', err);
+			toast.error('Error sending message: ' + (err instanceof Error ? err.message : String(err)));
 		}
-
-		sendMessageInternal(content);
 	}
 
 	async function sendMessageInternal(content: string) {
+		console.log(
+			'🚀 [sendMessageInternal] ===== ENTRY POINT ===== content:',
+			content.slice(0, 50) + '...'
+		);
+		console.log('🔍 [sendMessageInternal] chat?.id:', chat?.id);
+		console.log('🔍 [sendMessageInternal] user?.id:', user?.id);
+
 		if (!chat?.id || !user?.id) {
+			console.error('❌ [sendMessageInternal] Missing chat.id or user.id - EARLY RETURN');
 			toast.error('Chat session or user information is missing.');
 			return;
 		}
 
+		console.log('✅ [sendMessageInternal] chat and user IDs present');
+
 		// Check token limits if payments are enabled
+		console.log('🔍 [sendMessageInternal] Checking token limits...');
 		if (handleTokenLimitReached()) {
+			console.warn('⚠️ [sendMessageInternal] Token limit reached - EARLY RETURN');
 			return;
 		}
 
+		console.log('✅ [sendMessageInternal] Token limit check passed');
+
 		// Build history from the single source of truth (NEW: use isAnimating instead of loading)
-		const existingHistoryForApi = (streamingService.messages as StreamingMessage[])
+		const existingHistoryForApi = (activeStreamingService.messages as StreamingMessage[])
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
@@ -1355,22 +1513,25 @@
 		}
 
 		try {
-			// Use StreamingService for the connection
+			// Use DesktopStreamingService for desktop, StreamingService for web
+			const service = isInDesktopMode() ? desktopStreamingService : streamingService;
+			const serviceName = isInDesktopMode() ? 'DesktopStreamingService' : 'StreamingService';
+
 			const currentModel = await getCurrentChatModel();
-			console.log('🚀 Starting StreamingService connection:', {
+			console.log(`🚀 Starting ${serviceName} connection:`, {
 				chatId: chat.id,
 				userMessage: content,
 				historyLength: existingHistoryForApi.length,
 				model: currentModel
 			});
-			await streamingService.connect({
+			await service.connect({
 				chatId: chat.id,
 				userMessage: content,
 				history: existingHistoryForApi,
 				model: currentModel || undefined,
 				agentMode: agentMode
 			});
-			console.log(`✅ StreamingService.connect() completed at ${Date.now()}`);
+			console.log(`✅ ${serviceName}.connect() completed at ${Date.now()}`);
 
 			// Refresh chat metadata to update token counts and costs
 			await refreshChatMetadata();
@@ -1412,7 +1573,7 @@
 		}
 
 		// Build history from current messages (NEW: use isAnimating instead of loading)
-		const historyToSend = (streamingService.messages as StreamingMessage[])
+		const historyToSend = (activeStreamingService.messages as StreamingMessage[])
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
@@ -1428,7 +1589,7 @@
 			}
 
 			const currentModel = await getCurrentChatModel();
-			await streamingService.connect({
+			await activeStreamingService.connect({
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
 				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
@@ -1457,7 +1618,7 @@
 	}
 
 	function stopGeneration() {
-		streamingService.interrupt();
+		activeStreamingService.interrupt();
 	}
 
 	// Input submission handler
@@ -1474,7 +1635,8 @@
 		_userMessageContent: string,
 		originalMessageId?: string,
 		analysisMode: AnalysisMode = 'existing',
-		guidance?: string
+		guidance?: string,
+		targetMessageId?: string
 	) {
 		if (!chat?.id || !user?.id) {
 			toast.error('Chat session or user information is missing.');
@@ -1496,12 +1658,14 @@
 
 		// Build the history - messages array already has the right messages after we removed the assistant message
 		// Just convert to API format (NEW: use isAnimating instead of loading)
-		const historyToSend = (streamingService.messages as StreamingMessage[])
+		const historyToSend = (activeStreamingService.messages as StreamingMessage[])
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
 				content: m.content
 			}));
+
+		console.log('DEBUG: regenerateResponse guidance:', guidance);
 
 		// Find the last user message to regenerate response for
 		const lastUserMessage = historyToSend.filter((h) => h.role === 'user').pop();
@@ -1515,9 +1679,9 @@
 			const currentModel = await getCurrentChatModel();
 
 			// Find the target message in the streaming service for variant update
-			let targetMessageIdForVariant: string | undefined;
-			if (originalMessageId) {
-				const currentMessages = streamingService.messages as StreamingMessage[];
+			let targetMessageIdForVariant: string | undefined = targetMessageId;
+			if (!targetMessageIdForVariant && originalMessageId) {
+				const currentMessages = activeStreamingService.messages as StreamingMessage[];
 				console.log('🔍 Searching for originalMessageId:', originalMessageId);
 				console.log(
 					'🔍 Current messages:',
@@ -1556,7 +1720,7 @@
 				finalLastRole: finalHistory[finalHistory.length - 1]?.role
 			});
 
-			await streamingService.connect({
+			await activeStreamingService.connect({
 				chatId: chat.id,
 				userMessage: lastUserMessage.content,
 				history: finalHistory,
@@ -1616,20 +1780,21 @@
 
 		// Update the first message content in the messages array with variant metadata
 		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
-		const firstMessage = streamingService.messages.find((msg) => msg.id === firstMessageId);
+		const firstMessage = activeStreamingService.messages.find((msg) => msg.id === firstMessageId);
 
 		// Optimistically update the UI
-		streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) =>
-			msg.id === firstMessageId
-				? {
-						...msg,
-						content,
-						displayedContent: content,
-						current_variant_index: index,
-						// Force re-render by updating a timestamp
-						_variantChangedAt: Date.now()
-					}
-				: msg
+		activeStreamingService.messages = (activeStreamingService.messages as StreamingMessage[]).map(
+			(msg) =>
+				msg.id === firstMessageId
+					? {
+							...msg,
+							content,
+							displayedContent: content,
+							current_variant_index: index,
+							// Force re-render by updating a timestamp
+							_variantChangedAt: Date.now()
+						}
+					: msg
 		);
 
 		// If this is a real backend message (has backend_id), persist the variant selection
@@ -1664,19 +1829,19 @@
 		console.log('Retry message:', messageId);
 
 		// Find the assistant message to retry
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+		const messageIndex = (activeStreamingService.messages as StreamingMessage[]).findIndex(
 			(msg) => msg.id === messageId
 		);
 		if (messageIndex === -1) return;
 
-		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
+		const targetMessage = (activeStreamingService.messages as StreamingMessage[])[messageIndex];
 		if (targetMessage.sender !== 'assistant') return;
 
 		// Find the previous user message to regenerate from
 		const userMessageIndex = messageIndex - 1;
 		if (userMessageIndex < 0) return;
 
-		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
+		const userMessage = (activeStreamingService.messages as StreamingMessage[])[userMessageIndex];
 		if (userMessage.sender !== 'user') return;
 
 		// DEFER CHANGES: Only collect data for the modal, don't modify anything yet
@@ -1689,7 +1854,7 @@
 			messageId: backendMessageId,
 			// Store additional data needed for cleanup
 			targetMessageIndex: messageIndex,
-			allMessages: [...(streamingService.messages as StreamingMessage[])]
+			allMessages: [...(activeStreamingService.messages as StreamingMessage[])]
 		};
 		showRegenerationModal = true;
 	}
@@ -1715,23 +1880,23 @@
 		if (!chat?.id || isLoading) return;
 
 		// Find the message index
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+		const messageIndex = (activeStreamingService.messages as StreamingMessage[]).findIndex(
 			(msg) => msg.id === messageId
 		);
 		if (messageIndex === -1) return;
 
-		const targetMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
+		const targetMessage = (activeStreamingService.messages as StreamingMessage[])[messageIndex];
 		if (targetMessage.sender !== 'user') return;
 
 		// Update the message content
-		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		const allMessages = [...(activeStreamingService.messages as StreamingMessage[])];
 		allMessages[messageIndex].content = newContent;
 
 		// Get messages that will be removed for backend cleanup
 		const removedMessages = allMessages.slice(messageIndex + 1);
 
 		// Clear all subsequent messages (everything after this user message)
-		streamingService.messages = allMessages.slice(0, messageIndex + 1);
+		activeStreamingService.messages = allMessages.slice(0, messageIndex + 1);
 
 		// Variant data is now managed by the backend
 
@@ -1754,7 +1919,7 @@
 		console.log('⬅️ Previous variant:', messageId);
 
 		// Find the message to get current variant info (check both frontend ID and backend ID)
-		const message = streamingService.messages.find(
+		const message = activeStreamingService.messages.find(
 			(msg) => msg.id === messageId || msg.backend_id === messageId
 		);
 		if (!message || (message.current_variant_index ?? 0) <= 0) return;
@@ -1773,7 +1938,9 @@
 			if (result.isOk()) {
 				const updatedMessage = result.value;
 				// Update the message in the streaming service (match by frontend or backend ID)
-				streamingService.messages = (streamingService.messages as StreamingMessage[]).map((msg) => {
+				activeStreamingService.messages = (
+					activeStreamingService.messages as StreamingMessage[]
+				).map((msg) => {
 					if (msg.id === messageId || msg.backend_id === messageId) {
 						return {
 							...msg,
@@ -1796,7 +1963,7 @@
 
 	async function handleNextVariant(messageId: string) {
 		// Find the message to get current variant info (check both frontend ID and backend ID)
-		const message = streamingService.messages.find(
+		const message = activeStreamingService.messages.find(
 			(msg) => msg.id === messageId || msg.backend_id === messageId
 		);
 		if (!message) return;
@@ -1823,19 +1990,19 @@
 				if (result.isOk()) {
 					const updatedMessage = result.value;
 					// Update the message in the streaming service (match by frontend or backend ID)
-					streamingService.messages = (streamingService.messages as StreamingMessage[]).map(
-						(msg) => {
-							if (msg.id === messageId || msg.backend_id === messageId) {
-								return {
-									...msg,
-									content: updatedMessage.content,
-									current_variant_index: updatedMessage.current_variant_index,
-									displayedContent: updatedMessage.content
-								};
-							}
-							return msg;
+					activeStreamingService.messages = (
+						activeStreamingService.messages as StreamingMessage[]
+					).map((msg) => {
+						if (msg.id === messageId || msg.backend_id === messageId) {
+							return {
+								...msg,
+								content: updatedMessage.content,
+								current_variant_index: updatedMessage.current_variant_index,
+								displayedContent: updatedMessage.content
+							};
 						}
-					);
+						return msg;
+					});
 				} else {
 					console.error('Failed to select next variant:', result.error);
 					toast.error('Failed to switch to next variant');
@@ -1847,12 +2014,14 @@
 		} else {
 			// No more variants, generate a new one as a variant (not a retry)
 			// Find the current message and the user message before it
-			const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+			const messageIndex = (activeStreamingService.messages as StreamingMessage[]).findIndex(
 				(msg) => msg.id === messageId || msg.backend_id === messageId
 			);
 
 			if (messageIndex > 0) {
-				const userMessage = (streamingService.messages as StreamingMessage[])[messageIndex - 1];
+				const userMessage = (activeStreamingService.messages as StreamingMessage[])[
+					messageIndex - 1
+				];
 				if (userMessage.sender === 'user') {
 					// Show regeneration modal for variant generation
 					const backendMessageId = message.backend_id || messageId;
@@ -1873,26 +2042,26 @@
 		console.log('Retry failed message:', messageId);
 
 		// Find the failed assistant message
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+		const messageIndex = (activeStreamingService.messages as StreamingMessage[]).findIndex(
 			(msg) => msg.id === messageId
 		);
 		if (messageIndex === -1) return;
 
-		const failedMessage = (streamingService.messages as StreamingMessage[])[messageIndex];
+		const failedMessage = (activeStreamingService.messages as StreamingMessage[])[messageIndex];
 		if (failedMessage.sender !== 'assistant' || !failedMessage.error) return;
 
 		// Find the previous user message to regenerate from
 		const userMessageIndex = messageIndex - 1;
 		if (userMessageIndex < 0) return;
 
-		const userMessage = (streamingService.messages as StreamingMessage[])[userMessageIndex];
+		const userMessage = (activeStreamingService.messages as StreamingMessage[])[userMessageIndex];
 		if (userMessage.sender !== 'user') return;
 
 		// Remove the failed assistant message and any messages after it
 		// This prevents the "Thinking..." state from getting stuck when streamingService creates a new message
-		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		const allMessages = [...(activeStreamingService.messages as StreamingMessage[])];
 		const messagesToRemove = allMessages.slice(messageIndex); // Include the failed message
-		streamingService.messages = allMessages.slice(0, messageIndex); // Keep only up to the user message
+		activeStreamingService.messages = allMessages.slice(0, messageIndex); // Keep only up to the user message
 
 		// Variant data is now managed by the backend
 
@@ -1920,15 +2089,15 @@
 
 		// IMMEDIATELY set loading state for variant generation (instant feedback)
 		if (messageId) {
-			const existingMessageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
-				(msg) => msg.id === messageId || msg.backend_id === messageId
-			);
+			const existingMessageIndex = (
+				activeStreamingService.messages as StreamingMessage[]
+			).findIndex((msg) => msg.id === messageId || msg.backend_id === messageId);
 
 			if (existingMessageIndex !== -1) {
-				const existingMessage = streamingService.messages[existingMessageIndex];
+				const existingMessage = activeStreamingService.messages[existingMessageIndex];
 
 				// Set immediate loading state
-				streamingService.messages[existingMessageIndex] = {
+				activeStreamingService.messages[existingMessageIndex] = {
 					...existingMessage,
 					content: '',
 					displayedContent: '',
@@ -1938,7 +2107,7 @@
 				};
 
 				// Force Svelte reactivity
-				streamingService.messages = [...streamingService.messages];
+				activeStreamingService.messages = [...activeStreamingService.messages];
 			}
 		}
 
@@ -1959,12 +2128,17 @@
 			}
 
 			// Remove trailing messages from UI (but keep the target message for variant update)
-			streamingService.messages = allMessages.slice(0, targetMessageIndex + 1);
+			activeStreamingService.messages = allMessages.slice(0, targetMessageIndex + 1);
 		} else {
 			console.log('🎯 Generating new variant - no cleanup needed');
 		}
 
-		regenerateResponse(userMessage, messageId, mode, guidance);
+		let targetMessageFrontendId: string | undefined;
+		if (targetMessageIndex !== undefined && allMessages && allMessages[targetMessageIndex]) {
+			targetMessageFrontendId = allMessages[targetMessageIndex].id;
+		}
+
+		regenerateResponse(userMessage, messageId, mode, guidance, targetMessageFrontendId);
 
 		// Clear pending data
 		pendingRegenerationData = null;
@@ -1983,18 +2157,18 @@
 		console.log('Delete message:', messageId);
 
 		// Find the message to delete
-		const messageIndex = (streamingService.messages as StreamingMessage[]).findIndex(
+		const messageIndex = (activeStreamingService.messages as StreamingMessage[]).findIndex(
 			(msg) => msg.id === messageId
 		);
 		if (messageIndex === -1) return;
 
 		// Get the message before removing it
-		const messageToDelete = (streamingService.messages as StreamingMessage[])[messageIndex];
+		const messageToDelete = (activeStreamingService.messages as StreamingMessage[])[messageIndex];
 
 		// Remove the message from the UI immediately
-		const allMessages = [...(streamingService.messages as StreamingMessage[])];
+		const allMessages = [...(activeStreamingService.messages as StreamingMessage[])];
 		allMessages.splice(messageIndex, 1);
-		streamingService.messages = allMessages;
+		activeStreamingService.messages = allMessages;
 
 		// Variant data is now managed by the backend
 
@@ -2228,11 +2402,13 @@
 					{/if}
 
 					<!-- Session Total Display (from backend) -->
-					{#if chat?.total_credits_used || chat?.total_prompt_tokens || chat?.total_completion_tokens}
+					{#if chat?.total_actual_cost || chat?.total_credits_used || chat?.total_prompt_tokens || chat?.total_completion_tokens}
 						{@const sessionCost =
-							typeof chat.total_credits_used === 'string'
-								? parseFloat(chat.total_credits_used)
-								: chat.total_credits_used}
+							chat.total_actual_cost !== undefined
+								? chat.total_actual_cost
+								: typeof chat.total_credits_used === 'string'
+									? parseFloat(chat.total_credits_used)
+									: chat.total_credits_used}
 						{@const formatSessionCost = (cost: number | undefined) =>
 							typeof cost !== 'number' || isNaN(cost) || cost < 0.0001
 								? '<$0.0001'
@@ -2291,7 +2467,14 @@
 {/if}
 
 <!-- Chronicle Opt-in Dialog -->
-<ChronicleOptInDialog bind:_open={showChronicleOptIn} onConfirm={handleChronicleChoice} />
+<ChronicleOptInDialog
+	open={showChronicleOptIn}
+	onConfirm={handleChronicleChoice}
+	onOpenChange={(newOpen) => {
+		console.log('[Chat] ChronicleDialog onOpenChange:', newOpen);
+		showChronicleOptIn = newOpen;
+	}}
+/>
 
 <!-- Regeneration Options Modal -->
 <RegenerationModal

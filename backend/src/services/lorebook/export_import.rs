@@ -1,12 +1,15 @@
 use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
+use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::DbId;
 
 impl LorebookService {
     pub async fn export_lorebook(
         &self,
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<crate::models::lorebook_dtos::ExportedLorebook, AppError> {
         let _user = get_user_from_session(auth_session)?;
 
@@ -109,7 +112,7 @@ impl LorebookService {
         &self,
         auth_session: &AuthSession<AuthBackend>,
         user_dek: Option<&SecretBox<Vec<u8>>>,
-        lorebook_id: Uuid,
+        lorebook_id: crate::db::DbId,
     ) -> Result<crate::models::lorebook_dtos::ScribeMinimalLorebook, AppError> {
         let _user = get_user_from_session(auth_session)?;
 
@@ -166,30 +169,38 @@ impl LorebookService {
     ) -> Result<LorebookResponse, AppError> {
         let user = get_user_from_session(auth_session)?;
 
-        let new_lorebook_id = Uuid::new_v4();
+        let new_lorebook_id = DbId::new();
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id,
+            id: new_lorebook_id.into(),
             user_id: user.id,
             name: payload.name,
             description: payload.description,
             source_format: "silly_tavern_full_v1".to_string(), // Set correct format
             is_public: payload.is_public,                      // Use payload's is_public
-            created_at: Some(current_time),
-            updated_at: Some(current_time),
+            created_at: Some(current_time.into()),
+            updated_at: Some(current_time.into()),
         };
 
-        let conn = self.pool.get().await.map_err(|e| {
+        let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
         let lorebook = conn
             .interact(move |conn_sync| {
-                diesel::insert_into(lorebooks::table)
-                    .values(&new_lorebook_db)
-                    .returning(Lorebook::as_returning())
-                    .get_result::<Lorebook>(conn_sync)
+                #[cfg(feature = "postgres-backend")]
+                {
+                    diesel::insert_into(lorebooks::table)
+                        .values(&new_lorebook_db)
+                        .returning(Lorebook::as_returning())
+                        .get_result::<Lorebook>(conn_sync)
+                }
+
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    super::insert_lorebook_sync(conn_sync, &new_lorebook_db)
+                }
             })
             .await
             .map_err(|e| {
@@ -261,7 +272,7 @@ impl LorebookService {
                 "Preparing lorebook entry [REDACTED_UUID]: title='[REDACTED]', content_len=[REDACTED], keys=[REDACTED]"
             );
 
-            let new_entry_id = Uuid::new_v4();
+            let new_entry_id = DbId::new();
 
             // Encrypt the fields if DEK is provided
             let (entry_title_ciphertext, entry_title_nonce) = if let Some(dek) = user_dek {
@@ -325,7 +336,7 @@ impl LorebookService {
             };
 
             let new_entry_db = NewLorebookEntry {
-                id: new_entry_id,
+                id: new_entry_id.into(),
                 lorebook_id: lorebook.id,
                 user_id: user.id,
                 entry_title_ciphertext,
@@ -344,8 +355,8 @@ impl LorebookService {
                 original_sillytavern_uid: entry.uid,
                 sillytavern_metadata_ciphertext: None,
                 sillytavern_metadata_nonce: None,
-                created_at: Some(current_time),
-                updated_at: Some(current_time),
+                created_at: Some(current_time.into()),
+                updated_at: Some(current_time.into()),
             };
 
             // Store the entry data for embedding generation
@@ -367,15 +378,17 @@ impl LorebookService {
             );
 
             info!("Getting database connection for batch insert...");
-            let conn = self.pool.get().await.map_err(|e| {
+            let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
                 error!("Failed to get DB connection for batch insert: {e}");
                 AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
             })?;
             info!("Successfully obtained database connection for batch insert");
 
             info!("Starting database interaction for batch insert...");
-            let inserted_entries: Vec<LorebookEntry> = conn
-                .interact(move |conn_sync| {
+
+            #[cfg(feature = "postgres-backend")]
+            let inserted_entries: Vec<LorebookEntry> = {
+                conn.interact(move |conn_sync| {
                     info!("Inside database interaction, executing batch insert SQL...");
                     let result = diesel::insert_into(lorebook_entries::table)
                         .values(&new_entries_batch)
@@ -394,7 +407,41 @@ impl LorebookService {
                 .map_err(|e| {
                     error!("Database error during batch insert: {}", e);
                     AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
-                })?;
+                })?
+            };
+
+            #[cfg(feature = "sqlite-backend")]
+            let inserted_entries: Vec<LorebookEntry> = {
+                use diesel::prelude::*;
+                // Collect IDs before insert for querying back
+                let entry_id_strings: Vec<String> =
+                    new_entries_batch.iter().map(|e| e.id.to_string()).collect();
+
+                crate::db::with_conn(&self.pool, move |conn_sync| {
+                    info!("Inside database interaction, executing batch insert SQL...");
+                    diesel::insert_into(lorebook_entries::table)
+                        .values(&new_entries_batch)
+                        .execute(conn_sync)
+                        .map_err(|e| {
+                            error!("Database error during batch insert: {}", e);
+                            AppError::DatabaseQueryError(format!("Batch insert failed: {e}"))
+                        })?;
+                    info!("Batch insert SQL execution completed");
+
+                    // Query back all inserted entries
+                    lorebook_entries::table
+                        .filter(lorebook_entries::id.eq_any(&entry_id_strings))
+                        .select(LorebookEntry::as_select())
+                        .load::<LorebookEntry>(conn_sync)
+                        .map_err(|e| {
+                            error!("Failed to query inserted entries: {}", e);
+                            AppError::DatabaseQueryError(format!(
+                                "Failed to query inserted entries: {e}"
+                            ))
+                        })
+                })
+                .await?
+            };
 
             info!(
                 "Successfully batch inserted {} lorebook entries",

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use uuid::Uuid;
 
 pub mod examples;
 pub mod ip_anonymization;
@@ -38,7 +37,7 @@ pub struct ObfuscatedId {
 
 impl ObfuscatedId {
     /// Create an obfuscated ID from a UUID with a specific salt and type
-    pub fn new(uuid: Uuid, salt: &str, id_type: &str) -> Self {
+    pub fn new(uuid: crate::db::DbId, salt: &str, id_type: &str) -> Self {
         let input = format!("{}{}{}", uuid, salt, id_type);
         let hash = blake3::hash(input.as_bytes());
         let hash_str = hash.to_hex()[..16].to_string(); // Use first 16 chars for brevity
@@ -50,32 +49,32 @@ impl ObfuscatedId {
     }
 
     /// Create from user ID
-    pub fn user_id(uuid: Uuid, salt: &str) -> Self {
+    pub fn user_id(uuid: crate::db::DbId, salt: &str) -> Self {
         Self::new(uuid, salt, "user")
     }
 
     /// Create from session ID
-    pub fn session_id(uuid: Uuid, salt: &str) -> Self {
+    pub fn session_id(uuid: crate::db::DbId, salt: &str) -> Self {
         Self::new(uuid, salt, "session")
     }
 
     /// Create from character ID
-    pub fn character_id(uuid: Uuid, salt: &str) -> Self {
+    pub fn character_id(uuid: crate::db::DbId, salt: &str) -> Self {
         Self::new(uuid, salt, "character")
     }
 
     /// Create from persona ID
-    pub fn persona_id(uuid: Uuid, salt: &str) -> Self {
+    pub fn persona_id(uuid: crate::db::DbId, salt: &str) -> Self {
         Self::new(uuid, salt, "persona")
     }
 
     /// Create from chronicle ID
-    pub fn chronicle_id(uuid: Uuid, salt: &str) -> Self {
+    pub fn chronicle_id(uuid: crate::db::DbId, salt: &str) -> Self {
         Self::new(uuid, salt, "chronicle")
     }
 
     /// Create from lorebook ID
-    pub fn lorebook_id(uuid: Uuid, salt: &str) -> Self {
+    pub fn lorebook_id(uuid: crate::db::DbId, salt: &str) -> Self {
         Self::new(uuid, salt, "lorebook")
     }
 }
@@ -178,27 +177,27 @@ impl PrivacyContext {
         &self.request_id
     }
 
-    pub fn obfuscate_user_id(&self, uuid: Uuid) -> ObfuscatedId {
+    pub fn obfuscate_user_id(&self, uuid: crate::db::DbId) -> ObfuscatedId {
         ObfuscatedId::user_id(uuid, &self.config.hash_salt)
     }
 
-    pub fn obfuscate_session_id(&self, uuid: Uuid) -> ObfuscatedId {
+    pub fn obfuscate_session_id(&self, uuid: crate::db::DbId) -> ObfuscatedId {
         ObfuscatedId::session_id(uuid, &self.config.hash_salt)
     }
 
-    pub fn obfuscate_character_id(&self, uuid: Uuid) -> ObfuscatedId {
+    pub fn obfuscate_character_id(&self, uuid: crate::db::DbId) -> ObfuscatedId {
         ObfuscatedId::character_id(uuid, &self.config.hash_salt)
     }
 
-    pub fn obfuscate_persona_id(&self, uuid: Uuid) -> ObfuscatedId {
+    pub fn obfuscate_persona_id(&self, uuid: crate::db::DbId) -> ObfuscatedId {
         ObfuscatedId::persona_id(uuid, &self.config.hash_salt)
     }
 
-    pub fn obfuscate_chronicle_id(&self, uuid: Uuid) -> ObfuscatedId {
+    pub fn obfuscate_chronicle_id(&self, uuid: crate::db::DbId) -> ObfuscatedId {
         ObfuscatedId::chronicle_id(uuid, &self.config.hash_salt)
     }
 
-    pub fn obfuscate_lorebook_id(&self, uuid: Uuid) -> ObfuscatedId {
+    pub fn obfuscate_lorebook_id(&self, uuid: crate::db::DbId) -> ObfuscatedId {
         ObfuscatedId::lorebook_id(uuid, &self.config.hash_salt)
     }
 
@@ -209,10 +208,10 @@ impl PrivacyContext {
 
 /// Wrapper types for privacy-safe logging
 #[derive(Debug, Clone)]
-pub struct LoggableUserId(pub Uuid, pub String);
+pub struct LoggableUserId(pub crate::db::DbId, pub String);
 
 impl LoggableUserId {
-    pub fn new(uuid: Uuid, salt: &str) -> Self {
+    pub fn new(uuid: crate::db::DbId, salt: &str) -> Self {
         Self(uuid, salt.to_string())
     }
 }
@@ -225,10 +224,10 @@ impl fmt::Display for LoggableUserId {
 }
 
 #[derive(Debug, Clone)]
-pub struct LoggableSessionId(pub Uuid, pub String);
+pub struct LoggableSessionId(pub crate::db::DbId, pub String);
 
 impl LoggableSessionId {
-    pub fn new(uuid: Uuid, salt: &str) -> Self {
+    pub fn new(uuid: crate::db::DbId, salt: &str) -> Self {
         Self(uuid, salt.to_string())
     }
 }
@@ -241,10 +240,10 @@ impl fmt::Display for LoggableSessionId {
 }
 
 #[derive(Debug, Clone)]
-pub struct LoggableCharacterId(pub Uuid, pub String);
+pub struct LoggableCharacterId(pub crate::db::DbId, pub String);
 
 impl LoggableCharacterId {
-    pub fn new(uuid: Uuid, salt: &str) -> Self {
+    pub fn new(uuid: crate::db::DbId, salt: &str) -> Self {
         Self(uuid, salt.to_string())
     }
 }
@@ -257,10 +256,10 @@ impl fmt::Display for LoggableCharacterId {
 }
 
 #[derive(Debug, Clone)]
-pub struct LoggablePersonaId(pub Uuid, pub String);
+pub struct LoggablePersonaId(pub crate::db::DbId, pub String);
 
 impl LoggablePersonaId {
-    pub fn new(uuid: Uuid, salt: &str) -> Self {
+    pub fn new(uuid: crate::db::DbId, salt: &str) -> Self {
         Self(uuid, salt.to_string())
     }
 }
@@ -275,10 +274,11 @@ impl fmt::Display for LoggablePersonaId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::DbId;
 
     #[test]
     fn test_obfuscated_id_consistency() {
-        let uuid = Uuid::new_v4();
+        let uuid = DbId::new();
         let salt = "test-salt";
 
         let id1 = ObfuscatedId::user_id(uuid, salt);
@@ -295,7 +295,7 @@ mod tests {
             "Different salt should produce different obfuscated ID"
         );
 
-        let different_uuid = Uuid::new_v4();
+        let different_uuid = DbId::new();
         let id4 = ObfuscatedId::user_id(different_uuid, salt);
         assert_ne!(
             id1, id4,
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_obfuscated_id_display() {
-        let uuid = Uuid::new_v4();
+        let uuid = DbId::new();
         let salt = "test-salt";
 
         let user_id = ObfuscatedId::user_id(uuid, salt);

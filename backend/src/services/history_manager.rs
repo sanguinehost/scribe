@@ -207,22 +207,23 @@ fn estimate_message_tokens(message: &ChatMessage) -> usize {
     content_str.chars().count() // Approximation
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
     use super::*;
+    use crate::db::DbId;
     use crate::models::chats::MessageRole;
     use chrono::Utc;
     use uuid::Uuid;
 
-    fn create_test_message(id: Uuid, role: MessageRole, content: &str) -> ChatMessage {
+    fn create_test_message(id: crate::db::DbId, role: MessageRole, content: &str) -> ChatMessage {
         ChatMessage {
             id,
-            session_id: Uuid::new_v4(),
+            session_id: DbId::new(),
             message_type: role,
             content: content.as_bytes().to_vec(),
             content_nonce: None, // Added missing field
-            created_at: Utc::now(),
-            user_id: Uuid::new_v4(),
+            created_at: Utc::now().into(),
+            user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -239,8 +240,8 @@ mod tests {
 
     #[test]
     fn test_manage_history_none() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Hi");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "Hi");
         let msg1_id = msg1.id;
         let msg2_id = msg2.id;
         let history = vec![msg1, msg2];
@@ -252,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_manage_history_unknown_strategy() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello");
         let msg1_id = msg1.id;
         let history = vec![msg1];
         let managed = manage_history(history, "unknown_strategy", 10);
@@ -262,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_manage_history_zero_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello");
         let msg1_id = msg1.id;
         let history = vec![msg1];
         let managed = manage_history(history, "sliding_window_messages", 0);
@@ -274,8 +275,8 @@ mod tests {
 
     #[test]
     fn test_sliding_window_messages_under_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "1");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "2");
         let msg1_id = msg1.id;
         let msg2_id = msg2.id;
         let history = vec![msg1, msg2];
@@ -287,8 +288,8 @@ mod tests {
 
     #[test]
     fn test_sliding_window_messages_at_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "1");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "2");
         let msg1_id = msg1.id;
         let msg2_id = msg2.id;
         let history = vec![msg1, msg2];
@@ -300,9 +301,9 @@ mod tests {
 
     #[test]
     fn test_sliding_window_messages_over_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
-        let msg3 = create_test_message(Uuid::new_v4(), MessageRole::User, "3");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "1");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "2");
+        let msg3 = create_test_message(DbId::new(), MessageRole::User, "3");
         let msg2_id = msg2.id;
         let msg3_id = msg3.id;
         let history = vec![msg1, msg2, msg3];
@@ -314,8 +315,8 @@ mod tests {
 
     #[test]
     fn test_sliding_window_messages_limit_one() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "1");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "2");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "1");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "2");
         let msg2_id = msg2.id;
         let history = vec![msg1, msg2];
         let managed = manage_history(history, "sliding_window_messages", 1);
@@ -327,8 +328,8 @@ mod tests {
 
     #[test]
     fn test_sliding_window_tokens_under_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello"); // 5 chars
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World"); // 5 chars
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello"); // 5 chars
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "World"); // 5 chars
         let msg1_id = msg1.id;
         let msg2_id = msg2.id;
         let history = vec![msg1, msg2];
@@ -340,8 +341,8 @@ mod tests {
 
     #[test]
     fn test_sliding_window_tokens_at_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello"); // 5 chars
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World"); // 5 chars
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello"); // 5 chars
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "World"); // 5 chars
         let msg1_id = msg1.id;
         let msg2_id = msg2.id;
         let history = vec![msg1, msg2];
@@ -353,9 +354,9 @@ mod tests {
 
     #[test]
     fn test_sliding_window_tokens_over_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "This is long"); // 12 chars
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Short"); // 5 chars
-        let msg3 = create_test_message(Uuid::new_v4(), MessageRole::User, "Medium"); // 6 chars
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "This is long"); // 12 chars
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "Short"); // 5 chars
+        let msg3 = create_test_message(DbId::new(), MessageRole::User, "Medium"); // 6 chars
         let msg2_id = msg2.id;
         let msg3_id = msg3.id;
         let history = vec![msg1, msg2, msg3]; // Total 23 chars
@@ -367,9 +368,9 @@ mod tests {
 
     #[test]
     fn test_sliding_window_tokens_keeps_last_if_over_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Short"); // 5 chars
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Short"); // 5 chars
         let msg2 = create_test_message(
-            Uuid::new_v4(),
+            DbId::new(),
             MessageRole::Assistant,
             "This message is very long indeed",
         ); // 30 chars
@@ -384,8 +385,8 @@ mod tests {
 
     #[test]
     fn test_truncate_tokens_under_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "World");
         let history = vec![msg1, msg2];
         let managed = manage_history(history, "truncate_tokens", 20);
         assert_eq!(managed.len(), 2);
@@ -395,8 +396,8 @@ mod tests {
 
     #[test]
     fn test_truncate_tokens_at_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "Hello");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "World");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "Hello");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "World");
         let history = vec![msg1, msg2];
         let managed = manage_history(history, "truncate_tokens", 10);
         assert_eq!(managed.len(), 2);
@@ -406,12 +407,8 @@ mod tests {
 
     #[test]
     fn test_truncate_tokens_over_limit_truncates_oldest() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "This is message one");
-        let msg2 = create_test_message(
-            Uuid::new_v4(),
-            MessageRole::Assistant,
-            "This is message two",
-        );
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "This is message one");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "This is message two");
         let history = vec![msg1, msg2];
         let managed = manage_history(history, "truncate_tokens", 30);
 
@@ -431,11 +428,11 @@ mod tests {
     #[test]
     fn test_truncate_tokens_over_limit_drops_oldest() {
         let msg1 = create_test_message(
-            Uuid::new_v4(),
+            DbId::new(),
             MessageRole::User,
             "This is a very long first message that will be dropped",
         );
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Short second");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "Short second");
         let history = vec![msg1, msg2];
         let managed = manage_history(history, "truncate_tokens", 10);
 
@@ -453,8 +450,8 @@ mod tests {
 
     #[test]
     fn test_truncate_tokens_keeps_last_if_over_limit() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "First message"); // 13 chars
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Second message"); // 14 chars
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "First message"); // 13 chars
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "Second message"); // 14 chars
         let history = vec![msg1, msg2]; // Total 27 chars
 
         // Limit allows only part of the first message, second message fully
@@ -487,10 +484,10 @@ mod tests {
 
     #[test]
     fn test_truncate_tokens_multiple_messages() {
-        let msg1 = create_test_message(Uuid::new_v4(), MessageRole::User, "One");
-        let msg2 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Two");
-        let msg3 = create_test_message(Uuid::new_v4(), MessageRole::User, "Three");
-        let msg4 = create_test_message(Uuid::new_v4(), MessageRole::Assistant, "Four");
+        let msg1 = create_test_message(DbId::new(), MessageRole::User, "One");
+        let msg2 = create_test_message(DbId::new(), MessageRole::Assistant, "Two");
+        let msg3 = create_test_message(DbId::new(), MessageRole::User, "Three");
+        let msg4 = create_test_message(DbId::new(), MessageRole::Assistant, "Four");
         let history = vec![msg1, msg2, msg3, msg4];
         let managed = manage_history(history, "truncate_tokens", 10);
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "postgres-backend")]
 //! Integration tests for credit flow in chat generation
 //!
 //! These tests verify that:
