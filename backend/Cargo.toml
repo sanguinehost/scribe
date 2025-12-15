@@ -106,7 +106,7 @@ icu_testdata = "1.5"
 
 # Add missing dependencies here
 # icu = { version = "1.5", features = ["macros"] }
-icu_locid = "1.5"
+icu_locid = "2.0"
 
 validator = { version = "0.20", features = ["derive"] }
 regex = "1.10.4"
