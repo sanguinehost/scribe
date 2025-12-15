@@ -70,7 +70,7 @@ time = { version = "0.3.41", features = ["serde", "serde-well-known"] }
 
 rand = "0.9.1"
 cookie = { version = "0.18.1", features = ["secure"] }
-tower-cookies = { version = "0.10.0", features = ["signed"] } # Aligned with axum-login 0.14.0, added "signed" feature
+tower-cookies = { version = "0.11.0", features = ["signed"] } # Aligned with axum-login 0.14.0, added "signed" feature
 
 lettre = { version = "0.11.15" }
 mime = "0.3.17"
