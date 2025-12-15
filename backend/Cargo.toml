@@ -100,7 +100,7 @@ async-stream = "0.3.6"
 
 # Added for sentence splitting (using ICU4X)
 icu_segmenter = { version = "1.5", features = ["compiled_data"] }
-icu_provider = "1.5"
+icu_provider = "2.1"
 icu_provider_blob = "1.5"
 icu_testdata = "1.5"
 
