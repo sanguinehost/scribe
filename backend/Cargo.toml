@@ -82,7 +82,7 @@ genai = { git = "https://github.com/sanguinehost/rust-genai", rev = "d7460e2" }
 
 reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
-reqwest-retry = { version = "0.7.0"}
+reqwest-retry = { version = "0.8.0"}
 
 qdrant-client = { version = "1.14.0", features = ["serde"] }
 
