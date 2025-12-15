@@ -43,7 +43,7 @@ tower = { version = "0.5.2" }
 tower-http = { version = "0.5.2", features = ["trace", "cors"] }
 tower-sessions = { version = "0.11.1", features = ["signed"] }
 tower-sessions-memory-store = "0.11.1"
-axum-login = "0.14.0" # Compatible with axum 0.7.x
+axum-login = "0.18.0" # Compatible with axum 0.7.x
 bcrypt = "0.17.0"
 argon2 = { version = "0.5.3", features = ["std"] } # Ensure std feature for hash_raw if available, or check API
 secrecy = { version = "0.10.3", features = ["serde"] } # alloc feature removed as it's not standard
