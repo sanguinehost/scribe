@@ -78,6 +78,7 @@ class StreamingService {
 	public connectionStatus = $state<ConnectionStatus>('idle');
 	public currentError = $state<StreamingError | null>(null);
 	public isTyping = $state(false);
+	public latestGameState = $state<Record<string, unknown> | null>(null);
 
 	// Private state for connection management
 	private activeConnection: ReturnType<typeof source> | null = null;
@@ -278,6 +279,14 @@ class StreamingService {
 			message.displayedContent = buffer.content; // Update displayed content for UI
 			message.isAnimating = false; // TypewriterMessage handles animation
 		}
+	}
+
+	/**
+	 * Handle game state update event
+	 */
+	private handleGameStateUpdateEvent(gameState: Record<string, unknown>): void {
+		console.log('📡 StreamingService received game_state event:', gameState);
+		this.latestGameState = gameState;
 	}
 
 	/**
@@ -693,6 +702,13 @@ class StreamingService {
 				}
 			});
 			this.activeSubscriptions.push(tokenUnsub);
+
+			const gameStateUnsub = this.activeConnection.select('game_state').subscribe((data) => {
+				if (data) {
+					this.handleStreamMessage({ event: 'game_state', data }, assistantMessageId);
+				}
+			});
+			this.activeSubscriptions.push(gameStateUnsub);
 		} catch (error) {
 			logger.error(
 				'streaming-service',
@@ -787,10 +803,6 @@ class StreamingService {
 							const message = this.messages.find((msg) => msg.id === messageId);
 							if (message) {
 								// Ensure final content is synced
-								message.content = messageBuffer.content;
-								message.displayedContent = messageBuffer.content;
-								message.isAnimating = false; // Stop animation
-								message.shouldAnimate = false;
 								message.isRegenerating = false;
 							}
 						}
@@ -809,6 +821,17 @@ class StreamingService {
 
 						// Try to close if we have everything
 						this.tryCloseConnection();
+					}
+					break;
+
+				case 'game_state':
+					if (_event.data) {
+						try {
+							const gameState = JSON.parse(_event.data);
+							this.handleGameStateUpdateEvent(gameState);
+						} catch (e) {
+							logger.error('streaming-service', 'Failed to parse game state', e as Error);
+						}
 					}
 					break;
 

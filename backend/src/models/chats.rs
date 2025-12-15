@@ -192,6 +192,9 @@ pub struct Chat {
     pub total_actual_charge: crate::db::DbDecimal,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    // Game Master Agent fields
+    pub game_state: Option<crate::DbJson>,
+    pub game_master_mode_enabled: bool,
 }
 
 impl std::fmt::Debug for Chat {
@@ -269,6 +272,8 @@ impl std::fmt::Debug for Chat {
                     .as_ref()
                     .map(|_| "[REDACTED_BYTES]"),
             )
+            .field("game_state", &self.game_state)
+            .field("game_master_mode_enabled", &self.game_master_mode_enabled)
             .finish()
     }
 }
@@ -322,6 +327,9 @@ pub struct NewChat {
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    // Game Master Agent fields
+    pub game_state: Option<crate::DbJson>,
+    pub game_master_mode_enabled: bool,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -393,6 +401,8 @@ impl std::fmt::Debug for NewChat {
                     .as_ref()
                     .map(|_| "[REDACTED_BYTES]"),
             )
+            .field("game_state", &self.game_state)
+            .field("game_master_mode_enabled", &self.game_master_mode_enabled)
             .finish()
     }
 }
@@ -1861,6 +1871,8 @@ pub struct ChatForClient {
     pub total_completion_tokens: i32,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
+    pub game_state: Option<crate::DbJson>,
+    pub game_master_mode_enabled: bool,
 }
 
 impl Chat {
@@ -1988,6 +2000,15 @@ impl Chat {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
             total_actual_cost: self.total_actual_cost,
+            game_state: {
+                if let Some(ref gs) = self.game_state {
+                    tracing::info!("SERIALIZATION_DEBUG: Chat {} has game_state: {:?}", self.id, gs);
+                } else {
+                    tracing::info!("SERIALIZATION_DEBUG: Chat {} has NO game_state", self.id);
+                }
+                self.game_state.clone()
+            },
+            game_master_mode_enabled: self.game_master_mode_enabled,
         })
     }
 
@@ -2125,6 +2146,8 @@ pub struct ChatSettingsResponse {
     pub active_custom_persona_id: Option<crate::db::DbId>,
     // Prompt template to use for this chat session
     pub prompt_template_id: Option<String>,
+    // Game Master mode flag
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -2157,6 +2180,7 @@ impl std::fmt::Debug for ChatSettingsResponse {
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
             .field("prompt_template_id", &self.prompt_template_id)
+            .field("game_master_mode_enabled", &self.game_master_mode_enabled)
             .finish()
     }
 }
@@ -2182,6 +2206,7 @@ impl From<Chat> for ChatSettingsResponse {
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
+            game_master_mode_enabled: chat.game_master_mode_enabled,
         }
     }
 }
@@ -2227,6 +2252,8 @@ pub struct UpdateChatSettingsRequest {
     // Prompt template to use for this chat session
     #[validate(custom(function = "validate_optional_template_id"))]
     pub prompt_template_id: Option<String>,
+    // Game Master mode flag
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -2258,6 +2285,7 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             .field("chronicle_id", &self.chronicle_id)
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
+            .field("game_master_mode_enabled", &self.game_master_mode_enabled)
             .finish()
     }
 }

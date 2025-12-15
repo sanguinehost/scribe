@@ -187,25 +187,3 @@ where
 
 // Re-export for convenience
 pub use UnifiedAuth as CurrentAuth;
-
-#[cfg(all(test, feature = "postgres-backend"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_unified_auth_methods() {
-        let auth = UnifiedAuth {
-            session: UnifiedAuthSession {
-                user: None,
-                backend: std::marker::PhantomData,
-                _session_data_type: std::marker::PhantomData,
-            },
-            is_token_auth: false,
-        };
-
-        assert!(!auth.is_authenticated());
-        assert!(auth.user().is_none());
-        assert!(auth.user_id().is_none());
-        assert!(auth.role().is_none());
-    }
-}

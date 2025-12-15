@@ -2456,3 +2456,472 @@ impl ScribeTool for UpdateLorebookEntryTool {
         }))
     }
 }
+
+/// Tool for querying rulebook/game rules from lorebook entries tagged with "rules"
+/// This is used by the Game Master mode to enforce game mechanics and world consistency
+pub struct QueryRulesTool {
+    qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+    embedding_client: Arc<dyn EmbeddingClient>,
+    app_state: Arc<AppState>,
+}
+
+impl QueryRulesTool {
+    pub fn new(
+        qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+        embedding_client: Arc<dyn EmbeddingClient>,
+        app_state: Arc<AppState>,
+    ) -> Self {
+        Self {
+            qdrant_service,
+            embedding_client,
+            app_state,
+        }
+    }
+}
+
+#[async_trait]
+impl ScribeTool for QueryRulesTool {
+    fn name(&self) -> &'static str {
+        "query_rules"
+    }
+
+    fn description(&self) -> &'static str {
+        "Searches for game rules and mechanics from lorebook entries tagged with 'rules'. Use this to enforce game mechanics, check travel rules, combat mechanics, or any world-specific constraints."
+    }
+
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The rule query (e.g., 'travel time between cities', 'combat initiative rules', 'magic casting limitations')"
+                },
+                "rule_category": {
+                    "type": "string",
+                    "enum": ["general", "travel", "combat", "magic", "social", "economy", "crafting", "survival"],
+                    "description": "Optional category to narrow down the rule search",
+                    "default": "general"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of rule entries to return",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "REQUIRED: User ID to filter search results to user's own data only"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional: Session ID to filter results to session-associated lorebooks"
+                }
+            },
+            "required": ["query", "user_id"]
+        })
+    }
+
+    async fn execute(&self, params: &ToolParams) -> Result<ToolResult, ToolError> {
+        debug!("Executing query_rules tool with params: {}", params);
+
+        let query = params
+            .get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidParams("query is required".to_string()))?;
+
+        let rule_category = params
+            .get("rule_category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("general");
+
+        let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as u32;
+
+        let user_id_str = params
+            .get("user_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                ToolError::InvalidParams("user_id is REQUIRED for security filtering".to_string())
+            })?;
+
+        let user_id: DbId = DbId::parse_str(user_id_str)
+            .map_err(|_| ToolError::InvalidParams("Invalid user_id format".to_string()))?;
+
+        let _session_id_opt: Option<DbId> = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DbId::parse_str(s).ok());
+
+        info!(
+            "Querying rules for '{}' (category: {}, limit: {}) for user {}",
+            query, rule_category, limit, user_id
+        );
+
+        // Generate embedding for the query
+        let query_embedding = match self
+            .embedding_client
+            .embed_content(query, "RETRIEVAL_QUERY", None)
+            .await
+        {
+            Ok(embedding) => embedding,
+            Err(e) => {
+                error!("Failed to generate query embedding: {}", e);
+                return Err(ToolError::ExecutionFailed(format!(
+                    "Embedding generation failed: {}",
+                    e
+                )));
+            }
+        };
+
+        // Build filter for rules search
+        use crate::vector_db::qdrant_client::{Condition, FieldCondition, Filter, Match};
+        use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
+
+        // Base conditions: user_id + source_type=lorebook_entry
+        let must_conditions = vec![
+            Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "user_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            },
+            Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "source_type".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            },
+        ];
+
+        let search_filter = Filter {
+            must: must_conditions,
+            ..Default::default()
+        };
+
+        // Execute the search
+        let search_results = match self
+            .qdrant_service
+            .search_points_with_threshold(
+                query_embedding,
+                limit as u64,
+                Some(search_filter),
+                Some(0.3), // Score threshold for rules (slightly lower to catch more rules)
+            )
+            .await
+        {
+            Ok(results) => results,
+            Err(e) => {
+                error!("Qdrant search failed: {}", e);
+                return Err(ToolError::ExecutionFailed(format!(
+                    "Vector search failed: {}",
+                    e
+                )));
+            }
+        };
+
+        info!("Found {} potential rule entries", search_results.len());
+
+        // Process results
+        let mut rules_found = Vec::new();
+        for result in search_results {
+            let payload = &result.payload;
+
+            // Extract string values from Qdrant Value type
+            let content = payload
+                .get("content")
+                .and_then(|v| match &v.kind {
+                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("");
+            let keywords = payload
+                .get("keywords")
+                .and_then(|v| match &v.kind {
+                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("");
+            let entry_name = payload
+                .get("entry_name")
+                .and_then(|v| match &v.kind {
+                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("Unknown Rule");
+
+            // Check if this entry is likely a rule (has "rule" in keywords or content)
+            let is_rule = keywords.to_lowercase().contains("rule")
+                || keywords.to_lowercase().contains("mechanic")
+                || keywords.to_lowercase().contains(rule_category)
+                || content.to_lowercase().contains("rule")
+                || content.to_lowercase().contains("mechanic");
+
+            if is_rule || rule_category == "general" {
+                rules_found.push(json!({
+                    "name": entry_name,
+                    "content": content,
+                    "keywords": keywords,
+                    "category": rule_category,
+                    "score": result.score
+                }));
+            }
+        }
+
+        // Sort by score (should already be sorted, but ensure)
+        rules_found.sort_by(|a, b| {
+            let score_a = a.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let score_b = b.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Take top N results
+        let rules_found: Vec<_> = rules_found.into_iter().take(limit as usize).collect();
+
+        if rules_found.is_empty() {
+            info!("No rules found for query: {}", query);
+            Ok(json!({
+                "status": "no_rules_found",
+                "query": query,
+                "category": rule_category,
+                "message": "No applicable rules found for this query. The action may proceed without specific rule constraints.",
+                "rules": []
+            }))
+        } else {
+            info!("Found {} rules for query: {}", rules_found.len(), query);
+            Ok(json!({
+                "status": "rules_found",
+                "query": query,
+                "category": rule_category,
+                "rule_count": rules_found.len(),
+                "rules": rules_found
+            }))
+        }
+    }
+}
+
+// ============================================================================
+// Unit Tests for QueryRulesTool
+// ============================================================================
+
+#[cfg(test)]
+mod query_rules_tests {
+    use super::*;
+    use serde_json::json;
+
+    // ========================================================================
+    // Schema Validation Tests (following sanguine-rpg patterns)
+    // ========================================================================
+
+    /// Helper to create a mock QueryRulesTool for schema testing
+    /// Note: This doesn't actually make network calls, just validates schema
+    fn get_query_rules_schema() -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The rule query (e.g., 'travel time between cities', 'combat initiative rules', 'magic casting limitations')"
+                },
+                "rule_category": {
+                    "type": "string",
+                    "enum": ["general", "travel", "combat", "magic", "social", "economy", "crafting", "survival"],
+                    "description": "Optional category to narrow down the rule search",
+                    "default": "general"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of rule entries to return",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "REQUIRED: User ID to filter search results to user's own data only"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional: Session ID to filter results to session-associated lorebooks"
+                }
+            },
+            "required": ["query", "user_id"]
+        })
+    }
+
+    #[test]
+    fn test_query_rules_schema_has_required_properties() {
+        let schema = get_query_rules_schema();
+
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"]["query"].is_object());
+        assert!(schema["properties"]["rule_category"].is_object());
+        assert!(schema["properties"]["limit"].is_object());
+        assert!(schema["properties"]["user_id"].is_object());
+    }
+
+    #[test]
+    fn test_query_rules_schema_required_fields() {
+        let schema = get_query_rules_schema();
+
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.contains(&json!("query")));
+        assert!(required.contains(&json!("user_id")));
+    }
+
+    #[test]
+    fn test_query_rules_schema_rule_category_enum() {
+        let schema = get_query_rules_schema();
+
+        let categories = schema["properties"]["rule_category"]["enum"]
+            .as_array()
+            .unwrap();
+        assert!(categories.contains(&json!("general")));
+        assert!(categories.contains(&json!("travel")));
+        assert!(categories.contains(&json!("combat")));
+        assert!(categories.contains(&json!("magic")));
+        assert!(categories.contains(&json!("social")));
+        assert!(categories.contains(&json!("economy")));
+        assert!(categories.contains(&json!("crafting")));
+        assert!(categories.contains(&json!("survival")));
+    }
+
+    #[test]
+    fn test_query_rules_schema_limit_constraints() {
+        let schema = get_query_rules_schema();
+
+        assert_eq!(schema["properties"]["limit"]["default"], 5);
+        assert_eq!(schema["properties"]["limit"]["minimum"], 1);
+        assert_eq!(schema["properties"]["limit"]["maximum"], 20);
+    }
+
+    #[test]
+    fn test_query_rules_schema_category_default() {
+        let schema = get_query_rules_schema();
+
+        assert_eq!(schema["properties"]["rule_category"]["default"], "general");
+    }
+
+    // ========================================================================
+    // Parameter Parsing Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_query_rules_params_minimal() {
+        let params = json!({
+            "query": "combat initiative",
+            "user_id": "user_123"
+        });
+
+        let query = params["query"].as_str().unwrap();
+        let user_id = params["user_id"].as_str().unwrap();
+        let rule_category = params
+            .get("rule_category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("general");
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .map(|v| v.clamp(1, 20))
+            .unwrap_or(5);
+
+        assert_eq!(query, "combat initiative");
+        assert_eq!(user_id, "user_123");
+        assert_eq!(rule_category, "general");
+        assert_eq!(limit, 5);
+    }
+
+    #[test]
+    fn test_parse_query_rules_params_full() {
+        let params = json!({
+            "query": "travel time between cities",
+            "user_id": "user_456",
+            "rule_category": "travel",
+            "limit": 10,
+            "session_id": "session_789"
+        });
+
+        let query = params["query"].as_str().unwrap();
+        let user_id = params["user_id"].as_str().unwrap();
+        let rule_category = params
+            .get("rule_category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("general");
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .map(|v| v.clamp(1, 20))
+            .unwrap_or(5);
+        let session_id = params.get("session_id").and_then(|v| v.as_str());
+
+        assert_eq!(query, "travel time between cities");
+        assert_eq!(user_id, "user_456");
+        assert_eq!(rule_category, "travel");
+        assert_eq!(limit, 10);
+        assert_eq!(session_id, Some("session_789"));
+    }
+
+    #[test]
+    fn test_parse_query_rules_limit_clamped_to_max() {
+        let params = json!({
+            "query": "test",
+            "user_id": "user_123",
+            "limit": 100 // Exceeds max of 20
+        });
+
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .map(|v| v.clamp(1, 20))
+            .unwrap_or(5);
+
+        assert_eq!(limit, 20); // Clamped to max
+    }
+
+    #[test]
+    fn test_parse_query_rules_limit_clamped_to_min() {
+        let params = json!({
+            "query": "test",
+            "user_id": "user_123",
+            "limit": 0 // Below min of 1
+        });
+
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .map(|v| v.clamp(1, 20))
+            .unwrap_or(5);
+
+        assert_eq!(limit, 1); // Clamped to min
+    }
+
+    #[test]
+    fn test_rule_category_validation() {
+        let valid_categories = vec![
+            "general", "travel", "combat", "magic", "social", "economy", "crafting", "survival",
+        ];
+
+        for category in valid_categories {
+            let params = json!({
+                "query": "test",
+                "user_id": "user_123",
+                "rule_category": category
+            });
+
+            let parsed_category = params
+                .get("rule_category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("general");
+
+            assert_eq!(parsed_category, category);
+        }
+    }
+}

@@ -324,7 +324,7 @@ mod tests {
             timestamp: Utc::now().into(),
             ip_address: "203.0.113.0".to_string(),
             event_id: "evt_abc123xyz".to_string(),
-            original_timestamp: original_ts,
+            original_timestamp: original_ts.into(),
             replay_delay_seconds: 7200,
         };
 

@@ -11,6 +11,7 @@ pub mod email_service;
 pub mod embeddings;
 pub mod encryption_service;
 pub mod extraction_dispatcher;
+pub mod game_state_service;
 pub mod gemini_token_client;
 pub mod history_manager;
 pub mod hybrid_token_counter;
@@ -19,6 +20,7 @@ pub mod narrative_intelligence_service;
 #[cfg(feature = "payment")]
 pub mod payment;
 pub mod rag_budget_manager;
+pub mod reconciliation_detector;
 pub mod safety_utils;
 pub mod secure_llm_service;
 pub mod template_preference_service;

@@ -42,6 +42,7 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<String>,          // 21: user_persona_name (NEW - for template substitution)
     Option<crate::db::DbId>, // 22: player_chronicle_id (NEW - for narrative processing)
     Option<String>,          // 23: agent_mode (NEW - for context enrichment)
+    Option<bool>,            // 24: game_master_mode_enabled (NEW - for Game Master processing)
 );
 
 /// Structured chunk with integrity checking for reliable streaming
@@ -67,4 +68,5 @@ pub enum ScribeSseEvent {
         variant_count: i32,
         current_variant_index: i32,
     },
+    GameState(serde_json::Value),
 }

@@ -29,9 +29,13 @@ use crate::{
         embeddings::RetrievedChunk,
         ChronicleService, LorebookService,
     },
-    state::AppState,
     vector_db::qdrant_client::QdrantClientServiceTrait,
+    AppState,
 };
+
+use crate::models::game_state::GameState;
+use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
+use crate::services::game_state_service::ReconciliationResult;
 
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 
@@ -369,6 +373,87 @@ impl NarrativeIntelligenceService {
                 Ok(NarrativeProcessingResult::default())
             }
         }
+    }
+
+    /// Process game state updates (Game Master Mode)
+    ///
+    /// This method handles the "Game Master" logic:
+    /// 1. Fetches current game state
+    /// 2. Uses LLM to determine state changes based on conversation
+    /// 3. Reconciles changes
+    /// 4. Persists new state to DB
+    pub async fn process_game_state(
+        &self,
+        chat_session_id: crate::db::DbId,
+        last_user_message: &str,
+        last_assistant_message: &str,
+        conversation_summary: &str,
+    ) -> Result<Option<ReconciliationResult>, AppError> {
+        let start_time = std::time::Instant::now();
+
+        // 1. Fetch current game state from DB
+        let mut conn = crate::db::get_conn(&self.app_state.pool).await?;
+
+        let current_state_db: Option<crate::DbJson> = conn
+            .interact(move |db_conn| {
+                chat_sessions_dsl::chat_sessions
+                    .select(chat_sessions_dsl::game_state)
+                    .filter(chat_sessions_dsl::id.eq(chat_session_id))
+                    .first::<Option<crate::DbJson>>(db_conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact error: {e}")))??
+            .flatten();
+
+        let current_state_json: Option<serde_json::Value> = current_state_db.map(|j| j.into());
+
+        let current_state = if let Some(json) = current_state_json {
+            serde_json::from_value::<GameState>(json).ok()
+        } else {
+            None
+        };
+
+        // 2. Execute the game state update workflow
+        let result = self
+            .narrative_runner
+            .process_game_state_update(
+                current_state.as_ref(),
+                conversation_summary,
+                last_user_message,
+                last_assistant_message,
+            )
+            .await?;
+
+        // 3. Persist the new state
+        let new_state_json = serde_json::to_value(&result.final_state).map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to serialize game state: {e}"))
+        })?;
+
+        let new_state_db: crate::DbJson = new_state_json.into();
+
+        conn.interact(move |db_conn| {
+            diesel::update(
+                chat_sessions_dsl::chat_sessions.filter(chat_sessions_dsl::id.eq(chat_session_id)),
+            )
+            .set(chat_sessions_dsl::game_state.eq(new_state_db))
+            .execute(db_conn)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact error: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to update game state: {e}"))
+        })?;
+
+        let duration = start_time.elapsed();
+        info!(
+            "Game state updated for chat {}: {} changes applied in {}ms",
+            chat_session_id,
+            result.applied_changes.len(),
+            duration.as_millis()
+        );
+
+        Ok(Some(result))
     }
 
     /// Future method for batch processing (game events, etc.)

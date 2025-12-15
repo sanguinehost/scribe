@@ -29,6 +29,7 @@ type ChatStreamEvent =
 			event: 'messageSaved';
 			data: { messageId: string; variantCount: number; currentVariantIndex: number };
 	  }
+	| { event: 'gameStateUpdate'; data: { gameState: Record<string, unknown> } }
 	| { event: 'done' };
 
 const DEFAULT_CONFIG: StreamingConfig = {
@@ -53,6 +54,7 @@ class DesktopStreamingService {
 	public connectionStatus = $state<ConnectionStatus>('idle');
 	public currentError = $state<StreamingError | null>(null);
 	public isTyping = $state(false);
+	public latestGameState = $state<Record<string, unknown> | null>(null);
 
 	// Private state for connection management
 	private retryCount = 0;
@@ -441,6 +443,10 @@ class DesktopStreamingService {
 				this.handleDoneEvent(assistantMessageId);
 				break;
 
+			case 'gameStateUpdate':
+				this.handleGameStateUpdateEvent(event.data.gameState);
+				break;
+
 			default:
 				logger.warn('desktop-streaming', 'Unknown event type', {
 					eventType: (event as { event: string }).event
@@ -769,6 +775,16 @@ class DesktopStreamingService {
 		this.isTyping = false;
 		this.connectionCloseState.doneReceived = true;
 		this.tryCloseConnection();
+	}
+
+	/**
+	 * Handle game state update event from backend
+	 */
+	private handleGameStateUpdateEvent(gameState: Record<string, unknown>): void {
+		logger.debug('desktop-streaming', 'Game state update received', {
+			gameStateKeys: Object.keys(gameState)
+		});
+		this.latestGameState = gameState;
 	}
 
 	/**

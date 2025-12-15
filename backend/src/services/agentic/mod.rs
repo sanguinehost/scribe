@@ -20,6 +20,7 @@ pub mod factory;
 pub mod narrative_tools;
 pub mod persona_context;
 pub mod registry;
+pub mod state_manager_agent;
 pub mod tools;
 
 #[cfg(test)]
@@ -39,4 +40,5 @@ pub use narrative_tools::{
 };
 pub use persona_context::UserPersonaContext;
 pub use registry::ToolRegistry;
+pub use state_manager_agent::{StateManagerAgent, StateManagerConfig};
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};

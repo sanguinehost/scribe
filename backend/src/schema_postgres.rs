@@ -341,6 +341,9 @@ diesel::table! {
         total_actual_charge -> Numeric,
         narrative_style_override_ciphertext -> Nullable<Bytea>,
         narrative_style_override_nonce -> Nullable<Bytea>,
+        // Game Master Agent columns
+        game_state -> Nullable<Jsonb>,
+        game_master_mode_enabled -> Bool,
     }
 }
 

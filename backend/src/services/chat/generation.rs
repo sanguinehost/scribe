@@ -206,6 +206,7 @@ pub async fn get_session_data_for_generation(
         raw_character_system_prompt,   // This is the raw system_prompt from the character itself
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
         agent_mode_from_session,       // The agent mode for context enrichment
+        game_master_mode_enabled_from_session, // The Game Master mode flag
     ) = {
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
@@ -264,13 +265,14 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
-            // Query 2: Additional session fields (5 fields)
+            // Query 2: Additional session fields (6 fields)
             let (
                 model_prov,
                 gem_think_budget,
                 gem_enable_code_exec,
                 player_chronicle_id,
                 agent_mode,
+                game_master_mode_enabled,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -280,6 +282,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::gemini_enable_code_execution,
                     chat_sessions::player_chronicle_id,
                     chat_sessions::agent_mode,
+                    chat_sessions::game_master_mode_enabled,
                 ))
                 .first::<(
                     Option<String>,
@@ -287,6 +290,7 @@ pub async fn get_session_data_for_generation(
                     Option<bool>,
                     Option<crate::db::DbId>,
                     Option<String>,
+                    bool,
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -654,6 +658,7 @@ pub async fn get_session_data_for_generation(
                 raw_character_system_prompt_from_db, // The new one
                 player_chronicle_id,
                 agent_mode,
+                Some(game_master_mode_enabled),
             ))
         })
         .await?
@@ -1412,6 +1417,7 @@ pub async fn get_session_data_for_generation(
         user_persona_name,                  // 21: user_persona_name (Option<String>) - NEW
         player_chronicle_id_from_session, // 22: player_chronicle_id (Option<crate::db::DbId>) - NEW
         agent_mode_from_session,          // 23: agent_mode (Option<String>) - NEW
+        game_master_mode_enabled_from_session, // 24: game_master_mode_enabled (Option<bool>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
@@ -1439,6 +1445,7 @@ pub struct StreamAiParams {
     pub player_chronicle_id: Option<crate::db::DbId>, // For narrative processing
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool,                // Whether credits should be charged for this message
+    pub game_master_mode_enabled: bool,      // Whether Game Master mode is enabled for this session
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1684,7 +1691,8 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             character_name: params.character_name.clone(),
             player_chronicle_id: params.player_chronicle_id,
             variant_of: params.variant_of,
-            charge_credits: params.charge_credits, // Pass through from original params
+            charge_credits: params.charge_credits,
+            game_master_mode_enabled: params.game_master_mode_enabled,
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -1753,6 +1761,7 @@ pub async fn stream_ai_response_and_save_message(
         player_chronicle_id,
         variant_of,
         charge_credits,
+        game_master_mode_enabled,
     } = params;
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
@@ -2087,6 +2096,7 @@ pub async fn stream_ai_response_and_save_message(
             let accumulated_content_clone = accumulated_content.clone(); // Clone content for the spawned task
             let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
             let charge_credits_clone_full = charge_credits; // Clone charge flag for this task
+            let game_master_mode_enabled_clone = game_master_mode_enabled; // Copy flag for spawned task
 
             tokio::spawn(async move {
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
@@ -2258,6 +2268,78 @@ pub async fn stream_ai_response_and_save_message(
                             }
 
                         info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Completed narrative processing attempt");
+
+                        info!(session_id = %full_session_id_clone, enabled = game_master_mode_enabled_clone, "GAME_MASTER_DEBUG: Checking Game Master mode flag");
+
+                        // --- Game Master Mode Processing ---
+                        if game_master_mode_enabled_clone {
+                            info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: Game Master mode enabled, processing state update");
+
+                            // We need the last user message for the reconciliation context
+                            // We can get it from recent_messages (last one should be user, second to last is assistant which we just saved)
+                            // Wait, get_messages_for_session returns *all* messages or a limit?
+                            // It returns recent ones.
+                            // The saved message is the assistant response.
+                            // The one before that should be the user message.
+
+                            // We already fetched recent_messages for narrative processing.
+                            // If we didn't run narrative processing, we might need to fetch them now.
+                            // But recent_messages variable is inside the narrative block scope?
+                            // Ah, line 2212 defines recent_messages inside the block.
+                            // I should probably lift the message fetching out or re-fetch.
+                            // Re-fetching is safer/easier to implement right now without refactoring scopes.
+
+                             let recent_messages_gm = match crate::services::chat::message_handling::get_messages_for_session(
+                                &state_for_full_save.pool,
+                                full_user_id_clone,
+                                full_session_id_clone,
+                            ).await {
+                                Ok(messages) => messages,
+                                Err(e) => {
+                                    error!(session_id = %full_session_id_clone, error = %e, "GAME_MASTER_DEBUG: Failed to retrieve messages for GM processing");
+                                    Vec::new()
+                                }
+                            };
+
+                            // Find the last user message
+                            let last_user_message_bytes = recent_messages_gm.iter()
+                                .rev()
+                                .find(|m| m.message_type == crate::models::chats::MessageRole::User)
+                                .map(|m| m.content.clone())
+                                .unwrap_or_default();
+
+                            let last_user_message = String::from_utf8_lossy(&last_user_message_bytes).to_string();
+
+                            // The assistant message is the one we just saved (accumulated_content_clone)
+                            let last_assistant_message = accumulated_content_clone.clone();
+
+                            // Conversation summary - for now just use the last exchange
+                            let conversation_summary = format!("User: {}\nAssistant: {}", last_user_message, last_assistant_message);
+
+                            match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_game_state(
+                                full_session_id_clone,
+                                &last_user_message,
+                                &last_assistant_message,
+                                &conversation_summary,
+                            ).await {
+                                Ok(Some(result)) => {
+                                    info!(
+                                        session_id = %full_session_id_clone,
+                                        changes = result.applied_changes.len(),
+                                        "GAME_MASTER_DEBUG: Game state updated successfully"
+                                    );
+                                    // Send the updated game state to the client via SSE
+                                    let _ = token_sender_clone.send(ScribeSseEvent::GameState(serde_json::to_value(&result.final_state).unwrap_or_default()));
+                                    info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: Sent GameState SSE event");
+                                }
+                                Ok(None) => {
+                                    info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: No game state changes needed");
+                                }
+                                Err(e) => {
+                                    error!(session_id = %full_session_id_clone, error = %e, "GAME_MASTER_DEBUG: Failed to process game state update");
+                                }
+                            }
+                        }
                     }
                     Err(e) => {
                         error!(error = ?e, session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Error saving full AI response via save_message (chat_service)");
@@ -2288,42 +2370,27 @@ pub async fn stream_ai_response_and_save_message(
         );
 
         if !stream_error_occurred && !accumulated_content.is_empty() {
-            info!(session_id = %stream_session_id, "Waiting for message_saved and token_usage events from spawned task");
+            info!(session_id = %stream_session_id, "Waiting for events from spawned task");
 
-            // CRITICAL: The spawned task sends TWO events through the channel:
-            // 1. MessageSaved event
-            // 2. TokenUsage event
-            // We need to receive BOTH events, not just one!
+            // Drop the original sender so the channel closes when the spawned task finishes
+            drop(token_sender);
 
-            // Receive first event (MessageSaved)
-            match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
-                Ok(Some(event)) => {
-                    info!(session_id = %stream_session_id, event_type = ?event, "Received first event from spawned task (MessageSaved), yielding to stream");
-                    yield Ok(event);
-                }
-                Ok(None) => {
-                    warn!(session_id = %stream_session_id, "Channel closed without sending MessageSaved event");
-                    yield Ok(ScribeSseEvent::Error("Processing completed without message_saved event".to_string()));
-                }
-                Err(_) => {
-                    error!(session_id = %stream_session_id, "Timeout waiting for MessageSaved event from spawned task");
-                    yield Ok(ScribeSseEvent::Error("Processing timeout - message may be incomplete".to_string()));
-                }
-            }
-
-            // Receive second event (TokenUsage)
-            match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
-                Ok(Some(event)) => {
-                    info!(session_id = %stream_session_id, event_type = ?event, "Received second event from spawned task (TokenUsage), yielding to stream");
-                    yield Ok(event);
-                }
-                Ok(None) => {
-                    warn!(session_id = %stream_session_id, "Channel closed without sending TokenUsage event");
-                    yield Ok(ScribeSseEvent::Error("Processing completed without token_usage event".to_string()));
-                }
-                Err(_) => {
-                    error!(session_id = %stream_session_id, "Timeout waiting for TokenUsage event from spawned task");
-                    yield Ok(ScribeSseEvent::Error("Processing timeout - token usage incomplete".to_string()));
+            // Loop to receive all events from the spawned task (MessageSaved, TokenUsage, GameState, etc.)
+            loop {
+                match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
+                    Ok(Some(event)) => {
+                        info!(session_id = %stream_session_id, event_type = ?event, "Received event from spawned task, yielding to stream");
+                        yield Ok(event);
+                    }
+                    Ok(None) => {
+                        info!(session_id = %stream_session_id, "Channel closed, all events received");
+                        break;
+                    }
+                    Err(_) => {
+                        error!(session_id = %stream_session_id, "Timeout waiting for events from spawned task");
+                        yield Ok(ScribeSseEvent::Error("Processing timeout - some events may be missing".to_string()));
+                        break;
+                    }
                 }
             }
         }

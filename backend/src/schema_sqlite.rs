@@ -277,6 +277,9 @@ diesel::table! {
         total_modified_cost -> Double,
         total_credit_cost -> Integer,
         total_actual_charge -> Double,
+        // Game Master Agent columns
+        game_state -> Nullable<Text>,
+        game_master_mode_enabled -> Bool,
     }
 }
 

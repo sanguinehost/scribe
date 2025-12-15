@@ -4,7 +4,7 @@
 	import ModelSelector from './model-selector.svelte';
 	import { Badge as BadgeComponent } from './ui/badge';
 	import { Button as _ButtonComponent } from './ui/button';
-	import { ScrollText, BookMarked } from 'lucide-svelte';
+	import { ScrollText, BookMarked, Crown } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
@@ -16,21 +16,25 @@
 	import { Button } from '$lib/components/ui/button';
 
 	let {
-		user: _user,
+		user,
 		chat,
 		readonly,
-		onOpenExtractDialog
+		onOpenExtractDialog,
+		onToggleGameMasterPanel
 	}: {
 		user: User | undefined;
 		chat: ScribeChatSession | undefined; // Use Scribe type
 		readonly: boolean;
 		onOpenExtractDialog?: () => void;
+		onToggleGameMasterPanel?: () => void;
 	} = $props();
 
 	const _sidebar = useSidebar();
 
 	// Chronicle state management (same pattern as ChatConfigPanel)
 	let currentChronicleId = $state<string | null>(null);
+	// Derive game master mode from chat prop directly to ensure reactivity
+	let gameMasterModeEnabled = $derived(chat?.game_master_mode_enabled ?? false);
 	let isLoadingSettings = $state(false);
 
 	// Get chronicle info if this chat belongs to one
@@ -104,7 +108,11 @@
 				// Update currentChronicleId from the fresh backend settings
 				// This ensures the UI shows the correct chronicle association from the database
 				currentChronicleId = settings.chronicle_id || null;
-				console.log('[Chat Header] Loaded settings:', { chronicleId: currentChronicleId });
+				// gameMasterModeEnabled is now derived from chat prop
+				console.log('[Chat Header] Loaded settings:', {
+					chronicleId: currentChronicleId,
+					gameMasterModeEnabled
+				});
 			} else {
 				console.error('[Chat Header] Failed to load chat settings:', result.error);
 				// Fallback to chat prop if API fails
@@ -167,6 +175,17 @@
 					showPurchaseButton={true}
 					onPurchaseClick={handlePurchaseClick}
 				/>
+			{/if}
+			{#if gameMasterModeEnabled}
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={() => onToggleGameMasterPanel?.()}
+					class="gap-1.5 border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-300 dark:hover:bg-purple-950/50"
+				>
+					<Crown class="h-4 w-4" />
+					GM
+				</Button>
 			{/if}
 			<Button variant="outline" size="sm" onclick={() => onOpenExtractDialog?.()} class="gap-1.5">
 				<BookMarked class="h-4 w-4" />

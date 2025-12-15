@@ -1684,8 +1684,8 @@ mod tests {
             creator_comment: None,
             creator_comment_nonce: None,
             first_mes: None,
-            created_at: dt,
-            updated_at: dt,
+            created_at: dt.into(),
+            updated_at: dt.into(),
         };
 
         // Serialize

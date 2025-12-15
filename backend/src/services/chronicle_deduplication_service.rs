@@ -405,7 +405,7 @@ impl ChronicleDeduplicationService {
 mod tests {
     use super::*;
     use crate::db::DbId;
-    use crate::DbId;
+
     use chrono::Utc;
 
     #[tokio::test]
@@ -413,7 +413,8 @@ mod tests {
         let test_app = crate::test_helpers::spawn_app(false, false, false).await;
         let pool = test_app.db_pool.clone();
 
-        let service = ChronicleDeduplicationService::new(pool, None);
+        let mock_ai_client = std::sync::Arc::new(crate::test_helpers::MockAiClient::new());
+        let service = ChronicleDeduplicationService::new(pool, mock_ai_client, None);
         assert_eq!(service.config.time_window_minutes, 3);
         assert_eq!(service.config.similarity_threshold, 0.90);
     }
@@ -422,7 +423,8 @@ mod tests {
     async fn test_content_similarity_calculation() {
         let test_app = crate::test_helpers::spawn_app(false, false, false).await;
         let pool = test_app.db_pool.clone();
-        let service = ChronicleDeduplicationService::new(pool, None);
+        let mock_ai_client = std::sync::Arc::new(crate::test_helpers::MockAiClient::new());
+        let service = ChronicleDeduplicationService::new(pool, mock_ai_client, None);
 
         // Test exact match
         assert_eq!(
@@ -461,10 +463,12 @@ mod tests {
             summary_encrypted: None,
             summary_nonce: None,
             timestamp_iso8601: Utc::now().into(),
-            keywords: None,
+            keywords: crate::db::unified_types::DbStringArray(None),
             keywords_encrypted: None,
             keywords_nonce: None,
             chat_session_id: None,
+            event_data: None,
+            message_variant_id: None,
         }
     }
 }

@@ -22,7 +22,7 @@
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 
-	import ChronicleOptInDialog from './chronicle-opt-in-dialog.svelte';
+	import ChatSetupDialog from './ChatSetupDialog.svelte';
 	import RegenerationModal, { type AnalysisMode } from './messages/regeneration-modal.svelte';
 
 	import { getCurrentUser, getIsAuthReady, getIsAuthenticated } from '$lib/auth.svelte';
@@ -32,10 +32,11 @@
 	import LorebookExtractionDialog from './LorebookExtractionDialog.svelte';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { ChatController } from '$lib/controllers/chat-controller.svelte';
+	import GameStateSidebar from './gamemaster/GameStateSidebar.svelte';
 
 	let {
 		user,
-		chat,
+		chat: chatProp,
 		readonly,
 		initialMessages,
 		character,
@@ -51,14 +52,18 @@
 		initialCursor?: string | null;
 	} = $props();
 
+	// Use controller.chat as single source of truth - controller has $state internally
 	const controller = new ChatController(
-		chat,
+		chatProp,
 		user,
 		character,
 		initialMessages,
 		initialCursor,
 		initialChatInputValue ?? ''
 	);
+
+	// Derived chat accessor for convenience
+	let chat = $derived(controller.chat);
 
 	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 	const _selectedPersonaStore = SelectedPersonaStore.fromContext();
@@ -127,6 +132,79 @@
 	let availablePersonas = $state<UserPersona[]>([]);
 	let currentUserPersona = $state<UserPersona | null>(null);
 	let userPersonaName = $derived(currentUserPersona?.name || 'User');
+
+	// --- Game Master Sidebar State ---
+	let isGameStatePanelOpen = $state(false);
+
+	function handleToggleGameMasterPanel() {
+		isGameStatePanelOpen = !isGameStatePanelOpen;
+	}
+
+	// --- Game State Refresh Effect ---
+	// When streaming closes and game master mode is enabled, refetch chat to get updated game_state
+	let previousStreamStatus = $state<string>('idle');
+	$effect(() => {
+		const currentStatus = controller.activeStreamingService.connectionStatus;
+
+		// Check if stream just closed and game master mode is enabled
+		if (
+			previousStreamStatus === 'open' &&
+			currentStatus === 'closed' &&
+			controller.chat?.game_master_mode_enabled
+		) {
+			console.log('🎮 Stream closed, refetching game state...');
+			// Small delay to allow backend to finish processing game state
+			setTimeout(async () => {
+				if (!controller.chat?.id) return;
+				const result = await _apiClient.getChatById(controller.chat.id);
+				if (result.isOk() && result.value.game_state && controller.chat) {
+					// Parse game_state if it's a JSON string (backend sends it as string)
+					let parsedGameState = result.value.game_state;
+					if (typeof parsedGameState === 'string') {
+						try {
+							parsedGameState = JSON.parse(parsedGameState);
+							console.log('🎮 Parsed game_state from JSON string');
+						} catch (e) {
+							console.error('🎮 Failed to parse game_state JSON:', e);
+						}
+					}
+					controller.chat = { ...controller.chat, game_state: parsedGameState };
+					console.log(
+						'🎮 Game state updated:',
+						JSON.stringify(parsedGameState).substring(0, 200) + '...'
+					);
+				}
+			}, 1500); // 1.5s delay for game state processing
+		}
+		previousStreamStatus = currentStatus;
+	});
+
+	// --- Real-time Game State Sync ---
+	$effect(() => {
+		const latestState = controller.activeStreamingService.latestGameState;
+		if (latestState && controller.chat && controller.chat.game_master_mode_enabled) {
+			// Parse game_state if it's a JSON string (backend/SSE may send as string)
+			let parsedState = latestState;
+			if (typeof parsedState === 'string') {
+				try {
+					parsedState = JSON.parse(parsedState);
+					console.log('🎮 Parsed real-time game_state from JSON string');
+				} catch (e) {
+					console.error('🎮 Failed to parse real-time game_state JSON:', e);
+				}
+			}
+			// Only update if the reference has changed
+			if (controller.chat.game_state !== parsedState) {
+				console.log(
+					'🎮 Real-time Game State Update:',
+					typeof parsedState,
+					Object.keys(parsedState || {})
+				);
+				// Create a new chat object to trigger reactivity
+				controller.chat = { ...controller.chat, game_state: parsedState };
+			}
+		}
+	});
 
 	// Load available personas
 	let hasFetchedPersonas = $state(false);
@@ -284,7 +362,13 @@
 </script>
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
-	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
+	<ChatHeader
+		{user}
+		{chat}
+		{readonly}
+		onOpenExtractDialog={handleOpenExtractDialog}
+		onToggleGameMasterPanel={handleToggleGameMasterPanel}
+	/>
 	{#key `${controller.messages.length}-${controller.firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}
@@ -530,6 +614,13 @@
 		{availablePersonas}
 		on:settingsUpdated={(event) => {
 			console.log('Chat settings updated:', event.detail);
+			// Update controller.chat to trigger Svelte 5 reactivity
+			if (controller.chat && event.detail?.game_master_mode_enabled !== undefined) {
+				controller.chat = {
+					...controller.chat,
+					game_master_mode_enabled: event.detail.game_master_mode_enabled
+				};
+			}
 		}}
 		on:personaChanged={(event) => {
 			console.log('Persona changed:', event.detail);
@@ -537,13 +628,22 @@
 	/>
 {/if}
 
-<!-- Chronicle Opt-in Dialog -->
-<ChronicleOptInDialog
-	open={controller.showChronicleOptIn}
-	onConfirm={(enable, remember) => controller.handleChronicleChoice(enable, remember)}
+<!-- Game Master Sidebar -->
+{#if chat && chat.game_master_mode_enabled}
+	<GameStateSidebar
+		bind:isOpen={isGameStatePanelOpen}
+		gameState={chat.game_state || null}
+		isLoading={false}
+	/>
+{/if}
+
+<!-- Chat Setup Dialog (Chronicles & Game Master) -->
+<ChatSetupDialog
+	open={controller.showSetupDialog}
+	onConfirm={(options) => controller.handleSetupChoice(options)}
 	onOpenChange={(newOpen) => {
-		console.log('[Chat] ChronicleDialog onOpenChange:', newOpen);
-		controller.showChronicleOptIn = newOpen;
+		console.log('[Chat] SetupDialog onOpenChange:', newOpen);
+		controller.showSetupDialog = newOpen;
 	}}
 />
 

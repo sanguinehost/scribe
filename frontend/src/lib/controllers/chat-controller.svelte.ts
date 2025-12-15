@@ -55,9 +55,11 @@ export class ChatController {
 	suggestionsRetryable = $state(false);
 
 	// Chronicles
-	showChronicleOptIn = $state(false);
+	// Setup Dialog (Chronicles & Game Master)
+	showSetupDialog = $state(false);
 	chroniclePreference = $state<boolean | null>(null);
-	hasExplicitChronicleChoice = $state(false);
+	gameMasterPreference = $state<boolean | null>(null);
+	hasExplicitSetupChoice = $state(false);
 	pendingMessage = $state<string | null>(null);
 
 	// Agent Mode
@@ -82,11 +84,15 @@ export class ChatController {
 		this.hasMoreMessages = initialCursor !== null;
 		this.chatInput = initialChatInputValue;
 
-		// Load chronicle preference
+		// Load preferences
 		if (typeof localStorage !== 'undefined') {
-			const pref = localStorage.getItem('chroniclePreference');
-			if (pref !== null) {
-				this.chroniclePreference = pref === 'true';
+			const chroniclePref = localStorage.getItem('chroniclePreference');
+			if (chroniclePref !== null) {
+				this.chroniclePreference = chroniclePref === 'true';
+			}
+			const gmPref = localStorage.getItem('gameMasterPreference');
+			if (gmPref !== null) {
+				this.gameMasterPreference = gmPref === 'true';
 			}
 		}
 	}
@@ -507,37 +513,41 @@ export class ChatController {
 			return;
 		}
 
-		// Check if we need to show chronicle opt-in
-		// Show if: no chronicle, first user message, no saved preference, and no explicit choice made
+		// Check if we need to show setup dialog
+		// Show if: first user message AND (no chronicle OR no GM setting) AND no explicit choice made
 		const _isFirst = this.isFirstUserMessage();
 
 		if (
-			!this.chat?.player_chronicle_id &&
 			_isFirst &&
-			this.chroniclePreference === null &&
-			!this.hasExplicitChronicleChoice
+			!this.hasExplicitSetupChoice &&
+			((!this.chat?.player_chronicle_id && this.chroniclePreference === null) ||
+				(!this.chat?.game_master_mode_enabled && this.gameMasterPreference === null))
 		) {
-			console.log('📖 [sendMessage] SHOWING CHRONICLES OPT-IN DIALOG');
+			console.log('📖 [sendMessage] SHOWING SETUP DIALOG');
 			this.pendingMessage = content;
-			this.showChronicleOptIn = true;
+			this.showSetupDialog = true;
 			return;
 		}
 
-		// If user has a saved preference and no chronicle, handle it automatically
+		// If user has saved preferences, apply them automatically
 		// BUT only if they haven't made an explicit choice for this session
-		if (
-			!this.chat?.player_chronicle_id &&
-			_isFirst &&
-			this.chroniclePreference === true &&
-			!this.hasExplicitChronicleChoice
-		) {
-			console.log('📖 [sendMessage] Auto-creating chronicle based on saved preference...');
-			try {
-				await this.createChronicleForChat();
-				console.log('✅ [sendMessage] Chronicle auto-created successfully');
-			} catch (error) {
-				console.error('❌ [sendMessage] Failed to auto-create chronicle:', error);
-				// Continue anyway - don't block message sending
+		if (_isFirst && !this.hasExplicitSetupChoice) {
+			const shouldCreateChronicle =
+				!this.chat?.player_chronicle_id && this.chroniclePreference === true;
+			const shouldEnableGM =
+				!this.chat?.game_master_mode_enabled && this.gameMasterPreference === true;
+
+			if (shouldCreateChronicle || shouldEnableGM) {
+				console.log('📖 [sendMessage] Auto-applying preferences...');
+				try {
+					await this.applySetupChoices({
+						enableChronicle: shouldCreateChronicle,
+						enableGameMaster: shouldEnableGM,
+						rememberChoice: false // Already remembered
+					});
+				} catch (error) {
+					console.error('❌ [sendMessage] Failed to auto-apply preferences:', error);
+				}
 			}
 		}
 
@@ -552,19 +562,23 @@ export class ChatController {
 		return !hasUserMessage;
 	}
 
-	async handleChronicleChoice(enableChronicle: boolean, rememberChoice: boolean) {
+	async handleSetupChoice(options: {
+		enableChronicle: boolean;
+		enableGameMaster: boolean;
+		rememberChoice: boolean;
+	}) {
 		// Mark that user made an explicit choice for this session
-		this.hasExplicitChronicleChoice = true;
+		this.hasExplicitSetupChoice = true;
 
-		if (rememberChoice && typeof localStorage !== 'undefined') {
-			localStorage.setItem('chroniclePreference', String(enableChronicle));
-			this.chroniclePreference = enableChronicle;
+		if (options.rememberChoice && typeof localStorage !== 'undefined') {
+			localStorage.setItem('chroniclePreference', String(options.enableChronicle));
+			this.chroniclePreference = options.enableChronicle;
+
+			localStorage.setItem('gameMasterPreference', String(options.enableGameMaster));
+			this.gameMasterPreference = options.enableGameMaster;
 		}
 
-		if (enableChronicle && this.chat?.id) {
-			// Create chronicle and associate with chat
-			await this.createChronicleForChat();
-		}
+		await this.applySetupChoices(options);
 
 		// Send the pending message first
 		if (this.pendingMessage) {
@@ -575,7 +589,46 @@ export class ChatController {
 
 		// CRITICAL: Wait for next tick before closing dialog
 		await tick();
-		this.showChronicleOptIn = false;
+		this.showSetupDialog = false;
+	}
+
+	async applySetupChoices(options: {
+		enableChronicle: boolean;
+		enableGameMaster: boolean;
+		rememberChoice: boolean;
+	}) {
+		if (!this.chat?.id) return;
+
+		const promises = [];
+
+		if (options.enableChronicle && !this.chat.player_chronicle_id) {
+			promises.push(this.createChronicleForChat());
+		}
+
+		if (options.enableGameMaster && !this.chat.game_master_mode_enabled) {
+			promises.push(this.enableGameMasterForChat());
+		}
+
+		await Promise.all(promises);
+	}
+
+	async enableGameMasterForChat() {
+		if (!this.chat?.id) return;
+		try {
+			const result = await _apiClient.updateChatSessionSettings(this.chat.id, {
+				game_master_mode_enabled: true
+			});
+			if (result.isOk()) {
+				this.chat.game_master_mode_enabled = true;
+				toast.success('Game Master Mode enabled');
+			} else {
+				console.error('Failed to enable Game Master Mode:', result.error);
+				toast.error('Failed to enable Game Master Mode');
+			}
+		} catch (error) {
+			console.error('Error enabling Game Master Mode:', error);
+			toast.error('Error enabling Game Master Mode');
+		}
 	}
 
 	async createChronicleForChat() {

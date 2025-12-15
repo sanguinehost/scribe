@@ -49,6 +49,16 @@ pub enum AccountStatus {
     Pending,
 }
 
+impl std::fmt::Display for AccountStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active => write!(f, "active"),
+            Self::Locked => write!(f, "locked"),
+            Self::Pending => write!(f, "pending"),
+        }
+    }
+}
+
 // SQLite implementations for UserRole - store as TEXT
 #[cfg(feature = "sqlite-backend")]
 impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
@@ -491,19 +501,21 @@ mod tests {
                 password_hash: params.password_hash.to_string(),
                 email: params.email.to_string(),
                 kek_salt: params.kek_salt.to_string(),
-                encrypted_dek: params.encrypted_dek,
-                encrypted_dek_by_recovery: params.encrypted_dek_by_recovery,
+                encrypted_dek: crate::db::DbBlob::from(params.encrypted_dek),
+                encrypted_dek_by_recovery: params
+                    .encrypted_dek_by_recovery
+                    .map(crate::db::DbBlob::from),
                 recovery_kek_salt: params.recovery_kek_salt,
-                dek_nonce: params.dek_nonce,
-                recovery_dek_nonce: params.recovery_dek_nonce,
+                dek_nonce: crate::db::DbBlob::from(params.dek_nonce),
+                recovery_dek_nonce: params.recovery_dek_nonce.map(crate::db::DbBlob::from),
                 dek: params.dek,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
+                updated_at: chrono::Utc::now().into(),
                 role: params.role,
-                account_status: Some("active".to_string()),
+                account_status: Some(AccountStatus::Active.to_string()),
                 recovery_phrase: None, // Add the recovery_phrase field
                 default_persona_id: params.default_persona_id,
-                token_usage_updated_at: chrono::Utc::now(),
+                token_usage_updated_at: chrono::Utc::now().into(),
                 tokens_last_reset_at: None,
                 total_completion_tokens: 0,
                 total_token_cost_cents: 0,
@@ -528,7 +540,7 @@ mod tests {
         ))));
 
         let user = User::new_test_user(TestUserParams {
-            id: user_id,
+            id: crate::db::DbId::from(user_id),
             username: "testuser",
             password_hash: "hashed_password",
             email: "test@example.com",
@@ -547,8 +559,11 @@ mod tests {
         assert_eq!(user.email, "test@example.com");
         assert_eq!(user.password_hash, "hashed_password");
         assert_eq!(user.kek_salt, test_kek_salt);
-        assert_eq!(user.encrypted_dek, test_encrypted_dek);
-        assert_eq!(user.dek_nonce, test_dek_nonce);
+        assert_eq!(
+            user.encrypted_dek,
+            crate::db::DbBlob::from(test_encrypted_dek)
+        );
+        assert_eq!(user.dek_nonce, crate::db::DbBlob::from(test_dek_nonce));
         assert!(user.dek.is_some());
         if let Some(wrapped_dek) = &user.dek {
             assert_eq!(wrapped_dek.expose_secret_bytes(), &test_dek_bytes);
@@ -569,7 +584,10 @@ mod tests {
             );
         }
 
-        assert_eq!(axum_login::AuthUser::id(&user), user_id);
+        assert_eq!(
+            axum_login::AuthUser::id(&user),
+            crate::db::DbId::from(user_id)
+        );
         assert_eq!(user.session_auth_hash(), user.password_hash.as_bytes());
     }
 
@@ -587,14 +605,14 @@ mod tests {
             password_hash: password_hash.clone(),
             email: email.clone(),
             kek_salt: kek_salt.clone(),
-            encrypted_dek: encrypted_dek.clone(),
+            encrypted_dek: crate::db::DbBlob::from(encrypted_dek.clone()),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
-            dek_nonce: dek_nonce.clone(),
+            dek_nonce: crate::db::DbBlob::from(dek_nonce.clone()),
             recovery_dek_nonce: None,
             role: UserRole::User,
             account_status: AccountStatus::Active,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::Utc::now().into(),
             tokens_last_reset_at: None,
             total_completion_tokens: 0,
             total_prompt_tokens: 0,
@@ -605,8 +623,11 @@ mod tests {
         assert_eq!(new_user.email, email);
         assert_eq!(new_user.password_hash, password_hash);
         assert_eq!(new_user.kek_salt, kek_salt);
-        assert_eq!(new_user.encrypted_dek, encrypted_dek);
-        assert_eq!(new_user.dek_nonce, dek_nonce);
+        assert_eq!(
+            new_user.encrypted_dek,
+            crate::db::DbBlob::from(encrypted_dek)
+        );
+        assert_eq!(new_user.dek_nonce, crate::db::DbBlob::from(dek_nonce));
         assert_eq!(new_user.role, UserRole::User);
     }
 

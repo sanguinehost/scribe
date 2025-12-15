@@ -181,6 +181,9 @@ pub struct Chat {
     pub total_modified_cost: f64, // 43 - FIXED: Schema has Double (REAL), not DbDecimal
     pub total_credit_cost: i32, // 44
     pub total_actual_charge: f64, // 45 - FIXED: Schema has Double (REAL), not DbDecimal
+    // Game Master Agent fields
+    pub game_state: Option<String>,     // 46 - JSON-encoded GameState
+    pub game_master_mode_enabled: bool, // 47 - Feature flag
 }
 
 impl std::fmt::Debug for Chat {
@@ -288,13 +291,19 @@ pub struct NewChat {
     pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<String>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub player_chronicle_id: Option<crate::db::DbId>,
+    pub agent_mode: Option<String>,
+    pub model_provider: Option<String>,
     // Token tracking fields with default values
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
@@ -304,6 +313,8 @@ pub struct NewChat {
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub game_state: Option<String>,
+    pub game_master_mode_enabled: bool,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -1733,6 +1744,8 @@ pub struct ChatForClient {
     pub total_completion_tokens: i32,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: f64, // Raw API cost in dollars
+    pub game_master_mode_enabled: bool,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl Chat {
@@ -1860,6 +1873,28 @@ impl Chat {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
             total_actual_cost: self.total_actual_cost,
+            game_master_mode_enabled: self.game_master_mode_enabled,
+            game_state: {
+                info!(
+                    "🎲 GAME_STATE_DEBUG: Chat {} - game_master_mode_enabled={}, raw_game_state={:?}",
+                    self.id, self.game_master_mode_enabled, self.game_state.as_ref().map(|s| s.len())
+                );
+                let parsed = self.game_state.as_ref().and_then(|s| {
+                    let result: Result<serde_json::Value, _> = serde_json::from_str(s);
+                    if let Err(ref e) = result {
+                        warn!(
+                            "🎲 GAME_STATE_DEBUG: Failed to parse game_state JSON: {}",
+                            e
+                        );
+                    }
+                    result.ok()
+                });
+                info!(
+                    "🎲 GAME_STATE_DEBUG: Parsed game_state is_some={}",
+                    parsed.is_some()
+                );
+                parsed
+            },
         })
     }
 
@@ -1997,6 +2032,8 @@ pub struct ChatSettingsResponse {
     pub active_custom_persona_id: Option<crate::db::DbId>,
     // Prompt template to use for this chat session
     pub prompt_template_id: Option<String>,
+    // Game Master mode enabled
+    pub game_master_mode_enabled: bool,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -2054,6 +2091,7 @@ impl From<Chat> for ChatSettingsResponse {
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
+            game_master_mode_enabled: chat.game_master_mode_enabled,
         }
     }
 }
@@ -2100,6 +2138,8 @@ pub struct UpdateChatSettingsRequest {
     // Prompt template to use for this chat session
     #[validate(custom(function = "validate_optional_template_id"))]
     pub prompt_template_id: Option<String>,
+    // Game Master mode enable/disable
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -2590,7 +2630,11 @@ mod tests {
             presence_penalty: Some(bd("0.0")),
             top_k: Some(50),
             top_p: Some(bd("0.9")),
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
             seed: Some(12345),
+            logit_bias: None,
             stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
@@ -2608,12 +2652,15 @@ mod tests {
             active_impersonated_character_id: None,
             player_chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
+            model_provider: None,
             total_actual_cost: 0.0,   // FIXED: f64, not DbDecimal
             total_modified_cost: 0.0, // FIXED: f64, not DbDecimal
             total_credit_cost: 0,
             total_actual_charge: 0.0, // FIXED: f64, not DbDecimal
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
+            game_state: None,
+            game_master_mode_enabled: false,
         }
     }
 
@@ -3401,6 +3448,8 @@ pub struct ChatListQuery {
     pub total_credits_used: crate::db::DbDecimal,
     pub visibility: Option<String>,
     pub player_chronicle_id: Option<crate::db::DbId>,
+    pub game_master_mode_enabled: bool,
+    pub game_state: Option<String>,
 }
 
 impl ChatListQuery {
@@ -3502,6 +3551,11 @@ impl ChatListQuery {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
             total_actual_cost: 0.0, // ChatListItem doesn't have actual cost data
+            game_master_mode_enabled: self.game_master_mode_enabled,
+            game_state: self
+                .game_state
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
         })
     }
 }
@@ -3556,6 +3610,8 @@ pub struct ChatSessionQuery {
     pub total_modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub total_credit_cost: i32,
     pub total_actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub game_master_mode_enabled: bool,
+    pub game_state: Option<String>,
 }
 
 impl ChatSessionQuery {
@@ -3657,6 +3713,11 @@ impl ChatSessionQuery {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
             total_actual_cost: self.total_actual_cost,
+            game_master_mode_enabled: self.game_master_mode_enabled,
+            game_state: self
+                .game_state
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok()),
         })
     }
 

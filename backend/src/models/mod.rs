@@ -33,6 +33,7 @@ pub mod chronicle_event;
 pub mod credit;
 pub mod documents;
 pub mod email_verification;
+pub mod game_state;
 pub mod lorebook_dtos;
 pub mod lorebooks;
 #[cfg(feature = "payment")]

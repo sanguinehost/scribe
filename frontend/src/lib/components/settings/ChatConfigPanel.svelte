@@ -8,7 +8,7 @@
 	import { Separator as _SeparatorComponent } from '../ui/separator';
 	import { Skeleton } from '../ui/skeleton';
 	import { Badge as BadgeComponent } from '../ui/badge';
-	import { Checkbox as _CheckboxComponent } from '../ui/checkbox';
+	import { Checkbox as CheckboxComponent } from '../ui/checkbox';
 	import { toast } from 'svelte-sonner';
 	import type {
 		ScribeChatSession,
@@ -77,7 +77,8 @@
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
 		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET, // Will be set from global or chat settings
 		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing', // Context enrichment agent mode
-		prompt_template_id: 'neutral_roleplay' // Will be set from global or chat settings
+		prompt_template_id: 'neutral_roleplay', // Will be set from global or chat settings
+		game_master_mode_enabled: false // Will be set from chat settings
 	});
 
 	// Typing speed state (client-side preference)
@@ -99,7 +100,8 @@
 		templates: true,
 		sessionStyle: false,
 		generation: false,
-		advanced: false
+		advanced: false,
+		gamemaster: false
 	});
 
 	// Lorebook state
@@ -138,7 +140,8 @@
 			localSettings.model_name !== '' ||
 			localSettings.context_total_token_limit !== DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT ||
 			localSettings.context_recent_history_budget !== DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET ||
-			localSettings.context_rag_budget !== DEFAULT_CONTEXT_RAG_BUDGET
+			localSettings.context_rag_budget !== DEFAULT_CONTEXT_RAG_BUDGET ||
+			localSettings.game_master_mode_enabled !== false
 		);
 	});
 
@@ -201,7 +204,8 @@
 				context_rag_budget:
 					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET,
 				agent_mode: 'disabled',
-				prompt_template_id: 'neutral_roleplay'
+				prompt_template_id: 'neutral_roleplay',
+				game_master_mode_enabled: false
 			};
 		}
 	});
@@ -253,7 +257,8 @@
 					DEFAULT_CONTEXT_RAG_BUDGET,
 				agent_mode:
 					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled',
-				prompt_template_id: settings.prompt_template_id ?? 'neutral_roleplay'
+				prompt_template_id: settings.prompt_template_id ?? 'neutral_roleplay',
+				game_master_mode_enabled: settings.game_master_mode_enabled ?? false
 			};
 
 			// IMPORTANT: Update currentChronicleId from the fresh backend settings
@@ -465,7 +470,8 @@
 				// NOTE: context fields removed - backend doesn't have these (causes 422)
 				chronicle_id: currentChronicleId,
 				agent_mode: localSettings.agent_mode,
-				prompt_template_id: localSettings.prompt_template_id
+				prompt_template_id: localSettings.prompt_template_id,
+				game_master_mode_enabled: localSettings.game_master_mode_enabled
 			};
 
 			const result = await _apiClient.updateChatSessionSettings(chat.id, updateRequest);
@@ -556,6 +562,7 @@
 			| 'context_total_token_limit'
 			| 'context_recent_history_budget'
 			| 'context_rag_budget'
+			| 'game_master_mode_enabled'
 	) {
 		// Reset to default values based on field type
 		if (!globalUserSettings) {
@@ -610,6 +617,9 @@
 				localSettings.context_rag_budget =
 					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 				break;
+			case 'game_master_mode_enabled':
+				localSettings.game_master_mode_enabled = false;
+				break;
 		}
 		toast.info('Override cleared (will use default)');
 	}
@@ -640,6 +650,7 @@
 			DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
 		localSettings.context_rag_budget =
 			globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
+		localSettings.game_master_mode_enabled = false;
 		toast.info('All overrides cleared');
 	}
 
@@ -951,11 +962,11 @@
 										<Label class="text-xs font-medium">Response Length</Label>
 										<select
 											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-											value={sessionNarrativeStyle?.length || ''}
+											value={sessionNarrativeStyle?.response_length || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
 												updateSessionNarrativeStyle({
-													length: value as ResponseLength | undefined
+													response_length: value as ResponseLength | undefined
 												});
 											}}
 										>
@@ -1097,7 +1108,7 @@
 													</div>
 												{/if}
 												<div class="mt-2 text-xs text-muted-foreground">
-													{linkedChronicle.event_count} events • {linkedChronicle.chat_session_count}
+													{linkedChronicle.event_count} events • {linkedChronicle.chat_count}
 													chats
 												</div>
 											</div>
@@ -1538,6 +1549,76 @@
 								<p class="text-xs text-muted-foreground">
 									Lower = faster (1ms), Higher = slower (100ms). Default: 30ms
 								</p>
+							</div>
+						</CardContent>
+					{/if}
+				</Card>
+
+				<!-- Game Master Mode (Expandable) -->
+				<Card>
+					<CardHeader
+						onclick={() => (expandedSections.gamemaster = !expandedSections.gamemaster)}
+						class="cursor-pointer {expandedSections.gamemaster ? '' : 'pb-6'}"
+					>
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-2">
+								<CardTitle class="text-lg">Game Master Mode</CardTitle>
+								{#if localSettings.game_master_mode_enabled}
+									<BadgeComponent variant="default" class="bg-purple-600 hover:bg-purple-700"
+										>Active</BadgeComponent
+									>
+								{/if}
+							</div>
+							<ButtonComponent variant="ghost" size="sm" class="pointer-events-none">
+								{#if expandedSections.gamemaster}
+									<ChevronUp />
+								{:else}
+									<ChevronDown />
+								{/if}
+							</ButtonComponent>
+						</div>
+					</CardHeader>
+					{#if expandedSections.gamemaster}
+						<CardContent class="space-y-4">
+							<div class="flex items-center justify-between space-x-2">
+								<div class="space-y-0.5">
+									<Label for="gm-mode">Enable Game Master</Label>
+									<p class="text-xs text-muted-foreground">Tracks inventory, quests, and vitals.</p>
+								</div>
+								<div class="flex items-center gap-2">
+									{#if localSettings.game_master_mode_enabled !== false}
+										<ButtonComponent
+											variant="ghost"
+											size="icon"
+											class="h-6 w-6 text-muted-foreground hover:text-foreground"
+											onclick={() => clearOverride('game_master_mode_enabled')}
+											title="Reset to default"
+										>
+											<span class="sr-only">Reset</span>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												width="12"
+												height="12"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											>
+												<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74-2.74L3 12" />
+											</svg>
+										</ButtonComponent>
+									{/if}
+									<CheckboxComponent
+										id="gm-mode"
+										checked={localSettings.game_master_mode_enabled}
+										on:change={(e) => {
+											localSettings.game_master_mode_enabled = e.detail;
+											saveSettings();
+										}}
+									/>
+								</div>
 							</div>
 						</CardContent>
 					{/if}

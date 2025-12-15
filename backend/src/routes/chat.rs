@@ -295,6 +295,7 @@ pub async fn generate_chat_response(
         user_persona_name,         // 21: Option<String> (NEW)
         player_chronicle_id,       // 22: Option<crate::db::DbId> (NEW) - Add this field
         agent_mode,                // 23: Option<String> (NEW) - Agent mode for context enrichment
+        game_master_mode_enabled,  // 24: Option<bool> (NEW) - Game Master mode flag
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -1118,6 +1119,7 @@ pub async fn generate_chat_response(
             guidance: payload.guidance.clone(), // Pass guidance for regeneration steering
             prompt_template_id,
             narrative_style: Some(narrative_style), // Pass narrative style from user preferences
+            game_state: None, // TODO: Load from chat session when game_master_mode_enabled
         })
         .await
         {
@@ -1178,6 +1180,7 @@ pub async fn generate_chat_response(
                     charge_credits: credit_reservation.is_some(), // Charge if reservation was made
                     #[cfg(not(feature = "payment"))]
                     charge_credits: false,
+                    game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                 },
             )
             .await
@@ -1264,6 +1267,9 @@ pub async fn generate_chat_response(
                                                 "current_variant_index": current_variant_index
                                             });
                                             Event::default().event("message_saved").data(message_data.to_string())
+                                        }
+                                        ScribeSseEvent::GameState(game_state_json) => {
+                                            Event::default().event("game_state").data(game_state_json.to_string())
                                         }
                                     };
                                     yield Ok(axum_sse_event);
@@ -2047,6 +2053,7 @@ pub async fn generate_chat_response(
                     charge_credits: credit_reservation.is_some(), // Charge if reservation was made
                     #[cfg(not(feature = "payment"))]
                     charge_credits: false,
+                    game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                 },
             )
             .await
@@ -2093,6 +2100,9 @@ pub async fn generate_chat_response(
                                                 "current_variant_index": current_variant_index
                                             });
                                             Event::default().event("message_saved").data(message_data.to_string())
+                                        }
+                                        ScribeSseEvent::GameState(game_state_json) => {
+                                            Event::default().event("game_state").data(game_state_json.to_string())
                                         }
                                     };
                                     yield Ok(axum_sse_event);
@@ -2729,9 +2739,10 @@ pub async fn generate_suggested_actions(
         _rag_context_items_from_service, // RAG not typically used for suggestions
         _hist_management_strategy,
         _hist_management_limit,
-        user_persona_name,    // NEW - for template substitution
-        _player_chronicle_id, // We don't use this for suggestions
-        _agent_mode,          // Agent mode - not used for suggestions
+        user_persona_name,         // NEW - for template substitution
+        _player_chronicle_id,      // We don't use this for suggestions
+        _agent_mode,               // Agent mode - not used for suggestions
+        _game_master_mode_enabled, // Game Master mode - not used for suggestions
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -2888,6 +2899,7 @@ pub async fn generate_suggested_actions(
             guidance: None,                    // No guidance for suggestions
             prompt_template_id: None,          // Use default template for suggestions
             narrative_style: None,             // Suggestions don't need narrative styling
+            game_state: None,                  // Suggestions don't use game state
         })
         .await
         {
@@ -3353,6 +3365,7 @@ pub async fn expand_text_handler(
         player_chronicle_id: None, // Text expansion doesn't involve chronicle processing
         variant_of: None,          // Text expansion doesn't create variants
         charge_credits: false,     // Text expansion is not charged (utility feature)
+        game_master_mode_enabled: false,
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3620,6 +3633,7 @@ pub async fn impersonate_handler(
 
     // Create StreamAiParams for the generation service
     let stream_params = chat::generation::StreamAiParams {
+        game_master_mode_enabled: false,
         state: state_arc,
         session_id,
         user_id,

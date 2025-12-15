@@ -169,7 +169,9 @@ mod tests {
 
         // Set a recent rotation time (30 minutes ago)
         let recent_time = Utc::now() - chrono::Duration::minutes(30);
-        set_last_rotation_time(&session, recent_time).await.unwrap();
+        set_last_rotation_time(&session, recent_time.into())
+            .await
+            .unwrap();
 
         // Should not rotate because it's too recent
         assert!(!should_rotate_session(&session).await);
@@ -186,7 +188,9 @@ mod tests {
 
         // Set an old rotation time (2 hours ago)
         let old_time = Utc::now() - chrono::Duration::hours(2);
-        set_last_rotation_time(&session, old_time).await.unwrap();
+        set_last_rotation_time(&session, old_time.into())
+            .await
+            .unwrap();
 
         // Should rotate because it's been more than 1 hour
         assert!(should_rotate_session(&session).await);

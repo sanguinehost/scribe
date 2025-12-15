@@ -266,9 +266,11 @@ mod tests {
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
         // Create chronicle service for narrative intelligence
-        let _chronicle_service = Arc::new(
-            crate::services::chronicle_service::ChronicleService::new(pool.clone()),
-        );
+        let _chronicle_service =
+            Arc::new(crate::services::chronicle_service::ChronicleService::new(
+                pool.clone(),
+                ai_client.clone(),
+            ));
 
         // First create services without narrative intelligence service
         let ai_client_factory = Arc::new(crate::services::ai_client_factory::AiClientFactory::new(
@@ -301,6 +303,7 @@ mod tests {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            token_service: None,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

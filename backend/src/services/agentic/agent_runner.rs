@@ -27,6 +27,7 @@ use crate::{
 use super::{
     narrative_tools::CreateChronicleEventTool,
     registry::ToolRegistry,
+    state_manager_agent::StateManagerAgent,
     tools::{ScribeTool, ToolParams, ToolResult},
 };
 
@@ -1550,6 +1551,62 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
             }
         }
     }
+
+    /// Process a game state update using the Sidecar Agent (State Manager)
+    ///
+    /// This method is called when `game_master_mode_enabled` is true for a chat session.
+    /// It uses the StateManagerAgent (Sidecar) to generate a complete new game state,
+    /// then reconciles it with the current state using GameStateService.
+    ///
+    /// # Arguments
+    /// * `current_state` - The current game state (may be None for new sessions)
+    /// * `conversation_summary` - Summary of recent conversation for context
+    /// * `last_user_message` - The most recent user message
+    /// * `last_assistant_message` - The most recent assistant/narrative response
+    ///
+    /// # Returns
+    /// A `Result` containing the reconciled game state and a list of changes
+    pub async fn process_game_state_update(
+        &self,
+        current_state: Option<&crate::models::game_state::GameState>,
+        conversation_summary: &str,
+        last_user_message: &str,
+        last_assistant_message: &str,
+    ) -> Result<crate::services::game_state_service::ReconciliationResult, AppError> {
+        use crate::models::game_state::GameState;
+        use crate::services::game_state_service::GameStateService;
+
+        info!("Processing game state update via Sidecar Agent");
+
+        // Create the State Manager Agent (Sidecar)
+        let state_manager = StateManagerAgent::new();
+
+        // Generate the LLM's suggested complete state
+        let suggested_state = state_manager
+            .generate_state_update(
+                current_state,
+                conversation_summary,
+                last_user_message,
+                last_assistant_message,
+            )
+            .await?;
+
+        // Get the current state or use default
+        let current = current_state.cloned().unwrap_or_else(GameState::default);
+
+        // Create the GameStateService and reconcile
+        let game_state_service = GameStateService::new(self.app_state.pool.clone());
+        let reconciliation_result =
+            game_state_service.reconcile(&current, &suggested_state, last_user_message);
+
+        info!(
+            applied = reconciliation_result.applied_changes.len(),
+            rejected = reconciliation_result.rejected_changes.len(),
+            "Game state reconciliation complete"
+        );
+
+        Ok(reconciliation_result)
+    }
 }
 
 #[cfg(all(test, feature = "postgres-backend"))]
@@ -1558,8 +1615,8 @@ mod tests {
     use crate::crypto::{encrypt_gcm, generate_dek};
     use crate::db::DbId;
     use crate::models::chats::{ChatMessage, MessageRole};
+    use chrono::Duration;
     use chrono::Utc;
-    use chrono::{Duration, Utc};
 
     // Helper struct to test JSON repair functions without full runner setup
     struct JsonRepairer;
@@ -1737,7 +1794,7 @@ mod tests {
         let messages: Vec<ChatMessage> = vec![];
 
         // Simulate the logic from calculate_conversation_timespan
-        let now = Utc::now().into();
+        let now: crate::DbTimestamp = Utc::now().into();
         let (_start_time, duration) = if messages.is_empty() {
             (now, Duration::hours(1))
         } else {
@@ -1759,7 +1816,7 @@ mod tests {
 
         // Simulate the logic
         let mut earliest = Utc::now().into();
-        let mut latest = chrono::DateTime::<chrono::Utc>::MIN_UTC;
+        let mut latest: crate::DbTimestamp = chrono::DateTime::<chrono::Utc>::MIN_UTC.into();
 
         for message in &messages {
             if message.created_at < earliest {
@@ -1771,7 +1828,7 @@ mod tests {
         }
 
         let duration = latest
-            .signed_duration_since(earliest)
+            .signed_duration_since(*earliest)
             .max(Duration::minutes(30));
 
         assert_eq!(
@@ -1791,8 +1848,8 @@ mod tests {
         ];
 
         // Simulate the logic
-        let mut earliest = Utc::now().into();
-        let mut latest = chrono::DateTime::<chrono::Utc>::MIN_UTC;
+        let mut earliest: crate::DbTimestamp = Utc::now().into();
+        let mut latest: crate::DbTimestamp = chrono::DateTime::<chrono::Utc>::MIN_UTC.into();
 
         for message in &messages {
             if message.created_at < earliest {
@@ -1804,7 +1861,7 @@ mod tests {
         }
 
         let duration = latest
-            .signed_duration_since(earliest)
+            .signed_duration_since(*earliest)
             .max(Duration::minutes(30));
 
         assert_eq!(
@@ -1816,8 +1873,8 @@ mod tests {
 
     #[test]
     fn test_temporal_exclusion_logic() {
-        let now = Utc::now().into();
-        let conversation_start = now - Duration::hours(1);
+        let now: crate::db::DbTimestamp = Utc::now().into();
+        let conversation_start: crate::db::DbTimestamp = now - Duration::hours(1);
         let _conversation_duration = Duration::hours(1);
 
         // Calculate exclusion cutoff (15 minutes before conversation start)
@@ -1900,7 +1957,8 @@ mod tests {
 
     #[test]
     fn test_exclusion_cutoff_calculation() {
-        let conversation_start = Utc::now().into() - Duration::hours(2);
+        let now: crate::db::DbTimestamp = Utc::now().into();
+        let conversation_start: crate::db::DbTimestamp = now - Duration::hours(2);
         let _conversation_duration = Duration::hours(1);
 
         // This matches the logic in get_recent_chronicle_context

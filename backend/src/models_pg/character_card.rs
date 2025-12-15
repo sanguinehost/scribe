@@ -1365,7 +1365,7 @@ mod tests {
             id: 1,
             character_id: DbId::new(),
             asset_type: "image".to_string(),
-            uri: "uri".to_string(),
+            uri: Some("uri".to_string()),
             name: "name".to_string(),
             ext: "png".to_string(),
         };
@@ -1447,12 +1447,20 @@ mod tests {
         // Test V3 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 433, 451, 457)
         assert_eq!(
             new_char.tags,
-            Some(vec![Some("tag1".to_string()), Some("tag2".to_string())])
+            crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("tag1".to_string()),
+                Some("tag2".to_string())
+            ])
         );
-        assert_eq!(new_char.source, Some(vec![Some("source1".to_string())]));
+        assert_eq!(
+            new_char.source,
+            crate::db::unified_types::DbStringArray::from_vec(vec![Some("source1".to_string())])
+        );
         assert_eq!(
             new_char.group_only_greetings,
-            Some(vec![Some("group_greet1".to_string())])
+            crate::db::unified_types::DbStringArray::from_vec(vec![Some(
+                "group_greet1".to_string()
+            )])
         );
 
         // Test timestamp conversion (lines 468, 471)
@@ -1466,7 +1474,7 @@ mod tests {
 
         // Test HashMap -> Json conversion (line 477-478 for multilingual, 481-489 for extensions)
         assert!(new_char.creator_notes_multilingual.is_some());
-        let multi_notes_json = new_char.creator_notes_multilingual.unwrap().0; // Extract Value from Json wrapper
+        let multi_notes_json = new_char.creator_notes_multilingual.unwrap(); // Extract Value from Json wrapper
         assert!(multi_notes_json.is_object());
         assert_eq!(
             multi_notes_json.get("es").unwrap().as_str().unwrap(),
@@ -1474,7 +1482,7 @@ mod tests {
         );
 
         assert!(new_char.extensions.is_some());
-        let extensions_json = new_char.extensions.unwrap().0; // Extract Value from Json wrapper
+        let extensions_json = new_char.extensions.unwrap(); // Extract Value from Json wrapper
         assert!(extensions_json.is_object());
         assert_eq!(
             extensions_json.get("ext_key").unwrap().as_str().unwrap(),
@@ -1505,17 +1513,20 @@ mod tests {
         assert_eq!(new_char.spec_version, "2.0"); // Check fallback version
 
         // Test V2 Vec<String> -> Option<Vec<Option<String>>> conversion (lines 528, 533)
-        assert_eq!(new_char.tags, Some(vec![Some("v2tag1".to_string())]));
+        assert_eq!(
+            new_char.tags,
+            crate::db::unified_types::DbStringArray::from_vec(vec![Some("v2tag1".to_string())])
+        );
         assert_eq!(
             new_char.alternate_greetings,
-            Some(vec![Some("v2greet1".to_string())])
+            crate::db::unified_types::DbStringArray::from_vec(vec![Some("v2greet1".to_string())])
         );
 
         // Check that V3 specific fields are None
         assert!(new_char.nickname.is_none());
         assert!(new_char.creator_notes_multilingual.is_none());
-        assert!(new_char.source.is_none());
-        assert!(new_char.group_only_greetings.is_none());
+        assert!(new_char.source.0.is_none());
+        assert!(new_char.group_only_greetings.0.is_none());
         assert!(new_char.creation_date.is_none());
         assert!(new_char.modification_date.is_none());
         assert!(new_char.extensions.is_none());

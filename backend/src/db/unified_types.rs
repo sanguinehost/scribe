@@ -416,6 +416,14 @@ impl std::ops::Sub<chrono::TimeDelta> for DbTimestamp {
     }
 }
 
+impl std::ops::Add<chrono::TimeDelta> for DbTimestamp {
+    type Output = DbTimestamp;
+
+    fn add(self, rhs: chrono::TimeDelta) -> Self::Output {
+        DbTimestamp(self.0 + rhs)
+    }
+}
+
 impl std::ops::Sub<DbTimestamp> for DateTime<Utc> {
     type Output = chrono::TimeDelta;
 

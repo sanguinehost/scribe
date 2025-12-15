@@ -1088,6 +1088,7 @@ pub async fn create_message_handler(
 
     // Fetch chat session and verify ownership
     let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
+    let game_master_mode_enabled = chat.game_master_mode_enabled;
 
     let user_id = user.id;
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
@@ -1320,6 +1321,7 @@ pub async fn create_message_handler(
                         _user_persona_name,
                         player_chronicle_id,
                         agent_mode,
+                        game_master_mode_enabled,
                     ) = data;
 
                     // 2. Convert history to GenAiChatMessage
@@ -1398,6 +1400,7 @@ pub async fn create_message_handler(
                             player_chronicle_id,
                             variant_of: None,
                             charge_credits: true, // Charge for AI response
+                            game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                         };
 
                         // 4. Stream response

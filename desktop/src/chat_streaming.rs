@@ -60,6 +60,11 @@ pub enum ChatStreamEvent {
         #[serde(rename = "currentVariantIndex")]
         current_variant_index: i32,
     },
+    /// Game state update from Game Master mode
+    GameStateUpdate {
+        #[serde(rename = "gameState")]
+        game_state: serde_json::Value,
+    },
     /// Streaming complete marker
     Done,
 }
@@ -348,6 +353,22 @@ pub async fn stream_chat_response(
                     "done" => {
                         log::info!("[stream_chat_response] Received 'done' event, ending stream");
                         ChatStreamEvent::Done
+                    }
+                    "game_state_update" => {
+                        // Parse JSON game state
+                        match serde_json::from_str::<serde_json::Value>(&sse_event.data) {
+                            Ok(game_state) => {
+                                log::info!("[stream_chat_response] Received game_state_update event");
+                                ChatStreamEvent::GameStateUpdate { game_state }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "[stream_chat_response] Failed to parse game_state_update: {}",
+                                    e
+                                );
+                                continue; // Skip this event
+                            }
+                        }
                     }
                     _ => {
                         // Ignore unknown events

@@ -26,6 +26,125 @@ fn escape_xml(text: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+/// Builds the scene context XML block for Game Master mode.
+/// Formats GameState into a `<scene_context>` XML block for injection into the system prompt.
+///
+/// # Arguments
+/// * `game_state` - The current game state to format
+///
+/// # Returns
+/// A formatted XML string containing scene information (location, time, active NPCs, environment)
+pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState) -> String {
+    use std::fmt::Write;
+
+    let mut scene_xml = String::from("<scene_context>\n");
+
+    // Location
+    if let Some(location) = &game_state.location {
+        writeln!(scene_xml, "  <location>").unwrap();
+        writeln!(scene_xml, "    <name>{}</name>", escape_xml(&location.name)).unwrap();
+        if let Some(desc) = &location.description {
+            let desc_str = match desc {
+                serde_json::Value::String(s) => s.clone(),
+                _ => desc.to_string(),
+            };
+            writeln!(
+                scene_xml,
+                "    <description>{}</description>",
+                escape_xml(&desc_str)
+            )
+            .unwrap();
+        }
+        if let Some(region) = &location.region {
+            writeln!(scene_xml, "    <region>{}</region>", escape_xml(region)).unwrap();
+        }
+        if !location.tags.is_empty() {
+            writeln!(scene_xml, "    <tags>{}</tags>", location.tags.join(", ")).unwrap();
+        }
+        writeln!(scene_xml, "  </location>").unwrap();
+    }
+
+    // Time
+    if let Some(time) = &game_state.game_time {
+        writeln!(scene_xml, "  <time>").unwrap();
+        writeln!(scene_xml, "    <day>{}</day>", time.day).unwrap();
+        writeln!(scene_xml, "    <hour>{}</hour>", time.hour).unwrap();
+        writeln!(
+            scene_xml,
+            "    <period>{}</period>",
+            escape_xml(&time.period)
+        )
+        .unwrap();
+        if let Some(season) = &time.season {
+            writeln!(scene_xml, "    <season>{}</season>", escape_xml(season)).unwrap();
+        }
+        writeln!(scene_xml, "  </time>").unwrap();
+    }
+
+    // Active NPCs (only those present in current location and alive)
+    let active_npcs: Vec<_> = game_state
+        .npcs
+        .values()
+        .filter(|npc| npc.status == "alive")
+        .collect();
+
+    if !active_npcs.is_empty() {
+        writeln!(scene_xml, "  <active_npcs>").unwrap();
+        for npc in active_npcs {
+            writeln!(
+                scene_xml,
+                "    <npc name=\"{}\" disposition=\"{:?}\" />",
+                escape_xml(&npc.name),
+                npc.disposition
+            )
+            .unwrap();
+        }
+        writeln!(scene_xml, "  </active_npcs>").unwrap();
+    }
+
+    // Environment
+    writeln!(scene_xml, "  <environment>").unwrap();
+    if let Some(weather) = &game_state.environment.weather {
+        writeln!(scene_xml, "    <weather>{}</weather>", escape_xml(weather)).unwrap();
+    }
+    if let Some(lighting) = &game_state.environment.lighting {
+        writeln!(
+            scene_xml,
+            "    <lighting>{}</lighting>",
+            escape_xml(lighting)
+        )
+        .unwrap();
+    }
+    if let Some(temp) = &game_state.environment.temperature {
+        writeln!(
+            scene_xml,
+            "    <temperature>{}</temperature>",
+            escape_xml(temp)
+        )
+        .unwrap();
+    }
+    if !game_state.environment.hazards.is_empty() {
+        writeln!(
+            scene_xml,
+            "    <hazards>{}</hazards>",
+            game_state.environment.hazards.join(", ")
+        )
+        .unwrap();
+    }
+    if !game_state.environment.tags.is_empty() {
+        writeln!(
+            scene_xml,
+            "    <tags>{}</tags>",
+            game_state.environment.tags.join(", ")
+        )
+        .unwrap();
+    }
+    writeln!(scene_xml, "  </environment>").unwrap();
+
+    scene_xml.push_str("</scene_context>");
+    scene_xml
+}
+
 /// Replaces template variables {{char}} and {{user}} with actual names
 pub fn replace_template_variables(
     text: &str,
@@ -261,6 +380,9 @@ pub struct PromptBuildParams<'a> {
     pub guidance: Option<String>, // Optional guidance for response generation
     pub prompt_template_id: Option<String>, // Template ID for conversation style
     pub narrative_style: Option<crate::prompt_templates::NarrativeStyle>, // Narrative style variables for template rendering
+    /// Game state for Game Master mode scene card injection
+    /// When present, formats as `<scene_context>` XML block in the system prompt
+    pub game_state: Option<&'a crate::models::game_state::GameState>,
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -1159,6 +1281,7 @@ async fn build_final_prompt_strings(
     template_id: Option<&str>,
     user_persona_name: Option<&str>,
     narrative_style: Option<&crate::prompt_templates::NarrativeStyle>,
+    game_state: Option<&crate::models::game_state::GameState>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Use the template system to build the final system prompt
     let template_id = template_id.unwrap_or("neutral_roleplay");
@@ -1265,6 +1388,12 @@ async fn build_final_prompt_strings(
         template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string()).into();
     }
 
+    // Add scene context for Game Master mode (if game_state is provided)
+    if let Some(state) = game_state {
+        let scene_context = build_scene_context_xml(state);
+        template_context["scene_context"] = serde_json::Value::String(scene_context).into();
+    }
+
     // Use render_with_style to inject narrative style variables into the template
     let final_system_prompt = TEMPLATE_MANAGER.render_with_style(
         template_id,
@@ -1326,6 +1455,7 @@ pub async fn build_final_llm_prompt(
         params.prompt_template_id.as_deref(),
         params.user_persona_name.as_deref(),
         params.narrative_style.as_ref(),
+        params.game_state,
     )
     .await?;
 
@@ -1822,7 +1952,7 @@ mod tests {
                     chronicle_id: None,
                     user_id: crate::db::DbId::new_v4(),
                     speaker: "user".to_string(),
-                    timestamp: chrono::Utc::now(),
+                    timestamp: chrono::Utc::now().into(),
                     text: "Some context".to_string(),
                     source_type: "chat".to_string(),
                     encrypted_text: None,
@@ -1933,5 +2063,418 @@ mod tests {
             parsed["causality"]["causedBy"][0],
             "997a300f-1e05-42da-a906-08a2858be03a"
         );
+    }
+
+    // ========================================================================
+    // Scene Context XML Tests (for Game Master mode)
+    // ========================================================================
+
+    #[test]
+    fn test_build_scene_context_xml_empty_state() {
+        use crate::models::game_state::GameState;
+        let state = GameState::default();
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.starts_with("<scene_context>"));
+        assert!(xml.contains("</scene_context>"));
+        assert!(xml.contains("<environment>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_location() {
+        use crate::models::game_state::{GameState, Location};
+        let mut state = GameState::default();
+        state.location = Some(Location {
+            id: "tavern_001".to_string(),
+            name: "The Rusty Anchor".to_string(),
+            description: Some("A cozy tavern".to_string()),
+            region: Some("Port District".to_string()),
+            tags: vec!["indoors".to_string(), "safe".to_string()],
+        });
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<location>"));
+        assert!(xml.contains("<name>The Rusty Anchor</name>"));
+        assert!(xml.contains("<description>A cozy tavern</description>"));
+        assert!(xml.contains("<region>Port District</region>"));
+        assert!(xml.contains("<tags>indoors, safe</tags>"));
+        assert!(xml.contains("</location>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_time() {
+        use crate::models::game_state::{GameState, GameTime};
+        let mut state = GameState::default();
+        state.game_time = Some(GameTime {
+            day: 5,
+            hour: 14,
+            period: "afternoon".to_string(),
+            season: Some("autumn".to_string()),
+        });
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<time>"));
+        assert!(xml.contains("<day>5</day>"));
+        assert!(xml.contains("<hour>14</hour>"));
+        assert!(xml.contains("<period>afternoon</period>"));
+        assert!(xml.contains("<season>autumn</season>"));
+        assert!(xml.contains("</time>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_npcs() {
+        use crate::models::game_state::{GameState, NpcState};
+        use std::collections::HashMap;
+
+        let mut state = GameState::default();
+        state.npcs.insert(
+            "npc_001".to_string(),
+            NpcState {
+                id: "npc_001".to_string(),
+                name: "Friendly Bartender".to_string(),
+                location: None,
+                disposition: "friendly".to_string(),
+                status: "alive".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("Friendly Bartender"));
+        assert!(xml.contains("</active_npcs>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_filters_dead_npcs() {
+        use crate::models::game_state::{GameState, NpcState};
+        use std::collections::HashMap;
+
+        let mut state = GameState::default();
+        state.npcs.insert(
+            "npc_alive".to_string(),
+            NpcState {
+                id: "npc_alive".to_string(),
+                name: "Living Guard".to_string(),
+                location: None,
+                disposition: "neutral".to_string(),
+                status: "alive".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+        state.npcs.insert(
+            "npc_dead".to_string(),
+            NpcState {
+                id: "npc_dead".to_string(),
+                name: "Fallen Warrior".to_string(),
+                location: None,
+                disposition: "hostile".to_string(),
+                status: "dead".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("Living Guard"));
+        assert!(!xml.contains("Fallen Warrior")); // Dead NPCs should be filtered out
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_environment() {
+        use crate::models::game_state::{EnvironmentState, GameState};
+        let mut state = GameState::default();
+        state.environment = EnvironmentState {
+            weather: Some("rainy".to_string()),
+            lighting: Some("dim".to_string()),
+            temperature: Some("cool".to_string()),
+            hazards: vec!["slippery floor".to_string()],
+            tags: vec!["atmospheric".to_string()],
+        };
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<weather>rainy</weather>"));
+        assert!(xml.contains("<lighting>dim</lighting>"));
+        assert!(xml.contains("<temperature>cool</temperature>"));
+        assert!(xml.contains("<hazards>slippery floor</hazards>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_escapes_special_chars() {
+        use crate::models::game_state::{GameState, Location};
+        let mut state = GameState::default();
+        state.location = Some(Location {
+            id: "test".to_string(),
+            name: "Tom & Jerry's <Tavern>".to_string(),
+            description: Some("A \"special\" place with 'quotes'".to_string()),
+            region: None,
+            tags: vec![],
+        });
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("Tom &amp; Jerry&apos;s &lt;Tavern&gt;"));
+        assert!(xml.contains("&quot;special&quot;"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_full_state() {
+        use crate::models::game_state::{
+            EnvironmentState, GameState, GameTime, Location, NpcState,
+        };
+        use std::collections::HashMap;
+
+        let mut state = GameState::default();
+        state.location = Some(Location {
+            id: "dungeon_01".to_string(),
+            name: "Dark Dungeon".to_string(),
+            description: None,
+            region: Some("Underworld".to_string()),
+            tags: vec!["dangerous".to_string()],
+        });
+        state.game_time = Some(GameTime {
+            day: 10,
+            hour: 23,
+            period: "night".to_string(),
+            season: Some("winter".to_string()),
+        });
+        state.npcs.insert(
+            "goblin_01".to_string(),
+            NpcState {
+                id: "goblin_01".to_string(),
+                name: "Sneaky Goblin".to_string(),
+                location: None,
+                disposition: "hostile".to_string(),
+                status: "alive".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+        state.environment = EnvironmentState {
+            weather: None,
+            lighting: Some("torch-lit".to_string()),
+            temperature: Some("cold".to_string()),
+            hazards: vec!["traps".to_string(), "pit".to_string()],
+            tags: vec!["eerie".to_string()],
+        };
+
+        let xml = super::build_scene_context_xml(&state);
+
+        // Verify all components present
+        assert!(xml.contains("<location>"));
+        assert!(xml.contains("<time>"));
+        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<environment>"));
+        assert!(xml.contains("Dark Dungeon"));
+        assert!(xml.contains("night"));
+        assert!(xml.contains("Sneaky Goblin"));
+        assert!(xml.contains("torch-lit"));
+    }
+}
+
+// Scene Context XML Tests - feature-agnostic (works with both postgres and sqlite)
+#[cfg(test)]
+mod scene_context_tests {
+    use crate::models::game_state::{EnvironmentState, GameState, GameTime, Location, NpcState};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_build_scene_context_xml_empty_state() {
+        let state = GameState::default();
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.starts_with("<scene_context>"));
+        assert!(xml.contains("</scene_context>"));
+        assert!(xml.contains("<environment>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_location() {
+        let mut state = GameState::default();
+        state.location = Some(Location {
+            id: "tavern_001".to_string(),
+            name: "The Rusty Anchor".to_string(),
+            description: Some("A cozy tavern".to_string()),
+            region: Some("Port District".to_string()),
+            tags: vec!["indoors".to_string(), "safe".to_string()],
+        });
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<location>"));
+        assert!(xml.contains("<name>The Rusty Anchor</name>"));
+        assert!(xml.contains("<description>A cozy tavern</description>"));
+        assert!(xml.contains("<region>Port District</region>"));
+        assert!(xml.contains("<tags>indoors, safe</tags>"));
+        assert!(xml.contains("</location>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_time() {
+        let mut state = GameState::default();
+        state.game_time = Some(GameTime {
+            day: 5,
+            hour: 14,
+            period: "afternoon".to_string(),
+            season: Some("autumn".to_string()),
+        });
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<time>"));
+        assert!(xml.contains("<day>5</day>"));
+        assert!(xml.contains("<hour>14</hour>"));
+        assert!(xml.contains("<period>afternoon</period>"));
+        assert!(xml.contains("<season>autumn</season>"));
+        assert!(xml.contains("</time>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_npcs() {
+        let mut state = GameState::default();
+        state.npcs.insert(
+            "npc_001".to_string(),
+            NpcState {
+                id: "npc_001".to_string(),
+                name: "Friendly Bartender".to_string(),
+                location: None,
+                disposition: "friendly".to_string(),
+                status: "alive".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("Friendly Bartender"));
+        assert!(xml.contains("</active_npcs>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_filters_dead_npcs() {
+        let mut state = GameState::default();
+        state.npcs.insert(
+            "npc_alive".to_string(),
+            NpcState {
+                id: "npc_alive".to_string(),
+                name: "Living Guard".to_string(),
+                location: None,
+                disposition: "neutral".to_string(),
+                status: "alive".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+        state.npcs.insert(
+            "npc_dead".to_string(),
+            NpcState {
+                id: "npc_dead".to_string(),
+                name: "Fallen Warrior".to_string(),
+                location: None,
+                disposition: "hostile".to_string(),
+                status: "dead".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("Living Guard"));
+        assert!(!xml.contains("Fallen Warrior")); // Dead NPCs should be filtered out
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_with_environment() {
+        let mut state = GameState::default();
+        state.environment = EnvironmentState {
+            weather: Some("rainy".to_string()),
+            lighting: Some("dim".to_string()),
+            temperature: Some("cool".to_string()),
+            hazards: vec!["slippery floor".to_string()],
+            tags: vec!["atmospheric".to_string()],
+        };
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("<weather>rainy</weather>"));
+        assert!(xml.contains("<lighting>dim</lighting>"));
+        assert!(xml.contains("<temperature>cool</temperature>"));
+        assert!(xml.contains("<hazards>slippery floor</hazards>"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_escapes_special_chars() {
+        let mut state = GameState::default();
+        state.location = Some(Location {
+            id: "test".to_string(),
+            name: "Tom & Jerry's <Tavern>".to_string(),
+            description: Some("A \"special\" place with 'quotes'".to_string()),
+            region: None,
+            tags: vec![],
+        });
+
+        let xml = super::build_scene_context_xml(&state);
+
+        assert!(xml.contains("Tom &amp; Jerry&apos;s &lt;Tavern&gt;"));
+        assert!(xml.contains("&quot;special&quot;"));
+    }
+
+    #[test]
+    fn test_build_scene_context_xml_full_state() {
+        let mut state = GameState::default();
+        state.location = Some(Location {
+            id: "dungeon_01".to_string(),
+            name: "Dark Dungeon".to_string(),
+            description: None,
+            region: Some("Underworld".to_string()),
+            tags: vec!["dangerous".to_string()],
+        });
+        state.game_time = Some(GameTime {
+            day: 10,
+            hour: 23,
+            period: "night".to_string(),
+            season: Some("winter".to_string()),
+        });
+        state.npcs.insert(
+            "goblin_01".to_string(),
+            NpcState {
+                id: "goblin_01".to_string(),
+                name: "Sneaky Goblin".to_string(),
+                location: None,
+                disposition: "hostile".to_string(),
+                status: "alive".to_string(),
+                objectives: vec![],
+                data: HashMap::new(),
+            },
+        );
+        state.environment = EnvironmentState {
+            weather: None,
+            lighting: Some("torch-lit".to_string()),
+            temperature: Some("cold".to_string()),
+            hazards: vec!["traps".to_string(), "pit".to_string()],
+            tags: vec!["eerie".to_string()],
+        };
+
+        let xml = super::build_scene_context_xml(&state);
+
+        // Verify all components present
+        assert!(xml.contains("<location>"));
+        assert!(xml.contains("<time>"));
+        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<environment>"));
+        assert!(xml.contains("Dark Dungeon"));
+        assert!(xml.contains("night"));
+        assert!(xml.contains("Sneaky Goblin"));
+        assert!(xml.contains("torch-lit"));
     }
 }

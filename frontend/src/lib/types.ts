@@ -147,6 +147,89 @@ export interface BackendAuthResponse {
 	default_persona_id: string | null;
 }
 
+// ============================================================================
+// Game State Types (Game Master Agent)
+// ============================================================================
+
+export interface GameState {
+	location: Location | null;
+	game_time: GameTime | null;
+	inventory: InventoryItem[];
+	vitals: Record<string, Vital>;
+	quests: Quest[];
+	npcs: Record<string, NpcState>;
+	environment: EnvironmentState;
+	custom_data: Record<string, unknown>;
+}
+
+export interface Location {
+	id: string;
+	name: string;
+	description: string | null;
+	region: string | null;
+	tags: string[];
+}
+
+export interface GameTime {
+	day: number;
+	hour: number;
+	period: string;
+	season: string | null;
+}
+
+export interface InventoryItem {
+	id: string;
+	name: string;
+	quantity: number;
+	description: string | null;
+	category: string | null;
+	equipped: boolean;
+	properties: Record<string, unknown>;
+}
+
+export interface Vital {
+	current: number;
+	max: number;
+	regen_rate: number | null;
+	modifiers: string[];
+}
+
+export interface Quest {
+	id: string;
+	title: string;
+	status: QuestStatus;
+	description: string | null;
+	objectives: QuestObjective[];
+	giver: string | null;
+	rewards: string | null;
+}
+
+export type QuestStatus = 'active' | 'completed' | 'failed' | 'abandoned';
+
+export interface QuestObjective {
+	description: string;
+	completed: boolean;
+	progress: string | null;
+}
+
+export interface NpcState {
+	id: string;
+	name: string;
+	location: string | null;
+	disposition: string;
+	status: string;
+	objectives: string[];
+	data: Record<string, unknown>;
+}
+
+export interface EnvironmentState {
+	weather: string | null;
+	lighting: string | null;
+	temperature: string | null;
+	hazards: string[];
+	tags: string[];
+}
+
 // Placeholder for ScribeChatSession type - Define based on expected fields from backend
 export interface ScribeChatSession {
 	id: string;
@@ -181,6 +264,10 @@ export interface ScribeChatSession {
 	total_completion_tokens?: number;
 	total_credits_used?: number | string; // BigDecimal from backend may serialize as string
 	total_actual_cost?: number; // Raw cost in dollars (from backend)
+
+	// Game Master Fields
+	game_master_mode_enabled?: boolean;
+	game_state?: GameState | null;
 }
 
 // LoginSuccessData type matching the backend LoginSuccessResponse

@@ -442,7 +442,7 @@ mod tests {
     use super::*;
     use crate::crypto;
     use crate::db::DbId;
-    use crate::db::{DbBlob, DbId, DbTimestamp};
+    use crate::db::{DbBlob, DbTimestamp};
     use secrecy::SecretBox;
     use serde_json;
 
@@ -467,7 +467,10 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]),
+            tags: crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("tag1".to_string()),
+                Some("tag2".to_string()),
+            ]),
             avatar: Some("avatar.png".to_string()),
             description_nonce: Some(DbBlob::from(vec![7, 8, 9])),
             personality_nonce: Some(DbBlob::from(vec![10, 11, 12])),
@@ -503,7 +506,9 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: Some(vec![Some("client_tag1".to_string())]),
+            tags: crate::db::unified_types::DbStringArray::from_vec(vec![Some(
+                "client_tag1".to_string(),
+            )]),
             avatar: Some("client_avatar.png".to_string()),
             created_at: DbTimestamp::now(),
             updated_at: DbTimestamp::now(),
@@ -588,8 +593,8 @@ mod tests {
         let create_empty_desc_persona = || {
             let (empty_desc_ct, empty_desc_n) = crypto::encrypt_gcm(b"", &dek).unwrap();
             UserPersona {
-                description: empty_desc_ct,
-                description_nonce: Some(empty_desc_n),
+                description: crate::db::DbBlob::from(empty_desc_ct),
+                description_nonce: Some(crate::db::DbBlob::from(empty_desc_n)),
                 personality: None, // No personality
                 personality_nonce: None,
                 ..create_dummy_user_persona_encrypted() // Fill other fields
@@ -626,7 +631,7 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: Some(vec![Some("new".to_string())]),
+            tags: Some(vec!["new".to_string()]),
             avatar: None,
         };
         let serialized = serde_json::to_string(&dto).unwrap();
@@ -646,7 +651,7 @@ mod tests {
             mes_example: Some("Updated example".to_string()),
             system_prompt: None,
             post_history_instructions: None,
-            tags: Some(vec![Some("updated".to_string())]),
+            tags: Some(vec!["updated".to_string()]),
             avatar: Some("new_avatar.jpg".to_string()),
             spec_version: Some("1.1.0".to_string()),
         };

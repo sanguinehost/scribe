@@ -86,6 +86,7 @@ struct ChatSessionUpdateBuilder {
     agent_mode: DatabaseUpdate<String>,
     active_custom_persona_id: DatabaseUpdate<Option<crate::db::DbId>>,
     prompt_template_id: DatabaseUpdate<String>,
+    game_master_mode_enabled: DatabaseUpdate<bool>,
     updated_at: DatabaseUpdate<crate::DbTimestamp>,
 }
 
@@ -170,6 +171,10 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
+            game_master_mode_enabled: match self.game_master_mode_enabled {
+                DatabaseUpdate::SetValue(v) => Some(v),
+                _ => None,
+            },
             updated_at: match self.updated_at {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
@@ -200,6 +205,7 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
             || !matches!(self.active_custom_persona_id, DatabaseUpdate::NoChange)
             || !matches!(self.prompt_template_id, DatabaseUpdate::NoChange)
+            || !matches!(self.game_master_mode_enabled, DatabaseUpdate::NoChange)
     }
 }
 
@@ -232,6 +238,7 @@ struct ChatSessionUpdateChangeset {
     agent_mode: Option<String>,
     active_custom_persona_id: Option<Option<crate::db::DbId>>,
     prompt_template_id: Option<String>,
+    game_master_mode_enabled: Option<bool>,
     updated_at: Option<crate::DbTimestamp>,
 }
 /// Verifies session ownership and returns the owner ID
@@ -444,6 +451,16 @@ pub async fn get_session_settings(
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
+        // Query 6: game_master_mode_enabled
+        let game_master_mode_enabled = chat_sessions::table
+            .filter(chat_sessions::id.eq(session_id))
+            .select(chat_sessions::game_master_mode_enabled)
+            .first::<bool>(conn)
+            .map_err(|e| {
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch game_master_mode_enabled");
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
         // Destructure all query results
         let (
             system_prompt_ciphertext,
@@ -507,6 +524,7 @@ pub async fn get_session_settings(
             agent_mode,
             active_custom_persona_id,
             prompt_template_id: Some(prompt_template_id),
+            game_master_mode_enabled: Some(game_master_mode_enabled),
         };
 
         info!(%session_id, %user_id,
@@ -631,6 +649,11 @@ fn apply_payload_to_builder(
     // Prompt template ID handling
     if let Some(template_id) = payload.prompt_template_id {
         update_builder.prompt_template_id = DatabaseUpdate::SetValue(template_id);
+    }
+
+    // Game Master mode handling
+    if let Some(gm_enabled) = payload.game_master_mode_enabled {
+        update_builder.game_master_mode_enabled = DatabaseUpdate::SetValue(gm_enabled);
     }
 
     Ok(update_builder)

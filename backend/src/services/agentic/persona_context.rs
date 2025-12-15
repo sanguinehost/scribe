@@ -128,10 +128,10 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: None,
+            tags: crate::db::unified_types::DbStringArray(None),
             avatar: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         };
 
         let context: UserPersonaContext = persona_data.into();

@@ -145,7 +145,11 @@ pub struct Chat {
     pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<serde_json::Value>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
@@ -162,13 +166,14 @@ pub struct Chat {
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
+    pub model_provider: Option<String>,
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
+    pub prompt_template_id: String,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_credits_used: crate::db::DbDecimal,
-    pub prompt_template_id: String,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_cost: crate::db::DbDecimal,
@@ -179,6 +184,9 @@ pub struct Chat {
     pub total_actual_charge: crate::db::DbDecimal,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    // Game Master Agent fields
+    pub game_state: Option<serde_json::Value>, // JSONB-encoded GameState
+    pub game_master_mode_enabled: bool,        // Feature flag
 }
 
 /// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)
@@ -206,6 +214,8 @@ pub struct ChatListQuery {
     pub total_credits_used: crate::db::DbDecimal,
     pub visibility: Option<String>,
     pub player_chronicle_id: Option<crate::db::DbId>,
+    pub game_master_mode_enabled: bool,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl ChatListQuery {
@@ -307,6 +317,8 @@ impl ChatListQuery {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
             total_actual_cost: crate::db::DbDecimal::from(0), // ChatListItem doesn't have actual cost data
+            game_master_mode_enabled: self.game_master_mode_enabled,
+            game_state: self.game_state,
         })
     }
 }
@@ -353,6 +365,8 @@ pub struct ChatSessionQuery {
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
     pub total_actual_cost: crate::db::DbDecimal, // Added for cost display
+    pub game_master_mode_enabled: bool,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl ChatSessionQuery {
@@ -454,6 +468,8 @@ impl ChatSessionQuery {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
             total_actual_cost: self.total_actual_cost,
+            game_master_mode_enabled: self.game_master_mode_enabled,
+            game_state: self.game_state,
         })
     }
 
@@ -2137,6 +2153,9 @@ pub struct ChatForClient {
     pub total_completion_tokens: i32,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
+    // Game Master Agent fields
+    pub game_master_mode_enabled: bool,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl Chat {
@@ -2264,6 +2283,8 @@ impl Chat {
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
             total_actual_cost: self.total_actual_cost,
+            game_master_mode_enabled: self.game_master_mode_enabled,
+            game_state: self.game_state,
         })
     }
 
@@ -2401,6 +2422,8 @@ pub struct ChatSettingsResponse {
     pub active_custom_persona_id: Option<crate::db::DbId>,
     // Prompt template to use for this chat session
     pub prompt_template_id: Option<String>,
+    // Game Master mode flag
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -2458,6 +2481,7 @@ impl From<Chat> for ChatSettingsResponse {
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
+            game_master_mode_enabled: Some(chat.game_master_mode_enabled),
         }
     }
 }
@@ -2504,6 +2528,8 @@ pub struct UpdateChatSettingsRequest {
     // Prompt template to use for this chat session
     #[validate(custom(function = "validate_optional_template_id"))]
     pub prompt_template_id: Option<String>,
+    // Game Master mode enable/disable
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -2972,7 +2998,9 @@ mod tests {
 
     // Helper function to create BigDecimal from a string for tests
     fn bd(s: &str) -> crate::db::DbDecimal {
-        BigDecimal::from_str(s).expect("Invalid decimal string")
+        crate::db::DbDecimal::from_bigdecimal(
+            BigDecimal::from_str(s).expect("Invalid decimal string"),
+        )
     }
 
     // Helper function to create a sample chat session
@@ -2988,14 +3016,21 @@ mod tests {
             system_prompt_nonce: None,
             temperature: Some(bd("0.7")),
             max_output_tokens: Some(1024),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: crate::db::DbTimestamp::now(),
+            updated_at: crate::db::DbTimestamp::now(),
             frequency_penalty: Some(bd("0.0")),
             presence_penalty: Some(bd("0.0")),
             top_k: Some(50),
             top_p: Some(bd("0.9")),
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
             seed: Some(12345),
-            stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
+            logit_bias: None,
+            stop_sequences: crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("\n\n".to_string()),
+                Some("##".to_string()),
+            ]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash".to_string(),
@@ -3003,7 +3038,7 @@ mod tests {
             gemini_enable_code_execution: None,
             estimated_cost_cents: 0,
             prompt_template_id: "default".to_string(),
-            tokens_counted_at: Utc::now(),
+            tokens_counted_at: crate::db::DbTimestamp::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
             total_credits_used: crate::db::DbDecimal::from(0),
@@ -3012,12 +3047,15 @@ mod tests {
             active_impersonated_character_id: None,
             player_chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
+            model_provider: None,
             total_actual_cost: crate::db::DbDecimal::from(0),
             total_modified_cost: crate::db::DbDecimal::from(0),
             total_credit_cost: 0,
             total_actual_charge: crate::db::DbDecimal::from(0),
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
+            game_master_mode_enabled: false,
+            game_state: None,
         }
     }
 
@@ -3070,7 +3108,7 @@ mod tests {
             message_type: MessageRole::User,
             content: b"Hello, how are you?".to_vec(),
             content_nonce: None,
-            created_at: Utc::now(),
+            created_at: crate::db::DbTimestamp::now(),
             user_id: DbId::new(),
             prompt_tokens: None,
             completion_tokens: None,
@@ -3203,8 +3241,8 @@ mod tests {
             content: b"Hello!".to_vec(),
             content_nonce: None,
             user_id: DbId::new(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
@@ -3212,7 +3250,7 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
-            model_name: "test-model".to_string(),
+            model_name: Some("test-model".to_string()),
         }
     }
 
@@ -3270,10 +3308,13 @@ mod tests {
             top_k: Some(50),
             top_p: Some(bd("0.9")),
             seed: Some(12345),
-            stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
+            stop_sequences: crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("\n\n".to_string()),
+                Some("##".to_string()),
+            ]),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
-            model_name: "gemini-2.5-flash".to_string(),
+            model_name: Some("gemini-2.5-flash".to_string()),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
@@ -3326,7 +3367,10 @@ mod tests {
             top_k: Some(40),
             top_p: Some(bd("0.95")),
             seed: Some(42),
-            stop_sequences: Some(vec![Some("\n\n".to_string()), Some("##".to_string())]),
+            stop_sequences: Some(crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("\n\n".to_string()),
+                Some("##".to_string()),
+            ])),
             history_management_strategy: Some("sliding_window_tokens".to_string()),
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro".to_string()),
