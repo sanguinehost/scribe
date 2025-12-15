@@ -2033,7 +2033,7 @@ pub struct ChatSettingsResponse {
     // Prompt template to use for this chat session
     pub prompt_template_id: Option<String>,
     // Game Master mode enabled
-    pub game_master_mode_enabled: bool,
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -2091,7 +2091,7 @@ impl From<Chat> for ChatSettingsResponse {
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
-            game_master_mode_enabled: chat.game_master_mode_enabled,
+            game_master_mode_enabled: Some(chat.game_master_mode_enabled),
         }
     }
 }

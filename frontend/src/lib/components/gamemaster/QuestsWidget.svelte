@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Quest, QuestObjective } from '$lib/types';
+	import { FileText } from 'lucide-svelte';
 	import WidgetBase from './WidgetBase.svelte';
 
 	interface Props {
@@ -25,10 +26,10 @@
 	// Get status icon and color
 	function getStatusStyle(status: string): { icon: string; color: string } {
 		const styles: Record<string, { icon: string; color: string }> = {
-			active: { icon: '📍', color: 'text-yellow-400 border-yellow-500/30' },
-			completed: { icon: '✅', color: 'text-green-400 border-green-500/30' },
-			failed: { icon: '❌', color: 'text-red-400 border-red-500/30' },
-			abandoned: { icon: '🚫', color: 'text-gray-400 border-gray-500/30' }
+			active: { icon: '📍', color: 'text-yellow-500 border-yellow-500/30' },
+			completed: { icon: '✅', color: 'text-green-500 border-green-500/30' },
+			failed: { icon: '❌', color: 'text-destructive border-destructive/30' },
+			abandoned: { icon: '🚫', color: 'text-muted-foreground border-border' }
 		};
 		return styles[status] || styles.active;
 	}
@@ -42,28 +43,16 @@
 </script>
 
 {#snippet iconSnippet()}
-	<svg
-		xmlns="http://www.w3.org/2000/svg"
-		class="h-4 w-4"
-		viewBox="0 0 24 24"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="2"
-	>
-		<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-		<polyline points="14 2 14 8 20 8"></polyline>
-		<line x1="16" y1="13" x2="8" y2="13"></line>
-		<line x1="16" y1="17" x2="8" y2="17"></line>
-	</svg>
+	<FileText class="h-4 w-4" />
 {/snippet}
 
 <WidgetBase title="Quests" icon={iconSnippet}>
 	<!-- Tabs -->
-	<div class="mb-3 flex gap-1 rounded-lg bg-gray-800 p-1">
+	<div class="bg-muted mb-3 flex gap-1 rounded-lg p-1">
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab === 'active'
-				? 'bg-purple-500/30 text-purple-300'
-				: 'text-gray-400 hover:text-gray-200'}"
+				? 'bg-primary/20 text-primary'
+				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'active')}
 		>
 			Active
@@ -71,16 +60,16 @@
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
 			'completed'
-				? 'bg-purple-500/30 text-purple-300'
-				: 'text-gray-400 hover:text-gray-200'}"
+				? 'bg-primary/20 text-primary'
+				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'completed')}
 		>
 			Completed
 		</button>
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab === 'all'
-				? 'bg-purple-500/30 text-purple-300'
-				: 'text-gray-400 hover:text-gray-200'}"
+				? 'bg-primary/20 text-primary'
+				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'all')}
 		>
 			All
@@ -90,28 +79,28 @@
 	<!-- Quest list -->
 	<div class="max-h-64 space-y-2 overflow-y-auto">
 		{#if filteredQuests().length === 0}
-			<p class="py-4 text-center text-sm italic text-gray-500">No quests</p>
+			<p class="text-muted-foreground py-4 text-center text-sm italic">No quests</p>
 		{:else}
 			{#each filteredQuests() as quest (quest.id)}
 				{@const style = getStatusStyle(quest.status)}
 				{@const progress = getQuestProgress(quest.objectives)}
 				<div
-					class="rounded-lg border bg-gray-800/50 p-3 transition-colors hover:bg-gray-800 {style.color}"
+					class="bg-muted/50 hover:bg-muted rounded-lg border p-3 transition-colors {style.color}"
 				>
 					<!-- Title row -->
 					<div class="flex items-start gap-2">
 						<span class="text-sm">{style.icon}</span>
 						<div class="min-w-0 flex-1">
-							<h4 class="text-sm font-medium text-gray-200">{quest.title}</h4>
+							<h4 class="text-foreground text-sm font-medium">{quest.title}</h4>
 							{#if quest.giver}
-								<p class="text-xs text-gray-500">From: {quest.giver}</p>
+								<p class="text-muted-foreground text-xs">From: {quest.giver}</p>
 							{/if}
 						</div>
 					</div>
 
 					<!-- Description -->
 					{#if quest.description}
-						<p class="mt-2 text-xs text-gray-400">{quest.description}</p>
+						<p class="text-muted-foreground mt-2 text-xs">{quest.description}</p>
 					{/if}
 
 					<!-- Objectives -->
@@ -119,11 +108,13 @@
 						<div class="mt-2 space-y-1">
 							{#each quest.objectives as objective}
 								<div class="flex items-start gap-2 text-xs">
-									<span class={objective.completed ? 'text-green-400' : 'text-gray-500'}>
+									<span class={objective.completed ? 'text-green-500' : 'text-muted-foreground'}>
 										{objective.completed ? '✓' : '○'}
 									</span>
 									<span
-										class={objective.completed ? 'text-gray-500 line-through' : 'text-gray-300'}
+										class={objective.completed
+											? 'text-muted-foreground line-through'
+											: 'text-foreground'}
 									>
 										{objective.description}
 									</span>
@@ -134,20 +125,22 @@
 						<!-- Progress bar -->
 						{#if quest.status === 'active'}
 							<div class="mt-2">
-								<div class="h-1.5 overflow-hidden rounded-full bg-gray-700">
+								<div class="bg-muted h-1.5 overflow-hidden rounded-full">
 									<div
-										class="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+										class="from-primary to-accent h-full bg-gradient-to-r transition-all duration-500"
 										style="width: {progress}%"
 									></div>
 								</div>
-								<p class="mt-1 text-right text-[10px] text-gray-500">{progress}% complete</p>
+								<p class="text-muted-foreground mt-1 text-right text-[10px]">
+									{progress}% complete
+								</p>
 							</div>
 						{/if}
 					{/if}
 
 					<!-- Rewards -->
 					{#if quest.rewards}
-						<div class="mt-2 flex items-center gap-1 text-xs text-amber-400">
+						<div class="text-accent mt-2 flex items-center gap-1 text-xs">
 							<span>🎁</span>
 							<span>{quest.rewards}</span>
 						</div>

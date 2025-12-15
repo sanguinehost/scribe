@@ -9,7 +9,8 @@
 		ScribeChatSession,
 		ScribeChatMessage,
 		UserPersona,
-		LorebookEntry
+		LorebookEntry,
+		GameState
 	} from '$lib/types';
 	import { createChatModeStrategy } from '$lib/strategies/chat';
 	import Messages from './messages.svelte';
@@ -184,14 +185,17 @@
 		const latestState = controller.activeStreamingService.latestGameState;
 		if (latestState && controller.chat && controller.chat.game_master_mode_enabled) {
 			// Parse game_state if it's a JSON string (backend/SSE may send as string)
-			let parsedState = latestState;
-			if (typeof parsedState === 'string') {
+			let parsedState: GameState | null = null;
+			if (typeof latestState === 'string') {
 				try {
-					parsedState = JSON.parse(parsedState);
+					parsedState = JSON.parse(latestState) as GameState;
 					console.log('🎮 Parsed real-time game_state from JSON string');
 				} catch (e) {
 					console.error('🎮 Failed to parse real-time game_state JSON:', e);
 				}
+			} else {
+				// Already an object
+				parsedState = latestState as unknown as GameState;
 			}
 			// Only update if the reference has changed
 			if (controller.chat.game_state !== parsedState) {
@@ -361,7 +365,7 @@
 	}
 </script>
 
-<div class="flex h-dvh min-w-0 flex-col bg-background">
+<div class="bg-background flex h-dvh min-w-0 flex-col">
 	<ChatHeader
 		{user}
 		{chat}
@@ -408,11 +412,11 @@
 					controller.fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || controller.isLoadingSuggestions || controller.isLoading}
-				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="border-input bg-background ring-offset-background hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if controller.isLoadingSuggestions}
 					<svg
-						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
+						class="text-primary -ml-1 mr-2 h-4 w-4 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
@@ -572,7 +576,7 @@
 						{@const completionTokens = chat.total_completion_tokens || 0}
 						{@const totalTokens = promptTokens + completionTokens}
 
-						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
+						<div class="text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs">
 							<!-- Main breakdown -->
 							<div class="flex items-center justify-between">
 								<span class="font-medium">Session Usage:</span>

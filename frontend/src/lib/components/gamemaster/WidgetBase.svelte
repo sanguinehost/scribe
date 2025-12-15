@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { ChevronUp, Maximize2, X } from 'lucide-svelte';
 
 	interface Props {
 		title: string;
@@ -20,21 +21,21 @@
 </script>
 
 <div
-	class="mb-3 overflow-hidden rounded-lg border border-purple-500/20 bg-gray-900/80 backdrop-blur-sm transition-all duration-200"
+	class="border-border bg-card/80 mb-3 overflow-hidden rounded-lg border shadow-sm backdrop-blur-sm transition-all duration-200"
 >
 	<!-- Widget Header -->
-	<div class="flex items-center justify-between border-b border-purple-500/10 px-4 py-3">
+	<div class="border-border flex items-center justify-between border-b px-4 py-3">
 		<button
 			onclick={toggleCollapse}
-			class="flex flex-1 items-center gap-2 text-left transition-colors hover:text-purple-400"
+			class="hover:text-primary flex flex-1 items-center gap-2 text-left transition-colors"
 			aria-label="Toggle {title}"
 		>
 			{#if icon}
-				<div class="text-purple-400">
+				<div class="text-primary">
 					{@render icon()}
 				</div>
 			{/if}
-			<h3 class="text-sm font-semibold">{title}</h3>
+			<h3 class="text-foreground text-sm font-semibold">{title}</h3>
 		</button>
 
 		<div class="flex items-center gap-1">
@@ -42,61 +43,37 @@
 			{#if onExpand}
 				<button
 					onclick={onExpand}
-					class="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-purple-500/10"
+					class="hover:bg-muted flex h-7 w-7 items-center justify-center rounded transition-colors"
 					aria-label="Expand {title}"
 				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-3.5 w-3.5 text-gray-400 transition-colors hover:text-purple-400"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<polyline points="15 3 21 3 21 9"></polyline>
-						<polyline points="9 21 3 21 3 15"></polyline>
-						<line x1="21" y1="3" x2="14" y2="10"></line>
-						<line x1="3" y1="21" x2="10" y2="14"></line>
-					</svg>
+					<Maximize2
+						class="text-muted-foreground hover:text-primary h-3.5 w-3.5 transition-colors"
+					/>
 				</button>
 			{/if}
 
 			<!-- Collapse/Expand Button -->
 			<button
 				onclick={toggleCollapse}
-				class="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-purple-500/10"
+				class="hover:bg-muted flex h-7 w-7 items-center justify-center rounded transition-colors"
 				aria-label={collapsed ? 'Expand' : 'Collapse'}
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="h-4 w-4 text-gray-400 transition-transform duration-200"
+				<span
+					class="text-muted-foreground transition-transform duration-200"
 					class:rotate-180={collapsed}
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
 				>
-					<path d="m18 15-6-6-6 6" />
-				</svg>
+					<ChevronUp class="h-4 w-4" />
+				</span>
 			</button>
 
 			<!-- Close Button (optional) -->
 			{#if onClose}
 				<button
 					onclick={onClose}
-					class="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-red-500/10"
+					class="hover:bg-destructive/10 flex h-7 w-7 items-center justify-center rounded transition-colors"
 					aria-label="Close {title}"
 				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-4 w-4 text-gray-400 hover:text-red-400"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M18 6L6 18M6 6l12 12" />
-					</svg>
+					<X class="text-muted-foreground hover:text-destructive h-4 w-4" />
 				</button>
 			{/if}
 		</div>

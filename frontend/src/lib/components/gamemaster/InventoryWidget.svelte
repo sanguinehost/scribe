@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { InventoryItem } from '$lib/types';
+	import { Package } from 'lucide-svelte';
 	import WidgetBase from './WidgetBase.svelte';
 
 	interface Props {
@@ -37,11 +38,11 @@
 	function getRarityColor(item: InventoryItem): string {
 		const rarity = (item.properties?.rarity as string)?.toLowerCase() || 'common';
 		const colors: Record<string, string> = {
-			common: 'text-gray-400 border-gray-600',
-			uncommon: 'text-green-400 border-green-600',
-			rare: 'text-blue-400 border-blue-600',
-			epic: 'text-purple-400 border-purple-600',
-			legendary: 'text-amber-400 border-amber-600'
+			common: 'text-muted-foreground border-border',
+			uncommon: 'text-green-500 border-green-600',
+			rare: 'text-blue-500 border-blue-600',
+			epic: 'text-purple-500 border-purple-600',
+			legendary: 'text-amber-500 border-amber-600'
 		};
 		return colors[rarity] || colors.common;
 	}
@@ -63,27 +64,16 @@
 </script>
 
 {#snippet iconSnippet()}
-	<svg
-		xmlns="http://www.w3.org/2000/svg"
-		class="h-4 w-4"
-		viewBox="0 0 24 24"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="2"
-	>
-		<path d="M4 7V4h16v3"></path>
-		<path d="M9 20h6"></path>
-		<path d="M12 4v16"></path>
-	</svg>
+	<Package class="h-4 w-4" />
 {/snippet}
 
 <WidgetBase title="Inventory" icon={iconSnippet}>
 	<!-- Tabs -->
-	<div class="mb-3 flex gap-1 rounded-lg bg-gray-800 p-1">
+	<div class="bg-muted mb-3 flex gap-1 rounded-lg p-1">
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab === 'all'
-				? 'bg-purple-500/30 text-purple-300'
-				: 'text-gray-400 hover:text-gray-200'}"
+				? 'bg-primary/20 text-primary'
+				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'all')}
 		>
 			All ({inventory.length})
@@ -91,8 +81,8 @@
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
 			'equipped'
-				? 'bg-purple-500/30 text-purple-300'
-				: 'text-gray-400 hover:text-gray-200'}"
+				? 'bg-primary/20 text-primary'
+				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'equipped')}
 		>
 			Equipped
@@ -100,8 +90,8 @@
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
 			'consumables'
-				? 'bg-purple-500/30 text-purple-300'
-				: 'text-gray-400 hover:text-gray-200'}"
+				? 'bg-primary/20 text-primary'
+				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'consumables')}
 		>
 			Consumables
@@ -111,16 +101,16 @@
 	<!-- Item list -->
 	<div class="max-h-48 space-y-1.5 overflow-y-auto">
 		{#if filteredItems().length === 0}
-			<p class="py-4 text-center text-sm italic text-gray-500">No items</p>
+			<p class="text-muted-foreground py-4 text-center text-sm italic">No items</p>
 		{:else}
 			{#each filteredItems() as item (item.id)}
 				<div
-					class="flex items-center gap-2 rounded-lg border bg-gray-800/50 p-2 transition-colors hover:bg-gray-800 {getRarityColor(
+					class="bg-muted/50 hover:bg-muted flex items-center gap-2 rounded-lg border p-2 transition-colors {getRarityColor(
 						item
 					)}"
 				>
 					<!-- Icon -->
-					<div class="flex h-8 w-8 items-center justify-center rounded bg-gray-700 text-sm">
+					<div class="bg-muted flex h-8 w-8 items-center justify-center rounded text-sm">
 						{getCategoryIcon(item.category)}
 					</div>
 
@@ -131,18 +121,18 @@
 								{item.name}
 							</span>
 							{#if item.equipped}
-								<span class="rounded bg-green-500/20 px-1 text-[10px] text-green-400">Equipped</span
+								<span class="rounded bg-green-500/20 px-1 text-[10px] text-green-500">Equipped</span
 								>
 							{/if}
 						</div>
 						{#if item.description}
-							<p class="truncate text-xs text-gray-500">{item.description}</p>
+							<p class="text-muted-foreground truncate text-xs">{item.description}</p>
 						{/if}
 					</div>
 
 					<!-- Quantity -->
 					{#if item.quantity > 1}
-						<span class="rounded bg-gray-700 px-1.5 py-0.5 font-mono text-xs text-gray-400">
+						<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-xs">
 							×{item.quantity}
 						</span>
 					{/if}
@@ -153,8 +143,8 @@
 
 	<!-- Weight indicator -->
 	{#if totalWeight > 0}
-		<div class="mt-3 border-t border-gray-700 pt-2">
-			<div class="flex items-center justify-between text-xs text-gray-500">
+		<div class="border-border mt-3 border-t pt-2">
+			<div class="text-muted-foreground flex items-center justify-between text-xs">
 				<span>Total Weight</span>
 				<span class="font-mono">{totalWeight.toFixed(1)} kg</span>
 			</div>

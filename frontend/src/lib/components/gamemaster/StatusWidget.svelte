@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Vital } from '$lib/types';
+	import { Heart } from 'lucide-svelte';
 	import WidgetBase from './WidgetBase.svelte';
 
 	interface Props {
@@ -43,41 +44,30 @@
 </script>
 
 {#snippet iconSnippet()}
-	<svg
-		xmlns="http://www.w3.org/2000/svg"
-		class="h-4 w-4"
-		viewBox="0 0 24 24"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="2"
-	>
-		<path
-			d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-		></path>
-	</svg>
+	<Heart class="h-4 w-4" />
 {/snippet}
 
 <WidgetBase title="Status" icon={iconSnippet}>
 	<div class="space-y-3">
 		{#if !vitals || Object.keys(vitals).length === 0}
-			<p class="text-center text-sm italic text-gray-500">No vitals tracked</p>
+			<p class="text-muted-foreground text-center text-sm italic">No vitals tracked</p>
 		{:else}
 			{#each Object.entries(vitals) as [key, vital]}
 				{@const percent = vital.max > 0 ? (vital.current / vital.max) * 100 : 0}
 				<div class="space-y-1">
 					<!-- Label row -->
 					<div class="flex items-center justify-between text-xs">
-						<span class="flex items-center gap-1.5 font-medium text-gray-300">
+						<span class="text-foreground flex items-center gap-1.5 font-medium">
 							<span>{getVitalIcon(key)}</span>
 							<span>{formatVitalName(key)}</span>
 						</span>
-						<span class="font-mono text-gray-400">
+						<span class="text-muted-foreground font-mono">
 							{vital.current}/{vital.max}
 						</span>
 					</div>
 
 					<!-- Progress bar -->
-					<div class="h-2.5 overflow-hidden rounded-full bg-gray-800">
+					<div class="bg-muted h-2.5 overflow-hidden rounded-full">
 						<div
 							class="h-full bg-gradient-to-r transition-all duration-500 ease-out {getVitalColor(
 								vital.current,
@@ -91,7 +81,7 @@
 					{#if vital.modifiers && vital.modifiers.length > 0}
 						<div class="flex flex-wrap gap-1">
 							{#each vital.modifiers as modifier}
-								<span class="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] text-purple-300">
+								<span class="bg-primary/20 text-primary rounded px-1.5 py-0.5 text-[10px]">
 									{modifier}
 								</span>
 							{/each}
