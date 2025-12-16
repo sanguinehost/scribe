@@ -4,10 +4,13 @@
 	import WidgetBase from './WidgetBase.svelte';
 
 	interface Props {
-		inventory: InventoryItem[];
+		inventory?: InventoryItem[] | null;
 	}
 
 	let { inventory = [] }: Props = $props();
+
+	// Ensure we always have an array
+	const items = inventory ?? [];
 
 	let activeTab: 'all' | 'equipped' | 'consumables' = $state('all');
 
@@ -15,20 +18,20 @@
 	let filteredItems = $derived(() => {
 		switch (activeTab) {
 			case 'equipped':
-				return inventory.filter((item) => item.equipped);
+				return items.filter((item) => item.equipped);
 			case 'consumables':
-				return inventory.filter(
+				return items.filter(
 					(item) =>
 						item.category?.toLowerCase() === 'consumable' || item.category?.toLowerCase() === 'food'
 				);
 			default:
-				return inventory;
+				return items;
 		}
 	});
 
 	// Get total weight if items have weight property
 	let totalWeight = $derived(
-		inventory.reduce((sum, item) => {
+		items.reduce((sum, item) => {
 			const weight = (item.properties?.weight as number) || 0;
 			return sum + weight * item.quantity;
 		}, 0)
@@ -76,7 +79,7 @@
 				: 'text-muted-foreground hover:text-foreground'}"
 			onclick={() => (activeTab = 'all')}
 		>
-			All ({inventory.length})
+			All ({items.length})
 		</button>
 		<button
 			class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===

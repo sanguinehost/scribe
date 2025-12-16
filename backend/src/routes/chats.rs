@@ -609,7 +609,19 @@ pub async fn delete_chat_handler(
         }
     }
 
-    // Delete the chat (messages and other associated data will cascade)
+    // First, explicitly delete all messages for this chat session
+    // Note: chat_messages.session_id doesn't have ON DELETE CASCADE to chat_sessions,
+    // so we must delete messages explicitly. message_variants will cascade-delete from chat_messages.
+    let chat_id_for_messages = id;
+    crate::db::with_conn(&pool, move |conn| {
+        diesel::delete(chat_messages::table.filter(chat_messages::session_id.eq(chat_id_for_messages)))
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete chat messages: {e}")))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+    // Now delete the chat session itself (game_state column is deleted with the row)
     crate::db::with_conn(&pool, move |conn| {
         diesel::delete(chat_sessions::table.filter(chat_sessions::id.eq(id)))
             .execute(conn)
@@ -836,9 +848,14 @@ async fn process_messages_for_response(
     user_id: crate::db::DbId,
     character_name: Option<&str>,
     user_persona_name: Option<&str>,
+    session_game_state: Option<&str>, // Game state from chat_sessions for fallback
 ) -> Result<Vec<MessageResponse>, AppError> {
     tracing::info!("🔄 Processing {} messages for response", messages_db.len());
     let mut responses = Vec::new();
+
+    // Parse session game_state once for use as fallback
+    let session_gs: Option<serde_json::Value> = session_game_state
+        .and_then(|s| serde_json::from_str(s).ok());
 
     for msg_db in messages_db {
         tracing::info!(
@@ -849,43 +866,40 @@ async fn process_messages_for_response(
             msg_db.current_variant_index
         );
         // Get content based on the current variant index, not always variant 0
-        let content = if msg_db.current_variant_index == 0 {
-            // Index 0 means original message content
-            tracing::info!("📄 Using original content for message {}", msg_db.id);
-            let decrypted_client_message =
-                msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
-            decrypted_client_message.content
-        } else {
-            // Get the specific variant content based on current_variant_index
-            tracing::info!(
-                "🎯 Getting variant {} content for message {}",
-                msg_db.current_variant_index,
-                msg_db.id
-            );
-            match get_variant_content_by_index(
-                pool.clone(),
-                msg_db.id,
-                msg_db.current_variant_index,
-                user_id,
-                dek,
-            )
-            .await?
-            {
-                Some(variant_content) => {
-                    tracing::info!("✅ Found variant content for message {}", msg_db.id);
-                    variant_content
-                }
-                None => {
-                    // Fallback to original message content if variant not found
-                    tracing::warn!(
-                        "⚠️ Variant {} not found for message {}, falling back to original",
-                        msg_db.current_variant_index,
-                        msg_db.id
-                    );
-                    let decrypted_client_message =
-                        msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
-                    decrypted_client_message.content
-                }
+        // Get content and game_state based on the current variant index
+        let (content, game_state) = match get_variant_content_by_index(
+            pool.clone(),
+            msg_db.id,
+            msg_db.current_variant_index,
+            user_id,
+            dek,
+        )
+        .await?
+        {
+            Some((c, gs)) => {
+                tracing::info!(
+                    "✅ Found variant content and game state for message {}",
+                    msg_db.id
+                );
+                (c, gs)
+            }
+            None => {
+                // Fallback to original message content if variant not found
+                // For the most recent assistant message, use the session's game_state
+                tracing::warn!(
+                    "⚠️ Variant {} not found for message {}, falling back to original",
+                    msg_db.current_variant_index,
+                    msg_db.id
+                );
+                let decrypted_client_message =
+                    msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
+                // Use session game_state as fallback for assistant messages
+                let fallback_gs = if msg_db.message_type == crate::models::chats::MessageRole::Assistant {
+                    session_gs.clone()
+                } else {
+                    None
+                };
+                (decrypted_client_message.content, fallback_gs)
             }
         };
 
@@ -913,8 +927,19 @@ async fn process_messages_for_response(
             session_id: msg_db.session_id,
             message_type: msg_db.message_type,
             role: response_role,
-            content: crate::prompt_builder::replace_template_variables(&content, character_name, user_persona_name),
-            parts: json!([{"text": crate::prompt_builder::replace_template_variables(&content, character_name, user_persona_name)}]).into(),
+            content: crate::prompt_builder::replace_template_variables(
+                &content,
+                character_name,
+                user_persona_name,
+            ),
+            parts: json!([{
+                "text": crate::prompt_builder::replace_template_variables(
+                    &content,
+                    character_name,
+                    user_persona_name
+                )
+            }])
+            .into(),
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
@@ -928,14 +953,16 @@ async fn process_messages_for_response(
             is_variant: msg_db.variant_count > 0, // True if this message has variants
             parent_message_id: None,              // TODO: Add parent_message_id to Message struct
             variants: None,                       // TODO: Load actual variants
+            game_state,
         };
 
         tracing::info!(
-            "📤 Sending message response: id={}, variant_count={}, current_variant_index={}, is_variant={}",
+            "📤 Sending message response: id={}, variant_count={}, current_variant_index={}, is_variant={}, game_state_is_some={}",
             message_response.id,
             message_response.variant_count,
             message_response.current_variant_index,
-            message_response.is_variant
+            message_response.is_variant,
+            message_response.game_state.is_some()
         );
 
         responses.push(message_response);
@@ -1046,6 +1073,7 @@ pub async fn get_messages_by_chat_id_handler(
         user.id,
         character_name.as_deref(),
         user_persona_name.as_deref(),
+        chat.game_state.as_deref(), // Pass session game_state for fallback
     )
     .await?;
 
@@ -1440,6 +1468,7 @@ pub async fn create_message_handler(
         is_variant: saved_db_message.variant_count > 0,
         parent_message_id: None, // TODO: Add parent_message_id to ChatMessage struct
         variants: None,          // TODO: Load actual variants
+        game_state: None,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -1658,6 +1687,7 @@ pub async fn get_message_by_id_handler(
         is_variant: false,
         parent_message_id: None,
         variants: None,
+        game_state: None,
     };
 
     Ok(Json(response))
@@ -2519,15 +2549,26 @@ pub async fn select_message_variant_handler(
         .await
         .map_err(|e| AppError::DbInteractError(e.to_string()))?;
 
-    // Get the content for the selected variant
-    let content = if payload.variant_index == 0 {
-        // Variant 0 means use original message content
+    // Get content and game_state
+    let (content, game_state) = if payload.variant_index == 0 {
+        // Index 0 means original message content
         let client_message = updated_message
             .clone()
             .into_decrypted_for_client(Some(&dek.0))?;
-        client_message.content
+        
+        // For variant 0, try to fetch game_state from message_variants table
+        match get_variant_content_by_index(
+            pool.clone(),
+            message_id,
+            0,
+            user.id,
+            &dek,
+        ).await? {
+            Some((_, gs)) => (client_message.content, gs),
+            None => (client_message.content, None)
+        }
     } else {
-        // Get content from the variants table
+        // Get content and game_state from the variants table
         get_variant_content_by_index(
             pool.clone(),
             message_id,
@@ -2564,6 +2605,7 @@ pub async fn select_message_variant_handler(
         is_variant: false,
         parent_message_id: None,
         variants: None,
+        game_state,
     };
 
     Ok((StatusCode::OK, Json(response)))
@@ -2576,8 +2618,9 @@ async fn get_variant_content_by_index(
     variant_index: i32,
     user_id: crate::db::DbId,
     dek: &SessionDek,
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<(String, Option<serde_json::Value>)>, AppError> {
     use crate::schema::message_variants;
+    use diesel::SelectableHelper;
 
     let dek_ref = &dek.0;
     let variant_opt = crate::db::with_conn(&pool, move |conn| {
@@ -2585,7 +2628,8 @@ async fn get_variant_content_by_index(
             .filter(message_variants::parent_message_id.eq(message_id))
             .filter(message_variants::user_id.eq(user_id))
             .filter(message_variants::variant_index.eq(variant_index))
-            .first::<crate::models::chats::MessageVariant>(conn)
+            .select(crate::models::chats::MessageVariant::as_select())
+            .first(conn)
             .optional()
             .map_err(Into::into)
     })
@@ -2593,7 +2637,7 @@ async fn get_variant_content_by_index(
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;
-        Ok(Some(content))
+        Ok(Some((content, variant.game_state.map(Into::into))))
     } else {
         Ok(None)
     }

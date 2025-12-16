@@ -2733,6 +2733,7 @@ pub struct MessageVariantResponse {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 // MessageResponse struct for API responses
@@ -2761,6 +2762,7 @@ pub struct MessageResponse {
 
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -3627,6 +3629,7 @@ pub struct MessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 /// Insertable model for creating new message variants
@@ -3644,6 +3647,7 @@ pub struct NewMessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl MessageVariant {
@@ -3727,6 +3731,7 @@ impl NewMessageVariant {
         completion_tokens: Option<i32>,
         model_name: Option<String>,
         raw_prompt_debug: Option<&str>,
+        game_state: Option<serde_json::Value>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
@@ -3755,6 +3760,7 @@ impl NewMessageVariant {
             model_name,
             raw_prompt_ciphertext,
             raw_prompt_nonce,
+            game_state,
         })
     }
 }
@@ -3773,6 +3779,7 @@ pub struct MessageVariantDto {
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
     pub raw_prompt: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl MessageVariantDto {
@@ -3793,6 +3800,7 @@ impl MessageVariantDto {
             completion_tokens: variant.completion_tokens,
             model_name: variant.model_name,
             raw_prompt,
+            game_state: variant.game_state,
         })
     }
 }

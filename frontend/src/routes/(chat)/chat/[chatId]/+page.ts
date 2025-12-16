@@ -67,7 +67,8 @@ export async function load({ params: { chatId }, parent }) {
 				variant_count: msg.variant_count,
 				current_variant_index: msg.current_variant_index,
 				is_variant: msg.is_variant,
-				parent_message_id: msg.parent_message_id
+				parent_message_id: msg.parent_message_id,
+				has_game_state: !!msg.game_state
 			}))
 		);
 
@@ -79,9 +80,9 @@ export async function load({ params: { chatId }, parent }) {
 				message_type: rawMsg.message_type,
 				content:
 					rawMsg.parts &&
-					rawMsg.parts.length > 0 &&
-					'text' in rawMsg.parts[0] &&
-					typeof rawMsg.parts[0].text === 'string'
+						rawMsg.parts.length > 0 &&
+						'text' in rawMsg.parts[0] &&
+						typeof rawMsg.parts[0].text === 'string'
 						? rawMsg.parts[0].text
 						: '',
 				created_at:
@@ -102,7 +103,8 @@ export async function load({ params: { chatId }, parent }) {
 				parent_message_id: rawMsg.parent_message_id,
 				variants: rawMsg.variants,
 				status: rawMsg.status,
-				superseded_at: rawMsg.superseded_at
+				superseded_at: rawMsg.superseded_at,
+				game_state: rawMsg.game_state // CRITICAL: Include game_state from backend
 			})
 		);
 

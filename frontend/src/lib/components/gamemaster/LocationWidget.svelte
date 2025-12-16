@@ -4,22 +4,23 @@
 	import WidgetBase from './WidgetBase.svelte';
 
 	interface Props {
-		location: Location | null;
-		environment: EnvironmentState;
-		gameTime: GameTime | null;
+		location?: Location | null;
+		environment?: EnvironmentState | null;
+		gameTime?: GameTime | null;
 	}
 
-	let {
-		location,
-		environment = {
-			weather: null,
-			lighting: null,
-			temperature: null,
-			hazards: [],
-			tags: []
-		},
-		gameTime
-	}: Props = $props();
+	const defaultEnvironment: EnvironmentState = {
+		weather: null,
+		lighting: null,
+		temperature: null,
+		hazards: [],
+		tags: []
+	};
+
+	let { location = null, environment = null, gameTime = null }: Props = $props();
+
+	// Use provided environment or default
+	const env = environment ?? defaultEnvironment;
 
 	// Get weather icon
 	function getWeatherIcon(weather: string | null): string {
@@ -118,17 +119,16 @@
 		<div class="grid grid-cols-3 gap-2">
 			<!-- Weather -->
 			<div class="bg-muted/50 flex flex-col items-center rounded-lg p-2">
-				<span class="text-lg">{getWeatherIcon(environment.weather)}</span>
-				<span class="text-muted-foreground mt-1 text-xs capitalize"
-					>{environment.weather || 'Unknown'}</span
+				<span class="text-lg">{getWeatherIcon(env.weather)}</span>
+				<span class="text-muted-foreground mt-1 text-xs capitalize">{env.weather || 'Unknown'}</span
 				>
 			</div>
 
 			<!-- Lighting -->
 			<div class="bg-muted/50 flex flex-col items-center rounded-lg p-2">
-				<span class="text-lg {getLightingColor(environment.lighting)}">💡</span>
+				<span class="text-lg {getLightingColor(env.lighting)}">💡</span>
 				<span class="text-muted-foreground mt-1 text-xs capitalize"
-					>{environment.lighting || 'Unknown'}</span
+					>{env.lighting || 'Unknown'}</span
 				>
 			</div>
 
@@ -136,20 +136,20 @@
 			<div class="bg-muted/50 flex flex-col items-center rounded-lg p-2">
 				<span class="text-lg">🌡️</span>
 				<span class="text-muted-foreground mt-1 text-xs capitalize"
-					>{environment.temperature || 'Unknown'}</span
+					>{env.temperature || 'Unknown'}</span
 				>
 			</div>
 		</div>
 
 		<!-- Hazards -->
-		{#if environment.hazards && environment.hazards.length > 0}
+		{#if env.hazards && env.hazards.length > 0}
 			<div class="border-destructive/30 bg-destructive/10 rounded-lg border p-2">
 				<div class="text-destructive flex items-center gap-1 text-xs">
 					<span>⚠️</span>
 					<span class="font-medium">Hazards</span>
 				</div>
 				<div class="mt-1.5 flex flex-wrap gap-1">
-					{#each environment.hazards as hazard}
+					{#each env.hazards as hazard}
 						<span class="bg-destructive/20 text-destructive rounded px-1.5 py-0.5 text-[10px]"
 							>{hazard}</span
 						>

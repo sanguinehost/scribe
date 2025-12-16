@@ -71,9 +71,8 @@
 	const _settingsStore = SettingsStore.fromContext();
 	// const chatHistory = ChatHistory.fromContext();
 
-	// Reactivity for props updates
+	// Reactivity for props updates (excluding chat which is already derived from controller.chat)
 	$effect(() => {
-		controller.chat = chat;
 		controller.user = user;
 		controller.character = character;
 	});

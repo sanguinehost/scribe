@@ -77,6 +77,8 @@ impl StateManagerAgent {
     /// * `conversation_summary` - A summary of recent conversation for context
     /// * `last_user_message` - The most recent user message
     /// * `last_assistant_message` - The most recent assistant/narrative response
+    /// * `player_name` - Name of the player (user's persona) - THEIR state is tracked
+    /// * `character_name` - Name of the NPC character being talked to
     ///
     /// # Returns
     /// A `Result<GameState, AppError>` containing the LLM's suggested complete new state
@@ -86,13 +88,17 @@ impl StateManagerAgent {
         conversation_summary: &str,
         last_user_message: &str,
         last_assistant_message: &str,
+        player_name: Option<&str>,
+        character_name: Option<&str>,
     ) -> Result<GameState, AppError> {
-        let system_prompt = self.build_system_prompt();
+        let system_prompt = self.build_system_prompt(player_name, character_name);
         let user_prompt = self.build_user_prompt(
             current_state,
             conversation_summary,
             last_user_message,
             last_assistant_message,
+            player_name,
+            character_name,
         );
 
         debug!(
@@ -129,13 +135,19 @@ impl StateManagerAgent {
     }
 
     /// Build the system prompt for the State Manager
-    fn build_system_prompt(&self) -> String {
-        r#"You are the Game State Manager, a specialized AI that tracks and outputs the complete game world state.
+    /// Uses {{user}} and {{char}} placeholders for templating consistency
+    fn build_system_prompt(&self, player_name: Option<&str>, character_name: Option<&str>) -> String {
+        let template = r#"You are the Game State Manager, a specialized AI that tracks and outputs the complete game world state.
 
 YOUR ROLE:
 - Analyze the conversation and narrative to determine what has changed
 - Output the COMPLETE current state of the game world as valid JSON
 - You must output the ENTIRE state, not just changes
+
+CRITICAL: WHO IS THE PLAYER?
+- "{{user}}" is the PLAYER (the user's persona). Track THEIR inventory, vitals, location, and quests.
+- "{{char}}" is the NPC (non-player character the AI roleplays). They go in the "npcs" section only.
+- The inventory, vitals, quests, and location should track {{user}}'s state, NOT {{char}}'s.
 
 OUTPUT FORMAT:
 You MUST output a valid JSON object matching this schema:
@@ -205,17 +217,23 @@ RULES:
 2. Include ALL parts of the state, even if unchanged from before
 3. Be consistent with the narrative - if something happened in the story, reflect it in state
 4. Use reasonable defaults for values not explicitly stated in the narrative
-5. For new games, infer initial state from the character and setting"#
-            .to_string()
+5. For new games, infer initial state from {{user}}'s context (their persona), not {{char}}
+6. The location, inventory, vitals, and quests are {{user}}'s - not {{char}}'s"#;
+
+        // Use the existing template substitution function for consistency
+        crate::prompt_builder::replace_template_variables(template, character_name, player_name)
     }
 
     /// Build the user prompt with context
+    /// Uses {{user}} and {{char}} placeholders for templating consistency
     fn build_user_prompt(
         &self,
         current_state: Option<&GameState>,
         conversation_summary: &str,
         last_user_message: &str,
         last_assistant_message: &str,
+        player_name: Option<&str>,
+        character_name: Option<&str>,
     ) -> String {
         let current_state_json = match current_state {
             Some(state) => serde_json::to_string_pretty(state).unwrap_or_else(|_| "{}".to_string()),
@@ -224,24 +242,38 @@ RULES:
             }
         };
 
-        format!(
+        // Build the prompt with clear XML-style tags for message attribution
+        let prompt = format!(
             r#"Based on the following context, output the COMPLETE updated game state as JSON.
 
-CURRENT STATE:
-{}
+<state_tracking_rules>
+CRITICAL: You are tracking the PLAYER's state ({{{{user}}}}), NOT the NPC's state ({{{{char}}}}).
+- inventory, vitals, quests, location = {{{{user}}}}'s stats
+- {{{{char}}}} goes in the "npcs" section only
+</state_tracking_rules>
 
-RECENT CONTEXT:
+<current_game_state>
 {}
+</current_game_state>
 
-LAST USER MESSAGE:
+<conversation_context>
 {}
+</conversation_context>
 
-LAST NARRATIVE RESPONSE:
+<human_message name="{{{{user}}}}">
 {}
+</human_message>
 
-Now output the complete updated game state as a single JSON object:"#,
+<ai_message name="{{{{char}}}}">
+{}
+</ai_message>
+
+Output the complete updated game state tracking {{{{user}}}}'s stats (not {{{{char}}}}'s):"#,
             current_state_json, conversation_summary, last_user_message, last_assistant_message
-        )
+        );
+
+        // Substitute {{user}} and {{char}} with actual names
+        crate::prompt_builder::replace_template_variables(&prompt, character_name, player_name)
     }
 
     /// Parse the LLM response into a GameState

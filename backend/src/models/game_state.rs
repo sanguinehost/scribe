@@ -14,16 +14,22 @@ pub struct GameState {
     /// In-game time (narrative time, not real time)
     pub game_time: Option<GameTime>,
     /// Player's inventory
+    #[serde(default)]
     pub inventory: Vec<InventoryItem>,
     /// Player's vital statistics (health, mana, stamina, etc.)
+    #[serde(default)]
     pub vitals: HashMap<String, Vital>,
     /// Active and completed quests
+    #[serde(default)]
     pub quests: Vec<Quest>,
     /// NPC states (disposition, location, status)
+    #[serde(default)]
     pub npcs: HashMap<String, NpcState>,
     /// Environmental conditions and tags
+    #[serde(default)]
     pub environment: EnvironmentState,
     /// Custom key-value data for game-specific state
+    #[serde(default)]
     pub custom_data: HashMap<String, serde_json::Value>,
 }
 
@@ -31,14 +37,17 @@ pub struct GameState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Location {
     /// Unique identifier for the location
+    #[serde(default)]
     pub id: String,
     /// Display name
+    #[serde(default)]
     pub name: String,
     /// Optional description (can be string or object)
     pub description: Option<serde_json::Value>,
     /// Parent region/area (for hierarchical locations)
     pub region: Option<String>,
     /// Tags for semantic search and rules lookup
+    #[serde(default)]
     pub tags: Vec<String>,
 }
 
@@ -46,10 +55,13 @@ pub struct Location {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameTime {
     /// Day number (1-indexed)
+    #[serde(default)]
     pub day: u32,
     /// Hour (0-23)
+    #[serde(default)]
     pub hour: u8,
     /// Time of day descriptor (dawn, morning, noon, afternoon, dusk, evening, night)
+    #[serde(default)]
     pub period: String,
     /// Optional season
     pub season: Option<String>,
@@ -59,18 +71,23 @@ pub struct GameTime {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InventoryItem {
     /// Unique identifier for the item
+    #[serde(default)]
     pub id: String,
     /// Display name
+    #[serde(default)]
     pub name: String,
     /// Quantity (for stackable items)
+    #[serde(default)]
     pub quantity: u32,
     /// Optional description
     pub description: Option<serde_json::Value>,
     /// Item category (weapon, armor, consumable, quest, misc)
     pub category: Option<String>,
     /// Whether the item is currently equipped
+    #[serde(default)]
     pub equipped: bool,
     /// Custom properties (durability, enchantments, etc.)
+    #[serde(default)]
     pub properties: HashMap<String, serde_json::Value>,
 }
 
@@ -78,12 +95,15 @@ pub struct InventoryItem {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Vital {
     /// Current value
+    #[serde(default)]
     pub current: f64,
     /// Maximum value
+    #[serde(default)]
     pub max: f64,
     /// Optional: regeneration rate per game-time unit
     pub regen_rate: Option<f64>,
     /// Status effects affecting this vital (e.g., "poisoned", "blessed")
+    #[serde(default)]
     pub modifiers: Vec<String>,
 }
 
@@ -91,14 +111,18 @@ pub struct Vital {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Quest {
     /// Unique identifier
+    #[serde(default)]
     pub id: String,
     /// Quest title
+    #[serde(default)]
     pub title: String,
     /// Current status
+    #[serde(default)]
     pub status: QuestStatus,
     /// Description or objective text
     pub description: Option<serde_json::Value>,
     /// Sub-objectives or steps
+    #[serde(default)]
     pub objectives: Vec<QuestObjective>,
     /// NPC who gave the quest
     pub giver: Option<String>,
@@ -120,9 +144,11 @@ pub enum QuestStatus {
 /// A sub-objective within a quest.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct QuestObjective {
-    /// Description of the objective
-    pub description: String,
+    /// Description of the objective (can be string or structured object)
+    #[serde(default)]
+    pub description: serde_json::Value,
     /// Whether this objective is complete
+    #[serde(default)]
     pub completed: bool,
     /// Optional progress (e.g., "3/5 wolves killed")
     pub progress: Option<serde_json::Value>,
@@ -132,18 +158,24 @@ pub struct QuestObjective {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NpcState {
     /// NPC's unique identifier
+    #[serde(default)]
     pub id: String,
     /// Display name
+    #[serde(default)]
     pub name: String,
     /// Current location (location ID)
     pub location: Option<String>,
     /// Disposition towards player (hostile, neutral, friendly, allied)
+    #[serde(default)]
     pub disposition: String,
     /// Current status (alive, dead, unconscious, absent)
+    #[serde(default)]
     pub status: String,
     /// Active objectives or goals (for "Director" pattern)
+    #[serde(default)]
     pub objectives: Vec<String>,
     /// Custom data
+    #[serde(default)]
     pub data: HashMap<String, serde_json::Value>,
 }
 
@@ -157,8 +189,10 @@ pub struct EnvironmentState {
     /// Temperature descriptor
     pub temperature: Option<String>,
     /// Active environmental hazards
+    #[serde(default)]
     pub hazards: Vec<String>,
     /// Tags for semantic matching
+    #[serde(default)]
     pub tags: Vec<String>,
 }
 
@@ -212,7 +246,7 @@ mod tests {
                     "Retrieve the family ring from the old mine"
                 )),
                 objectives: vec![QuestObjective {
-                    description: "Enter the abandoned mine".to_string(),
+                    description: serde_json::json!("Enter the abandoned mine"),
                     completed: false,
                     progress: None,
                 }],

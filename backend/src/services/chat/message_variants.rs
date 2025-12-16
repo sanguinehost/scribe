@@ -64,6 +64,7 @@ pub async fn create_message_variant(
     completion_tokens: Option<i32>,
     model_name: Option<String>,
     raw_prompt_debug: Option<&str>,
+    game_state: Option<serde_json::Value>,
 ) -> Result<crate::models::chats::MessageResponse, AppError> {
     tracing::info!(
         "🆕 Creating new variant for message {} with content length {}, tokens: prompt={:?}, completion={:?}",
@@ -96,6 +97,7 @@ pub async fn create_message_variant(
         completion_tokens,
         model_name.clone(),
         raw_prompt_debug,
+        game_state.clone(),
     )?;
 
     // Clone the DEK for use in the closure (create a new SecretBox from the exposed secret)
@@ -183,6 +185,7 @@ pub async fn create_message_variant(
                     parent_message.completion_tokens, // Preserve original tokens
                     Some(parent_message.model_name.clone()), // Preserve original model
                     parent_raw_prompt.as_deref(), // Preserve original raw_prompt
+                    None, // No game state for original variant
                 )
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
@@ -355,6 +358,7 @@ pub async fn create_message_variant(
         prompt_tokens: updated_message.prompt_tokens,
         completion_tokens: updated_message.completion_tokens,
         model_name: Some(updated_message.model_name),
+        game_state,
         status: updated_message.status,
         error_message: updated_message.error_message,
         variant_count: updated_message.variant_count,
@@ -403,14 +407,14 @@ pub async fn delete_message_variant(
     user_id: crate::db::DbId,
 ) -> Result<bool, AppError> {
     let deleted_count = crate::db::with_conn(&state.pool, move |conn| {
-        diesel::delete(
-            message_variants::table
-                .filter(message_variants::parent_message_id.eq(message_id))
-                .filter(message_variants::variant_index.eq(variant_index))
-                .filter(message_variants::user_id.eq(user_id)),
-        )
-        .execute(conn)
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}")))
+        let query = message_variants::table
+            .filter(message_variants::parent_message_id.eq(message_id))
+            .filter(message_variants::variant_index.eq(variant_index))
+            .filter(message_variants::user_id.eq(user_id));
+
+        diesel::delete(query)
+            .execute(conn)
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}")))
     })
     .await?;
 
@@ -523,6 +527,7 @@ pub async fn ensure_original_variant_exists(
             None,
             None,
             None, // No raw_prompt for old variants
+            None, // No game state for old variants
         )?;
 
         #[cfg(feature = "postgres-backend")]
@@ -585,6 +590,7 @@ pub async fn select_message_variant(
         variant_completion_tokens,
         variant_model_name,
         variant_raw_prompt,
+        variant_game_state,
     ) = if variant_index == 0 {
         // Index 0 is the original message content - decrypt from parent message and use parent's tokens AND raw_prompt
         use crate::crypto;
@@ -628,6 +634,7 @@ pub async fn select_message_variant(
             parent_message.completion_tokens,
             Some(parent_message.model_name.clone()),
             raw_prompt,
+            None, // No game state for original variant
         )
     } else {
         // Get content, token data, AND raw_prompt from variants table
@@ -642,6 +649,7 @@ pub async fn select_message_variant(
                 dto.completion_tokens,
                 dto.model_name,
                 dto.raw_prompt,
+                dto.game_state,
             ),
             None => {
                 return Err(AppError::BadRequest(format!(
@@ -653,47 +661,71 @@ pub async fn select_message_variant(
     };
 
     // Update the parent message's current_variant_index
+    // Update the parent message's current_variant_index AND chat_sessions.game_state
+    let variant_game_state_clone = variant_game_state.clone();
+
     let updated_message = crate::db::with_conn(&state.pool, move |conn| {
-        #[cfg(feature = "postgres-backend")]
-        {
-            diesel::update(chat_messages::table)
-                .filter(chat_messages::id.eq(message_id))
-                .filter(chat_messages::user_id.eq(user_id))
-                .set(chat_messages::current_variant_index.eq(variant_index))
-                .returning(Message::as_returning())
-                .get_result::<Message>(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to update current variant index: {e}"
-                    ))
-                })
-        }
+        use crate::models::chats::Message;
+        use crate::schema::{chat_messages, chat_sessions};
 
-        #[cfg(feature = "sqlite-backend")]
-        {
-            use diesel::prelude::*;
-            // SQLite doesn't support RETURNING, update and query back
-            diesel::update(chat_messages::table)
-                .filter(chat_messages::id.eq(message_id))
-                .filter(chat_messages::user_id.eq(user_id))
-                .set(chat_messages::current_variant_index.eq(variant_index))
-                .execute(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to update current variant index: {e}"
-                    ))
-                })?;
+        conn.transaction::<Message, AppError, _>(|trans_conn| {
+            #[cfg(feature = "postgres-backend")]
+            let msg = {
+                diesel::update(chat_messages::table)
+                    .filter(chat_messages::id.eq(message_id))
+                    .filter(chat_messages::user_id.eq(user_id))
+                    .set(chat_messages::current_variant_index.eq(variant_index))
+                    .returning(Message::as_returning())
+                    .get_result::<Message>(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to update current variant index: {e}"
+                        ))
+                    })?
+            };
 
-            chat_messages::table
-                .find(message_id)
-                .select(Message::as_select())
-                .first::<Message>(conn)
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to query message after update: {e}"
-                    ))
-                })
-        }
+            #[cfg(feature = "sqlite-backend")]
+            let msg = {
+                use diesel::prelude::*;
+                // SQLite doesn't support RETURNING, update and query back
+                diesel::update(chat_messages::table)
+                    .filter(chat_messages::id.eq(message_id))
+                    .filter(chat_messages::user_id.eq(user_id))
+                    .set(chat_messages::current_variant_index.eq(variant_index))
+                    .execute(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to update current variant index: {e}"
+                        ))
+                    })?;
+
+                chat_messages::table
+                    .find(message_id)
+                    .select(Message::as_select())
+                    .first::<Message>(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to query message after update: {e}"
+                        ))
+                    })?
+            };
+
+            // Update chat_sessions game_state if variant has one
+            if let Some(gs) = variant_game_state_clone {
+                let gs_db: crate::db::DbJson = gs.into();
+                diesel::update(chat_sessions::table)
+                    .filter(chat_sessions::id.eq(msg.session_id))
+                    .set(chat_sessions::game_state.eq(gs_db))
+                    .execute(trans_conn)
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to update session game state: {e}"
+                        ))
+                    })?;
+            }
+
+            Ok(msg)
+        })
     })
     .await?;
 
@@ -724,6 +756,7 @@ pub async fn select_message_variant(
         is_variant: false,
         parent_message_id: None,
         variants: None, // Don't include full variant data in selection response
+        game_state: variant_game_state,
     };
 
     Ok(response)

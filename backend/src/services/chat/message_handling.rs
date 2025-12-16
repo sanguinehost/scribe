@@ -313,6 +313,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 completion_tokens_val,
                 Some(model_name.clone()),
                 raw_prompt_debug, // Pass through the raw_prompt for the variant
+                None, // game_state will be updated later by narrative service if applicable
             )
             .await;
 

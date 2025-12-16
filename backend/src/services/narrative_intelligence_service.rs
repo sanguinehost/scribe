@@ -23,7 +23,7 @@ use crate::{
         chats::ChatMessage,
         users::{User, UserDbQuery},
     },
-    schema::users::dsl as users_dsl,
+    schema::{chat_messages, chat_sessions::dsl as chat_sessions_dsl, message_variants, users::dsl as users_dsl},
     services::{
         agentic::{AgenticNarrativeFactory, NarrativeAgentRunner, UserPersonaContext},
         embeddings::RetrievedChunk,
@@ -34,7 +34,6 @@ use crate::{
 };
 
 use crate::models::game_state::GameState;
-use crate::schema::chat_sessions::dsl as chat_sessions_dsl;
 use crate::services::game_state_service::ReconciliationResult;
 
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
@@ -388,6 +387,9 @@ impl NarrativeIntelligenceService {
         last_user_message: &str,
         last_assistant_message: &str,
         conversation_summary: &str,
+        message_id: Option<crate::db::DbId>,
+        player_name: Option<&str>,
+        character_name: Option<&str>,
     ) -> Result<Option<ReconciliationResult>, AppError> {
         let start_time = std::time::Instant::now();
 
@@ -422,6 +424,8 @@ impl NarrativeIntelligenceService {
                 conversation_summary,
                 last_user_message,
                 last_assistant_message,
+                player_name,
+                character_name,
             )
             .await?;
 
@@ -432,11 +436,12 @@ impl NarrativeIntelligenceService {
 
         let new_state_db: crate::DbJson = new_state_json.into();
 
+        let new_state_db_for_update = new_state_db.clone();
         conn.interact(move |db_conn| {
             diesel::update(
                 chat_sessions_dsl::chat_sessions.filter(chat_sessions_dsl::id.eq(chat_session_id)),
             )
-            .set(chat_sessions_dsl::game_state.eq(new_state_db))
+            .set(chat_sessions_dsl::game_state.eq(new_state_db_for_update))
             .execute(db_conn)
         })
         .await
@@ -444,6 +449,61 @@ impl NarrativeIntelligenceService {
         .map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to update game state: {e}"))
         })?;
+
+        // 4. Persist game_state to the message itself via chat_messages.game_state
+        // NOTE: Original messages (variant 0) don't have records in message_variants table,
+        // so we update the chat_messages table directly. The game_state in chat_sessions
+        // is the "current" state, while game_state on each message represents the state
+        // AFTER that message was processed.
+        if let Some(msg_id) = message_id {
+            let new_state_db_clone = new_state_db.clone();
+
+            // Try to update message_variants first (for regenerated messages)
+            let update_result = conn
+                .interact(move |db_conn| {
+                    // Get current variant index
+                    let current_idx = chat_messages::table
+                        .select(chat_messages::current_variant_index)
+                        .filter(chat_messages::id.eq(msg_id))
+                        .first::<i32>(db_conn)?;
+
+                    // Try to update the variant
+                    let rows_updated = diesel::update(
+                        message_variants::table
+                            .filter(message_variants::parent_message_id.eq(msg_id))
+                            .filter(message_variants::variant_index.eq(current_idx)),
+                    )
+                    .set(message_variants::game_state.eq(new_state_db_clone))
+                    .execute(db_conn)?;
+
+                    Ok::<usize, diesel::result::Error>(rows_updated)
+                })
+                .await
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("DB interact error: {e}"))
+                })?;
+
+            // If no variant was updated (original message), we log it but don't fail
+            // The game_state is already saved in chat_sessions.game_state
+            match update_result {
+                Ok(0) => {
+                    tracing::info!(
+                        "No variant record found for message {} - game_state saved to chat_sessions only",
+                        msg_id
+                    );
+                }
+                Ok(n) => {
+                    tracing::info!(
+                        "Updated game_state on {} variant record(s) for message {}",
+                        n,
+                        msg_id
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to update message variant game_state: {}", e);
+                }
+            }
+        }
 
         let duration = start_time.elapsed();
         info!(

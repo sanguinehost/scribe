@@ -354,16 +354,16 @@ pub async fn stream_chat_response(
                         log::info!("[stream_chat_response] Received 'done' event, ending stream");
                         ChatStreamEvent::Done
                     }
-                    "game_state_update" => {
+                    "game_state" => {
                         // Parse JSON game state
                         match serde_json::from_str::<serde_json::Value>(&sse_event.data) {
                             Ok(game_state) => {
-                                log::info!("[stream_chat_response] Received game_state_update event");
+                                log::info!("[stream_chat_response] Received game_state event");
                                 ChatStreamEvent::GameStateUpdate { game_state }
                             }
                             Err(e) => {
                                 log::error!(
-                                    "[stream_chat_response] Failed to parse game_state_update: {}",
+                                    "[stream_chat_response] Failed to parse game_state: {}",
                                     e
                                 );
                                 continue; // Skip this event

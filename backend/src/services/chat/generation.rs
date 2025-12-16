@@ -2271,74 +2271,76 @@ pub async fn stream_ai_response_and_save_message(
 
                         info!(session_id = %full_session_id_clone, enabled = game_master_mode_enabled_clone, "GAME_MASTER_DEBUG: Checking Game Master mode flag");
 
-                        // --- Game Master Mode Processing ---
+                        // --- Game Master Mode Processing (Fire-and-Forget) ---
+                        // Spawn a separate task so game state LLM call doesn't block the stream from closing.
+                        // The game state will still be persisted to DB; frontend can fetch on next load.
                         if game_master_mode_enabled_clone {
-                            info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: Game Master mode enabled, processing state update");
+                            info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: Game Master mode enabled, spawning fire-and-forget state update task");
 
-                            // We need the last user message for the reconciliation context
-                            // We can get it from recent_messages (last one should be user, second to last is assistant which we just saved)
-                            // Wait, get_messages_for_session returns *all* messages or a limit?
-                            // It returns recent ones.
-                            // The saved message is the assistant response.
-                            // The one before that should be the user message.
+                            // Clone everything needed for the async task
+                            let gm_session_id = full_session_id_clone;
+                            let gm_user_id = full_user_id_clone;
+                            let gm_state = state_for_full_save.clone();
+                            let gm_accumulated_content = accumulated_content_clone.clone();
+                            let gm_token_sender = token_sender_clone.clone();
+                            let gm_saved_message_id = saved_message.id;
 
-                            // We already fetched recent_messages for narrative processing.
-                            // If we didn't run narrative processing, we might need to fetch them now.
-                            // But recent_messages variable is inside the narrative block scope?
-                            // Ah, line 2212 defines recent_messages inside the block.
-                            // I should probably lift the message fetching out or re-fetch.
-                            // Re-fetching is safer/easier to implement right now without refactoring scopes.
+                            tokio::spawn(async move {
+                                // We need the last user message for the reconciliation context
+                                let recent_messages_gm = match crate::services::chat::message_handling::get_messages_for_session(
+                                    &gm_state.pool,
+                                    gm_user_id,
+                                    gm_session_id,
+                                ).await {
+                                    Ok(messages) => messages,
+                                    Err(e) => {
+                                        error!(session_id = %gm_session_id, error = %e, "GAME_MASTER_DEBUG: Failed to retrieve messages for GM processing");
+                                        return;
+                                    }
+                                };
 
-                             let recent_messages_gm = match crate::services::chat::message_handling::get_messages_for_session(
-                                &state_for_full_save.pool,
-                                full_user_id_clone,
-                                full_session_id_clone,
-                            ).await {
-                                Ok(messages) => messages,
-                                Err(e) => {
-                                    error!(session_id = %full_session_id_clone, error = %e, "GAME_MASTER_DEBUG: Failed to retrieve messages for GM processing");
-                                    Vec::new()
+                                // Find the last user message
+                                let last_user_message_bytes = recent_messages_gm.iter()
+                                    .rev()
+                                    .find(|m| m.message_type == crate::models::chats::MessageRole::User)
+                                    .map(|m| m.content.clone())
+                                    .unwrap_or_default();
+
+                                let last_user_message = String::from_utf8_lossy(&last_user_message_bytes).to_string();
+
+                                // The assistant message is the one we just saved
+                                let last_assistant_message = gm_accumulated_content;
+
+                                // Conversation summary - for now just use the last exchange
+                                let conversation_summary = format!("User: {}\nAssistant: {}", last_user_message, last_assistant_message);
+
+                                match gm_state.narrative_intelligence_service.as_ref().unwrap().process_game_state(
+                                    gm_session_id,
+                                    &last_user_message,
+                                    &last_assistant_message,
+                                    &conversation_summary,
+                                    Some(gm_saved_message_id),
+                                    None, // TODO: Fetch persona name from DB
+                                    None, // TODO: Fetch character name from DB
+                                ).await {
+                                    Ok(Some(result)) => {
+                                        info!(
+                                            session_id = %gm_session_id,
+                                            changes = result.applied_changes.len(),
+                                            "GAME_MASTER_DEBUG: Game state updated successfully (fire-and-forget)"
+                                        );
+                                        // Try to send the updated game state via SSE (may fail if stream already closed)
+                                        let _ = gm_token_sender.send(ScribeSseEvent::GameState(serde_json::to_value(&result.final_state).unwrap_or_default()));
+                                        info!(session_id = %gm_session_id, "GAME_MASTER_DEBUG: Sent GameState SSE event (fire-and-forget)");
+                                    }
+                                    Ok(None) => {
+                                        info!(session_id = %gm_session_id, "GAME_MASTER_DEBUG: No game state changes needed");
+                                    }
+                                    Err(e) => {
+                                        error!(session_id = %gm_session_id, error = %e, "GAME_MASTER_DEBUG: Failed to process game state update");
+                                    }
                                 }
-                            };
-
-                            // Find the last user message
-                            let last_user_message_bytes = recent_messages_gm.iter()
-                                .rev()
-                                .find(|m| m.message_type == crate::models::chats::MessageRole::User)
-                                .map(|m| m.content.clone())
-                                .unwrap_or_default();
-
-                            let last_user_message = String::from_utf8_lossy(&last_user_message_bytes).to_string();
-
-                            // The assistant message is the one we just saved (accumulated_content_clone)
-                            let last_assistant_message = accumulated_content_clone.clone();
-
-                            // Conversation summary - for now just use the last exchange
-                            let conversation_summary = format!("User: {}\nAssistant: {}", last_user_message, last_assistant_message);
-
-                            match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_game_state(
-                                full_session_id_clone,
-                                &last_user_message,
-                                &last_assistant_message,
-                                &conversation_summary,
-                            ).await {
-                                Ok(Some(result)) => {
-                                    info!(
-                                        session_id = %full_session_id_clone,
-                                        changes = result.applied_changes.len(),
-                                        "GAME_MASTER_DEBUG: Game state updated successfully"
-                                    );
-                                    // Send the updated game state to the client via SSE
-                                    let _ = token_sender_clone.send(ScribeSseEvent::GameState(serde_json::to_value(&result.final_state).unwrap_or_default()));
-                                    info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: Sent GameState SSE event");
-                                }
-                                Ok(None) => {
-                                    info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: No game state changes needed");
-                                }
-                                Err(e) => {
-                                    error!(session_id = %full_session_id_clone, error = %e, "GAME_MASTER_DEBUG: Failed to process game state update");
-                                }
-                            }
+                            });
                         }
                     }
                     Err(e) => {

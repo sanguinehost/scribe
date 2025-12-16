@@ -1563,6 +1563,8 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
     /// * `conversation_summary` - Summary of recent conversation for context
     /// * `last_user_message` - The most recent user message
     /// * `last_assistant_message` - The most recent assistant/narrative response
+    /// * `player_name` - Name of the player (user's persona) - THEIR state is tracked
+    /// * `character_name` - Name of the NPC character being talked to
     ///
     /// # Returns
     /// A `Result` containing the reconciled game state and a list of changes
@@ -1572,11 +1574,17 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
         conversation_summary: &str,
         last_user_message: &str,
         last_assistant_message: &str,
+        player_name: Option<&str>,
+        character_name: Option<&str>,
     ) -> Result<crate::services::game_state_service::ReconciliationResult, AppError> {
         use crate::models::game_state::GameState;
         use crate::services::game_state_service::GameStateService;
 
-        info!("Processing game state update via Sidecar Agent");
+        info!(
+            player = ?player_name,
+            character = ?character_name,
+            "Processing game state update via Sidecar Agent"
+        );
 
         // Create the State Manager Agent (Sidecar)
         let state_manager = StateManagerAgent::new();
@@ -1588,6 +1596,8 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
                 conversation_summary,
                 last_user_message,
                 last_assistant_message,
+                player_name,
+                character_name,
             )
             .await?;
 

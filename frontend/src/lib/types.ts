@@ -37,6 +37,7 @@ export interface Message {
 	is_variant: boolean; // Whether this is a variant of another message
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
+	game_state?: GameState | null; // Game state associated with this message variant
 }
 
 // Message variant response type
@@ -47,6 +48,7 @@ export interface MessageVariantResponse {
 	prompt_tokens?: number | null;
 	completion_tokens?: number | null;
 	model_name?: string | null;
+	game_state?: GameState | null;
 }
 
 // Request types for variant operations
@@ -668,6 +670,7 @@ export interface ScribeChatMessage {
 	is_variant?: boolean; // Whether this is a variant of another message
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
+	game_state?: GameState | null; // Game state associated with this message variant
 	// UI state
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages

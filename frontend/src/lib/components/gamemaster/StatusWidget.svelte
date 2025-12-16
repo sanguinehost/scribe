@@ -4,10 +4,10 @@
 	import WidgetBase from './WidgetBase.svelte';
 
 	interface Props {
-		vitals: Record<string, Vital>;
+		vitals?: Record<string, Vital> | null;
 	}
 
-	let { vitals }: Props = $props();
+	let { vitals = {} }: Props = $props();
 
 	// Get color gradient based on percentage
 	function getVitalColor(current: number, max: number): string {

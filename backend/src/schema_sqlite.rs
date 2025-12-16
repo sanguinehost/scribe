@@ -416,6 +416,7 @@ diesel::table! {
         model_name -> Nullable<Text>,
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
+        game_state -> Nullable<Text>,
     }
 }
 

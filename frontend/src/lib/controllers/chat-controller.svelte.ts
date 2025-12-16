@@ -273,9 +273,9 @@ export class ChatController {
 						message_type: rawMsg.message_type,
 						content:
 							rawMsg.parts &&
-							rawMsg.parts.length > 0 &&
-							'text' in rawMsg.parts[0] &&
-							typeof rawMsg.parts[0].text === 'string'
+								rawMsg.parts.length > 0 &&
+								'text' in rawMsg.parts[0] &&
+								typeof rawMsg.parts[0].text === 'string'
 								? rawMsg.parts[0].text
 								: '',
 						created_at:
@@ -295,7 +295,8 @@ export class ChatController {
 						variant_count: rawMsg.variant_count,
 						current_variant_index: rawMsg.current_variant_index,
 						is_variant: rawMsg.is_variant,
-						parent_message_id: rawMsg.parent_message_id
+						parent_message_id: rawMsg.parent_message_id,
+						game_state: rawMsg.game_state
 					})
 				);
 
@@ -322,7 +323,8 @@ export class ChatController {
 						current_variant_index: msg.current_variant_index,
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
-						contentVersion: 0
+						contentVersion: 0,
+						game_state: msg.game_state as unknown as Record<string, unknown> | null
 					})
 				);
 
@@ -494,12 +496,37 @@ export class ChatController {
 						current_variant_index: msg.current_variant_index,
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
-						contentVersion: 0 // Initialize for Svelte 5 reactivity
+						contentVersion: 0, // Initialize for Svelte 5 reactivity
+						game_state: msg.game_state as unknown as Record<string, unknown> | null
 					})
 				);
 
 				// Populate streaming service
 				this.activeStreamingService.messages = streamingMessages;
+
+				// CRITICAL: Initialize game state from the last message that has it
+				// This ensures the UI shows the correct state when loading a chat
+				console.log(
+					`🎮 [initializeChat] Checking ${streamingMessages.length} messages for game_state`
+				);
+				streamingMessages.forEach((m, i) => {
+					console.log(
+						`🎮 [initializeChat] Message ${i}: id=${m.id?.slice(-8)}, sender=${m.sender}, has_game_state=${!!m.game_state}`
+					);
+				});
+
+				const lastMessageWithState = [...streamingMessages]
+					.reverse()
+					.find((m) => m.game_state);
+
+				if (lastMessageWithState?.game_state) {
+					console.log(
+						`🎮 [initializeChat] Restoring game state from message ${lastMessageWithState.id}`
+					);
+					this.activeStreamingService.latestGameState = lastMessageWithState.game_state;
+				} else {
+					console.log(`🎮 [initializeChat] No messages have game_state - state will be empty`);
+				}
 			}
 		}
 	}
@@ -617,7 +644,7 @@ export class ChatController {
 		try {
 			const result = await _apiClient.updateChatSessionSettings(this.chat.id, {
 				game_master_mode_enabled: true
-			});
+			} as any);
 			if (result.isOk()) {
 				this.chat.game_master_mode_enabled = true;
 				toast.success('Game Master Mode enabled');
@@ -1093,6 +1120,12 @@ export class ChatController {
 
 				if (result.isOk()) {
 					const updatedMessage = result.value;
+
+					// Update game state if available (Game Master Mode)
+					if (this.chat && updatedMessage.game_state !== undefined) {
+						this.chat.game_state = updatedMessage.game_state;
+					}
+
 					this.activeStreamingService.messages = (
 						this.activeStreamingService.messages as StreamingMessage[]
 					).map((msg) => {
@@ -1241,13 +1274,13 @@ export class ChatController {
 		).map((msg) =>
 			msg.id === firstMessageId
 				? {
-						...msg,
-						content,
-						displayedContent: content,
-						current_variant_index: index,
-						_variantChangedAt: Date.now(),
-						shouldAnimate: false // Don't animate greeting changes
-					}
+					...msg,
+					content,
+					displayedContent: content,
+					current_variant_index: index,
+					_variantChangedAt: Date.now(),
+					shouldAnimate: false // Don't animate greeting changes
+				}
 				: msg
 		);
 

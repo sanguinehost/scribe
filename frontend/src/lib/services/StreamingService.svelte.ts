@@ -41,6 +41,7 @@ export interface StreamingMessage {
 	is_variant?: boolean; // Whether this is a variant of another message
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
 	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
+	game_state?: Record<string, unknown> | null; // Game state associated with this message
 }
 
 // Connection states following the architectural design
