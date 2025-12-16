@@ -88,6 +88,11 @@
 			// This ensures the Overview component is displayed instead of old messages
 			controller.activeStreamingService.clearMessages();
 		}
+
+		// CRITICAL: Cleanup on component unmount to prevent stale state on navigation
+		return () => {
+			controller.activeStreamingService.disconnect();
+		};
 	});
 
 	// --- Token Counter State ---

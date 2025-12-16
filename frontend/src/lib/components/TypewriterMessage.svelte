@@ -48,6 +48,22 @@
 	let hasTextContent = $derived((message?.content || '').replace(/\s/g, '').length > 0);
 	let shouldShowLoading = $derived(!hasTextContent || message?.isRegenerating === true);
 
+	// Timeout for stuck loading states (10 seconds)
+	let isStuckLoading = $state(false);
+
+	$effect(() => {
+		// Reset stuck state when loading ends
+		if (!shouldShowLoading) {
+			isStuckLoading = false;
+			return;
+		}
+		// Start timeout when loading begins
+		const timer = setTimeout(() => {
+			isStuckLoading = true;
+		}, 10000);
+		return () => clearTimeout(timer);
+	});
+
 	/**
 	 * Animate content incrementally - only animate NEW characters added
 	 */
@@ -215,9 +231,13 @@
 	>
 		<!-- Show loading spinner when no content or regenerating -->
 		{#if shouldShowLoading}
-			<div class="flex items-center gap-2 py-2 text-muted-foreground">
-				<div class="loading-spinner"></div>
-				<span class="text-sm">Thinking...</span>
+			<div class="text-muted-foreground flex items-center gap-2 py-2">
+				{#if isStuckLoading}
+					<span class="text-sm text-red-500">Failed to load response. Try refreshing.</span>
+				{:else}
+					<div class="loading-spinner"></div>
+					<span class="text-sm">Thinking...</span>
+				{/if}
 			</div>
 		{:else}
 			<Markdown md={displayedContent} />

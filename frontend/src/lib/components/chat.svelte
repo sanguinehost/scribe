@@ -30,6 +30,7 @@
 	import LorebookExtractionDialog from './LorebookExtractionDialog.svelte';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import type { LorebookEntry } from '$lib/types';
+	import { extractMessageContent } from '$lib/utils/message-helpers';
 
 	// Get reactive state from streaming service
 	// By directly accessing the $state properties of the service, we ensure reactivity.
@@ -405,13 +406,7 @@
 						backend_id: rawMsg.id,
 						session_id: rawMsg.session_id,
 						message_type: rawMsg.message_type,
-						content:
-							rawMsg.parts &&
-							rawMsg.parts.length > 0 &&
-							'text' in rawMsg.parts[0] &&
-							typeof rawMsg.parts[0].text === 'string'
-								? rawMsg.parts[0].text
-								: '',
+						content: extractMessageContent(rawMsg),
 						created_at:
 							typeof rawMsg.created_at === 'string'
 								? rawMsg.created_at
@@ -2205,7 +2200,7 @@
 	}
 </script>
 
-<div class="flex h-dvh min-w-0 flex-col bg-background">
+<div class="bg-background flex h-dvh min-w-0 flex-col">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
@@ -2248,11 +2243,11 @@
 					fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
-				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="border-input bg-background ring-offset-background hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if isLoadingSuggestions}
 					<svg
-						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
+						class="text-primary -ml-1 mr-2 h-4 w-4 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
@@ -2417,7 +2412,7 @@
 						{@const completionTokens = chat.total_completion_tokens || 0}
 						{@const totalTokens = promptTokens + completionTokens}
 
-						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
+						<div class="text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs">
 							<!-- Main breakdown -->
 							<div class="flex items-center justify-between">
 								<span class="font-medium">Session Usage:</span>

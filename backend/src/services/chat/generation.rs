@@ -2389,8 +2389,9 @@ pub async fn stream_ai_response_and_save_message(
                         break;
                     }
                     Err(_) => {
-                        error!(session_id = %stream_session_id, "Timeout waiting for events from spawned task");
-                        yield Ok(ScribeSseEvent::Error("Processing timeout - some events may be missing".to_string()));
+                        // Timeout waiting for metadata events. Content was already delivered successfully,
+                        // so don't report this as an error to the client. TokenUsage/GameState are optional.
+                        warn!(session_id = %stream_session_id, "Timeout waiting for metadata events (content was delivered successfully)");
                         break;
                     }
                 }

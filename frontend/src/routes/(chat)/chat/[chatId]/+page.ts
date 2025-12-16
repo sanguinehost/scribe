@@ -9,6 +9,7 @@ import type {
 	Message
 } from '$lib/types.ts';
 import { getCurrentUser } from '$lib/auth.svelte';
+import { extractMessageContent } from '$lib/utils/message-helpers';
 
 export async function load({ params: { chatId }, parent }) {
 	try {
@@ -78,13 +79,7 @@ export async function load({ params: { chatId }, parent }) {
 				backend_id: rawMsg.id, // Also store in backend_id for consistency
 				session_id: rawMsg.session_id,
 				message_type: rawMsg.message_type,
-				content:
-					rawMsg.parts &&
-						rawMsg.parts.length > 0 &&
-						'text' in rawMsg.parts[0] &&
-						typeof rawMsg.parts[0].text === 'string'
-						? rawMsg.parts[0].text
-						: '',
+				content: extractMessageContent(rawMsg),
 				created_at:
 					typeof rawMsg.created_at === 'string'
 						? rawMsg.created_at

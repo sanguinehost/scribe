@@ -98,6 +98,12 @@
 
 	// Function to detect if a message is the first message from a character
 	function isFirstMessage(message: ScribeChatMessage, index: number): boolean {
+		// If there are more messages to load above, this isn't the true first message
+		// The greeting should only render as FirstMessage when we've loaded everything
+		if (hasMoreMessages) {
+			return false;
+		}
+
 		// Check if it's an Assistant message and either:
 		// 1. Has the expected first-message ID pattern, OR
 		// 2. Is the first Assistant message in the conversation
@@ -248,21 +254,10 @@
 		}
 	});
 
-	// Also scroll to top when starting fresh chats (with only initial message)
-	$effect(() => {
-		if (!containerRef || !_mounted) return;
-
-		// For truly new chats with just a greeting message, scroll to top
-		// instead of bottom to show the character info and start of conversation
-		const isNewChat = chat && new Date().getTime() - new Date(chat.created_at).getTime() < 5000; // Less than 5 seconds old
-		if (messages.length === 1 && messages[0]?.message_type === 'Assistant' && isNewChat) {
-			setTimeout(() => {
-				if (containerRef) {
-					containerRef.scrollTo({ top: 0, behavior: 'smooth' });
-				}
-			}, 100);
-		}
-	});
+	// NOTE: Removed scroll-to-top for "new" chats with greeting message.
+	// This was causing first message to always appear at top even in existing chats
+	// because the 5-second window check was unreliable. Initial scroll behavior is now
+	// handled solely by the "Scroll to bottom when loading existing chats" effect below.
 
 	// Scroll to bottom when loading existing chats with messages
 	$effect(() => {
@@ -492,7 +487,7 @@
 			<!-- Loading indicator for loading more messages -->
 			{#if isLoadingMore && hasMoreMessages}
 				<div class="flex justify-center py-4">
-					<div class="flex items-center gap-2 text-muted-foreground">
+					<div class="text-muted-foreground flex items-center gap-2">
 						<Loader2 class="h-4 w-4 animate-spin" />
 						<span class="text-sm">Loading older messages...</span>
 					</div>

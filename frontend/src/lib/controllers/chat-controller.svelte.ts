@@ -14,6 +14,7 @@ import { isInDesktopMode } from '$lib/api/desktop-auth';
 import { tick } from 'svelte';
 import type { AnalysisMode } from '$lib/components/messages/regeneration-modal.svelte';
 import { ChatHistory } from '$lib/hooks/chat-history.svelte';
+import { extractMessageContent } from '$lib/utils/message-helpers';
 
 export class ChatController {
 	// State
@@ -271,13 +272,7 @@ export class ChatController {
 						backend_id: rawMsg.id,
 						session_id: rawMsg.session_id,
 						message_type: rawMsg.message_type,
-						content:
-							rawMsg.parts &&
-								rawMsg.parts.length > 0 &&
-								'text' in rawMsg.parts[0] &&
-								typeof rawMsg.parts[0].text === 'string'
-								? rawMsg.parts[0].text
-								: '',
+						content: extractMessageContent(rawMsg),
 						created_at:
 							typeof rawMsg.created_at === 'string'
 								? rawMsg.created_at
