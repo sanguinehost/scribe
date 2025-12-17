@@ -157,6 +157,9 @@ export interface GameState {
 	location: Location | null;
 	game_time: GameTime | null;
 	inventory: InventoryItem[];
+	inventory_stored: Record<string, InventoryItem[]>;
+	assets: string[];
+	currencies: Record<string, number>;
 	vitals: Record<string, Vital>;
 	quests: Quest[];
 	npcs: Record<string, NpcState>;
@@ -175,6 +178,7 @@ export interface Location {
 export interface GameTime {
 	day: number;
 	hour: number;
+	minute: number;
 	period: string;
 	season: string | null;
 }
@@ -199,6 +203,7 @@ export interface Vital {
 export interface Quest {
 	id: string;
 	title: string;
+	is_main: boolean;
 	status: QuestStatus;
 	description: string | null;
 	objectives: QuestObjective[];

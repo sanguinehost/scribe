@@ -185,7 +185,7 @@ pub async fn create_message_variant(
                     parent_message.completion_tokens, // Preserve original tokens
                     Some(parent_message.model_name.clone()), // Preserve original model
                     parent_raw_prompt.as_deref(), // Preserve original raw_prompt
-                    None, // No game state for original variant
+                    None,                         // No game state for original variant
                 )
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
@@ -412,9 +412,9 @@ pub async fn delete_message_variant(
             .filter(message_variants::variant_index.eq(variant_index))
             .filter(message_variants::user_id.eq(user_id));
 
-        diesel::delete(query)
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}")))
+        diesel::delete(query).execute(conn).map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}"))
+        })
     })
     .await?;
 

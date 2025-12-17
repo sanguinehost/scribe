@@ -22,13 +22,13 @@ type ChatStreamEvent =
 	| { event: 'thinking'; data: { text: string } }
 	| { event: 'error'; data: { message: string } }
 	| {
-		event: 'tokenUsage';
-		data: { promptTokens: number; completionTokens: number; modelName: string };
-	}
+			event: 'tokenUsage';
+			data: { promptTokens: number; completionTokens: number; modelName: string };
+	  }
 	| {
-		event: 'messageSaved';
-		data: { messageId: string; variantCount: number; currentVariantIndex: number };
-	}
+			event: 'messageSaved';
+			data: { messageId: string; variantCount: number; currentVariantIndex: number };
+	  }
 	| { event: 'gameStateUpdate'; data: { gameState: Record<string, unknown> } }
 	| { event: 'done' };
 
@@ -858,6 +858,7 @@ class DesktopStreamingService {
 		this.currentError = null;
 		this.isTyping = false;
 		this.retryCount = 0;
+		this.latestGameState = null; // CRITICAL: Reset game state when switching chats
 		this.stopTimeoutCheck();
 		this.messageBuffers.clear();
 		this.currentChatId = null;

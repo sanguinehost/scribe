@@ -1101,45 +1101,47 @@ pub async fn generate_chat_response(
     }
 
     // Load game_state if Game Master mode is enabled
-    let game_state_for_prompt: Option<crate::models::game_state::GameState> = if game_master_mode_enabled.unwrap_or(false) {
-        info!(%session_id, "Game Master mode enabled, loading game_state for prompt context");
-        let session_id_for_query = session_id;
-        let game_state_result = crate::db::with_conn(&state_arc.pool, move |conn| {
-            use crate::schema::chat_sessions::dsl::*;
-            chat_sessions
-                .filter(id.eq(session_id_for_query))
-                .select(game_state)
-                .first::<Option<crate::DbJson>>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await;
+    let game_state_for_prompt: Option<crate::models::game_state::GameState> =
+        if game_master_mode_enabled.unwrap_or(false) {
+            info!(%session_id, "Game Master mode enabled, loading game_state for prompt context");
+            let session_id_for_query = session_id;
+            let game_state_result = crate::db::with_conn(&state_arc.pool, move |conn| {
+                use crate::schema::chat_sessions::dsl::*;
+                chat_sessions
+                    .filter(id.eq(session_id_for_query))
+                    .select(game_state)
+                    .first::<Option<crate::DbJson>>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await;
 
-        match game_state_result {
-            Ok(Some(db_json)) => {
-                let state_json: serde_json::Value = db_json.into();
-                match serde_json::from_value::<crate::models::game_state::GameState>(state_json) {
-                    Ok(parsed_state) => {
-                        info!(%session_id, "Successfully loaded game_state for prompt context");
-                        Some(parsed_state)
-                    }
-                    Err(e) => {
-                        warn!(%session_id, error = %e, "Failed to parse game_state JSON, scene context will be empty");
-                        None
+            match game_state_result {
+                Ok(Some(db_json)) => {
+                    let state_json: serde_json::Value = db_json.into();
+                    match serde_json::from_value::<crate::models::game_state::GameState>(state_json)
+                    {
+                        Ok(parsed_state) => {
+                            info!(%session_id, "Successfully loaded game_state for prompt context");
+                            Some(parsed_state)
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Failed to parse game_state JSON, scene context will be empty");
+                            None
+                        }
                     }
                 }
+                Ok(None) => {
+                    info!(%session_id, "No game_state found in session, scene context will be empty");
+                    None
+                }
+                Err(e) => {
+                    warn!(%session_id, error = %e, "Failed to query game_state from session");
+                    None
+                }
             }
-            Ok(None) => {
-                info!(%session_id, "No game_state found in session, scene context will be empty");
-                None
-            }
-            Err(e) => {
-                warn!(%session_id, error = %e, "Failed to query game_state from session");
-                None
-            }
-        }
-    } else {
-        None
-    };
+        } else {
+            None
+        };
 
     // Call the new prompt builder
 

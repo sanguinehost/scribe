@@ -13,9 +13,18 @@ pub struct GameState {
     pub location: Option<Location>,
     /// In-game time (narrative time, not real time)
     pub game_time: Option<GameTime>,
-    /// Player's inventory
+    /// Player's inventory (items on person)
     #[serde(default)]
     pub inventory: Vec<InventoryItem>,
+    /// Items stored at named locations (e.g., "Home" -> items, "Bank" -> items)
+    #[serde(default)]
+    pub inventory_stored: HashMap<String, Vec<InventoryItem>>,
+    /// Major possessions (vehicles, property, etc.) - plaintext list
+    #[serde(default)]
+    pub assets: Vec<String>,
+    /// Player's currencies (gold, credits, gems, etc.) - key is currency name, value is amount
+    #[serde(default)]
+    pub currencies: HashMap<String, i64>,
     /// Player's vital statistics (health, mana, stamina, etc.)
     #[serde(default)]
     pub vitals: HashMap<String, Vital>,
@@ -31,6 +40,10 @@ pub struct GameState {
     /// Custom key-value data for game-specific state
     #[serde(default)]
     pub custom_data: HashMap<String, serde_json::Value>,
+    /// Items explicitly removed by the AI (bypasses staleness tracking).
+    /// Contains item IDs that should be immediately deleted from inventory.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_items: Vec<String>,
 }
 
 /// Represents a location in the game world.
@@ -60,6 +73,12 @@ pub struct GameTime {
     /// Hour (0-23)
     #[serde(default)]
     pub hour: u8,
+    /// Minute (0-59)
+    #[serde(default)]
+    pub minute: u8,
+    /// Second (0-59) - useful for combat-level granularity
+    #[serde(default)]
+    pub second: u8,
     /// Time of day descriptor (dawn, morning, noon, afternoon, dusk, evening, night)
     #[serde(default)]
     pub period: String,
@@ -89,6 +108,16 @@ pub struct InventoryItem {
     /// Custom properties (durability, enchantments, etc.)
     #[serde(default)]
     pub properties: HashMap<String, serde_json::Value>,
+    /// How many reconciliation cycles since this item was last referenced in narrative.
+    /// Used for auto-cleanup of stale items. Increments each turn if AI doesn't include item.
+    /// Items with staleness >= threshold are candidates for removal.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub staleness_count: u32,
+}
+
+/// Helper for serde skip_serializing_if
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 /// A vital statistic (health, mana, stamina, etc.).
@@ -116,6 +145,9 @@ pub struct Quest {
     /// Quest title
     #[serde(default)]
     pub title: String,
+    /// Whether this is the main quest (vs optional/side quest)
+    #[serde(default)]
+    pub is_main: bool,
     /// Current status
     #[serde(default)]
     pub status: QuestStatus,
@@ -213,6 +245,7 @@ mod tests {
             game_time: Some(GameTime {
                 day: 3,
                 hour: 21,
+                minute: 30,
                 period: "night".to_string(),
                 season: Some("autumn".to_string()),
             }),
@@ -224,6 +257,7 @@ mod tests {
                 category: Some("weapon".to_string()),
                 equipped: true,
                 properties: HashMap::new(),
+                staleness_count: 0,
             }],
             vitals: {
                 let mut v = HashMap::new();

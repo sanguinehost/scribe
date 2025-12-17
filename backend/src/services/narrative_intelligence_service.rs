@@ -23,7 +23,10 @@ use crate::{
         chats::ChatMessage,
         users::{User, UserDbQuery},
     },
-    schema::{chat_messages, chat_sessions::dsl as chat_sessions_dsl, message_variants, users::dsl as users_dsl},
+    schema::{
+        chat_messages, chat_sessions::dsl as chat_sessions_dsl, message_variants,
+        users::dsl as users_dsl,
+    },
     services::{
         agentic::{AgenticNarrativeFactory, NarrativeAgentRunner, UserPersonaContext},
         embeddings::RetrievedChunk,

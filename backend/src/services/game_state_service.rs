@@ -166,6 +166,7 @@ impl GameStateService {
                             category: Some("Currency".to_string()),
                             equipped: false,
                             properties: HashMap::new(),
+                            staleness_count: 0,
                         };
                         final_state.inventory.push(new_item.clone());
                         applied_changes.push(StateChange::ItemAdded { item: new_item });
@@ -235,12 +236,31 @@ impl GameStateService {
             applied_changes.push(change);
         }
 
-        // 3. Reconcile Inventory
+        // 3. Reconcile Inventory (on person)
         let (inv_applied, inv_rejected, inv_warnings) =
             self.reconcile_inventory(current_state, new_state, &mut final_state);
         applied_changes.extend(inv_applied);
         rejected_changes.extend(inv_rejected);
         warnings.extend(inv_warnings);
+
+        // 3a. Reconcile Stored Inventory (just copy from new state)
+        if !new_state.inventory_stored.is_empty() || !current_state.inventory_stored.is_empty() {
+            final_state.inventory_stored = new_state.inventory_stored.clone();
+        }
+
+        // 3b. Reconcile Assets (just copy from new state)
+        if !new_state.assets.is_empty() || !current_state.assets.is_empty() {
+            final_state.assets = new_state.assets.clone();
+        }
+
+        // 3c. Reconcile Currencies (just copy from new state - trust LLM output)
+        if !new_state.currencies.is_empty() {
+            final_state.currencies = new_state.currencies.clone();
+            debug!(
+                currencies = ?final_state.currencies,
+                "Reconciled currencies from new state"
+            );
+        }
 
         // 4. Reconcile Vitals
         let (vital_applied, vital_rejected) =
@@ -320,10 +340,9 @@ impl GameStateService {
 
     /// Reconcile inventory changes
     ///
-    /// Validates:
-    /// - Items can't appear from nowhere (unless it's a legitimate acquisition)
-    /// - Quantities must be non-negative
-    /// - Equipped items must exist in inventory
+    /// Simple approach: Trust the LLM's inventory output completely.
+    /// This matches how quests and NPCs are handled - the LLM output replaces current state.
+    /// Changes are still logged for debugging.
     fn reconcile_inventory(
         &self,
         current: &GameState,
@@ -331,10 +350,10 @@ impl GameStateService {
         final_state: &mut GameState,
     ) -> (Vec<StateChange>, Vec<(StateChange, String)>, Vec<String>) {
         let mut applied = Vec::new();
-        let mut rejected = Vec::new();
-        let mut warnings = Vec::new();
+        let rejected = Vec::new();
+        let warnings = Vec::new();
 
-        // Build maps for efficient lookup
+        // Build maps for change detection
         let current_items: HashMap<&str, &InventoryItem> = current
             .inventory
             .iter()
@@ -343,7 +362,33 @@ impl GameStateService {
         let new_items: HashMap<&str, &InventoryItem> =
             new.inventory.iter().map(|i| (i.id.as_str(), i)).collect();
 
-        // Check for removed items (in current but not in new)
+        // Log additions
+        for (id, new_item) in &new_items {
+            if let Some(current_item) = current_items.get(*id) {
+                // Existing item - check for quantity changes
+                if new_item.quantity != current_item.quantity {
+                    debug!(
+                        item_id = %id,
+                        old_qty = current_item.quantity,
+                        new_qty = new_item.quantity,
+                        "Item quantity changed"
+                    );
+                    applied.push(StateChange::ItemQuantityChanged {
+                        item_id: id.to_string(),
+                        old_qty: current_item.quantity,
+                        new_qty: new_item.quantity,
+                    });
+                }
+            } else {
+                // New item
+                debug!(item_id = %id, item_name = %new_item.name, "Item added to inventory");
+                applied.push(StateChange::ItemAdded {
+                    item: (*new_item).clone(),
+                });
+            }
+        }
+
+        // Log removals
         for (id, current_item) in &current_items {
             if !new_items.contains_key(*id) {
                 debug!(item_id = %id, item_name = %current_item.name, "Item removed from inventory");
@@ -353,41 +398,7 @@ impl GameStateService {
             }
         }
 
-        // Check for added or changed items
-        for (id, new_item) in &new_items {
-            if let Some(current_item) = current_items.get(*id) {
-                // Item exists - check for quantity changes
-                if new_item.quantity != current_item.quantity {
-                    // Validate: quantity can't go negative
-                    if new_item.quantity == 0 {
-                        // This is effectively a removal
-                        applied.push(StateChange::ItemRemoved {
-                            item_id: id.to_string(),
-                        });
-                    } else {
-                        debug!(
-                            item_id = %id,
-                            old_qty = current_item.quantity,
-                            new_qty = new_item.quantity,
-                            "Item quantity changed"
-                        );
-                        applied.push(StateChange::ItemQuantityChanged {
-                            item_id: id.to_string(),
-                            old_qty: current_item.quantity,
-                            new_qty: new_item.quantity,
-                        });
-                    }
-                }
-            } else {
-                // New item - apply it
-                debug!(item_id = %id, item_name = %new_item.name, "Item added to inventory");
-                applied.push(StateChange::ItemAdded {
-                    item: (*new_item).clone(),
-                });
-            }
-        }
-
-        // Apply changes to final state
+        // Trust LLM output - replace inventory entirely
         final_state.inventory = new.inventory.clone();
 
         (applied, rejected, warnings)
@@ -684,6 +695,7 @@ mod tests {
                                     category: Some("Currency".to_string()),
                                     equipped: false,
                                     properties: HashMap::new(),
+                                    staleness_count: 0,
                                 };
                                 final_state.inventory.push(new_item.clone());
                                 applied_changes.push(StateChange::ItemAdded { item: new_item });
@@ -920,6 +932,7 @@ mod tests {
             category: Some("misc".to_string()),
             equipped: false,
             properties: HashMap::new(),
+            staleness_count: 0,
         }
     }
 

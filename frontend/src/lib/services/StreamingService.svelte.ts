@@ -1046,6 +1046,7 @@ class StreamingService {
 		this.messageBuffers.clear();
 		this.currentAssistantMessageId = null;
 		this.currentChatId = null;
+		this.latestGameState = null; // CRITICAL: Reset game state when switching chats
 	}
 }
 

@@ -3722,9 +3722,7 @@ impl ChatSessionQuery {
             total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
-            game_state: self
-                .game_state
-                .and_then(|s| serde_json::from_str(&s).ok()),
+            game_state: self.game_state.and_then(|s| serde_json::from_str(&s).ok()),
         })
     }
 

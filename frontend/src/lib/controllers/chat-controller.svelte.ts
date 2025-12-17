@@ -510,9 +510,7 @@ export class ChatController {
 					);
 				});
 
-				const lastMessageWithState = [...streamingMessages]
-					.reverse()
-					.find((m) => m.game_state);
+				const lastMessageWithState = [...streamingMessages].reverse().find((m) => m.game_state);
 
 				if (lastMessageWithState?.game_state) {
 					console.log(
@@ -1269,13 +1267,13 @@ export class ChatController {
 		).map((msg) =>
 			msg.id === firstMessageId
 				? {
-					...msg,
-					content,
-					displayedContent: content,
-					current_variant_index: index,
-					_variantChangedAt: Date.now(),
-					shouldAnimate: false // Don't animate greeting changes
-				}
+						...msg,
+						content,
+						displayedContent: content,
+						current_variant_index: index,
+						_variantChangedAt: Date.now(),
+						shouldAnimate: false // Don't animate greeting changes
+					}
 				: msg
 		);
 

@@ -21,13 +21,13 @@
 </script>
 
 <div
-	class="border-border bg-card/80 mb-3 overflow-hidden rounded-lg border shadow-sm backdrop-blur-sm transition-all duration-200"
+	class="mb-3 overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm backdrop-blur-sm transition-all duration-200"
 >
 	<!-- Widget Header -->
-	<div class="border-border flex items-center justify-between border-b px-4 py-3">
+	<div class="flex items-center justify-between border-b border-border px-4 py-3">
 		<button
 			onclick={toggleCollapse}
-			class="hover:text-primary flex flex-1 items-center gap-2 text-left transition-colors"
+			class="flex flex-1 items-center gap-2 text-left transition-colors hover:text-primary"
 			aria-label="Toggle {title}"
 		>
 			{#if icon}
@@ -35,7 +35,7 @@
 					{@render icon()}
 				</div>
 			{/if}
-			<h3 class="text-foreground text-sm font-semibold">{title}</h3>
+			<h3 class="text-sm font-semibold text-foreground">{title}</h3>
 		</button>
 
 		<div class="flex items-center gap-1">
@@ -43,11 +43,11 @@
 			{#if onExpand}
 				<button
 					onclick={onExpand}
-					class="hover:bg-muted flex h-7 w-7 items-center justify-center rounded transition-colors"
+					class="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-muted"
 					aria-label="Expand {title}"
 				>
 					<Maximize2
-						class="text-muted-foreground hover:text-primary h-3.5 w-3.5 transition-colors"
+						class="h-3.5 w-3.5 text-muted-foreground transition-colors hover:text-primary"
 					/>
 				</button>
 			{/if}
@@ -55,7 +55,7 @@
 			<!-- Collapse/Expand Button -->
 			<button
 				onclick={toggleCollapse}
-				class="hover:bg-muted flex h-7 w-7 items-center justify-center rounded transition-colors"
+				class="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-muted"
 				aria-label={collapsed ? 'Expand' : 'Collapse'}
 			>
 				<span
@@ -70,10 +70,10 @@
 			{#if onClose}
 				<button
 					onclick={onClose}
-					class="hover:bg-destructive/10 flex h-7 w-7 items-center justify-center rounded transition-colors"
+					class="flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-destructive/10"
 					aria-label="Close {title}"
 				>
-					<X class="text-muted-foreground hover:text-destructive h-4 w-4" />
+					<X class="h-4 w-4 text-muted-foreground hover:text-destructive" />
 				</button>
 			{/if}
 		</div>

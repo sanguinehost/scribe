@@ -614,9 +614,11 @@ pub async fn delete_chat_handler(
     // so we must delete messages explicitly. message_variants will cascade-delete from chat_messages.
     let chat_id_for_messages = id;
     crate::db::with_conn(&pool, move |conn| {
-        diesel::delete(chat_messages::table.filter(chat_messages::session_id.eq(chat_id_for_messages)))
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete chat messages: {e}")))
+        diesel::delete(
+            chat_messages::table.filter(chat_messages::session_id.eq(chat_id_for_messages)),
+        )
+        .execute(conn)
+        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete chat messages: {e}")))
     })
     .await
     .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
@@ -854,8 +856,8 @@ async fn process_messages_for_response(
     let mut responses = Vec::new();
 
     // Parse session game_state once for use as fallback
-    let session_gs: Option<serde_json::Value> = session_game_state
-        .and_then(|s| serde_json::from_str(s).ok());
+    let session_gs: Option<serde_json::Value> =
+        session_game_state.and_then(|s| serde_json::from_str(s).ok());
 
     for msg_db in messages_db {
         tracing::info!(
@@ -894,11 +896,12 @@ async fn process_messages_for_response(
                 let decrypted_client_message =
                     msg_db.clone().into_decrypted_for_client(Some(&dek.0))?;
                 // Use session game_state as fallback for assistant messages
-                let fallback_gs = if msg_db.message_type == crate::models::chats::MessageRole::Assistant {
-                    session_gs.clone()
-                } else {
-                    None
-                };
+                let fallback_gs =
+                    if msg_db.message_type == crate::models::chats::MessageRole::Assistant {
+                        session_gs.clone()
+                    } else {
+                        None
+                    };
                 (decrypted_client_message.content, fallback_gs)
             }
         };
@@ -2555,17 +2558,11 @@ pub async fn select_message_variant_handler(
         let client_message = updated_message
             .clone()
             .into_decrypted_for_client(Some(&dek.0))?;
-        
+
         // For variant 0, try to fetch game_state from message_variants table
-        match get_variant_content_by_index(
-            pool.clone(),
-            message_id,
-            0,
-            user.id,
-            &dek,
-        ).await? {
+        match get_variant_content_by_index(pool.clone(), message_id, 0, user.id, &dek).await? {
             Some((_, gs)) => (client_message.content, gs),
-            None => (client_message.content, None)
+            None => (client_message.content, None),
         }
     } else {
         // Get content and game_state from the variants table

@@ -2286,7 +2286,9 @@ pub async fn stream_ai_response_and_save_message(
                             let gm_saved_message_id = saved_message.id;
 
                             tokio::spawn(async move {
-                                // We need the last user message for the reconciliation context
+                                // We need recent messages for proper context (like rpg-companion's updateDepth: 4)
+                                const UPDATE_DEPTH: usize = 4;
+
                                 let recent_messages_gm = match crate::services::chat::message_handling::get_messages_for_session(
                                     &gm_state.pool,
                                     gm_user_id,
@@ -2299,20 +2301,97 @@ pub async fn stream_ai_response_and_save_message(
                                     }
                                 };
 
-                                // Find the last user message
-                                let last_user_message_bytes = recent_messages_gm.iter()
+                                // Build conversation summary from last UPDATE_DEPTH messages
+                                let conversation_summary = {
+                                    let last_n: Vec<_> = recent_messages_gm.iter().rev().take(UPDATE_DEPTH).collect();
+                                    let mut summary_parts = Vec::new();
+
+                                    // Iterate in chronological order (reverse again)
+                                    for msg in last_n.into_iter().rev() {
+                                        let role = match msg.message_type {
+                                            crate::models::chats::MessageRole::User => "User",
+                                            crate::models::chats::MessageRole::Assistant => "Assistant",
+                                            crate::models::chats::MessageRole::System => "System",
+                                        };
+                                        let content = String::from_utf8_lossy(&msg.content);
+                                        summary_parts.push(format!("{}: {}", role, content));
+                                    }
+
+                                    summary_parts.join("\n\n")
+                                };
+
+                                // Get last user message for reconciliation detector
+                                let last_user_message = recent_messages_gm.iter()
                                     .rev()
                                     .find(|m| m.message_type == crate::models::chats::MessageRole::User)
-                                    .map(|m| m.content.clone())
+                                    .map(|m| String::from_utf8_lossy(&m.content).to_string())
                                     .unwrap_or_default();
-
-                                let last_user_message = String::from_utf8_lossy(&last_user_message_bytes).to_string();
 
                                 // The assistant message is the one we just saved
                                 let last_assistant_message = gm_accumulated_content;
 
-                                // Conversation summary - for now just use the last exchange
-                                let conversation_summary = format!("User: {}\nAssistant: {}", last_user_message, last_assistant_message);
+                                // Fetch persona and character names from the session
+                                let (persona_name, character_name) = {
+                                    use crate::schema::chat_sessions::dsl as sessions_dsl;
+                                    use crate::schema::user_personas::dsl as personas_dsl;
+                                    use crate::schema::characters::dsl as chars_dsl;
+                                    use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
+
+                                    // Get session info with persona_id and character_id
+                                    let session_info = crate::db::with_conn(&gm_state.pool, move |conn| {
+                                        sessions_dsl::chat_sessions
+                                            .filter(sessions_dsl::id.eq(gm_session_id))
+                                            .select((
+                                                sessions_dsl::active_custom_persona_id,
+                                                sessions_dsl::character_id,
+                                            ))
+                                            .first::<(Option<crate::db::DbId>, Option<crate::db::DbId>)>(conn)
+                                            .optional()
+                                            .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+                                    }).await;
+
+                                    let (persona_id, char_id) = match session_info {
+                                        Ok(Some(info)) => info,
+                                        _ => (None, None),
+                                    };
+
+                                    // Fetch persona name if ID exists
+                                    let p_name = if let Some(pid) = persona_id {
+                                        crate::db::with_conn(&gm_state.pool, move |conn| {
+                                            personas_dsl::user_personas
+                                                .filter(personas_dsl::id.eq(pid))
+                                                .select(personas_dsl::name)
+                                                .first::<String>(conn)
+                                                .optional()
+                                                .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+                                        }).await.ok().flatten()
+                                    } else {
+                                        None
+                                    };
+
+                                    // Fetch character name if ID exists
+                                    let c_name = if let Some(cid) = char_id {
+                                        crate::db::with_conn(&gm_state.pool, move |conn| {
+                                            chars_dsl::characters
+                                                .filter(chars_dsl::id.eq(cid))
+                                                .select(chars_dsl::name)
+                                                .first::<String>(conn)
+                                                .optional()
+                                                .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+                                        }).await.ok().flatten()
+                                    } else {
+                                        None
+                                    };
+
+                                    info!(
+                                        session_id = %gm_session_id,
+                                        persona_name = ?p_name,
+                                        character_name = ?c_name,
+                                        "GAME_MASTER_DEBUG: Fetched persona and character names for state manager"
+                                    );
+
+                                    (p_name, c_name)
+                                };
 
                                 match gm_state.narrative_intelligence_service.as_ref().unwrap().process_game_state(
                                     gm_session_id,
@@ -2320,8 +2399,8 @@ pub async fn stream_ai_response_and_save_message(
                                     &last_assistant_message,
                                     &conversation_summary,
                                     Some(gm_saved_message_id),
-                                    None, // TODO: Fetch persona name from DB
-                                    None, // TODO: Fetch character name from DB
+                                    persona_name.as_deref(),
+                                    character_name.as_deref(),
                                 ).await {
                                     Ok(Some(result)) => {
                                         info!(

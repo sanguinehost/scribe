@@ -2200,7 +2200,7 @@
 	}
 </script>
 
-<div class="bg-background flex h-dvh min-w-0 flex-col">
+<div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
 	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
@@ -2243,11 +2243,11 @@
 					fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || isLoadingSuggestions || isLoading}
-				class="border-input bg-background ring-offset-background hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if isLoadingSuggestions}
 					<svg
-						class="text-primary -ml-1 mr-2 h-4 w-4 animate-spin"
+						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
@@ -2412,7 +2412,7 @@
 						{@const completionTokens = chat.total_completion_tokens || 0}
 						{@const totalTokens = promptTokens + completionTokens}
 
-						<div class="text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs">
+						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
 							<!-- Main breakdown -->
 							<div class="flex items-center justify-between">
 								<span class="font-medium">Session Usage:</span>

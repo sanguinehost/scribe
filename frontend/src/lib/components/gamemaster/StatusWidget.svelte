@@ -50,24 +50,24 @@
 <WidgetBase title="Status" icon={iconSnippet}>
 	<div class="space-y-3">
 		{#if !vitals || Object.keys(vitals).length === 0}
-			<p class="text-muted-foreground text-center text-sm italic">No vitals tracked</p>
+			<p class="text-center text-sm italic text-muted-foreground">No vitals tracked</p>
 		{:else}
 			{#each Object.entries(vitals) as [key, vital]}
 				{@const percent = vital.max > 0 ? (vital.current / vital.max) * 100 : 0}
 				<div class="space-y-1">
 					<!-- Label row -->
 					<div class="flex items-center justify-between text-xs">
-						<span class="text-foreground flex items-center gap-1.5 font-medium">
+						<span class="flex items-center gap-1.5 font-medium text-foreground">
 							<span>{getVitalIcon(key)}</span>
 							<span>{formatVitalName(key)}</span>
 						</span>
-						<span class="text-muted-foreground font-mono">
+						<span class="font-mono text-muted-foreground">
 							{vital.current}/{vital.max}
 						</span>
 					</div>
 
 					<!-- Progress bar -->
-					<div class="bg-muted h-2.5 overflow-hidden rounded-full">
+					<div class="h-2.5 overflow-hidden rounded-full bg-muted">
 						<div
 							class="h-full bg-gradient-to-r transition-all duration-500 ease-out {getVitalColor(
 								vital.current,
@@ -81,7 +81,7 @@
 					{#if vital.modifiers && vital.modifiers.length > 0}
 						<div class="flex flex-wrap gap-1">
 							{#each vital.modifiers as modifier}
-								<span class="bg-primary/20 text-primary rounded px-1.5 py-0.5 text-[10px]">
+								<span class="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">
 									{modifier}
 								</span>
 							{/each}

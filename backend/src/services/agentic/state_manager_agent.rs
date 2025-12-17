@@ -5,18 +5,24 @@
 //!
 //! This agent implements the "Complete State + Reconciliation" pattern:
 //! - It receives the current game state and recent conversation history
-//! - It outputs a COMPLETE new state (not deltas)
-//! - The backend reconciles this with the current state
+//! - It outputs a COMPLETE new state (not deltas) in plaintext markdown format
+//! - The backend parses and reconciles this with the current state
 //!
 //! Key design principles from sanguine-rpg:
 //! - The LLM outputs the *goal* state (what it thinks should happen)
 //! - The code decides the *actual* state (what CAN happen)
 //! - This prevents drift, hallucination, and cheating
+//! - Uses plaintext format instead of JSON Schema for better LLM compatibility
 
 use crate::errors::AppError;
-use crate::models::game_state::GameState;
-use genai::chat::{ChatMessage, ChatRequest};
+use crate::models::game_state::{
+    EnvironmentState, GameState, GameTime, InventoryItem, Location, NpcState, Quest,
+    QuestObjective, QuestStatus, Vital,
+};
+use genai::chat::{ChatMessage, ChatOptions, ChatRequest};
 use genai::Client;
+use regex::Regex;
+use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 /// AI Provider enum for the State Manager
@@ -45,7 +51,7 @@ impl Default for StateManagerConfig {
     fn default() -> Self {
         Self {
             provider: AiProvider::Gemini,
-            model_name: "gemini-2.5-flash-lite".to_string(),
+            model_name: "gemini-2.5-flash".to_string(),
             max_output_tokens: Some(4096),
             temperature: Some(0.3), // Lower temp for more consistent state output
         }
@@ -65,23 +71,18 @@ impl StateManagerAgent {
         }
     }
 
-    /// Create a new StateManagerAgent with custom configuration
+    /// Create with custom configuration
     pub fn with_config(config: StateManagerConfig) -> Self {
         Self { config }
     }
 
-    /// Generate a complete game state update based on conversation history
+    /// Generate a complete state update based on the current state and conversation
     ///
-    /// # Arguments
-    /// * `current_state` - The current game state (may be None for new sessions)
-    /// * `conversation_summary` - A summary of recent conversation for context
-    /// * `last_user_message` - The most recent user message
-    /// * `last_assistant_message` - The most recent assistant/narrative response
-    /// * `player_name` - Name of the player (user's persona) - THEIR state is tracked
-    /// * `character_name` - Name of the NPC character being talked to
-    ///
-    /// # Returns
-    /// A `Result<GameState, AppError>` containing the LLM's suggested complete new state
+    /// This is the main entry point for the sidecar. It:
+    /// 1. Builds a prompt with the current state and recent conversation
+    /// 2. Calls the LLM to generate the complete new state
+    /// 3. Parses the plaintext markdown response into a GameState
+    /// 4. Returns the parsed state (caller handles reconciliation)
     pub async fn generate_state_update(
         &self,
         current_state: Option<&GameState>,
@@ -91,6 +92,7 @@ impl StateManagerAgent {
         player_name: Option<&str>,
         character_name: Option<&str>,
     ) -> Result<GameState, AppError> {
+        // Build prompts
         let system_prompt = self.build_system_prompt(player_name, character_name);
         let user_prompt = self.build_user_prompt(
             current_state,
@@ -102,8 +104,10 @@ impl StateManagerAgent {
         );
 
         debug!(
-            model = %self.config.model_name,
-            "Generating state update via Sidecar"
+            system_prompt_len = system_prompt.len(),
+            user_prompt_len = user_prompt.len(),
+            has_current_state = current_state.is_some(),
+            "Building state update request"
         );
 
         // Build the chat request using genai crate
@@ -114,9 +118,19 @@ impl StateManagerAgent {
         // Create the genai client (uses environment variables for API keys)
         let client = Client::default();
 
-        // Execute the request
+        // Build chat options - no structured output, just plain text
+        // The LLM will generate plaintext markdown which we parse with regex
+        let mut chat_options = ChatOptions::default();
+        if let Some(temp) = self.config.temperature {
+            chat_options = chat_options.with_temperature(temp);
+        }
+        if let Some(max_tokens) = self.config.max_output_tokens {
+            chat_options = chat_options.with_max_tokens(max_tokens as u32);
+        }
+
+        // Execute the request (no structured output - we use plaintext markdown format)
         let response = client
-            .exec_chat(&self.config.model_name, chat_request, None)
+            .exec_chat(&self.config.model_name, chat_request, Some(&chat_options))
             .await
             .map_err(|e| AppError::GenerationError(format!("State generation failed: {}", e)))?;
 
@@ -136,96 +150,147 @@ impl StateManagerAgent {
 
     /// Build the system prompt for the State Manager
     /// Uses {{user}} and {{char}} placeholders for templating consistency
-    fn build_system_prompt(&self, player_name: Option<&str>, character_name: Option<&str>) -> String {
-        let template = r#"You are the Game State Manager, a specialized AI that tracks and outputs the complete game world state.
+    /// Instructs LLM to output plaintext markdown format (inspired by sanguine-rpg)
+    fn build_system_prompt(
+        &self,
+        player_name: Option<&str>,
+        character_name: Option<&str>,
+    ) -> String {
+        let template = r#"You are the Game State Manager, a specialized AI that tracks the complete game world state.
 
 YOUR ROLE:
 - Analyze the conversation and narrative to determine what has changed
-- Output the COMPLETE current state of the game world as valid JSON
+- Output the COMPLETE current state in a structured plaintext format
 - You must output the ENTIRE state, not just changes
 
 CRITICAL: WHO IS THE PLAYER?
-- "{{user}}" is the PLAYER (the user's persona). Track THEIR inventory, vitals, location, and quests.
-- "{{char}}" is the NPC (non-player character the AI roleplays). They go in the "npcs" section only.
-- The inventory, vitals, quests, and location should track {{user}}'s state, NOT {{char}}'s.
+- "{{user}}" is the PLAYER. Track THEIR inventory, vitals, location, and quests.
+- "{{char}}" is the NPC. They go in the "NPCs" section only.
+- All tracked state belongs to {{user}}, NOT {{char}}.
 
 OUTPUT FORMAT:
-You MUST output a valid JSON object matching this schema:
-{
-  "location": {
-    "id": "string",
-    "name": "string",
-    "description": "string (optional)",
-    "region": "string (optional)",
-    "tags": ["string"]
-  },
-  "game_time": {
-    "day": number,
-    "hour": number (0-23),
-    "period": "dawn|morning|noon|afternoon|dusk|evening|night",
-    "season": "string (optional)"
-  },
-  "inventory": [
-    {
-      "id": "string",
-      "name": "string",
-      "quantity": number,
-      "description": "string (optional)",
-      "category": "weapon|armor|consumable|quest|misc (optional)",
-      "equipped": boolean,
-      "properties": {}
-    }
-  ],
-  "vitals": {
-    "health": {"current": number, "max": number, "regen_rate": number (optional), "modifiers": []},
-    "stamina": {"current": number, "max": number, ...}
-  },
-  "quests": [
-    {
-      "id": "string",
-      "title": "string",
-      "status": "active|completed|failed|abandoned",
-      "description": "string (optional)",
-      "objectives": [{"description": "string", "completed": boolean, "progress": "string (optional)"}],
-      "giver": "string (optional)",
-      "rewards": "string (optional)"
-    }
-  ],
-  "npcs": {
-    "npc_id": {
-      "id": "string",
-      "name": "string",
-      "location": "string (optional)",
-      "disposition": "hostile|neutral|friendly|allied",
-      "status": "alive|dead|unconscious|absent",
-      "objectives": [],
-      "data": {}
-    }
-  },
-  "environment": {
-    "weather": "string (optional)",
-    "lighting": "bright|dim|dark (optional)",
-    "temperature": "string (optional)",
-    "hazards": [],
-    "tags": []
-  },
-  "custom_data": {}
-}
+You MUST output a code block with the following sections:
+
+```game-state
+Location
+---
+Name: [location name]
+Region: [region name]
+Description: [brief description]
+Tags: [comma-separated tags like public, safe, tavern]
+
+Environment
+---
+Weather: [weather condition]
+Lighting: [bright/dim/dark]
+Temperature: [temperature description]
+
+Time
+---
+Day: [day number]
+Hour: [0-23]
+Minute: [0-59]
+Period: [dawn/morning/noon/afternoon/dusk/evening/night]
+Season: [season name]
+
+Vitals
+---
+- health: [current]/[max]
+- stamina: [current]/[max]
+- mana: [current]/[max] (if applicable)
+
+Currency
+---
+Gold: [amount]
+Silver: [amount]
+[Other currencies as applicable]
+
+Inventory
+---
+On Person: [item1, item2 (equipped), item3 x3]
+Stored - [Location]: [items at that location]
+Stored - [Location2]: [items at another location]
+Assets: [horse, house, shop ownership, vehicle, etc.]
+Removed: [item_id1, item_id2] (items consumed/lost this turn)
+
+Equipment
+---
+[slot]: [item name] ([+bonus stat])
+
+Main Quest
+---
+- [Quest Title] (active/completed/failed)
+  Given by: [NPC name]
+  Description: [quest description]
+  Objectives:
+    - [x] [completed objective]
+    - [ ] [incomplete objective]
+  Rewards: [reward description]
+
+Optional Quests
+---
+- [Side Quest 1] (active/completed/failed)
+  Given by: [NPC name]
+  Objectives:
+    - [ ] [objective]
+- [Side Quest 2] (active)
+  ...
+
+NPCs
+---
+- [NPC Name] ([disposition: friendly/neutral/hostile])
+  Location: [where they are]
+  Status: [alive/dead/unconscious]
+  Notes: [any relevant info]
+
+Status Effects
+---
+- [Effect Name] ([description])
+```
 
 RULES:
-1. ALWAYS output valid JSON only - no markdown, no explanation, just the JSON object
-2. Include ALL parts of the state, even if unchanged from before
-3. Be consistent with the narrative - if something happened in the story, reflect it in state
-4. Use reasonable defaults for values not explicitly stated in the narrative
-5. For new games, infer initial state from {{user}}'s context (their persona), not {{char}}
-6. The location, inventory, vitals, and quests are {{user}}'s - not {{char}}'s"#;
+1. ALWAYS output the ```game-state code block - this is required for parsing
+2. Include ALL sections, even if unchanged from before
+3. Be consistent with the narrative - if something happened in the story, reflect it
+4. Use reasonable defaults for values not explicitly stated
+5. For new games, infer initial state from {{user}}'s context
 
-        // Use the existing template substitution function for consistency
+CRITICAL - VITALS FORMAT:
+- Always use format: stat_name: current/max
+- Example: health: 85/100
+- Never use separate "current" and "max" fields
+
+CRITICAL - CURRENCY:
+- Track ALL money/coins/credits in the Currency section, NOT as inventory items
+- Extract currency amounts mentioned in narrative (e.g., "counted 1500 gold coins" → Gold: 1500)
+- Format: "[Currency Name]: [amount]" (one per line)
+- Common currencies: Gold, Silver, Copper, Platinum, Credits, Gems
+- DO NOT list money as inventory items like "gold coins x10" - use Currency section instead
+- Update totals when money is gained or spent
+
+CRITICAL - INVENTORY:
+- List items on "On Person:" line, comma-separated
+- Use "Stored - [Location]:" for items stored elsewhere (e.g., "Stored - Home:", "Stored - Bank:")
+- Use "Assets:" for major possessions (horses, property, vehicles)
+- Use "x3" for quantities greater than 1
+- Mark equipped items with "(equipped)"
+- Items removed this turn go in "Removed:" line
+- DO NOT include money/coins here - use Currency section
+
+CRITICAL - QUESTS:
+- Use "Main Quest" section for the primary objective
+- Use "Optional Quests" section for side quests
+- Use [x] for completed objectives, [ ] for incomplete
+- Mark quest status in parentheses after title
+- Review each objective every turn
+- If NO quests exist, leave the section EMPTY - DO NOT write "None"
+- Only list actual quests with real titles"#;
+
         crate::prompt_builder::replace_template_variables(template, character_name, player_name)
     }
 
     /// Build the user prompt with context
-    /// Uses {{user}} and {{char}} placeholders for templating consistency
+    /// Provides current state and conversation context for the LLM
     fn build_user_prompt(
         &self,
         current_state: Option<&GameState>,
@@ -235,21 +300,19 @@ RULES:
         player_name: Option<&str>,
         character_name: Option<&str>,
     ) -> String {
-        let current_state_json = match current_state {
-            Some(state) => serde_json::to_string_pretty(state).unwrap_or_else(|_| "{}".to_string()),
-            None => {
-                "null (This is a new game session, infer initial state from context)".to_string()
-            }
+        // Format current state as plaintext for context
+        let current_state_text = match current_state {
+            Some(state) => Self::format_state_for_prompt(state),
+            None => "(New game session - infer initial state from context)".to_string(),
         };
 
-        // Build the prompt with clear XML-style tags for message attribution
         let prompt = format!(
-            r#"Based on the following context, output the COMPLETE updated game state as JSON.
+            r#"Based on the following context, output the COMPLETE updated game state.
 
 <state_tracking_rules>
 CRITICAL: You are tracking the PLAYER's state ({{{{user}}}}), NOT the NPC's state ({{{{char}}}}).
 - inventory, vitals, quests, location = {{{{user}}}}'s stats
-- {{{{char}}}} goes in the "npcs" section only
+- {{{{char}}}} goes in the "NPCs" section only
 </state_tracking_rules>
 
 <current_game_state>
@@ -268,38 +331,764 @@ CRITICAL: You are tracking the PLAYER's state ({{{{user}}}}), NOT the NPC's stat
 {}
 </ai_message>
 
-Output the complete updated game state tracking {{{{user}}}}'s stats (not {{{{char}}}}'s):"#,
-            current_state_json, conversation_summary, last_user_message, last_assistant_message
+Output the complete updated game state in ```game-state format, tracking {{{{user}}}}'s stats:"#,
+            current_state_text, conversation_summary, last_user_message, last_assistant_message
         );
 
-        // Substitute {{user}} and {{char}} with actual names
         crate::prompt_builder::replace_template_variables(&prompt, character_name, player_name)
     }
 
+    /// Format a GameState for display in the prompt (human-readable plaintext)
+    /// CRITICAL: This must include ALL fields so the LLM knows the complete current state
+    fn format_state_for_prompt(state: &GameState) -> String {
+        let mut output = String::new();
+
+        // === LOCATION ===
+        if let Some(ref location) = state.location {
+            output.push_str(&format!("Location: {}", location.name));
+            if let Some(ref region) = location.region {
+                output.push_str(&format!(" ({})", region));
+            }
+            output.push('\n');
+            if let Some(ref desc) = location.description {
+                output.push_str(&format!("  Description: {}\n", desc));
+            }
+            if !location.tags.is_empty() {
+                output.push_str(&format!("  Tags: {}\n", location.tags.join(", ")));
+            }
+        }
+
+        // === ENVIRONMENT ===
+        let env = &state.environment;
+        output.push_str("Environment:\n");
+        output.push_str(&format!(
+            "  Weather: {}\n",
+            env.weather.as_deref().unwrap_or("unknown")
+        ));
+        output.push_str(&format!(
+            "  Lighting: {}\n",
+            env.lighting.as_deref().unwrap_or("unknown")
+        ));
+        output.push_str(&format!(
+            "  Temperature: {}\n",
+            env.temperature.as_deref().unwrap_or("unknown")
+        ));
+        if !env.hazards.is_empty() {
+            output.push_str(&format!("  Hazards: {}\n", env.hazards.join(", ")));
+        }
+
+        // === TIME ===
+        if let Some(ref time) = state.game_time {
+            output.push_str(&format!(
+                "Time: Day {}, {:02}:{:02} ({})",
+                time.day, time.hour, time.minute, time.period
+            ));
+            if let Some(ref season) = time.season {
+                output.push_str(&format!(", {}", season));
+            }
+            output.push('\n');
+        }
+
+        // === CURRENCIES ===
+        if !state.currencies.is_empty() {
+            output.push_str("Currencies:\n");
+            for (name, amount) in &state.currencies {
+                output.push_str(&format!("  {}: {}\n", name, amount));
+            }
+        }
+
+        // === VITALS ===
+        if !state.vitals.is_empty() {
+            output.push_str("Vitals:\n");
+            for (name, vital) in &state.vitals {
+                output.push_str(&format!("  {}: {}/{}\n", name, vital.current, vital.max));
+            }
+        }
+
+        // === INVENTORY (ON PERSON) ===
+        if !state.inventory.is_empty() {
+            output.push_str("Inventory (On Person):\n");
+            for item in &state.inventory {
+                let qty = if item.quantity > 1 {
+                    format!(" x{}", item.quantity)
+                } else {
+                    String::new()
+                };
+                let equipped = if item.equipped { " (equipped)" } else { "" };
+                output.push_str(&format!("  - {}{}{}\n", item.name, qty, equipped));
+            }
+        }
+
+        // === INVENTORY (STORED) ===
+        if !state.inventory_stored.is_empty() {
+            output.push_str("Inventory (Stored):\n");
+            for (location, items) in &state.inventory_stored {
+                output.push_str(&format!("  {}:\n", location));
+                for item in items {
+                    let qty = if item.quantity > 1 {
+                        format!(" x{}", item.quantity)
+                    } else {
+                        String::new()
+                    };
+                    output.push_str(&format!("    - {}{}\n", item.name, qty));
+                }
+            }
+        }
+
+        // === ASSETS ===
+        if !state.assets.is_empty() {
+            output.push_str("Assets:\n");
+            for asset in &state.assets {
+                output.push_str(&format!("  - {}\n", asset));
+            }
+        }
+
+        // === QUESTS ===
+        // Filter out "None" placeholder quests to prevent feedback loop
+        let real_quests: Vec<_> = state
+            .quests
+            .iter()
+            .filter(|q| !q.title.eq_ignore_ascii_case("none"))
+            .collect();
+        if !real_quests.is_empty() {
+            let main_quests: Vec<_> = real_quests.iter().filter(|q| q.is_main).collect();
+            let optional_quests: Vec<_> = real_quests.iter().filter(|q| !q.is_main).collect();
+
+            if !main_quests.is_empty() {
+                output.push_str("Main Quest:\n");
+                for quest in main_quests {
+                    output.push_str(&format!("  - {} ({:?})\n", quest.title, quest.status));
+                    for obj in &quest.objectives {
+                        let check = if obj.completed { "x" } else { " " };
+                        output.push_str(&format!("    [{}] {}\n", check, obj.description));
+                    }
+                }
+            }
+
+            if !optional_quests.is_empty() {
+                output.push_str("Optional Quests:\n");
+                for quest in optional_quests {
+                    output.push_str(&format!("  - {} ({:?})\n", quest.title, quest.status));
+                    for obj in &quest.objectives {
+                        let check = if obj.completed { "x" } else { " " };
+                        output.push_str(&format!("    [{}] {}\n", check, obj.description));
+                    }
+                }
+            }
+        }
+
+        // === NPCS ===
+        if !state.npcs.is_empty() {
+            output.push_str("NPCs:\n");
+            for (name, npc) in &state.npcs {
+                output.push_str(&format!("  - {} ({:?})\n", name, npc.disposition));
+                if let Some(ref loc) = npc.location {
+                    output.push_str(&format!("    Location: {}\n", loc));
+                }
+                output.push_str(&format!("    Status: {:?}\n", npc.status));
+            }
+        }
+
+        output
+    }
+
     /// Parse the LLM response into a GameState
+    /// Uses a fuzzy section-based parser instead of JSON:
+    /// 1. Extract the ```game-state code block
+    /// 2. Split into sections by header keywords
+    /// 3. Parse each section with targeted regex
     fn parse_state_response(&self, response: &str) -> Result<GameState, AppError> {
-        // Try to extract JSON if wrapped in markdown code blocks
-        let json_str = if response.contains("```json") {
-            response
-                .split("```json")
-                .nth(1)
-                .and_then(|s| s.split("```").next())
-                .unwrap_or(response)
-                .trim()
-        } else if response.contains("```") {
-            response.split("```").nth(1).unwrap_or(response).trim()
+        debug!(
+            response_len = response.len(),
+            response_preview = %response.chars().take(200).collect::<String>(),
+            "Parsing plaintext game state response"
+        );
+
+        // Extract the game-state code block
+        let state_text = Self::extract_code_block(response)?;
+
+        // Parse sections
+        let sections = Self::parse_sections(&state_text);
+
+        // Build GameState from parsed sections
+        let mut game_state = GameState::default();
+
+        // Parse Location section
+        if let Some(location_text) = sections.get("location") {
+            game_state.location = Some(Self::parse_location_section(location_text));
+        }
+
+        // Parse Environment section
+        if let Some(env_text) = sections.get("environment") {
+            game_state.environment = Self::parse_environment_section(env_text);
+        }
+
+        // Parse Time section
+        if let Some(time_text) = sections.get("time") {
+            game_state.game_time = Some(Self::parse_time_section(time_text));
+        }
+
+        // Parse Vitals section
+        if let Some(vitals_text) = sections.get("vitals") {
+            game_state.vitals = Self::parse_vitals_section(vitals_text);
+        }
+
+        // Parse Currency section
+        if let Some(currency_text) = sections.get("currency") {
+            info!(currency_text = %currency_text, "Found currency section");
+            game_state.currencies = Self::parse_currency_section(currency_text);
+            info!(currencies_parsed = ?game_state.currencies, "Parsed currencies");
         } else {
-            response.trim()
+            info!("No currency section found in LLM response");
+        }
+
+        // Parse Inventory section
+        if let Some(inv_text) = sections.get("inventory") {
+            let (on_person, stored, assets, removed) = Self::parse_inventory_section(inv_text);
+            game_state.inventory = on_person;
+            game_state.inventory_stored = stored;
+            game_state.assets = assets;
+            game_state.removed_items = removed;
+        }
+
+        // Parse Main Quest section
+        if let Some(main_quest_text) = sections.get("main quest") {
+            info!(main_quest_text = %main_quest_text, "Parsing main quest section");
+            let mut main_quests = Self::parse_quests_section(main_quest_text);
+            // Filter out "None" placeholders
+            main_quests.retain(|q| !q.title.eq_ignore_ascii_case("none"));
+            for quest in &mut main_quests {
+                quest.is_main = true;
+            }
+            game_state.quests.extend(main_quests);
+        }
+
+        // Parse Optional Quests section
+        if let Some(opt_quests_text) = sections.get("optional quests") {
+            info!(opt_quests_text = %opt_quests_text, "Parsing optional quests section");
+            let mut optional_quests = Self::parse_quests_section(opt_quests_text);
+            // Filter out "None" placeholders
+            optional_quests.retain(|q| !q.title.eq_ignore_ascii_case("none"));
+            // is_main defaults to false
+            game_state.quests.extend(optional_quests);
+        }
+
+        // Parse legacy Quests section (for backwards compatibility)
+        if let Some(quests_text) = sections.get("quests") {
+            game_state
+                .quests
+                .extend(Self::parse_quests_section(quests_text));
+        }
+
+        // Parse NPCs section
+        if let Some(npcs_text) = sections.get("npcs") {
+            game_state.npcs = Self::parse_npcs_section(npcs_text);
+        }
+
+        info!(
+            location = ?game_state.location.as_ref().map(|l| &l.name),
+            vitals_count = game_state.vitals.len(),
+            currencies_count = game_state.currencies.len(),
+            inventory_count = game_state.inventory.len(),
+            quests_count = game_state.quests.len(),
+            "Successfully parsed plaintext game state"
+        );
+
+        Ok(game_state)
+    }
+
+    /// Extract the ```game-state or ``` code block from the response
+    fn extract_code_block(response: &str) -> Result<String, AppError> {
+        // Try to find ```game-state block first
+        let code_block_re = Regex::new(r"```(?:game-state)?\s*\n([\s\S]*?)\n```").unwrap();
+
+        if let Some(caps) = code_block_re.captures(response) {
+            if let Some(content) = caps.get(1) {
+                return Ok(content.as_str().to_string());
+            }
+        }
+
+        // If no code block, check if response looks like state text (has section headers)
+        if response.contains("Location") && response.contains("---") {
+            return Ok(response.to_string());
+        }
+
+        warn!(
+            response_preview = %response.chars().take(300).collect::<String>(),
+            "No game-state code block found in response"
+        );
+        Err(AppError::SerializationError(
+            "No game-state code block found in LLM response".to_string(),
+        ))
+    }
+
+    /// Parse response text into sections by detecting headers
+    /// Headers are case-insensitive keywords followed by optional "---"
+    fn parse_sections(text: &str) -> HashMap<String, String> {
+        let mut sections: HashMap<String, String> = HashMap::new();
+        let known_headers = [
+            "location",
+            "environment",
+            "time",
+            "vitals",
+            "currency",
+            "inventory",
+            "equipment",
+            "main quest",
+            "optional quests",
+            "quests",
+            "npcs",
+            "status effects",
+        ];
+
+        // Match section headers: "Location", "Location\n---", "## Location", etc.
+        let header_re = Regex::new(r"(?mi)^(?:#*\s*)?(location|environment|time|vitals|currency|inventory|equipment|main quest|optional quests|quests|npcs|status effects)\s*$").unwrap();
+
+        let mut current_section: Option<String> = None;
+        let mut current_content = String::new();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+
+            // Skip separator lines
+            if trimmed == "---" || trimmed.is_empty() {
+                continue;
+            }
+
+            // Check if this line is a header
+            if let Some(caps) = header_re.captures(line) {
+                // Save previous section
+                if let Some(section_name) = current_section.take() {
+                    sections.insert(section_name, current_content.trim().to_string());
+                    current_content.clear();
+                }
+
+                // Start new section
+                let header = caps.get(1).unwrap().as_str().to_lowercase();
+                current_section = Some(header);
+            } else if current_section.is_some() {
+                // Add line to current section
+                current_content.push_str(line);
+                current_content.push('\n');
+            }
+        }
+
+        // Don't forget last section
+        if let Some(section_name) = current_section {
+            sections.insert(section_name, current_content.trim().to_string());
+        }
+
+        info!(
+            sections_found = ?sections.keys().collect::<Vec<_>>(),
+            "Parsed sections from response"
+        );
+
+        sections
+    }
+
+    /// Parse Location section
+    fn parse_location_section(text: &str) -> Location {
+        let mut id = String::new();
+        let mut name = String::new();
+        let mut description: Option<serde_json::Value> = None;
+        let mut region: Option<String> = None;
+        let mut tags: Vec<String> = Vec::new();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some((key, value)) = trimmed.split_once(':') {
+                let key = key.trim().to_lowercase();
+                let value = value.trim();
+                match key.as_str() {
+                    "name" => name = value.to_string(),
+                    "id" => id = value.to_lowercase().replace(' ', "_"),
+                    "region" => region = Some(value.to_string()),
+                    "description" => description = Some(serde_json::json!(value)),
+                    "tags" => {
+                        tags = value.split(',').map(|s| s.trim().to_string()).collect();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Generate ID from name if not provided
+        if id.is_empty() && !name.is_empty() {
+            id = name.to_lowercase().replace(' ', "_");
+        }
+
+        Location {
+            id,
+            name,
+            description,
+            region,
+            tags,
+        }
+    }
+
+    /// Parse Environment section
+    fn parse_environment_section(text: &str) -> EnvironmentState {
+        let mut env = EnvironmentState::default();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some((key, value)) = trimmed.split_once(':') {
+                let key = key.trim().to_lowercase();
+                let value = value.trim();
+                match key.as_str() {
+                    "weather" => env.weather = Some(value.to_string()),
+                    "lighting" => env.lighting = Some(value.to_string()),
+                    "temperature" | "temp" => env.temperature = Some(value.to_string()),
+                    "hazards" => {
+                        env.hazards = value.split(',').map(|s| s.trim().to_string()).collect();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        env
+    }
+
+    /// Parse Time section
+    fn parse_time_section(text: &str) -> GameTime {
+        let mut day: u32 = 1;
+        let mut hour: u8 = 12;
+        let mut minute: u8 = 0;
+        let mut second: u8 = 0;
+        let mut period = String::new();
+        let mut season: Option<String> = None;
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some((key, value)) = trimmed.split_once(':') {
+                let key = key.trim().to_lowercase();
+                let value = value.trim();
+                match key.as_str() {
+                    "day" => day = value.parse().unwrap_or(1),
+                    "hour" => hour = value.parse().unwrap_or(12),
+                    "minute" => minute = value.parse().unwrap_or(0),
+                    "second" => second = value.parse().unwrap_or(0),
+                    "period" => period = value.to_string(),
+                    "season" => season = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        GameTime {
+            day,
+            hour,
+            minute,
+            second,
+            period,
+            season,
+        }
+    }
+
+    /// Parse Vitals section - handles "- stat_name: current/max" or "- stat_name: current / max"
+    fn parse_vitals_section(text: &str) -> HashMap<String, Vital> {
+        let mut vitals = HashMap::new();
+
+        // Regex: "- stat_name: current/max" with optional whitespace around /
+        let vital_re =
+            Regex::new(r"(?m)^\s*-\s*([^:]+):\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)").unwrap();
+
+        for caps in vital_re.captures_iter(text) {
+            let name = caps.get(1).unwrap().as_str().trim().to_lowercase();
+            let current: f64 = caps.get(2).unwrap().as_str().parse().unwrap_or(100.0);
+            let max: f64 = caps.get(3).unwrap().as_str().parse().unwrap_or(100.0);
+
+            vitals.insert(
+                name,
+                Vital {
+                    current,
+                    max,
+                    regen_rate: None,
+                    modifiers: Vec::new(),
+                },
+            );
+        }
+
+        vitals
+    }
+
+    /// Parse Currency section - handles "[currency name]: [amount]" format
+    /// Examples: "Gold: 1500", "Silver: 45", "Credits: 10000"
+    fn parse_currency_section(text: &str) -> HashMap<String, i64> {
+        let mut currencies = HashMap::new();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            // Skip empty lines, example lines starting with (, and header lines
+            if trimmed.is_empty() || trimmed.starts_with('(') || trimmed.contains("---") {
+                continue;
+            }
+
+            // Parse "currency_name: amount" format
+            if let Some((name, amount_str)) = trimmed.split_once(':') {
+                let name = name.trim().to_string();
+                let amount_str = amount_str.trim();
+
+                // Extract numeric value, handling commas and other non-numeric chars
+                let clean_amount: String = amount_str
+                    .chars()
+                    .filter(|c| c.is_ascii_digit() || *c == '-')
+                    .collect();
+
+                if let Ok(amount) = clean_amount.parse::<i64>() {
+                    if !name.is_empty() && name.to_lowercase() != "e.g" {
+                        currencies.insert(name, amount);
+                    }
+                }
+            }
+        }
+
+        currencies
+    }
+
+    /// Parse Inventory section - handles "On Person:", "Stored - [Location]:", "Assets:", "Removed:"
+    /// Returns: (on_person_items, stored_items_by_location, assets, removed_ids)
+    fn parse_inventory_section(
+        text: &str,
+    ) -> (
+        Vec<InventoryItem>,
+        HashMap<String, Vec<InventoryItem>>,
+        Vec<String>,
+        Vec<String>,
+    ) {
+        let mut on_person = Vec::new();
+        let mut stored: HashMap<String, Vec<InventoryItem>> = HashMap::new();
+        let mut assets = Vec::new();
+        let mut removed = Vec::new();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+
+            // Parse "On Person:" line
+            if let Some(value) = trimmed
+                .strip_prefix("On Person:")
+                .or_else(|| trimmed.strip_prefix("on person:"))
+            {
+                for item_str in value.split(',') {
+                    if let Some(item) = Self::parse_inventory_item(item_str.trim()) {
+                        on_person.push(item);
+                    }
+                }
+            }
+            // Parse "Stored - [Location]:" lines
+            else if let Some(rest) = trimmed
+                .strip_prefix("Stored -")
+                .or_else(|| trimmed.strip_prefix("stored -"))
+            {
+                // Extract location name and items: "Home: sword, shield"
+                if let Some((location, items_str)) = rest.split_once(':') {
+                    let location = location.trim().to_string();
+                    let items: Vec<InventoryItem> = items_str
+                        .split(',')
+                        .filter_map(|s| Self::parse_inventory_item(s.trim()))
+                        .collect();
+                    if !items.is_empty() {
+                        stored.entry(location).or_default().extend(items);
+                    }
+                }
+            }
+            // Parse "Assets:" line
+            else if let Some(value) = trimmed
+                .strip_prefix("Assets:")
+                .or_else(|| trimmed.strip_prefix("assets:"))
+            {
+                for asset_str in value.split(',') {
+                    let asset = asset_str.trim();
+                    if !asset.is_empty() && asset.to_lowercase() != "none" {
+                        assets.push(asset.to_string());
+                    }
+                }
+            }
+            // Parse "Removed:" line
+            else if let Some(value) = trimmed
+                .strip_prefix("Removed:")
+                .or_else(|| trimmed.strip_prefix("removed:"))
+            {
+                for id in value.split(',') {
+                    let id = id.trim();
+                    if !id.is_empty() {
+                        removed.push(id.to_string());
+                    }
+                }
+            }
+        }
+
+        (on_person, stored, assets, removed)
+    }
+
+    /// Parse a single inventory item: "Sword (equipped)", "Potion x3", "Health Potion"
+    fn parse_inventory_item(text: &str) -> Option<InventoryItem> {
+        let text = text.trim();
+        if text.is_empty() || text.to_lowercase() == "none" {
+            return None;
+        }
+
+        // Check for (equipped) marker
+        let equipped = text.to_lowercase().contains("(equipped)");
+        let text = text.replace("(equipped)", "").replace("(Equipped)", "");
+
+        // Check for quantity: "x3" or "x 3"
+        let quantity_re = Regex::new(r"\s*x\s*(\d+)\s*$").unwrap();
+        let (name, quantity) = if let Some(caps) = quantity_re.captures(&text) {
+            let qty: u32 = caps.get(1).unwrap().as_str().parse().unwrap_or(1);
+            let name = quantity_re.replace(&text, "").trim().to_string();
+            (name, qty)
+        } else {
+            (text.trim().to_string(), 1)
         };
 
-        serde_json::from_str(json_str).map_err(|e| {
-            warn!(
-                error = %e,
-                response_preview = %json_str.chars().take(200).collect::<String>(),
-                "Failed to parse state response"
-            );
-            AppError::SerializationError(format!("Failed to parse state JSON: {}", e))
+        if name.is_empty() {
+            return None;
+        }
+
+        Some(InventoryItem {
+            id: name.to_lowercase().replace(' ', "_"),
+            name,
+            quantity,
+            description: None,
+            category: None,
+            equipped,
+            properties: HashMap::new(),
+            staleness_count: 0,
         })
+    }
+
+    /// Parse Quests section with [x] and [ ] objective syntax
+    fn parse_quests_section(text: &str) -> Vec<Quest> {
+        let mut quests = Vec::new();
+        let mut current_quest: Option<Quest> = None;
+
+        // Quest title line: "- Quest Title (active)" or "- Quest Title (completed)"
+        let quest_title_re =
+            Regex::new(r"^\s*-\s*(.+?)\s*\((active|completed|failed|abandoned)\)").unwrap();
+        // Objective line: "- [x] objective" or "- [ ] objective"
+        let objective_re = Regex::new(r"^\s*-\s*\[([ xX])\]\s*(.+)").unwrap();
+        // Key-value lines: "Given by: Name", "Description: text", "Rewards: text"
+        let kv_re = Regex::new(r"^\s*(Given by|Description|Rewards):\s*(.+)").unwrap();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+
+            // Check for quest title
+            if let Some(caps) = quest_title_re.captures(trimmed) {
+                // Save previous quest
+                if let Some(q) = current_quest.take() {
+                    quests.push(q);
+                }
+
+                let title = caps.get(1).unwrap().as_str().trim().to_string();
+                let status_str = caps.get(2).unwrap().as_str();
+                let status = match status_str.to_lowercase().as_str() {
+                    "completed" => QuestStatus::Completed,
+                    "failed" => QuestStatus::Failed,
+                    "abandoned" => QuestStatus::Abandoned,
+                    _ => QuestStatus::Active,
+                };
+
+                current_quest = Some(Quest {
+                    id: title.to_lowercase().replace(' ', "_"),
+                    title,
+                    is_main: false, // Will be set by caller based on section
+                    status,
+                    description: None,
+                    objectives: Vec::new(),
+                    giver: None,
+                    rewards: None,
+                });
+            }
+            // Check for objective
+            else if let Some(caps) = objective_re.captures(trimmed) {
+                if let Some(ref mut quest) = current_quest {
+                    let completed = caps.get(1).unwrap().as_str().to_lowercase() == "x";
+                    let description = serde_json::json!(caps.get(2).unwrap().as_str().trim());
+                    quest.objectives.push(QuestObjective {
+                        description,
+                        completed,
+                        progress: None,
+                    });
+                }
+            }
+            // Check for key-value (Given by, Description, Rewards)
+            else if let Some(caps) = kv_re.captures(trimmed) {
+                if let Some(ref mut quest) = current_quest {
+                    let key = caps.get(1).unwrap().as_str();
+                    let value = caps.get(2).unwrap().as_str().trim();
+                    match key {
+                        "Given by" => quest.giver = Some(value.to_string()),
+                        "Description" => quest.description = Some(serde_json::json!(value)),
+                        "Rewards" => quest.rewards = Some(serde_json::json!(value)),
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Don't forget last quest
+        if let Some(q) = current_quest {
+            quests.push(q);
+        }
+
+        quests
+    }
+
+    /// Parse NPCs section
+    fn parse_npcs_section(text: &str) -> HashMap<String, NpcState> {
+        let mut npcs = HashMap::new();
+        let mut current_npc: Option<NpcState> = None;
+        let mut current_id = String::new();
+
+        // NPC header: "- NPC Name (friendly)" or "- NPC Name (hostile)"
+        let npc_header_re =
+            Regex::new(r"^\s*-\s*(.+?)\s*\((friendly|neutral|hostile|allied)\)").unwrap();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+
+            if let Some(caps) = npc_header_re.captures(trimmed) {
+                // Save previous NPC
+                if let Some(npc) = current_npc.take() {
+                    npcs.insert(current_id.clone(), npc);
+                }
+
+                let name = caps.get(1).unwrap().as_str().trim().to_string();
+                let disposition = caps.get(2).unwrap().as_str().to_string();
+                current_id = name.to_lowercase().replace(' ', "_");
+
+                current_npc = Some(NpcState {
+                    id: current_id.clone(),
+                    name,
+                    location: None,
+                    disposition,
+                    status: "alive".to_string(),
+                    objectives: Vec::new(),
+                    data: HashMap::new(),
+                });
+            } else if let Some(ref mut npc) = current_npc {
+                // Parse NPC properties
+                if let Some((key, value)) = trimmed.split_once(':') {
+                    let key = key.trim().to_lowercase();
+                    let value = value.trim().to_string();
+                    match key.as_str() {
+                        "location" => npc.location = Some(value),
+                        "status" => npc.status = value,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Don't forget last NPC
+        if let Some(npc) = current_npc {
+            npcs.insert(current_id, npc);
+        }
+
+        npcs
     }
 }
 
@@ -607,6 +1396,7 @@ mod tests {
             category: None,
             equipped: true,
             properties: HashMap::new(),
+            staleness_count: 0,
         });
         current_state.vitals.insert(
             "health".to_string(),

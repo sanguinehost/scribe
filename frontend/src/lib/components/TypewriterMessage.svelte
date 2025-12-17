@@ -48,7 +48,7 @@
 	let hasTextContent = $derived((message?.content || '').replace(/\s/g, '').length > 0);
 	let shouldShowLoading = $derived(!hasTextContent || message?.isRegenerating === true);
 
-	// Timeout for stuck loading states (10 seconds)
+	// Timeout for stuck loading states (30 seconds - needs to account for slow model cold starts)
 	let isStuckLoading = $state(false);
 
 	$effect(() => {
@@ -57,10 +57,10 @@
 			isStuckLoading = false;
 			return;
 		}
-		// Start timeout when loading begins
+		// Start timeout when loading begins - 30s to handle slow initial connections
 		const timer = setTimeout(() => {
 			isStuckLoading = true;
-		}, 10000);
+		}, 30000);
 		return () => clearTimeout(timer);
 	});
 
@@ -231,7 +231,7 @@
 	>
 		<!-- Show loading spinner when no content or regenerating -->
 		{#if shouldShowLoading}
-			<div class="text-muted-foreground flex items-center gap-2 py-2">
+			<div class="flex items-center gap-2 py-2 text-muted-foreground">
 				{#if isStuckLoading}
 					<span class="text-sm text-red-500">Failed to load response. Try refreshing.</span>
 				{:else}
