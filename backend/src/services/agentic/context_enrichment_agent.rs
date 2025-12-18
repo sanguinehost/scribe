@@ -9,7 +9,7 @@ use crate::db::DbId;
 use chrono::Utc;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    JsonSchemaSpec, MessageContent,
+    MessageContent,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -379,7 +379,7 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
             // Create chat messages with enhanced prefill on retries
             let user_message = GenAiChatMessage {
                 role: ChatRole::User,
-                content: MessageContent::Text(user_message_content.clone()),
+                content: MessageContent::from(user_message_content.clone()),
                 options: None,
             };
 
@@ -392,7 +392,7 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
 
             let prefill_message = GenAiChatMessage {
                 role: ChatRole::Assistant,
-                content: MessageContent::Text(prefill_content),
+                content: MessageContent::from(prefill_content),
                 options: None,
             };
 
@@ -400,20 +400,16 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
 
             // Build chat options
             let mut chat_options = ChatOptions::default();
-            chat_options = chat_options.with_temperature(0.7); // Some creativity for search planning
+            chat_options = chat_options.with_temperature(1.0);
             chat_options = chat_options.with_max_tokens(1024); // Don't need much for planning
 
             // Enable structured output
-            let json_schema_spec = JsonSchemaSpec::new(planning_schema.clone());
-            let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
-            chat_options = chat_options.with_response_format(response_format);
-
-            // Add safety settings
-            let safety_settings = create_unrestricted_safety_settings();
-            chat_options = chat_options.with_safety_settings(safety_settings);
+            chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
             // Create chat request
-            let chat_request = ChatRequest::new(messages_vec).with_system(&system_prompt);
+            let chat_request = ChatRequest::new(messages_vec)
+                .with_system(&system_prompt)
+                ;
 
             match self
                 .state
@@ -424,15 +420,10 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
                 Ok(response) => {
                     // Extract JSON from response
                     let json_result = response
-                        .contents
-                        .into_iter()
-                        .next()
-                        .and_then(|content| match content {
-                            MessageContent::Text(text) => {
-                                // Try to parse as JSON
-                                serde_json::from_str::<Value>(&text).ok()
-                            }
-                            _ => None,
+                        .first_text()
+                        .and_then(|text| {
+                            // Try to parse as JSON
+                            serde_json::from_str::<Value>(text).ok()
                         })
                         .ok_or_else(|| {
                             AppError::GeminiError(
@@ -775,13 +766,15 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         // Create chat messages
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(user_message_content),
+            content: MessageContent::from(user_message_content),
             options: None,
         };
 
+
+
         let prefill_message = GenAiChatMessage {
             role: ChatRole::Assistant,
-            content: MessageContent::Text(
+            content: MessageContent::from(
                 "I'll synthesize the search results into relevant context for the roleplay:"
                     .to_string(),
             ),
@@ -792,23 +785,19 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
 
         // Build chat options
         let mut chat_options = ChatOptions::default();
-        chat_options = chat_options.with_temperature(0.5); // Lower temperature for synthesis
+        chat_options = chat_options.with_temperature(1.0);
         chat_options = chat_options.with_max_tokens(1024);
 
         // Enable structured output
-        let json_schema_spec = JsonSchemaSpec::new(synthesis_schema.clone());
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
-        chat_options = chat_options.with_response_format(response_format);
-
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        chat_options = chat_options.with_safety_settings(safety_settings);
+        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
         // System prompt
         let system_prompt = "You are a context synthesis agent for a roleplay assistant. Your role is to take search results from chronicles and lorebooks and create a coherent summary that provides relevant background context.";
 
         // Create chat request
-        let chat_request = ChatRequest::new(messages_vec).with_system(system_prompt);
+        let chat_request = ChatRequest::new(messages_vec)
+            .with_system(system_prompt)
+            ;
 
         // Try to get AI synthesis
         match self
@@ -821,13 +810,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                 // Extract JSON from response
                 if let Some(json_result) =
                     response
-                        .contents
-                        .into_iter()
-                        .next()
-                        .and_then(|content| match content {
-                            MessageContent::Text(text) => serde_json::from_str::<Value>(&text).ok(),
-                            _ => None,
-                        })
+                        .first_text()
+                        .and_then(|text| serde_json::from_str::<Value>(text).ok())
                 {
                     let synthesis_text = json_result
                         .get("summary")

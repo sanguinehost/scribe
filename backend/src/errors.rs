@@ -1189,8 +1189,8 @@ impl From<uuid::Error> for AppError {
 
 impl From<genai::Error> for AppError {
     fn from(err: genai::Error) -> Self {
-        // First, try to extract retryDelay from StreamEventError body if applicable
-        if let genai::Error::StreamEventError { body, .. } = &err {
+        // First, try to extract retryDelay from ChatResponse body if applicable
+        if let genai::Error::ChatResponse { body, .. } = &err {
             if let Some(retry_info) = body["error"]["details"].as_array().and_then(|details| {
                 details
                     .iter()
@@ -1200,7 +1200,7 @@ impl From<genai::Error> for AppError {
                     if let Some(seconds_str) = delay_str.strip_suffix('s') {
                         if let Ok(seconds) = seconds_str.parse::<u64>() {
                             tracing::info!(
-                                "Detected Gemini API rate limit from StreamEventError with retryDelay: {}s",
+                                "Detected Gemini API rate limit from ChatResponse with retryDelay: {}s",
                                 seconds
                             );
                             return AppError::RateLimited(Some(Duration::from_secs(seconds)));

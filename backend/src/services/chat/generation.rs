@@ -10,7 +10,7 @@ use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
     ChatRequest as GenAiChatRequest, ChatRole, ChatStreamEvent as GeminiResponseChunkAlias,
-    ReasoningEffort,
+    ReasoningEffort, ThinkingLevel,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -198,6 +198,7 @@ pub async fn get_session_data_for_generation(
         session_model_name_db,
         session_model_provider_db,
         session_gemini_thinking_budget_db,
+        session_gemini_thinking_level_db,
         session_gemini_enable_code_execution_db,
         existing_messages_db_raw, // Raw, potentially encrypted messages
         character_for_first_mes,  // Full character for first_mes logic
@@ -269,6 +270,7 @@ pub async fn get_session_data_for_generation(
             let (
                 model_prov,
                 gem_think_budget,
+                gem_think_level,
                 gem_enable_code_exec,
                 player_chronicle_id,
                 agent_mode,
@@ -279,6 +281,7 @@ pub async fn get_session_data_for_generation(
                 .select((
                     chat_sessions::model_provider,
                     chat_sessions::gemini_thinking_budget,
+                    chat_sessions::gemini_thinking_level,
                     chat_sessions::gemini_enable_code_execution,
                     chat_sessions::player_chronicle_id,
                     chat_sessions::agent_mode,
@@ -287,6 +290,7 @@ pub async fn get_session_data_for_generation(
                 .first::<(
                     Option<String>,
                     Option<i32>,
+                    Option<String>,
                     Option<bool>,
                     Option<crate::db::DbId>,
                     Option<String>,
@@ -650,6 +654,7 @@ pub async fn get_session_data_for_generation(
                 model_n,
                 model_prov,
                 gem_think_budget,
+                gem_think_level,
                 gem_enable_code_exec,
                 messages_raw_db,
                 character_db,
@@ -859,7 +864,7 @@ pub async fn get_session_data_for_generation(
     debug!(%session_id, %user_id, "Retrieved user settings for context management");
 
     // Use user-configured values or fall back to config defaults
-    let mut context_total_token_limit = user_settings
+    let context_total_token_limit = user_settings
         .default_context_total_token_limit
         .map(|v| v as usize)
         .unwrap_or(state.config.context_total_token_limit);
@@ -1406,18 +1411,19 @@ pub async fn get_session_data_for_generation(
         session_model_provider_db,      // 13: model_provider (Option<String>) - NEW
         // -- Gemini Specific Options --
         session_gemini_thinking_budget_db, // 14: gemini_thinking_budget (Option<i32>) - MOVED
-        session_gemini_enable_code_execution_db, // 15: gemini_enable_code_execution (Option<bool>) - MOVED
-        user_db_message_to_save, // 16: The user message struct (DbInsertableChatMessage) - MOVED
+        session_gemini_thinking_level_db,  // 15: gemini_thinking_level (Option<String>) - NEW
+        session_gemini_enable_code_execution_db, // 16: gemini_enable_code_execution (Option<bool>) - MOVED
+        user_db_message_to_save, // 17: The user message struct (DbInsertableChatMessage) - MOVED
         // -- RAG Context & Recent History Tokens --
-        actual_recent_history_tokens, // 17: actual_recent_history_tokens (usize) - MOVED
-        rag_context_items,            // 18: rag_context_items (Vec<RetrievedChunk>) - MOVED
+        actual_recent_history_tokens, // 18: actual_recent_history_tokens (usize) - MOVED
+        rag_context_items,            // 19: rag_context_items (Vec<RetrievedChunk>) - MOVED
         // History Management Settings
-        history_management_strategy_db_val, // 19: history_management_strategy (String) - MOVED
-        history_management_limit_db_val,    // 20: history_management_limit (i32) - MOVED
-        user_persona_name,                  // 21: user_persona_name (Option<String>) - NEW
-        player_chronicle_id_from_session, // 22: player_chronicle_id (Option<crate::db::DbId>) - NEW
-        agent_mode_from_session,          // 23: agent_mode (Option<String>) - NEW
-        game_master_mode_enabled_from_session, // 24: game_master_mode_enabled (Option<bool>) - NEW
+        history_management_strategy_db_val, // 20: history_management_strategy (String) - MOVED
+        history_management_limit_db_val,    // 21: history_management_limit (i32) - MOVED
+        user_persona_name,                  // 22: user_persona_name (Option<String>) - NEW
+        player_chronicle_id_from_session, // 23: player_chronicle_id (Option<crate::db::DbId>) - NEW
+        agent_mode_from_session,          // 24: agent_mode (Option<String>) - NEW
+        game_master_mode_enabled_from_session, // 25: game_master_mode_enabled (Option<bool>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
@@ -1438,6 +1444,7 @@ pub struct StreamAiParams {
     pub model_name: String,
     pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
+    pub gemini_thinking_level: Option<String>,
     pub gemini_enable_code_execution: Option<bool>,
     pub request_thinking: bool,                       // New parameter
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
@@ -1560,13 +1567,14 @@ pub async fn exec_chat_with_retry(
 
             let prefill_message = genai::chat::ChatMessage {
                 role: genai::chat::ChatRole::Assistant,
-                content: genai::chat::MessageContent::Text(prefill_content),
+                content: genai::chat::MessageContent::from(prefill_content),
                 options: None,
             };
             messages_with_prefill.push(prefill_message);
 
-            let mut request =
-                genai::chat::ChatRequest::new(messages_with_prefill).with_system(system_prompt);
+            let mut request = genai::chat::ChatRequest::new(messages_with_prefill)
+                .with_system(system_prompt)
+                ;
 
             if let Some(tools) = &params.chat_request.tools {
                 request = request.with_tools(tools.clone());
@@ -1635,13 +1643,18 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             state: params.state.clone(),
             session_id: params.session_id,
             user_id: params.user_id,
+            model_name: params.model_name.clone(),
+            model_provider: params.model_provider.clone(),
+            gemini_thinking_budget: params.gemini_thinking_budget,
+            gemini_thinking_level: params.gemini_thinking_level.clone(),
+            gemini_enable_code_execution: params.gemini_enable_code_execution,
             incoming_genai_messages: {
                 let mut messages_with_prefill = params.incoming_genai_messages.clone();
 
                 // Check if the last message is from User and contains guidance
                 let has_guidance = messages_with_prefill.last().map_or(false, |msg| {
                     matches!(msg.role, genai::chat::ChatRole::User) &&
-                    matches!(&msg.content, genai::chat::MessageContent::Text(text) if text.contains("(SYSTEM INSTRUCTION:"))
+                    msg.content.first_text().map_or(false, |text| text.contains("(SYSTEM INSTRUCTION:"))
                 });
 
                 if !has_guidance {
@@ -1656,7 +1669,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                     // Add fake assistant message with prefill for all attempts
                     let prefill_message = genai::chat::ChatMessage {
                         role: genai::chat::ChatRole::Assistant,
-                        content: genai::chat::MessageContent::Text(prefill_content),
+                        content: genai::chat::MessageContent::from(prefill_content),
                         options: None,
                     };
                     messages_with_prefill.push(prefill_message);
@@ -1682,10 +1695,6 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             top_p: params.top_p.clone(),
             stop_sequences: params.stop_sequences.clone(),
             seed: params.seed,
-            model_name: params.model_name.clone(),
-            model_provider: params.model_provider.clone(),
-            gemini_thinking_budget: params.gemini_thinking_budget,
-            gemini_enable_code_execution: params.gemini_enable_code_execution,
             request_thinking: params.request_thinking,
             user_dek: params.user_dek.clone(),
             character_name: params.character_name.clone(),
@@ -1754,6 +1763,7 @@ pub async fn stream_ai_response_and_save_message(
         model_name,
         model_provider,
         gemini_thinking_budget,
+        gemini_thinking_level,
         gemini_enable_code_execution,
         request_thinking,
         user_dek,
@@ -1819,10 +1829,25 @@ pub async fn stream_ai_response_and_save_message(
                 .with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
         }
     }
+    if let Some(level_str) = gemini_thinking_level {
+        let thinking_level = match level_str.to_lowercase().as_str() {
+            "low" => Some(ThinkingLevel::Low),
+            "medium" => Some(ThinkingLevel::Medium),
+            "high" => Some(ThinkingLevel::High),
+            "disabled" | "off" => {
+                // Explicitly disable thinking by setting budget to 0 if possible
+                genai_chat_options = genai_chat_options
+                    .with_reasoning_effort(ReasoningEffort::Budget(0));
+                None
+            },
+            _ => None,
+        };
+        if let Some(level) = thinking_level {
+            genai_chat_options = genai_chat_options.with_thinking_level(level);
+        }
+    }
 
-    // Disable all safety filters to prevent content filtering errors
-    let safety_settings = create_unrestricted_safety_settings();
-    genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
+    // Safety settings are now set on the ChatRequest in create_jailbreak_request
 
     // NEW LOGIC FOR TOOL CONFIGURATION
     let mut tools_to_declare: Vec<genai::chat::Tool> = Vec::new();
@@ -1924,12 +1949,12 @@ pub async fn stream_ai_response_and_save_message(
                     debug!("Received Start event from AI stream in chat_service");
                 }
                 Ok(GeminiResponseChunkAlias::Chunk(chunk)) => {
-                    debug!(content_chunk_len = chunk.content.len(), "Received Content chunk from AI stream in chat_service");
                     if chunk.content.is_empty() {
                         trace!("Skipping empty content chunk from AI in chat_service");
                     } else {
-                        // Check for safety-related refusal patterns
-                        let chunk_lower = chunk.content.to_lowercase();
+                        // ... existing logic for content ..
+                        let chunk_content = chunk.content;
+                        let chunk_lower = chunk_content.to_lowercase();
                         let is_likely_safety_refusal = chunk_lower.contains("i can't help")
                             || chunk_lower.contains("i cannot provide")
                             || chunk_lower.contains("i'm not able to")
@@ -1939,14 +1964,14 @@ pub async fn stream_ai_response_and_save_message(
                             || chunk_lower.contains("harmful content");
 
                         if is_likely_safety_refusal {
-                            warn!(session_id = %stream_session_id, content_len = chunk.content.len(), "Detected potential safety refusal in AI response");
+                            warn!(session_id = %stream_session_id, content_len = chunk_content.len(), "Detected potential safety refusal in AI response");
                         }
 
                         // Create structured chunk with integrity checking
-                        let checksum = crc32fast::hash(chunk.content.as_bytes());
+                        let checksum = crc32fast::hash(chunk_content.as_bytes());
                         let structured_chunk = super::types::StreamedChunk {
                             index: chunk_index,
-                            content: chunk.content.clone(),
+                            content: chunk_content.clone(),
                             checksum,
                         };
 
@@ -1955,39 +1980,45 @@ pub async fn stream_ai_response_and_save_message(
                             Ok(json_payload) => {
                                 info!(
                                     chunk_index = chunk_index,
-                                    content_len = chunk.content.len(),
+                                    content_len = chunk_content.len(),
                                     checksum = checksum,
                                     "🔥 BACKEND: Yielding chunk {} (length: {} chars)",
                                     chunk_index,
-                                    chunk.content.len()
+                                    chunk_content.len()
                                 );
 
-                                accumulated_content.push_str(&chunk.content);
+                                accumulated_content.push_str(&chunk_content);
                                 yield Ok(ScribeSseEvent::Content(json_payload));
                                 chunk_index += 1;
                             }
                             Err(e) => {
                                 error!(error = ?e, "Failed to serialize structured chunk");
                                 // Fallback to original behavior for this chunk
-                                accumulated_content.push_str(&chunk.content);
-                                yield Ok(ScribeSseEvent::Content(chunk.content.clone()));
+                                accumulated_content.push_str(&chunk_content);
+                                yield Ok(ScribeSseEvent::Content(chunk_content));
                             }
                         }
                     }
                 }
                 Ok(GeminiResponseChunkAlias::ReasoningChunk(chunk)) => {
-                    debug!(reasoning_chunk_len = chunk.content.len(), "Received ReasoningChunk from AI stream in chat_service");
+                    // Handle reasoning chunks
                     if !chunk.content.is_empty() {
-                        yield Ok(ScribeSseEvent::Thinking(chunk.content.clone()));
-                       }
-                      }
-                      Ok(GeminiResponseChunkAlias::ToolCall(tool_call)) => {
-                                  debug!(tool_call_id = %tool_call.call_id, tool_fn_name = %tool_call.fn_name, "Received ToolCall event from AI stream in chat_service");
-                                  let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_call.fn_name, tool_call.call_id);
-                                  yield Ok(ScribeSseEvent::Thinking(thinking_message));
-                              }
-                      Ok(GeminiResponseChunkAlias::End(_)) => {
-                       debug!("Received End event from AI stream in chat_service");
+                        yield Ok(ScribeSseEvent::Thinking(chunk.content));
+                    }
+                }
+                Ok(GeminiResponseChunkAlias::ToolCallChunk(tool_chunk)) => {
+                    // Handle tool call chunks
+                    debug!(tool_call_id = %tool_chunk.tool_call.call_id, tool_fn_name = %tool_chunk.tool_call.fn_name, "Received ToolCall from AI stream in chat_service");
+                    let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_chunk.tool_call.fn_name, tool_chunk.tool_call.call_id);
+                    yield Ok(ScribeSseEvent::Thinking(thinking_message));
+                }
+                Ok(GeminiResponseChunkAlias::End(stream_end)) => {
+                    debug!("Received End event from AI stream in chat_service");
+                    if let Some(sig) = &stream_end.captured_thought_signature {
+                         if !sig.is_empty() {
+                            yield Ok(ScribeSseEvent::Thinking(format!("Thought Signature: {}", sig)));
+                        }
+                    }
                 }
                 Err(e) => {
                     error!(error = ?e, "Error during AI stream processing in chat_service (inside loop)");
@@ -2054,7 +2085,7 @@ pub async fn stream_ai_response_and_save_message(
                     } else if detailed_error.contains("Failed to parse stream data") {
                         // Handle Gemini JSON parsing errors more gracefully
                         if detailed_error.contains("trailing characters") {
-                            "LLM API error: The AI service returned a malformed response. This is a temporary issue - please try again.".to_string()
+                            "LLM API error: The AI service returned a malformed response (trailing characters). This is a known issue with the Gemini 3 Preview streaming format in the current adapter. Please try disabling reasoning or using a stable model.".to_string()
                         } else if detailed_error.contains("GeminiError") {
                             "LLM API error: The AI service encountered a parsing error. Please try again or consider rephrasing your message.".to_string()
                         } else {
@@ -2564,35 +2595,33 @@ fn build_raw_prompt_debug(
 
         writeln!(&mut debug_prompt, "Message {} [{}]:", i + 1, role_display).unwrap();
 
-        // Extract and format the actual text content
-        match &message.content {
-            MessageContent::Text(text) => {
-                writeln!(&mut debug_prompt, "{}", text).unwrap();
-            }
-            MessageContent::Parts(parts) => {
-                for part in parts {
-                    if let ContentPart::Text(text) = part {
-                        writeln!(&mut debug_prompt, "{}", text).unwrap();
-                    } else {
-                        writeln!(&mut debug_prompt, "[Non-text content]").unwrap();
-                    }
+        // Extract and format the actual text content using MessageContent API
+        // MessageContent is a struct with parts, not an enum
+        if !message.content.tool_calls().is_empty() {
+            writeln!(
+                &mut debug_prompt,
+                "[Tool Calls: {} calls]",
+                message.content.tool_calls().len()
+            )
+            .unwrap();
+        } else if !message.content.tool_responses().is_empty() {
+            writeln!(
+                &mut debug_prompt,
+                "[Tool Responses: {} responses]",
+                message.content.tool_responses().len()
+            )
+            .unwrap();
+        } else if let Some(text) = message.content.first_text() {
+            writeln!(&mut debug_prompt, "{}", text).unwrap();
+        } else {
+            // Check for multiple text parts
+            let texts = message.content.texts();
+            if !texts.is_empty() {
+                for text in texts {
+                    writeln!(&mut debug_prompt, "{}", text).unwrap();
                 }
-            }
-            MessageContent::ToolCalls(tool_calls) => {
-                writeln!(
-                    &mut debug_prompt,
-                    "[Tool Calls: {} calls]",
-                    tool_calls.len()
-                )
-                .unwrap();
-            }
-            MessageContent::ToolResponses(tool_responses) => {
-                writeln!(
-                    &mut debug_prompt,
-                    "[Tool Responses: {} responses]",
-                    tool_responses.len()
-                )
-                .unwrap();
+            } else {
+                writeln!(&mut debug_prompt, "[Non-text content]").unwrap();
             }
         }
         writeln!(&mut debug_prompt, "---").unwrap();

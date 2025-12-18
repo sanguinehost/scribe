@@ -295,6 +295,8 @@ function createCreditStore() {
 
 		// Fallback to hardcoded defaults for resilience
 		const defaultCosts: { [key: string]: number } = {
+			'gemini-3-pro': 50,
+			'gemini-3-flash-preview': 10,
 			'gemini-2.5-pro': 50,
 			'gemini-2.5-flash': 10,
 			'gemini-2.5-flash-preview-09-2025': 10,

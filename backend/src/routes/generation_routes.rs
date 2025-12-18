@@ -189,7 +189,7 @@ pub async fn generate_character_field_stream_handler(
                                 ChatStreamEvent::Start => {
                                     // Stream started, no content yet
                                 }
-                                ChatStreamEvent::Chunk(chunk) => {
+                                ChatStreamEvent::Chunk(chunk) | ChatStreamEvent::ReasoningChunk(chunk) => {
                                     _full_content.push_str(&chunk.content);
 
                                     // Yield content chunk
@@ -201,7 +201,7 @@ pub async fn generate_character_field_stream_handler(
                                         .event("chunk")
                                         .data(chunk_data.to_string()));
                                 }
-                                ChatStreamEvent::End(_end_data) => {
+                                ChatStreamEvent::End(_) => {
                                     // StreamEnd doesn't contain token counts in the genai crate
                                     // Use accumulated counts from chunks if available, or estimate
                                     let total_tokens = prompt_tokens_count + completion_tokens_count;
@@ -309,7 +309,7 @@ pub async fn enhance_character_handler(
 
     use genai::chat::{
         ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-        ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+        ChatResponseFormat, ChatRole, MessageContent,
     };
 
     // Build system prompt for enhancement
@@ -370,7 +370,7 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
     // Create messages for generation
     let messages = vec![GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::Text(user_message),
+        content: MessageContent::from(user_message),
         options: None,
     }];
 
@@ -389,14 +389,12 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
         }
     } else {
         // Default: moderate temperature for balanced enhancement
-        chat_options = chat_options.with_temperature(0.7);
+        chat_options = chat_options.with_temperature(1.0);
         chat_options = chat_options.with_max_tokens(2048);
     }
 
     // Enable structured output using JSON schema
-    let json_schema_spec = JsonSchemaSpec::new(get_enhancement_schema());
-    let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
-    chat_options = chat_options.with_response_format(response_format);
+    chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
     // Create chat request
     let chat_request = ChatRequest::new(messages).with_system(&system_prompt);
@@ -415,14 +413,7 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
 
     // Extract and parse the response
     let response_text = response
-        .contents
-        .into_iter()
-        .next()
-        .and_then(|content| match content {
-            MessageContent::Text(text) => Some(text),
-            _ => None,
-        })
-        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?;
+        .first_text().unwrap_or_default().to_string();
 
     let enhancement_output: EnhancementOutput =
         serde_json::from_str(&response_text).map_err(|e| {
@@ -487,7 +478,7 @@ pub async fn generate_lorebook_entries_handler(
     };
     use genai::chat::{
         ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-        ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+        ChatResponseFormat, ChatRole, MessageContent,
     };
 
     // Use FieldGenerator for comprehensive prompt engineering
@@ -553,7 +544,7 @@ pub async fn generate_lorebook_entries_handler(
     // Create messages for generation
     let messages = vec![GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::Text(user_message),
+        content: MessageContent::from(user_message),
         options: None,
     }];
 
@@ -564,7 +555,7 @@ pub async fn generate_lorebook_entries_handler(
     if let Some(temp) = payload.temperature {
         chat_options = chat_options.with_temperature(temp as f64);
     } else {
-        chat_options = chat_options.with_temperature(0.8); // Creative generation
+        chat_options = chat_options.with_temperature(1.0);
     }
 
     // Increase max tokens for batch generation
@@ -576,9 +567,7 @@ pub async fn generate_lorebook_entries_handler(
     chat_options = chat_options.with_max_tokens(max_tokens);
 
     // Enable structured output using JSON schema for batch entries
-    let json_schema_spec = JsonSchemaSpec::new(get_batch_lorebook_entries_schema());
-    let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
-    chat_options = chat_options.with_response_format(response_format);
+    chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
     // Create chat request with comprehensive system prompt from FieldGenerator
     let chat_request = ChatRequest::new(messages).with_system(&system_prompt);
@@ -597,14 +586,7 @@ pub async fn generate_lorebook_entries_handler(
 
     // Extract and parse the response
     let response_text = response
-        .contents
-        .into_iter()
-        .next()
-        .and_then(|content| match content {
-            MessageContent::Text(text) => Some(text),
-            _ => None,
-        })
-        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?;
+        .first_text().unwrap_or_default().to_string();
 
     let batch_output: BatchLorebookEntriesOutput =
         serde_json::from_str(&response_text).map_err(|e| {
@@ -683,7 +665,7 @@ pub async fn generate_lorebook_entry_handler(
     };
     use genai::chat::{
         ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-        ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+        ChatResponseFormat, ChatRole, MessageContent,
     };
 
     // Use FieldGenerator for comprehensive prompt engineering
@@ -741,7 +723,7 @@ pub async fn generate_lorebook_entry_handler(
     // Create messages for generation
     let messages = vec![GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::Text(user_message),
+        content: MessageContent::from(user_message),
         options: None,
     }];
 
@@ -752,7 +734,7 @@ pub async fn generate_lorebook_entry_handler(
     if let Some(temp) = payload.temperature {
         chat_options = chat_options.with_temperature(temp as f64);
     } else {
-        chat_options = chat_options.with_temperature(0.8); // Creative generation
+        chat_options = chat_options.with_temperature(1.0);
     }
 
     // Apply max_tokens from payload or use default
@@ -763,9 +745,7 @@ pub async fn generate_lorebook_entry_handler(
     }
 
     // Enable structured output using JSON schema
-    let json_schema_spec = JsonSchemaSpec::new(get_lorebook_entry_schema());
-    let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
-    chat_options = chat_options.with_response_format(response_format);
+    chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
     // Create chat request with comprehensive system prompt from FieldGenerator
     let chat_request = ChatRequest::new(messages).with_system(&system_prompt);
@@ -784,14 +764,9 @@ pub async fn generate_lorebook_entry_handler(
 
     // Extract and parse the response
     let response_text = response
-        .contents
-        .into_iter()
-        .next()
-        .and_then(|content| match content {
-            MessageContent::Text(text) => Some(text),
-            _ => None,
-        })
-        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?;
+        .first_text()
+        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?
+        .to_string();;
 
     let entry_output: LorebookEntryOutput = serde_json::from_str(&response_text).map_err(|e| {
         AppError::InternalServerErrorGeneric(format!(
@@ -901,7 +876,7 @@ You have access to character context when provided, which helps you give more re
             };
             messages.push(GenAiChatMessage {
                 role,
-                content: MessageContent::Text(msg.content.clone()),
+                content: MessageContent::from(msg.content.clone()),
                 options: None,
             });
         }
@@ -930,7 +905,7 @@ You have access to character context when provided, which helps you give more re
     // Add current user message
     messages.push(GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::Text(user_message),
+        content: MessageContent::from(user_message),
         options: None,
     });
 
@@ -942,7 +917,7 @@ You have access to character context when provided, which helps you give more re
         chat_options = chat_options.with_temperature(temp.into());
     } else {
         // Default: balanced creativity for helpful assistant
-        chat_options = chat_options.with_temperature(0.7);
+        chat_options = chat_options.with_temperature(1.0);
     }
 
     if let Some(max_tokens) = payload.max_tokens {
@@ -969,14 +944,9 @@ You have access to character context when provided, which helps you give more re
 
     // Extract response text
     let response_text = response
-        .contents
-        .into_iter()
-        .next()
-        .and_then(|content| match content {
-            MessageContent::Text(text) => Some(text),
-            _ => None,
-        })
-        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?;
+        .first_text()
+        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?
+        .to_string();;
 
     // Calculate generation time
     let generation_time_ms = start_time.elapsed().as_millis() as u64;

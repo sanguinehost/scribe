@@ -1014,6 +1014,7 @@ pub async fn create_session_and_maybe_first_message(
             default_top_k: None,
             default_seed: None,
             default_gemini_thinking_budget: None,
+            default_gemini_thinking_level: None,
             default_gemini_enable_code_execution: None,
             default_context_total_token_limit: Some(state.config.context_total_token_limit as i32),
             default_context_recent_history_budget: Some(state.config.context_recent_history_token_budget as i32),

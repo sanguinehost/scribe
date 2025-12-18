@@ -1119,7 +1119,7 @@ pub async fn create_message_handler(
 
     // Fetch chat session and verify ownership
     let chat = fetch_and_verify_chat_ownership(state.pool.clone(), chat_id, user.id).await?;
-    let game_master_mode_enabled = chat.game_master_mode_enabled;
+    let _game_master_mode_enabled = chat.game_master_mode_enabled;
 
     let user_id = user.id;
     let user_dek_arc = Some(Arc::new(SecretBox::new(Box::new(
@@ -1343,6 +1343,7 @@ pub async fn create_message_handler(
                         model_name,
                         model_provider,
                         gemini_thinking_budget,
+                        _gemini_thinking_level,
                         gemini_enable_code_execution,
                         _user_db_message_to_save, // We already saved the message
                         _actual_recent_history_tokens,
@@ -1351,7 +1352,7 @@ pub async fn create_message_handler(
                         _history_management_limit,
                         _user_persona_name,
                         player_chronicle_id,
-                        agent_mode,
+                        _agent_mode,
                         game_master_mode_enabled,
                     ) = data;
 
@@ -1375,7 +1376,7 @@ pub async fn create_message_handler(
                                 Ok(content) => {
                                     incoming_genai_messages.push(GenAiChatMessage {
                                         role,
-                                        content: genai::chat::MessageContent::Text(content),
+                                        content: genai::chat::MessageContent::from(content),
                                         options: None,
                                     });
                                 }
@@ -1390,15 +1391,12 @@ pub async fn create_message_handler(
                     let last_msg_content =
                         incoming_genai_messages
                             .last()
-                            .and_then(|m| match &m.content {
-                                genai::chat::MessageContent::Text(t) => Some(t.clone()),
-                                _ => None,
-                            });
+                            .and_then(|m| m.content.first_text().map(|t| t.to_string()));
 
                     if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
                         incoming_genai_messages.push(GenAiChatMessage {
                             role: ChatRole::User,
-                            content: genai::chat::MessageContent::Text(
+                            content: genai::chat::MessageContent::from(
                                 user_message_content_for_gen,
                             ),
                             options: None,
@@ -1424,6 +1422,7 @@ pub async fn create_message_handler(
                             model_name,
                             model_provider,
                             gemini_thinking_budget,
+                            gemini_thinking_level: None, // TODO: Fetch from settings if needed
                             gemini_enable_code_execution,
                             request_thinking: false, // Default to false for now
                             user_dek: dek_arc,

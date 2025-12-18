@@ -10,9 +10,22 @@ interface ChatModel {
 	name: string;
 	description: string;
 	isLocal?: boolean; // Flag to indicate if this is a local model
+	supportsReasoning?: boolean; // Flag to indicate if this model supports thinking_level
 }
 
 export const cloudModels: Array<ChatModel> = [
+	{
+		id: 'gemini-3-pro',
+		name: 'Gemini 3 Pro',
+		description: 'Next-generation Pro model with advanced reasoning',
+		supportsReasoning: true
+	},
+	{
+		id: 'gemini-3-flash-preview',
+		name: 'Gemini 3 Flash Preview',
+		description: 'Next-generation Flash model (Preview)',
+		supportsReasoning: true
+	},
 	{
 		id: 'gemini-2.5-pro',
 		name: 'Gemini 2.5 Pro',

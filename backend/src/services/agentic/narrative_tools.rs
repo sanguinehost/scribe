@@ -442,34 +442,28 @@ impl AnalyzeTextSignificanceTool {
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+            ChatResponseFormat, ChatRole, MessageContent,
         };
 
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(prompt.to_string()),
+            content: MessageContent::from(prompt.to_string()),
             options: None,
         };
 
         let mut genai_chat_options = GenAiChatOptions::default();
-        genai_chat_options = genai_chat_options.with_temperature(0.2); // Low temp for consistent triage
+        genai_chat_options = genai_chat_options.with_temperature(1.0);
         genai_chat_options = genai_chat_options.with_max_tokens(1024);
-
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
-
-        // Create JSON schema spec for structured output
-        let schema = get_text_significance_triage_schema();
-        let json_schema_spec = JsonSchemaSpec::new(schema);
 
         // Add structured output format to chat options
         genai_chat_options = genai_chat_options
-            .with_response_format(ChatResponseFormat::JsonSchemaSpec(json_schema_spec));
+            .with_response_format(ChatResponseFormat::JsonMode);
 
         // CLEAN: No "Respond only with valid JSON" needed - Gemini 2.5+ enforces schema natively
         let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.";
-        let chat_req = ChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let chat_req = ChatRequest::new(vec![user_message])
+            .with_system(system_prompt)
+            ;
 
         let response = self
             .ai_client
@@ -477,7 +471,7 @@ impl AnalyzeTextSignificanceTool {
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("AI call failed: {}", e)))?;
 
-        let content = response.first_content_text_as_str().unwrap_or_default();
+        let content = response.first_text().unwrap_or_default();
 
         // CLEAN: Direct JSON parsing (no markdown fence stripping needed)
         serde_json::from_str(content)
@@ -1960,29 +1954,25 @@ Return your analysis as a JSON object with these four arrays."#,
         // Call AI with structured output
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+            ChatResponseFormat, ChatRole, MessageContent,
         };
 
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(analysis_prompt),
+            content: MessageContent::from(analysis_prompt),
             options: None,
         };
 
         let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(0.3); // Low temp for consistent analysis
+        chat_options = chat_options.with_temperature(1.0);
         chat_options = chat_options.with_max_tokens(2048);
 
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        chat_options = chat_options.with_safety_settings(safety_settings);
-
         // Enable structured output using JSON schema
-        let json_schema_spec = JsonSchemaSpec::new(analysis_schema);
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
-        let chat_request = ChatRequest::new(vec![user_message]);
+        let chat_request = ChatRequest::new(vec![user_message])
+            ;
 
         let response = self
             .ai_client
@@ -2003,7 +1993,7 @@ Return your analysis as a JSON object with these four arrays."#,
         );
 
         let ai_content = response
-            .first_content_text_as_str()
+            .first_text()
             .ok_or_else(|| ToolError::ExecutionFailed("AI response had no content".to_string()))?;
 
         // Parse AI response as JSON
@@ -2184,7 +2174,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
         };
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, JsonSchemaSpec, MessageContent,
+            ChatResponseFormat, ChatRole, MessageContent,
         };
 
         let system_prompt = format!(
@@ -2210,25 +2200,22 @@ You must respond with a JSON object containing an array of {} entries."#,
 
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(prompt),
+            content: MessageContent::from(prompt),
             options: None,
         };
 
         let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(0.8); // Creative generation
+        chat_options = chat_options.with_temperature(1.0);
         let max_tokens = (count * 800).min(8192) as u32; // ~800 tokens per entry
         chat_options = chat_options.with_max_tokens(max_tokens);
 
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        chat_options = chat_options.with_safety_settings(safety_settings);
-
         // Enable structured output using JSON schema
-        let json_schema_spec = JsonSchemaSpec::new(get_batch_lorebook_entries_schema());
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
-        let chat_request = ChatRequest::new(vec![user_message]).with_system(&system_prompt);
+        let chat_request = ChatRequest::new(vec![user_message])
+            .with_system(&system_prompt)
+            ;
 
         // Execute AI generation
         let start_time = std::time::Instant::now();
@@ -2253,7 +2240,7 @@ You must respond with a JSON object containing an array of {} entries."#,
 
         // Parse structured output
         let response_text = response
-            .first_content_text_as_str()
+            .first_text()
             .ok_or_else(|| ToolError::ExecutionFailed("No content in AI response".to_string()))?;
 
         let batch_output: BatchLorebookEntriesOutput = serde_json::from_str(response_text)

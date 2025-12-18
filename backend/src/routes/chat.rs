@@ -61,7 +61,7 @@ use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHel
 use futures_util::StreamExt;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    JsonSchemaSpec, MessageContent, ReasoningEffort,
+    MessageContent, ReasoningEffort,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -284,18 +284,19 @@ pub async fn generate_chat_response(
         gen_model_name_from_service, // 12: String (was 15)
         gen_model_provider_from_service, // 13: Option<String> (NEW)
         gen_gemini_thinking_budget,  // 14: Option<i32> (was 16)
-        gen_gemini_enable_code_execution, // 15: Option<bool> (was 17)
-        user_message_struct_to_save, // 16: DbInsertableChatMessage (was 18)
+        gen_gemini_thinking_level,   // 15: Option<String> (NEW)
+        gen_gemini_enable_code_execution, // 16: Option<bool> (was 17)
+        user_message_struct_to_save, // 17: DbInsertableChatMessage (was 18)
         // -- New RAG related fields --
-        _actual_recent_history_tokens_from_service, // 17: usize (NEW) - Handled by prompt_builder (was 19)
-        rag_context_items_from_service, // 18: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
+        _actual_recent_history_tokens_from_service, // 18: usize (NEW) - Handled by prompt_builder (was 19)
+        rag_context_items_from_service, // 19: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
         // -- Original history management settings --
-        _hist_management_strategy, // 19: String (was 21)
-        _hist_management_limit,    // 20: i32 (was 22)
-        user_persona_name,         // 21: Option<String> (NEW)
-        player_chronicle_id,       // 22: Option<crate::db::DbId> (NEW) - Add this field
-        agent_mode,                // 23: Option<String> (NEW) - Agent mode for context enrichment
-        game_master_mode_enabled,  // 24: Option<bool> (NEW) - Game Master mode flag
+        _hist_management_strategy, // 20: String (was 21)
+        _hist_management_limit,    // 21: i32 (was 22)
+        user_persona_name,         // 22: Option<String> (NEW)
+        player_chronicle_id,       // 23: Option<crate::db::DbId> (NEW) - Add this field
+        agent_mode,                // 24: Option<String> (NEW) - Agent mode for context enrichment
+        game_master_mode_enabled,  // 25: Option<bool> (NEW) - Game Master mode flag
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -941,10 +942,7 @@ pub async fn generate_chat_response(
                                 ChatRole::Assistant => "Assistant".to_string(),
                                 _ => "System".to_string(),
                             };
-                            let content = match &msg.content {
-                                MessageContent::Text(text) => text.clone(),
-                                _ => String::new(),
-                            };
+                            let content = msg.content.first_text().unwrap_or_default().to_string();
                             (role, content)
                         })
                         .collect();
@@ -1213,6 +1211,7 @@ pub async fn generate_chat_response(
                     model_name: model_to_use.clone(),
                     model_provider: gen_model_provider_from_service,
                     gemini_thinking_budget: gen_gemini_thinking_budget,
+                    gemini_thinking_level: gen_gemini_thinking_level.clone(),
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
                     user_dek: dek_for_stream_service,
@@ -1377,10 +1376,7 @@ pub async fn generate_chat_response(
                                                     ChatRole::Assistant => "Assistant".to_string(),
                                                     _ => "System".to_string(),
                                                 };
-                                                let content = match &msg.content {
-                                                    MessageContent::Text(text) => text.clone(),
-                                                    _ => String::new(),
-                                                };
+                                                let content = msg.content.first_text().map(|t| t.to_string()).unwrap_or_default();
                                                 (role, content)
                                             })
                                             .collect();
@@ -1790,14 +1786,9 @@ pub async fn generate_chat_response(
                     }
 
                     let response_content = chat_response
-                        .contents
-                        .into_iter()
-                        .next()
-                        .and_then(|content| match content {
-                            genai::chat::MessageContent::Text(text) => Some(text),
-                            _ => None,
-                        })
-                        .unwrap_or_default();
+                        .first_text()
+                        .unwrap_or_default()
+                        .to_string();
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
 
@@ -1930,10 +1921,7 @@ pub async fn generate_chat_response(
                                                     ChatRole::Assistant => "Assistant".to_string(),
                                                     _ => "System".to_string(),
                                                 };
-                                                let content = match &msg.content {
-                                                    MessageContent::Text(text) => text.clone(),
-                                                    _ => String::new(),
-                                                };
+                                                let content = msg.content.first_text().unwrap_or_default().to_string();
                                                 (role, content)
                                             })
                                             .collect();
@@ -1943,7 +1931,7 @@ pub async fn generate_chat_response(
                                     messages_for_agent
                                         .push(("User".to_string(), current_user_text));
                                     messages_for_agent
-                                        .push(("Assistant".to_string(), assistant_response));
+                                        .push(("Assistant".to_string(), assistant_response.to_string()));
 
                                     // Run the agent with the assistant message ID
                                     match agent
@@ -2086,6 +2074,7 @@ pub async fn generate_chat_response(
                     model_name: model_to_use.clone(),
                     model_provider: gen_model_provider_from_service,
                     gemini_thinking_budget: gen_gemini_thinking_budget,
+                    gemini_thinking_level: gen_gemini_thinking_level.clone(),
                     gemini_enable_code_execution: gen_gemini_enable_code_execution,
                     request_thinking,
                     user_dek: dek_for_fallback_stream_service,
@@ -2777,6 +2766,7 @@ pub async fn generate_suggested_actions(
         _gen_model_name_from_service, // We use a fixed model for suggestions
         _gen_model_provider_from_service, // Model provider field
         _gen_gemini_thinking_budget,
+        _gen_gemini_thinking_level,
         _gen_gemini_enable_code_execution,
         _user_message_struct_to_save, // Not saving a user message here
         _actual_recent_history_tokens_from_service,
@@ -2901,7 +2891,7 @@ pub async fn generate_suggested_actions(
 
     let suggestion_request_genai_message = GenAiChatMessage {
         role: ChatRole::User, // We are "asking" the LLM on behalf of the system/user for suggestions
-        content: MessageContent::Text(prompt_text_for_llm_suggestions),
+        content: MessageContent::from(prompt_text_for_llm_suggestions),
         options: None,
     };
 
@@ -2957,7 +2947,7 @@ pub async fn generate_suggested_actions(
     let chat_request = ChatRequest::new(final_messages_for_suggestions_llm)
         .with_system(final_system_prompt_for_suggestions);
 
-    let suggested_actions_schema_value = json!({
+    let _suggested_actions_schema_value = json!({
         "type": "array",
         "items": {
             "type": "object",
@@ -2979,9 +2969,7 @@ pub async fn generate_suggested_actions(
                 .into(),
         ) // Use session temp or default
         .with_max_tokens(1000) // Increased max tokens for suggestions
-        .with_response_format(ChatResponseFormat::JsonSchemaSpec(JsonSchemaSpec {
-            schema: suggested_actions_schema_value.clone(),
-        }));
+        .with_response_format(ChatResponseFormat::JsonMode);
 
     trace!(%session_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
 
@@ -3009,7 +2997,7 @@ pub async fn generate_suggested_actions(
     debug!(%session_id, "Received response from Gemini for suggested actions");
     trace!(%session_id, ?gemini_response, "Full Gemini response object for suggested actions");
 
-    let response_text = if let Some(text) = gemini_response.first_content_text_as_str() {
+    let response_text = if let Some(text) = gemini_response.first_text() {
         text.to_string()
     } else {
         error!(%session_id, "Gemini response for suggested actions (JsonSchemaSpec) did not contain text content or was empty. Full response: {:?}", gemini_response);
@@ -3366,7 +3354,7 @@ pub async fn expand_text_handler(
                 "system" => ChatRole::System,
                 _ => ChatRole::User,
             },
-            content: MessageContent::Text(msg.content),
+            content: MessageContent::from(msg.content),
             options: None,
         })
         .collect::<Vec<_>>();
@@ -3374,7 +3362,7 @@ pub async fn expand_text_handler(
     // Add the user's text to be expanded as the final message
     genai_messages.push(GenAiChatMessage {
         role: ChatRole::User,
-        content: MessageContent::Text(format!(
+        content: MessageContent::from(format!(
             "Please expand this text: \"{}\"",
             payload.original_text
         )),
@@ -3402,6 +3390,7 @@ pub async fn expand_text_handler(
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
         gemini_thinking_budget: None,
+        gemini_thinking_level: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: user_dek_arc,
@@ -3670,7 +3659,7 @@ pub async fn impersonate_handler(
                 "system" => ChatRole::System,
                 _ => ChatRole::User,
             },
-            content: MessageContent::Text(msg.content),
+            content: MessageContent::from(msg.content),
             options: None,
         })
         .collect();
@@ -3697,6 +3686,7 @@ pub async fn impersonate_handler(
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
         gemini_thinking_budget: None,
+        gemini_thinking_level: None,
         gemini_enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: user_dek_arc,

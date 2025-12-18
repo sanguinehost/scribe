@@ -263,6 +263,7 @@ export interface ScribeChatSession {
 	top_p?: number | null;
 	seed?: number | null;
 	gemini_thinking_budget?: number | null;
+	gemini_thinking_level?: string | null;
 	gemini_enable_code_execution?: boolean | null;
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
@@ -733,6 +734,7 @@ export interface UpdateChatSessionSettingsRequest {
 	model_name?: string | null;
 	model_provider?: string | null;
 	gemini_thinking_budget?: number | null;
+	gemini_thinking_level?: string | null;
 	gemini_enable_code_execution?: boolean | null;
 	agent_mode?: string | null;
 	prompt_template_id?: string | null;
@@ -754,6 +756,7 @@ export interface ChatSessionSettingsResponse {
 	seed?: number | null;
 	stop_sequences?: (string | null)[] | null;
 	gemini_thinking_budget?: number | null;
+	gemini_thinking_level?: string | null;
 	gemini_enable_code_execution?: boolean | null;
 	chronicle_id?: string | null; // Chronicle association (backend API returns chronicle_id)
 	// Context fields that don't exist in backend but are expected by frontend components
@@ -778,6 +781,7 @@ export interface UpdateUserSettingsRequest {
 
 	// Gemini-Specific Settings
 	default_gemini_thinking_budget?: number | null;
+	default_gemini_thinking_level?: string | null;
 	default_gemini_enable_code_execution?: boolean | null;
 
 	// Context Management Settings
@@ -809,6 +813,7 @@ export interface UserSettingsResponse {
 
 	// Gemini-Specific Settings
 	default_gemini_thinking_budget?: number | null;
+	default_gemini_thinking_level?: string | null;
 	default_gemini_enable_code_execution?: boolean | null;
 
 	// Context Management Settings

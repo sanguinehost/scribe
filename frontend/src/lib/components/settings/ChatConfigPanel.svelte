@@ -72,6 +72,7 @@
 		top_k: 40, // Will be set from global or chat settings
 		seed: null as number | null, // Will be set from global or chat settings
 		gemini_thinking_budget: null as number | null, // Will be set from global or chat settings
+		gemini_thinking_level: null as string | null, // Will be set from global or chat settings
 		gemini_enable_code_execution: false, // Will be set from global or chat settings
 		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
@@ -136,6 +137,7 @@
 			localSettings.top_k !== 40 ||
 			localSettings.seed !== null ||
 			localSettings.gemini_thinking_budget !== null ||
+			localSettings.gemini_thinking_level !== null ||
 			localSettings.gemini_enable_code_execution !== false ||
 			localSettings.model_name !== '' ||
 			localSettings.context_total_token_limit !== DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT ||
@@ -194,6 +196,7 @@
 				top_k: globalUserSettings.default_top_k ?? 40,
 				seed: globalUserSettings.default_seed ?? null,
 				gemini_thinking_budget: globalUserSettings.default_gemini_thinking_budget ?? null,
+				gemini_thinking_level: globalUserSettings.default_gemini_thinking_level ?? null,
 				gemini_enable_code_execution:
 					globalUserSettings.default_gemini_enable_code_execution ?? false,
 				context_total_token_limit:
@@ -238,6 +241,10 @@
 				gemini_thinking_budget:
 					settings.gemini_thinking_budget ??
 					globalUserSettings?.default_gemini_thinking_budget ??
+					null,
+				gemini_thinking_level:
+					settings.gemini_thinking_level ??
+					globalUserSettings?.default_gemini_thinking_level ??
 					null,
 				gemini_enable_code_execution:
 					settings.gemini_enable_code_execution ??
@@ -466,6 +473,7 @@
 				active_custom_persona_id: localSettings.active_custom_persona_id,
 				model_name: localSettings.model_name,
 				gemini_thinking_budget: localSettings.gemini_thinking_budget,
+				gemini_thinking_level: localSettings.gemini_thinking_level,
 				gemini_enable_code_execution: localSettings.gemini_enable_code_execution,
 				// NOTE: context fields removed - backend doesn't have these (causes 422)
 				chronicle_id: currentChronicleId,
@@ -558,6 +566,7 @@
 			| 'top_k'
 			| 'seed'
 			| 'gemini_thinking_budget'
+			| 'gemini_thinking_level'
 			| 'gemini_enable_code_execution'
 			| 'context_total_token_limit'
 			| 'context_recent_history_budget'
@@ -600,6 +609,10 @@
 				localSettings.gemini_thinking_budget =
 					globalUserSettings.default_gemini_thinking_budget ?? null;
 				break;
+			case 'gemini_thinking_level':
+				localSettings.gemini_thinking_level =
+					globalUserSettings.default_gemini_thinking_level ?? null;
+				break;
 			case 'gemini_enable_code_execution':
 				localSettings.gemini_enable_code_execution =
 					globalUserSettings.default_gemini_enable_code_execution ?? false;
@@ -640,6 +653,7 @@
 		localSettings.seed = globalUserSettings.default_seed ?? null;
 		localSettings.gemini_thinking_budget =
 			globalUserSettings.default_gemini_thinking_budget ?? null;
+		localSettings.gemini_thinking_level = globalUserSettings.default_gemini_thinking_level ?? null;
 		localSettings.gemini_enable_code_execution =
 			globalUserSettings.default_gemini_enable_code_execution ?? false;
 		localSettings.model_name = globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL;
@@ -777,7 +791,7 @@
 	<div class="flex items-center justify-between border-b p-4">
 		<div>
 			<h2 class="text-lg font-semibold">Chat Configuration</h2>
-			<p class="text-sm text-muted-foreground">
+			<p class="text-muted-foreground text-sm">
 				{chat?.title || 'Configure this chat'}
 			</p>
 		</div>
@@ -822,7 +836,7 @@
 						<CardContent class="space-y-3">
 							<div class="space-y-2">
 								<select
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 									bind:value={localSettings.active_custom_persona_id}
 									onchange={(e) => changePersona((e.target as HTMLSelectElement).value || null)}
 								>
@@ -831,7 +845,7 @@
 										<option value={persona.id}>{persona.name}</option>
 									{/each}
 								</select>
-								<p class="text-xs text-muted-foreground">Override the user persona for this chat</p>
+								<p class="text-muted-foreground text-xs">Override the user persona for this chat</p>
 							</div>
 						</CardContent>
 					{/if}
@@ -894,7 +908,7 @@
 									<Skeleton class="h-8 w-full" />
 								</div>
 							{:else}
-								<p class="text-sm text-muted-foreground">
+								<p class="text-muted-foreground text-sm">
 									Temporarily override narrative preferences for this conversation only. These
 									changes won't affect your character or global defaults.
 								</p>
@@ -904,7 +918,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Tense</Label>
 										<select
-											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.tense || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -923,7 +937,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Narration</Label>
 										<select
-											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.narration || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -942,7 +956,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Point of View</Label>
 										<select
-											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.perspective || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -961,7 +975,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Response Length</Label>
 										<select
-											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.response_length || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -1038,7 +1052,7 @@
 											</div>
 											<select
 												id="chronicle-select"
-												class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+												class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 												bind:value={currentChronicleId}
 												onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
 											>
@@ -1047,7 +1061,7 @@
 													<option value={chronicle.id}>{chronicle.name}</option>
 												{/each}
 											</select>
-											<p class="text-xs text-muted-foreground">
+											<p class="text-muted-foreground text-xs">
 												Link this chat to a chronicle to organize related conversations and make
 												them available for RAG queries.
 											</p>
@@ -1100,14 +1114,14 @@
 											(c) => c.id === currentChronicleId
 										)}
 										{#if linkedChronicle}
-											<div class="rounded-md bg-muted p-3">
+											<div class="bg-muted rounded-md p-3">
 												<div class="text-sm font-medium">{linkedChronicle.name}</div>
 												{#if linkedChronicle.description}
-													<div class="mt-1 text-xs text-muted-foreground">
+													<div class="text-muted-foreground mt-1 text-xs">
 														{linkedChronicle.description}
 													</div>
 												{/if}
-												<div class="mt-2 text-xs text-muted-foreground">
+												<div class="text-muted-foreground mt-2 text-xs">
 													{linkedChronicle.event_count} events • {linkedChronicle.chat_count}
 													chats
 												</div>
@@ -1145,7 +1159,7 @@
 									<Skeleton class="h-8 w-full" />
 								</div>
 							{:else if chatLorebookAssociations.length === 0}
-								<p class="text-sm text-muted-foreground">No lorebooks associated</p>
+								<p class="text-muted-foreground text-sm">No lorebooks associated</p>
 							{:else}
 								<div class="space-y-2">
 									{#each chatLorebookAssociations as assoc (assoc.lorebook_id)}
@@ -1198,7 +1212,7 @@
 														{/if}
 													</ButtonComponent>
 												{/if}
-												<span class="text-xs text-muted-foreground">
+												<span class="text-muted-foreground text-xs">
 													{#if assoc.source === 'Chat'}
 														Directly associated with this chat
 													{:else if assoc.source === 'Character' && assoc.is_overridden}
@@ -1245,7 +1259,7 @@
 								<Label for="model">Model Override</Label>
 								<select
 									id="model"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 									bind:value={localSettings.model_name}
 								>
 									<option value="">
@@ -1256,7 +1270,7 @@
 										<option value={model.id}>{model.name}</option>
 									{/each}
 								</select>
-								<p class="text-xs text-muted-foreground">
+								<p class="text-muted-foreground text-xs">
 									Override the global model setting for this specific chat
 								</p>
 							</div>
@@ -1265,14 +1279,14 @@
 								<Label for="agent-mode">Context Enhancement Agent</Label>
 								<select
 									id="agent-mode"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 									bind:value={localSettings.agent_mode}
 								>
 									<option value="disabled">Disabled</option>
 									<option value="pre_processing">Pre-process (before AI response)</option>
 									<option value="post_processing">Post-process (after AI response)</option>
 								</select>
-								<p class="text-xs text-muted-foreground">
+								<p class="text-muted-foreground text-xs">
 									{#if localSettings.agent_mode === 'pre_processing'}
 										Agent searches for context before generating response (slight delay)
 									{:else if localSettings.agent_mode === 'post_processing'}
@@ -1508,6 +1522,30 @@
 								</div>
 								<div class="space-y-2">
 									<div class="flex items-center justify-between">
+										<Label for="thinking-level">Thinking Level</Label>
+										{#if localSettings.gemini_thinking_level !== null}
+											<ButtonComponent
+												variant="ghost"
+												size="sm"
+												onclick={() => clearOverride('gemini_thinking_level')}
+											>
+												Clear
+											</ButtonComponent>
+										{/if}
+									</div>
+									<select
+										id="thinking-level"
+										class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+										bind:value={localSettings.gemini_thinking_level}
+									>
+										<option value={null}>Default</option>
+										<option value="Low">Low</option>
+										<option value="Medium">Medium</option>
+										<option value="High">High</option>
+									</select>
+								</div>
+								<div class="col-span-2 space-y-2">
+									<div class="flex items-center justify-between">
 										<Label for="code-execution">Code Execution</Label>
 										{#if localSettings.gemini_enable_code_execution !== false}
 											<ButtonComponent
@@ -1521,7 +1559,7 @@
 									</div>
 									<select
 										id="code-execution"
-										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+										class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
 										bind:value={localSettings.gemini_enable_code_execution}
 									>
 										<option value={false}>Disabled</option>
@@ -1534,7 +1572,7 @@
 							<div class="space-y-2">
 								<div class="flex items-center justify-between">
 									<Label for="typing-speed">Typing Animation Speed</Label>
-									<span class="text-xs text-muted-foreground">{typingSpeed}ms</span>
+									<span class="text-muted-foreground text-xs">{typingSpeed}ms</span>
 								</div>
 								<input
 									id="typing-speed"
@@ -1544,9 +1582,9 @@
 									step="1"
 									bind:value={typingSpeed}
 									onchange={() => saveTypingSpeed()}
-									class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+									class="bg-muted accent-primary h-2 w-full cursor-pointer appearance-none rounded-lg"
 								/>
-								<p class="text-xs text-muted-foreground">
+								<p class="text-muted-foreground text-xs">
 									Lower = faster (1ms), Higher = slower (100ms). Default: 30ms
 								</p>
 							</div>
@@ -1583,14 +1621,14 @@
 							<div class="flex items-center justify-between space-x-2">
 								<div class="space-y-0.5">
 									<Label for="gm-mode">Enable Game Master</Label>
-									<p class="text-xs text-muted-foreground">Tracks inventory, quests, and vitals.</p>
+									<p class="text-muted-foreground text-xs">Tracks inventory, quests, and vitals.</p>
 								</div>
 								<div class="flex items-center gap-2">
 									{#if localSettings.game_master_mode_enabled !== false}
 										<ButtonComponent
 											variant="ghost"
 											size="icon"
-											class="h-6 w-6 text-muted-foreground hover:text-foreground"
+											class="text-muted-foreground hover:text-foreground h-6 w-6"
 											onclick={() => clearOverride('game_master_mode_enabled')}
 											title="Reset to default"
 										>

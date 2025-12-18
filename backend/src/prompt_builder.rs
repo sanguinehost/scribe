@@ -26,62 +26,199 @@ fn escape_xml(text: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Builds the scene context XML block for Game Master mode.
-/// Formats GameState into a `<scene_context>` XML block for injection into the system prompt.
+/// Builds the complete game state context XML block for chat context injection.
+/// Formats GameState into a `<game_context>` XML block containing ALL player state.
+///
+/// This is injected into the main chat LLM so it knows about:
+/// - Player vitals (health, stamina, mana)
+/// - Player inventory (on person, stored, assets)
+/// - Currencies
+/// - Active quests (main + optional)
+/// - Current location and environment
+/// - Active NPCs in the scene
+/// - Status effects
 ///
 /// # Arguments
 /// * `game_state` - The current game state to format
 ///
 /// # Returns
-/// A formatted XML string containing scene information (location, time, active NPCs, environment)
+/// A formatted XML string containing the complete game state
 pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState) -> String {
     use std::fmt::Write;
 
-    let mut scene_xml = String::from("<scene_context>\n");
+    let mut xml = String::from("<game_context>\n");
 
-    // Location
+    // ============= PLAYER VITALS =============
+    if !game_state.vitals.is_empty() {
+        writeln!(xml, "  <player_vitals>").unwrap();
+        for (name, vital) in &game_state.vitals {
+            writeln!(
+                xml,
+                "    <{} current=\"{}\" max=\"{}\" />",
+                escape_xml(&name.to_lowercase().replace(' ', "_")),
+                vital.current,
+                vital.max
+            )
+            .unwrap();
+        }
+        writeln!(xml, "  </player_vitals>").unwrap();
+    }
+
+    // ============= CURRENCIES =============
+    if !game_state.currencies.is_empty() {
+        writeln!(xml, "  <currencies>").unwrap();
+        for (name, amount) in &game_state.currencies {
+            writeln!(xml, "    <{} amount=\"{}\" />", escape_xml(&name.to_lowercase()), amount).unwrap();
+        }
+        writeln!(xml, "  </currencies>").unwrap();
+    }
+
+    // ============= INVENTORY (On Person) =============
+    if !game_state.inventory.is_empty() {
+        writeln!(xml, "  <inventory_on_person>").unwrap();
+        for item in &game_state.inventory {
+            let equipped_attr = if item.equipped { " equipped=\"true\"" } else { "" };
+            let qty_attr = if item.quantity > 1 {
+                format!(" quantity=\"{}\"", item.quantity)
+            } else {
+                String::new()
+            };
+            writeln!(
+                xml,
+                "    <item name=\"{}\"{}{} />",
+                escape_xml(&item.name),
+                equipped_attr,
+                qty_attr
+            )
+            .unwrap();
+        }
+        writeln!(xml, "  </inventory_on_person>").unwrap();
+    }
+
+    // ============= STORED INVENTORY =============
+    if !game_state.inventory_stored.is_empty() {
+        writeln!(xml, "  <inventory_stored>").unwrap();
+        for (location, items) in &game_state.inventory_stored {
+            writeln!(xml, "    <location name=\"{}\">", escape_xml(location)).unwrap();
+            for item in items {
+                let qty_attr = if item.quantity > 1 {
+                    format!(" quantity=\"{}\"", item.quantity)
+                } else {
+                    String::new()
+                };
+                writeln!(xml, "      <item name=\"{}\"{}/>", escape_xml(&item.name), qty_attr).unwrap();
+            }
+            writeln!(xml, "    </location>").unwrap();
+        }
+        writeln!(xml, "  </inventory_stored>").unwrap();
+    }
+
+    // ============= ASSETS =============
+    if !game_state.assets.is_empty() {
+        writeln!(xml, "  <assets>").unwrap();
+        for asset in &game_state.assets {
+            writeln!(xml, "    <asset>{}</asset>", escape_xml(asset)).unwrap();
+        }
+        writeln!(xml, "  </assets>").unwrap();
+    }
+
+    // ============= MAIN QUEST =============
+    let main_quests: Vec<_> = game_state.quests.iter().filter(|q| q.is_main).collect();
+    if !main_quests.is_empty() {
+        writeln!(xml, "  <main_quest>").unwrap();
+        for quest in main_quests {
+            writeln!(xml, "    <title>{}</title>", escape_xml(&quest.title)).unwrap();
+            writeln!(xml, "    <status>{:?}</status>", quest.status).unwrap();
+            if let Some(desc) = &quest.description {
+                let desc_str = match desc {
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => desc.to_string(),
+                };
+                writeln!(xml, "    <description>{}</description>", escape_xml(&desc_str)).unwrap();
+            }
+            if !quest.objectives.is_empty() {
+                writeln!(xml, "    <objectives>").unwrap();
+                for obj in &quest.objectives {
+                    let done = if obj.completed { "done" } else { "pending" };
+                    let obj_desc = match &obj.description {
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => obj.description.to_string(),
+                    };
+                    writeln!(xml, "      <objective status=\"{}\">{}</objective>", done, escape_xml(&obj_desc)).unwrap();
+                }
+                writeln!(xml, "    </objectives>").unwrap();
+            }
+        }
+        writeln!(xml, "  </main_quest>").unwrap();
+    }
+
+    // ============= OPTIONAL QUESTS =============
+    let optional_quests: Vec<_> = game_state.quests.iter().filter(|q| !q.is_main).collect();
+    if !optional_quests.is_empty() {
+        writeln!(xml, "  <optional_quests>").unwrap();
+        for quest in optional_quests {
+            writeln!(xml, "    <quest title=\"{}\" status=\"{:?}\">", escape_xml(&quest.title), quest.status).unwrap();
+            if !quest.objectives.is_empty() {
+                for obj in &quest.objectives {
+                    let done = if obj.completed { "done" } else { "pending" };
+                    let obj_desc = match &obj.description {
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => obj.description.to_string(),
+                    };
+                    writeln!(xml, "      <objective status=\"{}\">{}</objective>", done, escape_xml(&obj_desc)).unwrap();
+                }
+            }
+            writeln!(xml, "    </quest>").unwrap();
+        }
+        writeln!(xml, "  </optional_quests>").unwrap();
+    }
+
+    // ============= LOCATION =============
     if let Some(location) = &game_state.location {
-        writeln!(scene_xml, "  <location>").unwrap();
-        writeln!(scene_xml, "    <name>{}</name>", escape_xml(&location.name)).unwrap();
+        writeln!(xml, "  <location>").unwrap();
+        writeln!(xml, "    <name>{}</name>", escape_xml(&location.name)).unwrap();
         if let Some(desc) = &location.description {
             let desc_str = match desc {
                 serde_json::Value::String(s) => s.clone(),
                 _ => desc.to_string(),
             };
             writeln!(
-                scene_xml,
+                xml,
                 "    <description>{}</description>",
                 escape_xml(&desc_str)
             )
             .unwrap();
         }
         if let Some(region) = &location.region {
-            writeln!(scene_xml, "    <region>{}</region>", escape_xml(region)).unwrap();
+            writeln!(xml, "    <region>{}</region>", escape_xml(region)).unwrap();
         }
         if !location.tags.is_empty() {
-            writeln!(scene_xml, "    <tags>{}</tags>", location.tags.join(", ")).unwrap();
+            writeln!(xml, "    <tags>{}</tags>", location.tags.join(", ")).unwrap();
         }
-        writeln!(scene_xml, "  </location>").unwrap();
+        writeln!(xml, "  </location>").unwrap();
     }
 
-    // Time
+    // ============= TIME =============
     if let Some(time) = &game_state.game_time {
-        writeln!(scene_xml, "  <time>").unwrap();
-        writeln!(scene_xml, "    <day>{}</day>", time.day).unwrap();
-        writeln!(scene_xml, "    <hour>{}</hour>", time.hour).unwrap();
+        writeln!(xml, "  <time>").unwrap();
+        writeln!(xml, "    <day>{}</day>", time.day).unwrap();
+        writeln!(xml, "    <hour>{}</hour>", time.hour).unwrap();
+        if time.minute > 0 {
+            writeln!(xml, "    <minute>{}</minute>", time.minute).unwrap();
+        }
         writeln!(
-            scene_xml,
+            xml,
             "    <period>{}</period>",
             escape_xml(&time.period)
         )
         .unwrap();
         if let Some(season) = &time.season {
-            writeln!(scene_xml, "    <season>{}</season>", escape_xml(season)).unwrap();
+            writeln!(xml, "    <season>{}</season>", escape_xml(season)).unwrap();
         }
-        writeln!(scene_xml, "  </time>").unwrap();
+        writeln!(xml, "  </time>").unwrap();
     }
 
-    // Active NPCs (only those present in current location and alive)
+    // ============= ACTIVE NPCs =============
     let active_npcs: Vec<_> = game_state
         .npcs
         .values()
@@ -89,27 +226,27 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
         .collect();
 
     if !active_npcs.is_empty() {
-        writeln!(scene_xml, "  <active_npcs>").unwrap();
+        writeln!(xml, "  <npcs_present>").unwrap();
         for npc in active_npcs {
-            writeln!(
-                scene_xml,
-                "    <npc name=\"{}\" disposition=\"{:?}\" />",
-                escape_xml(&npc.name),
-                npc.disposition
-            )
-            .unwrap();
+            writeln!(xml, "    <npc>").unwrap();
+            writeln!(xml, "      <name>{}</name>", escape_xml(&npc.name)).unwrap();
+            writeln!(xml, "      <disposition>{}</disposition>", escape_xml(&npc.disposition)).unwrap();
+            if let Some(loc) = &npc.location {
+                writeln!(xml, "      <location>{}</location>", escape_xml(loc)).unwrap();
+            }
+            writeln!(xml, "    </npc>").unwrap();
         }
-        writeln!(scene_xml, "  </active_npcs>").unwrap();
+        writeln!(xml, "  </npcs_present>").unwrap();
     }
 
-    // Environment
-    writeln!(scene_xml, "  <environment>").unwrap();
+    // ============= ENVIRONMENT =============
+    writeln!(xml, "  <environment>").unwrap();
     if let Some(weather) = &game_state.environment.weather {
-        writeln!(scene_xml, "    <weather>{}</weather>", escape_xml(weather)).unwrap();
+        writeln!(xml, "    <weather>{}</weather>", escape_xml(weather)).unwrap();
     }
     if let Some(lighting) = &game_state.environment.lighting {
         writeln!(
-            scene_xml,
+            xml,
             "    <lighting>{}</lighting>",
             escape_xml(lighting)
         )
@@ -117,7 +254,7 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
     }
     if let Some(temp) = &game_state.environment.temperature {
         writeln!(
-            scene_xml,
+            xml,
             "    <temperature>{}</temperature>",
             escape_xml(temp)
         )
@@ -125,24 +262,18 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
     }
     if !game_state.environment.hazards.is_empty() {
         writeln!(
-            scene_xml,
+            xml,
             "    <hazards>{}</hazards>",
             game_state.environment.hazards.join(", ")
         )
         .unwrap();
     }
-    if !game_state.environment.tags.is_empty() {
-        writeln!(
-            scene_xml,
-            "    <tags>{}</tags>",
-            game_state.environment.tags.join(", ")
-        )
-        .unwrap();
-    }
-    writeln!(scene_xml, "  </environment>").unwrap();
+    writeln!(xml, "  </environment>").unwrap();
 
-    scene_xml.push_str("</scene_context>");
-    scene_xml
+    // Note: Status effects are tracked per-vital in Vital.modifiers, not as global effects
+
+    xml.push_str("</game_context>");
+    xml
 }
 
 /// Replaces template variables {{char}} and {{user}} with actual names
@@ -333,31 +464,19 @@ async fn count_tokens_for_genai_message(
     let mut total_tokens = 0;
     // genai::chat::ChatMessage has a `content: MessageContent` field.
     // genai::chat::MessageContent is an enum. We need to match its variants.
-    match &message.content {
-        MessageContent::Text(text) => {
-            total_tokens += token_counter
-                .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
-                .await?
-                .total;
-        }
-        MessageContent::Parts(parts_vec) => {
-            // parts_vec is Vec<genai::types::Part>
-            for part in parts_vec {
-                if let Part::Text(text) = part {
-                    // part is &genai::types::Part
-                    total_tokens += token_counter
-                        .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
-                        .await?
-                        .total;
-                }
-                // TODO: Consider other Part variants if they contribute to token count (e.g., InlineData)
+    if let Some(text) = message.content.first_text() {
+        total_tokens += token_counter
+            .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
+            .await?
+            .total;
+    } else {
+        for part in message.content.parts() {
+            if let Part::Text(text) = part {
+                total_tokens += token_counter
+                    .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
+                    .await?
+                    .total;
             }
-        }
-        // Handle other potential variants of MessageContent if they exist and are relevant
-        _ => {
-            warn!(
-                "Encountered unhandled MessageContent variant while counting tokens for message."
-            );
         }
     }
     Ok(total_tokens)
@@ -1413,15 +1532,18 @@ async fn build_final_prompt_strings(
     let mut final_user_message = current_user_message.clone();
     if let Some(guidance_text) = guidance {
         if !guidance_text.is_empty() {
-            if let MessageContent::Text(text_content) = &mut final_user_message.content {
-                text_content.push_str("\n\n(SYSTEM INSTRUCTION: ");
-                text_content.push_str(guidance_text);
-                text_content.push_str(")\n");
+            // Extract text from the message content and append guidance
+            if let Some(existing_text) = final_user_message.content.first_text() {
+                let modified_text = format!(
+                    "{}\n\n(SYSTEM INSTRUCTION: {})\n",
+                    existing_text,
+                    guidance_text
+                );
+                final_user_message.content = MessageContent::from_text(modified_text);
             } else {
                 warn!("User message is not plain text, guidance not applied.");
             }
         }
-    } else {
     }
 
     final_message_list.push(final_user_message);
@@ -1663,7 +1785,7 @@ mod tests {
             (
                 GenAiChatMessage {
                     role,
-                    content: MessageContent::Text(content.to_string()),
+                    content: MessageContent::from(content.to_string()),
                     options: None,
                 },
                 tokens,
@@ -1756,7 +1878,7 @@ mod tests {
             // Verify tail preservation: the last messages should be preserved
             let preserved_messages = &calculation.recent_history_with_tokens;
             for (i, (message, _)) in preserved_messages.iter().enumerate() {
-                if let MessageContent::Text(content) = &message.content {
+                if let MessageContent::from(content) = &message.content {
                     // The remaining messages should be the later ones (some from middle + tail)
                     // Due to middle-out truncation, we can't predict exact indices, but we know
                     // the last 4 should definitely be preserved
@@ -1891,7 +2013,7 @@ mod tests {
             let tail_start = preserved_messages.len() - min_tail;
 
             for (i, (message, _)) in preserved_messages[tail_start..].iter().enumerate() {
-                if let MessageContent::Text(content) = &message.content {
+                if let MessageContent::from(content) = &message.content {
                     // These should be messages 5, 6, 7 (the tail)
                     let expected_index = 8 - min_tail + i;
                     assert!(content.contains(&format!("Message {}", expected_index)));

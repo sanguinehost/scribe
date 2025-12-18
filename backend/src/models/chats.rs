@@ -123,6 +123,7 @@ pub type SettingsTuple = (
     String,                                     // model_name
     // -- Gemini Specific Options --
     Option<i32>,  // gemini_thinking_budget
+    Option<String>, // gemini_thinking_level
     Option<bool>, // gemini_enable_code_execution
     // -- Chronicle Support --
     Option<crate::db::DbId>, // player_chronicle_id
@@ -160,6 +161,7 @@ pub struct Chat {
     pub history_management_limit: i32,
     pub model_name: String,
     pub gemini_thinking_budget: Option<i32>,
+    pub gemini_thinking_level: Option<String>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
@@ -242,6 +244,7 @@ impl std::fmt::Debug for Chat {
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
             .field("gemini_thinking_budget", &self.gemini_thinking_budget)
+            .field("gemini_thinking_level", &self.gemini_thinking_level)
             .field(
                 "gemini_enable_code_execution",
                 &self.gemini_enable_code_execution,
@@ -1813,6 +1816,7 @@ pub struct GenerateChatRequest {
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
     pub guidance: Option<String>,      // Optional guidance text for regeneration steering
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
+    pub gemini_thinking_level: Option<String>, // Optional thinking level for Gemini 3
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -1861,6 +1865,7 @@ pub struct ChatForClient {
     pub history_management_limit: i32,
     pub model_name: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
+    pub gemini_thinking_level: Option<String>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
@@ -1990,6 +1995,7 @@ impl Chat {
             history_management_limit: self.history_management_limit,
             model_name: self.model_name,
             gemini_thinking_budget: self.gemini_thinking_budget,
+            gemini_thinking_level: self.gemini_thinking_level,
             gemini_enable_code_execution: self.gemini_enable_code_execution,
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
@@ -2137,6 +2143,7 @@ pub struct ChatSettingsResponse {
     pub model_name: Option<String>,
     // Gemini-specific options
     pub gemini_thinking_budget: Option<i32>,
+    pub gemini_thinking_level: Option<String>,
     pub gemini_enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<crate::db::DbId>,
@@ -2201,6 +2208,7 @@ impl From<Chat> for ChatSettingsResponse {
             history_management_limit: chat.history_management_limit,
             model_name: chat.model_name,
             gemini_thinking_budget: chat.gemini_thinking_budget,
+            gemini_thinking_level: chat.gemini_thinking_level,
             gemini_enable_code_execution: chat.gemini_enable_code_execution,
             chronicle_id: chat.player_chronicle_id,
             agent_mode: chat.agent_mode,

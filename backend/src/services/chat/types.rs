@@ -30,19 +30,20 @@ pub type GenerationDataWithUnsavedUserMessage = (
     String,         // 12: model_name (Fetched from DB) (was 15)
     Option<String>, // 13: model_provider (NEW - provider type for AI client routing)
     // -- Gemini Specific Options --
-    Option<i32>,             // 14: gemini_thinking_budget (was 16)
-    Option<bool>,            // 15: gemini_enable_code_execution (was 17)
-    DbInsertableChatMessage, // 16: The user message struct, ready to be saved (was 18)
+    Option<i32>,             // 14: gemini_thinking_budget
+    Option<String>,          // 15: gemini_thinking_level (NEW)
+    Option<bool>,            // 16: gemini_enable_code_execution (was 15)
+    DbInsertableChatMessage, // 17: The user message struct, ready to be saved (was 16)
     // -- RAG Context & Recent History Tokens --
-    usize,               // 17: actual_recent_history_tokens (NEW) (was 19)
-    Vec<RetrievedChunk>, // 18: rag_context_items (NEW) (was 20)
+    usize,               // 18: actual_recent_history_tokens (NEW) (was 17)
+    Vec<RetrievedChunk>, // 19: rag_context_items (NEW) (was 18)
     // History Management Settings (still returned for potential future use/logging)
-    String,                  // 19: history_management_strategy (was 21)
-    i32,                     // 20: history_management_limit (was 22)
-    Option<String>,          // 21: user_persona_name (NEW - for template substitution)
-    Option<crate::db::DbId>, // 22: player_chronicle_id (NEW - for narrative processing)
-    Option<String>,          // 23: agent_mode (NEW - for context enrichment)
-    Option<bool>,            // 24: game_master_mode_enabled (NEW - for Game Master processing)
+    String,                  // 20: history_management_strategy (was 19)
+    i32,                     // 21: history_management_limit (was 20)
+    Option<String>,          // 22: user_persona_name (NEW - for template substitution)
+    Option<crate::db::DbId>, // 23: player_chronicle_id (NEW - for narrative processing)
+    Option<String>,          // 24: agent_mode (NEW - for context enrichment)
+    Option<bool>,            // 25: game_master_mode_enabled (NEW - for Game Master processing)
 );
 
 /// Structured chunk with integrity checking for reliable streaming

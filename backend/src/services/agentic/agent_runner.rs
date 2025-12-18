@@ -48,7 +48,7 @@ impl Default for NarrativeWorkflowConfig {
     fn default() -> Self {
         Self {
             triage_model: "gemini-2.5-flash-lite".to_string(),
-            planning_model: "gemini-2.5-flash-lite".to_string(),
+            planning_model: "gemini-3-flash-preview".to_string(),
             max_tool_executions: 5,
             enable_cost_optimizations: true,
         }
@@ -512,7 +512,7 @@ RULES:
     ) -> Result<TriageResult, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, JsonSchemaSpec,
+            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole,
             MessageContent,
         };
 
@@ -543,30 +543,27 @@ CONVERSATION:
         // Create the user message
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(triage_prompt),
+            content: MessageContent::from(triage_prompt),
             options: None,
         };
 
         // Build chat options with structured output
         let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(0.3);
+        chat_options = chat_options.with_temperature(1.0);
         chat_options = chat_options.with_max_tokens(2048);
 
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        chat_options = chat_options.with_safety_settings(safety_settings);
-
         // Apply structured output schema
-        let triage_schema = get_triage_schema();
-        let json_schema_spec = JsonSchemaSpec::new(triage_schema);
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        // Note: genai now uses ChatResponseFormat::JsonMode for structured output
+        let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
         // Create system prompt
         let system_prompt = r#"You are analyzing fictional roleplay conversations. Provide a clear summary of what happened in the conversation."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let chat_req = GenAiChatRequest::new(vec![user_message])
+            .with_system(system_prompt)
+            ;
 
         // Call AI with structured output
         let response = match self
@@ -588,7 +585,7 @@ CONVERSATION:
         };
 
         // Parse structured response - no cleanup needed with structured outputs!
-        let content = response.first_content_text_as_str().unwrap_or("{}");
+        let content = response.first_text().unwrap_or("{}");
         let parsed: Result<crate::DbJson, _> = serde_json::from_str(content);
 
         let summary = match parsed {
@@ -658,7 +655,7 @@ CONVERSATION:
     ) -> Result<ActionPlan, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, JsonSchemaSpec,
+            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole,
             MessageContent,
         };
 
@@ -708,30 +705,26 @@ IMPORTANT RULES:
         // Create the user message
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(planning_prompt),
+            content: MessageContent::from(planning_prompt),
             options: None,
         };
 
         // Build chat options with structured output
         let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(0.5);
+        chat_options = chat_options.with_temperature(1.0);
         chat_options = chat_options.with_max_tokens(4096);
 
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        chat_options = chat_options.with_safety_settings(safety_settings);
-
         // Apply structured output schema
-        let action_plan_schema = get_action_plan_schema();
-        let json_schema_spec = JsonSchemaSpec::new(action_plan_schema);
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
         // Create system prompt
         let system_prompt = r#"You are a planning agent for a narrative intelligence system analyzing fictional roleplay. Generate a structured action plan for creating chronicle events."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let chat_req = GenAiChatRequest::new(vec![user_message])
+            .with_system(system_prompt)
+            ;
 
         // Call AI with structured output
         let response = self
@@ -744,7 +737,7 @@ IMPORTANT RULES:
             })?;
 
         // Parse structured response - no cleanup needed with structured outputs!
-        let content = response.first_content_text_as_str().unwrap_or("{}");
+        let content = response.first_text().unwrap_or("{}");
         let parsed: crate::DbJson = serde_json::from_str(content).map_err(|e| {
             error!("Failed to parse action plan response: {}", e);
             AppError::InternalServerErrorGeneric(format!("Invalid action plan response: {e}"))
@@ -1071,7 +1064,7 @@ Your task is to generate an appropriate chronicle name that captures the essence
     ) -> Result<String, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, JsonSchemaSpec,
+            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole,
             MessageContent,
         };
 
@@ -1131,30 +1124,26 @@ RULES:
         // Create the user message
         let user_message = GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(naming_prompt),
+            content: MessageContent::from(naming_prompt),
             options: None,
         };
 
         // Build chat options with structured output
         let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(0.3);
+        chat_options = chat_options.with_temperature(1.0);
         chat_options = chat_options.with_max_tokens(512);
 
-        // Add safety settings
-        let safety_settings = create_unrestricted_safety_settings();
-        chat_options = chat_options.with_safety_settings(safety_settings);
-
         // Apply structured output schema
-        let naming_schema = get_chronicle_naming_schema();
-        let json_schema_spec = JsonSchemaSpec::new(naming_schema);
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
+        let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
         // Create system prompt
         let system_prompt = r#"You are a narrative naming agent for fictional roleplay. Generate meaningful chronicle names that capture the overarching narrative."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let chat_req = GenAiChatRequest::new(vec![user_message])
+            .with_system(system_prompt)
+            ;
 
         // Call AI with structured output
         match self
@@ -1164,12 +1153,14 @@ RULES:
         {
             Ok(response) => {
                 // Parse structured response - no cleanup needed with structured outputs!
-                let content = response.first_content_text_as_str().unwrap_or("{}");
+                let content = response.first_text().unwrap_or("{}");
+                info!("Chronicle name AI response content: '{}'", content);
                 let parsed: Result<crate::DbJson, _> = serde_json::from_str(content);
 
                 let generated_name = match parsed {
                     Ok(json) => json
                         .get("name")
+                        .or_else(|| json.get("chronicle_name"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("Untitled Chronicle")
                         .to_string(),
@@ -1330,7 +1321,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
         const MAX_RETRIES: u8 = 2;
         let mut retry_count = 0;
         let original_prompt = prompt.to_string();
-        let model = "gemini-2.5-flash";
+        let model = "gemini-3-flash-preview";
         info!(
             "Chronicle generation prompt (length: {}): {}",
             prompt.len(),
@@ -1378,7 +1369,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
             // Create the user message with the actual conversation context
             let user_message = GenAiChatMessage {
                 role: ChatRole::User,
-                content: MessageContent::Text(format!(
+                content: MessageContent::from(format!(
                     "{}\n\nAnalyze the conversation in the <conversation> tags and use the `{}` tool to create a chronicle event summarizing what happened. You MUST call the tool.",
                     original_prompt,
                     create_event_tool.name()
@@ -1397,7 +1388,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
 
             let assistant_message = GenAiChatMessage {
                 role: ChatRole::Assistant,
-                content: MessageContent::Text(prefill_content),
+                content: MessageContent::from(prefill_content),
                 options: None,
             };
 
@@ -1405,15 +1396,13 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
             let mut genai_chat_options = GenAiChatOptions::default();
             genai_chat_options = genai_chat_options.with_temperature(1.0);
             genai_chat_options = genai_chat_options.with_max_tokens(8192);
-
-            // Add safety settings to allow analysis of any content
-            let safety_settings = create_unrestricted_safety_settings();
-            genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
+            genai_chat_options = genai_chat_options.with_thinking_level(genai::chat::ThinkingLevel::Low);
 
             // Create chat request with tools
             let chat_req = GenAiChatRequest::new(vec![user_message, assistant_message])
                 .with_system(system_prompt)
-                .with_tools(tools.clone());
+                .with_tools(tools.clone())
+                ;
 
             // Call the AI client
             // Call the AI client with timeout
@@ -1434,71 +1423,55 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
                         info!(
                         "AI client call successful for chronicle event generation, processing response..."
                     );
-                        error!(
-                            "DEBUG: Response received. Contents count: {}",
-                            response.contents.len()
-                        );
-                        error!("DEBUG: Full response: {:?}", response);
-
+                        
                         // Check for tool calls in the response content
-                        for (i, content) in response.contents.iter().enumerate() {
-                            error!("DEBUG: Processing content item {}", i);
-                            if let MessageContent::ToolCalls(tool_calls) = content {
-                                error!(
-                                    "DEBUG: Item {} is ToolCalls. Count: {}",
-                                    i,
-                                    tool_calls.len()
-                                );
-                                if let Some(tool_call) = tool_calls.first() {
-                                    error!("DEBUG: Tool call found: {}", tool_call.fn_name);
-                                    if tool_call.fn_name == create_event_tool.name() {
-                                        info!("Tool call detected: {}", tool_call.fn_name);
-                                        // The arguments are already a Value (JSON object)
-                                        let mut args = tool_call.fn_arguments.clone();
+                        for part in response.content.parts() {
+                            if let genai::chat::ContentPart::ToolCall(tool_call) = part {
+                                info!("Tool call detected: {}", tool_call.fn_name);
+                                // The arguments are already a Value (JSON object)
+                                let mut args = tool_call.fn_arguments.clone();
 
-                                        // Inject required context that we removed from schema
-                                        if let serde_json::Value::Object(ref mut map) = args {
-                                            // We need to get user_id and chronicle_id from somewhere
-                                            // Since this function signature doesn't have them, we might need to rely on the caller
-                                            // to handle the actual creation, OR we update this function signature.
-                                            //
-                                            // HOWEVER, looking at process_narrative_event, it handles tool execution separately
-                                            // by parsing the "actions" field from the JSON response.
-                                            // But here we are using the Tool calling API which returns a ToolCall object.
-                                            //
-                                            // The current implementation of process_narrative_event expects a JSON response with "actions".
-                                            // We need to adapt this to return the expected structure so process_narrative_event can execute it,
-                                            // OR execute it here.
+                                // Inject required context that we removed from schema
+                                if let serde_json::Value::Object(ref mut map) = args {
+                                    // We need to get user_id and chronicle_id from somewhere
+                                    // Since this function signature doesn't have them, we might need to rely on the caller
+                                    // to handle the actual creation, OR we update this function signature.
+                                    //
+                                    // HOWEVER, looking at process_narrative_event, it handles tool execution separately
+                                    // by parsing the "actions" field from the JSON response.
+                                    // But here we are using the Tool calling API which returns a ToolCall object.
+                                    //
+                                    // The current implementation of process_narrative_event expects a JSON response with "actions".
+                                    // We need to adapt this to return the expected structure so process_narrative_event can execute it,
+                                    // OR execute it here.
 
-                                            // Let's construct the "actions" array for the caller to execute.
-                                            // The caller (process_narrative_event) has user_id and chronicle_id.
+                                    // Let's construct the "actions" array for the caller to execute.
+                                    // The caller (process_narrative_event) has user_id and chronicle_id.
 
-                                            let summary = map
-                                                .get("summary")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-                                            let keywords =
-                                                map.get("keywords").cloned().unwrap_or(json!([]));
+                                    let summary = map
+                                        .get("summary")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let keywords =
+                                        map.get("keywords").cloned().unwrap_or(json!([]));
 
-                                            // Return the structure expected by process_narrative_event
-                                            let result = json!({
-                                                "should_create_event": true,
-                                                "reasoning": "Event created via tool call",
-                                                "summary": summary,
-                                                "keywords": keywords,
-                                                "actions": [
-                                                    {
-                                                        "tool_name": create_event_tool.name(),
-                                                        "parameters": args,
-                                                        "reasoning": "AI tool call"
-                                                    }
-                                                ]
-                                            });
+                                    // Return the structure expected by process_narrative_event
+                                    let result = json!({
+                                        "should_create_event": true,
+                                        "reasoning": "Event created via tool call",
+                                        "summary": summary,
+                                        "keywords": keywords,
+                                        "actions": [
+                                            {
+                                                "tool_name": create_event_tool.name(),
+                                                "parameters": args,
+                                                "reasoning": "AI tool call"
+                                            }
+                                        ]
+                                    });
 
-                                            return Ok(result);
-                                        }
-                                    }
+                                    return Ok(result);
                                 }
                             }
                         }

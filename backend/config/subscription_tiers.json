@@ -24,7 +24,9 @@
         "rollover_enabled": false
       },
       "models": {
-        "allowed": ["gemini-2.5-flash-lite"],
+        "allowed": [
+          "gemini-2.5-flash-lite"
+        ],
         "default": "gemini-2.5-flash-lite"
       },
       "features": {
@@ -58,7 +60,11 @@
         "rollover_max": 500
       },
       "models": {
-        "allowed": ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        "allowed": [
+          "gemini-3-flash-preview",
+          "gemini-2.5-flash",
+          "gemini-2.5-flash-lite"
+        ],
         "default": "gemini-2.5-flash"
       },
       "features": {
@@ -94,7 +100,12 @@
         "purchase_discount": 0.10
       },
       "models": {
-        "allowed": ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        "allowed": [
+          "gemini-3-pro-preview",
+          "gemini-3-flash-preview",
+          "gemini-2.5-flash",
+          "gemini-2.5-flash-lite"
+        ],
         "default": "gemini-2.5-flash"
       },
       "features": {
@@ -154,6 +165,8 @@
       }
     ],
     "model_costs": {
+      "gemini-3-pro-preview": 50,
+      "gemini-3-flash-preview": 10,
       "gemini-2.5-flash-lite": 0,
       "gemini-2.5-flash": 0,
       "gemini-2.5-pro": 0,
@@ -165,6 +178,16 @@
     "token_pricing": {
       "markup_percentage": 20,
       "base_api_costs": {
+        "gemini-3-flash-preview": {
+          "input_per_million": "0.50",
+          "output_per_million": "3.00",
+          "description": "Google API pricing: $0.50/1M input, $3.00/1M output"
+        },
+        "gemini-3-pro-preview": {
+          "input_per_million": "2.00",
+          "output_per_million": "12.00",
+          "description": "Google API pricing: $2.00/1M input, $12.00/1M output (<200k tokens)"
+        },
         "gemini-2.5-flash-lite": {
           "input_per_million": "0.10",
           "output_per_million": "0.40",

@@ -29,6 +29,7 @@ pub struct UserSettings {
 
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
+    pub default_gemini_thinking_level: Option<String>,
     pub default_gemini_enable_code_execution: Option<bool>,
 
     // Context Management Settings
@@ -78,6 +79,7 @@ pub struct NewUserSettings {
 
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
+    pub default_gemini_thinking_level: Option<String>,
     pub default_gemini_enable_code_execution: Option<bool>,
 
     // Context Management Settings
@@ -109,6 +111,7 @@ pub struct UpdateUserSettingsRequest {
 
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
+    pub default_gemini_thinking_level: Option<String>,
     pub default_gemini_enable_code_execution: Option<bool>,
 
     // Context Management Settings
@@ -140,6 +143,7 @@ pub struct UserSettingsResponse {
 
     // Gemini-Specific Settings
     pub default_gemini_thinking_budget: Option<i32>,
+    pub default_gemini_thinking_level: Option<String>,
     pub default_gemini_enable_code_execution: Option<bool>,
 
     // Context Management Settings
@@ -173,6 +177,7 @@ impl From<UserSettings> for UserSettingsResponse {
             default_top_k: settings.default_top_k,
             default_seed: settings.default_seed,
             default_gemini_thinking_budget: settings.default_gemini_thinking_budget,
+            default_gemini_thinking_level: settings.default_gemini_thinking_level,
             default_gemini_enable_code_execution: settings.default_gemini_enable_code_execution,
             default_context_total_token_limit: settings.default_context_total_token_limit,
             default_context_recent_history_budget: settings.default_context_recent_history_budget,

@@ -19,7 +19,7 @@ use crate::models::game_state::{
     EnvironmentState, GameState, GameTime, InventoryItem, Location, NpcState, Quest,
     QuestObjective, QuestStatus, Vital,
 };
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest};
+use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ThinkingLevel};
 use genai::Client;
 use regex::Regex;
 use std::collections::HashMap;
@@ -45,15 +45,18 @@ pub struct StateManagerConfig {
     pub max_output_tokens: Option<i32>,
     /// Temperature (lower = more deterministic)
     pub temperature: Option<f64>,
+    /// Gemini 3 thinking level
+    pub thinking_level: Option<String>,
 }
 
 impl Default for StateManagerConfig {
     fn default() -> Self {
         Self {
             provider: AiProvider::Gemini,
-            model_name: "gemini-2.5-flash".to_string(),
+            model_name: "gemini-3-flash-preview".to_string(),
             max_output_tokens: Some(4096),
-            temperature: Some(0.3), // Lower temp for more consistent state output
+            temperature: Some(1.0), // Google recommends temperature=1 for Gemini
+            thinking_level: Some("low".to_string()), // Low reasoning is sufficient for structured state output
         }
     }
 }
@@ -127,6 +130,19 @@ impl StateManagerAgent {
         if let Some(max_tokens) = self.config.max_output_tokens {
             chat_options = chat_options.with_max_tokens(max_tokens as u32);
         }
+        if let Some(level_str) = &self.config.thinking_level {
+            let thinking_level = match level_str.to_lowercase().as_str() {
+                "none" | "off" | "disabled" => Some(ThinkingLevel::None),
+                "minimal" => Some(ThinkingLevel::Minimal),
+                "low" => Some(ThinkingLevel::Low),
+                "medium" => Some(ThinkingLevel::Medium),
+                "high" => Some(ThinkingLevel::High),
+                _ => None,
+            };
+            if let Some(level) = thinking_level {
+                chat_options = chat_options.with_thinking_level(level);
+            }
+        }
 
         // Execute the request (no structured output - we use plaintext markdown format)
         let response = client
@@ -135,7 +151,7 @@ impl StateManagerAgent {
             .map_err(|e| AppError::GenerationError(format!("State generation failed: {}", e)))?;
 
         // Extract the response text
-        let response_text = response.first_content_text_as_str().ok_or_else(|| {
+        let response_text = response.first_text().ok_or_else(|| {
             AppError::GenerationError("Empty response from state manager".to_string())
         })?;
 
@@ -150,7 +166,7 @@ impl StateManagerAgent {
 
     /// Build the system prompt for the State Manager
     /// Uses {{user}} and {{char}} placeholders for templating consistency
-    /// Instructs LLM to output plaintext markdown format (inspired by sanguine-rpg)
+    /// Instructs LLM to output plaintext markdown format (inspired by rpg-companion-sillytavern)
     fn build_system_prompt(
         &self,
         player_name: Option<&str>,
@@ -167,6 +183,24 @@ CRITICAL: WHO IS THE PLAYER?
 - "{{user}}" is the PLAYER. Track THEIR inventory, vitals, location, and quests.
 - "{{char}}" is the NPC. They go in the "NPCs" section only.
 - All tracked state belongs to {{user}}, NOT {{char}}.
+
+PLACEHOLDER REPLACEMENT:
+Replace all [placeholders] with concrete in-world details. Examples:
+- [location name] → "The Rusty Anchor Tavern"
+- [weather condition] → "Light rain with occasional thunder"
+- [0-23] → 14
+- [current]/[max] → 85/100
+DO NOT keep brackets in your response. Every placeholder must become real content.
+
+RATE OF CHANGE:
+Manage values REALISTICALLY based on what happened:
+- 0% change: Only a few minutes passed, nothing significant
+- 1-5% change: Normal activities (walking, conversation, minor effort)
+- 5-15% change: Significant effort (combat, running, hard work)
+- 15%+ change: Major events (serious injury, exhaustion, time skip)
+
+Example: If {{user}} walked to the market (10 minutes), stamina might drop by 2%.
+Example: If {{user}} fought a bandit, health might drop by 15%, stamina by 20%.
 
 OUTPUT FORMAT:
 You MUST output a code block with the following sections:
@@ -201,15 +235,13 @@ Vitals
 
 Currency
 ---
-Gold: [amount]
-Silver: [amount]
-[Other currencies as applicable]
+[Currency Name]: [amount]
+(e.g., Gold: 100, Credits: 5000, Yen: 2000, USD: 50)
 
 Inventory
 ---
 On Person: [item1, item2 (equipped), item3 x3]
 Stored - [Location]: [items at that location]
-Stored - [Location2]: [items at another location]
 Assets: [horse, house, shop ownership, vehicle, etc.]
 Removed: [item_id1, item_id2] (items consumed/lost this turn)
 
@@ -233,8 +265,6 @@ Optional Quests
   Given by: [NPC name]
   Objectives:
     - [ ] [objective]
-- [Side Quest 2] (active)
-  ...
 
 NPCs
 ---
@@ -245,7 +275,7 @@ NPCs
 
 Status Effects
 ---
-- [Effect Name] ([description])
+- [Effect Name] ([duration/description])
 ```
 
 RULES:
@@ -255,36 +285,44 @@ RULES:
 4. Use reasonable defaults for values not explicitly stated
 5. For new games, infer initial state from {{user}}'s context
 
-CRITICAL - VITALS FORMAT:
-- Always use format: stat_name: current/max
-- Example: health: 85/100
+CRITICAL - VITALS:
+- Always use format: stat_name: current/max (e.g., health: 85/100)
 - Never use separate "current" and "max" fields
+- Adjust values based on Rate of Change guidelines above
 
 CRITICAL - CURRENCY:
-- Track ALL money/coins/credits in the Currency section, NOT as inventory items
-- Extract currency amounts mentioned in narrative (e.g., "counted 1500 gold coins" → Gold: 1500)
+- Track ALL money in the Currency section, NOT as inventory items
+- Example: "counted 1500 gold coins" → Gold: 1500
+- Example: "transferred 500 credits" → Credits: 500
+- Example: "found 2000 yen in wallet" → Yen: 2000
 - Format: "[Currency Name]: [amount]" (one per line)
-- Common currencies: Gold, Silver, Copper, Platinum, Credits, Gems
-- DO NOT list money as inventory items like "gold coins x10" - use Currency section instead
-- Update totals when money is gained or spent
+- If NO currency, write: "None"
 
 CRITICAL - INVENTORY:
-- List items on "On Person:" line, comma-separated
-- Use "Stored - [Location]:" for items stored elsewhere (e.g., "Stored - Home:", "Stored - Bank:")
-- Use "Assets:" for major possessions (horses, property, vehicles)
-- Use "x3" for quantities greater than 1
-- Mark equipped items with "(equipped)"
-- Items removed this turn go in "Removed:" line
-- DO NOT include money/coins here - use Currency section
+- "On Person:" for carried items, comma-separated
+- "Stored - [Location]:" for items elsewhere (e.g., "Stored - Home:")
+- "Assets:" for major possessions (horses, property, vehicles)
+- Use "x3" for quantities > 1, "(equipped)" for worn items
+- "Removed:" for items consumed/lost this turn
+- If empty: "On Person: None"
+- DO NOT include money here - use Currency section
 
 CRITICAL - QUESTS:
-- Use "Main Quest" section for the primary objective
-- Use "Optional Quests" section for side quests
-- Use [x] for completed objectives, [ ] for incomplete
-- Mark quest status in parentheses after title
-- Review each objective every turn
-- If NO quests exist, leave the section EMPTY - DO NOT write "None"
-- Only list actual quests with real titles"#;
+- "Main Quest" for primary objective, "Optional Quests" for side quests
+- Use [x] completed, [ ] incomplete
+- If NO quests exist, write under section: "None active"
+- Only list actual quests with real titles from the narrative
+
+CRITICAL - NPCS:
+- ONLY include NPCs who are PHYSICALLY PRESENT in the current scene
+- When an NPC leaves, REMOVE them from this section
+- Do NOT list every NPC ever met - only those HERE RIGHT NOW
+- If no NPCs are present, write: "None present"
+
+CRITICAL - STATUS EFFECTS:
+- Only list active effects (poison, buffs, debuffs, conditions)
+- Remove effects when they expire or are cured
+- If no effects, write: "None""#;
 
         crate::prompt_builder::replace_template_variables(template, character_name, player_name)
     }
@@ -307,7 +345,7 @@ CRITICAL - QUESTS:
         };
 
         let prompt = format!(
-            r#"Based on the following context, output the COMPLETE updated game state.
+            r#"You are updating the game state based on the MOST RECENT exchange only.
 
 <state_tracking_rules>
 CRITICAL: You are tracking the PLAYER's state ({{{{user}}}}), NOT the NPC's state ({{{{char}}}}).
@@ -315,23 +353,39 @@ CRITICAL: You are tracking the PLAYER's state ({{{{user}}}}), NOT the NPC's stat
 - {{{{char}}}} goes in the "NPCs" section only
 </state_tracking_rules>
 
+=== AUTHORITATIVE CURRENT STATE ===
+This is the CURRENT game state. Time, day, and all values are ALREADY CORRECT.
+DO NOT re-apply past events - they are already reflected here.
+
 <current_game_state>
 {}
 </current_game_state>
 
-<conversation_context>
-{}
-</conversation_context>
+=== BACKGROUND CONTEXT (READ ONLY) ===
+This is a summary of prior conversation for context. These events are ALREADY reflected
+in the current state above. DO NOT add time or changes from this section again.
 
-<human_message name="{{{{user}}}}">
+<prior_context>
 {}
-</human_message>
+</prior_context>
 
-<ai_message name="{{{{char}}}}">
+=== CURRENT TURN (UPDATE FOR THIS) ===
+These are the NEW messages from the current turn. Update the game state based ONLY
+on what happens in these two messages, starting from the current state above.
+
+<player_action name="{{{{user}}}}">
 {}
-</ai_message>
+</player_action>
 
-Output the complete updated game state in ```game-state format, tracking {{{{user}}}}'s stats:"#,
+<response name="{{{{char}}}}">
+{}
+</response>
+
+Based on the CURRENT TURN only, output the complete updated game state.
+The time should only change by the amount that passes DURING the current turn,
+NOT including any time from prior_context (that's already in the state).
+
+Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             current_state_text, conversation_summary, last_user_message, last_assistant_message
         );
 
@@ -962,6 +1016,16 @@ Output the complete updated game state in ```game-state format, tracking {{{{use
     /// Parse Quests section with [x] and [ ] objective syntax
     fn parse_quests_section(text: &str) -> Vec<Quest> {
         let mut quests = Vec::new();
+
+        // Early exit for explicit "none active" marker
+        let trimmed_text = text.trim().to_lowercase();
+        if trimmed_text.contains("none active")
+            || trimmed_text.contains("no quests")
+            || trimmed_text == "none"
+        {
+            return quests;
+        }
+
         let mut current_quest: Option<Quest> = None;
 
         // Quest title line: "- Quest Title (active)" or "- Quest Title (completed)"
@@ -1040,6 +1104,16 @@ Output the complete updated game state in ```game-state format, tracking {{{{use
     /// Parse NPCs section
     fn parse_npcs_section(text: &str) -> HashMap<String, NpcState> {
         let mut npcs = HashMap::new();
+
+        // Early exit for explicit "none present" marker
+        let trimmed_text = text.trim().to_lowercase();
+        if trimmed_text.contains("none present")
+            || trimmed_text.contains("unavailable")
+            || trimmed_text == "none"
+        {
+            return npcs;
+        }
+
         let mut current_npc: Option<NpcState> = None;
         let mut current_id = String::new();
 

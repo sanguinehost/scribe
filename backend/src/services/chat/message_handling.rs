@@ -27,6 +27,8 @@ use crate::{
 /// Returns (input_rate_per_million, output_rate_per_million) in dollars.
 fn get_hardcoded_pricing(model_name: &str) -> (f64, f64) {
     match model_name {
+        "gemini-3-pro-preview" => (2.00, 12.00),
+        "gemini-3-flash-preview" => (0.50, 3.00),
         "gemini-2.5-flash-lite" | "gemini-2.5-flash-lite-preview-09-2025" => (0.10, 0.40),
         "gemini-2.5-flash" | "gemini-2.5-flash-preview-09-2025" => (0.30, 2.50),
         "gemini-2.5-pro" => (1.25, 10.00),
@@ -419,18 +421,26 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 get_hardcoded_pricing(&model_name)
             };
 
+            // Apply tiered pricing for Gemini 3 Pro if tokens exceed 200k
+            let (effective_input_rate, effective_output_rate) =
+                if model_name == "gemini-3-pro-preview" && prompt_tokens > 200_000 {
+                    (4.00, 18.00)
+                } else {
+                    (input_rate_per_million, output_rate_per_million)
+                };
+
             // Calculate BASE API cost (NO markup) - ALWAYS calculated
-            let input_cost_dollars = (prompt_tokens as f64 / 1_000_000.0) * input_rate_per_million;
+            let input_cost_dollars = (prompt_tokens as f64 / 1_000_000.0) * effective_input_rate;
             let output_cost_dollars =
-                (completion_tokens as f64 / 1_000_000.0) * output_rate_per_million;
+                (completion_tokens as f64 / 1_000_000.0) * effective_output_rate;
             let actual_cost = input_cost_dollars + output_cost_dollars;
 
             tracing::info!(
                 model_name = %model_name,
                 prompt_tokens = prompt_tokens,
                 completion_tokens = completion_tokens,
-                input_rate = input_rate_per_million,
-                output_rate = output_rate_per_million,
+                input_rate = effective_input_rate,
+                output_rate = effective_output_rate,
                 actual_cost_dollars = actual_cost,
                 "Calculated message cost"
             );

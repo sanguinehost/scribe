@@ -1,4 +1,4 @@
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
+use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent, ChatResponseFormat};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, instrument};
@@ -222,7 +222,7 @@ impl FieldGenerator {
         // Create a simple message for generation
         let messages = vec![GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(user_message.clone()),
+            content: MessageContent::from(user_message.clone()),
             options: None,
         }];
 
@@ -1036,11 +1036,11 @@ Show different scenarios, moods, or personality aspects."#
         &self,
         system_prompt: &str,
         messages: &[GenAiChatMessage],
-        schema: &crate::DbJson,
+        _schema: &crate::DbJson,
         request: &FieldGenerationRequest,
     ) -> Result<crate::DbJson, AppError> {
         use genai::chat::{
-            ChatOptions as GenAiChatOptions, ChatResponseFormat, ChatRole, JsonSchemaSpec,
+            ChatOptions as GenAiChatOptions, ChatRole,
         };
 
         // Follow the same pattern as main chat generation
@@ -1064,7 +1064,7 @@ Show different scenarios, moods, or personality aspects."#
 
         let prefill_message = GenAiChatMessage {
             role: ChatRole::Assistant,
-            content: MessageContent::Text(prefill_content),
+            content: MessageContent::from(prefill_content),
             options: None,
         };
         messages_vec.push(prefill_message);
@@ -1073,7 +1073,7 @@ Show different scenarios, moods, or personality aspects."#
         let mut genai_chat_options = GenAiChatOptions::default();
 
         // Set temperature for creative generation
-        genai_chat_options = genai_chat_options.with_temperature(0.8);
+        genai_chat_options = genai_chat_options.with_temperature(1.0);
 
         // Set max tokens based on field complexity
         let max_tokens = match &request.field {
@@ -1098,18 +1098,15 @@ Show different scenarios, moods, or personality aspects."#
 
         if let Some(reasoning) = reasoning_budget {
             genai_chat_options = genai_chat_options.with_reasoning_effort(reasoning);
-            genai_chat_options = genai_chat_options.with_include_thoughts(true);
+            genai_chat_options = genai_chat_options.with_capture_reasoning_content(true);
             // Include reasoning in response for debugging
         }
 
         // Add safety settings to allow mature content (same as main generation)
-        let safety_settings = create_unrestricted_safety_settings();
-        genai_chat_options = genai_chat_options.with_safety_settings(safety_settings);
+        genai_chat_options.safety_settings = Some(create_unrestricted_safety_settings());
 
         // Enable structured output using JSON schema (Gemini 2.5+ feature)
-        let json_schema_spec = JsonSchemaSpec::new(schema.clone());
-        let response_format = ChatResponseFormat::JsonSchemaSpec(json_schema_spec);
-        genai_chat_options = genai_chat_options.with_response_format(response_format);
+        genai_chat_options = genai_chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
         // Implement retry logic similar to main chat generation
         const MAX_RETRIES: usize = 2;
@@ -1128,7 +1125,8 @@ Show different scenarios, moods, or personality aspects."#
 
             // Create chat request with enhanced system prompt
             let chat_req = genai::chat::ChatRequest::new(messages_vec.clone())
-                .with_system(&enhanced_system_prompt);
+                .with_system(&enhanced_system_prompt)
+                ;
 
             debug!(
                 "Character generation attempt {} of {}",
@@ -1199,15 +1197,7 @@ Show different scenarios, moods, or personality aspects."#
         debug!("Processing chat response");
 
         // Try the same approach as main chat generation - access contents directly
-        let response_text = chat_response
-            .contents
-            .into_iter()
-            .next()
-            .and_then(|content| match content {
-                genai::chat::MessageContent::Text(text) => Some(text),
-                _ => None,
-            })
-            .unwrap_or_default();
+        let response_text = chat_response.first_text().unwrap_or_default();
 
         if response_text.is_empty() {
             return Err(AppError::GeminiError(
@@ -1266,7 +1256,7 @@ Show different scenarios, moods, or personality aspects."#
 
         // Count message tokens
         for message in messages {
-            if let MessageContent::Text(text) = &message.content {
+            if let Some(text) = message.content.first_text() {
                 total_tokens += self
                     .state
                     .token_counter
@@ -1350,7 +1340,7 @@ Provide a detailed analysis including:
         // Create messages for generation
         let messages = vec![GenAiChatMessage {
             role: ChatRole::User,
-            content: MessageContent::Text(user_message),
+            content: MessageContent::from(user_message),
             options: None,
         }];
 

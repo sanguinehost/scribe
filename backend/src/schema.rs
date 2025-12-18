@@ -291,6 +291,7 @@ diesel::table! {
         total_actual_charge -> Float,
         game_state -> Nullable<Text>,
         game_master_mode_enabled -> Integer,
+        gemini_thinking_level -> Nullable<Text>,
     }
 }
 
@@ -806,6 +807,7 @@ diesel::table! {
         preferred_local_model -> Nullable<Text>,
         local_llm_enabled -> Nullable<Bool>,
         local_model_preferences -> Nullable<Text>,
+        default_gemini_thinking_level -> Nullable<Text>,
     }
 }
 

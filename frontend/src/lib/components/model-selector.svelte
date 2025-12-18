@@ -22,7 +22,7 @@
 	import { apiClient as _apiClient } from '$lib/api';
 	import { creditStore } from '$lib/stores/credits';
 	import { PAYMENT_FEATURES } from '$lib/utils/features';
-	import { Coins } from 'lucide-svelte';
+	import { Coins, Brain } from 'lucide-svelte';
 
 	let {
 		class: c,
@@ -142,7 +142,7 @@
 				{...props}
 				variant="outline"
 				class={_cn(
-					'w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground md:h-[34px] md:px-2',
+					'data-[state=open]:bg-accent data-[state=open]:text-accent-foreground w-fit md:h-[34px] md:px-2',
 					c
 				)}
 			>
@@ -161,9 +161,17 @@
 			>
 				<div class="flex flex-col items-start gap-1">
 					<div>Use Global Default</div>
-					<div class="text-xs text-muted-foreground">
+					<div class="text-muted-foreground text-xs">
 						{availableModels().find((m) => m.id === selectedChatModel.value)?.name ||
 							'Default Model'}
+						{#if availableModels().find((m) => m.id === selectedChatModel.value)?.supportsReasoning}
+							<span
+								class="ml-2 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+							>
+								<Brain class="mr-1 inline-block h-2.5 w-2.5" />
+								Reasoning
+							</span>
+						{/if}
 						{#if PAYMENT_FEATURES.credits}
 							{@const defaultModel = availableModels().find(
 								(m) => m.id === selectedChatModel.value
@@ -188,7 +196,7 @@
 				</div>
 
 				<div
-					class="text-foreground opacity-0 group-data-[active=true]/item:opacity-100 dark:text-foreground"
+					class="text-foreground dark:text-foreground opacity-0 group-data-[active=true]/item:opacity-100"
 				>
 					<CheckCircleFillIcon />
 				</div>
@@ -209,6 +217,16 @@
 				<div class="flex flex-col items-start gap-1">
 					<div class="flex items-center gap-2">
 						<span>{chatModel.name}</span>
+						{#if chatModel.supportsReasoning}
+							<div class="flex items-center gap-1">
+								<span
+									class="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+								>
+									<Brain class="mr-1 inline-block h-3 w-3" />
+									Reasoning
+								</span>
+							</div>
+						{/if}
 						{#if chatModel.isLocal}
 							{@const isActive = modelLifecycleStore.isModelActive(chatModel.id)}
 							{@const isActivating =
@@ -234,7 +252,7 @@
 							</div>
 						{/if}
 					</div>
-					<div class="text-xs text-muted-foreground">
+					<div class="text-muted-foreground text-xs">
 						{chatModel.description}
 						{#if PAYMENT_FEATURES.credits && !chatModel.isLocal}
 							{@const creditCost = getModelCreditCost(chatModel.id)}
@@ -258,7 +276,7 @@
 				</div>
 
 				<div
-					class="text-foreground opacity-0 group-data-[active=true]/item:opacity-100 dark:text-foreground"
+					class="text-foreground dark:text-foreground opacity-0 group-data-[active=true]/item:opacity-100"
 				>
 					<CheckCircleFillIcon />
 				</div>

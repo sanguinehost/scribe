@@ -238,7 +238,7 @@ impl AgenticNarrativeFactory {
     pub fn create_dev_config() -> NarrativeWorkflowConfig {
         NarrativeWorkflowConfig {
             triage_model: "gemini-2.5-flash-lite".to_string(),
-            planning_model: "gemini-2.5-flash".to_string(), // Use cheaper model for dev
+            planning_model: "gemini-3-flash-preview".to_string(),
             max_tool_executions: 3,
             enable_cost_optimizations: true,
         }
@@ -248,7 +248,7 @@ impl AgenticNarrativeFactory {
     pub fn create_production_config() -> NarrativeWorkflowConfig {
         NarrativeWorkflowConfig {
             triage_model: "gemini-2.5-flash-lite".to_string(),
-            planning_model: "gemini-2.5-pro".to_string(),
+            planning_model: "gemini-3-flash-preview".to_string(),
             max_tool_executions: 5,
             enable_cost_optimizations: true,
         }

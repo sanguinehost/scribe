@@ -57,7 +57,7 @@ fn log_generic_error(gen_err: &genai::Error) {
 /// Logs and converts `genai::Error` to `AppError` for better error handling
 fn log_and_convert_genai_error(gen_err: genai::Error) -> AppError {
     match &gen_err {
-        genai::Error::StreamEventError { model_iden, body } => {
+        genai::Error::ChatResponse { model_iden, body } => {
             let body_json: crate::DbJson = body.clone().into();
             log_stream_event_error(model_iden, &body_json, &gen_err);
         }
@@ -200,7 +200,7 @@ pub async fn generate_simple_response(
     tracing::debug!(%model_name, "Executing chat with specified model via trait");
     let response = client.exec_chat(model_name, chat_request, None).await?;
     let content = response
-        .first_content_text_as_str()
+        .first_text()
         .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))?
         .to_string();
     Ok(content)
@@ -284,13 +284,13 @@ mod tests {
                 let mut chunk_count = 0;
                 while let Some(item_result) = stream.next().await {
                     match item_result {
-                        Ok(ChatStreamEvent::Chunk(chunk)) => {
+                        Ok(ChatStreamEvent::Chunk(chunk)) | Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
                             if !chunk.content.is_empty() {
                                 full_response.push_str(&chunk.content);
                                 chunk_count += 1;
                             }
                         }
-                        Ok(ChatStreamEvent::End(_)) => break,
+                        Ok(ChatStreamEvent::CallEnd) => break,
                         Err(e) => {
                             // Handle expected API errors gracefully for integration tests
                             if e.to_string().contains("503") || e.to_string().contains("overloaded")
@@ -401,7 +401,11 @@ mod tests {
         // Helper to create a ChatResponse with no text content (empty vector)
         fn create_empty_chat_response() -> ChatResponse {
             ChatResponse {
-                contents: vec![],
+                message: genai::chat::ChatMessage {
+                    role: genai::chat::ChatRole::Assistant,
+                    content: genai::chat::MessageContent::from(""),
+                    options: None,
+                },
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
@@ -416,8 +420,12 @@ mod tests {
         // Helper to create a ChatResponse with some text content
         fn create_text_chat_response(text: &str) -> ChatResponse {
             ChatResponse {
-                // Use MessageContent::from_text in a vector
-                contents: vec![genai::chat::MessageContent::from_text(text)],
+                // Use MessageContent::from in a message
+                message: genai::chat::ChatMessage {
+                    role: genai::chat::ChatRole::Assistant,
+                    content: genai::chat::MessageContent::from(text),
+                    options: None,
+                },
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
@@ -473,8 +481,8 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap().first_content_text_as_str(),
-            expected_response.first_content_text_as_str()
+            result.unwrap().first_text(),
+            expected_response.first_text()
         );
         assert!(
             client_arc_mock.was_exec_chat_called(),
@@ -489,7 +497,7 @@ mod tests {
         let mut mock_client = MockAiClient::new();
         let response_without_text = MockAiClient::create_empty_chat_response();
         assert!(
-            response_without_text.first_content_text_as_str().is_none(),
+            response_without_text.first_text().is_none(),
             "Empty ChatResponse unexpectedly has text content"
         );
 

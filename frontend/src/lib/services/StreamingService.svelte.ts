@@ -406,6 +406,7 @@ class StreamingService {
 		guidance?: string; // Optional guidance text for regeneration steering
 		targetMessageId?: string; // If provided, update this message instead of creating new
 		variantOf?: string; // If provided, create this response as a variant of the specified message ID
+		gemini_thinking_level?: string; // Optional thinking level for Gemini 3
 	}): Promise<void> {
 		// Connect to streaming service
 		console.log('🌐 [WebStreamingService] Connecting to chat', params.chatId);
@@ -546,7 +547,8 @@ class StreamingService {
 					analysisMode: params.analysisMode,
 					guidance: params.guidance,
 					variantOf: params.variantOf,
-					isRegeneration: params.isRegeneration
+					isRegeneration: params.isRegeneration,
+					gemini_thinking_level: params.gemini_thinking_level
 				},
 				assistantMessageId
 			);
@@ -569,6 +571,7 @@ class StreamingService {
 			guidance?: string;
 			variantOf?: string;
 			isRegeneration?: boolean;
+			gemini_thinking_level?: string;
 		},
 		assistantMessageId: string
 	): Promise<void> {
@@ -611,7 +614,8 @@ class StreamingService {
 			agent_mode: params.agentMode,
 			analysis_mode: params.analysisMode, // Pass analysis mode for regeneration
 			guidance: params.guidance, // Pass optional guidance for regeneration steering
-			variant_of: params.variantOf // Pass variant_of for creating variants
+			variant_of: params.variantOf, // Pass variant_of for creating variants
+			gemini_thinking_level: params.gemini_thinking_level // Pass thinking level for Gemini 3
 		};
 
 		logger.debug('streaming-service', 'Starting sveltekit-sse source', { url: apiUrl });
@@ -710,6 +714,13 @@ class StreamingService {
 				}
 			});
 			this.activeSubscriptions.push(gameStateUnsub);
+
+			const thinkingUnsub = this.activeConnection.select('thinking').subscribe((data) => {
+				if (data) {
+					this.handleStreamMessage({ event: 'thinking', data }, assistantMessageId);
+				}
+			});
+			this.activeSubscriptions.push(thinkingUnsub);
 		} catch (error) {
 			logger.error(
 				'streaming-service',
@@ -781,6 +792,14 @@ class StreamingService {
 							}
 						}
 					}
+					break;
+
+				case 'thinking':
+					logger.debug('streaming-service', 'Thinking event received', {
+						data: _event.data
+					});
+					// TODO: Implement UI for thinking/reasoning content
+					// For now, we just log it to confirm receipt
 					break;
 
 				case 'error':

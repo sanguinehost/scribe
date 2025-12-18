@@ -252,7 +252,7 @@ impl ChronicleDeduplicationService {
         }
 
         // Parse JSON from the response content
-        let content = response.first_content_text_as_str().ok_or_else(|| {
+        let content = response.first_text().ok_or_else(|| {
             AppError::GenerationError(
                 "LLM returned empty response for deduplication check".to_string(),
             )

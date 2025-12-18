@@ -157,9 +157,7 @@ impl MockAiClient {
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(
-                    "Mock AI response".to_string(),
-                )],
+                content: genai::chat::MessageContent::from("Mock AI response"),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(20),     // Simulate ~20 tokens for prompt
@@ -168,6 +166,7 @@ impl MockAiClient {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -187,7 +186,7 @@ impl MockAiClient {
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(response_text)],
+                content: genai::chat::MessageContent::from(response_text),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(prompt_tokens),
@@ -196,6 +195,7 @@ impl MockAiClient {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -324,15 +324,18 @@ impl AiClient for MockAiClient {
                                         content: chunk.content.clone(),
                                     })
                                 }
-                                ChatStreamEvent::ToolCall(tool_call) => {
-                                    // Assuming ToolCall is effectively cloneable by its fields
-                                    ChatStreamEvent::ToolCall(ToolCall {
-                                        call_id: tool_call.call_id.clone(),
-                                        fn_name: tool_call.fn_name.clone(),
-                                        fn_arguments: tool_call.fn_arguments.clone(),
+                                ChatStreamEvent::ToolCallChunk(tool_chunk) => {
+                                    // ToolCall now has thought_signature field
+                                    ChatStreamEvent::ToolCallChunk(genai::chat::ToolChunk {
+                                        tool_call: ToolCall {
+                                            call_id: tool_chunk.tool_call.call_id.clone(),
+                                            fn_name: tool_chunk.tool_call.fn_name.clone(),
+                                            fn_arguments: tool_chunk.tool_call.fn_arguments.clone(),
+                                            thought_signature: tool_chunk.tool_call.thought_signature.clone(),
+                                        },
                                     })
                                 }
-                                ChatStreamEvent::End(_end_event) => {
+                                ChatStreamEvent::End(_) => {
                                     ChatStreamEvent::End(StreamEnd::default())
                                 } // StreamEnd is not Clone, use Default
                             };
@@ -1961,7 +1964,7 @@ pub mod db {
         Manager as DeadpoolManager, Pool as DeadpoolPool, Runtime as DeadpoolRuntime,
     };
     // For .env file loading
-    use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
+    // use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
                   // Ensure RegisterPayload is imported
     use super::{
         AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString,
@@ -3148,10 +3151,7 @@ pub fn assert_ai_history(
             genai::chat::ChatRole::System => "System",
             genai::chat::ChatRole::Tool => "Tool",
         };
-        let content = match &msg.content {
-            genai::chat::MessageContent::Text(text) => text.as_str(),
-            _ => "<non-text content>",
-        };
+        let content = msg.content.first_text().unwrap_or("<non-text content>");
         println!("  [{i}] {role_str}: {content}");
     }
 
@@ -3169,11 +3169,7 @@ pub fn assert_ai_history(
             .iter()
             .map(|m| (
                 format!("{:?}", m.role),
-                if let genai::chat::MessageContent::Text(t) = &m.content {
-                    t.clone()
-                } else {
-                    String::new()
-                }
+                m.content.first_text().unwrap_or("").to_string()
             ))
             .collect::<Vec<_>>(),
         expected_history
@@ -3191,13 +3187,12 @@ pub fn assert_ai_history(
                 panic!("Unexpected role in AI history: {:?}", actual.role)
             }
         };
-        let actual_content = match &actual.content {
-            genai::chat::MessageContent::Text(text) => text.as_str(),
-            _ => panic!(
+        let actual_content = actual.content.first_text().unwrap_or_else(|| {
+            panic!(
                 "Expected text content in AI history, got: {:?}",
                 actual.content
-            ),
-        };
+            )
+        });
 
         println!(
             "[DEBUG] Compare message {i}: Expected {expected_role_str}:'{expected_content}' vs Actual {actual_role_str}:'{actual_content}'"
