@@ -1064,7 +1064,7 @@ Your task is to generate an appropriate chronicle name that captures the essence
     ) -> Result<String, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole,
+            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, JsonSpec,
             MessageContent,
         };
 
@@ -1111,13 +1111,16 @@ Your task is to generate an appropriate chronicle name that captures the essence
 CURRENT CONVERSATION:
 {}
 
-Generate a chronicle name for this conversation. Chronicles represent major narrative arcs that can span thousands of exchanges and hundreds of story developments.
+ Generate a chronicle name for this conversation. Chronicles represent major narrative arcs that can span thousands of exchanges and hundreds of story developments.
 
 RULES:
 1. Think big picture - this chronicle may contain many adventures and story arcs
 2. Focus on the character's major journey, quest, or life chapter
 3. Consider the setting, era, or major themes that will define this chronicle
-4. Examples: "The Crimson Empress Chronicles", "Journey Through the Shadowlands", "Rise of the Merchant Prince", "The Last Mage of Avalon""#,
+4. Examples: "The Crimson Empress Chronicles", "Journey Through the Shadowlands", "Rise of the Merchant Prince", "The Last Mage of Avalon"
+
+IMPORTANT: You MUST respond with a JSON object containing a single field "name".
+Example: {{ "name": "The Crimson Empress Chronicles" }}"#,
             character_section, conversation_text
         );
 
@@ -1134,7 +1137,17 @@ RULES:
         chat_options = chat_options.with_max_tokens(512);
 
         // Apply structured output schema
-        let response_format = ChatResponseFormat::JsonMode;
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The generated chronicle name"
+                }
+            },
+            "required": ["name"]
+        });
+        let response_format = ChatResponseFormat::JsonSpec(JsonSpec::new("chronicle_name", schema));
         chat_options = chat_options.with_response_format(response_format);
 
         // Create system prompt
@@ -1160,7 +1173,6 @@ RULES:
                 let generated_name = match parsed {
                     Ok(json) => json
                         .get("name")
-                        .or_else(|| json.get("chronicle_name"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("Untitled Chronicle")
                         .to_string(),
