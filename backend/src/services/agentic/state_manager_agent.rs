@@ -229,9 +229,19 @@ Season: [season name]
 
 Vitals
 ---
-- health: [current]/[max]
-- stamina: [current]/[max]
-- mana: [current]/[max] (if applicable)
+Choose vitals that make sense for the current narrative context. You have full autonomy to add or remove stats as they become relevant.
+Examples:
+- Combat/Fantasy: health: [current]/[max], mana: [current]/[max], stamina: [current]/[max]
+- Slice of Life: health: [current]/[max], stress: [current]/[max], social_energy: [current]/[max]
+- Survival/Sci-Fi: health: [current]/[max], oxygen: [current]/[max], battery: [current]/[max]
+- Mature/Intimate: arousal: [current]/[max], stamina: [current]/[max]
+
+GUIDELINES:
+- Add stats when they become narratively relevant (e.g., "arousal" during intimacy, "oxygen" in space or underwater).
+- Remove stats when they are no longer relevant (e.g., hide "arousal" when the character is with their children).
+- Do not be rigid about "standard" stats like health/stamina if they don't fit the story.
+- Avoid dropping stats that are continually relevant to the current genre.
+- Format: - [stat_name]: [current]/[max]
 
 Currency
 ---
@@ -1587,5 +1597,24 @@ mod tests {
         // Verify the custom_data was included
         assert!(prompt.contains("player_class"));
         assert!(prompt.contains("warrior"));
+    }
+
+    #[test]
+    fn test_parse_vitals_section_dynamic() {
+        let agent = StateManagerAgent::new();
+        let vitals_text = r#"
+- health: 80/100
+- stress: 25/50
+- social_energy: 10/100
+- oxygen: 95/100
+"#;
+        let vitals = StateManagerAgent::parse_vitals_section(vitals_text);
+        
+        assert_eq!(vitals.len(), 4);
+        assert_eq!(vitals.get("health").unwrap().current, 80.0);
+        assert_eq!(vitals.get("stress").unwrap().current, 25.0);
+        assert_eq!(vitals.get("social_energy").unwrap().current, 10.0);
+        assert_eq!(vitals.get("oxygen").unwrap().current, 95.0);
+        assert_eq!(vitals.get("oxygen").unwrap().max, 100.0);
     }
 }

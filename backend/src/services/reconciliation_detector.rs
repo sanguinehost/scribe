@@ -222,6 +222,10 @@ impl ReconciliationDetector {
                         delta: expected_heal,
                     });
                 }
+            } else if current_state.vitals.contains_key("health") {
+                // Health exists in current but was REMOVED in new state during a healing action?
+                // This is likely an LLM error, but we'll let standard reconciliation handle it
+                // unless we want to force it back. For now, we just don't crash.
             }
         }
 
