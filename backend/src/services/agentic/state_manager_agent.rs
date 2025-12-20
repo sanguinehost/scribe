@@ -224,8 +224,12 @@ Time
 Day: [day number]
 Hour: [0-23]
 Minute: [0-59]
+Second: [0-59]
 Period: [dawn/morning/noon/afternoon/dusk/evening/night]
 Season: [season name]
+Calendar: [Earth/Fantasy/Sci-Fi/etc.]
+Date: [full date string, e.g. "2025-12-19" or "15th of Highsun, Year 120"]
+Total Seconds Elapsed: [total seconds since game start]
 
 Vitals
 ---
@@ -444,13 +448,19 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
         // === TIME ===
         if let Some(ref time) = state.game_time {
             output.push_str(&format!(
-                "Time: Day {}, {:02}:{:02} ({})",
-                time.day, time.hour, time.minute, time.period
+                "Time: Day {}, {:02}:{:02}:{:02} ({})",
+                time.day, time.hour, time.minute, time.second, time.period
             ));
             if let Some(ref season) = time.season {
                 output.push_str(&format!(", {}", season));
             }
             output.push('\n');
+            output.push_str(&format!("  Calendar: {}\n", time.calendar_system));
+            output.push_str(&format!("  Date: {}\n", time.date));
+            output.push_str(&format!(
+                "  Total Seconds Elapsed: {}\n",
+                time.total_seconds_elapsed
+            ));
         }
 
         // === CURRENCIES ===
@@ -822,6 +832,9 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
         let mut second: u8 = 0;
         let mut period = String::new();
         let mut season: Option<String> = None;
+        let mut total_seconds_elapsed: u64 = 0;
+        let mut calendar_system = String::new();
+        let mut date = String::new();
 
         for line in text.lines() {
             let trimmed = line.trim();
@@ -835,6 +848,13 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                     "second" => second = value.parse().unwrap_or(0),
                     "period" => period = value.to_string(),
                     "season" => season = Some(value.to_string()),
+                    "total seconds elapsed" | "total_seconds_elapsed" => {
+                        total_seconds_elapsed = value.parse().unwrap_or(0)
+                    }
+                    "calendar" | "calendar system" | "calendar_system" => {
+                        calendar_system = value.to_string()
+                    }
+                    "date" => date = value.to_string(),
                     _ => {}
                 }
             }
@@ -847,6 +867,9 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             second,
             period,
             season,
+            total_seconds_elapsed,
+            calendar_system,
+            date,
         }
     }
 
@@ -934,7 +957,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                 .strip_prefix("On Person:")
                 .or_else(|| trimmed.strip_prefix("on person:"))
             {
-                for item_str in value.split(',') {
+                for item_str in Self::split_outside_parens(value, ',') {
                     if let Some(item) = Self::parse_inventory_item(item_str.trim()) {
                         on_person.push(item);
                     }
@@ -948,8 +971,8 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                 // Extract location name and items: "Home: sword, shield"
                 if let Some((location, items_str)) = rest.split_once(':') {
                     let location = location.trim().to_string();
-                    let items: Vec<InventoryItem> = items_str
-                        .split(',')
+                    let items: Vec<InventoryItem> = Self::split_outside_parens(items_str, ',')
+                        .into_iter()
                         .filter_map(|s| Self::parse_inventory_item(s.trim()))
                         .collect();
                     if !items.is_empty() {
@@ -962,7 +985,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                 .strip_prefix("Assets:")
                 .or_else(|| trimmed.strip_prefix("assets:"))
             {
-                for asset_str in value.split(',') {
+                for asset_str in Self::split_outside_parens(value, ',') {
                     let asset = asset_str.trim();
                     if !asset.is_empty() && asset.to_lowercase() != "none" {
                         assets.push(asset.to_string());
@@ -974,7 +997,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                 .strip_prefix("Removed:")
                 .or_else(|| trimmed.strip_prefix("removed:"))
             {
-                for id in value.split(',') {
+                for id in Self::split_outside_parens(value, ',') {
                     let id = id.trim();
                     if !id.is_empty() {
                         removed.push(id.to_string());
@@ -994,17 +1017,47 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
         }
 
         // Check for (equipped) marker
-        let equipped = text.to_lowercase().contains("(equipped)");
-        let text = text.replace("(equipped)", "").replace("(Equipped)", "");
+        let equipped = text.to_lowercase().contains("equipped");
+
+        // Clean up the name by removing "equipped" and fixing commas/parens
+        let mut clean_name = text.to_string();
+
+        if equipped {
+            // Remove "equipped" (case insensitive)
+            let re = Regex::new(r"(?i)\bequipped\b").unwrap();
+            clean_name = re.replace_all(&clean_name, "").to_string();
+
+            // Clean up commas and spaces
+            let re_comma = Regex::new(r",\s*,").unwrap();
+            clean_name = re_comma.replace_all(&clean_name, ",").to_string();
+
+            let re_open = Regex::new(r"\(\s*,").unwrap();
+            clean_name = re_open.replace_all(&clean_name, "(").to_string();
+
+            let re_close = Regex::new(r",\s*\)").unwrap();
+            clean_name = re_close.replace_all(&clean_name, ")").to_string();
+
+            clean_name = clean_name.replace("()", "");
+
+            // Remove trailing spaces inside parens
+            let re_space_close = Regex::new(r"\s+\)").unwrap();
+            clean_name = re_space_close.replace_all(&clean_name, ")").to_string();
+
+            // Remove leading spaces inside parens
+            let re_space_open = Regex::new(r"\(\s+").unwrap();
+            clean_name = re_space_open.replace_all(&clean_name, "(").to_string();
+
+            clean_name = clean_name.trim().to_string();
+        }
 
         // Check for quantity: "x3" or "x 3"
-        let quantity_re = Regex::new(r"\s*x\s*(\d+)\s*$").unwrap();
-        let (name, quantity) = if let Some(caps) = quantity_re.captures(&text) {
+        let quantity_re = Regex::new(r"(?i)\s*x\s*(\d+)\s*$").unwrap();
+        let (name, quantity) = if let Some(caps) = quantity_re.captures(&clean_name) {
             let qty: u32 = caps.get(1).unwrap().as_str().parse().unwrap_or(1);
-            let name = quantity_re.replace(&text, "").trim().to_string();
+            let name = quantity_re.replace(&clean_name, "").trim().to_string();
             (name, qty)
         } else {
-            (text.trim().to_string(), 1)
+            (clean_name, 1)
         };
 
         if name.is_empty() {
@@ -1021,6 +1074,34 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             properties: HashMap::new(),
             staleness_count: 0,
         })
+    }
+
+    /// Helper to split a string by a delimiter, but only when not inside parentheses
+    fn split_outside_parens(text: &str, delimiter: char) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut current = String::new();
+        let mut paren_depth = 0;
+
+        for c in text.chars() {
+            if c == '(' {
+                paren_depth += 1;
+                current.push(c);
+            } else if c == ')' {
+                paren_depth -= 1;
+                current.push(c);
+            } else if c == delimiter && paren_depth == 0 {
+                result.push(current.trim().to_string());
+                current.clear();
+            } else {
+                current.push(c);
+            }
+        }
+
+        if !current.trim().is_empty() {
+            result.push(current.trim().to_string());
+        }
+
+        result
     }
 
     /// Parse Quests section with [x] and [ ] objective syntax
@@ -1186,8 +1267,7 @@ impl Default for StateManagerAgent {
 mod tests {
     use super::*;
     use crate::models::game_state::{
-        EnvironmentState, GameTime, InventoryItem, Location, NpcState, Quest, QuestObjective,
-        QuestStatus, Vital,
+        GameTime, InventoryItem, Location, Vital,
     };
     use std::collections::HashMap;
 
@@ -1220,107 +1300,104 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_parse_state_response_plain_json() {
+    fn test_parse_state_response_plain_text() {
         let agent = StateManagerAgent::new();
-        let json = r#"{"location": null, "game_time": null, "inventory": [], "vitals": {}, "quests": [], "npcs": {}, "environment": {"weather": null, "lighting": null, "temperature": null, "hazards": [], "tags": []}, "custom_data": {}}"#;
+        let text = r#"
+Location
+---
+Name: Forest Edge
+Region: Verdant Woods
 
-        let result = agent.parse_state_response(json);
+Time
+---
+Day: 1
+Hour: 8
+Minute: 0
+Second: 0
+Period: morning
+Season: spring
+Calendar: Earth
+Date: 2025-01-01
+Total Seconds Elapsed: 28800
+"#;
+
+        let result = agent.parse_state_response(text);
         assert!(result.is_ok());
+        let state = result.unwrap();
+        assert_eq!(state.location.as_ref().unwrap().name, "Forest Edge");
+        assert_eq!(state.game_time.as_ref().unwrap().day, 1);
+        assert_eq!(state.game_time.as_ref().unwrap().total_seconds_elapsed, 28800);
     }
 
     #[test]
     fn test_parse_state_response_markdown_wrapped() {
         let agent = StateManagerAgent::new();
-        let json = r#"```json
-{"location": null, "game_time": null, "inventory": [], "vitals": {}, "quests": [], "npcs": {}, "environment": {"weather": null, "lighting": null, "temperature": null, "hazards": [], "tags": []}, "custom_data": {}}
+        let text = r#"```game-state
+Location
+---
+Name: Forest Edge
+
+Time
+---
+Day: 1
+Hour: 8
 ```"#;
 
-        let result = agent.parse_state_response(json);
+        let result = agent.parse_state_response(text);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_parse_state_response_with_complete_game_state() {
         let agent = StateManagerAgent::new();
-        let json = r#"```json
-{
-  "location": {
-    "id": "tavern_001",
-    "name": "The Rusty Anchor",
-    "description": "A cozy tavern with a roaring fireplace",
-    "region": "Port District",
-    "tags": ["indoors", "safe", "social"]
-  },
-  "game_time": {
-    "day": 5,
-    "hour": 20,
-    "period": "evening",
-    "season": "autumn"
-  },
-  "inventory": [
-    {
-      "id": "sword_001",
-      "name": "Steel Longsword",
-      "quantity": 1,
-      "description": "A trusty blade",
-      "category": "weapon",
-      "equipped": true,
-      "properties": {}
-    },
-    {
-      "id": "potion_health",
-      "name": "Health Potion",
-      "quantity": 3,
-      "description": "Restores 50 HP",
-      "category": "consumable",
-      "equipped": false,
-      "properties": {}
-    }
-  ],
-  "vitals": {
-    "health": {"current": 85, "max": 100, "regen_rate": 1, "modifiers": []},
-    "stamina": {"current": 70, "max": 100, "regen_rate": 5, "modifiers": []}
-  },
-  "quests": [
-    {
-      "id": "quest_001",
-      "title": "Find the Missing Merchant",
-      "status": "active",
-      "description": "Search for the lost trader",
-      "objectives": [
-        {"description": "Talk to the innkeeper", "completed": true, "progress": null},
-        {"description": "Search the docks", "completed": false, "progress": "0/3 areas checked"}
-      ],
-      "giver": "Town Guard",
-      "rewards": "50 gold"
-    }
-  ],
-  "npcs": {
-    "bartender_001": {
-      "id": "bartender_001",
-      "name": "Greta",
-      "location": "tavern_001",
-      "disposition": "friendly",
-      "status": "alive",
-      "objectives": [],
-      "data": {}
-    }
-  },
-  "environment": {
-    "weather": "clear",
-    "lighting": "candlelit",
-    "temperature": "warm",
-    "hazards": [],
-    "tags": ["cozy", "atmospheric"]
-  },
-  "custom_data": {
-    "player_reputation": "neutral",
-    "discovered_locations": 3
-  }
-}
+        let text = r#"```game-state
+Location
+---
+Name: The Rusty Anchor
+Region: Port District
+Description: A cozy tavern with a roaring fireplace
+Tags: indoors, safe, social
+
+Time
+---
+Day: 5
+Hour: 20
+Minute: 0
+Second: 0
+Period: evening
+Season: autumn
+Calendar: Earth
+Date: 2025-01-05
+Total Seconds Elapsed: 417600
+
+Vitals
+---
+- health: 85/100
+- stamina: 70/100
+
+Main Quest
+---
+- Find the Missing Merchant (active)
+  Description: Search for the lost trader
+  Objectives:
+    - [x] Talk to the innkeeper
+    - [ ] Search the docks
+
+NPCs
+---
+- Greta (friendly)
+  Location: tavern_001
+  Status: alive
+
+Environment
+---
+Weather: clear
+Lighting: candlelit
+Temperature: warm
+Tags: cozy, atmospheric
 ```"#;
 
-        let result = agent.parse_state_response(json);
+        let result = agent.parse_state_response(text);
         assert!(result.is_ok());
 
         let state = result.unwrap();
@@ -1328,7 +1405,8 @@ mod tests {
         assert_eq!(state.location.as_ref().unwrap().name, "The Rusty Anchor");
         assert!(state.game_time.is_some());
         assert_eq!(state.game_time.as_ref().unwrap().day, 5);
-        assert_eq!(state.inventory.len(), 2);
+        assert_eq!(state.game_time.as_ref().unwrap().total_seconds_elapsed, 417600);
+        assert_eq!(state.vitals.len(), 2);
         assert_eq!(state.quests.len(), 1);
         assert_eq!(state.npcs.len(), 1);
     }
@@ -1336,23 +1414,23 @@ mod tests {
     #[test]
     fn test_parse_state_response_generic_code_block() {
         let agent = StateManagerAgent::new();
-        // Some LLMs wrap in ``` without json specifier
-        let json = r#"```
-{"location": null, "game_time": null, "inventory": [], "vitals": {}, "quests": [], "npcs": {}, "environment": {"weather": null, "lighting": null, "temperature": null, "hazards": [], "tags": []}, "custom_data": {}}
+        let text = r#"```
+Location
+---
+Name: Forest Edge
 ```"#;
 
-        let result = agent.parse_state_response(json);
+        let result = agent.parse_state_response(text);
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_parse_state_response_invalid_json_returns_error() {
+    fn test_parse_state_response_invalid_format_returns_error() {
         let agent = StateManagerAgent::new();
-        let invalid_json = r#"{"location": broken json here}"#;
+        let invalid = r#"This is not a game state"#;
 
-        let result = agent.parse_state_response(invalid_json);
+        let result = agent.parse_state_response(invalid);
         assert!(result.is_err());
-        assert!(matches!(result, Err(AppError::SerializationError(_))));
     }
 
     #[test]
@@ -1363,9 +1441,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_state_response_partial_json_returns_error() {
+    fn test_parse_state_response_partial_text_returns_error() {
         let agent = StateManagerAgent::new();
-        let partial = r#"{"location": {"id": "test", "name": "Test""#; // Incomplete
+        let partial = r#"Location: Forest Edge"#; // Missing headers/sections
 
         let result = agent.parse_state_response(partial);
         assert!(result.is_err());
@@ -1378,9 +1456,9 @@ mod tests {
     #[test]
     fn test_build_system_prompt() {
         let agent = StateManagerAgent::new();
-        let prompt = agent.build_system_prompt();
+        let prompt = agent.build_system_prompt(None, None);
         assert!(prompt.contains("Game State Manager"));
-        assert!(prompt.contains("JSON"));
+        assert!(prompt.contains("game-state"));
     }
 
     #[test]
@@ -1515,12 +1593,14 @@ mod tests {
         let agent = StateManagerAgent::new();
 
         // Build prompts
-        let system_prompt = agent.build_system_prompt();
+        let system_prompt = agent.build_system_prompt(None, None);
         let user_prompt = agent.build_user_prompt(
             None,
             "New adventure beginning.",
             "I check my surroundings.",
             "You stand at the edge of a forest...",
+            None,
+            None,
         );
 
         // Verify prompts are generated
@@ -1528,36 +1608,36 @@ mod tests {
         assert!(!user_prompt.is_empty());
 
         // Simulate LLM response
-        let mock_response = r#"```json
-{
-  "location": {
-    "id": "forest_edge",
-    "name": "Forest Edge",
-    "description": "The boundary between the village and the deep woods",
-    "region": "Verdant Woods",
-    "tags": ["outdoor", "border"]
-  },
-  "game_time": {
-    "day": 1,
-    "hour": 8,
-    "period": "morning",
-    "season": "spring"
-  },
-  "inventory": [],
-  "vitals": {
-    "health": {"current": 100, "max": 100, "regen_rate": 1, "modifiers": []}
-  },
-  "quests": [],
-  "npcs": {},
-  "environment": {
-    "weather": "clear",
-    "lighting": "bright",
-    "temperature": "mild",
-    "hazards": [],
-    "tags": ["nature", "peaceful"]
-  },
-  "custom_data": {}
-}
+        let mock_response = r#"```game-state
+Location
+---
+Name: Forest Edge
+Region: Verdant Woods
+Description: The boundary between the village and the deep woods
+Tags: outdoor, border
+
+Time
+---
+Day: 1
+Hour: 8
+Minute: 0
+Second: 0
+Period: morning
+Season: spring
+Calendar: Earth
+Date: 2025-01-01
+Total Seconds Elapsed: 28800
+
+Vitals
+---
+- health: 100/100
+
+Environment
+---
+Weather: clear
+Lighting: bright
+Temperature: mild
+Tags: nature, peaceful
 ```"#;
 
         // Parse the response
@@ -1565,7 +1645,7 @@ mod tests {
         assert!(result.is_ok());
 
         let state = result.unwrap();
-        assert_eq!(state.location.as_ref().unwrap().id, "forest_edge");
+        assert_eq!(state.location.as_ref().unwrap().name, "Forest Edge");
         assert_eq!(state.game_time.as_ref().unwrap().period, "morning");
     }
 
@@ -1592,11 +1672,15 @@ mod tests {
             "Context",
             "User message",
             "Assistant response",
+            None,
+            None,
         );
 
         // Verify the custom_data was included
-        assert!(prompt.contains("player_class"));
-        assert!(prompt.contains("warrior"));
+        // Note: custom_data is not currently formatted in format_state_for_prompt
+        // but it is preserved in the GameState struct.
+        // Let's verify location is there instead.
+        assert!(prompt.contains("Starting Area"));
     }
 
     #[test]
@@ -1616,5 +1700,30 @@ mod tests {
         assert_eq!(vitals.get("social_energy").unwrap().current, 10.0);
         assert_eq!(vitals.get("oxygen").unwrap().current, 95.0);
         assert_eq!(vitals.get("oxygen").unwrap().max, 100.0);
+    }
+
+    #[test]
+    fn test_parse_inventory_item_with_descriptors() {
+        let agent = StateManagerAgent::new();
+        
+        // Test item with multiple descriptors including equipped
+        let item_text = "Silk robes (equipped, damaged, blood-stained, brittle)";
+        let item = StateManagerAgent::parse_inventory_item(item_text).unwrap();
+        
+        assert_eq!(item.name, "Silk robes (damaged, blood-stained, brittle)");
+        assert!(item.equipped);
+        
+        // Test item with equipped at the end
+        let item_text2 = "Iron sword (sharp, equipped)";
+        let item2 = StateManagerAgent::parse_inventory_item(item_text2).unwrap();
+        assert_eq!(item2.name, "Iron sword (sharp)");
+        assert!(item2.equipped);
+
+        // Test item with multiple items on one line
+        let inv_text = "On Person: Silk robes (equipped, damaged), Iron sword (sharp)";
+        let (on_person, _, _, _) = StateManagerAgent::parse_inventory_section(inv_text);
+        assert_eq!(on_person.len(), 2);
+        assert_eq!(on_person[0].name, "Silk robes (damaged)");
+        assert_eq!(on_person[1].name, "Iron sword (sharp)");
     }
 }

@@ -181,6 +181,8 @@ export interface GameTime {
 	minute: number;
 	period: string;
 	season: string | null;
+	calendar_system: string;
+	date: string;
 }
 
 export interface InventoryItem {

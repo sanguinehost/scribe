@@ -84,6 +84,15 @@ pub struct GameTime {
     pub period: String,
     /// Optional season
     pub season: Option<String>,
+    /// Total seconds elapsed since game start (primary source of truth)
+    #[serde(default)]
+    pub total_seconds_elapsed: u64,
+    /// The calendar system being used (e.g., "Earth", "Fantasy", "Sci-Fi")
+    #[serde(default)]
+    pub calendar_system: String,
+    /// The full date string (e.g., "2025-12-19" or "15th of Highsun, Year 120")
+    #[serde(default)]
+    pub date: String,
 }
 
 /// An item in the player's inventory.
@@ -246,8 +255,12 @@ mod tests {
                 day: 3,
                 hour: 21,
                 minute: 30,
+                second: 0,
                 period: "night".to_string(),
                 season: Some("autumn".to_string()),
+                total_seconds_elapsed: 250200,
+                calendar_system: "Earth".to_string(),
+                date: "2025-01-03".to_string(),
             }),
             inventory: vec![InventoryItem {
                 id: "sword_001".to_string(),

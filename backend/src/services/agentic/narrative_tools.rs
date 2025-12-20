@@ -771,7 +771,7 @@ impl SearchKnowledgeBaseTool {
 
         let session_ids = crate::db::with_conn(&self.app_state.pool, move |conn| {
             chat_sessions::table
-                .filter(chat_sessions::player_chronicle_id.eq(chronicle_id))
+                .filter(chat_sessions::player_chronicle_id.eq(Some(chronicle_id)))
                 .select(chat_sessions::id)
                 .get_results::<crate::db::DbId>(conn)
                 .map_err(Into::into)

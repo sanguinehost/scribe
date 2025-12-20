@@ -419,17 +419,13 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
             {
                 Ok(response) => {
                     // Extract JSON from response
-                    let json_result = response
-                        .first_text()
-                        .and_then(|text| {
-                            // Try to parse as JSON
-                            serde_json::from_str::<Value>(text).ok()
-                        })
-                        .ok_or_else(|| {
-                            AppError::GeminiError(
-                                "Failed to extract JSON from response".to_string(),
-                            )
-                        })?;
+                    let text = response.first_text().unwrap_or("");
+                    // info!("🔍 CONTEXT ENRICHMENT RAW RESPONSE: {}", text);
+
+                    let json_result = serde_json::from_str::<Value>(text).map_err(|e| {
+                        warn!("Failed to parse JSON from response: {}. Text: {}", e, text);
+                        AppError::GeminiError("Failed to extract JSON from response".to_string())
+                    })?;
 
                     // Parse the structured response
                     let reasoning = json_result
@@ -611,18 +607,17 @@ For each search, provide:
 2. The reason for this search
 3. What to search (all/chronicles/lorebooks)
 
-Format your response as:
-REASONING: [Your analysis of what context would be helpful]
-
-SEARCH 1:
-Query: [broad keywords - entities/locations/concepts only]
-Reason: [why this search]
-Type: [all/chronicles/lorebooks]
-
-SEARCH 2:
-Query: [broad keywords - entities/locations/concepts only]
-Reason: [why this search]
-Type: [all/chronicles/lorebooks]
+Format your response as a JSON object with the following structure:
+{{
+  \"reasoning\": \"Your analysis of what context would be helpful\",
+  \"searches\": [
+    {{
+      \"query\": \"broad keywords\",
+      \"reason\": \"why this search\",
+      \"search_type\": \"all/chronicles/lorebooks\"
+    }}
+  ]
+}}
 
 Examples of GOOD searches: \"China\", \"geopolitics\", \"Mount Everest\", \"climate change\"
 Examples of BAD searches: \"user interaction\", \"character goals\", \"player China\"",
@@ -738,7 +733,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
              - World details that directly relate to the current scene\n\
              - Any important backstory or lore\n\n\
              Search Results:\n{}\n\n\
-             Provide a coherent summary that the AI can use as context:",
+             Format your response as a JSON object with the following structure:\n\
+             {{\n\
+               \"summary\": \"A 2-3 paragraph synthesis of the most relevant context\",\n\
+               \"key_points\": [\"fact 1\", \"fact 2\"]\n\
+             }}\n\n\
+             Provide the JSON synthesis:",
             all_results.len(),
             all_results.join("\n\n")
         );
@@ -1149,5 +1149,53 @@ Please analyze the conversation and plan appropriate searches to enhance the nar
             || error_str.contains("blocked")
             || error_str.contains("SAFETY")
             || error_str.contains("BLOCKED_REASON")
+    }
+}#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_planning_response() {
+        let text = r#"{
+            "reasoning": "The user is asking about China's economy.",
+            "searches": [
+                {
+                    "query": "China economy",
+                    "reason": "To provide context on China's economic situation",
+                    "search_type": "all"
+                }
+            ]
+        }"#;
+
+        let json_result: Value = serde_json::from_str(text).unwrap();
+        
+        let reasoning = json_result
+            .get("reasoning")
+            .and_then(|r| r.as_str())
+            .unwrap_or("No reasoning provided")
+            .to_string();
+
+        assert_eq!(reasoning, "The user is asking about China's economy.");
+
+        let mut searches = Vec::new();
+        if let Some(searches_array) = json_result.get("searches").and_then(|s| s.as_array()) {
+            for search in searches_array {
+                if let (Some(query), Some(reason), Some(search_type)) = (
+                    search.get("query").and_then(|q| q.as_str()),
+                    search.get("reason").and_then(|r| r.as_str()),
+                    search.get("search_type").and_then(|t| t.as_str()),
+                ) {
+                    searches.push(PlannedSearch {
+                        query: query.to_string(),
+                        reason: reason.to_string(),
+                        search_type: search_type.to_string(),
+                    });
+                }
+            }
+        }
+
+        assert_eq!(searches.len(), 1);
+        assert_eq!(searches[0].query, "China economy");
+        assert_eq!(searches[0].search_type, "all");
     }
 }

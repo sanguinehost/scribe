@@ -12,7 +12,7 @@
 use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::game_state::{
-    EnvironmentState, GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus,
+    GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus,
     Vital,
 };
 use crate::services::reconciliation_detector::{ReconciliationAction, ReconciliationDetector};
@@ -326,12 +326,26 @@ impl GameStateService {
     ) -> Option<StateChange> {
         if new.game_time != current.game_time {
             if let Some(new_time) = &new.game_time {
-                debug!(new_time = ?new_time, "Time advanced");
+                let mut validated_time = new_time.clone();
+
+                // Ensure total_seconds_elapsed is monotonic
+                if let Some(current_time) = &current.game_time {
+                    if validated_time.total_seconds_elapsed < current_time.total_seconds_elapsed {
+                        warn!(
+                            suggested = validated_time.total_seconds_elapsed,
+                            current = current_time.total_seconds_elapsed,
+                            "LLM suggested a time decrease, ignoring total_seconds_elapsed change"
+                        );
+                        validated_time.total_seconds_elapsed = current_time.total_seconds_elapsed;
+                    }
+                }
+
+                debug!(new_time = ?validated_time, "Time advanced");
                 let old_time = current.game_time.clone();
-                final_state.game_time = new.game_time.clone();
+                final_state.game_time = Some(validated_time.clone());
                 return Some(StateChange::TimeAdvanced {
                     old_time,
-                    new_time: new_time.clone(),
+                    new_time: validated_time,
                 });
             }
         }
@@ -746,11 +760,23 @@ mod tests {
                 // Time
                 if new.game_time != current.game_time {
                     if let Some(new_time) = &new.game_time {
+                        let mut validated_time = new_time.clone();
+
+                        // Ensure total_seconds_elapsed is monotonic
+                        if let Some(current_time) = &current.game_time {
+                            if validated_time.total_seconds_elapsed
+                                < current_time.total_seconds_elapsed
+                            {
+                                validated_time.total_seconds_elapsed =
+                                    current_time.total_seconds_elapsed;
+                            }
+                        }
+
                         let old_time = current.game_time.clone();
-                        final_state.game_time = new.game_time.clone();
+                        final_state.game_time = Some(validated_time.clone());
                         applied_changes.push(StateChange::TimeAdvanced {
                             old_time,
-                            new_time: new_time.clone(),
+                            new_time: validated_time,
                         });
                     }
                 }
@@ -1337,16 +1363,26 @@ mod tests {
         current.game_time = Some(GameTime {
             day: 1,
             hour: 10,
+            minute: 0,
+            second: 0,
             period: "morning".to_string(),
             season: Some("spring".to_string()),
+            total_seconds_elapsed: 36000,
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-01".to_string(),
         });
 
         let mut new = GameState::default();
         new.game_time = Some(GameTime {
             day: 1,
             hour: 14,
+            minute: 0,
+            second: 0,
             period: "afternoon".to_string(),
             season: Some("spring".to_string()),
+            total_seconds_elapsed: 50400,
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-01".to_string(),
         });
 
         let result = reconcile_pure(&current, &new, "");
@@ -1354,8 +1390,48 @@ mod tests {
         assert!(result.applied_changes.iter().any(|c| matches!(
             c,
             StateChange::TimeAdvanced { old_time: Some(_), new_time }
-            if new_time.hour == 14 && new_time.period == "afternoon"
+            if new_time.hour == 14 && new_time.period == "afternoon" && new_time.total_seconds_elapsed == 50400
         )));
+    }
+
+    #[test]
+    fn test_reconcile_time_monotonic() {
+        let mut current = GameState::default();
+        current.game_time = Some(GameTime {
+            day: 1,
+            hour: 10,
+            minute: 0,
+            second: 0,
+            period: "morning".to_string(),
+            season: Some("spring".to_string()),
+            total_seconds_elapsed: 36000,
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-01".to_string(),
+        });
+
+        let mut new = GameState::default();
+        new.game_time = Some(GameTime {
+            day: 1,
+            hour: 9, // LLM hallucinated a time decrease
+            minute: 0,
+            second: 0,
+            period: "morning".to_string(),
+            season: Some("spring".to_string()),
+            total_seconds_elapsed: 32400, // Decrease!
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-01".to_string(),
+        });
+
+        let result = reconcile_pure(&current, &new, "");
+
+        // Should have clamped total_seconds_elapsed to current
+        if let Some(StateChange::TimeAdvanced { new_time, .. }) =
+            result.applied_changes.iter().find(|c| matches!(c, StateChange::TimeAdvanced { .. }))
+        {
+            assert_eq!(new_time.total_seconds_elapsed, 36000);
+        } else {
+            panic!("TimeAdvanced change not found");
+        }
     }
 
     // ========================================================================
