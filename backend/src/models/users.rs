@@ -435,7 +435,8 @@ impl AuthUser for User {
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewUser {
-    // Always provide explicit ID (required for SQLite, optional for PostgreSQL)
+    // Only SQLite needs explicit ID (Postgres generates UUID via gen_random_uuid())
+    #[cfg(feature = "sqlite-backend")]
     pub id: DbId,
     pub username: String,
     pub password_hash: String,

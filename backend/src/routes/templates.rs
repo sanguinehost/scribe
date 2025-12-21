@@ -3,7 +3,13 @@ use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::middleware::{rate_limit_logger, security_headers, template_rate_limit_middleware};
 use crate::prompt_templates::{TemplateInfo, TEMPLATE_MANAGER};
-use axum::{extract::Path, middleware, response::IntoResponse, routing::get, Json, Router};
+use axum::{
+    extract::Path,
+    middleware,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use regex::Regex;
 use serde::Serialize;
 use std::sync::LazyLock;
@@ -61,7 +67,7 @@ pub async fn list_templates_handler(
 
     info!(user_id = %user.id, "Listing available templates");
 
-    let templates = TEMPLATE_MANAGER.list_templates();
+    let templates = TEMPLATE_MANAGER.read().unwrap().list_templates();
 
     Ok(Json(TemplateListResponse { templates }))
 }
@@ -87,7 +93,7 @@ pub async fn get_template_info_handler(
 
     info!(user_id = %user.id, template_id = %template_id, "Getting template info");
 
-    match TEMPLATE_MANAGER.get_template_info(&template_id) {
+    match TEMPLATE_MANAGER.read().unwrap().get_template_info(&template_id) {
         Some(info) => Ok(Json(info)),
         None => {
             warn!(template_id = %template_id, "Template not found");
@@ -97,6 +103,35 @@ pub async fn get_template_info_handler(
             )))
         }
     }
+}
+
+/// Reloads all templates from disk
+///
+/// # Security
+/// - Requires Administrator privileges
+/// - Rate limited
+pub async fn reload_templates_handler(
+    auth: UnifiedAuth,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth
+        .user()
+        .cloned()
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+
+    // Check for admin role
+    if user.role != crate::models::users::UserRole::Administrator {
+        warn!(user_id = %user.id, "Unauthorized attempt to reload templates");
+        return Err(AppError::Forbidden("Admin privileges required".to_string()));
+    }
+
+    info!(user_id = %user.id, "Reloading prompt templates");
+
+    TEMPLATE_MANAGER.write().unwrap().reload();
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "Templates reloaded successfully"
+    })))
 }
 
 /// Creates the router for template-related endpoints with security hardening
@@ -110,6 +145,7 @@ pub async fn get_template_info_handler(
 pub fn create_router() -> Router<crate::state::AppState> {
     Router::new()
         .route("/", get(list_templates_handler))
+        .route("/reload", post(reload_templates_handler))
         .route("/:template_id", get(get_template_info_handler))
         // Apply security hardening middleware
         .layer(middleware::from_fn(security_headers))

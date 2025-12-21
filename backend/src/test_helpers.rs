@@ -7,7 +7,8 @@ pub mod payment_test_helpers;
 
 use crate::db::DbId;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::{SqliteInteractExt, SqlitePoolExt};
+#[cfg(feature = "sqlite-backend")]
+use crate::db::SqliteInteractExt;
 use std::fmt;
 use std::net::SocketAddr;
 
@@ -76,7 +77,7 @@ use axum::{
 };
 use axum_login::{login_required, AuthManagerLayerBuilder, AuthSession};
 use diesel::prelude::*;
-use diesel::RunQueryDsl;
+use diesel::{RunQueryDsl, SelectableHelper};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
@@ -1824,6 +1825,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         .route("/api/health", get(health_check))
         .with_state(app_state_inner.clone());
 
+    #[allow(unused_mut)]
     let mut protected_api_routes_for_test = Router::new()
         .nest(
             "/characters",
@@ -1941,7 +1943,7 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
-    use diesel::prelude::*;
+    // use diesel::prelude::*; // Removed unused import
     use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
                                              // Import AppError
 
@@ -2094,7 +2096,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
+        let mut _conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2214,7 +2216,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
+        let mut _conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");

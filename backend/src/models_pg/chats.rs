@@ -149,7 +149,7 @@ pub struct Chat {
     pub min_p: Option<crate::db::DbDecimal>,
     pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
-    pub logit_bias: Option<serde_json::Value>,
+    pub logit_bias: Option<String>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
@@ -172,8 +172,7 @@ pub struct Chat {
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_credits_used: crate::db::DbDecimal,
+    pub total_credits_used: i32,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_cost: crate::db::DbDecimal,
@@ -185,7 +184,7 @@ pub struct Chat {
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
     // Game Master Agent fields
-    pub game_state: Option<serde_json::Value>, // JSONB-encoded GameState
+    pub game_state: Option<String>, // JSON-encoded GameState
     pub game_master_mode_enabled: bool,        // Feature flag
 }
 
@@ -210,12 +209,11 @@ pub struct ChatListQuery {
     pub stop_sequences: crate::models::OptionalStringArray,
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_credits_used: crate::db::DbDecimal,
+    pub total_credits_used: i32,
     pub visibility: Option<String>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 impl ChatListQuery {
@@ -366,7 +364,7 @@ pub struct ChatSessionQuery {
     pub narrative_style_override_nonce: Option<Vec<u8>>,
     pub total_actual_cost: crate::db::DbDecimal, // Added for cost display
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 impl ChatSessionQuery {
@@ -466,7 +464,7 @@ impl ChatSessionQuery {
             chronicle_id: self.player_chronicle_id,
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
-            total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
+            total_credits_used: self.estimated_cost_cents,
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
@@ -692,7 +690,7 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
-    pub total_credits_used: crate::db::DbDecimal,
+    pub total_credits_used: i32,
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
@@ -1220,16 +1218,18 @@ impl ChatMessage {
 
         let timestamp: Option<crate::DbTimestamp> = Some(chrono::Utc::now().into());
         let count = diesel::update(
-            chat_messages
-                .filter(session_id.eq(session_id_val))
-                .filter(created_at.ge(after_timestamp))
-                .filter(superseded_at.is_null())
-                .filter(
-                    status
-                        .eq("failed")
-                        .or(status.eq("partial"))
-                        .or(status.eq("streaming")),
-                ),
+            chat_messages.filter(
+                session_id
+                    .eq(session_id_val)
+                    .and(created_at.ge(after_timestamp))
+                    .and(superseded_at.is_null())
+                    .and(
+                        status
+                            .eq("failed")
+                            .or(status.eq("partial"))
+                            .or(status.eq("streaming")),
+                    ),
+            ),
         )
         .set(superseded_at.eq(timestamp))
         .execute(conn)
@@ -2151,11 +2151,11 @@ pub struct ChatForClient {
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    pub total_credits_used: crate::db::DbDecimal,
+    pub total_credits_used: i32,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     // Game Master Agent fields
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 impl Chat {
@@ -2733,7 +2733,8 @@ pub struct MessageVariantResponse {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
-    pub game_state: Option<serde_json::Value>,
+    pub credits_cost: crate::db::DbDecimal,
+    pub game_state: Option<String>,
 }
 
 // MessageResponse struct for API responses
@@ -2762,7 +2763,7 @@ pub struct MessageResponse {
 
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -2970,7 +2971,7 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
 
     // Check if template exists using the global template manager
     use crate::prompt_templates::TEMPLATE_MANAGER;
-    if !TEMPLATE_MANAGER.has_template(template_id) {
+    if !TEMPLATE_MANAGER.read().unwrap().has_template(template_id) {
         let mut err = ValidationError::new("template_not_found");
         err.message = Some(format!("Template '{}' not found", template_id).into());
         return Err(err);
@@ -3043,7 +3044,7 @@ mod tests {
             tokens_counted_at: crate::db::DbTimestamp::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_credits_used: crate::db::DbDecimal::from(0),
+            total_credits_used: 0,
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -3629,7 +3630,7 @@ pub struct MessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 /// Insertable model for creating new message variants
@@ -3647,7 +3648,7 @@ pub struct NewMessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 impl MessageVariant {
@@ -3731,7 +3732,7 @@ impl NewMessageVariant {
         completion_tokens: Option<i32>,
         model_name: Option<String>,
         raw_prompt_debug: Option<&str>,
-        game_state: Option<serde_json::Value>,
+        game_state: Option<String>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
@@ -3779,7 +3780,7 @@ pub struct MessageVariantDto {
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
     pub raw_prompt: Option<String>,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<String>,
 }
 
 impl MessageVariantDto {

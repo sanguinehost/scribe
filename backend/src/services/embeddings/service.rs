@@ -6,9 +6,11 @@ use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
 use crate::db::DbId;
 use crate::errors::AppError;
-use crate::models::chats::ChatMessage;
+use crate::models::chats::{ChatMessage, MessageRole};
+use crate::schema::chat_messages;
 use crate::state::AppState;
 use crate::text_processing::chunking::{chunk_text, ChunkConfig};
+use diesel::prelude::*;
 use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use qdrant_client::qdrant::{
@@ -79,24 +81,13 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         };
 
-        let content_to_embed = match (&session_dek, &message.content_nonce) {
+        // 1. Get content to embed (potentially combining with previous message for pairs)
+        let mut speaker_str = format!("{:?}", message.message_type);
+        let mut content_to_embed = match (&session_dek, &message.content_nonce) {
             (Some(dek), Some(nonce_bytes))
                 if !message.content.is_empty() && !nonce_bytes.is_empty() =>
             {
                 debug!(message_id = %message.id, "Attempting to decrypt message content for embedding.");
-                // Ensure SessionDek provides access to the inner SecretBox<Vec<u8>>
-                // Assuming SessionDek has a method like `inner()` or direct access to `pub .0`
-                // For this example, let's assume SessionDek can be dereferenced to &SecretBox<Vec<u8>>
-                // or has a method to get the inner SecretBox.
-                // If SessionDek itself is the SecretBox<Vec<u8>>, then just `dek` is fine.
-                // Let's assume `dek.0` gives us the `SecretBox<Vec<u8>>` as per SerializableSecretDek
-
-                // We need to ensure SessionDek can provide the &SecretBox<Vec<u8>>
-                // Let's assume SessionDek has a method `dek.inner_secret_box()` for this example
-                // Or if SessionDek is a newtype around SecretBox<Vec<u8>>, then `&dek.0`
-                // Based on `session_dek.rs`, SessionDek is a wrapper.
-                // `SessionDek(pub SecretBox<Vec<u8>>)`
-
                 crate::crypto::decrypt_gcm(&message.content, nonce_bytes, &dek.0)
                     .map_or_else(
                         |e| {
@@ -133,6 +124,47 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                     .replace(['\n', '\r'], " ")
             }
         };
+
+        // If this is an Assistant message, try to fetch the previous User message to form a pair
+        if message.message_type == MessageRole::Assistant {
+            let pool = state.pool.clone();
+            let session_id_val = message.session_id;
+            let current_msg_created_at = message.created_at;
+
+            let previous_user_msg = crate::db::with_conn(&pool, move |conn| {
+                chat_messages::table
+                    .filter(chat_messages::session_id.eq(session_id_val))
+                    .filter(chat_messages::message_type.eq(MessageRole::User))
+                    .filter(chat_messages::created_at.lt(current_msg_created_at))
+                    .order(chat_messages::created_at.desc())
+                    .first::<ChatMessage>(conn)
+                    .optional()
+                    .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .unwrap_or_else(|e| {
+                warn!(message_id = %message.id, error = %e, "Failed to fetch previous user message for pair embedding.");
+                None
+            });
+
+            if let Some(prev_msg) = previous_user_msg {
+                let prev_content = if let (Some(dek), Some(nonce)) = (session_dek, prev_msg.content_nonce.as_ref()) {
+                    crate::crypto::decrypt_gcm(&prev_msg.content, nonce, &dek.0)
+                        .map_or_else(
+                            |_| String::from_utf8_lossy(&prev_msg.content).to_string(),
+                            |p| String::from_utf8_lossy(p.expose_secret()).to_string()
+                        )
+                } else {
+                    String::from_utf8_lossy(&prev_msg.content).to_string()
+                };
+
+                if !prev_content.trim().is_empty() {
+                    content_to_embed = format!("User: {}\nAssistant: {}", prev_content.trim(), content_to_embed.trim());
+                    speaker_str = "Pair".to_string();
+                    info!(message_id = %message.id, "Combined assistant message with previous user message for pair embedding.");
+                }
+            }
+        }
 
         if content_to_embed.trim().is_empty() {
             warn!(message_id = %message.id, "Content for embedding is empty after potential decryption and trimming. Skipping embedding.");
@@ -180,7 +212,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             sleep(Duration::from_millis(6100)).await;
 
             // 2b. Prepare metadata
-            let speaker_str = format!("{:?}", message.message_type);
+            // speaker_str is already set above (either the original role or "Pair")
 
             // Encrypt chunk content if SessionDek is available
             let (text_for_storage, encrypted_text, text_nonce) = if let Some(ref dek) = session_dek
@@ -219,10 +251,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
-                chronicle_id,             // Include the chronicle_id from the session
+                chronicle_id: chronicle_id.clone(),             // Include the chronicle_id from the session
                 user_id: message.user_id, // user_id is now NOT NULL
-                speaker: speaker_str,
-                timestamp: message.created_at,
+                speaker: speaker_str.clone(),
+                timestamp: message.created_at.clone(),
                 text: text_for_storage, // Placeholder when encrypted, plaintext otherwise
                 source_type: "chat_message".to_string(),
                 // Encryption fields - populated when SessionDek is available
@@ -619,8 +651,14 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                 ..Default::default()
                             })),
                         },
+                        // Ensure we only get entries from the requested lorebooks
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                                should: lorebook_id_conditions,
+                                ..Default::default()
+                            })),
+                        },
                     ],
-                    should: lorebook_id_conditions, // Match any of the provided lorebook_ids
                     ..Default::default()
                 };
                 debug!(?lorebook_filter, "Lorebook filter for RAG");
@@ -735,8 +773,14 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                 ..Default::default()
                             })),
                         },
+                        // Ensure we only get entries from the requested lorebooks
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                                should: constant_lorebook_id_conditions,
+                                ..Default::default()
+                            })),
+                        },
                     ],
-                    should: constant_lorebook_id_conditions,
                     ..Default::default()
                 };
                 debug!(?constant_filter, "Constant lorebook filter for RAG");
@@ -763,9 +807,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                         "Successfully parsed constant lorebook metadata (RAG)"
                                     );
                                     // Give constant entries a high score to ensure they appear at the top
+                                    let decrypted_text =
+                                        decrypt_lorebook_content(&lorebook_meta, session_dek);
                                     combined_results.push(RetrievedChunk {
                                         score: 1.0, // Maximum score for constant entries
-                                        text: lorebook_meta.chunk_text.clone(),
+                                        text: decrypted_text,
                                         metadata: RetrievedMetadata::Lorebook(lorebook_meta),
                                     });
                                 }

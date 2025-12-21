@@ -10,7 +10,7 @@
 //! handle thousands/millions of events via batch processing and event queues.
 
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};

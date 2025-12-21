@@ -7,7 +7,7 @@ use crate::auth::session_dek::SessionDek;
 use crate::auth::token_auth::UnifiedAuth;
 use crate::crypto;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};
@@ -1874,8 +1874,10 @@ pub async fn get_character_asset_handler(
     // Load the asset from database
     let asset = crate::db::with_conn(&state.pool, move |conn_asset_block| {
         character_assets
-            .filter(crate::schema::character_assets::id.eq(asset_id))
-            .filter(crate::schema::character_assets::character_id.eq(character_id))
+            .filter(
+                crate::schema::character_assets::id.eq(asset_id)
+                    .and(crate::schema::character_assets::character_id.eq(character_id))
+            )
             .first::<CharacterAsset>(conn_asset_block)
             .optional()
             .map_err(|e| {

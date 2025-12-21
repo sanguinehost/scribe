@@ -183,6 +183,7 @@ export interface GameTime {
 	season: string | null;
 	calendar_system: string;
 	date: string;
+	total_seconds_elapsed: number;
 }
 
 export interface InventoryItem {

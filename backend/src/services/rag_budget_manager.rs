@@ -19,8 +19,12 @@ pub struct ContextBudgetPlanner {
     pub total_budget: usize,
     /// Budget allocated for recent chat history
     pub recent_history_budget: usize,
-    /// Budget allocated for RAG content (lorebooks, chronicles, etc.)
-    pub rag_budget: usize,
+    /// Budget allocated for lorebook entries
+    pub lorebook_budget: usize,
+    /// Budget allocated for chronicle events
+    pub chronicle_budget: usize,
+    /// Budget allocated for older chat history
+    pub older_chat_budget: usize,
     /// Estimated tokens for system prompt and overhead
     pub system_prompt_overhead: usize,
     /// The target model for this budget plan
@@ -57,13 +61,22 @@ impl ContextBudgetPlanner {
 
         let available_budget = total_budget.saturating_sub(system_prompt_overhead);
         let recent_history_budget = (available_budget as f32 * history_ratio) as usize;
-        let rag_budget = available_budget.saturating_sub(recent_history_budget);
+        let rag_total_budget = available_budget.saturating_sub(recent_history_budget);
+
+        // Sub-allocate RAG budget: 40% Lore, 40% Chronicle, 20% Older Chat
+        let lorebook_budget = (rag_total_budget as f32 * 0.4) as usize;
+        let chronicle_budget = (rag_total_budget as f32 * 0.4) as usize;
+        let older_chat_budget = rag_total_budget
+            .saturating_sub(lorebook_budget)
+            .saturating_sub(chronicle_budget);
 
         info!(
             model = %model,
             total_budget,
             recent_history_budget,
-            rag_budget,
+            lorebook_budget,
+            chronicle_budget,
+            older_chat_budget,
             system_prompt_overhead,
             "Created context budget plan"
         );
@@ -71,15 +84,17 @@ impl ContextBudgetPlanner {
         Self {
             total_budget,
             recent_history_budget,
-            rag_budget,
+            lorebook_budget,
+            chronicle_budget,
+            older_chat_budget,
             system_prompt_overhead,
             target_model: model.to_string(),
         }
     }
 
-    /// Get the available RAG budget
-    pub fn available_rag_budget(&self) -> usize {
-        self.rag_budget
+    /// Get the total RAG budget
+    pub fn total_rag_budget(&self) -> usize {
+        self.lorebook_budget + self.chronicle_budget + self.older_chat_budget
     }
 
     /// Check if we're approaching a pricing threshold
@@ -117,9 +132,10 @@ impl ContentPriority {
                 let recency_boost = (1.0 / (1.0 + days_old / 30.0)).max(0.1); // Decay over ~30 days
                 (recency_boost, 1.2) // 20% type bonus
             }
-            RetrievedMetadata::Lorebook(_) => {
-                // Lorebook entries: medium priority, less time-sensitive
-                (0.8, 1.0) // Stable, no time decay
+            RetrievedMetadata::Lorebook(lore_meta) => {
+                // Lorebook entries: high priority, especially if constant
+                let type_priority = if lore_meta.is_constant { 1.5 } else { 1.1 };
+                (1.0, type_priority) // Stable, no time decay
             }
             RetrievedMetadata::Chat(chat_meta) => {
                 // Older chat: lower priority, moderate recency bias
@@ -162,8 +178,9 @@ impl DynamicRagSelector {
         &self,
         candidates: Vec<RetrievedChunk>,
         query_timestamp: Option<crate::DbTimestamp>,
+        budget_override: Option<usize>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
-        let available_budget = self.budget_planner.available_rag_budget();
+        let available_budget = budget_override.unwrap_or_else(|| self.budget_planner.total_rag_budget());
         let query_time = query_timestamp.unwrap_or_else(|| Utc::now().into());
 
         debug!(

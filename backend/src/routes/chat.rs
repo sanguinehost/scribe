@@ -3,7 +3,7 @@
 use crate::auth::session_dek::SessionDek;
 use crate::auth::token_auth::UnifiedAuth;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};

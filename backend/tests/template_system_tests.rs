@@ -6,26 +6,26 @@ use validator::Validate;
 #[test]
 fn test_template_manager_basics() {
     // Test that templates are loaded
-    let templates = TEMPLATE_MANAGER.list_templates();
+    let templates = TEMPLATE_MANAGER.read().unwrap().list_templates();
     assert!(!templates.is_empty(), "No templates loaded");
 
     // Test that default templates exist
     assert!(
-        TEMPLATE_MANAGER.has_template("neutral_roleplay"),
+        TEMPLATE_MANAGER.read().unwrap().has_template("neutral_roleplay"),
         "neutral_roleplay template not found"
     );
     assert!(
-        TEMPLATE_MANAGER.has_template("chatbot_dialogue"),
+        TEMPLATE_MANAGER.read().unwrap().has_template("chatbot_dialogue"),
         "chatbot_dialogue template not found"
     );
     assert!(
-        TEMPLATE_MANAGER.has_template("creative_narrative"),
+        TEMPLATE_MANAGER.read().unwrap().has_template("creative_narrative"),
         "creative_narrative template not found"
     );
 
     // Test fallback behavior for non-existent template
     assert!(
-        !TEMPLATE_MANAGER.has_template("non_existent_template"),
+        !TEMPLATE_MANAGER.read().unwrap().has_template("non_existent_template"),
         "Non-existent template should not exist"
     );
 }
@@ -39,7 +39,7 @@ fn test_template_rendering() {
     });
 
     // Test rendering existing template
-    let result = TEMPLATE_MANAGER.render("neutral_roleplay", context.clone());
+    let result = TEMPLATE_MANAGER.read().unwrap().render("neutral_roleplay", context.clone());
     assert!(
         result.is_ok(),
         "Failed to render neutral_roleplay template: {:?}",
@@ -53,7 +53,7 @@ fn test_template_rendering() {
     );
 
     // Test fallback to default for non-existent template
-    let result = TEMPLATE_MANAGER.render("non_existent", context);
+    let result = TEMPLATE_MANAGER.read().unwrap().render("non_existent", context);
     assert!(
         result.is_ok(),
         "Should fallback to neutral_roleplay for non-existent template"
@@ -181,7 +181,7 @@ fn test_template_id_validation_invalid() {
 
 #[test]
 fn test_template_info_structure() {
-    let template_info = TEMPLATE_MANAGER.get_template_info("neutral_roleplay");
+    let template_info = TEMPLATE_MANAGER.read().unwrap().get_template_info("neutral_roleplay");
     assert!(
         template_info.is_some(),
         "Should get template info for neutral_roleplay"
@@ -210,7 +210,7 @@ fn test_template_info_structure() {
 
 #[test]
 fn test_all_templates_have_valid_structure() {
-    let templates = TEMPLATE_MANAGER.list_templates();
+    let templates = TEMPLATE_MANAGER.read().unwrap().list_templates();
 
     for template in templates {
         // Each template should have basic metadata
@@ -238,7 +238,7 @@ fn test_all_templates_have_valid_structure() {
             "character_definition": "A test character",
         });
 
-        let result = TEMPLATE_MANAGER.render(&template.id, context);
+        let result = TEMPLATE_MANAGER.read().unwrap().render(&template.id, context);
         assert!(
             result.is_ok(),
             "Template {} should be renderable: {:?}",

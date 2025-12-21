@@ -27,7 +27,7 @@ use crate::{
     privacy::logging::loggable_user_id,
     schema::{characters, chat_character_overrides, chat_messages, chat_sessions},
     services::{
-        embeddings::RetrievedChunk, // For RAG chunks
+        embeddings::{RetrievedChunk, RetrievedMetadata}, // For RAG chunks
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
         rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector}, // For unified RAG budget management
@@ -1004,11 +1004,9 @@ pub async fn get_session_data_for_generation(
     info!(%session_id, num_managed_messages = managed_recent_history.len(), %actual_recent_history_tokens, "Token-based recent history management complete.");
 
     // --- RAG Context Budgeting and Assembly ---
-    let available_rag_tokens = min(
-        context_rag_budget,
-        context_total_token_limit.saturating_sub(actual_recent_history_tokens),
-    );
-    info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated RAG token budget.");
+    // Flexible Budgeting: Use all remaining context space for RAG
+    let available_rag_tokens = context_total_token_limit.saturating_sub(actual_recent_history_tokens);
+    info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated flexible RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
     let mut combined_rag_candidates: Vec<RetrievedChunk> = Vec::new();
     let rag_query_limit_per_source: u64 = 15; // Example limit, cast to u64 for service call
@@ -1083,9 +1081,12 @@ pub async fn get_session_data_for_generation(
             debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
         }
 
-        // Retrieve Older Chat History Chunks (only if using database history)
-        if frontend_history.is_none() {
-            info!(%session_id, "Retrieving older chat history chunks for RAG (database mode).");
+        // Retrieve Older Chat History Chunks
+        // NOTE: We now allow this even if frontend_history is provided, to support the <older_chat_history> RAG section.
+        // If frontend_history is used, there is a risk of duplication if the frontend sends messages that are also in the database,
+        // but we prioritize providing the RAG context as requested.
+        {
+            info!(%session_id, "Retrieving older chat history chunks for RAG.");
             let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
                 use secrecy::ExposeSecret;
                 let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
@@ -1154,8 +1155,6 @@ pub async fn get_session_data_for_generation(
                     warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
                 }
             }
-        } else {
-            info!(%session_id, "Skipping older chat history RAG retrieval (frontend mode - preventing orphaned message contamination).");
         }
 
         // Unified RAG Context Selection with Dynamic Budget Management
@@ -1164,71 +1163,112 @@ pub async fn get_session_data_for_generation(
         if combined_rag_candidates.is_empty() {
             debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
         } else {
-            info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting unified RAG selection with dynamic budget management.");
+            info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting independent RAG selection with flexible budgets.");
 
             // Create pricing-aware context budget planner for the current model
-            // Use the user-configured total limit but cap it at available RAG tokens
-            let effective_total_limit = min(
-                context_total_token_limit,
-                available_rag_tokens + actual_recent_history_tokens,
-            );
             let budget_planner = ContextBudgetPlanner::new_for_model(
                 &session_model_name_db,
-                Some(effective_total_limit),
+                Some(context_total_token_limit),
             );
 
-            // Override the RAG budget with our calculated available tokens
-            let mut budget_planner_adjusted = budget_planner;
-            budget_planner_adjusted.rag_budget = available_rag_tokens;
+            // Sub-allocate the flexible RAG budget: 40% Lore, 40% Chronicle, 20% Older Chat
+            let lorebook_budget = (available_rag_tokens as f32 * 0.4) as usize;
+            let chronicle_budget = (available_rag_tokens as f32 * 0.4) as usize;
+            let older_chat_budget = available_rag_tokens
+                .saturating_sub(lorebook_budget)
+                .saturating_sub(chronicle_budget);
 
             debug!(
                 %session_id,
-                model = %session_model_name_db,
-                total_limit = effective_total_limit,
-                rag_budget = budget_planner_adjusted.available_rag_budget(),
-                "Created context budget planner for RAG selection with user settings."
+                %available_rag_tokens,
+                %lorebook_budget,
+                %chronicle_budget,
+                %older_chat_budget,
+                "Sub-allocated flexible RAG budgets."
             );
 
-            // Create dynamic RAG selector using existing token counter
-            let rag_selector =
-                DynamicRagSelector::new((*state.token_counter).clone(), budget_planner_adjusted);
+            // Separate candidates by source type
+            let mut lorebook_candidates = Vec::new();
+            let mut chronicle_candidates = Vec::new();
+            let mut older_chat_candidates = Vec::new();
 
-            // Use the unified RAG selector to choose content within budget
-            match rag_selector
-                .select_rag_content(combined_rag_candidates, Some(chrono::Utc::now().into()))
-                .await
-            {
-                Ok(selected_chunks) => {
-                    rag_context_items = selected_chunks;
-                    info!(%session_id, num_selected_items = rag_context_items.len(), "Dynamic RAG selection completed successfully.");
-
-                    // Calculate actual tokens used for debugging
-                    let mut actual_tokens_used = 0;
-                    for chunk in &rag_context_items {
-                        if let Ok(estimate) = state
-                            .token_counter
-                            .count_tokens(
-                                &chunk.text,
-                                CountingMode::LocalOnly,
-                                Some(&session_model_name_db),
-                            )
-                            .await
-                        {
-                            actual_tokens_used += estimate.total;
-                        }
-                    }
-                    let current_rag_tokens_used = actual_tokens_used;
-
-                    debug!(target: "test_debug", %session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, %available_rag_tokens, "Unified RAG selection finished.");
-                    info!(%session_id, num_rag_items = rag_context_items.len(), %current_rag_tokens_used, budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0), "Unified RAG context selection complete.");
-                }
-                Err(e) => {
-                    warn!(%session_id, error = %e, "Dynamic RAG selection failed. Proceeding without RAG context.");
-                    rag_context_items = Vec::new();
-                    // Reset for clarity (value not used after this point)
-                    let _ = 0; // current_rag_tokens_used would be reset here
+            for candidate in combined_rag_candidates {
+                match &candidate.metadata {
+                    RetrievedMetadata::Lorebook(_) => lorebook_candidates.push(candidate),
+                    RetrievedMetadata::Chronicle(_) => chronicle_candidates.push(candidate),
+                    RetrievedMetadata::Chat(_) => older_chat_candidates.push(candidate),
                 }
             }
+
+            // Create dynamic RAG selector
+            let rag_selector =
+                DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+
+            let query_time = Some(chrono::Utc::now().into());
+
+            // Select from each source independently
+            let mut selected_items = Vec::new();
+
+            // 1. Lorebooks
+            if !lorebook_candidates.is_empty() {
+                match rag_selector
+                    .select_rag_content(lorebook_candidates, query_time, Some(lorebook_budget))
+                    .await
+                {
+                    Ok(items) => selected_items.extend(items),
+                    Err(e) => warn!(%session_id, error = %e, "Lorebook RAG selection failed."),
+                }
+            }
+
+            // 2. Chronicles
+            if !chronicle_candidates.is_empty() {
+                match rag_selector
+                    .select_rag_content(chronicle_candidates, query_time, Some(chronicle_budget))
+                    .await
+                {
+                    Ok(items) => selected_items.extend(items),
+                    Err(e) => warn!(%session_id, error = %e, "Chronicle RAG selection failed."),
+                }
+            }
+
+            // 3. Older Chat History
+            if !older_chat_candidates.is_empty() {
+                match rag_selector
+                    .select_rag_content(older_chat_candidates, query_time, Some(older_chat_budget))
+                    .await
+                {
+                    Ok(items) => selected_items.extend(items),
+                    Err(e) => warn!(%session_id, error = %e, "Older chat RAG selection failed."),
+                }
+            }
+
+            rag_context_items = selected_items;
+
+            // Calculate actual tokens used for debugging
+            let mut actual_tokens_used = 0;
+            for chunk in &rag_context_items {
+                if let Ok(estimate) = state
+                    .token_counter
+                    .count_tokens(
+                        &chunk.text,
+                        CountingMode::LocalOnly,
+                        Some(&session_model_name_db),
+                    )
+                    .await
+                {
+                    actual_tokens_used += estimate.total;
+                }
+            }
+            let current_rag_tokens_used = actual_tokens_used;
+
+            info!(
+                %session_id,
+                num_rag_items = rag_context_items.len(),
+                %current_rag_tokens_used,
+                %available_rag_tokens,
+                budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0),
+                "Flexible RAG context selection complete."
+            );
         }
     } else {
         debug!(target: "test_debug", %session_id, %available_rag_tokens, "Skipping RAG context assembly as available_rag_tokens is not > 0.");

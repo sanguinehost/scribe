@@ -798,38 +798,21 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     }
 
     // Asynchronously trigger RAG processing if the message is from the user and RAG is enabled for the session/globally.
-    // Asynchronously trigger RAG processing if the message is from the user
-    // We'll always do this for tests too since the tests check for it
-    if saved_message_db.message_type == MessageRole::User {
-        // For test environments, we don't want to do actual RAG processing
-        // but we DO want to track the calls for test assertions
+    // Asynchronously trigger RAG processing for all completed messages
+    if saved_message_db.status == "completed" {
         let embedding_service = state.embedding_pipeline_service.clone();
         let app_state_clone_for_rag = state.clone();
         let message_for_rag = saved_message_db.clone(); // Clone for the async task
-                                                        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
+        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
         let dek_for_rag_task = user_dek_secret_box.clone();
 
         tokio::spawn(async move {
-            // Call will be tracked for mock service in test env
-            info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, "Spawning RAG processing task for user message.");
-
-            // Convert Option<Arc<SecretBox<Vec<u8>>>> to Option<&SessionDek>
-            // This requires SessionDek to be accessible and potentially a temporary SessionDek to be created.
-            // Assuming SessionDek can be constructed from SecretBox<Vec<u8>> or that we can pass the SecretBox directly
-            // For now, let's assume we need to pass the Option<&SecretBox<Vec<u8>>> if SessionDek is just a wrapper.
-            // The trait expects Option<&SessionDek>. SessionDek wraps SecretBox<Vec<u8>>.
-            // So, if dek_for_rag_task is Some(arc_secret_box), we need to pass Some(&SessionDek(*arc_secret_box))
-            // This is tricky due to lifetimes if SessionDek is created on the fly.
-            // A better approach might be to adjust process_and_embed_message to take Option<&SecretBox<Vec<u8>>>
-            // or ensure SessionDek can be easily passed.
-            // Given SessionDek is `pub struct SessionDek(pub SecretBox<Vec<u8>>);`
-            // we can create a temporary SessionDek if needed.
+            info!(message_id = %message_for_rag.id, session_id = %message_for_rag.session_id, message_type = ?message_for_rag.message_type, "Spawning RAG processing task for message.");
 
             let session_dek_for_embedding: Option<crate::auth::session_dek::SessionDek> =
                 dek_for_rag_task.map(|arc_sb| {
                     let secret_bytes = arc_sb.expose_secret().clone(); // Clone the Vec<u8>
                     crate::auth::session_dek::SessionDek(SecretBox::new(Box::new(secret_bytes)))
-                    // Create new SecretBox and SessionDek, changed back to Box::new
                 });
 
             if let Err(e) = embedding_service

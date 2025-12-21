@@ -4,7 +4,7 @@ use crate::{
     models::characters::CharacterMetadata,
     prompt_templates::TEMPLATE_MANAGER,
     services::{
-        embeddings::RetrievedChunk,
+        embeddings::{decrypt_lorebook_title, RetrievedChunk},
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
     },
 };
@@ -1048,34 +1048,40 @@ pub(crate) fn apply_token_limits(
 
 /// Builds the RAG context string from calculation data
 #[allow(deprecated)]
-fn build_rag_context_string(
+fn build_rag_context_strings(
     calculation: &TokenCalculation,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
-) -> String {
+) -> (String, String, String) {
     if calculation.rag_items_with_tokens.is_empty() {
-        return String::new();
+        return (String::new(), String::new(), String::new());
     }
 
-    let mut rag_context = String::new();
+    let mut chronicle_context = String::new();
+    let mut lorebook_context = String::new();
+    let mut older_chat_context = String::new();
 
-    // Separate chronicle events and other RAG items
+    // Separate chronicle events, lorebook entries, and older chat history
     let mut chronicle_events = Vec::new();
-    let mut other_rag_items = Vec::new();
+    let mut lorebook_entries = Vec::new();
+    let mut older_chat_history = Vec::new();
 
     for (rag_item, _tokens) in &calculation.rag_items_with_tokens {
         match &rag_item.metadata {
             crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
                 chronicle_events.push(rag_item);
             }
-            _ => {
-                other_rag_items.push(rag_item);
+            crate::services::embeddings::RetrievedMetadata::Lorebook(_) => {
+                lorebook_entries.push(rag_item);
+            }
+            crate::services::embeddings::RetrievedMetadata::Chat(_) => {
+                older_chat_history.push(rag_item);
             }
         }
     }
 
     // Add chronicle events in a long_term_memory section
     if !chronicle_events.is_empty() {
-        rag_context.push_str("<long_term_memory>\n");
+        chronicle_context.push_str("<long_term_memory>\n");
         for rag_item in &chronicle_events {
             if let crate::services::embeddings::RetrievedMetadata::Chronicle(chronicle_meta) =
                 &rag_item.metadata
@@ -1083,7 +1089,7 @@ fn build_rag_context_string(
                 // Try to parse the text as JSON to extract rich chronicle data
                 if let Ok(event_data) = serde_json::from_str::<crate::DbJson>(&rag_item.text) {
                     write!(
-                        rag_context,
+                        chronicle_context,
                         "<chronicle_event type=\"{}\" timestamp=\"{}\"",
                         escape_xml(&chronicle_meta.event_type),
                         chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC")
@@ -1092,20 +1098,20 @@ fn build_rag_context_string(
 
                     // Add action if available
                     if let Some(action) = event_data.get("action").and_then(|a| a.as_str()) {
-                        write!(rag_context, " action=\"{}\"", escape_xml(action)).unwrap();
+                        write!(chronicle_context, " action=\"{}\"", escape_xml(action)).unwrap();
                     }
 
                     // Add modality if available
                     if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str()) {
-                        write!(rag_context, " modality=\"{}\"", escape_xml(modality)).unwrap();
+                        write!(chronicle_context, " modality=\"{}\"", escape_xml(modality)).unwrap();
                     }
 
-                    writeln!(rag_context, ">").unwrap();
+                    writeln!(chronicle_context, ">").unwrap();
 
                     // Add actors if available
                     if let Some(actors) = event_data.get("actors").and_then(|a| a.as_array()) {
                         if !actors.is_empty() {
-                            writeln!(rag_context, "    <actors>").unwrap();
+                            writeln!(chronicle_context, "    <actors>").unwrap();
                             for actor in actors {
                                 if let (Some(id), Some(role)) = (
                                     actor.get("id").and_then(|i| i.as_str()),
@@ -1114,7 +1120,7 @@ fn build_rag_context_string(
                                     let details =
                                         actor.get("details").and_then(|d| d.as_str()).unwrap_or("");
                                     writeln!(
-                                        rag_context,
+                                        chronicle_context,
                                         "        <actor id=\"{}\" role=\"{}\">{}</actor>",
                                         escape_xml(id),
                                         escape_xml(role),
@@ -1123,14 +1129,14 @@ fn build_rag_context_string(
                                     .unwrap();
                                 }
                             }
-                            writeln!(rag_context, "    </actors>").unwrap();
+                            writeln!(chronicle_context, "    </actors>").unwrap();
                         }
                     }
 
                     // Add valence changes if available
                     if let Some(valence) = event_data.get("valence").and_then(|v| v.as_array()) {
                         if !valence.is_empty() {
-                            writeln!(rag_context, "    <valence>").unwrap();
+                            writeln!(chronicle_context, "    <valence>").unwrap();
                             for change in valence {
                                 if let (Some(target), Some(change_type), Some(delta)) = (
                                     change.get("target").and_then(|t| t.as_str()),
@@ -1138,7 +1144,7 @@ fn build_rag_context_string(
                                     change.get("change").and_then(|c| c.as_f64()),
                                 ) {
                                     writeln!(
-                                        rag_context,
+                                        chronicle_context,
                                         "        <change target=\"{}\" type=\"{}\" delta=\"{:+.1}\"/>",
                                         escape_xml(target),
                                         escape_xml(change_type),
@@ -1147,7 +1153,7 @@ fn build_rag_context_string(
                                     .unwrap();
                                 }
                             }
-                            writeln!(rag_context, "    </valence>").unwrap();
+                            writeln!(chronicle_context, "    </valence>").unwrap();
                         }
                     }
 
@@ -1156,11 +1162,11 @@ fn build_rag_context_string(
                         event_data.get("context_data").and_then(|c| c.as_object())
                     {
                         if !context.is_empty() {
-                            write!(rag_context, "    <context").unwrap();
+                            write!(chronicle_context, "    <context").unwrap();
                             for (key, value) in context {
                                 if let Some(val_str) = value.as_str() {
                                     write!(
-                                        rag_context,
+                                        chronicle_context,
                                         " {}=\"{}\"",
                                         escape_xml(key),
                                         escape_xml(val_str)
@@ -1168,7 +1174,7 @@ fn build_rag_context_string(
                                     .unwrap();
                                 }
                             }
-                            writeln!(rag_context, "/>").unwrap();
+                            writeln!(chronicle_context, "/>").unwrap();
                         }
                     }
 
@@ -1187,7 +1193,7 @@ fn build_rag_context_string(
                             .unwrap_or(false);
 
                         if has_caused_by || has_causes {
-                            writeln!(rag_context, "    <causality>").unwrap();
+                            writeln!(chronicle_context, "    <causality>").unwrap();
 
                             if let Some(caused_by) =
                                 causality.get("causedBy").and_then(|cb| cb.as_array())
@@ -1195,7 +1201,7 @@ fn build_rag_context_string(
                                 for cause_id in caused_by {
                                     if let Some(id_str) = cause_id.as_str() {
                                         writeln!(
-                                            rag_context,
+                                            chronicle_context,
                                             "        <caused_by>{}</caused_by>",
                                             escape_xml(id_str)
                                         )
@@ -1209,7 +1215,7 @@ fn build_rag_context_string(
                                 for effect_id in causes {
                                     if let Some(id_str) = effect_id.as_str() {
                                         writeln!(
-                                            rag_context,
+                                            chronicle_context,
                                             "        <causes>{}</causes>",
                                             escape_xml(id_str)
                                         )
@@ -1218,7 +1224,7 @@ fn build_rag_context_string(
                                 }
                             }
 
-                            writeln!(rag_context, "    </causality>").unwrap();
+                            writeln!(chronicle_context, "    </causality>").unwrap();
                         }
                     }
 
@@ -1228,13 +1234,13 @@ fn build_rag_context_string(
                         .and_then(|s| s.as_str())
                         .unwrap_or_else(|| rag_item.text.trim());
                     writeln!(
-                        rag_context,
+                        chronicle_context,
                         "    <summary>{}</summary>",
                         escape_xml(summary)
                     )
                     .unwrap();
 
-                    writeln!(rag_context, "</chronicle_event>").unwrap();
+                    writeln!(chronicle_context, "</chronicle_event>").unwrap();
                 } else {
                     // Fallback to simple format if JSON parsing fails
                     warn!(
@@ -1242,7 +1248,7 @@ fn build_rag_context_string(
                         chronicle_meta.event_type
                     );
                     writeln!(
-                        rag_context,
+                        chronicle_context,
                         "<chronicle_event type=\"{}\" timestamp=\"{}\" status=\"unparseable\">[Chronicle data corrupted or truncated - raw text length: {} chars]</chronicle_event>",
                         escape_xml(&chronicle_meta.event_type),
                         chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S UTC"),
@@ -1252,140 +1258,99 @@ fn build_rag_context_string(
                 }
             }
         }
-        rag_context.push_str("</long_term_memory>\n\n");
+        chronicle_context.push_str("</long_term_memory>\n\n");
     }
 
-    // Add regular RAG items (lorebooks and chat history) in lorebook_entries section
-    if !other_rag_items.is_empty() {
-        rag_context.push_str("<lorebook_entries>\n");
+    // Add Lorebook entries
+    if !lorebook_entries.is_empty() {
+        lorebook_context.push_str("<lorebook_entries>\n");
 
-        for rag_item in &other_rag_items {
-            match &rag_item.metadata {
-                crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
+        for rag_item in &lorebook_entries {
+            if let crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) =
+                &rag_item.metadata
+            {
+                let content = &rag_item.text;
+                let session_dek =
+                    user_dek.map(|d| crate::auth::SessionDek::new(d.expose_secret().clone()));
+                let title = decrypt_lorebook_title(lorebook_meta, session_dek.as_ref());
+
+                write!(lorebook_context, "<lorebook_entry").unwrap();
+                write!(lorebook_context, " title=\"{}\"", escape_xml(&title)).unwrap();
+
+                if let Some(keywords) = &lorebook_meta.keywords {
+                    if !keywords.is_empty() {
+                        let keywords_str = keywords.join(", ");
+                        write!(lorebook_context, " keywords=\"{}\"", escape_xml(&keywords_str))
+                            .unwrap();
+                    }
+                }
+
+                writeln!(
+                    lorebook_context,
+                    ">{}</lorebook_entry>",
+                    escape_xml(content.trim())
+                )
+                .unwrap();
+            }
+        }
+
+        lorebook_context.push_str("</lorebook_entries>\n\n");
+    }
+
+    // Add Older Chat History
+    if !older_chat_history.is_empty() {
+        older_chat_context.push_str("<older_chat_history>\n");
+
+        for rag_item in &older_chat_history {
+            if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
+                &rag_item.metadata
+            {
+                if chat_meta.speaker == "Pair" {
+                    // Split the pair into User and Assistant tags
+                    let text = rag_item.text.trim();
+                    if let Some((user_part, assistant_part)) = text.split_once("\nAssistant: ") {
+                        let user_text = user_part.strip_prefix("User: ").unwrap_or(user_part);
+                        writeln!(
+                            older_chat_context,
+                            "<chat_history speaker=\"User\">{}</chat_history>",
+                            escape_xml(user_text.trim())
+                        )
+                        .unwrap();
+                        writeln!(
+                            older_chat_context,
+                            "<chat_history speaker=\"Assistant\">{}</chat_history>",
+                            escape_xml(assistant_part.trim())
+                        )
+                        .unwrap();
+                    } else {
+                        // Fallback if split fails
+                        writeln!(
+                            older_chat_context,
+                            "<chat_history speaker=\"Pair\">{}</chat_history>",
+                            escape_xml(text)
+                        )
+                        .unwrap();
+                    }
+                } else {
                     writeln!(
-                        rag_context,
+                        older_chat_context,
                         "<chat_history speaker=\"{}\">{}</chat_history>",
                         escape_xml(&chat_meta.speaker),
                         escape_xml(rag_item.text.trim())
                     )
                     .unwrap();
                 }
-                crate::services::embeddings::RetrievedMetadata::Lorebook(lorebook_meta) => {
-                    // Decrypt content if encrypted fields are present
-                    let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
-                        lorebook_meta.encrypted_chunk_text.as_ref(),
-                        lorebook_meta.chunk_text_nonce.as_ref(),
-                    ) {
-                        // We have encrypted content
-                        if let Some(ref session_dek) = user_dek {
-                            // We have the DEK to decrypt
-                            match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, session_dek) {
-                                Ok(decrypted_secret) => {
-                                    let decrypted_bytes =
-                                        secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                    String::from_utf8_lossy(decrypted_bytes).to_string()
-                                }
-                                Err(e) => {
-                                    warn!("Failed to decrypt lorebook content: {}", e);
-                                    "[decryption failed]".to_string()
-                                }
-                            }
-                        } else {
-                            // No DEK available
-                            "[encrypted - no DEK available]".to_string()
-                        }
-                    } else {
-                        // No encrypted content available
-                        "[no encrypted content]".to_string()
-                    };
-
-                    // Decrypt title if encrypted fields are present
-                    let title =
-                        if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
-                            lorebook_meta.encrypted_title.as_ref(),
-                            lorebook_meta.title_nonce.as_ref(),
-                        ) {
-                            // We have encrypted title
-                            if let Some(ref session_dek) = user_dek {
-                                match crate::crypto::decrypt_gcm(
-                                    encrypted_title,
-                                    title_nonce,
-                                    session_dek,
-                                ) {
-                                    Ok(decrypted_secret) => {
-                                        let decrypted_bytes =
-                                            secrecy::ExposeSecret::expose_secret(&decrypted_secret);
-                                        let decrypted_title =
-                                            String::from_utf8_lossy(decrypted_bytes).to_string();
-                                        // Handle empty decrypted titles
-                                        if decrypted_title.trim().is_empty() {
-                                            "Untitled".to_string()
-                                        } else {
-                                            decrypted_title
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to decrypt lorebook title: {}", e);
-                                        // Handle empty fallback titles
-                                        lorebook_meta
-                                            .entry_title
-                                            .clone()
-                                            .and_then(|t| {
-                                                if t.trim().is_empty() {
-                                                    None
-                                                } else {
-                                                    Some(t)
-                                                }
-                                            })
-                                            .unwrap_or_else(|| "[decryption failed]".to_string())
-                                    }
-                                }
-                            } else {
-                                // Handle empty fallback titles
-                                lorebook_meta
-                                    .entry_title
-                                    .clone()
-                                    .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
-                                    .unwrap_or_else(|| "[encrypted - no DEK]".to_string())
-                            }
-                        } else {
-                            // Handle empty unencrypted titles
-                            lorebook_meta
-                                .entry_title
-                                .clone()
-                                .and_then(|t| if t.trim().is_empty() { None } else { Some(t) })
-                                .unwrap_or_else(|| "Untitled".to_string())
-                        };
-
-                    write!(rag_context, "<lorebook_entry").unwrap();
-
-                    write!(rag_context, " title=\"{}\"", escape_xml(&title)).unwrap();
-
-                    if let Some(keywords) = &lorebook_meta.keywords {
-                        if !keywords.is_empty() {
-                            let keywords_str = keywords.join(", ");
-                            write!(rag_context, " keywords=\"{}\"", escape_xml(&keywords_str))
-                                .unwrap();
-                        }
-                    }
-
-                    writeln!(
-                        rag_context,
-                        ">{}</lorebook_entry>",
-                        escape_xml(content.trim())
-                    )
-                    .unwrap();
-                }
-                crate::services::embeddings::RetrievedMetadata::Chronicle(_) => {
-                    // Already handled above
-                }
             }
         }
 
-        rag_context.push_str("</lorebook_entries>\n\n");
+        older_chat_context.push_str("</older_chat_history>\n\n");
     }
 
-    rag_context.trim_end().to_string()
+    (
+        chronicle_context.trim_end().to_string(),
+        lorebook_context.trim_end().to_string(),
+        older_chat_context.trim_end().to_string(),
+    )
 }
 
 async fn build_final_prompt_strings(
@@ -1407,8 +1372,9 @@ async fn build_final_prompt_strings(
 
     debug!(template_id = %template_id, "Building final prompt with template");
 
-    // Build RAG context string
-    let rag_context_string = build_rag_context_string(calculation, user_dek);
+    // Build RAG context strings
+    let (chronicle_context, lorebook_context, older_chat_context) =
+        build_rag_context_strings(calculation, user_dek);
 
     // Extract character personality and description if available
     let (character_personality, character_description) = if let Some(char_meta) = character_metadata
@@ -1432,27 +1398,7 @@ async fn build_final_prompt_strings(
         (None, None)
     };
 
-    // Add agent context to RAG if available
-    let enhanced_rag_context = if let Some(agent_ctx) = agent_context {
-        if !agent_ctx.is_empty() {
-            if rag_context_string.is_empty() {
-                format!(
-                    "<agent_context>\n{}\n</agent_context>",
-                    escape_xml(agent_ctx)
-                )
-            } else {
-                format!(
-                    "{}\n\n<agent_context>\n{}\n</agent_context>",
-                    rag_context_string,
-                    escape_xml(agent_ctx)
-                )
-            }
-        } else {
-            rag_context_string
-        }
-    } else {
-        rag_context_string
-    };
+    // Agent context is handled separately in the template now
 
     // Build context for template rendering
     let mut template_context = serde_json::json!({
@@ -1496,10 +1442,21 @@ async fn build_final_prompt_strings(
             serde_json::Value::String(calculation.character_details_str.clone()).into();
     }
 
-    // Add RAG context if available
-    if !enhanced_rag_context.is_empty() {
-        template_context["rag_context"] =
-            serde_json::Value::String(enhanced_rag_context.clone()).into();
+    // Add Chronicle context if available
+    if !chronicle_context.is_empty() {
+        template_context["chronicle_context"] =
+            serde_json::Value::String(chronicle_context).into();
+    }
+
+    // Add Lorebook RAG context if available
+    if !lorebook_context.is_empty() {
+        template_context["lorebook_context"] = serde_json::Value::String(lorebook_context).into();
+    }
+
+    // Add Older Chat RAG context if available
+    if !older_chat_context.is_empty() {
+        template_context["older_chat_context"] =
+            serde_json::Value::String(older_chat_context).into();
     }
 
     // Add agent context as separate template variable for sections list generation
@@ -1514,7 +1471,7 @@ async fn build_final_prompt_strings(
     }
 
     // Use render_with_style to inject narrative style variables into the template
-    let final_system_prompt = TEMPLATE_MANAGER.render_with_style(
+    let final_system_prompt = TEMPLATE_MANAGER.read().unwrap().render_with_style(
         template_id,
         template_context.into(),
         narrative_style.cloned(),

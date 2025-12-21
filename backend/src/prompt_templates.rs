@@ -3,6 +3,7 @@ use minijinja::Environment;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 /// Narrative style variables for template customization
@@ -246,6 +247,24 @@ impl TemplateManager {
                 warn!(error = %e, "Failed to read templates directory");
             }
         }
+    }
+
+    /// Reload all templates (embedded + files)
+    pub fn reload(&mut self) {
+        info!("Reloading prompt templates...");
+        // Reset environment and templates
+        self.env = Environment::new();
+        self.templates.clear();
+
+        // Re-load everything
+        self.load_embedded_templates();
+        self.load_file_templates();
+
+        info!(
+            template_count = self.templates.len(),
+            templates = ?self.templates.keys().collect::<Vec<_>>(),
+            "Template manager reloaded"
+        );
     }
 
     /// Load a template from a JSON string
@@ -518,7 +537,7 @@ impl TemplateManager {
 }
 
 /// Global template manager instance
-pub static TEMPLATE_MANAGER: Lazy<TemplateManager> = Lazy::new(|| {
+pub static TEMPLATE_MANAGER: Lazy<RwLock<TemplateManager>> = Lazy::new(|| {
     let mut manager = TemplateManager::new();
 
     // Load embedded templates first
@@ -533,7 +552,7 @@ pub static TEMPLATE_MANAGER: Lazy<TemplateManager> = Lazy::new(|| {
         "Template manager initialized"
     );
 
-    manager
+    RwLock::new(manager)
 });
 
 #[cfg(all(test, feature = "postgres-backend"))]
@@ -602,7 +621,7 @@ mod tests {
     #[test]
     fn test_fallback_to_default() {
         // This test ensures the global template manager falls back properly
-        let manager = &*TEMPLATE_MANAGER;
+        let manager = TEMPLATE_MANAGER.read().unwrap();
 
         let context = json!({
             "user": {"name": "TestUser"}
@@ -616,7 +635,7 @@ mod tests {
 
     #[test]
     fn test_global_template_manager() {
-        let manager = &*TEMPLATE_MANAGER;
+        let manager = TEMPLATE_MANAGER.read().unwrap();
 
         // Should have at least the embedded templates
         assert!(manager.has_template("neutral_roleplay"));

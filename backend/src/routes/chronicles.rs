@@ -1,7 +1,7 @@
 // backend/src/routes/chronicles.rs
 
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::models::OptionalStringArray;
 use axum::{
     extract::{Path, Query, State},
@@ -590,7 +590,7 @@ async fn get_character_name_for_session(
     user_id: crate::db::DbId,
 ) -> Result<Option<String>, AppError> {
     #[cfg(feature = "sqlite-backend")]
-    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+    use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{characters, chat_sessions};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
 
@@ -623,7 +623,7 @@ async fn get_character_for_session(
     user_id: crate::db::DbId,
 ) -> Result<Option<crate::models::characters::Character>, AppError> {
     #[cfg(feature = "sqlite-backend")]
-    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+    use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{characters, chat_sessions};
     use diesel::{
         ExpressionMethods, JoinOnDsl, NullableExpressionMethods, OptionalExtension, QueryDsl,
@@ -660,7 +660,7 @@ async fn get_chat_messages(
     user_id: crate::db::DbId,
 ) -> Result<Vec<ChatMessage>, AppError> {
     #[cfg(feature = "sqlite-backend")]
-    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+    use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{chat_messages, chat_sessions};
     use diesel::{
         BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl,
@@ -733,7 +733,7 @@ async fn generate_chronicle_name(
     Json(request): Json<GenerateChronicleNameRequest>,
 ) -> Result<Json<GenerateChronicleNameResponse>, AppError> {
     #[cfg(feature = "sqlite-backend")]
-    use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+    use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{chat_messages, chat_sessions};
     use crate::services::agentic::AgenticNarrativeFactory;
     use diesel::prelude::*;

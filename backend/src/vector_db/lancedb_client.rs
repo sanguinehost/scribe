@@ -111,6 +111,9 @@ impl LanceDbClient {
             Field::new("chunk_text", DataType::Utf8, true),
             Field::new("entry_title", DataType::Utf8, true),
             Field::new("keywords", DataType::Utf8, true),
+            Field::new("is_enabled", DataType::Boolean, true),
+            Field::new("is_constant", DataType::Boolean, true),
+            Field::new("timestamp", DataType::Utf8, true),
             // Encrypted fields
             Field::new("encrypted_chunk_text", DataType::Utf8, true),
             Field::new("chunk_text_nonce", DataType::Utf8, true),
@@ -168,6 +171,9 @@ impl LanceDbClient {
         let chunk_text_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let entry_title_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let keywords_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
+        let is_enabled_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
+        let is_constant_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
+        let timestamp_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let encrypted_chunk_text_array: ArrayRef =
             Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let chunk_text_nonce_array: ArrayRef =
@@ -187,6 +193,9 @@ impl LanceDbClient {
                 chunk_text_array,
                 entry_title_array,
                 keywords_array,
+                is_enabled_array,
+                is_constant_array,
+                timestamp_array,
                 encrypted_chunk_text_array,
                 chunk_text_nonce_array,
                 payload_json_array,
@@ -253,6 +262,9 @@ impl LanceDbClient {
         let mut chunk_texts: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut entry_titles: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut keywords_list: Vec<Option<String>> = Vec::with_capacity(num_points);
+        let mut is_enabled_list: Vec<Option<bool>> = Vec::with_capacity(num_points);
+        let mut is_constant_list: Vec<Option<bool>> = Vec::with_capacity(num_points);
+        let mut timestamps: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut encrypted_chunk_texts: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut chunk_text_nonces: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut payload_jsons: Vec<Option<String>> = Vec::with_capacity(num_points);
@@ -312,6 +324,9 @@ impl LanceDbClient {
                 payload,
                 "chunk_text_nonce",
             ));
+            is_enabled_list.push(Self::extract_bool_from_payload(payload, "is_enabled"));
+            is_constant_list.push(Self::extract_bool_from_payload(payload, "is_constant"));
+            timestamps.push(Self::extract_string_from_payload(payload, "timestamp"));
 
             // Store full payload as JSON
             let payload_json = serde_json::to_string(payload).ok();
@@ -329,6 +344,9 @@ impl LanceDbClient {
         let chunk_text_array: ArrayRef = Arc::new(StringArray::from(chunk_texts));
         let entry_title_array: ArrayRef = Arc::new(StringArray::from(entry_titles));
         let keywords_array: ArrayRef = Arc::new(StringArray::from(keywords_list));
+        let is_enabled_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(is_enabled_list));
+        let is_constant_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(is_constant_list));
+        let timestamp_array: ArrayRef = Arc::new(StringArray::from(timestamps));
         let encrypted_chunk_text_array: ArrayRef =
             Arc::new(StringArray::from(encrypted_chunk_texts));
         let chunk_text_nonce_array: ArrayRef = Arc::new(StringArray::from(chunk_text_nonces));
@@ -347,6 +365,9 @@ impl LanceDbClient {
                 chunk_text_array,
                 entry_title_array,
                 keywords_array,
+                is_enabled_array,
+                is_constant_array,
+                timestamp_array,
                 encrypted_chunk_text_array,
                 chunk_text_nonce_array,
                 payload_json_array,
@@ -404,6 +425,17 @@ impl LanceDbClient {
                 Kind::IntegerValue(i) => Some(i.to_string()),
                 Kind::DoubleValue(d) => Some(d.to_string()),
                 Kind::BoolValue(b) => Some(b.to_string()),
+                _ => None,
+            })
+        })
+    }
+
+    /// Extract a boolean value from the Qdrant payload
+    fn extract_bool_from_payload(payload: &HashMap<String, Value>, key: &str) -> Option<bool> {
+        payload.get(key).and_then(|v| {
+            v.kind.as_ref().and_then(|k| match k {
+                Kind::BoolValue(b) => Some(*b),
+                Kind::StringValue(s) => s.parse::<bool>().ok(),
                 _ => None,
             })
         })
@@ -634,6 +666,7 @@ impl QdrantClientServiceTrait for LanceDbClient {
         if let Some(f) = filter {
             let sql_filter = self.filter_to_sql(&f);
             if !sql_filter.is_empty() {
+                info!("LanceDB search SQL filter: {}", sql_filter);
                 query = query.only_if(sql_filter);
             }
         }
@@ -669,7 +702,7 @@ impl QdrantClientServiceTrait for LanceDbClient {
             scored_points.retain(|p| p.score >= threshold);
         }
 
-        debug!("LanceDB search returned {} results", scored_points.len());
+        info!("LanceDB search returned {} results", scored_points.len());
         Ok(scored_points)
     }
 

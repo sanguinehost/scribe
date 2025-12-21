@@ -11,7 +11,7 @@ use tracing::{info, instrument, warn};
 
 /// Helper function to decrypt lorebook content (encryption required)
 #[allow(deprecated)]
-pub(super) fn decrypt_lorebook_content(
+pub fn decrypt_lorebook_content(
     metadata: &LorebookChunkMetadata,
     session_dek: Option<&SessionDek>,
 ) -> String {
@@ -44,6 +44,43 @@ pub(super) fn decrypt_lorebook_content(
         metadata.original_lorebook_entry_id
     );
     "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
+}
+
+/// Helper function to decrypt lorebook title (encryption required)
+#[allow(deprecated)]
+pub fn decrypt_lorebook_title(
+    metadata: &LorebookChunkMetadata,
+    session_dek: Option<&SessionDek>,
+) -> String {
+    // Try to decrypt if we have encrypted title
+    if let (Some(ref encrypted_title), Some(ref nonce)) = (
+        metadata.encrypted_title.as_ref(),
+        metadata.title_nonce.as_ref(),
+    ) {
+        // We have encrypted title
+        if let Some(dek) = session_dek {
+            match crate::crypto::decrypt_gcm(encrypted_title, nonce, &dek.0) {
+                Ok(decrypted_secret) => {
+                    let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
+                    let title = String::from_utf8_lossy(decrypted_bytes).to_string();
+                    if title.trim().is_empty() {
+                        return metadata.entry_title.clone().unwrap_or_else(|| "Untitled".to_string());
+                    }
+                    return title;
+                }
+                Err(e) => {
+                    warn!("Failed to decrypt lorebook title: {}", e);
+                    return metadata.entry_title.clone().unwrap_or_else(|| "[decryption failed]".to_string());
+                }
+            }
+        } else {
+            // No DEK available
+            return metadata.entry_title.clone().unwrap_or_else(|| "[encrypted - no DEK]".to_string());
+        }
+    }
+
+    // Fallback to unencrypted title if present
+    metadata.entry_title.clone().unwrap_or_else(|| "Untitled".to_string())
 }
 
 /// Helper function to decrypt chat message content (encryption required)

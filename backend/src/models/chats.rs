@@ -2718,7 +2718,7 @@ fn validate_optional_template_id(template_id: &String) -> Result<(), ValidationE
 
     // Check if template exists using the global template manager
     use crate::prompt_templates::TEMPLATE_MANAGER;
-    if !TEMPLATE_MANAGER.has_template(template_id) {
+    if !TEMPLATE_MANAGER.read().unwrap().has_template(template_id) {
         let mut err = ValidationError::new("template_not_found");
         err.message = Some(format!("Template '{}' not found", template_id).into());
         return Err(err);

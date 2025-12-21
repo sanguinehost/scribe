@@ -10,10 +10,8 @@
 	let hasProcessed = $state(false);
 
 	onMount(() => {
-		if (!element || hasProcessed) return;
-
-		// Get just the text content, no HTML
-		const text = element.textContent || '';
+		const el = element;
+		if (!el || hasProcessed) return;
 
 		// Simple escape function
 		function escapeHtml(text: string): string {
@@ -22,43 +20,43 @@
 			return div.innerHTML;
 		}
 
-		// Split text into parts and identify dialogue
-		const parts: Array<{ text: string; isDialogue: boolean }> = [];
-		let _remaining = text;
-		let pos = 0;
+		// Process only text nodes to preserve existing elements like <code>
+		const nodes = Array.from(el.childNodes);
+		let changed = false;
 
-		// Find quoted text
-		const quoteRegex = /"[^"]+"/g;
-		let match;
+		nodes.forEach((node) => {
+			if (node.nodeType === 3) {
+				// Node.TEXT_NODE
+				const text = node.textContent || '';
+				const quoteRegex = /"[^"]+"/g;
+				let match;
+				let pos = 0;
+				const parts: string[] = [];
 
-		while ((match = quoteRegex.exec(text)) !== null) {
-			// Add text before quote
-			if (match.index > pos) {
-				parts.push({ text: text.slice(pos, match.index), isDialogue: false });
-			}
-			// Add the quote
-			parts.push({ text: match[0], isDialogue: true });
-			pos = match.index + match[0].length;
-		}
-
-		// Add remaining text
-		if (pos < text.length) {
-			parts.push({ text: text.slice(pos), isDialogue: false });
-		}
-
-		// Build new HTML
-		const newHTML = parts
-			.map((part) => {
-				if (part.isDialogue) {
-					return `<span class="dialogue-text">${escapeHtml(part.text)}</span>`;
-				} else {
-					return escapeHtml(part.text);
+				while ((match = quoteRegex.exec(text)) !== null) {
+					if (match.index > pos) {
+						parts.push(escapeHtml(text.slice(pos, match.index)));
+					}
+					parts.push(`<span class="dialogue-text">${escapeHtml(match[0])}</span>`);
+					pos = match.index + match[0].length;
 				}
-			})
-			.join('');
 
-		if (parts.some((p) => p.isDialogue)) {
-			element.innerHTML = newHTML;
+				if (pos < text.length) {
+					parts.push(escapeHtml(text.slice(pos)));
+				}
+
+				if (parts.length > 1 || (parts.length === 1 && parts[0].includes('span'))) {
+					const span = document.createElement('span');
+					span.innerHTML = parts.join('');
+					// Use a document fragment to avoid extra span if possible,
+					// but for simplicity and safety with replaceChild, a span is fine.
+					el.replaceChild(span, node);
+					changed = true;
+				}
+			}
+		});
+
+		if (changed) {
 			hasProcessed = true;
 		}
 	});

@@ -152,13 +152,12 @@ impl DieselSessionStore {
         info!("DieselSessionStore::delete_expired_sessions ENTERED");
 
         let pool = self.pool.clone();
-        let now = DbTimestamp::now();
 
-        debug!(now = %now, "Attempting to delete expired sessions...");
+        debug!("Attempting to delete expired sessions...");
 
         let delete_result = crate::db::with_conn(&pool, move |conn| {
             let count = diesel::delete(
-                sessions::table.filter(sessions::expires.lt(now).or(sessions::expires.is_null())),
+                sessions::table.filter(sessions::expires.lt(diesel::dsl::now).or(sessions::expires.is_null())),
             )
             .execute(conn)
             .map_err(|e| Self::map_diesel_error(&e))?;

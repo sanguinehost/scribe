@@ -98,12 +98,19 @@ pub type DbRuntime = deadpool_diesel::Runtime;
 // Database type aliases - PostgreSQL uses native types, SQLite uses newtype wrappers
 // Note: DbUuid and DbTimestamp are now provided by unified_types module
 
-// Integer type - i64 for PostgreSQL (Int8), i32 for SQLite (Integer)
+// Integer type - i32 for both PostgreSQL (Integer) and SQLite (Integer)
 #[cfg(feature = "postgres-backend")]
-pub type DbInt = i64;
+pub type DbInt = i32;
 
 #[cfg(feature = "sqlite-backend")]
 pub type DbInt = i32;
+
+// BigInt type - i64 for both PostgreSQL (BigInt) and SQLite (BigInt/Integer)
+#[cfg(feature = "postgres-backend")]
+pub type DbBigInt = i64;
+
+#[cfg(feature = "sqlite-backend")]
+pub type DbBigInt = i64;
 
 #[cfg(feature = "postgres-backend")]
 pub type DbJson = serde_json::Value;

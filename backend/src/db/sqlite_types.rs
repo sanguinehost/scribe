@@ -330,26 +330,32 @@ impl SqliteJson {
     }
 
     // Constructor functions matching serde_json::Value enum variants
+    #[allow(non_snake_case)]
     pub fn String(s: String) -> Self {
         Self(serde_json::Value::String(s))
     }
 
+    #[allow(non_snake_case)]
     pub fn Object(map: serde_json::Map<String, serde_json::Value>) -> Self {
         Self(serde_json::Value::Object(map))
     }
 
+    #[allow(non_snake_case)]
     pub fn Array(arr: Vec<serde_json::Value>) -> Self {
         Self(serde_json::Value::Array(arr))
     }
 
+    #[allow(non_snake_case)]
     pub fn Number(n: serde_json::Number) -> Self {
         Self(serde_json::Value::Number(n))
     }
 
+    #[allow(non_snake_case)]
     pub fn Bool(b: bool) -> Self {
         Self(serde_json::Value::Bool(b))
     }
 
+    #[allow(non_upper_case_globals)]
     pub const Null: Self = Self(serde_json::Value::Null);
 
     // Convenience accessors delegating to serde_json::Value methods

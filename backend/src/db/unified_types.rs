@@ -333,13 +333,11 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "postgres-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Timestamptz)
+    derive(FromSqlRow),
 )]
 #[cfg_attr(
     feature = "sqlite-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Timestamp)
+    derive(FromSqlRow),
 )]
 #[repr(transparent)]
 pub struct DbTimestamp(DateTime<Utc>);
@@ -396,6 +394,112 @@ impl From<DbTimestamp> for DateTime<Utc> {
 impl std::fmt::Display for DbTimestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.to_rfc3339())
+    }
+}
+
+// Expression trait implementation for DbTimestamp
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::Expression for DbTimestamp {
+    type SqlType = Timestamptz;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::Expression for DbTimestamp {
+    type SqlType = Timestamp;
+}
+
+// Implement ValidGrouping for DbTimestamp
+impl<GB> diesel::expression::ValidGrouping<GB> for DbTimestamp {
+    type IsAggregate = diesel::expression::is_aggregate::No;
+}
+
+// Implement QueryId for DbTimestamp
+impl diesel::query_builder::QueryId for DbTimestamp {
+    type QueryId = Self;
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+// Implement AppearsOnTable for DbTimestamp
+impl<QS> diesel::expression::AppearsOnTable<QS> for DbTimestamp where Self: diesel::Expression {}
+
+// Implement QueryFragment for DbTimestamp
+#[cfg(feature = "postgres-backend")]
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbTimestamp {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        pass.push_bind_param::<Timestamptz, _>(&self.0)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbTimestamp {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
+    ) -> diesel::QueryResult<()> {
+        pass.unsafe_to_cache_prepared();
+        pass.push_sql("'");
+        pass.push_sql(&self.0.to_rfc3339());
+        pass.push_sql("'");
+        Ok(())
+    }
+}
+
+// AsExpression implementations for Nullable types
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamptz>> for DbTimestamp {
+    type Expression = <Option<DateTime<Utc>> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Timestamptz>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<DateTime<Utc>> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<Timestamptz>,
+        >>::as_expression(Some(self.0))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamptz>>
+    for &'a DbTimestamp
+{
+    type Expression = <Option<&'a DateTime<Utc>> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Timestamptz>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<&'a DateTime<Utc>> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<Timestamptz>,
+        >>::as_expression(Some(&self.0))
+    }
+}
+
+// SQLite AsExpression<Nullable<Timestamp>> implementations using NaiveDateTime delegation
+// Diesel's chrono feature for SQLite uses NaiveDateTime, not DateTime<Utc>
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamp>> for DbTimestamp {
+    type Expression = <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Timestamp>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<Timestamp>,
+        >>::as_expression(Some(self.0.naive_utc()))
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamp>>
+    for &'a DbTimestamp
+{
+    type Expression = <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Timestamp>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<Timestamp>,
+        >>::as_expression(Some(self.0.naive_utc()))
     }
 }
 
@@ -538,6 +642,15 @@ impl ToSql<Timestamp, Sqlite> for DbTimestamp {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
+impl ToSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        // Serialize as ISO 8601 string for Timestamp type
+        out.set_value(self.0.to_rfc3339());
+        Ok(IsNull::No)
+    }
+}
+
 // Nullable<Timestamp> support for SQLite
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
@@ -572,7 +685,82 @@ impl FromSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
     }
 }
 
-// ============================================================================
+// Text SQL type support for SQLite (used when DbTimestampType = Text)
+#[cfg(feature = "sqlite-backend")]
+impl ToSql<Text, Sqlite> for DbTimestamp {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        // Serialize as ISO 8601 string
+        out.set_value(self.0.to_rfc3339());
+        Ok(IsNull::No)
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl FromSql<Text, Sqlite> for DbTimestamp {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+
+        // Try ISO 8601 formats
+        if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
+            return Ok(Self(dt.with_timezone(&Utc)));
+        }
+
+        // Try parsing as Unix timestamp (seconds since epoch)
+        if let Ok(timestamp) = text.parse::<i64>() {
+            if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
+                return Ok(Self(dt));
+            }
+        }
+
+        // Try parsing SQLite DATETIME format with subseconds: "YYYY-MM-DD HH:MM:SS.sssssssss"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S%.f") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
+        // Try parsing SQLite DATETIME format without subseconds: "YYYY-MM-DD HH:MM:SS"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
+        Err(format!("Invalid timestamp string: {}", text).into())
+    }
+}
+
+// Nullable<Text> support for SQLite (used when DbTimestampType = Text)
+#[cfg(feature = "sqlite-backend")]
+impl FromSql<Nullable<Text>, Sqlite> for DbTimestamp {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+
+        // Try ISO 8601 formats
+        if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
+            return Ok(Self(dt.with_timezone(&Utc)));
+        }
+
+        // Try parsing as Unix timestamp (seconds since epoch)
+        if let Ok(timestamp) = text.parse::<i64>() {
+            if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
+                return Ok(Self(dt));
+            }
+        }
+
+        // Try parsing SQLite DATETIME format with subseconds: "YYYY-MM-DD HH:MM:SS.sssssssss"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S%.f") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
+        // Try parsing SQLite DATETIME format without subseconds: "YYYY-MM-DD HH:MM:SS"
+        if let Ok(naive_dt) = chrono::NaiveDateTime::parse_from_str(&text, "%Y-%m-%d %H:%M:%S") {
+            return Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)));
+        }
+
+        Err(format!("Invalid timestamp string: {}", text).into())
+    }
+}
 // DbDecimal - Unified BigDecimal Type
 // ============================================================================
 
@@ -588,8 +776,7 @@ impl FromSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
 )]
 #[cfg_attr(
     feature = "sqlite-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Text)
+    derive(FromSqlRow),
 )]
 #[repr(transparent)]
 pub struct DbDecimal(BigDecimal);
@@ -790,7 +977,7 @@ impl diesel::expression::Expression for DbDecimal {
 
 #[cfg(feature = "sqlite-backend")]
 impl diesel::expression::Expression for DbDecimal {
-    type SqlType = diesel::sql_types::Double;
+    type SqlType = diesel::sql_types::Text;
 }
 
 // Implement ValidGrouping for DbDecimal
@@ -923,13 +1110,11 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Integer> for &'a Db
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "postgres-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Bytea)
+    derive(FromSqlRow),
 )]
 #[cfg_attr(
     feature = "sqlite-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Binary)
+    derive(FromSqlRow),
 )]
 #[repr(transparent)]
 pub struct DbBlob(Vec<u8>);
@@ -948,6 +1133,107 @@ impl DbBlob {
     /// Get a slice of the bytes
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+}
+
+// Expression trait implementation for DbBlob
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::Expression for DbBlob {
+    type SqlType = Bytea;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::Expression for DbBlob {
+    type SqlType = diesel::sql_types::Binary;
+}
+
+// Implement ValidGrouping for DbBlob
+impl<GB> diesel::expression::ValidGrouping<GB> for DbBlob {
+    type IsAggregate = diesel::expression::is_aggregate::No;
+}
+
+// Implement QueryId for DbBlob
+impl diesel::query_builder::QueryId for DbBlob {
+    type QueryId = Self;
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+// Implement AppearsOnTable for DbBlob
+impl<QS> diesel::expression::AppearsOnTable<QS> for DbBlob where Self: diesel::Expression {}
+
+// Implement QueryFragment for DbBlob
+#[cfg(feature = "postgres-backend")]
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbBlob {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        pass.push_bind_param::<Bytea, _>(&self.0)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbBlob {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
+    ) -> diesel::QueryResult<()> {
+        pass.push_bind_param::<diesel::sql_types::Binary, _>(&self.0)?;
+        Ok(())
+    }
+}
+
+// AsExpression implementations for Nullable types
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Bytea>> for DbBlob {
+    type Expression = <Option<Vec<u8>> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Bytea>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<Vec<u8>> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<Bytea>,
+        >>::as_expression(Some(self.0))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Bytea>> for &'a DbBlob {
+    type Expression = <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<Bytea>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<Bytea>,
+        >>::as_expression(Some(&self.0))
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Binary>>
+    for DbBlob
+{
+    type Expression = <Option<Vec<u8>> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<diesel::sql_types::Binary>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<Vec<u8>> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<diesel::sql_types::Binary>,
+        >>::as_expression(Some(self.0))
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Binary>>
+    for &'a DbBlob
+{
+    type Expression = <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<diesel::sql_types::Binary>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<diesel::sql_types::Binary>,
+        >>::as_expression(Some(&self.0))
     }
 }
 
@@ -1062,13 +1348,11 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "postgres-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Nullable<diesel::sql_types::Array<Nullable<Text>>>)
+    derive(FromSqlRow),
 )]
 #[cfg_attr(
     feature = "sqlite-backend",
-    derive(AsExpression, FromSqlRow),
-    diesel(sql_type = Nullable<Text>)
+    derive(FromSqlRow),
 )]
 #[repr(transparent)]
 pub struct DbStringArray(pub Option<Vec<Option<String>>>);
@@ -1135,6 +1419,61 @@ impl DbStringArray {
         I: IntoIterator<Item = Option<String>>,
     {
         Self(Some(iter.into_iter().collect()))
+    }
+}
+
+// Expression trait implementation for DbStringArray
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::Expression for DbStringArray {
+    type SqlType = Nullable<diesel::sql_types::Array<Nullable<Text>>>;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::Expression for DbStringArray {
+    type SqlType = Nullable<Text>;
+}
+
+// Implement ValidGrouping for DbStringArray
+impl<GB> diesel::expression::ValidGrouping<GB> for DbStringArray {
+    type IsAggregate = diesel::expression::is_aggregate::No;
+}
+
+// Implement QueryId for DbStringArray
+impl diesel::query_builder::QueryId for DbStringArray {
+    type QueryId = Self;
+    const HAS_STATIC_QUERY_ID: bool = false;
+}
+
+// Implement AppearsOnTable for DbStringArray
+impl<QS> diesel::expression::AppearsOnTable<QS> for DbStringArray where Self: diesel::Expression {}
+
+// Implement QueryFragment for DbStringArray
+#[cfg(feature = "postgres-backend")]
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbStringArray {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
+    ) -> diesel::QueryResult<()> {
+        pass.push_bind_param::<Nullable<diesel::sql_types::Array<Nullable<Text>>>, _>(&self.0)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbStringArray {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
+    ) -> diesel::QueryResult<()> {
+        let json_str = match &self.0 {
+            Some(vec) => serde_json::to_string(vec).unwrap_or_else(|_| "[]".to_string()),
+            None => "[]".to_string(),
+        };
+        // Use SQL literal since push_bind_param requires 'b lifetime for the value
+        pass.push_sql("'");
+        pass.push_sql(&json_str.replace('\'', "''")); // Escape single quotes for SQL
+        pass.push_sql("'");
+        Ok(())
     }
 }
 
