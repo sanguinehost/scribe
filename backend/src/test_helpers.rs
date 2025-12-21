@@ -332,7 +332,10 @@ impl AiClient for MockAiClient {
                                             call_id: tool_chunk.tool_call.call_id.clone(),
                                             fn_name: tool_chunk.tool_call.fn_name.clone(),
                                             fn_arguments: tool_chunk.tool_call.fn_arguments.clone(),
-                                            thought_signature: tool_chunk.tool_call.thought_signature.clone(),
+                                            thought_signature: tool_chunk
+                                                .tool_call
+                                                .thought_signature
+                                                .clone(),
                                         },
                                     })
                                 }
@@ -1967,7 +1970,7 @@ pub mod db {
     };
     // For .env file loading
     // use std::env; // For DATABASE_URL reading in setup_test_database // Corrected: Added hash_password, auth for module items
-                  // Ensure RegisterPayload is imported
+    // Ensure RegisterPayload is imported
     use super::{
         AccountStatus, Context, DbUser, ExposeSecret, SecretBox, SecretString,
         SerializableSecretDek,

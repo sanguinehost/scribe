@@ -12,8 +12,7 @@
 use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::game_state::{
-    GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus,
-    Vital,
+    GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus, Vital,
 };
 use crate::services::reconciliation_detector::{ReconciliationAction, ReconciliationDetector};
 use std::collections::HashMap;
@@ -1425,8 +1424,10 @@ mod tests {
         let result = reconcile_pure(&current, &new, "");
 
         // Should have clamped total_seconds_elapsed to current
-        if let Some(StateChange::TimeAdvanced { new_time, .. }) =
-            result.applied_changes.iter().find(|c| matches!(c, StateChange::TimeAdvanced { .. }))
+        if let Some(StateChange::TimeAdvanced { new_time, .. }) = result
+            .applied_changes
+            .iter()
+            .find(|c| matches!(c, StateChange::TimeAdvanced { .. }))
         {
             assert_eq!(new_time.total_seconds_elapsed, 36000);
         } else {

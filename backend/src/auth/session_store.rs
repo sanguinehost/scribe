@@ -157,7 +157,11 @@ impl DieselSessionStore {
 
         let delete_result = crate::db::with_conn(&pool, move |conn| {
             let count = diesel::delete(
-                sessions::table.filter(sessions::expires.lt(diesel::dsl::now).or(sessions::expires.is_null())),
+                sessions::table.filter(
+                    sessions::expires
+                        .lt(diesel::dsl::now)
+                        .or(sessions::expires.is_null()),
+                ),
             )
             .execute(conn)
             .map_err(|e| Self::map_diesel_error(&e))?;

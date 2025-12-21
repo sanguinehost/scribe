@@ -412,8 +412,7 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
         .map_err(|e| AppError::GeminiError(format!("Enhancement failed: {}", e)))?;
 
     // Extract and parse the response
-    let response_text = response
-        .first_text().unwrap_or_default().to_string();
+    let response_text = response.first_text().unwrap_or_default().to_string();
 
     let enhancement_output: EnhancementOutput =
         serde_json::from_str(&response_text).map_err(|e| {
@@ -585,8 +584,7 @@ pub async fn generate_lorebook_entries_handler(
         .map_err(|e| AppError::GeminiError(format!("Batch lorebook generation failed: {}", e)))?;
 
     // Extract and parse the response
-    let response_text = response
-        .first_text().unwrap_or_default().to_string();
+    let response_text = response.first_text().unwrap_or_default().to_string();
 
     let batch_output: BatchLorebookEntriesOutput =
         serde_json::from_str(&response_text).map_err(|e| {
@@ -766,7 +764,7 @@ pub async fn generate_lorebook_entry_handler(
     let response_text = response
         .first_text()
         .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?
-        .to_string();;
+        .to_string();
 
     let entry_output: LorebookEntryOutput = serde_json::from_str(&response_text).map_err(|e| {
         AppError::InternalServerErrorGeneric(format!(
@@ -946,7 +944,7 @@ You have access to character context when provided, which helps you give more re
     let response_text = response
         .first_text()
         .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?
-        .to_string();;
+        .to_string();
 
     // Calculate generation time
     let generation_time_ms = start_time.elapsed().as_millis() as u64;

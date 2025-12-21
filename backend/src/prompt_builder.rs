@@ -68,7 +68,13 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
     if !game_state.currencies.is_empty() {
         writeln!(xml, "  <currencies>").unwrap();
         for (name, amount) in &game_state.currencies {
-            writeln!(xml, "    <{} amount=\"{}\" />", escape_xml(&name.to_lowercase()), amount).unwrap();
+            writeln!(
+                xml,
+                "    <{} amount=\"{}\" />",
+                escape_xml(&name.to_lowercase()),
+                amount
+            )
+            .unwrap();
         }
         writeln!(xml, "  </currencies>").unwrap();
     }
@@ -77,7 +83,11 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
     if !game_state.inventory.is_empty() {
         writeln!(xml, "  <inventory_on_person>").unwrap();
         for item in &game_state.inventory {
-            let equipped_attr = if item.equipped { " equipped=\"true\"" } else { "" };
+            let equipped_attr = if item.equipped {
+                " equipped=\"true\""
+            } else {
+                ""
+            };
             let qty_attr = if item.quantity > 1 {
                 format!(" quantity=\"{}\"", item.quantity)
             } else {
@@ -106,7 +116,13 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
                 } else {
                     String::new()
                 };
-                writeln!(xml, "      <item name=\"{}\"{}/>", escape_xml(&item.name), qty_attr).unwrap();
+                writeln!(
+                    xml,
+                    "      <item name=\"{}\"{}/>",
+                    escape_xml(&item.name),
+                    qty_attr
+                )
+                .unwrap();
             }
             writeln!(xml, "    </location>").unwrap();
         }
@@ -134,7 +150,12 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
                     serde_json::Value::String(s) => s.clone(),
                     _ => desc.to_string(),
                 };
-                writeln!(xml, "    <description>{}</description>", escape_xml(&desc_str)).unwrap();
+                writeln!(
+                    xml,
+                    "    <description>{}</description>",
+                    escape_xml(&desc_str)
+                )
+                .unwrap();
             }
             if !quest.objectives.is_empty() {
                 writeln!(xml, "    <objectives>").unwrap();
@@ -144,7 +165,13 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
                         serde_json::Value::String(s) => s.clone(),
                         _ => obj.description.to_string(),
                     };
-                    writeln!(xml, "      <objective status=\"{}\">{}</objective>", done, escape_xml(&obj_desc)).unwrap();
+                    writeln!(
+                        xml,
+                        "      <objective status=\"{}\">{}</objective>",
+                        done,
+                        escape_xml(&obj_desc)
+                    )
+                    .unwrap();
                 }
                 writeln!(xml, "    </objectives>").unwrap();
             }
@@ -157,7 +184,13 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
     if !optional_quests.is_empty() {
         writeln!(xml, "  <optional_quests>").unwrap();
         for quest in optional_quests {
-            writeln!(xml, "    <quest title=\"{}\" status=\"{:?}\">", escape_xml(&quest.title), quest.status).unwrap();
+            writeln!(
+                xml,
+                "    <quest title=\"{}\" status=\"{:?}\">",
+                escape_xml(&quest.title),
+                quest.status
+            )
+            .unwrap();
             if !quest.objectives.is_empty() {
                 for obj in &quest.objectives {
                     let done = if obj.completed { "done" } else { "pending" };
@@ -165,7 +198,13 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
                         serde_json::Value::String(s) => s.clone(),
                         _ => obj.description.to_string(),
                     };
-                    writeln!(xml, "      <objective status=\"{}\">{}</objective>", done, escape_xml(&obj_desc)).unwrap();
+                    writeln!(
+                        xml,
+                        "      <objective status=\"{}\">{}</objective>",
+                        done,
+                        escape_xml(&obj_desc)
+                    )
+                    .unwrap();
                 }
             }
             writeln!(xml, "    </quest>").unwrap();
@@ -206,12 +245,7 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
         if time.minute > 0 {
             writeln!(xml, "    <minute>{}</minute>", time.minute).unwrap();
         }
-        writeln!(
-            xml,
-            "    <period>{}</period>",
-            escape_xml(&time.period)
-        )
-        .unwrap();
+        writeln!(xml, "    <period>{}</period>", escape_xml(&time.period)).unwrap();
         if let Some(season) = &time.season {
             writeln!(xml, "    <season>{}</season>", escape_xml(season)).unwrap();
         }
@@ -230,7 +264,12 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
         for npc in active_npcs {
             writeln!(xml, "    <npc>").unwrap();
             writeln!(xml, "      <name>{}</name>", escape_xml(&npc.name)).unwrap();
-            writeln!(xml, "      <disposition>{}</disposition>", escape_xml(&npc.disposition)).unwrap();
+            writeln!(
+                xml,
+                "      <disposition>{}</disposition>",
+                escape_xml(&npc.disposition)
+            )
+            .unwrap();
             if let Some(loc) = &npc.location {
                 writeln!(xml, "      <location>{}</location>", escape_xml(loc)).unwrap();
             }
@@ -245,20 +284,10 @@ pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState
         writeln!(xml, "    <weather>{}</weather>", escape_xml(weather)).unwrap();
     }
     if let Some(lighting) = &game_state.environment.lighting {
-        writeln!(
-            xml,
-            "    <lighting>{}</lighting>",
-            escape_xml(lighting)
-        )
-        .unwrap();
+        writeln!(xml, "    <lighting>{}</lighting>", escape_xml(lighting)).unwrap();
     }
     if let Some(temp) = &game_state.environment.temperature {
-        writeln!(
-            xml,
-            "    <temperature>{}</temperature>",
-            escape_xml(temp)
-        )
-        .unwrap();
+        writeln!(xml, "    <temperature>{}</temperature>", escape_xml(temp)).unwrap();
     }
     if !game_state.environment.hazards.is_empty() {
         writeln!(
@@ -1103,7 +1132,8 @@ fn build_rag_context_strings(
 
                     // Add modality if available
                     if let Some(modality) = event_data.get("modality").and_then(|m| m.as_str()) {
-                        write!(chronicle_context, " modality=\"{}\"", escape_xml(modality)).unwrap();
+                        write!(chronicle_context, " modality=\"{}\"", escape_xml(modality))
+                            .unwrap();
                     }
 
                     writeln!(chronicle_context, ">").unwrap();
@@ -1280,8 +1310,12 @@ fn build_rag_context_strings(
                 if let Some(keywords) = &lorebook_meta.keywords {
                     if !keywords.is_empty() {
                         let keywords_str = keywords.join(", ");
-                        write!(lorebook_context, " keywords=\"{}\"", escape_xml(&keywords_str))
-                            .unwrap();
+                        write!(
+                            lorebook_context,
+                            " keywords=\"{}\"",
+                            escape_xml(&keywords_str)
+                        )
+                        .unwrap();
                     }
                 }
 
@@ -1444,8 +1478,7 @@ async fn build_final_prompt_strings(
 
     // Add Chronicle context if available
     if !chronicle_context.is_empty() {
-        template_context["chronicle_context"] =
-            serde_json::Value::String(chronicle_context).into();
+        template_context["chronicle_context"] = serde_json::Value::String(chronicle_context).into();
     }
 
     // Add Lorebook RAG context if available
@@ -1493,8 +1526,7 @@ async fn build_final_prompt_strings(
             if let Some(existing_text) = final_user_message.content.first_text() {
                 let modified_text = format!(
                     "{}\n\n(SYSTEM INSTRUCTION: {})\n",
-                    existing_text,
-                    guidance_text
+                    existing_text, guidance_text
                 );
                 final_user_message.content = MessageContent::from_text(modified_text);
             } else {

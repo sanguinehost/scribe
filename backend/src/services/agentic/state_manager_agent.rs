@@ -1266,9 +1266,7 @@ impl Default for StateManagerAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::game_state::{
-        GameTime, InventoryItem, Location, Vital,
-    };
+    use crate::models::game_state::{GameTime, InventoryItem, Location, Vital};
     use std::collections::HashMap;
 
     // ========================================================================
@@ -1326,7 +1324,10 @@ Total Seconds Elapsed: 28800
         let state = result.unwrap();
         assert_eq!(state.location.as_ref().unwrap().name, "Forest Edge");
         assert_eq!(state.game_time.as_ref().unwrap().day, 1);
-        assert_eq!(state.game_time.as_ref().unwrap().total_seconds_elapsed, 28800);
+        assert_eq!(
+            state.game_time.as_ref().unwrap().total_seconds_elapsed,
+            28800
+        );
     }
 
     #[test]
@@ -1405,7 +1406,10 @@ Tags: cozy, atmospheric
         assert_eq!(state.location.as_ref().unwrap().name, "The Rusty Anchor");
         assert!(state.game_time.is_some());
         assert_eq!(state.game_time.as_ref().unwrap().day, 5);
-        assert_eq!(state.game_time.as_ref().unwrap().total_seconds_elapsed, 417600);
+        assert_eq!(
+            state.game_time.as_ref().unwrap().total_seconds_elapsed,
+            417600
+        );
         assert_eq!(state.vitals.len(), 2);
         assert_eq!(state.quests.len(), 1);
         assert_eq!(state.npcs.len(), 1);
@@ -1693,7 +1697,7 @@ Tags: nature, peaceful
 - oxygen: 95/100
 "#;
         let vitals = StateManagerAgent::parse_vitals_section(vitals_text);
-        
+
         assert_eq!(vitals.len(), 4);
         assert_eq!(vitals.get("health").unwrap().current, 80.0);
         assert_eq!(vitals.get("stress").unwrap().current, 25.0);
@@ -1705,14 +1709,14 @@ Tags: nature, peaceful
     #[test]
     fn test_parse_inventory_item_with_descriptors() {
         let agent = StateManagerAgent::new();
-        
+
         // Test item with multiple descriptors including equipped
         let item_text = "Silk robes (equipped, damaged, blood-stained, brittle)";
         let item = StateManagerAgent::parse_inventory_item(item_text).unwrap();
-        
+
         assert_eq!(item.name, "Silk robes (damaged, blood-stained, brittle)");
         assert!(item.equipped);
-        
+
         // Test item with equipped at the end
         let item_text2 = "Iron sword (sharp, equipped)";
         let item2 = StateManagerAgent::parse_inventory_item(item_text2).unwrap();

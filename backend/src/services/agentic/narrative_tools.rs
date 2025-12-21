@@ -456,14 +456,11 @@ impl AnalyzeTextSignificanceTool {
         genai_chat_options = genai_chat_options.with_max_tokens(1024);
 
         // Add structured output format to chat options
-        genai_chat_options = genai_chat_options
-            .with_response_format(ChatResponseFormat::JsonMode);
+        genai_chat_options = genai_chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
         // CLEAN: No "Respond only with valid JSON" needed - Gemini 2.5+ enforces schema natively
         let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.";
-        let chat_req = ChatRequest::new(vec![user_message])
-            .with_system(system_prompt)
-            ;
+        let chat_req = ChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         let response = self
             .ai_client
@@ -1971,8 +1968,7 @@ Return your analysis as a JSON object with these four arrays."#,
         let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
-        let chat_request = ChatRequest::new(vec![user_message])
-            ;
+        let chat_request = ChatRequest::new(vec![user_message]);
 
         let response = self
             .ai_client
@@ -2213,9 +2209,7 @@ You must respond with a JSON object containing an array of {} entries."#,
         let response_format = ChatResponseFormat::JsonMode;
         chat_options = chat_options.with_response_format(response_format);
 
-        let chat_request = ChatRequest::new(vec![user_message])
-            .with_system(&system_prompt)
-            ;
+        let chat_request = ChatRequest::new(vec![user_message]).with_system(&system_prompt);
 
         // Execute AI generation
         let start_time = std::time::Instant::now();

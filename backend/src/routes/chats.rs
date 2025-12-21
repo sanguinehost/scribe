@@ -1388,10 +1388,9 @@ pub async fn create_message_handler(
                     }
 
                     // Add the current user message
-                    let last_msg_content =
-                        incoming_genai_messages
-                            .last()
-                            .and_then(|m| m.content.first_text().map(|t| t.to_string()));
+                    let last_msg_content = incoming_genai_messages
+                        .last()
+                        .and_then(|m| m.content.first_text().map(|t| t.to_string()));
 
                     if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
                         incoming_genai_messages.push(GenAiChatMessage {

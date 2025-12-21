@@ -276,8 +276,8 @@
 
 		{#if isLoading}
 			<div class="py-8 text-center">
-				<div class="border-primary inline-block h-8 w-8 animate-spin rounded-full border-b-2"></div>
-				<p class="text-muted-foreground mt-2">Loading settings...</p>
+				<div class="inline-block h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
+				<p class="mt-2 text-muted-foreground">Loading settings...</p>
 			</div>
 		{:else}
 			<!-- Tabs -->
@@ -289,7 +289,7 @@
 							class="flex items-center gap-2 border-b-2 px-1 py-2 text-sm font-medium transition-colors {activeTab ===
 							tab.id
 								? 'border-primary text-primary'
-								: 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'}"
+								: 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'}"
 						>
 							<span>{tab.icon}</span>
 							{tab.label}
@@ -337,14 +337,14 @@
 								<Label for="model">Language Model</Label>
 								<select
 									id="model"
-									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 									bind:value={settings.model_name}
 								>
 									{#each chatModels as model}
 										<option value={model.id}>{model.name}</option>
 									{/each}
 								</select>
-								<p class="text-muted-foreground text-xs">Default model for new chats</p>
+								<p class="text-xs text-muted-foreground">Default model for new chats</p>
 							</div>
 						</CardContent>
 					</Card>
@@ -366,7 +366,7 @@
 										step="0.1"
 										bind:value={settings.temperature}
 									/>
-									<p class="text-muted-foreground text-xs">Controls randomness (0-2)</p>
+									<p class="text-xs text-muted-foreground">Controls randomness (0-2)</p>
 								</div>
 								<div class="space-y-2">
 									<Label for="max-tokens">Max Output Tokens</Label>
@@ -377,7 +377,7 @@
 										max="8192"
 										bind:value={settings.max_output_tokens}
 									/>
-									<p class="text-muted-foreground text-xs">Maximum response length</p>
+									<p class="text-xs text-muted-foreground">Maximum response length</p>
 								</div>
 							</div>
 
@@ -397,7 +397,7 @@
 											}
 										}}
 									/>
-									<p class="text-muted-foreground text-xs">Probability cutoff (0-1)</p>
+									<p class="text-xs text-muted-foreground">Probability cutoff (0-1)</p>
 								</div>
 								<div class="space-y-2">
 									<Label for="top-k">Top K</Label>
@@ -409,7 +409,7 @@
 										step="1"
 										bind:value={settings.top_k}
 									/>
-									<p class="text-muted-foreground text-xs">Number of top tokens (0-100)</p>
+									<p class="text-xs text-muted-foreground">Number of top tokens (0-100)</p>
 								</div>
 							</div>
 						</CardContent>
@@ -446,7 +446,7 @@
 											step="0.1"
 											bind:value={settings.frequency_penalty}
 										/>
-										<p class="text-muted-foreground text-xs">Reduce repetition (-2 to 2)</p>
+										<p class="text-xs text-muted-foreground">Reduce repetition (-2 to 2)</p>
 									</div>
 									<div class="space-y-2">
 										<Label for="presence-penalty">Presence Penalty</Label>
@@ -458,7 +458,7 @@
 											step="0.1"
 											bind:value={settings.presence_penalty}
 										/>
-										<p class="text-muted-foreground text-xs">Encourage new topics (-2 to 2)</p>
+										<p class="text-xs text-muted-foreground">Encourage new topics (-2 to 2)</p>
 									</div>
 								</div>
 
@@ -470,7 +470,7 @@
 										placeholder="Leave empty for random"
 										bind:value={settings.seed}
 									/>
-									<p class="text-muted-foreground text-xs">For reproducible generation</p>
+									<p class="text-xs text-muted-foreground">For reproducible generation</p>
 								</div>
 							</CardContent>
 						{/if}
@@ -506,13 +506,13 @@
 											placeholder="Default"
 											bind:value={settings.gemini_thinking_budget}
 										/>
-										<p class="text-muted-foreground text-xs">Reasoning tokens</p>
+										<p class="text-xs text-muted-foreground">Reasoning tokens</p>
 									</div>
 									<div class="space-y-2">
 										<Label for="thinking-level">Thinking Level</Label>
 										<select
 											id="thinking-level"
-											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 											bind:value={settings.gemini_thinking_level}
 										>
 											<option value={null}>Default</option>
@@ -521,7 +521,7 @@
 											<option value="Medium">Medium</option>
 											<option value="High">High</option>
 										</select>
-										<p class="text-muted-foreground text-xs">Reasoning effort</p>
+										<p class="text-xs text-muted-foreground">Reasoning effort</p>
 									</div>
 								</div>
 							</CardContent>
@@ -544,7 +544,7 @@
 									step="1"
 									bind:value={settings.typing_speed}
 								/>
-								<p class="text-muted-foreground text-xs">
+								<p class="text-xs text-muted-foreground">
 									Milliseconds between characters (lower = faster). Common values: 10 (very fast),
 									30 (default), 50 (slow)
 								</p>

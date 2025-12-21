@@ -1005,7 +1005,8 @@ pub async fn get_session_data_for_generation(
 
     // --- RAG Context Budgeting and Assembly ---
     // Flexible Budgeting: Use all remaining context space for RAG
-    let available_rag_tokens = context_total_token_limit.saturating_sub(actual_recent_history_tokens);
+    let available_rag_tokens =
+        context_total_token_limit.saturating_sub(actual_recent_history_tokens);
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated flexible RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
     let mut combined_rag_candidates: Vec<RetrievedChunk> = Vec::new();
@@ -1612,9 +1613,8 @@ pub async fn exec_chat_with_retry(
             };
             messages_with_prefill.push(prefill_message);
 
-            let mut request = genai::chat::ChatRequest::new(messages_with_prefill)
-                .with_system(system_prompt)
-                ;
+            let mut request =
+                genai::chat::ChatRequest::new(messages_with_prefill).with_system(system_prompt);
 
             if let Some(tools) = &params.chat_request.tools {
                 request = request.with_tools(tools.clone());
@@ -1693,8 +1693,11 @@ pub async fn stream_ai_response_and_save_message_with_retry(
 
                 // Check if the last message is from User and contains guidance
                 let has_guidance = messages_with_prefill.last().map_or(false, |msg| {
-                    matches!(msg.role, genai::chat::ChatRole::User) &&
-                    msg.content.first_text().map_or(false, |text| text.contains("(SYSTEM INSTRUCTION:"))
+                    matches!(msg.role, genai::chat::ChatRole::User)
+                        && msg
+                            .content
+                            .first_text()
+                            .map_or(false, |text| text.contains("(SYSTEM INSTRUCTION:"))
                 });
 
                 if !has_guidance {
@@ -1876,10 +1879,10 @@ pub async fn stream_ai_response_and_save_message(
             "high" => Some(ThinkingLevel::High),
             "disabled" | "off" => {
                 // Explicitly disable thinking by setting budget to 0 if possible
-                genai_chat_options = genai_chat_options
-                    .with_reasoning_effort(ReasoningEffort::Budget(0));
+                genai_chat_options =
+                    genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(0));
                 None
-            },
+            }
             _ => None,
         };
         if let Some(level) = thinking_level {

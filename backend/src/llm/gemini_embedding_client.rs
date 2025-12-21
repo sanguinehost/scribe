@@ -205,9 +205,15 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
                         })?;
                         let values = embedding_response.embedding.values;
                         if values.is_empty() {
-                            warn!("Gemini Embedding API returned an empty vector for text: {}", text);
+                            warn!(
+                                "Gemini Embedding API returned an empty vector for text: {}",
+                                text
+                            );
                         } else {
-                            debug!("Gemini Embedding API returned vector of length {}", values.len());
+                            debug!(
+                                "Gemini Embedding API returned vector of length {}",
+                                values.len()
+                            );
                         }
                         return Ok(values);
                     } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {

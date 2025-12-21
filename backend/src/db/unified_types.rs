@@ -331,14 +331,8 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for
 /// Stores UTC timestamps in both PostgreSQL (TIMESTAMPTZ) and SQLite (INTEGER as Unix timestamp).
 /// Provides transparent access to the underlying `chrono::DateTime<Utc>` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    derive(FromSqlRow),
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    derive(FromSqlRow),
-)]
+#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
 #[repr(transparent)]
 pub struct DbTimestamp(DateTime<Utc>);
 
@@ -774,10 +768,7 @@ impl FromSql<Nullable<Text>, Sqlite> for DbTimestamp {
     derive(FromSqlRow),
     diesel(sql_type = Numeric)
 )]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    derive(FromSqlRow),
-)]
+#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
 #[repr(transparent)]
 pub struct DbDecimal(BigDecimal);
 
@@ -1108,14 +1099,8 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Integer> for &'a Db
 /// Stores binary data in both PostgreSQL (BYTEA) and SQLite (BLOB).
 /// Used for encrypted data, hashes, and other binary content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    derive(FromSqlRow),
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    derive(FromSqlRow),
-)]
+#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
 #[repr(transparent)]
 pub struct DbBlob(Vec<u8>);
 
@@ -1346,14 +1331,8 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 /// # SQLite Representation
 /// JSON array stored as TEXT: `["string1", "string2", null, "string3"]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "postgres-backend",
-    derive(FromSqlRow),
-)]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    derive(FromSqlRow),
-)]
+#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
 #[repr(transparent)]
 pub struct DbStringArray(pub Option<Vec<Option<String>>>);
 

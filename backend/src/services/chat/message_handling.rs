@@ -803,7 +803,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         let embedding_service = state.embedding_pipeline_service.clone();
         let app_state_clone_for_rag = state.clone();
         let message_for_rag = saved_message_db.clone(); // Clone for the async task
-        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
+                                                        // Clone the DEK for the spawned task. user_dek_secret_box is Option<Arc<SecretBox<Vec<u8>>>>
         let dek_for_rag_task = user_dek_secret_box.clone();
 
         tokio::spawn(async move {

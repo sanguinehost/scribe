@@ -1,27 +1,26 @@
 // @generated automatically by Diesel CLI.
 
 pub mod sql_types_unified {
-    #[cfg(feature = "postgres-backend")]
-    pub use diesel::sql_types::Uuid as DbIdType;
     #[cfg(feature = "sqlite-backend")]
     pub use diesel::sql_types::Text as DbIdType;
-
     #[cfg(feature = "postgres-backend")]
-    pub use diesel::sql_types::Timestamptz as DbTimestampType;
+    pub use diesel::sql_types::Uuid as DbIdType;
+
     #[cfg(feature = "sqlite-backend")]
     pub use diesel::sql_types::Timestamp as DbTimestampType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::Timestamptz as DbTimestampType;
 
     #[cfg(feature = "postgres-backend")]
     pub use diesel::sql_types::Jsonb as DbJsonType;
     #[cfg(feature = "sqlite-backend")]
     pub use diesel::sql_types::Text as DbJsonType;
 
-    #[cfg(feature = "postgres-backend")]
-    pub use diesel::sql_types::Numeric as DbNumericType;
     #[cfg(feature = "sqlite-backend")]
     pub use diesel::sql_types::Double as DbNumericType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::Numeric as DbNumericType;
 }
-
 
 diesel::table! {
     use diesel::sql_types::*;

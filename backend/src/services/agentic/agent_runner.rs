@@ -512,8 +512,7 @@ RULES:
     ) -> Result<TriageResult, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole,
-            MessageContent,
+            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, MessageContent,
         };
 
         debug!(
@@ -561,9 +560,7 @@ CONVERSATION:
         let system_prompt = r#"You are analyzing fictional roleplay conversations. Provide a clear summary of what happened in the conversation."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message])
-            .with_system(system_prompt)
-            ;
+        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         // Call AI with structured output
         let response = match self
@@ -655,8 +652,7 @@ CONVERSATION:
     ) -> Result<ActionPlan, AppError> {
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole,
-            MessageContent,
+            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, MessageContent,
         };
 
         debug!("Generating chronicle event for: {}", triage_result.summary);
@@ -722,9 +718,7 @@ IMPORTANT RULES:
         let system_prompt = r#"You are a planning agent for a narrative intelligence system analyzing fictional roleplay. Generate a structured action plan for creating chronicle events."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message])
-            .with_system(system_prompt)
-            ;
+        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         // Call AI with structured output
         let response = self
@@ -1154,9 +1148,7 @@ Example: {{ "name": "The Crimson Empress Chronicles" }}"#,
         let system_prompt = r#"You are a narrative naming agent for fictional roleplay. Generate meaningful chronicle names that capture the overarching narrative."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message])
-            .with_system(system_prompt)
-            ;
+        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         // Call AI with structured output
         match self
@@ -1408,13 +1400,13 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
             let mut genai_chat_options = GenAiChatOptions::default();
             genai_chat_options = genai_chat_options.with_temperature(1.0);
             genai_chat_options = genai_chat_options.with_max_tokens(8192);
-            genai_chat_options = genai_chat_options.with_thinking_level(genai::chat::ThinkingLevel::Low);
+            genai_chat_options =
+                genai_chat_options.with_thinking_level(genai::chat::ThinkingLevel::Low);
 
             // Create chat request with tools
             let chat_req = GenAiChatRequest::new(vec![user_message, assistant_message])
                 .with_system(system_prompt)
-                .with_tools(tools.clone())
-                ;
+                .with_tools(tools.clone());
 
             // Call the AI client
             // Call the AI client with timeout
@@ -1435,7 +1427,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
                         info!(
                         "AI client call successful for chronicle event generation, processing response..."
                     );
-                        
+
                         // Check for tool calls in the response content
                         for part in response.content.parts() {
                             if let genai::chat::ContentPart::ToolCall(tool_call) = part {

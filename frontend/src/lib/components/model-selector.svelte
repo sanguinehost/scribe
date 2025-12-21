@@ -142,7 +142,7 @@
 				{...props}
 				variant="outline"
 				class={_cn(
-					'data-[state=open]:bg-accent data-[state=open]:text-accent-foreground w-fit md:h-[34px] md:px-2',
+					'w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground md:h-[34px] md:px-2',
 					c
 				)}
 			>
@@ -161,7 +161,7 @@
 			>
 				<div class="flex flex-col items-start gap-1">
 					<div>Use Global Default</div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{availableModels().find((m) => m.id === selectedChatModel.value)?.name ||
 							'Default Model'}
 						{#if availableModels().find((m) => m.id === selectedChatModel.value)?.supportsReasoning}
@@ -196,7 +196,7 @@
 				</div>
 
 				<div
-					class="text-foreground dark:text-foreground opacity-0 group-data-[active=true]/item:opacity-100"
+					class="text-foreground opacity-0 group-data-[active=true]/item:opacity-100 dark:text-foreground"
 				>
 					<CheckCircleFillIcon />
 				</div>
@@ -252,7 +252,7 @@
 							</div>
 						{/if}
 					</div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{chatModel.description}
 						{#if PAYMENT_FEATURES.credits && !chatModel.isLocal}
 							{@const creditCost = getModelCreditCost(chatModel.id)}
@@ -276,7 +276,7 @@
 				</div>
 
 				<div
-					class="text-foreground dark:text-foreground opacity-0 group-data-[active=true]/item:opacity-100"
+					class="text-foreground opacity-0 group-data-[active=true]/item:opacity-100 dark:text-foreground"
 				>
 					<CheckCircleFillIcon />
 				</div>

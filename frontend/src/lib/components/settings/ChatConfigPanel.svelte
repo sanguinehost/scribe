@@ -791,7 +791,7 @@
 	<div class="flex items-center justify-between border-b p-4">
 		<div>
 			<h2 class="text-lg font-semibold">Chat Configuration</h2>
-			<p class="text-muted-foreground text-sm">
+			<p class="text-sm text-muted-foreground">
 				{chat?.title || 'Configure this chat'}
 			</p>
 		</div>
@@ -836,7 +836,7 @@
 						<CardContent class="space-y-3">
 							<div class="space-y-2">
 								<select
-									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 									bind:value={localSettings.active_custom_persona_id}
 									onchange={(e) => changePersona((e.target as HTMLSelectElement).value || null)}
 								>
@@ -845,7 +845,7 @@
 										<option value={persona.id}>{persona.name}</option>
 									{/each}
 								</select>
-								<p class="text-muted-foreground text-xs">Override the user persona for this chat</p>
+								<p class="text-xs text-muted-foreground">Override the user persona for this chat</p>
 							</div>
 						</CardContent>
 					{/if}
@@ -908,7 +908,7 @@
 									<Skeleton class="h-8 w-full" />
 								</div>
 							{:else}
-								<p class="text-muted-foreground text-sm">
+								<p class="text-sm text-muted-foreground">
 									Temporarily override narrative preferences for this conversation only. These
 									changes won't affect your character or global defaults.
 								</p>
@@ -918,7 +918,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Tense</Label>
 										<select
-											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.tense || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -937,7 +937,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Narration</Label>
 										<select
-											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.narration || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -956,7 +956,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Point of View</Label>
 										<select
-											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.perspective || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -975,7 +975,7 @@
 									<div class="space-y-2">
 										<Label class="text-xs font-medium">Response Length</Label>
 										<select
-											class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 											value={sessionNarrativeStyle?.response_length || ''}
 											onchange={(e) => {
 												const value = (e.target as HTMLSelectElement).value;
@@ -1052,7 +1052,7 @@
 											</div>
 											<select
 												id="chronicle-select"
-												class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+												class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 												bind:value={currentChronicleId}
 												onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
 											>
@@ -1061,7 +1061,7 @@
 													<option value={chronicle.id}>{chronicle.name}</option>
 												{/each}
 											</select>
-											<p class="text-muted-foreground text-xs">
+											<p class="text-xs text-muted-foreground">
 												Link this chat to a chronicle to organize related conversations and make
 												them available for RAG queries.
 											</p>
@@ -1114,14 +1114,14 @@
 											(c) => c.id === currentChronicleId
 										)}
 										{#if linkedChronicle}
-											<div class="bg-muted rounded-md p-3">
+											<div class="rounded-md bg-muted p-3">
 												<div class="text-sm font-medium">{linkedChronicle.name}</div>
 												{#if linkedChronicle.description}
-													<div class="text-muted-foreground mt-1 text-xs">
+													<div class="mt-1 text-xs text-muted-foreground">
 														{linkedChronicle.description}
 													</div>
 												{/if}
-												<div class="text-muted-foreground mt-2 text-xs">
+												<div class="mt-2 text-xs text-muted-foreground">
 													{linkedChronicle.event_count} events • {linkedChronicle.chat_count}
 													chats
 												</div>
@@ -1159,7 +1159,7 @@
 									<Skeleton class="h-8 w-full" />
 								</div>
 							{:else if chatLorebookAssociations.length === 0}
-								<p class="text-muted-foreground text-sm">No lorebooks associated</p>
+								<p class="text-sm text-muted-foreground">No lorebooks associated</p>
 							{:else}
 								<div class="space-y-2">
 									{#each chatLorebookAssociations as assoc (assoc.lorebook_id)}
@@ -1212,7 +1212,7 @@
 														{/if}
 													</ButtonComponent>
 												{/if}
-												<span class="text-muted-foreground text-xs">
+												<span class="text-xs text-muted-foreground">
 													{#if assoc.source === 'Chat'}
 														Directly associated with this chat
 													{:else if assoc.source === 'Character' && assoc.is_overridden}
@@ -1259,7 +1259,7 @@
 								<Label for="model">Model Override</Label>
 								<select
 									id="model"
-									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 									bind:value={localSettings.model_name}
 								>
 									<option value="">
@@ -1270,7 +1270,7 @@
 										<option value={model.id}>{model.name}</option>
 									{/each}
 								</select>
-								<p class="text-muted-foreground text-xs">
+								<p class="text-xs text-muted-foreground">
 									Override the global model setting for this specific chat
 								</p>
 							</div>
@@ -1279,14 +1279,14 @@
 								<Label for="agent-mode">Context Enhancement Agent</Label>
 								<select
 									id="agent-mode"
-									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 									bind:value={localSettings.agent_mode}
 								>
 									<option value="disabled">Disabled</option>
 									<option value="pre_processing">Pre-process (before AI response)</option>
 									<option value="post_processing">Post-process (after AI response)</option>
 								</select>
-								<p class="text-muted-foreground text-xs">
+								<p class="text-xs text-muted-foreground">
 									{#if localSettings.agent_mode === 'pre_processing'}
 										Agent searches for context before generating response (slight delay)
 									{:else if localSettings.agent_mode === 'post_processing'}
@@ -1535,7 +1535,7 @@
 									</div>
 									<select
 										id="thinking-level"
-										class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 										bind:value={localSettings.gemini_thinking_level}
 									>
 										<option value={null}>Default</option>
@@ -1559,7 +1559,7 @@
 									</div>
 									<select
 										id="code-execution"
-										class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 										bind:value={localSettings.gemini_enable_code_execution}
 									>
 										<option value={false}>Disabled</option>
@@ -1572,7 +1572,7 @@
 							<div class="space-y-2">
 								<div class="flex items-center justify-between">
 									<Label for="typing-speed">Typing Animation Speed</Label>
-									<span class="text-muted-foreground text-xs">{typingSpeed}ms</span>
+									<span class="text-xs text-muted-foreground">{typingSpeed}ms</span>
 								</div>
 								<input
 									id="typing-speed"
@@ -1582,9 +1582,9 @@
 									step="1"
 									bind:value={typingSpeed}
 									onchange={() => saveTypingSpeed()}
-									class="bg-muted accent-primary h-2 w-full cursor-pointer appearance-none rounded-lg"
+									class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
 								/>
-								<p class="text-muted-foreground text-xs">
+								<p class="text-xs text-muted-foreground">
 									Lower = faster (1ms), Higher = slower (100ms). Default: 30ms
 								</p>
 							</div>
@@ -1621,14 +1621,14 @@
 							<div class="flex items-center justify-between space-x-2">
 								<div class="space-y-0.5">
 									<Label for="gm-mode">Enable Game Master</Label>
-									<p class="text-muted-foreground text-xs">Tracks inventory, quests, and vitals.</p>
+									<p class="text-xs text-muted-foreground">Tracks inventory, quests, and vitals.</p>
 								</div>
 								<div class="flex items-center gap-2">
 									{#if localSettings.game_master_mode_enabled !== false}
 										<ButtonComponent
 											variant="ghost"
 											size="icon"
-											class="text-muted-foreground hover:text-foreground h-6 w-6"
+											class="h-6 w-6 text-muted-foreground hover:text-foreground"
 											onclick={() => clearOverride('game_master_mode_enabled')}
 											title="Reset to default"
 										>

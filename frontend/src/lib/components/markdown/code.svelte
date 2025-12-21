@@ -127,7 +127,7 @@
 	<code
 		bind:this={element}
 		class={_cn(
-			'border-border bg-muted text-foreground inline break-words rounded border px-1.5 py-0.5 font-mono text-sm',
+			'inline break-words rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground',
 			c
 		)}
 		{...props}>{@render children?.()}</code

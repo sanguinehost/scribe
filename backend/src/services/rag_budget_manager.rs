@@ -180,7 +180,8 @@ impl DynamicRagSelector {
         query_timestamp: Option<crate::DbTimestamp>,
         budget_override: Option<usize>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
-        let available_budget = budget_override.unwrap_or_else(|| self.budget_planner.total_rag_budget());
+        let available_budget =
+            budget_override.unwrap_or_else(|| self.budget_planner.total_rag_budget());
         let query_time = query_timestamp.unwrap_or_else(|| Utc::now().into());
 
         debug!(

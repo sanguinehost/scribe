@@ -1,4 +1,4 @@
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent, ChatResponseFormat};
+use genai::chat::{ChatMessage as GenAiChatMessage, ChatResponseFormat, ChatRole, MessageContent};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, instrument};
@@ -1039,9 +1039,7 @@ Show different scenarios, moods, or personality aspects."#
         _schema: &crate::DbJson,
         request: &FieldGenerationRequest,
     ) -> Result<crate::DbJson, AppError> {
-        use genai::chat::{
-            ChatOptions as GenAiChatOptions, ChatRole,
-        };
+        use genai::chat::{ChatOptions as GenAiChatOptions, ChatRole};
 
         // Follow the same pattern as main chat generation
         let mut messages_vec: Vec<GenAiChatMessage> = messages.to_vec();
@@ -1125,8 +1123,7 @@ Show different scenarios, moods, or personality aspects."#
 
             // Create chat request with enhanced system prompt
             let chat_req = genai::chat::ChatRequest::new(messages_vec.clone())
-                .with_system(&enhanced_system_prompt)
-                ;
+                .with_system(&enhanced_system_prompt);
 
             debug!(
                 "Character generation attempt {} of {}",

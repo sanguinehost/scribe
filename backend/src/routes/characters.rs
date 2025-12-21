@@ -1875,8 +1875,9 @@ pub async fn get_character_asset_handler(
     let asset = crate::db::with_conn(&state.pool, move |conn_asset_block| {
         character_assets
             .filter(
-                crate::schema::character_assets::id.eq(asset_id)
-                    .and(crate::schema::character_assets::character_id.eq(character_id))
+                crate::schema::character_assets::id
+                    .eq(asset_id)
+                    .and(crate::schema::character_assets::character_id.eq(character_id)),
             )
             .first::<CharacterAsset>(conn_asset_block)
             .optional()

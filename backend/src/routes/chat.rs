@@ -1785,10 +1785,8 @@ pub async fn generate_chat_response(
                         }
                     }
 
-                    let response_content = chat_response
-                        .first_text()
-                        .unwrap_or_default()
-                        .to_string();
+                    let response_content =
+                        chat_response.first_text().unwrap_or_default().to_string();
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
 
@@ -1921,7 +1919,11 @@ pub async fn generate_chat_response(
                                                     ChatRole::Assistant => "Assistant".to_string(),
                                                     _ => "System".to_string(),
                                                 };
-                                                let content = msg.content.first_text().unwrap_or_default().to_string();
+                                                let content = msg
+                                                    .content
+                                                    .first_text()
+                                                    .unwrap_or_default()
+                                                    .to_string();
                                                 (role, content)
                                             })
                                             .collect();
@@ -1930,8 +1932,10 @@ pub async fn generate_chat_response(
                                     let mut messages_for_agent = recent_messages;
                                     messages_for_agent
                                         .push(("User".to_string(), current_user_text));
-                                    messages_for_agent
-                                        .push(("Assistant".to_string(), assistant_response.to_string()));
+                                    messages_for_agent.push((
+                                        "Assistant".to_string(),
+                                        assistant_response.to_string(),
+                                    ));
 
                                     // Run the agent with the assistant message ID
                                     match agent

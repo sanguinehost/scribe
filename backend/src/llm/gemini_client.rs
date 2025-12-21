@@ -284,7 +284,8 @@ mod tests {
                 let mut chunk_count = 0;
                 while let Some(item_result) = stream.next().await {
                     match item_result {
-                        Ok(ChatStreamEvent::Chunk(chunk)) | Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
+                        Ok(ChatStreamEvent::Chunk(chunk))
+                        | Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
                             if !chunk.content.is_empty() {
                                 full_response.push_str(&chunk.content);
                                 chunk_count += 1;
@@ -480,10 +481,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap().first_text(),
-            expected_response.first_text()
-        );
+        assert_eq!(result.unwrap().first_text(), expected_response.first_text());
         assert!(
             client_arc_mock.was_exec_chat_called(),
             "MockAiClient::exec_chat was not called via Arc delegation"

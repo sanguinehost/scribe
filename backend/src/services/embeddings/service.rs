@@ -10,9 +10,9 @@ use crate::models::chats::{ChatMessage, MessageRole};
 use crate::schema::chat_messages;
 use crate::state::AppState;
 use crate::text_processing::chunking::{chunk_text, ChunkConfig};
-use diesel::prelude::*;
 use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
+use diesel::prelude::*;
 use qdrant_client::qdrant::{
     condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
 };
@@ -148,18 +148,23 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             });
 
             if let Some(prev_msg) = previous_user_msg {
-                let prev_content = if let (Some(dek), Some(nonce)) = (session_dek, prev_msg.content_nonce.as_ref()) {
-                    crate::crypto::decrypt_gcm(&prev_msg.content, nonce, &dek.0)
-                        .map_or_else(
-                            |_| String::from_utf8_lossy(&prev_msg.content).to_string(),
-                            |p| String::from_utf8_lossy(p.expose_secret()).to_string()
-                        )
+                let prev_content = if let (Some(dek), Some(nonce)) =
+                    (session_dek, prev_msg.content_nonce.as_ref())
+                {
+                    crate::crypto::decrypt_gcm(&prev_msg.content, nonce, &dek.0).map_or_else(
+                        |_| String::from_utf8_lossy(&prev_msg.content).to_string(),
+                        |p| String::from_utf8_lossy(p.expose_secret()).to_string(),
+                    )
                 } else {
                     String::from_utf8_lossy(&prev_msg.content).to_string()
                 };
 
                 if !prev_content.trim().is_empty() {
-                    content_to_embed = format!("User: {}\nAssistant: {}", prev_content.trim(), content_to_embed.trim());
+                    content_to_embed = format!(
+                        "User: {}\nAssistant: {}",
+                        prev_content.trim(),
+                        content_to_embed.trim()
+                    );
                     speaker_str = "Pair".to_string();
                     info!(message_id = %message.id, "Combined assistant message with previous user message for pair embedding.");
                 }
@@ -251,8 +256,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
-                chronicle_id: chronicle_id.clone(),             // Include the chronicle_id from the session
-                user_id: message.user_id, // user_id is now NOT NULL
+                chronicle_id: chronicle_id.clone(), // Include the chronicle_id from the session
+                user_id: message.user_id,           // user_id is now NOT NULL
                 speaker: speaker_str.clone(),
                 timestamp: message.created_at.clone(),
                 text: text_for_storage, // Placeholder when encrypted, plaintext otherwise

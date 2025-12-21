@@ -171,8 +171,10 @@ impl LanceDbClient {
         let chunk_text_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let entry_title_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let keywords_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
-        let is_enabled_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
-        let is_constant_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
+        let is_enabled_array: ArrayRef =
+            Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
+        let is_constant_array: ArrayRef =
+            Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
         let timestamp_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let encrypted_chunk_text_array: ArrayRef =
             Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
@@ -344,8 +346,10 @@ impl LanceDbClient {
         let chunk_text_array: ArrayRef = Arc::new(StringArray::from(chunk_texts));
         let entry_title_array: ArrayRef = Arc::new(StringArray::from(entry_titles));
         let keywords_array: ArrayRef = Arc::new(StringArray::from(keywords_list));
-        let is_enabled_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(is_enabled_list));
-        let is_constant_array: ArrayRef = Arc::new(arrow::array::BooleanArray::from(is_constant_list));
+        let is_enabled_array: ArrayRef =
+            Arc::new(arrow::array::BooleanArray::from(is_enabled_list));
+        let is_constant_array: ArrayRef =
+            Arc::new(arrow::array::BooleanArray::from(is_constant_list));
         let timestamp_array: ArrayRef = Arc::new(StringArray::from(timestamps));
         let encrypted_chunk_text_array: ArrayRef =
             Arc::new(StringArray::from(encrypted_chunk_texts));

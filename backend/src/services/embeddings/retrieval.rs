@@ -64,23 +64,35 @@ pub fn decrypt_lorebook_title(
                     let decrypted_bytes = secrecy::ExposeSecret::expose_secret(&decrypted_secret);
                     let title = String::from_utf8_lossy(decrypted_bytes).to_string();
                     if title.trim().is_empty() {
-                        return metadata.entry_title.clone().unwrap_or_else(|| "Untitled".to_string());
+                        return metadata
+                            .entry_title
+                            .clone()
+                            .unwrap_or_else(|| "Untitled".to_string());
                     }
                     return title;
                 }
                 Err(e) => {
                     warn!("Failed to decrypt lorebook title: {}", e);
-                    return metadata.entry_title.clone().unwrap_or_else(|| "[decryption failed]".to_string());
+                    return metadata
+                        .entry_title
+                        .clone()
+                        .unwrap_or_else(|| "[decryption failed]".to_string());
                 }
             }
         } else {
             // No DEK available
-            return metadata.entry_title.clone().unwrap_or_else(|| "[encrypted - no DEK]".to_string());
+            return metadata
+                .entry_title
+                .clone()
+                .unwrap_or_else(|| "[encrypted - no DEK]".to_string());
         }
     }
 
     // Fallback to unencrypted title if present
-    metadata.entry_title.clone().unwrap_or_else(|| "Untitled".to_string())
+    metadata
+        .entry_title
+        .clone()
+        .unwrap_or_else(|| "Untitled".to_string())
 }
 
 /// Helper function to decrypt chat message content (encryption required)

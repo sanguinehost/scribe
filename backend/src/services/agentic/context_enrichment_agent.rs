@@ -407,9 +407,7 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
             chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
             // Create chat request
-            let chat_request = ChatRequest::new(messages_vec)
-                .with_system(&system_prompt)
-                ;
+            let chat_request = ChatRequest::new(messages_vec).with_system(&system_prompt);
 
             match self
                 .state
@@ -770,8 +768,6 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
             options: None,
         };
 
-
-
         let prefill_message = GenAiChatMessage {
             role: ChatRole::Assistant,
             content: MessageContent::from(
@@ -795,9 +791,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         let system_prompt = "You are a context synthesis agent for a roleplay assistant. Your role is to take search results from chronicles and lorebooks and create a coherent summary that provides relevant background context.";
 
         // Create chat request
-        let chat_request = ChatRequest::new(messages_vec)
-            .with_system(system_prompt)
-            ;
+        let chat_request = ChatRequest::new(messages_vec).with_system(system_prompt);
 
         // Try to get AI synthesis
         match self
@@ -808,10 +802,9 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         {
             Ok(response) => {
                 // Extract JSON from response
-                if let Some(json_result) =
-                    response
-                        .first_text()
-                        .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                if let Some(json_result) = response
+                    .first_text()
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
                 {
                     let synthesis_text = json_result
                         .get("summary")
@@ -1150,7 +1143,8 @@ Please analyze the conversation and plan appropriate searches to enhance the nar
             || error_str.contains("SAFETY")
             || error_str.contains("BLOCKED_REASON")
     }
-}#[cfg(test)]
+}
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1168,7 +1162,7 @@ mod tests {
         }"#;
 
         let json_result: Value = serde_json::from_str(text).unwrap();
-        
+
         let reasoning = json_result
             .get("reasoning")
             .and_then(|r| r.as_str())

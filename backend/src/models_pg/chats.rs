@@ -184,8 +184,8 @@ pub struct Chat {
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
     // Game Master Agent fields
-    pub game_state: Option<String>, // JSON-encoded GameState
-    pub game_master_mode_enabled: bool,        // Feature flag
+    pub game_state: Option<String>,     // JSON-encoded GameState
+    pub game_master_mode_enabled: bool, // Feature flag
 }
 
 /// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)

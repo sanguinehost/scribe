@@ -93,7 +93,11 @@ pub async fn get_template_info_handler(
 
     info!(user_id = %user.id, template_id = %template_id, "Getting template info");
 
-    match TEMPLATE_MANAGER.read().unwrap().get_template_info(&template_id) {
+    match TEMPLATE_MANAGER
+        .read()
+        .unwrap()
+        .get_template_info(&template_id)
+    {
         Some(info) => Ok(Json(info)),
         None => {
             warn!(template_id = %template_id, "Template not found");
@@ -110,9 +114,7 @@ pub async fn get_template_info_handler(
 /// # Security
 /// - Requires Administrator privileges
 /// - Rate limited
-pub async fn reload_templates_handler(
-    auth: UnifiedAuth,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn reload_templates_handler(auth: UnifiedAuth) -> Result<impl IntoResponse, AppError> {
     let user = auth
         .user()
         .cloned()
