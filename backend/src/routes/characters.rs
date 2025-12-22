@@ -609,18 +609,45 @@ pub async fn upload_character_base64_handler(
                         {
                             Ok(mut entry) => {
                                 // Fallback: use insertion_order if position is None
-                                if entry.position.is_none() && entry.insertion_order.is_some() {
-                                    entry.position = entry.insertion_order;
+                                if entry.position.is_none() {
+                                    entry.position =
+                                        entry.insertion_order.or(entry.priority).or(entry.order);
                                 }
+
+                                // Merge both 'key' and 'keys' fields from SillyTavern format
+                                let mut all_keys = Vec::new();
+                                if let Some(key_list) = &entry.key {
+                                    all_keys.extend(key_list.iter().cloned());
+                                }
+                                if let Some(keys_list) = &entry.keys {
+                                    all_keys.extend(keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.keysecondary {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.secondary_keys {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                // Remove duplicates and empty strings
+                                all_keys.sort();
+                                all_keys.dedup();
+                                all_keys.retain(|k| !k.trim().is_empty());
+
+                                entry.keys = if all_keys.is_empty() {
+                                    None
+                                } else {
+                                    Some(all_keys)
+                                };
 
                                 let uid = entry
                                     .uid
                                     .map(|u| u.to_string())
                                     .unwrap_or_else(|| idx.to_string());
                                 tracing::info!(
-                                    "Successfully parsed array entry {}: content length={}",
+                                    "Successfully parsed array entry {}: content length={}, keys={:?}",
                                     uid,
-                                    entry.content.len()
+                                    entry.content.len(),
+                                    entry.keys
                                 );
                                 entries_map.insert(uid, entry);
                             }
@@ -643,14 +670,38 @@ pub async fn upload_character_base64_handler(
                         {
                             Ok(mut entry) => {
                                 // Fallback: use insertion_order if position is None
-                                if entry.position.is_none() && entry.insertion_order.is_some() {
-                                    entry.position = entry.insertion_order;
+                                if entry.position.is_none() {
+                                    entry.position =
+                                        entry.insertion_order.or(entry.priority).or(entry.order);
                                 }
 
+                                // Merge both 'key' and 'keys' fields from SillyTavern format
+                                let mut all_keys = Vec::new();
+                                if let Some(key_list) = &entry.key {
+                                    all_keys.extend(key_list.iter().cloned());
+                                }
+                                if let Some(keys_list) = &entry.keys {
+                                    all_keys.extend(keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.keysecondary {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                // Remove duplicates and empty strings
+                                all_keys.sort();
+                                all_keys.dedup();
+                                all_keys.retain(|k| !k.trim().is_empty());
+
+                                entry.keys = if all_keys.is_empty() {
+                                    None
+                                } else {
+                                    Some(all_keys)
+                                };
+
                                 tracing::info!(
-                                    "Successfully parsed object entry {}: content length={}",
+                                    "Successfully parsed object entry {}: content length={}, keys={:?}",
                                     uid,
-                                    entry.content.len()
+                                    entry.content.len(),
+                                    entry.keys
                                 );
                                 entries_map.insert(uid.clone(), entry);
                             }
@@ -1204,18 +1255,45 @@ pub async fn upload_character_handler(
                         {
                             Ok(mut entry) => {
                                 // Fallback: use insertion_order if position is None
-                                if entry.position.is_none() && entry.insertion_order.is_some() {
-                                    entry.position = entry.insertion_order;
+                                if entry.position.is_none() {
+                                    entry.position =
+                                        entry.insertion_order.or(entry.priority).or(entry.order);
                                 }
+
+                                // Merge both 'key' and 'keys' fields from SillyTavern format
+                                let mut all_keys = Vec::new();
+                                if let Some(key_list) = &entry.key {
+                                    all_keys.extend(key_list.iter().cloned());
+                                }
+                                if let Some(keys_list) = &entry.keys {
+                                    all_keys.extend(keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.keysecondary {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.secondary_keys {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                // Remove duplicates and empty strings
+                                all_keys.sort();
+                                all_keys.dedup();
+                                all_keys.retain(|k| !k.trim().is_empty());
+
+                                entry.keys = if all_keys.is_empty() {
+                                    None
+                                } else {
+                                    Some(all_keys)
+                                };
 
                                 let uid = entry
                                     .uid
                                     .map(|u| u.to_string())
                                     .unwrap_or_else(|| idx.to_string());
                                 tracing::info!(
-                                    "Successfully parsed array entry {}: content length={}",
+                                    "Successfully parsed array entry {}: content length={}, keys={:?}",
                                     uid,
-                                    entry.content.len()
+                                    entry.content.len(),
+                                    entry.keys
                                 );
                                 entries_map.insert(uid, entry);
                             }
@@ -1238,14 +1316,41 @@ pub async fn upload_character_handler(
                         {
                             Ok(mut entry) => {
                                 // Fallback: use insertion_order if position is None
-                                if entry.position.is_none() && entry.insertion_order.is_some() {
-                                    entry.position = entry.insertion_order;
+                                if entry.position.is_none() {
+                                    entry.position =
+                                        entry.insertion_order.or(entry.priority).or(entry.order);
                                 }
 
+                                // Merge both 'key' and 'keys' fields from SillyTavern format
+                                let mut all_keys = Vec::new();
+                                if let Some(key_list) = &entry.key {
+                                    all_keys.extend(key_list.iter().cloned());
+                                }
+                                if let Some(keys_list) = &entry.keys {
+                                    all_keys.extend(keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.keysecondary {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                if let Some(secondary_keys_list) = &entry.secondary_keys {
+                                    all_keys.extend(secondary_keys_list.iter().cloned());
+                                }
+                                // Remove duplicates and empty strings
+                                all_keys.sort();
+                                all_keys.dedup();
+                                all_keys.retain(|k| !k.trim().is_empty());
+
+                                entry.keys = if all_keys.is_empty() {
+                                    None
+                                } else {
+                                    Some(all_keys)
+                                };
+
                                 tracing::info!(
-                                    "Successfully parsed object entry {}: content length={}",
+                                    "Successfully parsed object entry {}: content length={}, keys={:?}",
                                     uid,
-                                    entry.content.len()
+                                    entry.content.len(),
+                                    entry.keys
                                 );
                                 entries_map.insert(uid.clone(), entry);
                             }

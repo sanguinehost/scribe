@@ -25,6 +25,9 @@ pub struct EmbeddingPipelineService {
     chunk_config: ChunkConfig, // Store chunking configuration
 }
 
+/// Default score threshold for standard RAG retrieval
+const RAG_SCORE_THRESHOLD: f32 = 0.20;
+
 impl EmbeddingPipelineService {
     /// Creates a new `EmbeddingPipelineService`.
     #[must_use]
@@ -161,7 +164,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
                 if !prev_content.trim().is_empty() {
                     content_to_embed = format!(
-                        "User: {}\nAssistant: {}",
+                        "User: {}\n\nAssistant: {}",
                         prev_content.trim(),
                         content_to_embed.trim()
                     );
@@ -206,7 +209,21 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 .embed_content(&chunk.content, task_type, None)
                 .await
             {
-                Ok(vector) => vector,
+                Ok(vector) => {
+                    if vector.is_empty() {
+                        warn!(
+                            chunk_index = index,
+                            "Embedding client returned an empty vector for chat chunk"
+                        );
+                    } else {
+                        debug!(
+                            chunk_index = index,
+                            vector_len = vector.len(),
+                            "Successfully got embedding for chat chunk"
+                        );
+                    }
+                    vector
+                }
                 Err(e) => {
                     error!(error = %e, chunk_index = index, "Failed to get embedding for chunk");
                     continue; // Skip this chunk for now
@@ -387,7 +404,14 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .embed_content(&full_content, task_type, decrypted_title.as_deref())
             .await
         {
-            Ok(vector) => vector,
+            Ok(vector) => {
+                if vector.is_empty() {
+                    warn!(%original_lorebook_entry_id, "Embedding client returned an empty vector for lorebook entry");
+                } else {
+                    debug!(%original_lorebook_entry_id, vector_len = vector.len(), "Successfully got embedding for lorebook entry");
+                }
+                vector
+            }
             Err(e) => {
                 error!(error = %e, %original_lorebook_entry_id, "Failed to get embedding for lorebook entry");
                 return Err(AppError::EmbeddingError(format!(
@@ -520,13 +544,14 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let query_embedding = embedding_client
             .embed_content(query_text, "RETRIEVAL_QUERY", None)
             .await?;
-        debug!(
+        info!(
             query_text,
-            ?query_embedding,
+            vector_len = query_embedding.len(),
             "Generated query embedding for RAG"
         );
 
         let mut combined_results = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
 
         // Search chat history if session_id is provided
         if let Some(session_id) = session_id_for_chat_history {
@@ -580,6 +605,22 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         match ChatMessageChunkMetadata::try_from(scored_point.payload.clone()) {
                             Ok(chat_meta) => {
                                 debug!(?chat_meta, %session_id, "Successfully parsed chat metadata (RAG)");
+
+                                if scored_point.score < RAG_SCORE_THRESHOLD {
+                                    info!(
+                                        point_id = ?scored_point.id,
+                                        score = scored_point.score,
+                                        threshold = %RAG_SCORE_THRESHOLD,
+                                        "Filtering out chat chunk below threshold"
+                                    );
+                                    continue;
+                                }
+
+                                if !seen_ids.insert(chat_meta.message_id.to_string()) {
+                                    debug!(message_id = %chat_meta.message_id, "Skipping duplicate chat message in RAG");
+                                    continue;
+                                }
+
                                 let decrypted_text = decrypt_chat_content(&chat_meta, session_dek);
                                 combined_results.push(RetrievedChunk {
                                     score: scored_point.score,
@@ -691,6 +732,24 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                         ?lorebook_ids,
                                         "Successfully parsed lorebook metadata (RAG)"
                                     );
+
+                                    if scored_point.score < RAG_SCORE_THRESHOLD {
+                                        debug!(
+                                            point_id = ?scored_point.id,
+                                            score = scored_point.score,
+                                            threshold = %RAG_SCORE_THRESHOLD,
+                                            "Filtering out lorebook chunk below threshold"
+                                        );
+                                        continue;
+                                    }
+
+                                    if !seen_ids.insert(
+                                        lorebook_meta.original_lorebook_entry_id.to_string(),
+                                    ) {
+                                        debug!(entry_id = %lorebook_meta.original_lorebook_entry_id, "Skipping duplicate lorebook entry in RAG");
+                                        continue;
+                                    }
+
                                     let decrypted_text =
                                         decrypt_lorebook_content(&lorebook_meta, session_dek);
                                     combined_results.push(RetrievedChunk {
@@ -811,6 +870,14 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                         ?lorebook_ids,
                                         "Successfully parsed constant lorebook metadata (RAG)"
                                     );
+
+                                    if !seen_ids.insert(
+                                        lorebook_meta.original_lorebook_entry_id.to_string(),
+                                    ) {
+                                        debug!(entry_id = %lorebook_meta.original_lorebook_entry_id, "Skipping duplicate constant lorebook entry in RAG");
+                                        continue;
+                                    }
+
                                     // Give constant entries a high score to ensure they appear at the top
                                     let decrypted_text =
                                         decrypt_lorebook_content(&lorebook_meta, session_dek);
@@ -935,6 +1002,22 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                         ) {
                             Ok(chronicle_meta) => {
                                 debug!(?chronicle_meta, %user_id, %chronicle_id, "Successfully parsed chronicle metadata (RAG)");
+
+                                if scored_point.score < RAG_SCORE_THRESHOLD {
+                                    info!(
+                                        point_id = ?scored_point.id,
+                                        score = scored_point.score,
+                                        threshold = %RAG_SCORE_THRESHOLD,
+                                        "Filtering out chronicle chunk below threshold"
+                                    );
+                                    continue;
+                                }
+
+                                if !seen_ids.insert(chronicle_meta.event_id.to_string()) {
+                                    debug!(event_id = %chronicle_meta.event_id, "Skipping duplicate chronicle event in RAG");
+                                    continue;
+                                }
+
                                 combined_results.push(RetrievedChunk {
                                     score: scored_point.score,
                                     text: chunk_text,

@@ -161,17 +161,20 @@ pub struct UploadedLorebookEntry {
     pub constant: Option<bool>,   // Maps to is_constant
     pub order: Option<i32>,       // Maps to insertion_order
     pub insertion_order: Option<i32>, // Alternative field name used in some SillyTavern exports
+    pub priority: Option<i32>,    // Another alternative field name
     #[serde(default, deserialize_with = "deserialize_position")]
     pub position: Option<i32>, // 0=before prompt, 1=after prompt
     pub uid: Option<i32>,         // Original SillyTavern UID
     #[serde(skip_deserializing)]
     pub id: Option<i32>, // Ignore duplicate "id" field during deserialization
-    #[serde(default, alias = "displayName")] // Added alias for compatibility
+    #[serde(default, alias = "displayName")]
     pub display_name: Option<String>, // Field for SillyTavern entry title
+    pub name: Option<String>,     // Alternative field name
 
     // Additional SillyTavern fields that we'll ignore but need for deserialization
     #[serde(default)]
     pub keysecondary: Option<Vec<String>>,
+    pub secondary_keys: Option<Vec<String>>, // Alternative field name
     #[serde(default)]
     pub selective: Option<bool>,
     #[serde(default, rename = "displayIndex")]
@@ -384,6 +387,9 @@ where
             }
         }
         serde_json::Value::String(s) => {
+            if s.is_empty() {
+                return Ok(None);
+            }
             match s.as_str() {
                 "before_char" | "before_prompt" => Ok(Some(0)),
                 "after_char" | "after_prompt" => Ok(Some(1)),

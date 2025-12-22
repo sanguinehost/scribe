@@ -9,7 +9,7 @@
 # 4. Binary placement for Tauri sidecar
 # 5. Validation and Tauri dev server startup (optional)
 #
-# Usage: ./scripts/build-desktop-dev.sh [--clean] [--skip-backend] [--no-rebuild] [--run|--open]
+# Usage: ./scripts/build-desktop-dev.sh [--clean] [--skip-backend] [--no-rebuild] [--run|--open] [--check]
 #
 # Options:
 #   --clean         Full clean rebuild (removes all Cargo cache - slow but thorough)
@@ -17,6 +17,7 @@
 #   --skip-backend  Skip backend compilation (only rebuild frontend)
 #   --no-rebuild    Skip both frontend and backend compilation (just run existing binaries)
 #   --run/--open    Start the Tauri dev server after building
+#   --check         Run cargo check instead of cargo build (fast verification)
 #
 # Default: Incremental rebuild (fast, only recompiles changed files)
 #
@@ -35,6 +36,7 @@ CLEAN_BUILD=false
 SKIP_BACKEND=false
 SKIP_FRONTEND=false
 RUN_APP=false
+CHECK_ONLY=false
 LOG_LEVEL="info"
 for arg in "$@"; do
     case $arg in
@@ -63,9 +65,13 @@ for arg in "$@"; do
             SKIP_FRONTEND=true
             shift
             ;;
+        --check)
+            CHECK_ONLY=true
+            shift
+            ;;
         *)
             echo "Unknown option: $arg"
-            echo "Usage: $0 [--clean] [--skip-backend] [--run|--open]"
+            echo "Usage: $0 [--clean] [--skip-backend] [--run|--open] [--check]"
             exit 1
             ;;
     esac
@@ -227,6 +233,16 @@ if [ "$SKIP_BACKEND" = false ]; then
     log_info "Step 4/7: Building backend binary with desktop features (SQLite + LanceDB)..."
 
     cd "$PROJECT_ROOT"
+
+    if [ "$CHECK_ONLY" = true ]; then
+        log_info "Running: cargo check -p scribe-backend --no-default-features --features desktop"
+        cargo check -p scribe-backend \
+            --no-default-features \
+            --features desktop \
+            --message-format=short
+        log_success "Backend check successful"
+        exit 0
+    fi
 
     log_info "Running: cargo build -p scribe-backend --no-default-features --features desktop --bin scribe-backend"
     cargo build -p scribe-backend \

@@ -335,8 +335,8 @@ impl TemplateManager {
                     .collect::<String>();
 
                 // Limit length to prevent memory exhaustion
-                if sanitized.len() > 10000 {
-                    serde_json::Value::String(format!("{}...[truncated]", &sanitized[..10000]))
+                if sanitized.len() > 200000 {
+                    serde_json::Value::String(format!("{}...[truncated]", &sanitized[..200000]))
                         .into()
                 } else {
                     serde_json::Value::String(sanitized).into()
@@ -345,7 +345,7 @@ impl TemplateManager {
             serde_json::Value::Array(arr) => {
                 serde_json::Value::Array(
                     arr.iter()
-                        .take(100) // Limit array size
+                        .take(500) // Limit array size
                         .map(|v| self.sanitize_context(v.clone().into(), skip_keys))
                         .map(|v| v.into())
                         .collect(),
@@ -355,7 +355,7 @@ impl TemplateManager {
             serde_json::Value::Object(obj) => {
                 serde_json::Value::Object(
                     obj.iter()
-                        .take(100) // Limit object size
+                        .take(500) // Limit object size
                         .map(|(k, v)| {
                             if skip_keys.contains(&k.as_str()) {
                                 // Don't sanitize template sections - they need Jinja2 syntax

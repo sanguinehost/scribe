@@ -171,10 +171,10 @@ fn default_chunking_metric() -> String {
     "word".to_string()
 }
 const fn default_chunking_max_size() -> usize {
-    200
+    1000
 } // Default for word metric
 const fn default_chunking_overlap() -> usize {
-    20
+    50
 } // Default for word metric
 fn default_tokenizer_model_path() -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");

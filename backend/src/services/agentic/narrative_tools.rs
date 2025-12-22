@@ -1240,9 +1240,9 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         // Different thresholds for different search types to optimize results
         // LOWERED THRESHOLDS based on user feedback that search was too sensitive
         let score_threshold = match search_type {
-            "lorebooks" => Some(0.35),  // Lowered from 0.45
-            "chronicles" => Some(0.40), // Lowered from 0.5
-            _ => Some(0.30),            // Lowered from 0.4
+            "lorebooks" => Some(0.20),  // Lowered from 0.35
+            "chronicles" => Some(0.25), // Lowered from 0.40
+            _ => Some(0.20),            // Lowered from 0.30
         };
 
         info!(

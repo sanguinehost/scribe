@@ -711,6 +711,25 @@ pub fn create_qdrant_point(
     vector: Vec<f32>,
     payload: Option<crate::DbJson>,
 ) -> Result<PointStruct, AppError> {
+    if vector.is_empty() {
+        error!(
+            "CRITICAL: create_qdrant_point received an empty vector! ID: {}",
+            id
+        );
+    } else {
+        // Log first few elements to verify content
+        let preview = if vector.len() > 3 {
+            format!("{:?}...", &vector[0..3])
+        } else {
+            format!("{:?}", vector)
+        };
+        info!(
+            "create_qdrant_point received vector of length {}. Preview: {}",
+            vector.len(),
+            preview
+        );
+    }
+
     // Convert Option<serde_json::Value> to HashMap<String, qdrant_client::qdrant::Value>
     let qdrant_payload: std::collections::HashMap<String, Value> = match payload {
         Some(json_value) => {
@@ -735,11 +754,42 @@ pub fn create_qdrant_point(
     // Convert UUID to string for PointId
     let point_id_str = id.to_string();
 
-    Ok(PointStruct {
+    let vectors = qdrant_client::qdrant::Vectors {
+        vectors_options: Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(
+            qdrant_client::qdrant::Vector {
+                data: vector,
+                ..Default::default()
+            },
+        )),
+    };
+
+    let point = PointStruct {
         id: Some(point_id_str.into()), // Convert String to Qdrant PointId
-        vectors: Some(vector.into()),  // Convert Vec<f32> to Qdrant Vectors
+        vectors: Some(vectors),        // Use explicit Vectors struct
         payload: qdrant_payload,
-    })
+    };
+
+    // Final sanity check before returning
+    if let Some(v) = &point.vectors {
+        if let Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(vec_data)) =
+            &v.vectors_options
+        {
+            if vec_data.data.is_empty() {
+                error!(
+                    "CRITICAL: PointStruct created with EMPTY vector! ID: {}",
+                    id
+                );
+            } else {
+                info!(
+                    "PointStruct created successfully with vector length: {} for ID: {}",
+                    vec_data.data.len(),
+                    id
+                );
+            }
+        }
+    }
+
+    Ok(point)
 }
 
 // Add a helper function to create a filter for message_id

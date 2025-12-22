@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 // Re-export Qdrant types that we need to implement the trait
 use qdrant_client::qdrant::{
@@ -288,20 +288,46 @@ impl LanceDbClient {
                 Some(vectors_struct) => {
                     use qdrant_client::qdrant::vectors::VectorsOptions;
                     match &vectors_struct.vectors_options {
-                        Some(VectorsOptions::Vector(v)) => v.data.clone(),
-                        _ => vec![0.0; self.embedding_dimension as usize],
+                        Some(VectorsOptions::Vector(v)) => {
+                            let data = v.data.clone();
+                            if data.is_empty() {
+                                error!("CRITICAL: Qdrant point has an empty Vector (VectorsOptions::Vector). Point ID: {:?}", point.id);
+                            }
+                            data
+                        }
+                        Some(VectorsOptions::Vectors(nv)) => {
+                            error!("CRITICAL: Qdrant point has NamedVectors (VectorsOptions::Vectors), expected single Vector. Found keys: {:?}", nv.vectors.keys().collect::<Vec<_>>());
+                            vec![0.0; self.embedding_dimension as usize]
+                        }
+                        None => {
+                            error!("CRITICAL: Qdrant point has Vectors but VectorsOptions is None");
+                            vec![0.0; self.embedding_dimension as usize]
+                        }
                     }
                 }
-                None => vec![0.0; self.embedding_dimension as usize],
+                None => {
+                    error!("CRITICAL: Qdrant point has no vectors (None)");
+                    vec![0.0; self.embedding_dimension as usize]
+                }
             };
+
+            // Check for NaN in the vector before storing
+            if vector.iter().any(|&x| x.is_nan()) {
+                error!(
+                    "CRITICAL: Vector for point {:?} contains NaN values! Replacing with zeros.",
+                    point.id
+                );
+                vector = vec![0.0; self.embedding_dimension as usize];
+            }
 
             // Ensure vector has the correct dimension
             let expected_dim = self.embedding_dimension as usize;
             if vector.len() != expected_dim {
-                warn!(
-                    "Vector dimension mismatch: got {}, expected {}. Padding/truncating.",
+                error!(
+                    "CRITICAL: Vector dimension mismatch: got {}, expected {}. Padding/truncating. Point ID: {:?}",
                     vector.len(),
-                    expected_dim
+                    expected_dim,
+                    point.id
                 );
                 vector.resize(expected_dim, 0.0);
             }
@@ -584,10 +610,26 @@ impl LanceDbClient {
                 .unwrap_or_default();
 
             // Calculate score from distance (cosine distance to cosine similarity)
-            let score = distances
-                .and_then(|d| d.get(i))
-                .map(|&d| 1.0 - d) // Cosine distance to similarity
+            let distance = distances.and_then(|d| d.get(i)).copied();
+            let score = distance
+                .map(|d| 1.0 - d) // Cosine distance to similarity
                 .unwrap_or(1.0);
+
+            if score.is_nan() {
+                error!(
+                    point_id = ?id,
+                    distance = ?distance,
+                    "LanceDB result has NaN score! Skipping point."
+                );
+                continue;
+            }
+
+            info!(
+                point_id = ?id,
+                distance = ?distance,
+                score = %score,
+                "LanceDB raw result"
+            );
 
             results.push(ScoredPoint {
                 id,
@@ -658,10 +700,25 @@ impl QdrantClientServiceTrait for LanceDbClient {
         filter: Option<Filter>,
         score_threshold: Option<f32>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
+        if vector.iter().any(|&x| x.is_nan()) {
+            error!("CRITICAL: Search vector contains NaN values!");
+        }
+
+        let magnitude = (vector.iter().map(|&x| x * x).sum::<f32>()).sqrt();
+        if magnitude < 1e-6 {
+            error!(
+                "CRITICAL: Search vector has near-zero magnitude: {}!",
+                magnitude
+            );
+        } else {
+            debug!("Search vector magnitude: {}", magnitude);
+        }
+
         let table = self.get_table().await?;
 
         let mut query = table
-            .vector_search(vector)
+            .query()
+            .nearest_to(vector)
             .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create query: {}", e)))?
             .limit(limit as usize)
             .distance_type(lancedb::DistanceType::Cosine);
@@ -703,7 +760,36 @@ impl QdrantClientServiceTrait for LanceDbClient {
 
         // Apply score threshold if provided
         if let Some(threshold) = score_threshold {
+            let initial_count = scored_points.len();
+
+            // Sort by score descending for better logging of "what we almost found"
+            scored_points.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            if initial_count > 0 {
+                info!(
+                    "Top 5 raw scores before threshold ({}): {:?}",
+                    threshold,
+                    scored_points
+                        .iter()
+                        .take(5)
+                        .map(|p| format!("{:.3}", p.score))
+                        .collect::<Vec<_>>()
+                );
+            }
+
             scored_points.retain(|p| p.score >= threshold);
+
+            if scored_points.len() < initial_count {
+                info!(
+                    "Filtered out {} results below threshold {}",
+                    initial_count - scored_points.len(),
+                    threshold
+                );
+            }
         }
 
         info!("LanceDB search returned {} results", scored_points.len());
@@ -727,7 +813,7 @@ impl QdrantClientServiceTrait for LanceDbClient {
             // Vector search with optional text filter
             let mut combined_filter = filter.unwrap_or_default();
 
-            if let Some(text) = text_query {
+            if let Some(text) = text_query.as_ref() {
                 // Add text conditions to the filter
                 for field in &text_fields {
                     combined_filter.should.push(Condition {
@@ -742,8 +828,83 @@ impl QdrantClientServiceTrait for LanceDbClient {
                 }
             }
 
-            self.search_points_with_threshold(v, limit, Some(combined_filter), score_threshold)
+            // Increase limit significantly to compensate for post-filtering
+            // and ensure we find matches that might have low vector similarity
+            let search_limit = (limit * 5).max(100);
+            info!("Hybrid search using internal limit: {}", search_limit);
+
+            // Call search without threshold first, so we can boost before thresholding
+            self.search_points_with_threshold(v, search_limit, Some(combined_filter), None)
                 .await
+                .map(|mut points| {
+                    let initial_count = points.len();
+
+                    // If we have a text query, boost points that match it
+                    if let Some(text) = text_query.as_ref() {
+                        let text_lower = text.to_lowercase();
+                        for point in &mut points {
+                            let mut matched = false;
+                            for field in &text_fields {
+                                if let Some(val) = point.payload.get(field).and_then(|v| v.as_str())
+                                {
+                                    if val.to_lowercase().contains(&text_lower) {
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if matched {
+                                // Boost score for text matches to ensure they survive thresholds
+                                // and appear higher in results
+                                let old_score = point.score;
+                                point.score = (point.score + 0.5).min(1.0);
+                                info!(
+                                    point_id = ?point.id,
+                                    old_score = %old_score,
+                                    new_score = %point.score,
+                                    "Boosted score for text match in hybrid search"
+                                );
+                            }
+                        }
+                    }
+
+                    // Re-sort after boosting
+                    points.sort_by(|a, b| {
+                        b.score
+                            .partial_cmp(&a.score)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+
+                    // Apply threshold after boosting
+                    if let Some(threshold) = score_threshold {
+                        if initial_count > 0 {
+                            info!(
+                                "Top 5 raw scores before threshold ({}): {:?}",
+                                threshold,
+                                points
+                                    .iter()
+                                    .take(5)
+                                    .map(|p| format!("{:.3}", p.score))
+                                    .collect::<Vec<_>>()
+                            );
+                        }
+
+                        points.retain(|p| p.score >= threshold);
+
+                        if points.len() < initial_count {
+                            info!(
+                                "Filtered out {} results below threshold {} after boosting",
+                                initial_count - points.len(),
+                                threshold
+                            );
+                        }
+                    }
+
+                    // Truncate to requested limit
+                    points.truncate(limit as usize);
+                    points
+                })
         } else if text_query.is_some() {
             // Text-only search - retrieve with filter
             let mut combined_filter = filter.unwrap_or_default();

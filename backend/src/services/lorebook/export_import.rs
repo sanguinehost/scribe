@@ -233,6 +233,12 @@ impl LorebookService {
             if let Some(keys_list) = &entry.keys {
                 all_keys.extend(keys_list.iter().cloned());
             }
+            if let Some(secondary_keys_list) = &entry.keysecondary {
+                all_keys.extend(secondary_keys_list.iter().cloned());
+            }
+            if let Some(secondary_keys_list) = &entry.secondary_keys {
+                all_keys.extend(secondary_keys_list.iter().cloned());
+            }
             // Remove duplicates and empty strings
             all_keys.sort();
             all_keys.dedup();
@@ -254,6 +260,7 @@ impl LorebookService {
                 entry_title: entry
                     .display_name
                     .clone()
+                    .or_else(|| entry.name.clone())
                     .or_else(|| entry.comment.clone())
                     .unwrap_or_else(|| format!("Entry {}", uid)),
                 keys_text,
@@ -264,7 +271,7 @@ impl LorebookService {
                     .or_else(|| entry.disable.map(|d| !d))
                     .or(Some(true)), // Use enabled if present, otherwise invert disable, default to true
                 is_constant: entry.constant,
-                insertion_order: entry.order.or(entry.insertion_order),
+                insertion_order: entry.order.or(entry.insertion_order).or(entry.priority),
                 placement_hint: Some(placement_hint),
             };
 
