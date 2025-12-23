@@ -9,9 +9,18 @@
 		onClose?: () => void;
 		onExpand?: () => void;
 		children?: Snippet;
+		action?: Snippet;
 	}
 
-	let { title, icon, defaultCollapsed = false, onClose, onExpand, children }: Props = $props();
+	let {
+		title,
+		icon,
+		defaultCollapsed = false,
+		onClose,
+		onExpand,
+		children,
+		action
+	}: Props = $props();
 
 	let collapsed = $state(defaultCollapsed);
 
@@ -39,6 +48,11 @@
 		</button>
 
 		<div class="flex items-center gap-1">
+			<!-- Custom Action -->
+			{#if action}
+				{@render action()}
+			{/if}
+
 			<!-- Expand Button (optional) -->
 			{#if onExpand}
 				<button

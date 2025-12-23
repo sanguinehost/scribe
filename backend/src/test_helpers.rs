@@ -36,6 +36,7 @@ use crate::{
         chat::chat_routes,
         chats,
         chronicles,
+        game_state,        // Added game_state
         generation_routes, // Added generation_routes
         health::health_check,
         lorebook_routes,           // Added lorebook_routes
@@ -1834,7 +1835,10 @@ pub async fn spawn_app_with_rate_limiting_options(
             "/characters",
             characters::characters_router(app_state_inner.clone()),
         )
-        .nest("/chat", chat_routes(app_state_inner.clone()))
+        .nest(
+            "/chat",
+            chat_routes(app_state_inner.clone()).merge(game_state::router(app_state_inner.clone())),
+        )
         .nest("/chats", chats::chat_routes()) // Assuming this returns Router<AppState> or is already stateful
         .nest(
             "/chronicles",

@@ -10,13 +10,17 @@
 		gameState = null,
 		gameTime = null,
 		location = null,
-		isLoading = false
+		isLoading = false,
+		sessionId = null,
+		onStateUpdate
 	}: {
 		isOpen?: boolean;
 		gameState: GameState | null;
 		gameTime?: any;
 		location?: any;
 		isLoading?: boolean;
+		sessionId: string | null;
+		onStateUpdate?: (newState: GameState) => void;
 	} = $props();
 
 	$inspect(gameState).with((type, value) => {
@@ -48,7 +52,7 @@
 
 			<!-- Game State Panel -->
 			<div class="flex-1 overflow-hidden">
-				<GameStatePanel {gameState} {isLoading} />
+				<GameStatePanel {gameState} {isLoading} {sessionId} {onStateUpdate} />
 			</div>
 		</div>
 	</div>

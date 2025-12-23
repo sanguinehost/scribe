@@ -183,6 +183,7 @@ export interface GameTime {
 	season: string | null;
 	calendar_system: string;
 	date: string;
+	weekday: string | null;
 	total_seconds_elapsed: number;
 }
 
@@ -225,9 +226,13 @@ export interface QuestObjective {
 export interface NpcState {
 	id: string;
 	name: string;
+	role: string;
 	location: string | null;
 	disposition: string;
 	status: string;
+	description: string | null;
+	personality: string | null;
+	is_important: boolean;
 	objectives: string[];
 	data: Record<string, unknown>;
 }

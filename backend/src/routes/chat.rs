@@ -297,6 +297,7 @@ pub async fn generate_chat_response(
         player_chronicle_id,       // 23: Option<crate::db::DbId> (NEW) - Add this field
         agent_mode,                // 24: Option<String> (NEW) - Agent mode for context enrichment
         game_master_mode_enabled,  // 25: Option<bool> (NEW) - Game Master mode flag
+        initial_game_state,        // 26: Option<serde_json::Value> (NEW) - Initial game state
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -1223,6 +1224,7 @@ pub async fn generate_chat_response(
                     #[cfg(not(feature = "payment"))]
                     charge_credits: false,
                     game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
+                    initial_game_state,
                 },
             )
             .await
@@ -2090,6 +2092,7 @@ pub async fn generate_chat_response(
                     #[cfg(not(feature = "payment"))]
                     charge_credits: false,
                     game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
+                    initial_game_state,
                 },
             )
             .await
@@ -2781,6 +2784,7 @@ pub async fn generate_suggested_actions(
         _player_chronicle_id,      // We don't use this for suggestions
         _agent_mode,               // Agent mode - not used for suggestions
         _game_master_mode_enabled, // Game Master mode - not used for suggestions
+        _initial_game_state,       // Initial game state - not used for suggestions
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -3403,6 +3407,7 @@ pub async fn expand_text_handler(
         variant_of: None,          // Text expansion doesn't create variants
         charge_credits: false,     // Text expansion is not charged (utility feature)
         game_master_mode_enabled: false,
+        initial_game_state: session_data.game_state.map(|j| j.into()),
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3670,7 +3675,6 @@ pub async fn impersonate_handler(
 
     // Create StreamAiParams for the generation service
     let stream_params = chat::generation::StreamAiParams {
-        game_master_mode_enabled: false,
         state: state_arc,
         session_id,
         user_id,
@@ -3698,6 +3702,8 @@ pub async fn impersonate_handler(
         player_chronicle_id: None, // Impersonation doesn't involve chronicle processing
         variant_of: None,          // Impersonation doesn't create variants
         charge_credits: false,     // Impersonation is not charged (utility feature)
+        game_master_mode_enabled: false,
+        initial_game_state: session_data.game_state.map(|j| j.into()),
     };
 
     // Generate the response using the full pipeline

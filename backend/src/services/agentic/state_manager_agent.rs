@@ -183,6 +183,7 @@ CRITICAL: WHO IS THE PLAYER?
 - "{{user}}" is the PLAYER. Track THEIR inventory, vitals, location, and quests.
 - "{{char}}" is the NPC. They go in the "NPCs" section only.
 - All tracked state belongs to {{user}}, NOT {{char}}.
+- NPC NAMES: Always use proper capitalization for NPC names (e.g., "Lin Mei", not "lin_mei").
 
 PLACEHOLDER REPLACEMENT:
 Replace all [placeholders] with concrete in-world details. Examples:
@@ -221,15 +222,27 @@ Temperature: [temperature description]
 
 Time
 ---
-Day: [day number]
+Day: [total days elapsed] (DO NOT RESET)
+Weekday: [day name] (e.g., Monday, Fredas, Jīnyào (金曜日), etc.)
 Hour: [0-23]
 Minute: [0-59]
 Second: [0-59]
 Period: [dawn/morning/noon/afternoon/dusk/evening/night]
 Season: [season name]
 Calendar: [Earth/Fantasy/Sci-Fi/etc.]
-Date: [full date string, e.g. "2025-12-19" or "15th of Highsun, Year 120"]
+Date: [full date string, e.g. "2025-12-19", "15th of Highsun, Year 120", or "4th Day of the Lotus Moon, Year of the Dragon"]
 Total Seconds Elapsed: [total seconds since game start]
+TIME CONTINUITY:
+- MICRO-TIME (Conversations, Trading, Crafting, Combat): Increment by MINUTES only.
+  - Buying an item: +5-10 mins
+  - Short conversation: +2-5 mins
+  - Combat encounter: +1-5 mins
+  - Limit time progression to minutes for these actions.
+- MACRO-TIME (Travel, Sleep, Time Skips): Increment by HOURS or DAYS.
+  - "Travelled to the next town": +Hours/Days
+  - "Slept until morning": Set time to morning
+DAY COUNTER: "Day" is the TOTAL count of days since the adventure started. Persist the total day count throughout the campaign.
+WEEKDAY: "Weekday" is the name of the day in the cycle. Update this as days pass.
 
 Vitals
 ---
@@ -272,6 +285,7 @@ Main Quest
     - [x] [completed objective]
     - [ ] [incomplete objective]
   Rewards: [reward description]
+- QUEST STICKINESS: ALWAYS include all active and completed quests. Retain all completed quests in the list permanently.
 
 Optional Quests
 ---
@@ -285,6 +299,8 @@ NPCs
 - [NPC Name] ([disposition: friendly/neutral/hostile])
   Location: [where they are]
   Status: [alive/dead/unconscious]
+  Description: [detailed physical description]
+  Personality: [personality traits]
   Notes: [any relevant info]
 
 Status Effects
@@ -328,10 +344,15 @@ CRITICAL - QUESTS:
 - Only list actual quests with real titles from the narrative
 
 CRITICAL - NPCS:
-- ONLY include NPCs who are PHYSICALLY PRESENT in the current scene
-- When an NPC leaves, REMOVE them from this section
-- Do NOT list every NPC ever met - only those HERE RIGHT NOW
-- If no NPCs are present, write: "None present"
+- "NPCs (Present)" section lists NPCs currently in the scene.
+- "Known NPCs (Elsewhere)" lists important NPCs who are not present.
+- When an NPC enters the scene, move them to "NPCs (Present)" and add full details.
+- When an NPC leaves, move them to "Known NPCs (Elsewhere)" IF they are important.
+- If an NPC is unimportant (e.g., random guard) and leaves, REMOVE them entirely.
+- "Important" means: recurring characters, quest givers, or narratively significant.
+- Set "Important: true" for named characters who matter.
+- Set "Important: false" for generic guards, villagers, or one-off characters.
+- If no NPCs are present, write: "NPCs (Present): None"
 
 CRITICAL - STATUS EFFECTS:
 - Only list active effects (poison, buffs, debuffs, conditions)
@@ -455,6 +476,9 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                 output.push_str(&format!(", {}", season));
             }
             output.push('\n');
+            if let Some(ref weekday) = time.weekday {
+                output.push_str(&format!("  Weekday: {}\n", weekday));
+            }
             output.push_str(&format!("  Calendar: {}\n", time.calendar_system));
             output.push_str(&format!("  Date: {}\n", time.date));
             output.push_str(&format!(
@@ -553,13 +577,56 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
 
         // === NPCS ===
         if !state.npcs.is_empty() {
-            output.push_str("NPCs:\n");
+            let current_location_name = state.location.as_ref().map(|l| l.name.to_lowercase());
+            let mut present_npcs = Vec::new();
+            let mut known_npcs = Vec::new();
+
             for (name, npc) in &state.npcs {
-                output.push_str(&format!("  - {} ({:?})\n", name, npc.disposition));
-                if let Some(ref loc) = npc.location {
-                    output.push_str(&format!("    Location: {}\n", loc));
+                let is_present = if let (Some(curr_loc), Some(npc_loc)) =
+                    (&current_location_name, &npc.location)
+                {
+                    npc_loc.to_lowercase().contains(curr_loc)
+                        || curr_loc.contains(&npc_loc.to_lowercase())
+                } else {
+                    false
+                };
+
+                if is_present {
+                    present_npcs.push((name, npc));
+                } else if npc.is_important {
+                    known_npcs.push((name, npc));
                 }
-                output.push_str(&format!("    Status: {:?}\n", npc.status));
+            }
+
+            if !present_npcs.is_empty() {
+                output.push_str("NPCs (Present):\n");
+                for (name, npc) in present_npcs {
+                    output.push_str(&format!("- {} ({})\n", name, npc.disposition));
+                    if let Some(ref loc) = npc.location {
+                        output.push_str(&format!("  Location: {}\n", loc));
+                    }
+                    output.push_str(&format!("  Status: {}\n", npc.status));
+                    output.push_str(&format!("  Role: {}\n", npc.role));
+                    output.push_str(&format!("  Important: {}\n", npc.is_important));
+                    if let Some(ref desc) = npc.description {
+                        output.push_str(&format!("  Description: {}\n", desc));
+                    }
+                    if let Some(ref pers) = npc.personality {
+                        output.push_str(&format!("  Personality: {}\n", pers));
+                    }
+                }
+            } else {
+                output.push_str("NPCs (Present): None\n");
+            }
+
+            if !known_npcs.is_empty() {
+                output.push_str("\nKnown NPCs (Elsewhere):\n");
+                for (name, npc) in known_npcs {
+                    output.push_str(&format!("- {} ({})\n", name, npc.role));
+                    if let Some(ref loc) = npc.location {
+                        output.push_str(&format!("  Location: {}\n", loc));
+                    }
+                }
             }
         }
 
@@ -827,14 +894,15 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
     /// Parse Time section
     fn parse_time_section(text: &str) -> GameTime {
         let mut day: u32 = 1;
-        let mut hour: u8 = 12;
+        let mut hour: u8 = 0;
         let mut minute: u8 = 0;
         let mut second: u8 = 0;
         let mut period = String::new();
         let mut season: Option<String> = None;
-        let mut total_seconds_elapsed: u64 = 0;
-        let mut calendar_system = String::new();
+        let mut calendar_system = "Earth".to_string();
         let mut date = String::new();
+        let mut weekday: Option<String> = None;
+        let mut total_seconds_elapsed = 0;
 
         for line in text.lines() {
             let trimmed = line.trim();
@@ -843,18 +911,17 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                 let value = value.trim();
                 match key.as_str() {
                     "day" => day = value.parse().unwrap_or(1),
-                    "hour" => hour = value.parse().unwrap_or(12),
+                    "hour" => hour = value.parse().unwrap_or(0),
                     "minute" => minute = value.parse().unwrap_or(0),
                     "second" => second = value.parse().unwrap_or(0),
                     "period" => period = value.to_string(),
                     "season" => season = Some(value.to_string()),
-                    "total seconds elapsed" | "total_seconds_elapsed" => {
-                        total_seconds_elapsed = value.parse().unwrap_or(0)
-                    }
-                    "calendar" | "calendar system" | "calendar_system" => {
-                        calendar_system = value.to_string()
-                    }
+                    "calendar" => calendar_system = value.to_string(),
                     "date" => date = value.to_string(),
+                    "weekday" => weekday = Some(value.to_string()),
+                    "total seconds elapsed" => {
+                        total_seconds_elapsed = value.parse().unwrap_or(0);
+                    }
                     _ => {}
                 }
             }
@@ -867,9 +934,10 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             second,
             period,
             season,
-            total_seconds_elapsed,
             calendar_system,
             date,
+            weekday,
+            total_seconds_elapsed,
         }
     }
 
@@ -1230,9 +1298,13 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                     name,
                     location: None,
                     disposition,
+                    role: "Unknown".to_string(),
                     status: "alive".to_string(),
+                    description: None,
+                    personality: None,
+                    is_important: true, // Default to true if parsed from existing state, or let LLM override
                     objectives: Vec::new(),
-                    data: HashMap::new(),
+                    data: serde_json::Value::Object(serde_json::Map::new()),
                 });
             } else if let Some(ref mut npc) = current_npc {
                 // Parse NPC properties
@@ -1242,7 +1314,18 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
                     match key.as_str() {
                         "location" => npc.location = Some(value),
                         "status" => npc.status = value,
-                        _ => {}
+                        "role" => npc.role = value,
+                        "description" => npc.description = Some(value),
+                        "personality" => npc.personality = Some(value),
+                        "important" | "is_important" => {
+                            let v = value.to_lowercase();
+                            npc.is_important = v == "true" || v == "yes" || v == "on";
+                        }
+                        _ => {
+                            if let Some(map) = npc.data.as_object_mut() {
+                                map.insert(key, serde_json::Value::String(value));
+                            }
+                        }
                     }
                 }
             }
@@ -1276,8 +1359,8 @@ mod tests {
     #[test]
     fn test_state_manager_config_default() {
         let config = StateManagerConfig::default();
-        assert_eq!(config.model_name, "gemini-2.5-flash-lite");
-        assert_eq!(config.temperature, Some(0.3));
+        assert_eq!(config.model_name, "gemini-3-flash-preview");
+        assert_eq!(config.temperature, Some(1.0));
     }
 
     #[test]
@@ -1287,6 +1370,7 @@ mod tests {
             model_name: "custom-model".to_string(),
             max_output_tokens: Some(8192),
             temperature: Some(0.5),
+            thinking_level: None,
         };
         let agent = StateManagerAgent::with_config(config);
         assert_eq!(agent.config.model_name, "custom-model");
@@ -1468,26 +1552,26 @@ Name: Forest Edge
     #[test]
     fn test_build_system_prompt_contains_schema() {
         let agent = StateManagerAgent::new();
-        let prompt = agent.build_system_prompt();
+        let prompt = agent.build_system_prompt(None, None);
 
         // Verify schema elements are present
-        assert!(prompt.contains("location"));
-        assert!(prompt.contains("game_time"));
+        assert!(prompt.contains("Location"));
+        assert!(prompt.contains("Time"));
         assert!(prompt.contains("inventory"));
-        assert!(prompt.contains("vitals"));
+        assert!(prompt.contains("Vitals"));
         assert!(prompt.contains("quests"));
-        assert!(prompt.contains("npcs"));
-        assert!(prompt.contains("environment"));
+        assert!(prompt.contains("NPCs"));
+        assert!(prompt.contains("Environment"));
     }
 
     #[test]
     fn test_build_system_prompt_contains_instructions() {
         let agent = StateManagerAgent::new();
-        let prompt = agent.build_system_prompt();
+        let prompt = agent.build_system_prompt(None, None);
 
         // Verify key instructions
         assert!(prompt.contains("COMPLETE"));
-        assert!(prompt.contains("valid JSON"));
+        assert!(prompt.contains("structured plaintext format"));
     }
 
     // ========================================================================
@@ -1502,10 +1586,12 @@ Name: Forest Edge
             "The player just started their adventure.",
             "I wake up and look around.",
             "You find yourself in a small village at dawn...",
+            None,
+            None,
         );
 
-        assert!(prompt.contains("null"));
-        assert!(prompt.contains("new game session"));
+        assert!(prompt.contains("(New game session - infer initial state from context)"));
+        assert!(prompt.contains("New game session"));
         assert!(prompt.contains("I wake up and look around"));
         assert!(prompt.contains("small village at dawn"));
     }
@@ -1518,7 +1604,9 @@ Name: Forest Edge
         current_state.location = Some(Location {
             id: "village_center".to_string(),
             name: "Village Square".to_string(),
-            description: Some("A bustling town center".to_string()),
+            description: Some(serde_json::Value::String(
+                "A bustling town center".to_string(),
+            )),
             region: None,
             tags: vec!["outdoor".to_string()],
         });
@@ -1528,6 +1616,8 @@ Name: Forest Edge
             "Player explored the village square.",
             "I walk toward the blacksmith.",
             "The blacksmith looks up from his anvil...",
+            None,
+            None,
         );
 
         assert!(prompt.contains("Village Square"));
@@ -1552,7 +1642,13 @@ Name: Forest Edge
             day: 3,
             hour: 2,
             period: "night".to_string(),
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-03".to_string(),
+            weekday: None,
+            minute: 0,
+            second: 0,
             season: Some("winter".to_string()),
+            total_seconds_elapsed: 0,
         });
         current_state.inventory.push(InventoryItem {
             id: "torch_01".to_string(),
@@ -1579,6 +1675,8 @@ Name: Forest Edge
             "Player entered the dungeon.",
             "I light my torch and proceed.",
             "The cavern walls glisten with moisture...",
+            None,
+            None,
         );
 
         // Verify complex state serialized correctly

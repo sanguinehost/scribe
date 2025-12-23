@@ -230,7 +230,7 @@ async fn create_test_message(
 async fn test_hidden_streaming_message() -> anyhow::Result<()> {
     std::env::set_var(
         "COOKIE_SIGNING_KEY",
-        "mock_cookie_signing_key_for_testing_only",
+        "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     );
     std::env::set_var("JWT_SECRET", "01234567890123456789012345678901");
     let test_app = test_helpers::spawn_app(true, false, false).await;

@@ -144,6 +144,9 @@ pub enum AppError {
     #[error("Bad Request: {0}")]
     BadRequest(String),
 
+    #[error("Payload Too Large: {0}")]
+    PayloadTooLarge(String),
+
     #[error("Not Found: {0}")]
     NotFound(String), // Resource not found
 
@@ -365,6 +368,7 @@ impl AppError {
 
             // Request/Input Errors
             Self::BadRequest(_) => "BAD_REQUEST",
+            Self::PayloadTooLarge(_) => "PAYLOAD_TOO_LARGE",
             Self::NotFound(_) => "NOT_FOUND",
             Self::Conflict(_) => "CONFLICT",
             Self::UsernameTaken => "USERNAME_TAKEN",
@@ -506,6 +510,7 @@ impl AppError {
             matches!(
                 error,
                 Self::BadRequest(_)
+                    | Self::PayloadTooLarge(_)
                     | Self::InvalidInput(_)
                     | Self::InvalidCredentials
                     | Self::Unauthorized(_)
@@ -534,6 +539,7 @@ impl AppError {
             matches!(
                 error,
                 Self::BadRequest(_)
+                    | Self::PayloadTooLarge(_)
                     | Self::InvalidInput(_)
                     | Self::InvalidCredentials
                     | Self::Unauthorized(_)
@@ -587,6 +593,7 @@ impl AppError {
             matches!(
                 error,
                 Self::BadRequest(_)
+                    | Self::PayloadTooLarge(_)
                     | Self::InvalidInput(_)
                     | Self::InvalidCredentials
                     | Self::Unauthorized(_)
@@ -608,6 +615,7 @@ impl AppError {
             matches!(
                 error,
                 Self::BadRequest(_)
+                    | Self::PayloadTooLarge(_)
                     | Self::InvalidInput(_)
                     | Self::InvalidCredentials
                     | Self::Unauthorized(_)
@@ -632,6 +640,7 @@ impl AppError {
     fn handle_simple_client_error(app_error: Self) -> (StatusCode, String) {
         match app_error {
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            Self::PayloadTooLarge(msg) => (StatusCode::PAYLOAD_TOO_LARGE, msg),
             Self::InvalidInput(msg) => (StatusCode::BAD_REQUEST, format!("Invalid input: {msg}")),
             Self::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())

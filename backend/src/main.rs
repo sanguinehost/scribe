@@ -698,20 +698,16 @@ fn build_router(
             characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
         ) // 10MB limit for character uploads
         .nest("/chat", {
-            #[cfg(feature = "payment")]
-            let routes = {
-                let routes =
-                    chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
-
-                // Add soft limit enforcement before LLM security
-                routes.layer(axum::middleware::from_fn(
-                    scribe_backend::middleware::soft_limit_enforcement_middleware,
+            let routes = chat_routes(app_state.clone())
+                .merge(scribe_backend::routes::game_state::router(
+                    app_state.clone(),
                 ))
-            };
+                .layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
 
-            #[cfg(not(feature = "payment"))]
-            let routes =
-                chat_routes(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB limit for chat history
+            #[cfg(feature = "payment")]
+            let routes = routes.layer(axum::middleware::from_fn(
+                scribe_backend::middleware::soft_limit_enforcement_middleware,
+            ));
 
             routes.layer(axum::middleware::from_fn_with_state(
                 app_state.clone(),

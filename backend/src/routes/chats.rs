@@ -1354,6 +1354,7 @@ pub async fn create_message_handler(
                         player_chronicle_id,
                         _agent_mode,
                         game_master_mode_enabled,
+                        initial_game_state,
                     ) = data;
 
                     // 2. Convert history to GenAiChatMessage
@@ -1430,6 +1431,7 @@ pub async fn create_message_handler(
                             variant_of: None,
                             charge_credits: true, // Charge for AI response
                             game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
+                            initial_game_state,
                         };
 
                         // 4. Stream response

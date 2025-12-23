@@ -1,171 +1,274 @@
 <script lang="ts">
-	import type { Quest, QuestObjective } from '$lib/types';
-	import { FileText, Star, ListTodo } from 'lucide-svelte';
+	import type { Quest, GameState } from '$lib/types';
+	import { Scroll, CheckCircle2, Circle, Edit2, Save, X, Plus, Trash2 } from 'lucide-svelte';
 	import WidgetBase from './WidgetBase.svelte';
+	import { Button } from '../ui/button';
+	import { Input } from '../ui/input';
+	import { Textarea } from '../ui/textarea';
+	import { Label } from '../ui/label';
 
 	interface Props {
-		quests: Quest[];
+		quests?: Quest[] | null;
+		onUpdate?: (updates: Partial<GameState>) => void;
 	}
 
-	let { quests = [] }: Props = $props();
+	let { quests = [], onUpdate }: Props = $props();
 
-	let activeTab: 'main' | 'optional' | 'all' = $state('main');
+	// Ensure we always have an array
+	const questList = $derived(quests ?? []);
 
-	// Separate main and optional quests
-	const mainQuests = $derived(quests.filter((q) => q.is_main));
-	const optionalQuests = $derived(quests.filter((q) => !q.is_main));
+	let activeTab: 'active' | 'completed' = $state('active');
 
-	// Filtered quests based on tab
-	const filteredQuests = $derived(() => {
-		switch (activeTab) {
-			case 'main':
-				return mainQuests.filter((q) => q.status === 'active');
-			case 'optional':
-				return optionalQuests.filter((q) => q.status === 'active');
-			default:
-				return quests;
+	let isEditing = $state(false);
+	let editQuests = $state<Quest[]>([]);
+
+	function startEditing() {
+		editQuests = quests ? JSON.parse(JSON.stringify(quests)) : [];
+		isEditing = true;
+	}
+
+	function save() {
+		if (onUpdate) {
+			onUpdate({ quests: editQuests });
 		}
-	});
+		isEditing = false;
+	}
 
-	// Get status icon and color
-	function getStatusStyle(status: string): { icon: string; color: string } {
-		const styles: Record<string, { icon: string; color: string }> = {
-			active: { icon: '📍', color: 'text-yellow-500 border-yellow-500/30' },
-			completed: { icon: '✅', color: 'text-green-500 border-green-500/30' },
-			failed: { icon: '❌', color: 'text-destructive border-destructive/30' },
-			abandoned: { icon: '🚫', color: 'text-muted-foreground border-border' }
+	function cancel() {
+		isEditing = false;
+	}
+
+	function addQuest() {
+		const newQuest: Quest = {
+			id: crypto.randomUUID(),
+			title: 'New Quest',
+			description: '',
+			status: activeTab === 'active' ? 'active' : 'completed',
+			objectives: []
 		};
-		return styles[status] || styles.active;
+		editQuests.push(newQuest);
 	}
 
-	// Calculate progress percentage
-	function getQuestProgress(objectives: QuestObjective[]): number {
-		if (!objectives || objectives.length === 0) return 0;
-		const completed = objectives.filter((o) => o.completed).length;
-		return Math.round((completed / objectives.length) * 100);
+	function removeQuest(index: number) {
+		editQuests = editQuests.filter((_, i) => i !== index);
 	}
+
+	function addObjective(questIndex: number) {
+		if (!editQuests[questIndex].objectives) editQuests[questIndex].objectives = [];
+		editQuests[questIndex].objectives.push({
+			description: 'New Objective',
+			completed: false
+		});
+	}
+
+	function removeObjective(questIndex: number, objIndex: number) {
+		if (editQuests[questIndex].objectives) {
+			editQuests[questIndex].objectives = editQuests[questIndex].objectives.filter(
+				(_, i) => i !== objIndex
+			);
+		}
+	}
+
+	// Filter quests based on status
+	const activeQuests = $derived(questList.filter((q) => q.status === 'active'));
+	const completedQuests = $derived(
+		questList.filter((q) => q.status === 'completed' || q.status === 'failed')
+	);
+
+	const editActiveQuests = $derived(editQuests.filter((q) => q.status === 'active'));
+	const editCompletedQuests = $derived(
+		editQuests.filter((q) => q.status === 'completed' || q.status === 'failed')
+	);
 </script>
 
 {#snippet iconSnippet()}
-	<FileText class="h-4 w-4" />
+	<Scroll class="h-4 w-4" />
 {/snippet}
 
 {#snippet questCard(quest: Quest)}
-	{@const style = getStatusStyle(quest.status)}
-	{@const progress = getQuestProgress(quest.objectives)}
-	<div class="rounded-lg border bg-muted/50 p-3 transition-colors hover:bg-muted {style.color}">
-		<!-- Title row -->
-		<div class="flex items-start gap-2">
-			<span class="text-sm">{style.icon}</span>
-			<div class="min-w-0 flex-1">
-				<div class="flex items-center gap-2">
-					<h4 class="text-sm font-medium text-foreground">{quest.title}</h4>
-					{#if quest.is_main}
-						<span class="rounded bg-yellow-500/20 px-1 text-[10px] text-yellow-500">Main</span>
-					{/if}
-				</div>
-				{#if quest.giver}
-					<p class="text-xs text-muted-foreground">From: {quest.giver}</p>
-				{/if}
-			</div>
+	<div class="rounded-lg border border-border bg-muted/50 p-3">
+		<div class="mb-2 flex items-start justify-between gap-2">
+			<h4 class="font-medium text-foreground">{quest.title}</h4>
+			<span
+				class="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider {quest.status === 'active'
+					? 'bg-primary/20 text-primary'
+					: quest.status === 'completed'
+						? 'bg-green-500/20 text-green-500'
+						: 'bg-destructive/20 text-destructive'}"
+			>
+				{quest.status}
+			</span>
 		</div>
+		<p class="mb-3 text-xs text-muted-foreground">{quest.description}</p>
 
-		<!-- Description -->
-		{#if quest.description}
-			<p class="mt-2 text-xs text-muted-foreground">{quest.description}</p>
-		{/if}
-
-		<!-- Objectives -->
 		{#if quest.objectives && quest.objectives.length > 0}
-			<div class="mt-2 space-y-1">
+			<div class="space-y-1.5">
 				{#each quest.objectives as objective}
 					<div class="flex items-start gap-2 text-xs">
-						<span class={objective.completed ? 'text-green-500' : 'text-muted-foreground'}>
-							{objective.completed ? '✓' : '○'}
-						</span>
-						<span
-							class={objective.completed ? 'text-muted-foreground line-through' : 'text-foreground'}
-						>
-							{objective.description}
-						</span>
+						{#if objective.completed}
+							<CheckCircle2 class="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
+							<span class="text-muted-foreground line-through">{objective.description}</span>
+						{:else}
+							<Circle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+							<span class="text-foreground">{objective.description}</span>
+						{/if}
 					</div>
 				{/each}
-			</div>
-
-			<!-- Progress bar -->
-			{#if quest.status === 'active'}
-				<div class="mt-2">
-					<div class="h-1.5 overflow-hidden rounded-full bg-muted">
-						<div
-							class="h-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
-							style="width: {progress}%"
-						></div>
-					</div>
-					<p class="mt-1 text-right text-[10px] text-muted-foreground">{progress}% complete</p>
-				</div>
-			{/if}
-		{/if}
-
-		<!-- Rewards -->
-		{#if quest.rewards}
-			<div class="mt-2 flex items-center gap-1 text-xs text-accent">
-				<span>🎁</span>
-				<span>{quest.rewards}</span>
 			</div>
 		{/if}
 	</div>
 {/snippet}
 
-<WidgetBase title="Quests" icon={iconSnippet}>
-	<!-- Tabs: Main / Optional / All -->
+{#snippet editQuestCard(quest: Quest, index: number)}
+	<div class="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+		<div class="flex items-center gap-2">
+			<Input
+				bind:value={quest.title}
+				class="h-7 flex-1 text-xs font-medium"
+				placeholder="Quest Title"
+			/>
+			<select
+				bind:value={quest.status}
+				class="h-7 rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+			>
+				<option value="active">Active</option>
+				<option value="completed">Completed</option>
+				<option value="failed">Failed</option>
+			</select>
+			<Button
+				variant="ghost"
+				size="icon"
+				class="h-7 w-7 text-destructive"
+				onclick={() => removeQuest(index)}
+			>
+				<Trash2 class="h-3.5 w-3.5" />
+			</Button>
+		</div>
+
+		<Textarea
+			bind:value={quest.description}
+			class="min-h-[60px] text-xs"
+			placeholder="Description"
+		/>
+
+		<div class="space-y-2">
+			<div class="flex items-center justify-between">
+				<Label class="text-[10px] text-muted-foreground">Objectives</Label>
+				<Button variant="ghost" size="icon" class="h-5 w-5" onclick={() => addObjective(index)}>
+					<Plus class="h-3 w-3" />
+				</Button>
+			</div>
+			{#if quest.objectives}
+				<div class="space-y-1">
+					{#each quest.objectives as objective, objIndex}
+						<div class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								bind:checked={objective.completed}
+								class="rounded border-border"
+							/>
+							<Input bind:value={objective.description} class="h-6 flex-1 text-xs" />
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-6 w-6 text-destructive"
+								onclick={() => removeObjective(index, objIndex)}
+							>
+								<Trash2 class="h-3 w-3" />
+							</Button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet headerAction()}
+	{#if onUpdate}
+		{#if isEditing}
+			<div class="flex gap-1">
+				<Button variant="ghost" size="icon" class="h-6 w-6" onclick={save} title="Save">
+					<Save class="h-3.5 w-3.5 text-primary" />
+				</Button>
+				<Button variant="ghost" size="icon" class="h-6 w-6" onclick={cancel} title="Cancel">
+					<X class="h-3.5 w-3.5 text-muted-foreground" />
+				</Button>
+			</div>
+		{:else}
+			<Button
+				variant="ghost"
+				size="icon"
+				class="h-6 w-6"
+				onclick={startEditing}
+				title="Edit Quests"
+			>
+				<Edit2 class="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+			</Button>
+		{/if}
+	{/if}
+{/snippet}
+
+<WidgetBase title="Quests" icon={iconSnippet} action={headerAction}>
+	<!-- Tabs -->
 	<div class="mb-3 flex gap-1 rounded-lg bg-muted p-1">
 		<button
 			class="flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
-			'main'
+			'active'
 				? 'bg-primary/20 text-primary'
 				: 'text-muted-foreground hover:text-foreground'}"
-			onclick={() => (activeTab = 'main')}
+			onclick={() => (activeTab = 'active')}
 		>
-			<Star class="h-3 w-3" />
-			Main ({mainQuests.filter((q) => q.status === 'active').length})
+			Active ({isEditing ? editActiveQuests.length : activeQuests.length})
 		</button>
 		<button
 			class="flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
-			'optional'
+			'completed'
 				? 'bg-primary/20 text-primary'
 				: 'text-muted-foreground hover:text-foreground'}"
-			onclick={() => (activeTab = 'optional')}
+			onclick={() => (activeTab = 'completed')}
 		>
-			<ListTodo class="h-3 w-3" />
-			Optional ({optionalQuests.filter((q) => q.status === 'active').length})
-		</button>
-		<button
-			class="flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
-			'all'
-				? 'bg-primary/20 text-primary'
-				: 'text-muted-foreground hover:text-foreground'}"
-			onclick={() => (activeTab = 'all')}
-		>
-			All ({quests.length})
+			Completed ({isEditing ? editCompletedQuests.length : completedQuests.length})
 		</button>
 	</div>
 
-	<!-- Quest list -->
-	<div class="max-h-64 space-y-2 overflow-y-auto">
-		{#if filteredQuests().length === 0}
-			<p class="py-4 text-center text-sm italic text-muted-foreground">
-				{#if activeTab === 'main'}
-					No active main quest
-				{:else if activeTab === 'optional'}
-					No optional quests
-				{:else}
-					No quests
-				{/if}
-			</p>
+	<!-- Content -->
+	<div class="max-h-64 space-y-3 overflow-y-auto">
+		{#if isEditing}
+			<!-- EDIT MODE -->
+			{#if activeTab === 'active'}
+				{#each editQuests as quest, i}
+					{#if quest.status === 'active'}
+						{@render editQuestCard(quest, i)}
+					{/if}
+				{/each}
+			{:else}
+				{#each editQuests as quest, i}
+					{#if quest.status !== 'active'}
+						{@render editQuestCard(quest, i)}
+					{/if}
+				{/each}
+			{/if}
+			<Button variant="outline" size="sm" class="h-7 w-full text-xs" onclick={addQuest}>
+				<Plus class="mr-1 h-3 w-3" /> Add Quest
+			</Button>
 		{:else}
-			{#each filteredQuests() as quest (quest.id)}
-				{@render questCard(quest)}
-			{/each}
+			<!-- VIEW MODE -->
+			{#if activeTab === 'active'}
+				{#if activeQuests.length === 0}
+					<p class="py-4 text-center text-sm italic text-muted-foreground">No active quests</p>
+				{:else}
+					{#each activeQuests as quest (quest.id)}
+						{@render questCard(quest)}
+					{/each}
+				{/if}
+			{:else if completedQuests.length === 0}
+				<p class="py-4 text-center text-sm italic text-muted-foreground">No completed quests</p>
+			{:else}
+				{#each completedQuests as quest (quest.id)}
+					{@render questCard(quest)}
+				{/each}
+			{/if}
 		{/if}
 	</div>
 </WidgetBase>

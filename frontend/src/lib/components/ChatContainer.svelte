@@ -642,6 +642,12 @@
 		bind:isOpen={isGameStatePanelOpen}
 		gameState={chat.game_state || null}
 		isLoading={false}
+		sessionId={chat.id}
+		onStateUpdate={(newState) => {
+			if (controller.chat) {
+				controller.chat = { ...controller.chat, game_state: newState };
+			}
+		}}
 	/>
 {/if}
 

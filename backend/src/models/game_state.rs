@@ -90,9 +90,10 @@ pub struct GameTime {
     /// The calendar system being used (e.g., "Earth", "Fantasy", "Sci-Fi")
     #[serde(default)]
     pub calendar_system: String,
-    /// The full date string (e.g., "2025-12-19" or "15th of Highsun, Year 120")
-    #[serde(default)]
+    /// Current date string (e.g., "2024-03-15" or "15th of Sun's Height")
     pub date: String,
+    /// Current weekday (e.g., "Monday", "Fredas")
+    pub weekday: Option<String>,
 }
 
 /// An item in the player's inventory.
@@ -209,15 +210,31 @@ pub struct NpcState {
     /// Disposition towards player (hostile, neutral, friendly, allied)
     #[serde(default)]
     pub disposition: String,
+    /// Role or archetype (e.g., "Merchant", "Guard", "Villager")
+    #[serde(default)]
+    pub role: String,
     /// Current status (alive, dead, unconscious, absent)
     #[serde(default)]
     pub status: String,
+    /// Detailed physical description
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Personality traits and behavioral notes
+    #[serde(default)]
+    pub personality: Option<String>,
+    /// Whether this NPC is narratively important (persists in context even when absent)
+    #[serde(default = "default_true")]
+    pub is_important: bool,
     /// Active objectives or goals (for "Director" pattern)
     #[serde(default)]
     pub objectives: Vec<String>,
-    /// Custom data
+    /// Custom data bag for flexibility
     #[serde(default)]
-    pub data: HashMap<String, serde_json::Value>,
+    pub data: serde_json::Value,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Environmental conditions.
@@ -244,6 +261,10 @@ mod tests {
     #[test]
     fn test_game_state_serialization() {
         let state = GameState {
+            assets: vec![],
+            currencies: HashMap::new(),
+            inventory_stored: HashMap::new(),
+            removed_items: vec![],
             location: Some(Location {
                 id: "tavern_001".to_string(),
                 name: "The Rusty Anchor".to_string(),
@@ -261,6 +282,7 @@ mod tests {
                 total_seconds_elapsed: 250200,
                 calendar_system: "Earth".to_string(),
                 date: "2025-01-03".to_string(),
+                weekday: None,
             }),
             inventory: vec![InventoryItem {
                 id: "sword_001".to_string(),
@@ -299,6 +321,7 @@ mod tests {
                 }],
                 giver: Some("Old Man Jenkins".to_string()),
                 rewards: Some(serde_json::json!("50 gold, Family's gratitude")),
+                is_main: false,
             }],
             npcs: HashMap::new(),
             environment: EnvironmentState {

@@ -201,6 +201,7 @@ pub async fn generate_simple_response(
     let response = client.exec_chat(model_name, chat_request, None).await?;
     let content = response
         .first_text()
+        .filter(|s| !s.is_empty())
         .ok_or_else(|| AppError::BadRequest("No text content in LLM response".to_string()))?
         .to_string();
     Ok(content)
@@ -291,7 +292,7 @@ mod tests {
                                 chunk_count += 1;
                             }
                         }
-                        Ok(ChatStreamEvent::CallEnd) => break,
+
                         Err(e) => {
                             // Handle expected API errors gracefully for integration tests
                             if e.to_string().contains("503") || e.to_string().contains("overloaded")
@@ -402,11 +403,8 @@ mod tests {
         // Helper to create a ChatResponse with no text content (empty vector)
         fn create_empty_chat_response() -> ChatResponse {
             ChatResponse {
-                message: genai::chat::ChatMessage {
-                    role: genai::chat::ChatRole::Assistant,
-                    content: genai::chat::MessageContent::from(""),
-                    options: None,
-                },
+                content: genai::chat::MessageContent::from(""),
+                captured_raw_body: None,
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-empty"),
@@ -422,11 +420,8 @@ mod tests {
         fn create_text_chat_response(text: &str) -> ChatResponse {
             ChatResponse {
                 // Use MessageContent::from in a message
-                message: genai::chat::ChatMessage {
-                    role: genai::chat::ChatRole::Assistant,
-                    content: genai::chat::MessageContent::from(text),
-                    options: None,
-                },
+                content: genai::chat::MessageContent::from(text),
+                captured_raw_body: None,
                 reasoning_content: None,
                 // Use ModelIden::new with AdapterKind::Gemini
                 model_iden: ModelIden::new(adapter::AdapterKind::Gemini, "mock-model-text"),
@@ -494,9 +489,10 @@ mod tests {
     async fn test_generate_simple_response_no_text_content() {
         let mut mock_client = MockAiClient::new();
         let response_without_text = MockAiClient::create_empty_chat_response();
+        let text = response_without_text.first_text();
         assert!(
-            response_without_text.first_text().is_none(),
-            "Empty ChatResponse unexpectedly has text content"
+            text.is_none() || text.unwrap().is_empty(),
+            "Empty ChatResponse unexpectedly has non-empty text content"
         );
 
         mock_client.set_exec_chat_response(Ok(response_without_text));

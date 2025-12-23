@@ -14,7 +14,9 @@ use crate::errors::AppError;
 use crate::models::game_state::{
     GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus, Vital,
 };
+use crate::schema::chat_sessions;
 use crate::services::reconciliation_detector::{ReconciliationAction, ReconciliationDetector};
+use diesel::prelude::*;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
@@ -88,6 +90,29 @@ impl GameStateService {
     /// Create a new GameStateService
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
+    }
+
+    /// Manually update the game state, bypassing LLM reconciliation
+    pub async fn manual_update(
+        &self,
+        session_id: crate::db::DbId,
+        new_state: GameState,
+    ) -> Result<(), AppError> {
+        let new_state_json = serde_json::to_value(&new_state).map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Serialization error: {e}"))
+        })?;
+        let new_state_db: crate::DbJson = new_state_json.into();
+
+        crate::db::with_conn(&self.pool, move |conn| {
+            diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))
+                .set(chat_sessions::game_state.eq(new_state_db))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?;
+
+        info!(%session_id, "Game state manually updated via service");
+        Ok(())
     }
 
     /// Reconcile a new state from the LLM against the current state
@@ -494,12 +519,16 @@ impl GameStateService {
     ) -> Vec<StateChange> {
         let mut applied = Vec::new();
 
-        // Build map for current quests
-        let current_quests: HashMap<&str, &Quest> =
-            current.quests.iter().map(|q| (q.id.as_str(), q)).collect();
+        let mut final_quests = current.quests.clone();
+        let mut final_quests_map: std::collections::HashMap<String, usize> = final_quests
+            .iter()
+            .enumerate()
+            .map(|(i, q)| (q.id.clone(), i))
+            .collect();
 
         for new_quest in &new.quests {
-            if let Some(current_quest) = current_quests.get(new_quest.id.as_str()) {
+            if let Some(&idx) = final_quests_map.get(&new_quest.id) {
+                let current_quest = &final_quests[idx];
                 // Quest exists - check for status change
                 if new_quest.status != current_quest.status {
                     debug!(
@@ -514,18 +543,33 @@ impl GameStateService {
                         new_status: new_quest.status,
                     });
                 }
+                // Update existing quest with new data
+                final_quests[idx] = new_quest.clone();
             } else {
                 // New quest
                 debug!(quest_id = %new_quest.id, title = %new_quest.title, "New quest added");
                 applied.push(StateChange::QuestAdded {
                     quest: new_quest.clone(),
                 });
+                final_quests_map.insert(new_quest.id.clone(), final_quests.len());
+                final_quests.push(new_quest.clone());
             }
         }
 
-        // Replace quests in final state
-        final_state.quests = new.quests.clone();
+        // Ensure completed quests from current state are preserved even if LLM omitted them
+        for current_quest in &current.quests {
+            if current_quest.status == crate::models::game_state::QuestStatus::Completed
+                && !final_quests_map.contains_key(&current_quest.id)
+            {
+                debug!(
+                    quest_id = %current_quest.id,
+                    "Preserving completed quest omitted by LLM"
+                );
+                final_quests.push(current_quest.clone());
+            }
+        }
 
+        final_state.quests = final_quests;
         applied
     }
 
@@ -537,6 +581,7 @@ impl GameStateService {
         final_state: &mut GameState,
     ) -> Vec<StateChange> {
         let mut applied = Vec::new();
+        let mut final_npcs = current.npcs.clone();
 
         for (npc_id, new_npc) in &new.npcs {
             if let Some(current_npc) = current.npcs.get(npc_id) {
@@ -565,6 +610,8 @@ impl GameStateService {
                         change: changes.join(", "),
                     });
                 }
+                // Update existing NPC
+                final_npcs.insert(npc_id.clone(), new_npc.clone());
             } else {
                 // New NPC
                 debug!(npc_id = %npc_id, name = %new_npc.name, "New NPC added");
@@ -572,12 +619,22 @@ impl GameStateService {
                     npc_id: npc_id.clone(),
                     change: "added".to_string(),
                 });
+                final_npcs.insert(npc_id.clone(), new_npc.clone());
             }
         }
 
-        // Replace NPCs in final state
-        final_state.npcs = new.npcs.clone();
+        // Preserve NPCs from current state that were omitted by LLM
+        for (npc_id, current_npc) in &current.npcs {
+            if !new.npcs.contains_key(npc_id) {
+                debug!(
+                    npc_id = %npc_id,
+                    name = %current_npc.name,
+                    "Preserving NPC omitted by LLM"
+                );
+            }
+        }
 
+        final_state.npcs = final_npcs;
         applied
     }
 
@@ -704,7 +761,9 @@ mod tests {
                                     id: uuid::Uuid::new_v4().to_string(),
                                     name: currency_name.clone(),
                                     quantity: amount,
-                                    description: Some("Currency".to_string()),
+                                    description: Some(serde_json::Value::String(
+                                        "Currency".to_string(),
+                                    )),
                                     category: Some("Currency".to_string()),
                                     equipped: false,
                                     properties: HashMap::new(),
@@ -992,6 +1051,7 @@ mod tests {
             objectives: vec![],
             giver: None,
             rewards: None,
+            is_main: false,
         }
     }
 
@@ -1369,6 +1429,7 @@ mod tests {
             total_seconds_elapsed: 36000,
             calendar_system: "Earth".to_string(),
             date: "2025-01-01".to_string(),
+            weekday: None,
         });
 
         let mut new = GameState::default();
@@ -1382,6 +1443,7 @@ mod tests {
             total_seconds_elapsed: 50400,
             calendar_system: "Earth".to_string(),
             date: "2025-01-01".to_string(),
+            weekday: None,
         });
 
         let result = reconcile_pure(&current, &new, "");
@@ -1406,6 +1468,7 @@ mod tests {
             total_seconds_elapsed: 36000,
             calendar_system: "Earth".to_string(),
             date: "2025-01-01".to_string(),
+            weekday: None,
         });
 
         let mut new = GameState::default();
@@ -1419,6 +1482,7 @@ mod tests {
             total_seconds_elapsed: 32400, // Decrease!
             calendar_system: "Earth".to_string(),
             date: "2025-01-01".to_string(),
+            weekday: None,
         });
 
         let result = reconcile_pure(&current, &new, "");
@@ -1450,8 +1514,12 @@ mod tests {
                 location: None,
                 disposition: "friendly".to_string(),
                 status: "alive".to_string(),
+                role: "Merchant".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 
@@ -1464,8 +1532,12 @@ mod tests {
                 location: None,
                 disposition: "hostile".to_string(), // Changed!
                 status: "alive".to_string(),
+                role: "Merchant".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 
@@ -1491,8 +1563,12 @@ mod tests {
                 location: None,
                 disposition: "neutral".to_string(),
                 status: "alive".to_string(),
+                role: "Unknown".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 

@@ -208,6 +208,7 @@ pub async fn get_session_data_for_generation(
         player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
         agent_mode_from_session,       // The agent mode for context enrichment
         game_master_mode_enabled_from_session, // The Game Master mode flag
+        initial_game_state_db,         // The initial game state for reconciliation
     ) = {
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
@@ -275,6 +276,7 @@ pub async fn get_session_data_for_generation(
                 player_chronicle_id,
                 agent_mode,
                 game_master_mode_enabled,
+                game_state_db,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -286,6 +288,7 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::player_chronicle_id,
                     chat_sessions::agent_mode,
                     chat_sessions::game_master_mode_enabled,
+                    chat_sessions::game_state,
                 ))
                 .first::<(
                     Option<String>,
@@ -295,6 +298,7 @@ pub async fn get_session_data_for_generation(
                     Option<crate::db::DbId>,
                     Option<String>,
                     bool,
+                    Option<crate::DbJson>,
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -664,6 +668,7 @@ pub async fn get_session_data_for_generation(
                 player_chronicle_id,
                 agent_mode,
                 Some(game_master_mode_enabled),
+                game_state_db,
             ))
         })
         .await?
@@ -1465,6 +1470,7 @@ pub async fn get_session_data_for_generation(
         player_chronicle_id_from_session, // 23: player_chronicle_id (Option<crate::db::DbId>) - NEW
         agent_mode_from_session,          // 24: agent_mode (Option<String>) - NEW
         game_master_mode_enabled_from_session, // 25: game_master_mode_enabled (Option<bool>) - NEW
+        initial_game_state_db.map(|j| j.into()), // 26: initial_game_state (Option<serde_json::Value>) - NEW
     ))
 }
 /// Parameters for streaming AI response and saving messages.
@@ -1494,6 +1500,7 @@ pub struct StreamAiParams {
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool,                // Whether credits should be charged for this message
     pub game_master_mode_enabled: bool,      // Whether Game Master mode is enabled for this session
+    pub initial_game_state: Option<serde_json::Value>,
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -1745,6 +1752,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             variant_of: params.variant_of,
             charge_credits: params.charge_credits,
             game_master_mode_enabled: params.game_master_mode_enabled,
+            initial_game_state: params.initial_game_state.clone(),
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -1815,6 +1823,7 @@ pub async fn stream_ai_response_and_save_message(
         variant_of,
         charge_credits,
         game_master_mode_enabled,
+        initial_game_state,
     } = params;
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
@@ -2171,6 +2180,7 @@ pub async fn stream_ai_response_and_save_message(
             let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
             let charge_credits_clone_full = charge_credits; // Clone charge flag for this task
             let game_master_mode_enabled_clone = game_master_mode_enabled; // Copy flag for spawned task
+            let initial_game_state_clone = initial_game_state.clone(); // Clone for spawned task
 
             tokio::spawn(async move {
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
@@ -2358,6 +2368,7 @@ pub async fn stream_ai_response_and_save_message(
                             let gm_accumulated_content = accumulated_content_clone.clone();
                             let gm_token_sender = token_sender_clone.clone();
                             let gm_saved_message_id = saved_message.id;
+                            let gm_initial_game_state = initial_game_state_clone.clone();
 
                             tokio::spawn(async move {
                                 // We need recent messages for proper context (like rpg-companion's updateDepth: 4)
@@ -2475,6 +2486,7 @@ pub async fn stream_ai_response_and_save_message(
                                     Some(gm_saved_message_id),
                                     persona_name.as_deref(),
                                     character_name.as_deref(),
+                                    gm_initial_game_state,
                                 ).await {
                                     Ok(Some(result)) => {
                                         info!(

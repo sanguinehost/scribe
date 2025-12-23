@@ -1030,6 +1030,16 @@ class ApiClient {
 		});
 	}
 
+	async updateGameState(
+		sessionId: string,
+		gameState: import('$lib/types').GameState
+	): Promise<_Result<void, ApiError>> {
+		return this.fetch<void>(`/api/chat/sessions/${sessionId}/game-state`, {
+			method: 'PUT',
+			body: JSON.stringify({ game_state: gameState })
+		});
+	}
+
 	async fetchSuggestedActions(
 		chatId: string
 	): Promise<_Result<SuggestedActionsResponse, ApiError>> {

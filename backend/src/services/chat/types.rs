@@ -38,12 +38,13 @@ pub type GenerationDataWithUnsavedUserMessage = (
     usize,               // 18: actual_recent_history_tokens (NEW) (was 17)
     Vec<RetrievedChunk>, // 19: rag_context_items (NEW) (was 18)
     // History Management Settings (still returned for potential future use/logging)
-    String,                  // 20: history_management_strategy (was 19)
-    i32,                     // 21: history_management_limit (was 20)
-    Option<String>,          // 22: user_persona_name (NEW - for template substitution)
-    Option<crate::db::DbId>, // 23: player_chronicle_id (NEW - for narrative processing)
-    Option<String>,          // 24: agent_mode (NEW - for context enrichment)
-    Option<bool>,            // 25: game_master_mode_enabled (NEW - for Game Master processing)
+    String,                    // 20: history_management_strategy (was 19)
+    i32,                       // 21: history_management_limit (was 20)
+    Option<String>,            // 22: user_persona_name (NEW - for template substitution)
+    Option<crate::db::DbId>,   // 23: player_chronicle_id (NEW - for narrative processing)
+    Option<String>,            // 24: agent_mode (NEW - for context enrichment)
+    Option<bool>,              // 25: game_master_mode_enabled (NEW - for Game Master processing)
+    Option<serde_json::Value>, // 26: initial_game_state (NEW - for double deduction prevention)
 );
 
 /// Structured chunk with integrity checking for reliable streaming

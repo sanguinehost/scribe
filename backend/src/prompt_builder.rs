@@ -2190,8 +2190,8 @@ mod tests {
         let state = GameState::default();
         let xml = super::build_scene_context_xml(&state);
 
-        assert!(xml.starts_with("<scene_context>"));
-        assert!(xml.contains("</scene_context>"));
+        assert!(xml.starts_with("<game_context>"));
+        assert!(xml.contains("</game_context>"));
         assert!(xml.contains("<environment>"));
     }
 
@@ -2252,8 +2252,12 @@ mod tests {
                 location: None,
                 disposition: "friendly".to_string(),
                 status: "alive".to_string(),
+                role: "Bartender".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 
@@ -2278,8 +2282,12 @@ mod tests {
                 location: None,
                 disposition: "neutral".to_string(),
                 status: "alive".to_string(),
+                role: "Guard".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
         state.npcs.insert(
@@ -2290,8 +2298,12 @@ mod tests {
                 location: None,
                 disposition: "hostile".to_string(),
                 status: "dead".to_string(),
+                role: "Warrior".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 
@@ -2368,8 +2380,12 @@ mod tests {
                 location: None,
                 disposition: "hostile".to_string(),
                 status: "alive".to_string(),
+                role: "Goblin".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
         state.environment = EnvironmentState {
@@ -2385,7 +2401,7 @@ mod tests {
         // Verify all components present
         assert!(xml.contains("<location>"));
         assert!(xml.contains("<time>"));
-        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<npcs_present>"));
         assert!(xml.contains("<environment>"));
         assert!(xml.contains("Dark Dungeon"));
         assert!(xml.contains("night"));
@@ -2405,8 +2421,8 @@ mod scene_context_tests {
         let state = GameState::default();
         let xml = super::build_scene_context_xml(&state);
 
-        assert!(xml.starts_with("<scene_context>"));
-        assert!(xml.contains("</scene_context>"));
+        assert!(xml.starts_with("<game_context>"));
+        assert!(xml.contains("</game_context>"));
         assert!(xml.contains("<environment>"));
     }
 
@@ -2416,7 +2432,7 @@ mod scene_context_tests {
         state.location = Some(Location {
             id: "tavern_001".to_string(),
             name: "The Rusty Anchor".to_string(),
-            description: Some("A cozy tavern".to_string()),
+            description: Some(serde_json::Value::String("A cozy tavern".to_string())),
             region: Some("Port District".to_string()),
             tags: vec!["indoors".to_string(), "safe".to_string()],
         });
@@ -2438,7 +2454,13 @@ mod scene_context_tests {
             day: 5,
             hour: 14,
             period: "afternoon".to_string(),
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-05".to_string(),
+            weekday: None,
+            minute: 0,
+            second: 0,
             season: Some("autumn".to_string()),
+            total_seconds_elapsed: 0,
         });
 
         let xml = super::build_scene_context_xml(&state);
@@ -2462,16 +2484,20 @@ mod scene_context_tests {
                 location: None,
                 disposition: "friendly".to_string(),
                 status: "alive".to_string(),
+                role: "Bartender".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 
         let xml = super::build_scene_context_xml(&state);
 
-        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<npcs_present>"));
         assert!(xml.contains("Friendly Bartender"));
-        assert!(xml.contains("</active_npcs>"));
+        assert!(xml.contains("</npcs_present>"));
     }
 
     #[test]
@@ -2485,8 +2511,12 @@ mod scene_context_tests {
                 location: None,
                 disposition: "neutral".to_string(),
                 status: "alive".to_string(),
+                role: "Guard".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
         state.npcs.insert(
@@ -2497,8 +2527,12 @@ mod scene_context_tests {
                 location: None,
                 disposition: "hostile".to_string(),
                 status: "dead".to_string(),
+                role: "Warrior".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
 
@@ -2533,7 +2567,9 @@ mod scene_context_tests {
         state.location = Some(Location {
             id: "test".to_string(),
             name: "Tom & Jerry's <Tavern>".to_string(),
-            description: Some("A \"special\" place with 'quotes'".to_string()),
+            description: Some(serde_json::Value::String(
+                "A \"special\" place with 'quotes'".to_string(),
+            )),
             region: None,
             tags: vec![],
         });
@@ -2558,7 +2594,13 @@ mod scene_context_tests {
             day: 10,
             hour: 23,
             period: "night".to_string(),
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-10".to_string(),
+            weekday: None,
+            minute: 0,
+            second: 0,
             season: Some("winter".to_string()),
+            total_seconds_elapsed: 0,
         });
         state.npcs.insert(
             "goblin_01".to_string(),
@@ -2568,8 +2610,12 @@ mod scene_context_tests {
                 location: None,
                 disposition: "hostile".to_string(),
                 status: "alive".to_string(),
+                role: "Goblin".to_string(),
+                description: None,
+                personality: None,
+                is_important: false,
                 objectives: vec![],
-                data: HashMap::new(),
+                data: serde_json::Value::Object(serde_json::Map::new()),
             },
         );
         state.environment = EnvironmentState {
@@ -2585,7 +2631,7 @@ mod scene_context_tests {
         // Verify all components present
         assert!(xml.contains("<location>"));
         assert!(xml.contains("<time>"));
-        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<npcs_present>"));
         assert!(xml.contains("<environment>"));
         assert!(xml.contains("Dark Dungeon"));
         assert!(xml.contains("night"));

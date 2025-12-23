@@ -393,25 +393,26 @@ impl NarrativeIntelligenceService {
         message_id: Option<crate::db::DbId>,
         player_name: Option<&str>,
         character_name: Option<&str>,
+        initial_game_state: Option<serde_json::Value>,
     ) -> Result<Option<ReconciliationResult>, AppError> {
         let start_time = std::time::Instant::now();
 
-        // 1. Fetch current game state from DB
-        let mut conn = crate::db::get_conn(&self.app_state.pool).await?;
-
-        let current_state_db: Option<crate::DbJson> = conn
-            .interact(move |db_conn| {
+        // 1. Fetch current game state from DB if not provided
+        let current_state_json = if let Some(state) = initial_game_state {
+            Some(state)
+        } else {
+            crate::db::with_conn(&self.app_state.pool, move |db_conn| {
                 chat_sessions_dsl::chat_sessions
                     .select(chat_sessions_dsl::game_state)
                     .filter(chat_sessions_dsl::id.eq(chat_session_id))
                     .first::<Option<crate::DbJson>>(db_conn)
                     .optional()
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             })
-            .await
-            .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact error: {e}")))??
-            .flatten();
-
-        let current_state_json: Option<serde_json::Value> = current_state_db.map(|j| j.into());
+            .await?
+            .flatten()
+            .map(|j| j.into())
+        };
 
         let current_state = if let Some(json) = current_state_json {
             serde_json::from_value::<GameState>(json).ok()
@@ -440,18 +441,15 @@ impl NarrativeIntelligenceService {
         let new_state_db: crate::DbJson = new_state_json.into();
 
         let new_state_db_for_update = new_state_db.clone();
-        conn.interact(move |db_conn| {
+        crate::db::with_conn(&self.app_state.pool, move |db_conn| {
             diesel::update(
                 chat_sessions_dsl::chat_sessions.filter(chat_sessions_dsl::id.eq(chat_session_id)),
             )
             .set(chat_sessions_dsl::game_state.eq(new_state_db_for_update))
             .execute(db_conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(format!("DB interact error: {e}")))?
-        .map_err(|e| {
-            AppError::InternalServerErrorGeneric(format!("Failed to update game state: {e}"))
-        })?;
+        .await?;
 
         // 4. Persist game_state to the message itself via chat_messages.game_state
         // NOTE: Original messages (variant 0) don't have records in message_variants table,
@@ -462,29 +460,25 @@ impl NarrativeIntelligenceService {
             let new_state_db_clone = new_state_db.clone();
 
             // Try to update message_variants first (for regenerated messages)
-            let update_result = conn
-                .interact(move |db_conn| {
-                    // Get current variant index
-                    let current_idx = chat_messages::table
-                        .select(chat_messages::current_variant_index)
-                        .filter(chat_messages::id.eq(msg_id))
-                        .first::<i32>(db_conn)?;
+            let update_result = crate::db::with_conn(&self.app_state.pool, move |db_conn| {
+                // Get current variant index
+                let current_idx = chat_messages::table
+                    .select(chat_messages::current_variant_index)
+                    .filter(chat_messages::id.eq(msg_id))
+                    .first::<i32>(db_conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                    // Try to update the variant
-                    let rows_updated = diesel::update(
-                        message_variants::table
-                            .filter(message_variants::parent_message_id.eq(msg_id))
-                            .filter(message_variants::variant_index.eq(current_idx)),
-                    )
-                    .set(message_variants::game_state.eq(new_state_db_clone))
-                    .execute(db_conn)?;
-
-                    Ok::<usize, diesel::result::Error>(rows_updated)
-                })
-                .await
-                .map_err(|e| {
-                    AppError::InternalServerErrorGeneric(format!("DB interact error: {e}"))
-                })?;
+                // Try to update the variant
+                diesel::update(
+                    message_variants::table
+                        .filter(message_variants::parent_message_id.eq(msg_id))
+                        .filter(message_variants::variant_index.eq(current_idx)),
+                )
+                .set(message_variants::game_state.eq(new_state_db_clone))
+                .execute(db_conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await;
 
             // If no variant was updated (original message), we log it but don't fail
             // The game_state is already saved in chat_sessions.game_state
