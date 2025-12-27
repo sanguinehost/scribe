@@ -78,6 +78,38 @@ use super::{
 /// `AppError::DatabaseQueryError` if any database query fails,
 /// `AppError::DecryptionError` if message content decryption fails with valid DEK,
 /// `AppError::InternalServerErrorGeneric` if UTF-8 decoding fails or token counting encounters errors.
+/// Data retrieved from the database for chat generation.
+struct GenerationDbData {
+    history_management_strategy_db_val: String,
+    history_management_limit_db_val: i32,
+    session_character_id_db: Option<crate::db::DbId>,
+    session_temperature_db: Option<crate::db::DbDecimal>,
+    session_max_output_tokens_db: Option<i32>,
+    session_frequency_penalty_db: Option<crate::db::DbDecimal>,
+    session_presence_penalty_db: Option<crate::db::DbDecimal>,
+    session_top_k_db: Option<i32>,
+    session_top_p_db: Option<crate::db::DbDecimal>,
+    session_seed_db: Option<i32>,
+    _session_stop_sequences_db: Option<crate::db::DbStringArray>,
+    session_model_name_db: String,
+    session_model_provider_db: Option<String>,
+    session_gemini_thinking_budget_db: Option<i32>,
+    session_gemini_thinking_level_db: Option<String>,
+    session_gemini_enable_code_execution_db: Option<bool>,
+    existing_messages_db_raw: Vec<DbChatMessage>,
+    character_for_first_mes: Character,
+    character_overrides_for_first_mes: Vec<ChatCharacterOverride>,
+    final_effective_system_prompt: Option<String>,
+    raw_character_system_prompt: Option<String>,
+    player_chronicle_id_from_session: Option<crate::db::DbId>,
+    agent_mode_from_session: Option<String>,
+    game_master_mode_enabled_from_session: bool,
+    game_state_from_session: Option<crate::db::DbJson>,
+    rag_chronicles_limit_sess: Option<i32>,
+    rag_lorebooks_limit_sess: Option<i32>,
+    rag_older_chat_limit_sess: Option<i32>,
+}
+
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
     state: Arc<AppState>,
@@ -183,33 +215,8 @@ pub async fn get_session_data_for_generation(
     // NOTE: Comprehensive lorebook ID retrieval moved after character_id is available
 
     // --- Main Interact Block for DB Data (Session Settings, Raw Messages, Character for FirstMes) ---
-    let (
-        history_management_strategy_db_val, // Renamed to avoid conflict in outer scope
-        history_management_limit_db_val,    // Renamed
-        session_character_id_db,
-        session_temperature_db,
-        session_max_output_tokens_db,
-        session_frequency_penalty_db,
-        session_presence_penalty_db,
-        session_top_k_db,
-        session_top_p_db,
-        session_seed_db,
-        _session_stop_sequences_db,
-        session_model_name_db,
-        session_model_provider_db,
-        session_gemini_thinking_budget_db,
-        session_gemini_thinking_level_db,
-        session_gemini_enable_code_execution_db,
-        existing_messages_db_raw, // Raw, potentially encrypted messages
-        character_for_first_mes,  // Full character for first_mes logic
-        character_overrides_for_first_mes, // Overrides for first_mes logic
-        final_effective_system_prompt, // This is the system_prompt for the builder (persona/override only)
-        raw_character_system_prompt,   // This is the raw system_prompt from the character itself
-        player_chronicle_id_from_session, // The chronicle ID for RAG retrieval
-        agent_mode_from_session,       // The agent mode for context enrichment
-        game_master_mode_enabled_from_session, // The Game Master mode flag
-        initial_game_state_db,         // The initial game state for reconciliation
-    ) = {
+    // --- Main Interact Block for DB Data (Session Settings, Raw Messages, Character for FirstMes) ---
+    let db_data = {
         let dek_for_interact_cloned = user_dek_secret_box.clone();
         let initial_effective_system_prompt = effective_system_prompt; // Capture current state
         let frontend_history_for_interact = frontend_history.clone(); // Clone for closure
@@ -277,6 +284,9 @@ pub async fn get_session_data_for_generation(
                 agent_mode,
                 game_master_mode_enabled,
                 game_state_db,
+                rag_chronicles_limit_sess,
+                rag_lorebooks_limit_sess,
+                rag_older_chat_limit_sess,
             ) = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
@@ -289,6 +299,9 @@ pub async fn get_session_data_for_generation(
                     chat_sessions::agent_mode,
                     chat_sessions::game_master_mode_enabled,
                     chat_sessions::game_state,
+                    chat_sessions::rag_chronicles_limit,
+                    chat_sessions::rag_lorebooks_limit,
+                    chat_sessions::rag_older_chat_limit,
                 ))
                 .first::<(
                     Option<String>,
@@ -299,6 +312,9 @@ pub async fn get_session_data_for_generation(
                     Option<String>,
                     bool,
                     Option<crate::DbJson>,
+                    Option<i32>,
+                    Option<i32>,
+                    Option<i32>,
                 )>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
@@ -345,7 +361,7 @@ pub async fn get_session_data_for_generation(
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(chat_sessions::stop_sequences)
-                .first::<Option<Vec<Option<String>>>>(conn_interaction)
+                .first::<crate::db::DbStringArray>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
                         AppError::NotFound(format!("Chat session {session_id} not found"))
@@ -370,7 +386,7 @@ pub async fn get_session_data_for_generation(
                             "Failed to query chat session {session_id}: {e}"
                         )),
                     })?;
-                optional_array.0
+                crate::db::DbStringArray(optional_array.0)
             };
 
             // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
@@ -393,14 +409,46 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
-            let overrides_db: Vec<ChatCharacterOverride> = chat_character_overrides::table
+            let overrides_db_raw: Vec<(
+                crate::db::DbId,
+                crate::db::DbId,
+                crate::db::DbId,
+                String,
+                Vec<u8>,
+                Vec<u8>,
+                crate::db::DbTimestamp,
+                crate::db::DbTimestamp,
+            )> = chat_character_overrides::table
                 .filter(chat_character_overrides::chat_session_id.eq(session_id))
                 .filter(chat_character_overrides::original_character_id.eq(char_id))
-                .select(ChatCharacterOverride::as_select())
-                .load::<ChatCharacterOverride>(conn_interaction)
+                .select((
+                    chat_character_overrides::id,
+                    chat_character_overrides::chat_session_id,
+                    chat_character_overrides::original_character_id,
+                    chat_character_overrides::field_name,
+                    chat_character_overrides::overridden_value,
+                    chat_character_overrides::overridden_value_nonce,
+                    chat_character_overrides::created_at,
+                    chat_character_overrides::updated_at,
+                ))
+                .load(conn_interaction)
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to query overrides: {e}"))
                 })?;
+
+            let overrides_db: Vec<ChatCharacterOverride> = overrides_db_raw
+                .into_iter()
+                .map(|row| ChatCharacterOverride {
+                    id: row.0,
+                    chat_session_id: row.1,
+                    original_character_id: row.2,
+                    field_name: row.3,
+                    overridden_value: row.4,
+                    overridden_value_nonce: row.5,
+                    created_at: row.6,
+                    updated_at: row.7,
+                })
+                .collect();
 
             // Only query database messages if no frontend history is provided
             // Use ChatMessageQuery (11 fields) to avoid Diesel's CompatibleType limit
@@ -643,36 +691,81 @@ pub async fn get_session_data_for_generation(
                 }
             };
 
-            Ok::<_, AppError>((
-                hist_strat,
-                hist_limit,
-                sess_char_id,
-                temp,
-                max_tokens,
-                freq_pen,
-                pres_pen,
-                top_k_val,
-                top_p_val,
-                seed_val,
-                stop_seqs,
-                model_n,
-                model_prov,
-                gem_think_budget,
-                gem_think_level,
-                gem_enable_code_exec,
-                messages_raw_db,
-                character_db,
-                overrides_db,
-                current_effective_system_prompt, // This is the one for the builder (persona/override only)
-                raw_character_system_prompt_from_db, // The new one
-                player_chronicle_id,
-                agent_mode,
-                Some(game_master_mode_enabled),
-                game_state_db,
-            ))
+            Ok::<_, AppError>(GenerationDbData {
+                history_management_strategy_db_val: hist_strat,
+                history_management_limit_db_val: hist_limit,
+                session_character_id_db: sess_char_id,
+                session_temperature_db: temp,
+                session_max_output_tokens_db: max_tokens,
+                session_frequency_penalty_db: freq_pen,
+                session_presence_penalty_db: pres_pen,
+                session_top_k_db: top_k_val,
+                session_top_p_db: top_p_val,
+                session_seed_db: seed_val,
+                _session_stop_sequences_db: Some(stop_seqs),
+                session_model_name_db: model_n,
+                session_model_provider_db: model_prov,
+                session_gemini_thinking_budget_db: gem_think_budget,
+                session_gemini_thinking_level_db: gem_think_level,
+                session_gemini_enable_code_execution_db: gem_enable_code_exec,
+                existing_messages_db_raw: messages_raw_db,
+                character_for_first_mes: character_db,
+                character_overrides_for_first_mes: overrides_db,
+                final_effective_system_prompt: current_effective_system_prompt,
+                raw_character_system_prompt: raw_character_system_prompt_from_db,
+                player_chronicle_id_from_session: player_chronicle_id,
+                agent_mode_from_session: agent_mode,
+                game_master_mode_enabled_from_session: game_master_mode_enabled,
+                game_state_from_session: game_state_db,
+                rag_chronicles_limit_sess,
+                rag_lorebooks_limit_sess,
+                rag_older_chat_limit_sess,
+            })
         })
         .await?
     };
+
+    let GenerationDbData {
+        history_management_strategy_db_val,
+        history_management_limit_db_val,
+        session_character_id_db,
+        session_temperature_db,
+        session_max_output_tokens_db,
+        session_frequency_penalty_db,
+        session_presence_penalty_db,
+        session_top_k_db,
+        session_top_p_db,
+        session_seed_db,
+        _session_stop_sequences_db,
+        session_model_name_db,
+        session_model_provider_db,
+        session_gemini_thinking_budget_db,
+        session_gemini_thinking_level_db,
+        session_gemini_enable_code_execution_db,
+        existing_messages_db_raw,
+        character_for_first_mes,
+        character_overrides_for_first_mes,
+        final_effective_system_prompt,
+        raw_character_system_prompt,
+        player_chronicle_id_from_session,
+        agent_mode_from_session,
+        game_master_mode_enabled_from_session,
+        game_state_from_session,
+        rag_chronicles_limit_sess,
+        rag_lorebooks_limit_sess,
+        rag_older_chat_limit_sess,
+    } = db_data;
+
+    // Fetch user settings for RAG limit defaults
+    let user_settings =
+        UserSettingsService::get_user_settings(&state.pool, user_id, &state.config).await?;
+
+    let rag_chronicles_limit =
+        rag_chronicles_limit_sess.or(user_settings.default_rag_chronicles_limit);
+    let rag_lorebooks_limit =
+        rag_lorebooks_limit_sess.or(user_settings.default_rag_lorebooks_limit);
+    let rag_older_chat_limit =
+        rag_older_chat_limit_sess.or(user_settings.default_rag_older_chat_limit);
 
     // --- Retrieve Comprehensive Active Lorebook IDs (now that character_id is available) ---
     let active_lorebook_ids_for_search: Option<Vec<crate::db::DbId>> = {
@@ -902,7 +995,20 @@ pub async fn get_session_data_for_generation(
 
         // Enforce max_context_tokens if set
         if let Some(max_tokens) = plan_features.and_then(|pf| pf.max_context_tokens) {
-            if context_total_token_limit > max_tokens as usize {
+            // Skip enforcement for desktop users on free tier to allow local override of context limits
+            let is_desktop_free = cfg!(feature = "desktop") && plan_type == "free";
+
+            debug!(
+                %session_id,
+                %user_id,
+                plan_type = %plan_type,
+                plan_max = %max_tokens,
+                is_desktop_free = %is_desktop_free,
+                current_limit = %context_total_token_limit,
+                "Subscription tier check for context limit"
+            );
+
+            if !is_desktop_free && context_total_token_limit > max_tokens as usize {
                 info!(
                     %session_id,
                     %user_id,
@@ -912,9 +1018,25 @@ pub async fn get_session_data_for_generation(
                     "Enforcing subscription tier context limit - capping user's requested limit to plan maximum"
                 );
                 context_total_token_limit = max_tokens as usize;
+            } else if is_desktop_free && context_total_token_limit > max_tokens as usize {
+                info!(
+                    %session_id,
+                    %user_id,
+                    requested = %context_total_token_limit,
+                    plan_max = %max_tokens,
+                    "Desktop user on free tier: bypassing subscription context limit to allow local override"
+                );
             }
+        } else {
+            debug!(%session_id, %user_id, "No plan features or max_context_tokens found for subscription tier");
         }
     }
+    #[cfg(not(feature = "payment"))]
+    {
+        debug!(%session_id, "Payment feature disabled, skipping subscription tier context limit check");
+    }
+
+    info!(%session_id, final_context_limit = %context_total_token_limit, "Final context_total_token_limit determined for generation.");
 
     let recent_history_token_budget = user_settings
         .default_context_recent_history_budget
@@ -1015,7 +1137,18 @@ pub async fn get_session_data_for_generation(
     info!(%session_id, %actual_recent_history_tokens, %available_rag_tokens, "Calculated flexible RAG token budget.");
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
     let mut combined_rag_candidates: Vec<RetrievedChunk> = Vec::new();
-    let rag_query_limit_per_source: u64 = 15; // Example limit, cast to u64 for service call
+
+    // Map token-based RAG limits to entry limits for search (divisor of 500 tokens per chunk)
+    let lorebook_search_limit = rag_lorebooks_limit_sess
+        .map(|l| (l / 500).max(15) as u64)
+        .unwrap_or(15);
+    let chronicles_search_limit = rag_chronicles_limit_sess
+        .map(|l| (l / 500).max(10) as u64)
+        .unwrap_or(10);
+    let older_chat_search_limit = rag_older_chat_limit_sess
+        .map(|l| (l / 500).max(15) as u64)
+        .unwrap_or(15);
+
     debug!(target: "test_debug", %session_id, %available_rag_tokens, "RAG token budget check. available_rag_tokens > 0: {}", available_rag_tokens > 0);
 
     if available_rag_tokens > 0 {
@@ -1037,7 +1170,7 @@ pub async fn get_session_data_for_generation(
                         Some(lorebook_ids.clone()),
                         None,                  // Not searching chronicles here (done separately)
                         &user_message_content, // query_text
-                        rag_query_limit_per_source,
+                        lorebook_search_limit,
                         session_dek_temp.as_ref(),
                     )
                     .await
@@ -1070,7 +1203,7 @@ pub async fn get_session_data_for_generation(
                     None,               // Not searching lorebooks here
                     Some(chronicle_id), // Search this chronicle
                     &user_message_content,
-                    10,                        // Limit to top 10 chronicle events
+                    chronicles_search_limit,
                     session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
@@ -1107,7 +1240,7 @@ pub async fn get_session_data_for_generation(
                     None,             // Not searching lorebooks here
                     None,             // Not searching chronicles here (done separately above)
                     &user_message_content, // query_text
-                    rag_query_limit_per_source,
+                    older_chat_search_limit,
                     session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
@@ -1436,7 +1569,9 @@ pub async fn get_session_data_for_generation(
 
     user_db_message_to_save = user_db_message_to_save
         .with_role("user".to_string())
-        .with_parts(serde_json::json!([{"text": user_message_content}]).into())
+        .with_parts(crate::db::Json(
+            serde_json::json!([{"text": user_message_content}]),
+        ))
         .with_token_counts(user_prompt_tokens_val, None);
 
     // --- Construct Final Tuple ---
@@ -1469,8 +1604,14 @@ pub async fn get_session_data_for_generation(
         user_persona_name,                  // 22: user_persona_name (Option<String>) - NEW
         player_chronicle_id_from_session, // 23: player_chronicle_id (Option<crate::db::DbId>) - NEW
         agent_mode_from_session,          // 24: agent_mode (Option<String>) - NEW
-        game_master_mode_enabled_from_session, // 25: game_master_mode_enabled (Option<bool>) - NEW
-        initial_game_state_db.map(|j| j.into()), // 26: initial_game_state (Option<serde_json::Value>) - NEW
+        Some(game_master_mode_enabled_from_session), // 25: game_master_mode_enabled (Option<bool>) - NEW
+        game_state_from_session.map(|j| j.0), // 26: initial_game_state (Option<serde_json::Value>) - NEW
+        rag_chronicles_limit,                 // 27: rag_chronicles_limit
+        rag_lorebooks_limit,                  // 28: rag_lorebooks_limit
+        rag_older_chat_limit,                 // 29: rag_older_chat_limit
+        context_total_token_limit,            // 30: context_total_token_limit
+        recent_history_token_budget,          // 31: recent_history_token_budget
+        context_rag_budget,                   // 32: rag_token_budget
     ))
 }
 /// Parameters for streaming AI response and saving messages.

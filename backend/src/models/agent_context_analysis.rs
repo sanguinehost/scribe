@@ -285,7 +285,7 @@ impl AgentContextAnalysis {
                 // Fallback to plaintext JSON
                 Ok(log.clone())
             }
-            _ => Ok(JsonValue::Null),
+            _ => Ok(crate::db::Json(serde_json::Value::Null)),
         }
     }
 
@@ -413,7 +413,12 @@ impl NewAgentContextAnalysis {
                         AppError::CryptoError(format!("Failed to encrypt execution log: {}", e))
                     })?;
                 // Store encrypted data as a JSON string
-                (Some(JsonValue::String(hex::encode(encrypted))), Some(nonce))
+                (
+                    Some(crate::db::Json(serde_json::Value::String(hex::encode(
+                        encrypted,
+                    )))),
+                    Some(nonce),
+                )
             } else {
                 (Some(execution_log.clone()), None)
             }

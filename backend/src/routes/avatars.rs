@@ -205,17 +205,14 @@ pub async fn upload_user_avatar(
     .await
     .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}")))?;
 
-    info!(user_id = %user_id, asset_id = %asset_result.id, "User avatar uploaded successfully");
+    info!(user_id = %user_id, asset_id = ?asset_result.id, "User avatar uploaded successfully");
 
     Ok((
         StatusCode::CREATED,
-        Json(
-            serde_json::json!({
-                "message": "Avatar uploaded successfully",
-                "asset_id": asset_result.id
-            })
-            .into(),
-        ),
+        Json(crate::db::Json(serde_json::json!({
+            "message": "Avatar uploaded successfully",
+            "asset_id": asset_result.id
+        }))),
     ))
 }
 
@@ -430,17 +427,14 @@ pub async fn upload_persona_avatar(
     })
     .await?;
 
-    info!(persona_id = %persona_id, asset_id = %asset_result.id, "Persona avatar uploaded successfully");
+    info!(persona_id = %persona_id, asset_id = ?asset_result.id, "Persona avatar uploaded successfully");
 
     Ok((
         StatusCode::CREATED,
-        Json(
-            serde_json::json!({
-                "message": "Persona avatar uploaded successfully",
-                "asset_id": asset_result.id
-            })
-            .into(),
-        ),
+        Json(crate::db::Json(serde_json::json!({
+            "message": "Persona avatar uploaded successfully",
+            "asset_id": asset_result.id
+        }))),
     ))
 }
 

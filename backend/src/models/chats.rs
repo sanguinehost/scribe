@@ -133,6 +133,10 @@ pub type SettingsTuple = (
     Option<crate::db::DbId>, // active_custom_persona_id
     // -- Prompt Template --
     String, // prompt_template_id
+    // -- RAG Limits --
+    Option<i32>, // rag_chronicles_limit
+    Option<i32>, // rag_lorebooks_limit
+    Option<i32>, // rag_older_chat_limit
 ); // Close the tuple definition
 #[derive(Queryable, Selectable, Identifiable, Serialize, Deserialize, Clone)]
 #[diesel(table_name = chat_sessions)]
@@ -197,6 +201,10 @@ pub struct Chat {
     // Game Master Agent fields
     pub game_state: Option<crate::DbJson>,
     pub game_master_mode_enabled: bool,
+    // RAG Limits
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -277,6 +285,9 @@ impl std::fmt::Debug for Chat {
             )
             .field("game_state", &self.game_state)
             .field("game_master_mode_enabled", &self.game_master_mode_enabled)
+            .field("rag_chronicles_limit", &self.rag_chronicles_limit)
+            .field("rag_lorebooks_limit", &self.rag_lorebooks_limit)
+            .field("rag_older_chat_limit", &self.rag_older_chat_limit)
             .finish()
     }
 }
@@ -333,6 +344,10 @@ pub struct NewChat {
     // Game Master Agent fields
     pub game_state: Option<crate::DbJson>,
     pub game_master_mode_enabled: bool,
+    // RAG Limits
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -406,6 +421,9 @@ impl std::fmt::Debug for NewChat {
             )
             .field("game_state", &self.game_state)
             .field("game_master_mode_enabled", &self.game_master_mode_enabled)
+            .field("rag_chronicles_limit", &self.rag_chronicles_limit)
+            .field("rag_lorebooks_limit", &self.rag_lorebooks_limit)
+            .field("rag_older_chat_limit", &self.rag_older_chat_limit)
             .finish()
     }
 }
@@ -2262,6 +2280,13 @@ pub struct UpdateChatSettingsRequest {
     pub prompt_template_id: Option<String>,
     // Game Master mode flag
     pub game_master_mode_enabled: Option<bool>,
+    // RAG Limits
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_chronicles_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_lorebooks_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_older_chat_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -3352,6 +3377,7 @@ mod tests {
     feature = "sqlite-backend",
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Associations, Identifiable)]
 pub struct MessageVariant {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,
@@ -3364,6 +3390,9 @@ pub struct MessageVariant {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub raw_prompt_ciphertext: Option<Vec<u8>>,
+    pub raw_prompt_nonce: Option<Vec<u8>>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 /// Insertable model for creating new message variants

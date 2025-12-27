@@ -149,7 +149,7 @@ pub struct Chat {
     pub min_p: Option<crate::db::DbDecimal>,
     pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
-    pub logit_bias: Option<String>,
+    pub logit_bias: Option<crate::db::DbJson>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
@@ -172,7 +172,7 @@ pub struct Chat {
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
-    pub total_credits_used: i32,
+    pub total_credits_used: crate::db::DbDecimal,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_cost: crate::db::DbDecimal,
@@ -184,8 +184,8 @@ pub struct Chat {
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
     // Game Master Agent fields
-    pub game_state: Option<String>,     // JSON-encoded GameState
-    pub game_master_mode_enabled: bool, // Feature flag
+    pub game_state: Option<crate::db::DbJson>, // JSON-encoded GameState
+    pub game_master_mode_enabled: bool,        // Feature flag
 }
 
 /// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)
@@ -209,11 +209,11 @@ pub struct ChatListQuery {
     pub stop_sequences: crate::models::OptionalStringArray,
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    pub total_credits_used: i32,
+    pub total_credits_used: crate::db::DbDecimal,
     pub visibility: Option<String>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<String>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 impl ChatListQuery {
@@ -364,7 +364,7 @@ pub struct ChatSessionQuery {
     pub narrative_style_override_nonce: Option<Vec<u8>>,
     pub total_actual_cost: crate::db::DbDecimal, // Added for cost display
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<String>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 impl ChatSessionQuery {
@@ -464,7 +464,7 @@ impl ChatSessionQuery {
             chronicle_id: self.player_chronicle_id,
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
-            total_credits_used: self.estimated_cost_cents,
+            total_credits_used: crate::db::DbDecimal::from(i64::from(self.estimated_cost_cents)),
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
@@ -690,7 +690,7 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
-    pub total_credits_used: i32,
+    pub total_credits_used: crate::db::DbDecimal,
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
@@ -2151,11 +2151,11 @@ pub struct ChatForClient {
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
     pub total_prompt_tokens: i32,
     pub total_completion_tokens: i32,
-    pub total_credits_used: i32,
+    pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     // Game Master Agent fields
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<String>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 impl Chat {
@@ -2763,7 +2763,7 @@ pub struct MessageResponse {
 
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
-    pub game_state: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -3044,7 +3044,7 @@ mod tests {
             tokens_counted_at: crate::db::DbTimestamp::now(),
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_credits_used: 0,
+            total_credits_used: crate::db::DbDecimal::from(0i64),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -3318,6 +3318,7 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: Some("gemini-2.5-flash".to_string()),
+            game_master_mode_enabled: Some(false),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
@@ -3378,6 +3379,7 @@ mod tests {
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro".to_string()),
             model_provider: Some("gemini".to_string()),
+            game_master_mode_enabled: Some(true),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
@@ -3630,7 +3632,7 @@ pub struct MessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub game_state: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 /// Insertable model for creating new message variants
@@ -3648,7 +3650,7 @@ pub struct NewMessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub game_state: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl MessageVariant {
@@ -3732,7 +3734,7 @@ impl NewMessageVariant {
         completion_tokens: Option<i32>,
         model_name: Option<String>,
         raw_prompt_debug: Option<&str>,
-        game_state: Option<String>,
+        game_state: Option<serde_json::Value>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
@@ -3780,7 +3782,7 @@ pub struct MessageVariantDto {
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
     pub raw_prompt: Option<String>,
-    pub game_state: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl MessageVariantDto {

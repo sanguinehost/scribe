@@ -8,15 +8,6 @@
 //! - `postgres-backend`: Enable PostgreSQL backend (cloud mode)
 //! - `sqlite-backend`: Enable SQLite backend (desktop mode)
 //!
-//! ## Current Status (Task 1.2.1 Complete)
-//!
-//! ✅ **Complete**:
-//! - Backend trait abstraction (`DbBackend`)
-//! - PostgreSQL backend with `deadpool-diesel` async pooling
-//! - SQLite backend with `diesel::r2d2` synchronous pooling
-//! - Conditional type aliases for connections and pools
-//! - **Cloud/PostgreSQL mode fully functional**
-//! - **Desktop/SQLite mode fully functional**
 //!
 //! ## Architecture Notes
 //!
@@ -112,11 +103,7 @@ pub type DbBigInt = i64;
 #[cfg(feature = "sqlite-backend")]
 pub type DbBigInt = i64;
 
-#[cfg(feature = "postgres-backend")]
-pub type DbJson = serde_json::Value;
-
-#[cfg(feature = "sqlite-backend")]
-pub type DbJson = sqlite_types::SqliteJson;
+// DbJson is now provided by unified_types module
 
 #[cfg(feature = "postgres-backend")]
 pub type DbBigDecimal = bigdecimal::BigDecimal;
@@ -142,4 +129,4 @@ pub use json_wrapper::Json;
 pub use backend_traits::DbType;
 
 /// Re-export all unified types
-pub use unified_types::{DbBlob, DbDecimal, DbId, DbStringArray, DbTimestamp};
+pub use unified_types::{DbBlob, DbDecimal, DbId, DbJson, DbStringArray, DbTimestamp};

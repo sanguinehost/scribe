@@ -288,101 +288,103 @@ impl LorebookService {
                                 .map(Some) // Wrap in Some if decryption is successful
                         };
 
-                        match (
-                            decrypted_title_result,
-                            decrypted_content_result,
-                            decrypted_keys_text_result,
-                        ) {
-                            (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
-                                let decrypted_title_for_embedding =
-                                    String::from_utf8_lossy(&title_bytes).into_owned();
-                                let decrypted_content_for_embedding =
-                                    String::from_utf8_lossy(&content_bytes).into_owned();
-
-                                let decrypted_keys_text_str_opt = keys_bytes_opt
-                                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
-
-                                let decrypted_keywords_for_embedding =
-                                    decrypted_keys_text_str_opt.as_ref().and_then(|keys_str| {
-                                        if keys_str.trim().is_empty() {
-                                            None
-                                        } else {
-                                            let keywords: Vec<String> = keys_str
-                                                .split(',')
-                                                .map(|s| s.trim().to_string())
-                                                .filter(|s| !s.is_empty())
-                                                .collect();
-                                            if keywords.is_empty() {
-                                                None
-                                            } else {
-                                                Some(keywords)
-                                            }
-                                        }
-                                    });
-
-                                let state_clone_for_task = state.clone();
-                                let embedding_pipeline_service_clone =
-                                    state_clone_for_task.embedding_pipeline_service.clone();
-                                let entry_id_for_embedding = entry.id;
-                                let lorebook_id_for_embedding_task = lorebook_id_to_associate;
-                                let user_id_for_embedding_task = current_user_id;
-                                let is_enabled_for_embedding_task = entry.is_enabled; // Should be true here
-                                let is_constant_for_embedding_task = entry.is_constant;
-
-                                // Clone the SessionDek for the async task
-                                let session_dek_for_embedding = user_dek.map(|dek| {
-                                    let dek_bytes = dek.expose_secret().clone();
-                                    secrecy::SecretBox::new(Box::new(dek_bytes))
-                                });
-
-                                tokio::spawn(async move {
-                                    debug!(
-                                        "Spawning task to process and embed lorebook entry [REDACTED_UUID] from lorebook [REDACTED_UUID] during chat association."
-                                    );
-
-                                    let params = LorebookEntryParams {
-                                        original_lorebook_entry_id: entry_id_for_embedding,
-                                        lorebook_id: lorebook_id_for_embedding_task,
-                                        user_id: user_id_for_embedding_task,
-                                        decrypted_content: decrypted_content_for_embedding,
-                                        decrypted_title: Some(decrypted_title_for_embedding),
-                                        decrypted_keywords: decrypted_keywords_for_embedding,
-                                        is_enabled: is_enabled_for_embedding_task,
-                                        is_constant: is_constant_for_embedding_task,
-                                        session_dek: session_dek_for_embedding,
-                                    };
-
-                                    if let Err(e) = embedding_pipeline_service_clone
-                                        .process_and_embed_lorebook_entry(
-                                            state_clone_for_task,
-                                            params,
-                                        )
-                                        .await
-                                    {
-                                        error!(
-                                            "Failed to process and embed lorebook entry [REDACTED_UUID] in background during association: {:?}",
-                                            e
-                                        );
-                                    } else {
-                                        debug!(
-                                            "Successfully queued lorebook entry [REDACTED_UUID] for embedding during association."
-                                        );
-                                    }
-                                });
+                        let title_bytes = match decrypted_title_result {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                error!("Failed to decrypt title for entry [REDACTED_UUID]: {:?}. Skipping embedding.", e);
+                                continue;
                             }
-                            (Err(e), _, _) => error!(
-                                "Failed to decrypt title for entry [REDACTED_UUID]: {:?}. Skipping embedding.",
-                                e
-                            ),
-                            (_, Err(e), _) => error!(
-                                "Failed to decrypt content for entry [REDACTED_UUID]: {:?}. Skipping embedding.",
-                                e
-                            ),
-                            (_, _, Err(e)) => error!(
-                                "Failed to decrypt keys_text for entry [REDACTED_UUID]: {:?}. Skipping embedding.",
-                                e
-                            ),
-                        }
+                        };
+
+                        let content_bytes = match decrypted_content_result {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                error!("Failed to decrypt content for entry [REDACTED_UUID]: {:?}. Skipping embedding.", e);
+                                continue;
+                            }
+                        };
+
+                        let keys_bytes_opt = match decrypted_keys_text_result {
+                            Ok(opt) => opt,
+                            Err(e) => {
+                                error!("Failed to decrypt keys_text for entry [REDACTED_UUID]: {:?}. Skipping embedding.", e);
+                                continue;
+                            }
+                        };
+
+                        let decrypted_title_for_embedding =
+                            String::from_utf8_lossy(&title_bytes).into_owned();
+                        let decrypted_content_for_embedding =
+                            String::from_utf8_lossy(&content_bytes).into_owned();
+
+                        let decrypted_keys_text_str_opt = keys_bytes_opt
+                            .as_ref()
+                            .map(|bytes| String::from_utf8_lossy(bytes).into_owned());
+
+                        let decrypted_keywords_for_embedding =
+                            decrypted_keys_text_str_opt.as_ref().and_then(|keys_str| {
+                                if keys_str.trim().is_empty() {
+                                    None
+                                } else {
+                                    let keywords: Vec<String> = keys_str
+                                        .split(',')
+                                        .map(|s| s.trim().to_string())
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                    if keywords.is_empty() {
+                                        None
+                                    } else {
+                                        Some(keywords)
+                                    }
+                                }
+                            });
+
+                        let state_clone_for_task = state.clone();
+                        let embedding_pipeline_service_clone =
+                            state_clone_for_task.embedding_pipeline_service.clone();
+                        let entry_id_for_embedding = entry.id;
+                        let lorebook_id_for_embedding_task = lorebook_id_to_associate;
+                        let user_id_for_embedding_task = current_user_id;
+                        let is_enabled_for_embedding_task = entry.is_enabled; // Should be true here
+                        let is_constant_for_embedding_task = entry.is_constant;
+
+                        // Clone the SessionDek for the async task
+                        let session_dek_for_embedding = user_dek.map(|dek| {
+                            let dek_bytes = dek.expose_secret().clone();
+                            secrecy::SecretBox::new(Box::new(dek_bytes))
+                        });
+
+                        tokio::spawn(async move {
+                            debug!(
+                                "Spawning task to process and embed lorebook entry [REDACTED_UUID] from lorebook [REDACTED_UUID] during chat association."
+                            );
+
+                            let params = LorebookEntryParams {
+                                original_lorebook_entry_id: entry_id_for_embedding,
+                                lorebook_id: lorebook_id_for_embedding_task,
+                                user_id: user_id_for_embedding_task,
+                                decrypted_content: decrypted_content_for_embedding,
+                                decrypted_title: Some(decrypted_title_for_embedding),
+                                decrypted_keywords: decrypted_keywords_for_embedding,
+                                is_enabled: is_enabled_for_embedding_task,
+                                is_constant: is_constant_for_embedding_task,
+                                session_dek: session_dek_for_embedding,
+                            };
+
+                            if let Err(e) = embedding_pipeline_service_clone
+                                .process_and_embed_lorebook_entry(state_clone_for_task, params)
+                                .await
+                            {
+                                error!(
+                                    "Failed to process and embed lorebook entry [REDACTED_UUID] in background during association: {:?}",
+                                    e
+                                );
+                            } else {
+                                debug!(
+                                    "Successfully queued lorebook entry [REDACTED_UUID] for embedding during association."
+                                );
+                            }
+                        });
                     } else {
                         debug!(
                             "Skipping disabled entry [REDACTED_UUID] during bulk embedding for lorebook [REDACTED_UUID]."

@@ -77,6 +77,9 @@
 		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
 		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET, // Will be set from global or chat settings
+		rag_chronicles_limit: 20000,
+		rag_lorebooks_limit: 20000,
+		rag_older_chat_limit: 10000,
 		agent_mode: 'disabled' as 'disabled' | 'pre_processing' | 'post_processing', // Context enrichment agent mode
 		prompt_template_id: 'neutral_roleplay', // Will be set from global or chat settings
 		game_master_mode_enabled: false // Will be set from chat settings
@@ -143,6 +146,9 @@
 			localSettings.context_total_token_limit !== DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT ||
 			localSettings.context_recent_history_budget !== DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET ||
 			localSettings.context_rag_budget !== DEFAULT_CONTEXT_RAG_BUDGET ||
+			localSettings.rag_chronicles_limit !== 20000 ||
+			localSettings.rag_lorebooks_limit !== 20000 ||
+			localSettings.rag_older_chat_limit !== 10000 ||
 			localSettings.game_master_mode_enabled !== false
 		);
 	});
@@ -206,6 +212,9 @@
 					DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 				context_rag_budget:
 					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET,
+				rag_chronicles_limit: globalUserSettings.default_rag_chronicles_limit ?? 20000,
+				rag_lorebooks_limit: globalUserSettings.default_rag_lorebooks_limit ?? 20000,
+				rag_older_chat_limit: globalUserSettings.default_rag_older_chat_limit ?? 10000,
 				agent_mode: 'disabled',
 				prompt_template_id: 'neutral_roleplay',
 				game_master_mode_enabled: false
@@ -262,6 +271,16 @@
 					settings.context_rag_budget ??
 					globalUserSettings?.default_context_rag_budget ??
 					DEFAULT_CONTEXT_RAG_BUDGET,
+				rag_chronicles_limit:
+					settings.rag_chronicles_limit ??
+					globalUserSettings?.default_rag_chronicles_limit ??
+					20000,
+				rag_lorebooks_limit:
+					settings.rag_lorebooks_limit ?? globalUserSettings?.default_rag_lorebooks_limit ?? 20000,
+				rag_older_chat_limit:
+					settings.rag_older_chat_limit ??
+					globalUserSettings?.default_rag_older_chat_limit ??
+					10000,
 				agent_mode:
 					(settings.agent_mode as 'pre_processing' | 'post_processing' | 'disabled') ?? 'disabled',
 				prompt_template_id: settings.prompt_template_id ?? 'neutral_roleplay',
@@ -479,7 +498,10 @@
 				chronicle_id: currentChronicleId,
 				agent_mode: localSettings.agent_mode,
 				prompt_template_id: localSettings.prompt_template_id,
-				game_master_mode_enabled: localSettings.game_master_mode_enabled
+				game_master_mode_enabled: localSettings.game_master_mode_enabled,
+				rag_chronicles_limit: localSettings.rag_chronicles_limit,
+				rag_lorebooks_limit: localSettings.rag_lorebooks_limit,
+				rag_older_chat_limit: localSettings.rag_older_chat_limit
 			};
 
 			const result = await _apiClient.updateChatSessionSettings(chat.id, updateRequest);
@@ -571,6 +593,9 @@
 			| 'context_total_token_limit'
 			| 'context_recent_history_budget'
 			| 'context_rag_budget'
+			| 'rag_chronicles_limit'
+			| 'rag_lorebooks_limit'
+			| 'rag_older_chat_limit'
 			| 'game_master_mode_enabled'
 	) {
 		// Reset to default values based on field type
@@ -630,6 +655,17 @@
 				localSettings.context_rag_budget =
 					globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
 				break;
+			case 'rag_chronicles_limit':
+				localSettings.rag_chronicles_limit =
+					globalUserSettings.default_rag_chronicles_limit ?? 20000;
+				break;
+			case 'rag_lorebooks_limit':
+				localSettings.rag_lorebooks_limit = globalUserSettings.default_rag_lorebooks_limit ?? 20000;
+				break;
+			case 'rag_older_chat_limit':
+				localSettings.rag_older_chat_limit =
+					globalUserSettings.default_rag_older_chat_limit ?? 10000;
+				break;
 			case 'game_master_mode_enabled':
 				localSettings.game_master_mode_enabled = false;
 				break;
@@ -664,6 +700,9 @@
 			DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET;
 		localSettings.context_rag_budget =
 			globalUserSettings.default_context_rag_budget ?? DEFAULT_CONTEXT_RAG_BUDGET;
+		localSettings.rag_chronicles_limit = globalUserSettings.default_rag_chronicles_limit ?? 20000;
+		localSettings.rag_lorebooks_limit = globalUserSettings.default_rag_lorebooks_limit ?? 20000;
+		localSettings.rag_older_chat_limit = globalUserSettings.default_rag_older_chat_limit ?? 10000;
 		localSettings.game_master_mode_enabled = false;
 		toast.info('All overrides cleared');
 	}
@@ -1484,6 +1523,9 @@
 									bind:total_token_limit={localSettings.context_total_token_limit}
 									bind:recent_history_budget={localSettings.context_recent_history_budget}
 									bind:rag_budget={localSettings.context_rag_budget}
+									bind:rag_chronicles_limit={localSettings.rag_chronicles_limit}
+									bind:rag_lorebooks_limit={localSettings.rag_lorebooks_limit}
+									bind:rag_older_chat_limit={localSettings.rag_older_chat_limit}
 									title="Context Override"
 									description="Override default context allocation for this chat."
 								/>
@@ -1492,6 +1534,9 @@
 									bind:total_token_limit={localSettings.context_total_token_limit}
 									bind:recent_history_budget={localSettings.context_recent_history_budget}
 									bind:rag_budget={localSettings.context_rag_budget}
+									bind:rag_chronicles_limit={localSettings.rag_chronicles_limit}
+									bind:rag_lorebooks_limit={localSettings.rag_lorebooks_limit}
+									bind:rag_older_chat_limit={localSettings.rag_older_chat_limit}
 									title="Context Override"
 									description="Override default context allocation for this chat."
 								/>

@@ -792,7 +792,7 @@ impl ChronicleService {
             updated_at: new_event.timestamp_iso8601,
             summary_encrypted: new_event.summary_encrypted.clone(),
             summary_nonce: new_event.summary_nonce.clone(),
-            timestamp_iso8601: new_event.timestamp_iso8601,
+            timestamp_iso8601: Some(new_event.timestamp_iso8601),
             keywords: new_event.keywords.clone(),
             keywords_encrypted: new_event.keywords_encrypted.clone(),
             keywords_nonce: new_event.keywords_nonce.clone(),

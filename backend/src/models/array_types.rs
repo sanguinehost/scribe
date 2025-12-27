@@ -30,7 +30,6 @@ use diesel::sqlite::Sqlite;
     Serialize,
     Deserialize,
     diesel::expression::AsExpression,
-    diesel::deserialize::FromSqlRow,
 )]
 #[cfg_attr(feature = "postgres-backend", diesel(sql_type = Array<Nullable<Text>>))]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Nullable<Text>))]
@@ -97,6 +96,24 @@ impl FromSql<Nullable<Array<Nullable<Text>>>, Pg> for OptionalStringArray {
 }
 
 #[cfg(feature = "postgres-backend")]
+impl diesel::deserialize::FromSqlRow<Array<Nullable<Text>>, Pg> for OptionalStringArray {
+    fn build_from_row<'a>(
+        row: &mut dyn diesel::row::Row<'a, Pg>,
+    ) -> deserialize::Result<Self> {
+        FromSql::<Array<Nullable<Text>>, Pg>::from_sql(row.get_next()?)
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl diesel::deserialize::FromSqlRow<Nullable<Array<Nullable<Text>>>, Pg> for OptionalStringArray {
+    fn build_from_row<'a>(
+        row: &mut dyn diesel::row::Row<'a, Pg>,
+    ) -> deserialize::Result<Self> {
+        FromSql::<Nullable<Array<Nullable<Text>>>, Pg>::from_sql(row.get_next()?)
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
 impl ToSql<Array<Nullable<Text>>, Pg> for OptionalStringArray {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         // Serialize the inner vector, using an empty array if None
@@ -125,6 +142,15 @@ impl FromSql<Nullable<Text>, Sqlite> for OptionalStringArray {
                 Ok(Self(parsed))
             }
         }
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::deserialize::FromSqlRow<Nullable<Text>, Sqlite> for OptionalStringArray {
+    fn build_from_row<'a>(
+        row: &mut dyn diesel::row::Row<'a, Sqlite>,
+    ) -> deserialize::Result<Self> {
+        FromSql::<Nullable<Text>, Sqlite>::from_sql(row.get_next()?)
     }
 }
 

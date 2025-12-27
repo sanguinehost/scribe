@@ -9,12 +9,18 @@
 		total_token_limit = $bindable(),
 		recent_history_budget = $bindable(),
 		rag_budget = $bindable(),
+		rag_chronicles_limit = $bindable(),
+		rag_lorebooks_limit = $bindable(),
+		rag_older_chat_limit = $bindable(),
 		title = 'Context Override',
 		description = 'Override default context allocation for this chat.'
 	} = $props<{
 		total_token_limit: number;
 		recent_history_budget: number;
 		rag_budget: number;
+		rag_chronicles_limit: number;
+		rag_lorebooks_limit: number;
+		rag_older_chat_limit: number;
 		title?: string;
 		description?: string;
 	}>();
@@ -101,7 +107,10 @@
 
 		return {
 			history: Math.floor(total * history_ratio),
-			rag: Math.floor(total * rag_ratio)
+			rag: Math.floor(total * rag_ratio),
+			chronicles: Math.floor(total * rag_ratio * 0.4),
+			lorebooks: Math.floor(total * rag_ratio * 0.4),
+			older_chats: Math.floor(total * rag_ratio * 0.2)
 		};
 	}
 </script>
@@ -156,6 +165,9 @@
 								const budgets = calculatePresetBudgets(4096);
 								recent_history_budget = budgets.history;
 								rag_budget = budgets.rag;
+								rag_chronicles_limit = budgets.chronicles;
+								rag_lorebooks_limit = budgets.lorebooks;
+								rag_older_chat_limit = budgets.older_chats;
 							}}
 						>
 							4K
@@ -171,6 +183,9 @@
 								const budgets = calculatePresetBudgets(8000);
 								recent_history_budget = budgets.history;
 								rag_budget = budgets.rag;
+								rag_chronicles_limit = budgets.chronicles;
+								rag_lorebooks_limit = budgets.lorebooks;
+								rag_older_chat_limit = budgets.older_chats;
 							}}
 						>
 							8K
@@ -186,6 +201,9 @@
 								const budgets = calculatePresetBudgets(32000);
 								recent_history_budget = budgets.history;
 								rag_budget = budgets.rag;
+								rag_chronicles_limit = budgets.chronicles;
+								rag_lorebooks_limit = budgets.lorebooks;
+								rag_older_chat_limit = budgets.older_chats;
 							}}
 						>
 							32K
@@ -201,6 +219,9 @@
 								const budgets = calculatePresetBudgets(128000);
 								recent_history_budget = budgets.history;
 								rag_budget = budgets.rag;
+								rag_chronicles_limit = budgets.chronicles;
+								rag_lorebooks_limit = budgets.lorebooks;
+								rag_older_chat_limit = budgets.older_chats;
 							}}
 						>
 							128K
@@ -216,6 +237,9 @@
 								const budgets = calculatePresetBudgets(200000);
 								recent_history_budget = budgets.history;
 								rag_budget = budgets.rag;
+								rag_chronicles_limit = budgets.chronicles;
+								rag_lorebooks_limit = budgets.lorebooks;
+								rag_older_chat_limit = budgets.older_chats;
 							}}
 						>
 							200K
@@ -269,6 +293,45 @@
 				/>
 			</div>
 		</div>
+
+		<div class="grid grid-cols-3 gap-1">
+			<div class="space-y-1">
+				<Label for="rag-chronicles-limit-compact" class="text-[10px]">Chron.</Label>
+				<Input
+					id="rag-chronicles-limit-compact"
+					type="number"
+					min={0}
+					max={rag_budget}
+					step={100}
+					bind:value={rag_chronicles_limit}
+					class="h-7 px-1 text-[10px]"
+				/>
+			</div>
+			<div class="space-y-1">
+				<Label for="rag-lorebooks-limit-compact" class="text-[10px]">Lore.</Label>
+				<Input
+					id="rag-lorebooks-limit-compact"
+					type="number"
+					min={0}
+					max={rag_budget}
+					step={100}
+					bind:value={rag_lorebooks_limit}
+					class="h-7 px-1 text-[10px]"
+				/>
+			</div>
+			<div class="space-y-1">
+				<Label for="rag-older-chat-limit-compact" class="text-[10px]">Chats</Label>
+				<Input
+					id="rag-older-chat-limit-compact"
+					type="number"
+					min={0}
+					max={rag_budget}
+					step={100}
+					bind:value={rag_older_chat_limit}
+					class="h-7 px-1 text-[10px]"
+				/>
+			</div>
+		</div>
 	</div>
 
 	<!-- Compact Presets -->
@@ -283,6 +346,9 @@
 						total_token_limit = 64000;
 						recent_history_budget = 40000;
 						rag_budget = 20000;
+						rag_chronicles_limit = 8000;
+						rag_lorebooks_limit = 8000;
+						rag_older_chat_limit = 4000;
 					}}
 					class="h-7 flex-1 text-xs"
 				>
@@ -297,6 +363,9 @@
 						total_token_limit = 200000;
 						recent_history_budget = 120000;
 						rag_budget = 70000;
+						rag_chronicles_limit = 28000;
+						rag_lorebooks_limit = 28000;
+						rag_older_chat_limit = 14000;
 					}}
 					class="h-7 flex-1 text-xs"
 				>
@@ -311,6 +380,9 @@
 						total_token_limit = 400000;
 						recent_history_budget = 240000;
 						rag_budget = 140000;
+						rag_chronicles_limit = 56000;
+						rag_lorebooks_limit = 56000;
+						rag_older_chat_limit = 28000;
 					}}
 					class="h-7 flex-1 text-xs"
 				>

@@ -597,10 +597,11 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         new_message_to_insert = new_message_to_insert.with_role(role);
     }
     if let Some(parts_val) = parts {
-        new_message_to_insert = new_message_to_insert.with_parts(parts_val.into());
+        new_message_to_insert = new_message_to_insert.with_parts(crate::db::Json(parts_val));
     }
     if let Some(attachments_val) = attachments {
-        new_message_to_insert = new_message_to_insert.with_attachments(attachments_val.into());
+        new_message_to_insert =
+            new_message_to_insert.with_attachments(crate::db::Json(attachments_val));
     }
     new_message_to_insert =
         new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
@@ -912,10 +913,10 @@ async fn update_cumulative_token_counts(
 
             #[cfg(feature = "postgres-backend")]
             let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = (
-                actual_cost.clone(),
-                modified_cost,
-                actual_charge,
-                actual_cost,
+                actual_cost.0.clone(),
+                modified_cost.0.clone(),
+                actual_charge.0.clone(),
+                actual_cost.0.clone(),
             );
 
             // Update chat session cumulative counts
@@ -928,19 +929,35 @@ async fn update_cumulative_token_counts(
                     chat_sessions::estimated_cost_cents
                         .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
                     // NEW: Track all four cost values properly
-                    chat_sessions::total_actual_cost
-                        .eq(chat_sessions::total_actual_cost + actual_cost_val.clone()),
-                    chat_sessions::total_modified_cost
-                        .eq(chat_sessions::total_modified_cost + modified_cost_val.clone()),
+                    chat_sessions::total_actual_cost.eq(diesel::dsl::sql::<
+                        crate::schema::sql_types_unified::DbNumericType,
+                    >(
+                        "total_actual_cost + "
+                    )
+                    .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_cost_val)),
+                    chat_sessions::total_modified_cost.eq(diesel::dsl::sql::<
+                        crate::schema::sql_types_unified::DbNumericType,
+                    >(
+                        "total_modified_cost + "
+                    )
+                    .bind::<crate::schema::sql_types_unified::DbNumericType, _>(modified_cost_val)),
                     chat_sessions::total_credit_cost
                         .eq(chat_sessions::total_credit_cost + credit_cost),
-                    chat_sessions::total_actual_charge
-                        .eq(chat_sessions::total_actual_charge + actual_charge_val.clone()),
+                    chat_sessions::total_actual_charge.eq(diesel::dsl::sql::<
+                        crate::schema::sql_types_unified::DbNumericType,
+                    >(
+                        "total_actual_charge + "
+                    )
+                    .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_charge_val)),
                     // Keep total_credits_used for backwards compatibility (uses actual_cost)
                     // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
                     // We use credits_used_delta which is typed correctly for each backend.
-                    chat_sessions::total_credits_used
-                        .eq(chat_sessions::total_credits_used + credits_used_delta),
+                    chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
+                        crate::schema::sql_types_unified::DbCreditType,
+                    >(
+                        "total_credits_used + "
+                    )
+                    .bind::<crate::schema::sql_types_unified::DbCreditType, _>(credits_used_delta)),
                     chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
                 ))
                 .execute(conn)?;
@@ -949,9 +966,9 @@ async fn update_cumulative_token_counts(
             // Note: PostgreSQL uses i64 (BigInt), SQLite uses i32 (Integer) for DbInt
             #[cfg(feature = "postgres-backend")]
             let (prompt_db, completion_db, cost_db) = (
-                prompt_tokens as i64,
-                completion_tokens as i64,
-                estimated_cost_cents as i64,
+                prompt_tokens as i32,
+                completion_tokens as i32,
+                estimated_cost_cents as i32,
             );
             #[cfg(feature = "sqlite-backend")]
             let (prompt_db, completion_db, cost_db) = (

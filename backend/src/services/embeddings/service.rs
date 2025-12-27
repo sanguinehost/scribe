@@ -140,6 +140,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                     .filter(chat_messages::message_type.eq(MessageRole::User))
                     .filter(chat_messages::created_at.lt(current_msg_created_at))
                     .order(chat_messages::created_at.desc())
+                    .select(ChatMessage::as_select())
                     .first::<ChatMessage>(conn)
                     .optional()
                     .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
@@ -289,7 +290,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             let point = match create_qdrant_point(
                 point_id.into(),
                 embedding_vector,
-                Some(serde_json::to_value(metadata)?.into()),
+                Some(crate::db::Json(serde_json::to_value(metadata)?)),
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -1285,7 +1286,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Add temporal context
         structured_parts.push(format!(
             "\n[WHEN] {}",
-            event.timestamp_iso8601.format("%B %d, %Y at %H:%M")
+            event
+                .timestamp_iso8601
+                .map(|ts| ts.format("%B %d, %Y at %H:%M").to_string())
+                .unwrap_or_else(|| "Unknown Time".to_string())
         ));
 
         // Add the main summary content
@@ -1321,7 +1325,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let mut event_json = serde_json::json!({
             "event_type": event.event_type,
             "summary": decrypted_summary,
-            "timestamp_iso8601": event.timestamp_iso8601.to_rfc3339(),
+            "timestamp_iso8601": event.timestamp_iso8601.map(|ts| ts.to_rfc3339()).unwrap_or_default(),
             "source": event.source,
             "event_id": event.id.to_string(),
         });
@@ -1331,8 +1335,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         if let Some(chat_session_id) = event.chat_session_id {
-            event_json["chat_session_id"] =
-                crate::DbJson::String(chat_session_id.to_string()).into();
+            event_json["chat_session_id"] = serde_json::Value::String(chat_session_id.to_string());
         }
 
         // Encrypt content if SessionDek is available
@@ -1417,7 +1420,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let point = match create_qdrant_point(
             point_id.into(),
             embedding_vector,
-            Some(metadata_json.into()),
+            Some(crate::db::Json(metadata_json)),
         ) {
             Ok(p) => p,
             Err(e) => {

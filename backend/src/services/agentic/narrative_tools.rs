@@ -22,7 +22,7 @@ use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
 /// Generate JSON schema for text significance triage response
 fn get_text_significance_triage_schema() -> crate::DbJson {
-    serde_json::json!({
+    crate::db::Json(serde_json::json!({
         "type": "object",
         "properties": {
             "is_significant": {
@@ -44,7 +44,7 @@ fn get_text_significance_triage_schema() -> crate::DbJson {
             }
         },
         "required": ["is_significant", "confidence", "reason", "suggested_categories"]
-    }).into()
+    }))
 }
 
 /// Tool for creating a single chronicle event (atomic operation)

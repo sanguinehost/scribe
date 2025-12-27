@@ -229,7 +229,7 @@ impl CharacterService {
             extensions: Some(
                 create_dto
                     .extensions
-                    .unwrap_or_else(|| serde_json::json!({}).into()),
+                    .unwrap_or_else(|| crate::db::Json(serde_json::json!({}))),
             ),
             persona: None,
             persona_nonce: None,
@@ -269,16 +269,7 @@ impl CharacterService {
             creator_comment: None, // Will be encrypted below
             creator_comment_nonce: None,
             depth_prompt: None, // The raw text, will be used for encryption
-            depth_prompt_depth: create_dto.depth_prompt_depth.map(|d| {
-                #[cfg(feature = "postgres-backend")]
-                {
-                    d as i64
-                }
-                #[cfg(feature = "sqlite-backend")]
-                {
-                    d as i32
-                }
-            }),
+            depth_prompt_depth: create_dto.depth_prompt_depth,
             depth_prompt_role: create_dto.depth_prompt_role.clone(),
             talkativeness: None, // Not supported yet (group chat feature)
             depth_prompt_ciphertext: None, // Will be encrypted below
@@ -601,16 +592,7 @@ impl CharacterService {
             }
         }
         if let Some(depth_prompt_depth_val) = update_dto.depth_prompt_depth {
-            existing_character.depth_prompt_depth = {
-                #[cfg(feature = "postgres-backend")]
-                {
-                    Some(depth_prompt_depth_val as i64)
-                }
-                #[cfg(feature = "sqlite-backend")]
-                {
-                    Some(depth_prompt_depth_val as i32)
-                }
-            };
+            existing_character.depth_prompt_depth = Some(depth_prompt_depth_val);
         }
         if let Some(depth_prompt_role_val) = update_dto.depth_prompt_role {
             existing_character.depth_prompt_role = Some(depth_prompt_role_val);

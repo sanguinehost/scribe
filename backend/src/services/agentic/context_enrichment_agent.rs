@@ -123,6 +123,9 @@ impl ContextEnrichmentAgent {
         mode: EnrichmentMode,
         session_dek: &[u8],
         message_id: crate::db::DbId, // Required message ID to link analysis to specific message
+        rag_chronicles_limit: Option<i32>,
+        rag_lorebooks_limit: Option<i32>,
+        rag_older_chat_limit: Option<i32>,
     ) -> Result<ContextEnrichmentResult, AppError> {
         let start_time = Instant::now();
         let mut execution_log = AgentExecutionLog {
@@ -168,7 +171,16 @@ impl ContextEnrichmentAgent {
                 let step_start = Instant::now();
 
                 match self
-                    .execute_search(search, user_id, session_id, chronicle_id, session_dek)
+                    .execute_search(
+                        search,
+                        user_id,
+                        session_id,
+                        chronicle_id,
+                        session_dek,
+                        rag_chronicles_limit,
+                        rag_lorebooks_limit,
+                        rag_older_chat_limit,
+                    )
                     .await
                 {
                     Ok((results, tokens)) => {
@@ -632,16 +644,36 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         session_id: crate::db::DbId,
         chronicle_id: Option<crate::db::DbId>,
         session_dek: &[u8],
+        rag_chronicles_limit: Option<i32>,
+        rag_lorebooks_limit: Option<i32>,
+        rag_older_chat_limit: Option<i32>,
     ) -> Result<(Value, u32), AppError> {
         debug!(
             "Executing search: '{}' for user {}, session: {}, chronicle: {:?}",
             search.query, user_id, session_id, chronicle_id
         );
 
+        // Map token-based RAG limits to entry limits for the search tool
+        // We use a conservative divisor of 500 tokens per chunk
+        let limit = match search.search_type.as_str() {
+            "chronicles" => rag_chronicles_limit
+                .map(|l| (l / 500).max(10))
+                .unwrap_or(10),
+            "lorebooks" => rag_lorebooks_limit.map(|l| (l / 500).max(10)).unwrap_or(10),
+            "all" => {
+                let max_limit = rag_chronicles_limit
+                    .unwrap_or(5000)
+                    .max(rag_lorebooks_limit.unwrap_or(5000))
+                    .max(rag_older_chat_limit.unwrap_or(5000));
+                (max_limit / 500).max(15)
+            }
+            _ => 10,
+        };
+
         let mut params = json!({
             "query": search.query,
             "search_type": search.search_type,
-            "limit": 10,
+            "limit": limit,
             "user_id": user_id.to_string()  // SECURITY: Always pass user_id for filtering
         });
 
@@ -1028,11 +1060,16 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                         AppError::CryptoError(format!("Failed to encrypt execution log: {}", e))
                     })?;
                 (
-                    Some(crate::DbJson::String(hex::encode(encrypted))),
+                    Some(crate::db::Json(serde_json::Value::String(hex::encode(
+                        encrypted,
+                    )))),
                     Some(nonce),
                 )
             } else {
-                (Some(serde_json::to_value(execution_log)?.into()), None)
+                (
+                    Some(crate::db::Json(serde_json::to_value(execution_log)?)),
+                    None,
+                )
             }
         };
 

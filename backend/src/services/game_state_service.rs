@@ -101,7 +101,7 @@ impl GameStateService {
         let new_state_json = serde_json::to_value(&new_state).map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Serialization error: {e}"))
         })?;
-        let new_state_db: crate::DbJson = new_state_json.into();
+        let new_state_db: crate::DbJson = crate::db::Json(new_state_json);
 
         crate::db::with_conn(&self.pool, move |conn| {
             diesel::update(chat_sessions::table.filter(chat_sessions::id.eq(session_id)))

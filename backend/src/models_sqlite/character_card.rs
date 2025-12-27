@@ -948,9 +948,9 @@ impl NewCharacter {
             extensions: if data.extensions.is_empty() {
                 None
             } else {
-                Some(crate::db::DbJson::Object(
+                Some(crate::db::Json(serde_json::Value::Object(
                     data.extensions.clone().into_iter().collect(),
-                ))
+                )))
             },
             spec: "chara_card_v2".to_string(), // V2 spec identifier
             spec_version: "2.0".to_string(),   // V2 version

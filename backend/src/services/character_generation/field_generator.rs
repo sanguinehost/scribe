@@ -238,7 +238,7 @@ impl FieldGenerator {
 
         // Parse the structured output
         let mut field_output: CharacterFieldOutput =
-            serde_json::from_value(generated_output.clone().into()).map_err(|e| {
+            serde_json::from_value(generated_output.0.clone()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse field generation output: {}",
                     e
@@ -1220,13 +1220,12 @@ Show different scenarios, moods, or personality aspects."#
 
                 // Fallback: wrap plain text response in expected structure
                 debug!("Wrapping plain text response in expected structure");
-                Ok(serde_json::json!({
+                Ok(crate::db::Json(serde_json::json!({
                     "content": response_text,
                     "reasoning": "Generated as plain text response due to JSON parsing failure",
                     "style_applied": "auto",
                     "quality_score": 7
-                })
-                .into())
+                })))
             }
         }
     }
@@ -1364,7 +1363,7 @@ Provide a detailed analysis including:
 
         // Parse the structured output
         let style_analysis: StyleAnalysisOutput =
-            serde_json::from_value(generated_output.clone().into()).map_err(|e| {
+            serde_json::from_value(generated_output.0.clone()).map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse style analysis output: {}",
                     e

@@ -291,13 +291,19 @@ pub async fn generate_chat_response(
         _actual_recent_history_tokens_from_service, // 18: usize (NEW) - Handled by prompt_builder (was 19)
         rag_context_items_from_service, // 19: Vec<RetrievedChunk> (NEW) - Passed to prompt_builder (was 20)
         // -- Original history management settings --
-        _hist_management_strategy, // 20: String (was 21)
-        _hist_management_limit,    // 21: i32 (was 22)
-        user_persona_name,         // 22: Option<String> (NEW)
-        player_chronicle_id,       // 23: Option<crate::db::DbId> (NEW) - Add this field
-        agent_mode,                // 24: Option<String> (NEW) - Agent mode for context enrichment
-        game_master_mode_enabled,  // 25: Option<bool> (NEW) - Game Master mode flag
-        initial_game_state,        // 26: Option<serde_json::Value> (NEW) - Initial game state
+        _hist_management_strategy,   // 20: String (was 21)
+        _hist_management_limit,      // 21: i32 (was 22)
+        user_persona_name,           // 22: Option<String> (NEW)
+        player_chronicle_id,         // 23: Option<crate::db::DbId> (NEW) - Add this field
+        agent_mode,                  // 24: Option<String> (NEW) - Agent mode for context enrichment
+        game_master_mode_enabled,    // 25: Option<bool> (NEW) - Game Master mode flag
+        initial_game_state,          // 26: Option<serde_json::Value> (NEW) - Initial game state
+        rag_chronicles_limit,        // 27: Option<i32> (NEW) - RAG chronicles limit
+        rag_lorebooks_limit,         // 28: Option<i32> (NEW) - RAG lorebooks limit
+        rag_older_chat_limit,        // 29: Option<i32> (NEW) - RAG older chat limit
+        context_total_token_limit,   // 30: usize (NEW)
+        recent_history_token_budget, // 31: usize (NEW)
+        rag_token_budget,            // 32: usize (NEW)
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id_value,
@@ -776,11 +782,8 @@ pub async fn generate_chat_response(
             message_type_enum: MessageRole::User,
             content: &current_user_content_text,
             role_str: user_message_struct_to_save.role.clone(),
-            parts: user_message_struct_to_save.parts.clone().map(Into::into),
-            attachments: user_message_struct_to_save
-                .attachments
-                .clone()
-                .map(Into::into),
+            parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
+            attachments: user_message_struct_to_save.attachments.clone().map(|j| j.0),
             user_dek_secret_box: Some(session_dek_arc.clone()),
             model_name: model_to_use.clone(),
             raw_prompt_debug: None, // User messages don't need raw prompt debug
@@ -963,6 +966,9 @@ pub async fn generate_chat_response(
                             EnrichmentMode::PreProcessing,
                             session_dek_arc.expose_secret(),
                             user_message_id, // Pass the user message ID for association (REQUIRED)
+                            rag_chronicles_limit,
+                            rag_lorebooks_limit,
+                            rag_older_chat_limit,
                         )
                         .await
                     {
@@ -1116,7 +1122,7 @@ pub async fn generate_chat_response(
 
             match game_state_result {
                 Ok(Some(db_json)) => {
-                    let state_json: serde_json::Value = db_json.into();
+                    let state_json: serde_json::Value = db_json.0;
                     match serde_json::from_value::<crate::models::game_state::GameState>(state_json)
                     {
                         Ok(parsed_state) => {
@@ -1162,6 +1168,12 @@ pub async fn generate_chat_response(
             prompt_template_id,
             narrative_style: Some(narrative_style), // Pass narrative style from user preferences
             game_state: game_state_for_prompt.as_ref(), // Pass loaded game state for scene context
+            rag_chronicles_limit,
+            rag_lorebooks_limit,
+            rag_older_chat_limit,
+            context_total_token_limit: Some(context_total_token_limit),
+            recent_history_token_budget: Some(recent_history_token_budget),
+            rag_token_budget: Some(rag_token_budget),
         })
         .await
         {
@@ -1398,6 +1410,9 @@ pub async fn generate_chat_response(
                                             EnrichmentMode::PostProcessing,
                                             session_dek_clone.expose_secret(),
                                             assistant_msg_id,  // Pass the required assistant message ID for association
+                                            rag_chronicles_limit,
+                                            rag_lorebooks_limit,
+                                            rag_older_chat_limit,
                                         ).await {
                                             Ok(result) => {
                                                 info!(
@@ -1949,6 +1964,9 @@ pub async fn generate_chat_response(
                                             EnrichmentMode::PostProcessing,
                                             session_dek_clone.expose_secret(),
                                             assistant_msg_id, // Pass the assistant message ID for association
+                                            rag_chronicles_limit,
+                                            rag_lorebooks_limit,
+                                            rag_older_chat_limit,
                                         )
                                         .await
                                     {
@@ -2785,6 +2803,12 @@ pub async fn generate_suggested_actions(
         _agent_mode,               // Agent mode - not used for suggestions
         _game_master_mode_enabled, // Game Master mode - not used for suggestions
         _initial_game_state,       // Initial game state - not used for suggestions
+        _rag_chronicles_limit,
+        _rag_lorebooks_limit,
+        _rag_older_chat_limit,
+        _context_total_token_limit,
+        _recent_history_token_budget,
+        _rag_token_budget,
     ) = chat::generation::get_session_data_for_generation(
         state_arc.clone(),
         user_id,
@@ -2942,6 +2966,12 @@ pub async fn generate_suggested_actions(
             prompt_template_id: None,          // Use default template for suggestions
             narrative_style: None,             // Suggestions don't need narrative styling
             game_state: None,                  // Suggestions don't use game state
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            context_total_token_limit: Some(_context_total_token_limit),
+            recent_history_token_budget: Some(_recent_history_token_budget),
+            rag_token_budget: Some(_rag_token_budget),
         })
         .await
         {
@@ -3407,7 +3437,7 @@ pub async fn expand_text_handler(
         variant_of: None,          // Text expansion doesn't create variants
         charge_credits: false,     // Text expansion is not charged (utility feature)
         game_master_mode_enabled: false,
-        initial_game_state: session_data.game_state.map(|j| j.into()),
+        initial_game_state: session_data.game_state.map(|j| j.0),
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3703,7 +3733,7 @@ pub async fn impersonate_handler(
         variant_of: None,          // Impersonation doesn't create variants
         charge_credits: false,     // Impersonation is not charged (utility feature)
         game_master_mode_enabled: false,
-        initial_game_state: session_data.game_state.map(|j| j.into()),
+        initial_game_state: session_data.game_state.map(|j| j.0),
     };
 
     // Generate the response using the full pipeline

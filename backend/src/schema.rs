@@ -1,5 +1,31 @@
 // @generated automatically by Diesel CLI.
 
+pub mod sql_types {
+    #[cfg(feature = "postgres-backend")]
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[diesel(postgres_type(name = "message_type"))]
+    pub struct MessageType;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub type MessageType = diesel::sql_types::Text;
+
+    #[cfg(feature = "postgres-backend")]
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "account_status"))]
+    pub struct AccountStatus;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub type AccountStatus = diesel::sql_types::Text;
+
+    #[cfg(feature = "postgres-backend")]
+    #[derive(diesel::sql_types::SqlType)]
+    #[diesel(postgres_type(name = "user_role"))]
+    pub struct UserRole;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub type UserRole = diesel::sql_types::Text;
+}
+
 pub mod sql_types_unified {
     #[cfg(feature = "sqlite-backend")]
     pub use diesel::sql_types::Text as DbIdType;
@@ -20,7 +46,39 @@ pub mod sql_types_unified {
     pub use diesel::sql_types::Double as DbNumericType;
     #[cfg(feature = "postgres-backend")]
     pub use diesel::sql_types::Numeric as DbNumericType;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::Integer as DbCreditType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::Numeric as DbCreditType;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::Binary as DbBlobType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::Bytea as DbBlobType;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::Text as DbStringArrayType;
+    #[cfg(feature = "postgres-backend")]
+    pub type DbStringArrayType =
+        diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>;
+
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::Binary as DbBinaryType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::Bytea as DbBinaryType;
+
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::Text as DbTextType;
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::Text as DbTextType;
+
+    pub use super::sql_types::AccountStatus as DbAccountStatus;
+    pub use super::sql_types::MessageType as DbMessageType;
+    pub use super::sql_types::UserRole as DbUserRole;
 }
+
+pub use sql_types_unified::*;
 
 diesel::table! {
     use diesel::sql_types::*;
@@ -31,25 +89,25 @@ diesel::table! {
         id -> DbIdType,
         chat_session_id -> DbIdType,
         user_id -> DbIdType,
-        analysis_type -> Text,
-        agent_reasoning -> Nullable<Text>,
-        agent_reasoning_nonce -> Nullable<Binary>,
+        analysis_type -> DbTextType,
+        agent_reasoning -> Nullable<DbTextType>,
+        agent_reasoning_nonce -> Nullable<DbBinaryType>,
         planned_searches -> Nullable<DbJsonType>,
         execution_log -> Nullable<DbJsonType>,
-        execution_log_nonce -> Nullable<Binary>,
-        retrieved_context -> Nullable<Text>,
-        retrieved_context_nonce -> Nullable<Binary>,
-        analysis_summary -> Nullable<Text>,
-        analysis_summary_nonce -> Nullable<Binary>,
+        execution_log_nonce -> Nullable<DbBinaryType>,
+        retrieved_context -> Nullable<DbTextType>,
+        retrieved_context_nonce -> Nullable<DbBinaryType>,
+        analysis_summary -> Nullable<DbTextType>,
+        analysis_summary_nonce -> Nullable<DbBinaryType>,
         total_tokens_used -> Nullable<Integer>,
         execution_time_ms -> Nullable<Integer>,
-        model_used -> Nullable<Text>,
+        model_used -> Nullable<DbTextType>,
         created_at -> Nullable<DbTimestampType>,
         updated_at -> Nullable<DbTimestampType>,
         message_id -> DbIdType,
         assistant_message_id -> Nullable<DbIdType>,
-        status -> Text,
-        error_message -> Nullable<Text>,
+        status -> DbTextType,
+        error_message -> Nullable<DbTextType>,
         retry_count -> Integer,
         superseded_at -> Nullable<DbTimestampType>,
     }
@@ -60,22 +118,17 @@ diesel::table! {
     use diesel_derive_enum::DbEnum;
     use super::sql_types_unified::*;
 
-    #[cfg(feature = "postgres-backend")]
-    use diesel::sql_types::Int4 as AssetIdType;
-    #[cfg(feature = "sqlite-backend")]
-    use diesel::sql_types::Text as AssetIdType;
-
     character_assets (id) {
-        id -> AssetIdType,
+        id -> Integer,
         character_id -> DbIdType,
-        asset_type -> Text,
-        uri -> Nullable<Text>,
-        name -> Text,
-        ext -> Text,
+        asset_type -> DbTextType,
+        uri -> Nullable<DbTextType>,
+        name -> DbTextType,
+        ext -> DbTextType,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
-        data -> Nullable<Binary>,
-        content_type -> Nullable<Text>,
+        data -> Nullable<DbBinaryType>,
+        content_type -> Nullable<DbTextType>,
     }
 }
 
@@ -101,92 +154,92 @@ diesel::table! {
     characters (id) {
         id -> DbIdType,
         user_id -> DbIdType,
-        spec -> Text,
-        spec_version -> Text,
-        name -> Text,
-        description -> Nullable<Binary>,
-        personality -> Nullable<Binary>,
-        scenario -> Nullable<Binary>,
-        first_mes -> Nullable<Binary>,
-        mes_example -> Nullable<Binary>,
-        creator_notes -> Nullable<Binary>,
-        system_prompt -> Nullable<Binary>,
-        post_history_instructions -> Nullable<Binary>,
-        tags -> Nullable<Array<Nullable<Text>>>,
-        creator -> Nullable<Text>,
-        character_version -> Nullable<Text>,
-        alternate_greetings -> Nullable<Array<Nullable<Text>>>,
-        nickname -> Nullable<Text>,
+        spec -> DbTextType,
+        spec_version -> DbTextType,
+        name -> DbTextType,
+        description -> Nullable<DbBinaryType>,
+        personality -> Nullable<DbBinaryType>,
+        scenario -> Nullable<DbBinaryType>,
+        first_mes -> Nullable<DbBinaryType>,
+        mes_example -> Nullable<DbBinaryType>,
+        creator_notes -> Nullable<DbBinaryType>,
+        system_prompt -> Nullable<DbBinaryType>,
+        post_history_instructions -> Nullable<DbBinaryType>,
+        tags -> Nullable<DbStringArrayType>,
+        creator -> Nullable<DbTextType>,
+        character_version -> Nullable<DbTextType>,
+        alternate_greetings -> Nullable<DbStringArrayType>,
+        nickname -> Nullable<DbTextType>,
         creator_notes_multilingual -> Nullable<DbJsonType>,
-        source -> Nullable<Array<Nullable<Text>>>,
-        group_only_greetings -> Nullable<Array<Nullable<Text>>>,
+        source -> Nullable<DbStringArrayType>,
+        group_only_greetings -> Nullable<DbStringArrayType>,
         creation_date -> Nullable<DbTimestampType>,
         modification_date -> Nullable<DbTimestampType>,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
-        persona -> Nullable<Binary>,
-        world_scenario -> Nullable<Binary>,
-        avatar -> Nullable<Text>,
-        chat -> Nullable<Text>,
-        greeting -> Nullable<Binary>,
-        definition -> Nullable<Binary>,
-        default_voice -> Nullable<Text>,
+        persona -> Nullable<DbBinaryType>,
+        world_scenario -> Nullable<DbBinaryType>,
+        avatar -> Nullable<DbTextType>,
+        chat -> Nullable<DbTextType>,
+        greeting -> Nullable<DbBinaryType>,
+        definition -> Nullable<DbBinaryType>,
+        default_voice -> Nullable<DbTextType>,
         extensions -> Nullable<DbJsonType>,
         data_id -> Nullable<Integer>,
-        category -> Nullable<Text>,
-        definition_visibility -> Nullable<Text>,
+        category -> Nullable<DbTextType>,
+        definition_visibility -> Nullable<DbTextType>,
         depth -> Nullable<Integer>,
-        example_dialogue -> Nullable<Binary>,
+        example_dialogue -> Nullable<DbBinaryType>,
         favorite -> Nullable<Bool>,
-        first_message_visibility -> Nullable<Text>,
+        first_message_visibility -> Nullable<DbTextType>,
         height -> Nullable<DbNumericType>,
         last_activity -> Nullable<DbTimestampType>,
-        migrated_from -> Nullable<Text>,
-        model_prompt -> Nullable<Binary>,
-        model_prompt_visibility -> Nullable<Text>,
+        migrated_from -> Nullable<DbTextType>,
+        model_prompt -> Nullable<DbBinaryType>,
+        model_prompt_visibility -> Nullable<DbTextType>,
         model_temperature -> Nullable<DbNumericType>,
         num_interactions -> Nullable<Integer>,
         permanence -> Nullable<DbNumericType>,
-        persona_visibility -> Nullable<Text>,
+        persona_visibility -> Nullable<DbTextType>,
         revision -> Nullable<Integer>,
-        sharing_visibility -> Nullable<Text>,
-        status -> Nullable<Text>,
-        system_prompt_visibility -> Nullable<Text>,
-        system_tags -> Nullable<Array<Nullable<Text>>>,
+        sharing_visibility -> Nullable<DbTextType>,
+        status -> Nullable<DbTextType>,
+        system_prompt_visibility -> Nullable<DbTextType>,
+        system_tags -> Nullable<DbStringArrayType>,
         token_budget -> Nullable<Integer>,
         usage_hints -> Nullable<DbJsonType>,
-        user_persona -> Nullable<Binary>,
-        user_persona_visibility -> Nullable<Text>,
-        visibility -> Nullable<Text>,
+        user_persona -> Nullable<DbBinaryType>,
+        user_persona_visibility -> Nullable<DbTextType>,
+        visibility -> Nullable<DbTextType>,
         weight -> Nullable<DbNumericType>,
-        world_scenario_visibility -> Nullable<Text>,
-        description_nonce -> Nullable<Binary>,
-        personality_nonce -> Nullable<Binary>,
-        scenario_nonce -> Nullable<Binary>,
-        first_mes_nonce -> Nullable<Binary>,
-        mes_example_nonce -> Nullable<Binary>,
-        creator_notes_nonce -> Nullable<Binary>,
-        system_prompt_nonce -> Nullable<Binary>,
-        persona_nonce -> Nullable<Binary>,
-        world_scenario_nonce -> Nullable<Binary>,
-        greeting_nonce -> Nullable<Binary>,
-        definition_nonce -> Nullable<Binary>,
-        example_dialogue_nonce -> Nullable<Binary>,
-        model_prompt_nonce -> Nullable<Binary>,
-        user_persona_nonce -> Nullable<Binary>,
-        post_history_instructions_nonce -> Nullable<Binary>,
+        world_scenario_visibility -> Nullable<DbTextType>,
+        description_nonce -> Nullable<DbBinaryType>,
+        personality_nonce -> Nullable<DbBinaryType>,
+        scenario_nonce -> Nullable<DbBinaryType>,
+        first_mes_nonce -> Nullable<DbBinaryType>,
+        mes_example_nonce -> Nullable<DbBinaryType>,
+        creator_notes_nonce -> Nullable<DbBinaryType>,
+        system_prompt_nonce -> Nullable<DbBinaryType>,
+        persona_nonce -> Nullable<DbBinaryType>,
+        world_scenario_nonce -> Nullable<DbBinaryType>,
+        greeting_nonce -> Nullable<DbBinaryType>,
+        definition_nonce -> Nullable<DbBinaryType>,
+        example_dialogue_nonce -> Nullable<DbBinaryType>,
+        model_prompt_nonce -> Nullable<DbBinaryType>,
+        user_persona_nonce -> Nullable<DbBinaryType>,
+        post_history_instructions_nonce -> Nullable<DbBinaryType>,
         fav -> Nullable<Bool>,
-        world -> Nullable<Text>,
-        creator_comment -> Nullable<Binary>,
-        creator_comment_nonce -> Nullable<Binary>,
-        depth_prompt -> Nullable<Binary>,
+        world -> Nullable<DbTextType>,
+        creator_comment -> Nullable<DbBinaryType>,
+        creator_comment_nonce -> Nullable<DbBinaryType>,
+        depth_prompt -> Nullable<DbBinaryType>,
         depth_prompt_depth -> Nullable<Integer>,
-        depth_prompt_role -> Nullable<Text>,
+        depth_prompt_role -> Nullable<DbTextType>,
         talkativeness -> Nullable<DbNumericType>,
-        depth_prompt_ciphertext -> Nullable<Binary>,
-        depth_prompt_nonce -> Nullable<Binary>,
-        world_ciphertext -> Nullable<Binary>,
-        world_nonce -> Nullable<Binary>,
+        depth_prompt_ciphertext -> Nullable<DbBinaryType>,
+        depth_prompt_nonce -> Nullable<DbBinaryType>,
+        world_ciphertext -> Nullable<DbBinaryType>,
+        world_nonce -> Nullable<DbBinaryType>,
     }
 }
 
@@ -196,11 +249,11 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     chat_character_lorebook_overrides (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         chat_session_id -> DbIdType,
         lorebook_id -> DbIdType,
         user_id -> DbIdType,
-        action -> Text,
+        action -> DbTextType,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
     }
@@ -212,12 +265,12 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     chat_character_overrides (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         chat_session_id -> DbIdType,
         original_character_id -> DbIdType,
-        field_name -> Text,
-        overridden_value -> Binary,
-        overridden_value_nonce -> Binary,
+        field_name -> DbTextType,
+        overridden_value -> DbBinaryType,
+        overridden_value_nonce -> DbBinaryType,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
     }
@@ -231,28 +284,28 @@ diesel::table! {
     chat_messages (id) {
         id -> DbIdType,
         session_id -> DbIdType,
-        message_type -> Text,
-        content -> Binary,
-        rag_embedding_id -> Nullable<Text>,
+        message_type -> DbMessageType,
+        content -> DbBinaryType,
+        rag_embedding_id -> Nullable<DbIdType>,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
         user_id -> DbIdType,
-        content_nonce -> Nullable<Binary>,
-        role -> Nullable<Text>,
+        content_nonce -> Nullable<DbBinaryType>,
+        role -> Nullable<DbTextType>,
         parts -> Nullable<DbJsonType>,
         attachments -> Nullable<DbJsonType>,
         prompt_tokens -> Nullable<Integer>,
         completion_tokens -> Nullable<Integer>,
-        raw_prompt_ciphertext -> Nullable<Binary>,
-        raw_prompt_nonce -> Nullable<Binary>,
-        model_name -> Text,
-        status -> Text,
-        error_message -> Nullable<Text>,
+        raw_prompt_ciphertext -> Nullable<DbBinaryType>,
+        raw_prompt_nonce -> Nullable<DbBinaryType>,
+        model_name -> DbTextType,
+        status -> DbTextType,
+        error_message -> Nullable<DbTextType>,
         superseded_at -> Nullable<DbTimestampType>,
         variant_count -> Integer,
         current_variant_index -> Integer,
         credits_charged -> Integer,
-        credits_cost -> Integer,
+        credits_cost -> DbNumericType,
         actual_cost -> DbNumericType,
         modified_cost -> DbNumericType,
         credit_cost -> Integer,
@@ -296,38 +349,41 @@ diesel::table! {
         top_a -> Nullable<DbNumericType>,
         seed -> Nullable<Integer>,
         logit_bias -> Nullable<DbJsonType>,
-        history_management_strategy -> Text,
+        history_management_strategy -> DbTextType,
         history_management_limit -> Integer,
-        model_name -> Text,
+        model_name -> DbTextType,
         gemini_thinking_budget -> Nullable<Integer>,
         gemini_enable_code_execution -> Nullable<Bool>,
-        visibility -> Nullable<Text>,
+        visibility -> Nullable<DbTextType>,
         active_custom_persona_id -> Nullable<DbIdType>,
         active_impersonated_character_id -> Nullable<DbIdType>,
-        system_prompt_ciphertext -> Nullable<Binary>,
-        system_prompt_nonce -> Nullable<Binary>,
-        title_ciphertext -> Nullable<Binary>,
-        title_nonce -> Nullable<Binary>,
-        stop_sequences -> Nullable<Array<Nullable<Text>>>,
-        chat_mode -> Text,
+        system_prompt_ciphertext -> Nullable<DbBinaryType>,
+        system_prompt_nonce -> Nullable<DbBinaryType>,
+        title_ciphertext -> Nullable<DbBinaryType>,
+        title_nonce -> Nullable<DbBinaryType>,
+        stop_sequences -> Nullable<DbStringArrayType>,
+        chat_mode -> DbTextType,
         player_chronicle_id -> Nullable<DbIdType>,
-        agent_mode -> Nullable<Text>,
-        model_provider -> Nullable<Text>,
+        agent_mode -> Nullable<DbTextType>,
+        model_provider -> Nullable<DbTextType>,
         total_prompt_tokens -> Integer,
         total_completion_tokens -> Integer,
         estimated_cost_cents -> Integer,
         tokens_counted_at -> DbTimestampType,
-        prompt_template_id -> Text,
-        total_credits_used -> Integer,
-        narrative_style_override_ciphertext -> Nullable<Binary>,
-        narrative_style_override_nonce -> Nullable<Binary>,
+        prompt_template_id -> DbTextType,
+        total_credits_used -> DbNumericType,
+        narrative_style_override_ciphertext -> Nullable<DbBinaryType>,
+        narrative_style_override_nonce -> Nullable<DbBinaryType>,
         total_actual_cost -> DbNumericType,
         total_modified_cost -> DbNumericType,
         total_credit_cost -> Integer,
         total_actual_charge -> DbNumericType,
         game_state -> Nullable<DbJsonType>,
         game_master_mode_enabled -> Bool,
-        gemini_thinking_level -> Nullable<Text>,
+        gemini_thinking_level -> Nullable<DbTextType>,
+        rag_chronicles_limit -> Nullable<Integer>,
+        rag_lorebooks_limit -> Nullable<Integer>,
+        rag_older_chat_limit -> Nullable<Integer>,
     }
 }
 
@@ -340,18 +396,18 @@ diesel::table! {
         id -> DbIdType,
         chronicle_id -> DbIdType,
         user_id -> DbIdType,
-        event_type -> Text,
-        summary -> Text,
-        source -> Text,
+        event_type -> DbTextType,
+        summary -> DbTextType,
+        source -> DbTextType,
         event_data -> Nullable<DbJsonType>,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
-        summary_encrypted -> Nullable<Binary>,
-        summary_nonce -> Nullable<Binary>,
+        summary_encrypted -> Nullable<DbBinaryType>,
+        summary_nonce -> Nullable<DbBinaryType>,
         timestamp_iso8601 -> Nullable<DbTimestampType>,
-        keywords -> Nullable<Array<Nullable<Text>>>,
-        keywords_encrypted -> Nullable<Binary>,
-        keywords_nonce -> Nullable<Binary>,
+        keywords -> Nullable<DbStringArrayType>,
+        keywords_encrypted -> Nullable<DbBinaryType>,
+        keywords_nonce -> Nullable<DbBinaryType>,
         chat_session_id -> Nullable<DbIdType>,
         message_variant_id -> Nullable<DbIdType>,
     }
@@ -363,7 +419,7 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     credit_packages (id) {
-        id -> DbIdType,
+        id -> Nullable<DbIdType>,
         package_id -> Text,
         name -> Text,
         credits -> Integer,
@@ -383,10 +439,10 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     credit_transactions (id) {
-        id -> DbIdType,
+        id -> Nullable<DbIdType>,
         user_id -> DbIdType,
-        amount -> Integer,
-        balance_after -> Integer,
+        amount -> DbNumericType,
+        balance_after -> DbNumericType,
         transaction_type -> Text,
         description_encrypted -> Binary,
         description_nonce -> Binary,
@@ -404,12 +460,12 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     daily_usage_tracking (id) {
-        id -> DbIdType,
+        id -> Nullable<DbIdType>,
         user_id -> DbIdType,
         date -> Date,
         message_count -> Integer,
         token_count -> Integer,
-        model_breakdown -> Nullable<Text>,
+        model_breakdown -> Nullable<DbJsonType>,
         soft_limit_triggered_at -> Nullable<Integer>,
         created_at -> Nullable<DbTimestampType>,
         updated_at -> Nullable<DbTimestampType>,
@@ -496,7 +552,7 @@ diesel::table! {
         model_name -> Nullable<Text>,
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
-        game_state -> Nullable<Text>,
+        game_state -> Nullable<DbJsonType>,
     }
 }
 
@@ -518,16 +574,17 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
 
     old_suggestions (id) {
-        id -> Text,
-        document_id -> Text,
-        document_created_at -> Timestamp,
+        id -> DbIdType,
+        document_id -> DbIdType,
+        document_created_at -> DbTimestampType,
         original_text -> Text,
         suggested_text -> Text,
         description -> Nullable<Text>,
         is_resolved -> Bool,
-        user_id -> Text,
+        user_id -> DbIdType,
         created_at -> DbTimestampType,
     }
 }
@@ -535,10 +592,11 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
 
     old_votes (chat_id, message_id) {
-        chat_id -> Text,
-        message_id -> Text,
+        chat_id -> DbIdType,
+        message_id -> DbIdType,
         is_upvoted -> Bool,
     }
 }
@@ -546,9 +604,10 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
 
     payment_audit_logs (id) {
-        id -> Nullable<Text>,
+        id -> DbIdType,
         user_id_hash -> Text,
         event_type -> Text,
         amount -> Nullable<Integer>,
@@ -563,11 +622,12 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
 
     payment_transactions (id) {
-        id -> Nullable<Text>,
+        id -> DbIdType,
         paddle_transaction_id -> Text,
-        user_id -> Text,
+        user_id -> DbIdType,
         status -> Text,
         collection_mode -> Nullable<Text>,
         total_cents -> Integer,
@@ -577,10 +637,10 @@ diesel::table! {
         paddle_customer_id -> Nullable<Text>,
         customer_data_encrypted -> Nullable<Binary>,
         customer_data_nonce -> Nullable<Binary>,
-        items -> Text,
+        items -> DbJsonType,
         checkout_id -> Nullable<Text>,
-        billed_at -> Nullable<Timestamp>,
-        completed_at -> Nullable<Timestamp>,
+        billed_at -> Nullable<DbTimestampType>,
+        completed_at -> Nullable<DbTimestampType>,
         paddle_data_encrypted -> Nullable<Binary>,
         paddle_data_nonce -> Nullable<Binary>,
         created_at -> Nullable<DbTimestampType>,
@@ -591,14 +651,15 @@ diesel::table! {
 diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
 
     payment_usage_tracking (id) {
-        id -> Nullable<Text>,
-        user_id -> Text,
-        subscription_id -> Nullable<Text>,
+        id -> DbIdType,
+        user_id -> DbIdType,
+        subscription_id -> Nullable<DbIdType>,
         tokens_used -> Integer,
         tokens_limit -> Nullable<Integer>,
-        period_start -> Timestamp,
+        period_start -> DbTimestampType,
         period_end -> DbTimestampType,
         metadata_encrypted -> Nullable<Binary>,
         metadata_nonce -> Nullable<Binary>,
@@ -638,7 +699,7 @@ diesel::table! {
         lorebooks_limit -> Nullable<Integer>,
         price_cents -> Nullable<Integer>,
         paddle_price_id -> Nullable<Text>,
-        features -> Nullable<Text>,
+        features -> Nullable<DbJsonType>,
         display_name -> Text,
         description -> Nullable<Text>,
         created_at -> Nullable<DbTimestampType>,
@@ -713,11 +774,11 @@ diesel::table! {
         paused_at -> Nullable<DbTimestampType>,
         trial_starts_at -> Nullable<DbTimestampType>,
         trial_ends_at -> Nullable<DbTimestampType>,
-        scheduled_change -> Nullable<Text>,
-        management_urls -> Nullable<Text>,
-        discount -> Nullable<Text>,
+        scheduled_change -> Nullable<DbJsonType>,
+        management_urls -> Nullable<DbJsonType>,
+        discount -> Nullable<DbJsonType>,
         collection_mode -> Nullable<Text>,
-        billing_details -> Nullable<Text>,
+        billing_details -> Nullable<DbJsonType>,
         scheduled_plan_change -> Nullable<Text>,
         scheduled_change_date -> Nullable<DbTimestampType>,
     }
@@ -758,7 +819,7 @@ diesel::table! {
         prompt_tokens_used -> Integer,
         completion_tokens_used -> Integer,
         estimated_cost_cents -> Integer,
-        model_breakdown -> Nullable<Text>,
+        model_breakdown -> Nullable<DbJsonType>,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
     }
@@ -790,10 +851,10 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     user_credits (user_id) {
-        user_id -> DbIdType,
-        balance -> Integer,
-        lifetime_earned -> Integer,
-        lifetime_spent -> Integer,
+        user_id -> Nullable<DbIdType>,
+        balance -> DbNumericType,
+        lifetime_earned -> DbNumericType,
+        lifetime_spent -> DbNumericType,
         last_monthly_grant -> Nullable<DbTimestampType>,
         created_at -> Nullable<DbTimestampType>,
         updated_at -> Nullable<DbTimestampType>,
@@ -819,7 +880,7 @@ diesel::table! {
         mes_example -> Nullable<Binary>,
         system_prompt -> Nullable<Binary>,
         post_history_instructions -> Nullable<Binary>,
-        tags -> Nullable<Text>,
+        tags -> Nullable<DbStringArrayType>,
         avatar -> Nullable<Text>,
         description_nonce -> Nullable<Binary>,
         personality_nonce -> Nullable<Binary>,
@@ -842,11 +903,11 @@ diesel::table! {
         id -> DbIdType,
         user_id -> DbIdType,
         default_model_name -> Nullable<Text>,
-        default_temperature -> Nullable<Double>,
+        default_temperature -> Nullable<DbNumericType>,
         default_max_output_tokens -> Nullable<Integer>,
-        default_frequency_penalty -> Nullable<Double>,
-        default_presence_penalty -> Nullable<Double>,
-        default_top_p -> Nullable<Double>,
+        default_frequency_penalty -> Nullable<DbNumericType>,
+        default_presence_penalty -> Nullable<DbNumericType>,
+        default_top_p -> Nullable<DbNumericType>,
         default_top_k -> Nullable<Integer>,
         default_seed -> Nullable<Integer>,
         default_gemini_thinking_budget -> Nullable<Integer>,
@@ -862,8 +923,11 @@ diesel::table! {
         typing_speed -> Nullable<Integer>,
         preferred_local_model -> Nullable<Text>,
         local_llm_enabled -> Nullable<Bool>,
-        local_model_preferences -> Nullable<Text>,
+        local_model_preferences -> Nullable<DbJsonType>,
         default_gemini_thinking_level -> Nullable<Text>,
+        default_rag_chronicles_limit -> Nullable<Integer>,
+        default_rag_lorebooks_limit -> Nullable<Integer>,
+        default_rag_older_chat_limit -> Nullable<Integer>,
     }
 }
 
@@ -878,15 +942,15 @@ diesel::table! {
         password_hash -> Text,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
-        email -> Nullable<Text>,
+        email -> Text,
         kek_salt -> Text,
         encrypted_dek -> Binary,
         encrypted_dek_by_recovery -> Nullable<Binary>,
         recovery_kek_salt -> Nullable<Text>,
         dek_nonce -> Binary,
         recovery_dek_nonce -> Nullable<Binary>,
-        role -> Text,
-        account_status -> Text,
+        role -> DbUserRole,
+        account_status -> DbAccountStatus,
         default_persona_id -> Nullable<DbIdType>,
         total_prompt_tokens -> Integer,
         total_completion_tokens -> Integer,
@@ -905,7 +969,7 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     webhook_events (id) {
-        id -> DbIdType,
+        id -> Nullable<DbIdType>,
         event_id -> Text,
         event_type -> Text,
         paddle_signature -> Text,

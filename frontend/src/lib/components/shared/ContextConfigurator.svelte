@@ -13,6 +13,9 @@
 		total_token_limit = $bindable(),
 		recent_history_budget = $bindable(),
 		rag_budget = $bindable(),
+		rag_chronicles_limit = $bindable(),
+		rag_lorebooks_limit = $bindable(),
+		rag_older_chat_limit = $bindable(),
 		title = 'Context Window Management',
 		description = 'Configure token allocation for context processing.',
 		selectedModelId = undefined
@@ -20,6 +23,9 @@
 		total_token_limit: number;
 		recent_history_budget: number;
 		rag_budget: number;
+		rag_chronicles_limit: number;
+		rag_lorebooks_limit: number;
+		rag_older_chat_limit: number;
 		title?: string;
 		description?: string;
 		selectedModelId?: string;
@@ -90,6 +96,11 @@
 			rag_budget = 500;
 		}
 
+		// Ensure granular RAG limits don't exceed RAG budget
+		// If they are 0, it means no limit (or system default), but here we treat them as individual caps
+		// We don't strictly enforce sum(granular) <= rag_budget because rag_budget is the total cap
+		// and granular limits are per-category caps.
+
 		// Ensure total is at least the sum of the two budgets
 		const min_total = recent_history_budget + rag_budget;
 		if (total_token_limit < min_total) {
@@ -129,7 +140,10 @@
 
 		return {
 			history: Math.floor(total * history_ratio),
-			rag: Math.floor(total * rag_ratio)
+			rag: Math.floor(total * rag_ratio),
+			chronicles: Math.floor(total * rag_ratio * 0.4),
+			lorebooks: Math.floor(total * rag_ratio * 0.4),
+			older_chats: Math.floor(total * rag_ratio * 0.2)
 		};
 	}
 
@@ -139,6 +153,9 @@
 		const budgets = calculatePresetBudgets(_value);
 		recent_history_budget = budgets.history;
 		rag_budget = budgets.rag;
+		rag_chronicles_limit = budgets.chronicles;
+		rag_lorebooks_limit = budgets.lorebooks;
+		rag_older_chat_limit = budgets.older_chats;
 	}
 
 	// Generate dynamic preset buttons based on model capabilities and subscription tier
@@ -250,6 +267,53 @@
 					/>
 					<p class="text-xs text-muted-foreground">Tokens for lorebooks + older messages</p>
 				</div>
+			</div>
+
+			<div class="space-y-3 rounded-md border border-dashed p-3">
+				<div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+					Granular RAG Limits (within RAG budget)
+				</div>
+				<div class="grid grid-cols-3 gap-3">
+					<div class="space-y-1">
+						<Label for="rag-chronicles-limit" class="text-xs">Chronicles</Label>
+						<Input
+							id="rag-chronicles-limit"
+							type="number"
+							min={0}
+							max={rag_budget}
+							step={100}
+							bind:value={rag_chronicles_limit}
+							class="h-8 text-xs"
+						/>
+					</div>
+					<div class="space-y-1">
+						<Label for="rag-lorebooks-limit" class="text-xs">Lorebooks</Label>
+						<Input
+							id="rag-lorebooks-limit"
+							type="number"
+							min={0}
+							max={rag_budget}
+							step={100}
+							bind:value={rag_lorebooks_limit}
+							class="h-8 text-xs"
+						/>
+					</div>
+					<div class="space-y-1">
+						<Label for="rag-older-chat-limit" class="text-xs">Older Chats</Label>
+						<Input
+							id="rag-older-chat-limit"
+							type="number"
+							min={0}
+							max={rag_budget}
+							step={100}
+							bind:value={rag_older_chat_limit}
+							class="h-8 text-xs"
+						/>
+					</div>
+				</div>
+				<p class="text-[10px] italic text-muted-foreground">
+					Individual caps for each category. Items are still subject to the total RAG budget above.
+				</p>
 			</div>
 
 			<!-- Visual Budget Breakdown -->

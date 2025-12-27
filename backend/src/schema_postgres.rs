@@ -1,12 +1,11 @@
 // @generated automatically by Diesel CLI.
 
-// PostgreSQL SQL types module - native enum types
 pub mod sql_types {
     #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "account_status"))]
     pub struct AccountStatus;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
 
@@ -129,12 +128,12 @@ diesel::table! {
         definition -> Nullable<Bytea>,
         default_voice -> Nullable<Text>,
         extensions -> Nullable<Jsonb>,
-        data_id -> Nullable<Int8>,
+        data_id -> Nullable<Int4>,
         #[max_length = 255]
         category -> Nullable<Varchar>,
         #[max_length = 50]
         definition_visibility -> Nullable<Varchar>,
-        depth -> Nullable<Int8>,
+        depth -> Nullable<Int4>,
         example_dialogue -> Nullable<Bytea>,
         favorite -> Nullable<Bool>,
         #[max_length = 50]
@@ -151,7 +150,7 @@ diesel::table! {
         permanence -> Nullable<Numeric>,
         #[max_length = 50]
         persona_visibility -> Nullable<Varchar>,
-        revision -> Nullable<Int8>,
+        revision -> Nullable<Int4>,
         #[max_length = 50]
         sharing_visibility -> Nullable<Varchar>,
         #[max_length = 50]
@@ -159,7 +158,7 @@ diesel::table! {
         #[max_length = 50]
         system_prompt_visibility -> Nullable<Varchar>,
         system_tags -> Nullable<Array<Nullable<Text>>>,
-        token_budget -> Nullable<Int8>,
+        token_budget -> Nullable<Int4>,
         usage_hints -> Nullable<Jsonb>,
         user_persona -> Nullable<Bytea>,
         #[max_length = 50]
@@ -189,7 +188,7 @@ diesel::table! {
         creator_comment -> Nullable<Bytea>,
         creator_comment_nonce -> Nullable<Bytea>,
         depth_prompt -> Nullable<Bytea>,
-        depth_prompt_depth -> Nullable<Int8>,
+        depth_prompt_depth -> Nullable<Int4>,
         #[max_length = 255]
         depth_prompt_role -> Nullable<Varchar>,
         talkativeness -> Nullable<Numeric>,
@@ -341,9 +340,12 @@ diesel::table! {
         total_actual_charge -> Numeric,
         narrative_style_override_ciphertext -> Nullable<Bytea>,
         narrative_style_override_nonce -> Nullable<Bytea>,
-        // Game Master Agent columns
-        game_state -> Nullable<Jsonb>,
+        game_state -> Nullable<Text>,
         game_master_mode_enabled -> Bool,
+        gemini_thinking_level -> Nullable<Text>,
+        rag_chronicles_limit -> Nullable<Int4>,
+        rag_lorebooks_limit -> Nullable<Int4>,
+        rag_older_chat_limit -> Nullable<Int4>,
     }
 }
 
@@ -360,9 +362,9 @@ diesel::table! {
         summary -> Text,
         #[max_length = 50]
         source -> Varchar,
+        event_data -> Nullable<Jsonb>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
-        event_data -> Nullable<Jsonb>,
         summary_encrypted -> Nullable<Bytea>,
         summary_nonce -> Nullable<Bytea>,
         timestamp_iso8601 -> Timestamptz,
@@ -510,12 +512,9 @@ diesel::table! {
         user_id -> Uuid,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
-        prompt_tokens -> Nullable<Int4>,
-        completion_tokens -> Nullable<Int4>,
-        #[max_length = 255]
-        model_name -> Nullable<Varchar>,
         raw_prompt_ciphertext -> Nullable<Bytea>,
         raw_prompt_nonce -> Nullable<Bytea>,
+        game_state -> Nullable<Jsonb>,
     }
 }
 
@@ -908,6 +907,10 @@ diesel::table! {
         preferred_local_model -> Nullable<Varchar>,
         local_llm_enabled -> Nullable<Bool>,
         local_model_preferences -> Nullable<Jsonb>,
+        default_gemini_thinking_level -> Nullable<Text>,
+        default_rag_chronicles_limit -> Nullable<Int4>,
+        default_rag_lorebooks_limit -> Nullable<Int4>,
+        default_rag_older_chat_limit -> Nullable<Int4>,
     }
 }
 
@@ -989,8 +992,8 @@ diesel::joinable!(chat_sessions -> player_chronicles (player_chronicle_id));
 diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
 diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
-diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
+diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));

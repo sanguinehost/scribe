@@ -77,7 +77,7 @@ impl ChronicleDeduplicationService {
         new_event: &ChronicleEvent,
     ) -> Result<DuplicateDetectionResult, AppError> {
         debug!(
-            "Checking for duplicates of event: {} at timestamp: {}",
+            "Checking for duplicates of event: {} at timestamp: {:?}",
             new_event.id, new_event.timestamp_iso8601
         );
 
@@ -124,12 +124,15 @@ impl ChronicleDeduplicationService {
     ) -> Result<Vec<ChronicleEvent>, AppError> {
         // Calculate time window - look backward only for deduplication
         // We want to find events that happened BEFORE this one within the time window
+        let event_timestamp = new_event
+            .timestamp_iso8601
+            .unwrap_or_else(crate::db::DbTimestamp::now);
         let time_window_start =
-            new_event.timestamp_iso8601 - Duration::minutes(self.config.time_window_minutes);
-        let time_window_end = new_event.timestamp_iso8601;
+            event_timestamp - Duration::minutes(self.config.time_window_minutes);
+        let time_window_end = event_timestamp;
 
         debug!(
-            "Getting candidate events for timestamp {} with window {} minutes: {} to {}",
+            "Getting candidate events for timestamp {:?} with window {} minutes: {:?} to {:?}",
             new_event.timestamp_iso8601,
             self.config.time_window_minutes,
             time_window_start,
@@ -170,7 +173,7 @@ impl ChronicleDeduplicationService {
         candidate: &ChronicleEvent,
     ) -> Result<Option<DuplicateDetectionResult>, AppError> {
         debug!(
-            "Comparing events {} at {} and {} at {}",
+            "Comparing events {} at {:?} and {} at {:?}",
             new_event.id, new_event.timestamp_iso8601, candidate.id, candidate.timestamp_iso8601
         );
 
@@ -325,9 +328,9 @@ impl ChronicleDeduplicationService {
         event1: &ChronicleEvent,
         event2: &ChronicleEvent,
     ) -> f32 {
-        let time_diff = (event1.timestamp_iso8601 - event2.timestamp_iso8601)
-            .num_minutes()
-            .abs();
+        let t1 = event1.timestamp_iso8601.unwrap_or_default();
+        let t2 = event2.timestamp_iso8601.unwrap_or_default();
+        let time_diff = (t1 - t2).num_minutes().abs();
         let max_window = self.config.time_window_minutes;
 
         debug!(
@@ -379,7 +382,9 @@ impl ChronicleDeduplicationService {
                 let event2 = &events[j];
 
                 // Check if they're within the time window
-                let time_diff = (event2.timestamp_iso8601 - event1.timestamp_iso8601).num_minutes();
+                let t1 = event1.timestamp_iso8601.unwrap_or_default();
+                let t2 = event2.timestamp_iso8601.unwrap_or_default();
+                let time_diff = (t2 - t1).num_minutes();
                 if time_diff > self.config.time_window_minutes {
                     break; // No need to check further events for this base event
                 }
@@ -462,7 +467,7 @@ mod tests {
             updated_at: Utc::now().into(),
             summary_encrypted: None,
             summary_nonce: None,
-            timestamp_iso8601: Utc::now().into(),
+            timestamp_iso8601: Some(Utc::now().into()),
             keywords: crate::db::unified_types::DbStringArray(None),
             keywords_encrypted: None,
             keywords_nonce: None,

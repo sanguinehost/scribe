@@ -57,7 +57,7 @@ impl Default for NarrativeWorkflowConfig {
 
 /// JSON schema for triage results (conversation summary)
 fn get_triage_schema() -> crate::DbJson {
-    serde_json::json!({
+    crate::db::Json(serde_json::json!({
         "type": "object",
         "properties": {
             "summary": {
@@ -66,12 +66,12 @@ fn get_triage_schema() -> crate::DbJson {
             }
         },
         "required": ["summary"]
-    }).into()
+    }))
 }
 
 /// JSON schema for action plans (chronicle event creation)
 fn get_action_plan_schema() -> crate::DbJson {
-    serde_json::json!({
+    crate::db::Json(serde_json::json!({
         "type": "object",
         "properties": {
             "reasoning": {
@@ -119,12 +119,12 @@ fn get_action_plan_schema() -> crate::DbJson {
             }
         },
         "required": ["actions"]
-    }).into()
+    }))
 }
 
 /// JSON schema for chronicle naming
 fn get_chronicle_naming_schema() -> crate::DbJson {
-    serde_json::json!({
+    crate::db::Json(serde_json::json!({
         "type": "object",
         "properties": {
             "name": {
@@ -133,8 +133,7 @@ fn get_chronicle_naming_schema() -> crate::DbJson {
             }
         },
         "required": ["name"]
-    })
-    .into()
+    }))
 }
 
 /// Result of the triage analysis step
@@ -879,7 +878,7 @@ IMPORTANT RULES:
                             ) {
                                 obj.extend(existing_obj);
                             }
-                            enriched_parameters = crate::DbJson::Object(obj).into();
+                            enriched_parameters = serde_json::Value::Object(obj);
                         }
                     }
 

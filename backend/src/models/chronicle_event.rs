@@ -62,17 +62,17 @@ pub struct ChronicleEvent {
     pub chronicle_id: crate::db::DbId,
     pub user_id: crate::db::DbId,
     pub event_type: String,
-    pub summary: String, // Plaintext fallback (legacy)
-    pub source: String,  // Will be converted to/from EventSource
+    pub summary: String,                   // Plaintext fallback (legacy)
+    pub source: String,                    // Will be converted to/from EventSource
+    pub event_data: Option<crate::DbJson>, // Added to match schema
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub event_data: Option<crate::DbJson>, // Added to match schema
     #[serde(skip_serializing)]
     pub summary_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
-    pub timestamp_iso8601: DbTimestamp,
-    pub keywords: crate::models::OptionalStringArray, // For search optimization
+    pub timestamp_iso8601: Option<DbTimestamp>,
+    pub keywords: crate::db::DbStringArray, // For search optimization
     #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]

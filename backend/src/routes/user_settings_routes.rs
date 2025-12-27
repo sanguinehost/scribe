@@ -99,6 +99,9 @@ async fn update_user_settings_handler(
 
     debug!(user_id = %user.id, "Updating user settings");
 
+    use validator::Validate;
+    update_request.validate()?;
+
     let updated_settings = UserSettingsService::update_user_settings(
         &app_state.pool,
         user.id,

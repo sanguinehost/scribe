@@ -316,7 +316,7 @@ impl TemplateManager {
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
     fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
-        let value_inner: serde_json::Value = value.clone().into();
+        let value_inner = value.0.clone();
         match &value_inner {
             serde_json::Value::String(s) => {
                 // Remove or escape potentially dangerous template injection patterns
@@ -336,24 +336,25 @@ impl TemplateManager {
 
                 // Limit length to prevent memory exhaustion
                 if sanitized.len() > 200000 {
-                    serde_json::Value::String(format!("{}...[truncated]", &sanitized[..200000]))
-                        .into()
+                    crate::db::Json(serde_json::Value::String(format!(
+                        "{}...[truncated]",
+                        &sanitized[..200000]
+                    )))
                 } else {
-                    serde_json::Value::String(sanitized).into()
+                    crate::db::Json(serde_json::Value::String(sanitized))
                 }
             }
             serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(
+                crate::db::Json(serde_json::Value::Array(
                     arr.iter()
                         .take(500) // Limit array size
-                        .map(|v| self.sanitize_context(v.clone().into(), skip_keys))
-                        .map(|v| v.into())
+                        .map(|v| self.sanitize_context(crate::db::Json(v.clone()), skip_keys))
+                        .map(|v| v.0)
                         .collect(),
-                )
-                .into()
+                ))
             }
             serde_json::Value::Object(obj) => {
-                serde_json::Value::Object(
+                crate::db::Json(serde_json::Value::Object(
                     obj.iter()
                         .take(500) // Limit object size
                         .map(|(k, v)| {
@@ -361,13 +362,13 @@ impl TemplateManager {
                                 // Don't sanitize template sections - they need Jinja2 syntax
                                 (k.clone(), v.clone())
                             } else {
-                                let sanitized = self.sanitize_context(v.clone().into(), skip_keys);
-                                (k.clone(), sanitized.into())
+                                let sanitized =
+                                    self.sanitize_context(crate::db::Json(v.clone()), skip_keys);
+                                (k.clone(), sanitized.0)
                             }
                         })
                         .collect(),
-                )
-                .into()
+                ))
             }
             // Numbers, booleans, and null are safe
             _ => value,
@@ -424,7 +425,7 @@ impl TemplateManager {
         })?;
 
         // Convert input context to map for manipulation
-        let context_value: &serde_json::Value = &context.clone().into();
+        let context_value: &serde_json::Value = &context.0;
         let mut context_map: serde_json::Map<String, serde_json::Value> = match context_value {
             serde_json::Value::Object(map) => map.clone(),
             _ => serde_json::Map::new(),
@@ -469,7 +470,9 @@ impl TemplateManager {
             match temp_env.add_template("temp", section_content) {
                 Ok(()) => {
                     if let Ok(temp_template) = temp_env.get_template("temp") {
-                        match temp_template.render(crate::DbJson::Object(context_map.clone())) {
+                        match temp_template.render(crate::db::Json(serde_json::Value::Object(
+                            context_map.clone(),
+                        ))) {
                             Ok(rendered_content) => {
                                 debug!(
                                     section = section_name,
@@ -509,7 +512,7 @@ impl TemplateManager {
             serde_json::to_value(&rendered_sections).unwrap_or(serde_json::Value::Null),
         );
 
-        let enhanced_context = crate::DbJson::Object(context_map);
+        let enhanced_context = crate::db::Json(serde_json::Value::Object(context_map));
 
         // Sanitize context to prevent template injection, but skip the 'self' key containing template sections
         let sanitized_context = self.sanitize_context(enhanced_context, &["self"]);
@@ -613,7 +616,7 @@ mod tests {
             "user": {"name": "TestUser"}
         });
 
-        let result = manager.render("test_template", context);
+        let result = manager.render("test_template", crate::db::Json(context));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Hello TestUser!");
     }
@@ -628,7 +631,7 @@ mod tests {
         });
 
         // Should fallback to neutral_roleplay
-        let result = manager.render("nonexistent_template", context);
+        let result = manager.render("nonexistent_template", crate::db::Json(context));
         assert!(result.is_ok());
         // Just ensure it doesn't error, content will vary
     }

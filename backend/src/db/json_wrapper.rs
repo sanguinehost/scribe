@@ -6,12 +6,132 @@
 //!
 //! This allows the same code to work with both backends without conditional compilation at usage sites.
 
-// ============================================================================
-// PostgreSQL Backend: Re-export diesel_json
-// ============================================================================
+#[cfg(feature = "postgres-backend")]
+use diesel::{
+    deserialize::{self, FromSql, FromSqlRow},
+    pg::Pg,
+    serialize::{self, IsNull, Output, ToSql},
+    sql_types::Jsonb,
+};
 
 #[cfg(feature = "postgres-backend")]
-pub use diesel_json::Json;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+#[cfg(feature = "postgres-backend")]
+use std::ops::{Deref, DerefMut};
+
+/// Generic JSON wrapper for PostgreSQL backend
+///
+/// Stores any serializable type T as JSONB in the database.
+#[cfg(feature = "postgres-backend")]
+#[derive(
+    Clone, PartialEq, Eq, diesel::expression::AsExpression, diesel::deserialize::FromSqlRow,
+)]
+#[diesel(sql_type = Jsonb)]
+#[repr(transparent)]
+pub struct Json<T>(pub T);
+
+#[cfg(feature = "postgres-backend")]
+impl<T> std::fmt::Debug for Json<T>
+where
+    T: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Json").field(&self.0).finish()
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T> Json<T> {
+    pub fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T> Deref for Json<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T> DerefMut for Json<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T> FromSql<Jsonb, Pg> for Json<T>
+where
+    T: DeserializeOwned,
+{
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let bytes = bytes.as_bytes();
+        if bytes[0] != 1 {
+            return Err("Unsupported JSONB version".into());
+        }
+        let value = serde_json::from_slice(&bytes[1..])
+            .map_err(|e| format!("Failed to parse JSON from JSONB: {}", e))?;
+        Ok(Json(value))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T> ToSql<Jsonb, Pg> for Json<T>
+where
+    T: Serialize + std::fmt::Debug,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        use std::io::Write;
+        out.write_all(&[1])?; // JSONB version 1
+        serde_json::to_writer(out, &self.0)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        Ok(IsNull::No)
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T: Default> Default for Json<T> {
+    fn default() -> Self {
+        Self(T::default())
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T> From<T> for Json<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<T: Serialize> Serialize for Json<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Json<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        T::deserialize(deserializer).map(Json)
+    }
+}
 
 // ============================================================================
 // SQLite Backend: Custom Generic JSON Wrapper

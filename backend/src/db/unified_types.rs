@@ -18,6 +18,7 @@
 //! - `DbDecimal`: BigDecimal wrapper (Postgres: NUMERIC, SQLite: TEXT)
 //! - `DbBlob`: Binary data wrapper (Postgres: BYTEA, SQLite: BLOB)
 //! - `DbStringArray`: String array wrapper (Postgres: TEXT[], SQLite: JSON array as TEXT)
+//! - `DbJson`: JSON wrapper (Postgres: JSONB, SQLite: TEXT as JSON string)
 
 use super::backend_traits::DbType;
 
@@ -66,8 +67,8 @@ use uuid::Uuid;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
-#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = PgUuid))]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Text))]
 #[repr(transparent)]
 pub struct DbId(Uuid);
 
@@ -331,8 +332,8 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for
 /// Stores UTC timestamps in both PostgreSQL (TIMESTAMPTZ) and SQLite (INTEGER as Unix timestamp).
 /// Provides transparent access to the underlying `chrono::DateTime<Utc>` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
-#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Timestamptz))]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Timestamp))]
 #[repr(transparent)]
 pub struct DbTimestamp(DateTime<Utc>);
 
@@ -765,12 +766,16 @@ impl FromSql<Nullable<Text>, Sqlite> for DbTimestamp {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "postgres-backend",
-    derive(FromSqlRow),
-    diesel(sql_type = Numeric)
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression),
+    diesel(sql_type = diesel::sql_types::Numeric)
 )]
-#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression),
+    diesel(sql_type = diesel::sql_types::Double)
+)]
 #[repr(transparent)]
-pub struct DbDecimal(BigDecimal);
+pub struct DbDecimal(pub BigDecimal);
 
 impl DbDecimal {
     /// Create a DbDecimal from a BigDecimal
@@ -852,7 +857,7 @@ impl DbType for DbDecimal {
     type PgType = BigDecimal;
     type SqliteType = SqliteBigDecimal;
     type PgSqlType = Numeric;
-    type SqliteSqlType = Text;
+    type SqliteSqlType = diesel::sql_types::Double;
 
     fn to_pg_type(&self) -> Self::PgType {
         self.0.clone()
@@ -883,13 +888,6 @@ impl FromSql<Numeric, Pg> for DbDecimal {
 
 #[cfg(feature = "postgres-backend")]
 impl ToSql<Numeric, Pg> for DbDecimal {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <BigDecimal as ToSql<Numeric, Pg>>::to_sql(&self.0, out)
-    }
-}
-
-#[cfg(feature = "postgres-backend")]
-impl ToSql<Nullable<Numeric>, Pg> for DbDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         <BigDecimal as ToSql<Numeric, Pg>>::to_sql(&self.0, out)
     }
@@ -960,63 +958,6 @@ impl ToSql<diesel::sql_types::Integer, Sqlite> for DbDecimal {
     }
 }
 
-// Expression trait implementation for DbDecimal
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::Expression for DbDecimal {
-    type SqlType = diesel::sql_types::Numeric;
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::Expression for DbDecimal {
-    type SqlType = diesel::sql_types::Text;
-}
-
-// Implement ValidGrouping for DbDecimal
-impl<GB> diesel::expression::ValidGrouping<GB> for DbDecimal {
-    type IsAggregate = diesel::expression::is_aggregate::No;
-}
-
-// Implement QueryId for DbDecimal
-impl diesel::query_builder::QueryId for DbDecimal {
-    type QueryId = Self;
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
-
-// Implement AppearsOnTable for DbDecimal
-impl<QS> diesel::expression::AppearsOnTable<QS> for DbDecimal where Self: diesel::Expression {}
-
-// Implement QueryFragment to enable SQL generation
-#[cfg(feature = "postgres-backend")]
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbDecimal {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
-    ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<Numeric, _>(&self.0)?;
-        Ok(())
-    }
-}
-
-// Note: AsExpression<Numeric> is automatically implemented by Diesel via blanket impl from diesel(sql_type = Numeric)
-// However, for Nullable<Numeric>, we need manual implementations since Numeric != Nullable<Numeric>
-#[cfg(feature = "postgres-backend")]
-impl AsExpression<Nullable<Numeric>> for DbDecimal {
-    type Expression = <Option<BigDecimal> as AsExpression<Nullable<Numeric>>>::Expression;
-
-    fn as_expression(self) -> Self::Expression {
-        <Option<BigDecimal> as AsExpression<Nullable<Numeric>>>::as_expression(Some(self.0))
-    }
-}
-
-#[cfg(feature = "postgres-backend")]
-impl<'a> AsExpression<Nullable<Numeric>> for &'a DbDecimal {
-    type Expression = <Option<&'a BigDecimal> as AsExpression<Nullable<Numeric>>>::Expression;
-
-    fn as_expression(self) -> Self::Expression {
-        <Option<&BigDecimal> as AsExpression<Nullable<Numeric>>>::as_expression(Some(&self.0))
-    }
-}
-
 #[cfg(feature = "sqlite-backend")]
 impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbDecimal {
     fn walk_ast<'b>(
@@ -1029,41 +970,6 @@ impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbDecimal 
         pass.unsafe_to_cache_prepared();
         pass.push_sql(&value.to_string());
         Ok(())
-    }
-}
-
-// AsExpression implementations for Nullable<Double> (SQLite)
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>
-    for DbDecimal
-{
-    type Expression = <Option<f64> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<diesel::sql_types::Double>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        use bigdecimal::ToPrimitive;
-        use std::str::FromStr;
-        let value = f64::from_str(&self.0.to_string()).ok();
-        <Option<f64> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<diesel::sql_types::Double>,
-        >>::as_expression(value)
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Double>>
-    for &'a DbDecimal
-{
-    type Expression = <Option<f64> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<diesel::sql_types::Double>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        use bigdecimal::ToPrimitive;
-        use std::str::FromStr;
-        let value = f64::from_str(&self.0.to_string()).ok();
-        <Option<f64> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<diesel::sql_types::Double>,
-        >>::as_expression(value)
     }
 }
 
@@ -1099,8 +1005,8 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Integer> for &'a Db
 /// Stores binary data in both PostgreSQL (BYTEA) and SQLite (BLOB).
 /// Used for encrypted data, hashes, and other binary content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
-#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Bytea))]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Binary))]
 #[repr(transparent)]
 pub struct DbBlob(Vec<u8>);
 
@@ -1331,8 +1237,8 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 /// # SQLite Representation
 /// JSON array stored as TEXT: `["string1", "string2", null, "string3"]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(FromSqlRow))]
-#[cfg_attr(feature = "sqlite-backend", derive(FromSqlRow))]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Nullable<diesel::sql_types::Array<Nullable<Text>>>))]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Nullable<Text>))]
 #[repr(transparent)]
 pub struct DbStringArray(pub Option<Vec<Option<String>>>);
 
@@ -1651,3 +1557,5 @@ mod tests {
         assert_eq!(original, restored);
     }
 }
+/// Unified JSON type
+pub type DbJson = super::Json<serde_json::Value>;

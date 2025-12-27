@@ -483,73 +483,84 @@ impl LorebookService {
                         .map(Some)
                 };
 
-                match (
-                    decrypted_title_result,
-                    decrypted_content_result,
-                    decrypted_keys_text_result,
-                ) {
-                    (Ok(title_bytes), Ok(content_bytes), Ok(keys_bytes_opt)) => {
-                        let decrypted_title = String::from_utf8_lossy(&title_bytes).into_owned();
-                        let decrypted_content =
-                            String::from_utf8_lossy(&content_bytes).into_owned();
-                        let decrypted_keywords = keys_bytes_opt
-                            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                            .and_then(|keys_str| {
-                                if keys_str.trim().is_empty() {
-                                    None
-                                } else {
-                                    let keywords: Vec<String> = keys_str
-                                        .split(',')
-                                        .map(|s| s.trim().to_string())
-                                        .filter(|s| !s.is_empty())
-                                        .collect();
-                                    if keywords.is_empty() {
-                                        None
-                                    } else {
-                                        Some(keywords)
-                                    }
-                                }
-                            });
-
-                        // Clone the SessionDek for the async task
-                        let session_dek_for_embedding = user_dek.map(|dek| {
-                            let dek_bytes = dek.expose_secret().clone();
-                            secrecy::SecretBox::new(Box::new(dek_bytes))
-                        });
-
-                        let params = crate::services::embeddings::LorebookEntryParams {
-                            original_lorebook_entry_id: inserted_entry.id,
-                            lorebook_id: inserted_entry.lorebook_id,
-                            user_id: inserted_entry.user_id,
-                            decrypted_content,
-                            decrypted_title: Some(decrypted_title),
-                            decrypted_keywords,
-                            is_enabled: inserted_entry.is_enabled,
-                            is_constant: inserted_entry.is_constant,
-                            session_dek: session_dek_for_embedding,
-                        };
-
-                        // Spawn embedding generation in background to avoid blocking import
-                        let state_clone = state.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = state_clone
-                                .embedding_pipeline_service
-                                .process_and_embed_lorebook_entry(state_clone.clone(), params)
-                                .await
-                            {
-                                error!(
-                                    "Failed to generate embeddings for imported lorebook entry: {:?}",
-                                    e
-                                );
-                            }
-                        });
+                let title_bytes = match decrypted_title_result {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        error!("Failed to decrypt title for entry [REDACTED_UUID]: {:?}. Skipping embedding.", e);
+                        continue;
                     }
-                    _ => {
+                };
+
+                let content_bytes = match decrypted_content_result {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        error!("Failed to decrypt content for entry [REDACTED_UUID]: {:?}. Skipping embedding.", e);
+                        continue;
+                    }
+                };
+
+                let keys_bytes_opt = match decrypted_keys_text_result {
+                    Ok(opt) => opt,
+                    Err(e) => {
+                        error!("Failed to decrypt keys_text for entry [REDACTED_UUID]: {:?}. Skipping embedding.", e);
+                        continue;
+                    }
+                };
+
+                let decrypted_title = String::from_utf8_lossy(&title_bytes).into_owned();
+                let decrypted_content = String::from_utf8_lossy(&content_bytes).into_owned();
+                let decrypted_keywords = keys_bytes_opt
+                    .as_ref()
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                    .and_then(|keys_str| {
+                        if keys_str.trim().is_empty() {
+                            None
+                        } else {
+                            let keywords: Vec<String> = keys_str
+                                .split(',')
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            if keywords.is_empty() {
+                                None
+                            } else {
+                                Some(keywords)
+                            }
+                        }
+                    });
+
+                // Clone the SessionDek for the async task
+                let session_dek_for_embedding = user_dek.map(|dek| {
+                    let dek_bytes = dek.expose_secret().clone();
+                    secrecy::SecretBox::new(Box::new(dek_bytes))
+                });
+
+                let params = crate::services::embeddings::LorebookEntryParams {
+                    original_lorebook_entry_id: inserted_entry.id,
+                    lorebook_id: inserted_entry.lorebook_id,
+                    user_id: inserted_entry.user_id,
+                    decrypted_content,
+                    decrypted_title: Some(decrypted_title),
+                    decrypted_keywords,
+                    is_enabled: inserted_entry.is_enabled,
+                    is_constant: inserted_entry.is_constant,
+                    session_dek: session_dek_for_embedding,
+                };
+
+                // Spawn embedding generation in background to avoid blocking import
+                let state_clone = state.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = state_clone
+                        .embedding_pipeline_service
+                        .process_and_embed_lorebook_entry(state_clone.clone(), params)
+                        .await
+                    {
                         error!(
-                            "Failed to decrypt lorebook entry fields for embedding generation. Skipping embeddings for this entry."
+                            "Failed to generate embeddings for imported lorebook entry: {:?}",
+                            e
                         );
                     }
-                }
+                });
             }
         }
 

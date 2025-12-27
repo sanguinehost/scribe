@@ -58,7 +58,7 @@ fn log_generic_error(gen_err: &genai::Error) {
 fn log_and_convert_genai_error(gen_err: genai::Error) -> AppError {
     match &gen_err {
         genai::Error::ChatResponse { model_iden, body } => {
-            let body_json: crate::DbJson = body.clone().into();
+            let body_json: crate::DbJson = crate::db::Json(body.clone());
             log_stream_event_error(model_iden, &body_json, &gen_err);
         }
         genai::Error::ReqwestEventSource(event_source_error) => {

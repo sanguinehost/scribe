@@ -12,6 +12,22 @@ pub mod sql_types {
     pub type Binary = diesel::sql_types::Binary;
 }
 
+pub mod sql_types_unified {
+    pub use diesel::sql_types::Binary as DbBlobType;
+    pub use diesel::sql_types::Binary as DbBinaryType;
+    pub use diesel::sql_types::Double as DbNumericType;
+    pub use diesel::sql_types::Integer as DbCreditType;
+    pub use diesel::sql_types::Text as DbIdType;
+    pub use diesel::sql_types::Text as DbJsonType;
+    pub use diesel::sql_types::Text as DbStringArrayType;
+    pub use diesel::sql_types::Text as DbTextType;
+    pub use diesel::sql_types::Timestamp as DbTimestampType;
+
+    pub use super::sql_types::MessageType as DbMessageType;
+}
+
+pub use sql_types_unified::*;
+
 diesel::table! {
     agent_context_analysis (id) {
         id -> Text,
@@ -281,6 +297,9 @@ diesel::table! {
         // Game Master Agent columns
         game_state -> Nullable<Text>,
         game_master_mode_enabled -> Bool,
+        rag_chronicles_limit -> Nullable<Integer>,
+        rag_lorebooks_limit -> Nullable<Integer>,
+        rag_older_chat_limit -> Nullable<Integer>,
     }
 }
 
@@ -292,9 +311,9 @@ diesel::table! {
         event_type -> Text,
         summary -> Text,
         source -> Text,
+        event_data -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        event_data -> Nullable<Text>,
         summary_encrypted -> Nullable<Binary>,
         summary_nonce -> Nullable<Binary>,
         timestamp_iso8601 -> Nullable<Timestamp>,
@@ -722,6 +741,9 @@ diesel::table! {
         preferred_local_model -> Nullable<Text>,
         local_llm_enabled -> Nullable<Bool>,
         local_model_preferences -> Nullable<Text>,
+        default_rag_chronicles_limit -> Nullable<Integer>,
+        default_rag_lorebooks_limit -> Nullable<Integer>,
+        default_rag_older_chat_limit -> Nullable<Integer>,
     }
 }
 

@@ -522,7 +522,7 @@ pub struct NewCharacter {
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
     pub system_tags: crate::models::OptionalStringArray,
-    pub token_budget: Option<i64>, // Int8 in PostgreSQL
+    pub token_budget: Option<i32>, // Int4 in PostgreSQL
     pub usage_hints: Option<DbJson>,
     pub user_persona: Option<Vec<u8>>,
     pub user_persona_nonce: Option<Vec<u8>>,
@@ -535,7 +535,7 @@ pub struct NewCharacter {
     pub creator_comment: Option<Vec<u8>>,
     pub creator_comment_nonce: Option<Vec<u8>>,
     pub depth_prompt: Option<Vec<u8>>,
-    pub depth_prompt_depth: Option<i64>, // Int8 in PostgreSQL
+    pub depth_prompt_depth: Option<i32>, // Int4 in PostgreSQL
     pub depth_prompt_role: Option<String>,
     pub talkativeness: Option<crate::db::DbDecimal>,
     pub depth_prompt_ciphertext: Option<Vec<u8>>,
@@ -802,12 +802,12 @@ impl NewCharacter {
             spec_version, // Use extracted spec_version
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
-            creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-            source: source.into(),   // Already converted to Option<Vec<Option<String>>>>
+            creator_notes_multilingual: creator_notes_multilingual_json.map(crate::db::Json), // Assign the wrapped value
+            source: source.into(), // Already converted to Option<Vec<Option<String>>>>
             group_only_greetings: group_only_greetings.into(), // Already Option<Vec<Option<String>>>
             creation_date: creation_date_ts,                   // Already Option<DbTimestamp>
             modification_date: modification_date_ts,           // Already Option<DbTimestamp>
-            extensions: extensions_option_json,                // Assign the calculated extensions
+            extensions: extensions_option_json.map(crate::db::Json), // Assign the calculated extensions
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -846,7 +846,7 @@ impl NewCharacter {
             creator_comment: None, // Not in extensions, could be mapped from creator_notes
             creator_comment_nonce: None,
             depth_prompt: depth_prompt_data,
-            depth_prompt_depth: depth_prompt_depth.map(|v| v as i64),
+            depth_prompt_depth: depth_prompt_depth.map(|v| v as i32),
             depth_prompt_role,
             talkativeness,
             depth_prompt_ciphertext: depth_prompt_json,
@@ -933,9 +933,9 @@ impl NewCharacter {
             extensions: if data.extensions.is_empty() {
                 None
             } else {
-                Some(crate::db::DbJson::Object(
+                Some(crate::db::Json(serde_json::Value::Object(
                     data.extensions.clone().into_iter().collect(),
-                ))
+                )))
             },
             spec: "chara_card_v2".to_string(), // V2 spec identifier
             spec_version: "2.0".to_string(),   // V2 version
@@ -1422,7 +1422,7 @@ mod tests {
             )])),
             extensions: HashMap::from([(
                 "ext_key".to_string(),
-                crate::db::DbJson::String("ext_val".to_string()),
+                serde_json::Value::String("ext_val".to_string()),
             )]),
             ..Default::default()
         };

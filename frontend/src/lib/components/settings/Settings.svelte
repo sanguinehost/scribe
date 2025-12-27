@@ -68,10 +68,12 @@
 		gemini_thinking_budget: null as number | null,
 		gemini_thinking_level: null as string | null,
 
-		// Context Management
 		context_total_token_limit: 200000,
 		context_recent_history_budget: 150000,
 		context_rag_budget: 50000, // Updated to match backend default
+		rag_chronicles_limit: 20000,
+		rag_lorebooks_limit: 20000,
+		rag_older_chat_limit: 10000,
 
 		// Application Preferences
 		auto_save_chats: true,
@@ -117,6 +119,9 @@
 				default_context_total_token_limit: settings.context_total_token_limit || null,
 				default_context_recent_history_budget: settings.context_recent_history_budget || null,
 				default_context_rag_budget: settings.context_rag_budget || null,
+				default_rag_chronicles_limit: settings.rag_chronicles_limit || null,
+				default_rag_lorebooks_limit: settings.rag_lorebooks_limit || null,
+				default_rag_older_chat_limit: settings.rag_older_chat_limit || null,
 
 				// Application Preferences
 				auto_save_chats: settings.auto_save_chats,
@@ -177,6 +182,9 @@
 					context_recent_history_budget:
 						userSettings.default_context_recent_history_budget || 150000,
 					context_rag_budget: userSettings.default_context_rag_budget || 50000,
+					rag_chronicles_limit: userSettings.default_rag_chronicles_limit ?? 20000,
+					rag_lorebooks_limit: userSettings.default_rag_lorebooks_limit ?? 20000,
+					rag_older_chat_limit: userSettings.default_rag_older_chat_limit ?? 10000,
 
 					// Application Preferences
 					auto_save_chats: userSettings.auto_save_chats ?? true,
@@ -215,6 +223,9 @@
 			context_total_token_limit: 200000,
 			context_recent_history_budget: 150000,
 			context_rag_budget: 50000, // Updated to match backend default
+			rag_chronicles_limit: 20000,
+			rag_lorebooks_limit: 20000,
+			rag_older_chat_limit: 10000,
 			auto_save_chats: true,
 			theme: 'system',
 			notifications_enabled: true,
@@ -559,6 +570,9 @@
 						bind:total_token_limit={settings.context_total_token_limit}
 						bind:recent_history_budget={settings.context_recent_history_budget}
 						bind:rag_budget={settings.context_rag_budget}
+						bind:rag_chronicles_limit={settings.rag_chronicles_limit}
+						bind:rag_lorebooks_limit={settings.rag_lorebooks_limit}
+						bind:rag_older_chat_limit={settings.rag_older_chat_limit}
 						title="Default Context Window Management"
 						description="Set default token allocation for new chats."
 					/>

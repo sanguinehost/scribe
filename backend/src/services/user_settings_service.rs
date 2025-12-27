@@ -53,6 +53,9 @@ impl UserSettingsService {
                             user_settings::default_context_total_token_limit,
                             user_settings::default_context_recent_history_budget,
                             user_settings::default_context_rag_budget,
+                            user_settings::default_rag_chronicles_limit,
+                            user_settings::default_rag_lorebooks_limit,
+                            user_settings::default_rag_older_chat_limit,
                             user_settings::auto_save_chats,
                             user_settings::theme,
                         ))
@@ -67,6 +70,9 @@ impl UserSettingsService {
                             Option<i32>,
                             Option<i32>,
                             Option<bool>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<i32>,
                             Option<i32>,
                             Option<i32>,
                             Option<i32>,
@@ -170,7 +176,7 @@ impl UserSettingsService {
                             ui_settings.1,
                             local_settings.0,
                             local_settings.1,
-                            local_settings.2,
+                            local_settings.2.map(crate::db::Json::new),
                         )
                     };
 
@@ -189,8 +195,11 @@ impl UserSettingsService {
                         default_context_total_token_limit: settings.10,
                         default_context_recent_history_budget: settings.11,
                         default_context_rag_budget: settings.12,
-                        auto_save_chats: settings.13,
-                        theme: settings.14,
+                        default_rag_chronicles_limit: settings.13,
+                        default_rag_lorebooks_limit: settings.14,
+                        default_rag_older_chat_limit: settings.15,
+                        auto_save_chats: settings.16,
+                        theme: settings.17,
                         notifications_enabled,
                         typing_speed,
                         preferred_local_model,
@@ -217,10 +226,12 @@ impl UserSettingsService {
                         INSERT INTO user_settings (
                             id, user_id, default_model_name, default_context_total_token_limit,
                             default_context_recent_history_budget, default_context_rag_budget,
+                            default_rag_chronicles_limit, default_rag_lorebooks_limit,
+                            default_rag_older_chat_limit,
                             auto_save_chats, theme, notifications_enabled, typing_speed,
                             local_llm_enabled, local_model_preferences
                         ) VALUES (
-                            $1, $2, $3, $4, $5, $6, TRUE, 'system', TRUE, 30, FALSE, '{}'
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 'system', TRUE, 30, FALSE, '{}'
                         )
                         "#,
                     );
@@ -259,6 +270,9 @@ impl UserSettingsService {
                             user_settings::default_context_total_token_limit,
                             user_settings::default_context_recent_history_budget,
                             user_settings::default_context_rag_budget,
+                            user_settings::default_rag_chronicles_limit,
+                            user_settings::default_rag_lorebooks_limit,
+                            user_settings::default_rag_older_chat_limit,
                             user_settings::auto_save_chats,
                             user_settings::theme,
                             user_settings::notifications_enabled,
@@ -272,6 +286,9 @@ impl UserSettingsService {
                             Option<i32>,
                             Option<i32>,
                             Option<i32>,
+                            Option<i32>,
+                            Option<i32>,
+                            Option<i32>,
                             Option<bool>,
                             Option<String>,
                             Option<bool>,
@@ -282,8 +299,8 @@ impl UserSettingsService {
                         )>(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                    let created_at = created_settings.9;
-                    let updated_at = created_settings.10;
+                    let created_at = created_settings.12;
+                    let updated_at = created_settings.13;
 
                     // Manually construct the response
                     let response = UserSettingsResponse {
@@ -301,12 +318,15 @@ impl UserSettingsService {
                         default_context_total_token_limit: created_settings.1,
                         default_context_recent_history_budget: created_settings.2,
                         default_context_rag_budget: created_settings.3,
-                        auto_save_chats: created_settings.4,
-                        theme: created_settings.5,
-                        notifications_enabled: created_settings.6,
-                        typing_speed: created_settings.7,
+                        default_rag_chronicles_limit: created_settings.4,
+                        default_rag_lorebooks_limit: created_settings.5,
+                        default_rag_older_chat_limit: created_settings.6,
+                        auto_save_chats: created_settings.7,
+                        theme: created_settings.8,
+                        notifications_enabled: created_settings.9,
+                        typing_speed: created_settings.10,
                         preferred_local_model: None,
-                        local_llm_enabled: created_settings.8,
+                        local_llm_enabled: created_settings.11,
                         local_model_preferences: None,
                         created_at,
                         updated_at,
@@ -418,6 +438,12 @@ impl UserSettingsService {
                         .eq(update_request.default_context_recent_history_budget),
                     user_settings::default_context_rag_budget
                         .eq(update_request.default_context_rag_budget),
+                    user_settings::default_rag_chronicles_limit
+                        .eq(update_request.default_rag_chronicles_limit),
+                    user_settings::default_rag_lorebooks_limit
+                        .eq(update_request.default_rag_lorebooks_limit),
+                    user_settings::default_rag_older_chat_limit
+                        .eq(update_request.default_rag_older_chat_limit),
                     user_settings::auto_save_chats.eq(update_request.auto_save_chats),
                     user_settings::theme.eq(update_request.theme),
                 ))
@@ -454,6 +480,9 @@ impl UserSettingsService {
                     user_settings::default_context_total_token_limit,
                     user_settings::default_context_recent_history_budget,
                     user_settings::default_context_rag_budget,
+                    user_settings::default_rag_chronicles_limit,
+                    user_settings::default_rag_lorebooks_limit,
+                    user_settings::default_rag_older_chat_limit,
                     user_settings::auto_save_chats,
                     user_settings::theme,
                 ))
@@ -468,6 +497,9 @@ impl UserSettingsService {
                     Option<i32>,
                     Option<i32>,
                     Option<bool>,
+                    Option<i32>,
+                    Option<i32>,
+                    Option<i32>,
                     Option<i32>,
                     Option<i32>,
                     Option<i32>,
@@ -589,8 +621,11 @@ impl UserSettingsService {
                 default_context_total_token_limit: settings.10,
                 default_context_recent_history_budget: settings.11,
                 default_context_rag_budget: settings.12,
-                auto_save_chats: settings.13,
-                theme: settings.14,
+                default_rag_chronicles_limit: settings.13,
+                default_rag_lorebooks_limit: settings.14,
+                default_rag_older_chat_limit: settings.15,
+                auto_save_chats: settings.16,
+                theme: settings.17,
                 notifications_enabled,
                 typing_speed,
                 preferred_local_model,

@@ -1950,9 +1950,9 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
-    // use diesel::prelude::*; // Removed unused import
-    use diesel_migrations::MigrationHarness; // User was already imported, ensure UserDbQuery is correct
-                                             // Import AppError
+    use diesel::{RunQueryDsl, SelectableHelper};
+    use diesel_migrations::MigrationHarness;
+    // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
     use crate::db::{DbId, DbTimestamp}; // Import unified types from crate::db
@@ -2040,7 +2040,8 @@ pub mod db {
             db_name_suffix.unwrap_or("default"),
             DbId::new()
         );
-        let base_db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for testing");
+        let base_db_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for testing");
         let (main_db_url, _) = base_db_url.rsplit_once('/').expect("Invalid DATABASE_URL");
 
         // Create a connection pool to the default database (e.g., postgres) to create the test database
@@ -2060,6 +2061,7 @@ pub mod db {
         let db_name_clone_create = db_name.clone();
         conn_default
             .interact(move |conn| {
+                use diesel::RunQueryDsl;
                 diesel::sql_query(format!(
                     "DROP DATABASE IF EXISTS \"{db_name_clone_drop}\" WITH (FORCE)"
                 ))
@@ -2103,7 +2105,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut _conn = crate::db::get_conn(pool)
+        let mut conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2159,6 +2161,7 @@ pub mod db {
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
             conn.interact(move |conn_actual| {
+                use diesel::{RunQueryDsl, SelectableHelper};
                 diesel::insert_into(crate::schema::users::table)
                     .values(new_user_payload)
                     .returning(UserDbQuery::as_returning())
@@ -2223,7 +2226,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut _conn = crate::db::get_conn(pool)
+        let mut conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2279,6 +2282,7 @@ pub mod db {
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
             conn.interact(move |conn_actual| {
+                use diesel::{RunQueryDsl, SelectableHelper};
                 diesel::insert_into(crate::schema::users::table)
                     .values(new_user_payload)
                     .returning(UserDbQuery::as_returning())
@@ -2454,6 +2458,7 @@ pub mod db {
         let name_clone_for_second_error = name_clone_for_error.clone();
         let character: Character = conn
             .interact(move |conn_actual| {
+                use diesel::{RunQueryDsl, SelectableHelper};
                 #[cfg(feature = "postgres-backend")]
                 {
                     diesel::insert_into(crate::schema::characters::table)

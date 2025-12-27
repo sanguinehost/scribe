@@ -1481,7 +1481,9 @@ async fn get_all_models(auth: UnifiedAuth) -> Result<Json<crate::DbJson>, Status
         models_response.insert(model_id.clone(), model_info);
     }
 
-    Ok(Json(crate::DbJson::Object(models_response)))
+    Ok(Json(crate::db::Json(serde_json::Value::Object(
+        models_response,
+    ))))
 }
 
 /// GET /api/llm/models/:model_id/capabilities - Get specific model capabilities
@@ -1510,7 +1512,7 @@ async fn get_model_capabilities(
                 "recommended_settings": registry.get_recommended_context_settings(&model_id)
             });
 
-            Ok(Json(response.into()))
+            Ok(Json(crate::db::Json(response)))
         }
         None => {
             warn!("Model not found: {}", model_id);

@@ -182,8 +182,8 @@ pub struct Chat {
     pub total_credit_cost: i32, // 44
     pub total_actual_charge: f64, // 45 - FIXED: Schema has Double (REAL), not DbDecimal
     // Game Master Agent fields
-    pub game_state: Option<String>,     // 46 - JSON-encoded GameState
-    pub game_master_mode_enabled: bool, // 47 - Feature flag
+    pub game_state: Option<crate::DbJson>, // 46 - JSON-encoded GameState
+    pub game_master_mode_enabled: bool,    // 47 - Feature flag
 }
 
 impl std::fmt::Debug for Chat {
@@ -1877,18 +1877,9 @@ impl Chat {
             game_state: {
                 info!(
                     "🎲 GAME_STATE_DEBUG: Chat {} - game_master_mode_enabled={}, raw_game_state={:?}",
-                    self.id, self.game_master_mode_enabled, self.game_state.as_ref().map(|s| s.len())
+                    self.id, self.game_master_mode_enabled, self.game_state.as_ref().map(|s| s.0.to_string().len())
                 );
-                let parsed = self.game_state.as_ref().and_then(|s| {
-                    let result: Result<serde_json::Value, _> = serde_json::from_str(s);
-                    if let Err(ref e) = result {
-                        warn!(
-                            "🎲 GAME_STATE_DEBUG: Failed to parse game_state JSON: {}",
-                            e
-                        );
-                    }
-                    result.ok()
-                });
+                let parsed = self.game_state.as_ref().map(|s| s.0.clone());
                 info!(
                     "🎲 GAME_STATE_DEBUG: Parsed game_state is_some={}",
                     parsed.is_some()
@@ -3426,7 +3417,7 @@ impl MessageVariantDto {
             completion_tokens: variant.completion_tokens,
             model_name: variant.model_name,
             raw_prompt,
-            game_state: variant.game_state.map(|s| s.into()),
+            game_state: variant.game_state.map(|s| s.0),
         })
     }
 }
@@ -3619,7 +3610,7 @@ pub struct ChatSessionQuery {
     pub total_credit_cost: i32,
     pub total_actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub game_master_mode_enabled: bool,
-    pub game_state: Option<String>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 impl ChatSessionQuery {
@@ -3722,7 +3713,7 @@ impl ChatSessionQuery {
             total_credits_used: crate::db::DbDecimal::from(self.estimated_cost_cents as i64),
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
-            game_state: self.game_state.and_then(|s| serde_json::from_str(&s).ok()),
+            game_state: self.game_state.map(|s| s.0),
         })
     }
 

@@ -411,7 +411,7 @@ impl NarrativeIntelligenceService {
             })
             .await?
             .flatten()
-            .map(|j| j.into())
+            .map(|j| j.0)
         };
 
         let current_state = if let Some(json) = current_state_json {
@@ -438,7 +438,7 @@ impl NarrativeIntelligenceService {
             AppError::InternalServerErrorGeneric(format!("Failed to serialize game state: {e}"))
         })?;
 
-        let new_state_db: crate::DbJson = new_state_json.into();
+        let new_state_db: crate::DbJson = crate::db::Json(new_state_json);
 
         let new_state_db_for_update = new_state_db.clone();
         crate::db::with_conn(&self.app_state.pool, move |db_conn| {

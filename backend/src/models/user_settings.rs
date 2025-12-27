@@ -36,6 +36,9 @@ pub struct UserSettings {
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
+    pub default_rag_chronicles_limit: Option<i32>,
+    pub default_rag_lorebooks_limit: Option<i32>,
+    pub default_rag_older_chat_limit: Option<i32>,
 
     // Application Preferences
     pub auto_save_chats: Option<bool>,
@@ -86,6 +89,9 @@ pub struct NewUserSettings {
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
+    pub default_rag_chronicles_limit: Option<i32>,
+    pub default_rag_lorebooks_limit: Option<i32>,
+    pub default_rag_older_chat_limit: Option<i32>,
 
     // Application Preferences
     pub auto_save_chats: Option<bool>,
@@ -97,7 +103,7 @@ pub struct NewUserSettings {
     pub local_model_preferences: Option<DbJson>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, validator::Validate)]
 pub struct UpdateUserSettingsRequest {
     // Generation Settings
     pub default_model_name: Option<String>,
@@ -118,6 +124,12 @@ pub struct UpdateUserSettingsRequest {
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub default_rag_chronicles_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub default_rag_lorebooks_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub default_rag_older_chat_limit: Option<i32>,
 
     // Application Preferences
     pub auto_save_chats: Option<bool>,
@@ -150,6 +162,9 @@ pub struct UserSettingsResponse {
     pub default_context_total_token_limit: Option<i32>,
     pub default_context_recent_history_budget: Option<i32>,
     pub default_context_rag_budget: Option<i32>,
+    pub default_rag_chronicles_limit: Option<i32>,
+    pub default_rag_lorebooks_limit: Option<i32>,
+    pub default_rag_older_chat_limit: Option<i32>,
 
     // Application Preferences
     pub auto_save_chats: Option<bool>,
@@ -182,6 +197,9 @@ impl From<UserSettings> for UserSettingsResponse {
             default_context_total_token_limit: settings.default_context_total_token_limit,
             default_context_recent_history_budget: settings.default_context_recent_history_budget,
             default_context_rag_budget: settings.default_context_rag_budget,
+            default_rag_chronicles_limit: settings.default_rag_chronicles_limit,
+            default_rag_lorebooks_limit: settings.default_rag_lorebooks_limit,
+            default_rag_older_chat_limit: settings.default_rag_older_chat_limit,
             auto_save_chats: settings.auto_save_chats,
             theme: settings.theme,
             notifications_enabled: settings.notifications_enabled,

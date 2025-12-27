@@ -48,7 +48,7 @@ use tracing::{error, info};
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde::{Deserialize, Serialize}; // Added Deserialize
-use validator::Validate; // Remove unused Deserialize // Added for cursor-based pagination
+use validator::Validate; // Added for cursor-based pagination
 
 // Shorthand for auth session
 
@@ -850,14 +850,14 @@ async fn process_messages_for_response(
     user_id: crate::db::DbId,
     character_name: Option<&str>,
     user_persona_name: Option<&str>,
-    session_game_state: Option<&str>, // Game state from chat_sessions for fallback
+    session_game_state: Option<&serde_json::Value>, // Game state from chat_sessions for fallback
 ) -> Result<Vec<MessageResponse>, AppError> {
     tracing::info!("🔄 Processing {} messages for response", messages_db.len());
     let mut responses = Vec::new();
 
     // Parse session game_state once for use as fallback
-    let session_gs: Option<serde_json::Value> =
-        session_game_state.and_then(|s| serde_json::from_str(s).ok());
+    // Parse session game_state once for use as fallback
+    let session_gs: Option<serde_json::Value> = session_game_state.cloned();
 
     for msg_db in messages_db {
         tracing::info!(
@@ -907,7 +907,9 @@ async fn process_messages_for_response(
         };
 
         // Parts are created inline with template substitution below
-        let response_attachments = msg_db.attachments.unwrap_or_else(|| json!([]).into());
+        let response_attachments = msg_db
+            .attachments
+            .unwrap_or_else(|| crate::db::Json(json!([])).into());
 
         let response_role = msg_db
             .role
@@ -935,13 +937,13 @@ async fn process_messages_for_response(
                 character_name,
                 user_persona_name,
             ),
-            parts: json!([{
+            parts: crate::db::Json(json!([{
                 "text": crate::prompt_builder::replace_template_variables(
                     &content,
                     character_name,
                     user_persona_name
                 )
-            }])
+            }]))
             .into(),
             attachments: response_attachments,
             created_at: msg_db.created_at,
@@ -1076,7 +1078,7 @@ pub async fn get_messages_by_chat_id_handler(
         user.id,
         character_name.as_deref(),
         user_persona_name.as_deref(),
-        chat.game_state.as_deref(), // Pass session game_state for fallback
+        chat.game_state.as_ref().map(|j| &j.0), // Pass session game_state for fallback
     )
     .await?;
 
@@ -1171,8 +1173,8 @@ pub async fn create_message_handler(
             message_type_enum: message_role_enum,
             content: &payload.content,
             role_str: Some(payload.role.clone()),
-            parts: payload.parts.clone().map(Into::into),
-            attachments: payload.attachments.clone().map(Into::into),
+            parts: payload.parts.clone().map(|j| j.0),
+            attachments: payload.attachments.clone().map(|j| j.0),
             user_dek_secret_box: user_dek_arc.clone(),
             model_name: chat.model_name.clone(),
             raw_prompt_debug: None,
@@ -1299,8 +1301,10 @@ pub async fn create_message_handler(
     // Use client_message.content (String) for parts if payload.parts is None
     let response_parts = payload
         .parts
-        .unwrap_or_else(|| json!([{"text": client_message.content.clone()}]).into());
-    let response_attachments = payload.attachments.unwrap_or_else(|| json!([]).into());
+        .unwrap_or_else(|| crate::db::Json(json!([{"text": client_message.content.clone()}])));
+    let response_attachments = payload
+        .attachments
+        .unwrap_or_else(|| crate::db::Json(json!([])));
 
     // --- Trigger AI Response Generation (Background Task) ---
     // Only trigger if the user sent the message (system messages don't trigger AI)
@@ -1355,6 +1359,12 @@ pub async fn create_message_handler(
                         _agent_mode,
                         game_master_mode_enabled,
                         initial_game_state,
+                        _rag_chronicles_limit,
+                        _rag_lorebooks_limit,
+                        _rag_older_chat_limit,
+                        _context_total_token_limit,
+                        _recent_history_token_budget,
+                        _rag_token_budget,
                     ) = data;
 
                     // 2. Convert history to GenAiChatMessage
@@ -1571,7 +1581,7 @@ pub async fn get_message_by_id_handler(
 
     let response_parts = message_db
         .parts
-        .unwrap_or_else(|| json!([{"text": decrypted_content_string}]).into());
+        .unwrap_or_else(|| crate::db::Json(json!([{"text": decrypted_content_string}])));
 
     // Decrypt raw prompt if available
     let decrypted_raw_prompt = match (
@@ -1677,7 +1687,9 @@ pub async fn get_message_by_id_handler(
             .unwrap_or_else(|| message_db.message_type.to_string()),
         content: decrypted_content_string,
         parts: response_parts,
-        attachments: message_db.attachments.unwrap_or_else(|| json!([]).into()),
+        attachments: message_db
+            .attachments
+            .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
         prompt_tokens: message_db.prompt_tokens,
@@ -2586,10 +2598,12 @@ pub async fn select_message_variant_handler(
             .role
             .unwrap_or_else(|| updated_message.message_type.to_string()),
         content,
-        parts: updated_message.parts.unwrap_or_else(|| json!([]).into()),
+        parts: updated_message
+            .parts
+            .unwrap_or_else(|| crate::db::Json(json!([]))),
         attachments: updated_message
             .attachments
-            .unwrap_or_else(|| json!([]).into()),
+            .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
         prompt_tokens: updated_message.prompt_tokens,
@@ -2634,7 +2648,7 @@ async fn get_variant_content_by_index(
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;
-        Ok(Some((content, variant.game_state.map(Into::into))))
+        Ok(Some((content, variant.game_state.map(|j| j.0))))
     } else {
         Ok(None)
     }

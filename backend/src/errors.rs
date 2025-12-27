@@ -462,7 +462,7 @@ impl AppError {
                     if !params.is_empty() {
                         err_map.insert("params".to_string(), json!(params));
                     }
-                    json!(err_map).into()
+                    crate::db::Json(json!(err_map))
                 })
                 .collect();
             error_details.insert(field.to_string(), json!(field_errors));

@@ -746,6 +746,9 @@ export interface UpdateChatSessionSettingsRequest {
 	gemini_enable_code_execution?: boolean | null;
 	agent_mode?: string | null;
 	prompt_template_id?: string | null;
+	rag_chronicles_limit?: number | null;
+	rag_lorebooks_limit?: number | null;
+	rag_older_chat_limit?: number | null;
 }
 
 export interface ChatSessionSettingsResponse {
@@ -771,6 +774,9 @@ export interface ChatSessionSettingsResponse {
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
+	rag_chronicles_limit?: number | null;
+	rag_lorebooks_limit?: number | null;
+	rag_older_chat_limit?: number | null;
 	agent_mode?: string | null;
 	prompt_template_id?: string | null;
 }
@@ -796,6 +802,9 @@ export interface UpdateUserSettingsRequest {
 	default_context_total_token_limit?: number | null;
 	default_context_recent_history_budget?: number | null;
 	default_context_rag_budget?: number | null;
+	default_rag_chronicles_limit?: number | null;
+	default_rag_lorebooks_limit?: number | null;
+	default_rag_older_chat_limit?: number | null;
 
 	// Application Preferences
 	auto_save_chats?: boolean | null;
@@ -828,6 +837,9 @@ export interface UserSettingsResponse {
 	default_context_total_token_limit?: number | null;
 	default_context_recent_history_budget?: number | null;
 	default_context_rag_budget?: number | null;
+	default_rag_chronicles_limit?: number | null;
+	default_rag_lorebooks_limit?: number | null;
+	default_rag_older_chat_limit?: number | null;
 
 	// Application Preferences
 	auto_save_chats?: boolean | null;

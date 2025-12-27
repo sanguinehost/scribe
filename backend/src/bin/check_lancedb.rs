@@ -1,8 +1,13 @@
+#[cfg(feature = "embedded-vector")]
 use scribe_backend::config::Config;
+#[cfg(feature = "embedded-vector")]
 use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait;
+#[cfg(feature = "embedded-vector")]
 use scribe_backend::vector_db::LanceDbClient;
+#[cfg(feature = "embedded-vector")]
 use std::sync::Arc;
 
+#[cfg(feature = "embedded-vector")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
@@ -19,4 +24,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(not(feature = "embedded-vector"))]
+fn main() {
+    println!("LanceDB check binary requires 'embedded-vector' feature.");
 }

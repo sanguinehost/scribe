@@ -2147,5 +2147,5 @@ pub async fn analyze_style_handler(
         "recommendations": analysis.recommendations
     });
 
-    Ok(Json(result.into()))
+    Ok(Json(crate::db::Json(result)))
 }

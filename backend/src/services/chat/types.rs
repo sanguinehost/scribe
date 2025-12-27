@@ -45,6 +45,12 @@ pub type GenerationDataWithUnsavedUserMessage = (
     Option<String>,            // 24: agent_mode (NEW - for context enrichment)
     Option<bool>,              // 25: game_master_mode_enabled (NEW - for Game Master processing)
     Option<serde_json::Value>, // 26: initial_game_state (NEW - for double deduction prevention)
+    Option<i32>,               // 27: rag_chronicles_limit
+    Option<i32>,               // 28: rag_lorebooks_limit
+    Option<i32>,               // 29: rag_older_chat_limit
+    usize,                     // 30: context_total_token_limit (NEW)
+    usize,                     // 31: recent_history_token_budget (NEW)
+    usize,                     // 32: rag_token_budget (NEW)
 );
 
 /// Structured chunk with integrity checking for reliable streaming

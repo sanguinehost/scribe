@@ -302,7 +302,7 @@ mod tests {
     fn test_budget_planner_pro_model() {
         let planner = ContextBudgetPlanner::new_for_model("gemini-2.5-pro", None);
         assert_eq!(planner.total_budget, 190_000);
-        assert!(planner.rag_budget > planner.recent_history_budget); // Pro favors RAG
+        assert!(planner.total_rag_budget() > planner.recent_history_budget); // Pro favors RAG
     }
 
     #[test]

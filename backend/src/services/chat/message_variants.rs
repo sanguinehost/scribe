@@ -349,10 +349,10 @@ pub async fn create_message_variant(
         content: current_content,
         parts: updated_message
             .parts
-            .unwrap_or_else(|| serde_json::json!([]).into()),
+            .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
         attachments: updated_message
             .attachments
-            .unwrap_or_else(|| serde_json::json!([]).into()),
+            .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant creation
         prompt_tokens: updated_message.prompt_tokens,
@@ -712,7 +712,7 @@ pub async fn select_message_variant(
 
             // Update chat_sessions game_state if variant has one
             if let Some(gs) = variant_game_state_clone {
-                let gs_db: crate::db::DbJson = gs.into();
+                let gs_db: crate::db::DbJson = crate::db::Json(gs);
                 diesel::update(chat_sessions::table)
                     .filter(chat_sessions::id.eq(msg.session_id))
                     .set(chat_sessions::game_state.eq(gs_db))
@@ -740,10 +740,10 @@ pub async fn select_message_variant(
         content: variant_content, // Use the selected variant's content
         parts: updated_message
             .parts
-            .unwrap_or_else(|| serde_json::json!([]).into()),
+            .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
         attachments: updated_message
             .attachments
-            .unwrap_or_else(|| serde_json::json!([]).into()),
+            .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: variant_raw_prompt, // Use variant's raw_prompt!
         prompt_tokens: variant_prompt_tokens, // Use variant's token counts!

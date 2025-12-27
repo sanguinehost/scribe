@@ -531,6 +531,14 @@ pub struct PromptBuildParams<'a> {
     /// Game state for Game Master mode scene card injection
     /// When present, formats as `<scene_context>` XML block in the system prompt
     pub game_state: Option<&'a crate::models::game_state::GameState>,
+    // RAG Limits
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
+    // Session-specific context limits (overrides config if present)
+    pub context_total_token_limit: Option<usize>,
+    pub recent_history_token_budget: Option<usize>,
+    pub rag_token_budget: Option<usize>,
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -815,8 +823,22 @@ async fn perform_initial_token_calculation(
     .await?;
 
     // 3. Calculate tokens for RAG items and recent history
-    let (rag_items_with_tokens, recent_history_with_tokens) =
-        calculate_content_tokens(rag_items, recent_history, token_counter, model_name).await?;
+    let mut processed_rag_items = params.rag_items.clone();
+
+    // Step 1: Deduplicate RAG items
+    processed_rag_items = deduplicate_rag_items(processed_rag_items);
+
+    // Step 2: Filter out chat chunks already in recent history
+    processed_rag_items =
+        filter_rag_items_already_in_history(processed_rag_items, &params.recent_history);
+
+    let (rag_items_with_tokens, recent_history_with_tokens) = calculate_content_tokens(
+        &processed_rag_items,
+        &params.recent_history,
+        &params.token_counter,
+        &params.model_name,
+    )
+    .await?;
 
     Ok(TokenCalculation {
         meta_system_prompt_tokens,
@@ -830,6 +852,76 @@ async fn perform_initial_token_calculation(
         rag_items_with_tokens,
         recent_history_with_tokens,
     })
+}
+
+/// Deduplicates RAG items based on their unique identifiers
+fn deduplicate_rag_items(items: Vec<RetrievedChunk>) -> Vec<RetrievedChunk> {
+    let mut seen = std::collections::HashSet::new();
+    items
+        .into_iter()
+        .filter(|item| {
+            let id = match &item.metadata {
+                crate::services::embeddings::RetrievedMetadata::Chat(meta) => {
+                    format!("chat:{}", meta.message_id)
+                }
+                crate::services::embeddings::RetrievedMetadata::Lorebook(meta) => {
+                    // Use entry_id + first 100 chars of text to distinguish chunks of the same entry
+                    let text_snippet = item.text.chars().take(100).collect::<String>();
+                    format!(
+                        "lorebook:{}:{}",
+                        meta.original_lorebook_entry_id, text_snippet
+                    )
+                }
+                crate::services::embeddings::RetrievedMetadata::Chronicle(meta) => {
+                    format!("chronicle:{}", meta.event_id)
+                }
+            };
+            seen.insert(id)
+        })
+        .collect()
+}
+
+/// Filters out RAG items of type Chat if their content is already present in recent history
+fn filter_rag_items_already_in_history(
+    rag_items: Vec<RetrievedChunk>,
+    recent_history: &[GenAiChatMessage],
+) -> Vec<RetrievedChunk> {
+    let mut history_texts = std::collections::HashSet::new();
+
+    for msg in recent_history {
+        if let Some(text) = msg.content.first_text() {
+            history_texts.insert(text.trim().to_string());
+        } else {
+            for part in msg.content.parts() {
+                if let Part::Text(t) = part {
+                    history_texts.insert(t.trim().to_string());
+                }
+            }
+        }
+    }
+
+    rag_items
+        .into_iter()
+        .filter(|item| {
+            if let crate::services::embeddings::RetrievedMetadata::Chat(_) = &item.metadata {
+                // If the RAG chunk text is exactly in history, skip it
+                // Also check if it's a substring of any history message (since chunks are parts of messages)
+                let item_text = item.text.trim();
+                if history_texts.contains(item_text) {
+                    return false;
+                }
+                // More expensive check: is this chunk a substring of any history message?
+                for h_text in &history_texts {
+                    if h_text.contains(item_text) {
+                        return false;
+                    }
+                }
+                true
+            } else {
+                true
+            }
+        })
+        .collect()
 }
 
 /// Calculates the total token count for all components
@@ -884,23 +976,56 @@ fn log_initial_token_calculation(
 pub(crate) fn truncate_rag_context(
     calculation: &mut TokenCalculation,
     current_total_tokens: &mut usize,
-    max_allowed_tokens: usize,
+    max_allowed_total_tokens: usize,
+    rag_chronicles_limit: Option<i32>,
+    rag_lorebooks_limit: Option<i32>,
+    rag_older_chat_limit: Option<i32>,
 ) {
-    if *current_total_tokens <= max_allowed_tokens {
-        return;
+    // 1. Apply granular limits first
+    let mut chronicle_tokens = 0;
+    let mut lorebook_tokens = 0;
+    let mut chat_tokens = 0;
+
+    let mut items_to_keep = Vec::new();
+
+    for (item, tokens) in calculation.rag_items_with_tokens.drain(..) {
+        let limit = match &item.metadata {
+            crate::services::embeddings::RetrievedMetadata::Chronicle(_) => rag_chronicles_limit,
+            crate::services::embeddings::RetrievedMetadata::Lorebook(_) => rag_lorebooks_limit,
+            crate::services::embeddings::RetrievedMetadata::Chat(_) => rag_older_chat_limit,
+        };
+
+        let current_cat_tokens = match &item.metadata {
+            crate::services::embeddings::RetrievedMetadata::Chronicle(_) => &mut chronicle_tokens,
+            crate::services::embeddings::RetrievedMetadata::Lorebook(_) => &mut lorebook_tokens,
+            crate::services::embeddings::RetrievedMetadata::Chat(_) => &mut chat_tokens,
+        };
+
+        if let Some(l) = limit {
+            if *current_cat_tokens + tokens > l as usize {
+                *current_total_tokens -= tokens;
+                continue;
+            }
+        }
+
+        *current_cat_tokens += tokens;
+        items_to_keep.push((item, tokens));
     }
 
-    debug!("Attempting to reduce tokens by truncating RAG context.");
-    while !calculation.rag_items_with_tokens.is_empty()
-        && *current_total_tokens > max_allowed_tokens
+    calculation.rag_items_with_tokens = items_to_keep;
+
+    // 2. If still over total limit, truncate from the end (lowest scores)
+    while *current_total_tokens > max_allowed_total_tokens
+        && !calculation.rag_items_with_tokens.is_empty()
     {
         if let Some((_, tokens)) = calculation.rag_items_with_tokens.pop() {
             *current_total_tokens -= tokens;
         }
     }
+
     debug!(
         current_total_tokens = *current_total_tokens,
-        max_allowed_tokens, "RAG context truncated."
+        max_allowed_total_tokens, "RAG context truncated."
     );
 }
 
@@ -1048,9 +1173,26 @@ fn enforce_hard_token_limit(
 pub(crate) fn apply_token_limits(
     mut calculation: TokenCalculation,
     config: &Arc<Config>,
+    rag_chronicles_limit: Option<i32>,
+    rag_lorebooks_limit: Option<i32>,
+    rag_older_chat_limit: Option<i32>,
+    context_total_token_limit: Option<usize>,
+    recent_history_token_budget: Option<usize>,
+    rag_token_budget: Option<usize>,
 ) -> Result<TokenCalculation, AppError> {
     let mut current_total_tokens = calculate_total_tokens(&calculation);
-    let max_allowed_tokens = config.context_total_token_limit;
+    let max_allowed_tokens = context_total_token_limit.unwrap_or(config.context_total_token_limit);
+    let recent_history_budget =
+        recent_history_token_budget.unwrap_or(config.context_recent_history_token_budget);
+    let rag_budget = rag_token_budget.unwrap_or(config.context_rag_token_budget);
+
+    debug!(
+        current_total_tokens,
+        max_allowed_tokens,
+        recent_history_token_budget = recent_history_budget,
+        rag_token_budget = rag_budget,
+        "Applying token limits in prompt_builder"
+    );
 
     log_initial_token_calculation(&calculation, current_total_tokens, max_allowed_tokens);
 
@@ -1059,6 +1201,9 @@ pub(crate) fn apply_token_limits(
         &mut calculation,
         &mut current_total_tokens,
         max_allowed_tokens,
+        rag_chronicles_limit,
+        rag_lorebooks_limit,
+        rag_older_chat_limit,
     );
 
     // Step 2: If still over limit, apply strategic middle-out truncation to history
@@ -1510,7 +1655,7 @@ async fn build_final_prompt_strings(
     // Use render_with_style to inject narrative style variables into the template
     let final_system_prompt = TEMPLATE_MANAGER.read().unwrap().render_with_style(
         template_id,
-        template_context.into(),
+        crate::db::Json(template_context),
         narrative_style.cloned(),
     )?;
 
@@ -1551,11 +1696,33 @@ async fn build_final_prompt_strings(
 pub async fn build_final_llm_prompt(
     params: PromptBuildParams<'_>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+    debug!(
+        max_allowed_total_tokens = params
+            .context_total_token_limit
+            .unwrap_or(params.config.context_total_token_limit),
+        recent_history_token_budget = params
+            .recent_history_token_budget
+            .unwrap_or(params.config.context_recent_history_token_budget),
+        rag_token_budget = params
+            .rag_token_budget
+            .unwrap_or(params.config.context_rag_token_budget),
+        "Starting build_final_llm_prompt"
+    );
+
     // Perform initial token calculations for all components
     let mut calculation = perform_initial_token_calculation(&params).await?;
 
     // Apply token limits by truncating RAG and history if necessary (with hard enforcement)
-    calculation = apply_token_limits(calculation, &params.config)?;
+    calculation = apply_token_limits(
+        calculation,
+        &params.config,
+        params.rag_chronicles_limit,
+        params.rag_lorebooks_limit,
+        params.rag_older_chat_limit,
+        params.context_total_token_limit,
+        params.recent_history_token_budget,
+        params.rag_token_budget,
+    )?;
 
     // Build final prompt strings
     let (final_system_prompt, final_message_list) = build_final_prompt_strings(
@@ -1871,7 +2038,7 @@ mod tests {
             // Verify tail preservation: the last messages should be preserved
             let preserved_messages = &calculation.recent_history_with_tokens;
             for (i, (message, _)) in preserved_messages.iter().enumerate() {
-                if let MessageContent::from(content) = &message.content {
+                if let Some(content) = message.content.first_text() {
                     // The remaining messages should be the later ones (some from middle + tail)
                     // Due to middle-out truncation, we can't predict exact indices, but we know
                     // the last 4 should definitely be preserved
@@ -2006,7 +2173,7 @@ mod tests {
             let tail_start = preserved_messages.len() - min_tail;
 
             for (i, (message, _)) in preserved_messages[tail_start..].iter().enumerate() {
-                if let MessageContent::from(content) = &message.content {
+                if let Some(content) = message.content.first_text() {
                     // These should be messages 5, 6, 7 (the tail)
                     let expected_index = 8 - min_tail + i;
                     assert!(content.contains(&format!("Message {}", expected_index)));
@@ -2040,7 +2207,8 @@ mod tests {
             let config_arc = Arc::new(config);
 
             // This should return an error due to hard limit enforcement
-            let result = apply_token_limits(calculation, &config_arc);
+            let result =
+                apply_token_limits(calculation, &config_arc, None, None, None, None, None, None);
 
             assert!(
                 result.is_err(),
@@ -2099,7 +2267,14 @@ mod tests {
             let max_allowed = 12_000;
 
             // First truncate RAG (should remove all 6000 tokens of RAG)
-            truncate_rag_context(&mut calculation, &mut current_total, max_allowed);
+            truncate_rag_context(
+                &mut calculation,
+                &mut current_total,
+                max_allowed,
+                None,
+                None,
+                None,
+            );
 
             // After RAG truncation: 17,500 - 6,000 = 11,500 tokens (under limit)
             assert_eq!(calculation.rag_items_with_tokens.len(), 0);
@@ -2202,7 +2377,7 @@ mod tests {
         state.location = Some(Location {
             id: "tavern_001".to_string(),
             name: "The Rusty Anchor".to_string(),
-            description: Some("A cozy tavern".to_string()),
+            description: Some(serde_json::Value::String("A cozy tavern".to_string())),
             region: Some("Port District".to_string()),
             tags: vec!["indoors".to_string(), "safe".to_string()],
         });
@@ -2224,8 +2399,14 @@ mod tests {
         state.game_time = Some(GameTime {
             day: 5,
             hour: 14,
+            minute: 0,
+            second: 0,
             period: "afternoon".to_string(),
             season: Some("autumn".to_string()),
+            total_seconds_elapsed: 0,
+            calendar_system: "Earth".to_string(),
+            date: "2024-01-01".to_string(),
+            weekday: None,
         });
 
         let xml = super::build_scene_context_xml(&state);
@@ -2340,7 +2521,9 @@ mod tests {
         state.location = Some(Location {
             id: "test".to_string(),
             name: "Tom & Jerry's <Tavern>".to_string(),
-            description: Some("A \"special\" place with 'quotes'".to_string()),
+            description: Some(serde_json::Value::String(
+                "A \"special\" place with 'quotes'".to_string(),
+            )),
             region: None,
             tags: vec![],
         });
@@ -2369,8 +2552,14 @@ mod tests {
         state.game_time = Some(GameTime {
             day: 10,
             hour: 23,
+            minute: 0,
+            second: 0,
             period: "night".to_string(),
             season: Some("winter".to_string()),
+            total_seconds_elapsed: 0,
+            calendar_system: "Earth".to_string(),
+            date: "2025-01-10".to_string(),
+            weekday: None,
         });
         state.npcs.insert(
             "goblin_01".to_string(),
@@ -2453,14 +2642,14 @@ mod scene_context_tests {
         state.game_time = Some(GameTime {
             day: 5,
             hour: 14,
+            minute: 0,
+            second: 0,
             period: "afternoon".to_string(),
+            season: Some("autumn".to_string()),
+            total_seconds_elapsed: 0,
             calendar_system: "Earth".to_string(),
             date: "2025-01-05".to_string(),
             weekday: None,
-            minute: 0,
-            second: 0,
-            season: Some("autumn".to_string()),
-            total_seconds_elapsed: 0,
         });
 
         let xml = super::build_scene_context_xml(&state);
@@ -2593,14 +2782,14 @@ mod scene_context_tests {
         state.game_time = Some(GameTime {
             day: 10,
             hour: 23,
+            minute: 0,
+            second: 0,
             period: "night".to_string(),
+            season: Some("winter".to_string()),
+            total_seconds_elapsed: 0,
             calendar_system: "Earth".to_string(),
             date: "2025-01-10".to_string(),
             weekday: None,
-            minute: 0,
-            second: 0,
-            season: Some("winter".to_string()),
-            total_seconds_elapsed: 0,
         });
         state.npcs.insert(
             "goblin_01".to_string(),

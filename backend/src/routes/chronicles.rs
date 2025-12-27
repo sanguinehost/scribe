@@ -334,8 +334,7 @@ async fn create_event(
     // Also decrypt keywords if encrypted
     if event.has_encrypted_keywords() {
         let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-        event.keywords =
-            OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
+        event.keywords = crate::db::DbStringArray::from_strings(decrypted_keywords);
     }
 
     info!("Successfully created event {}", event.id);
@@ -375,8 +374,7 @@ async fn list_events(
         // Also decrypt keywords if encrypted
         if event.has_encrypted_keywords() {
             let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-            event.keywords =
-                OptionalStringArray(Some(decrypted_keywords.into_iter().map(Some).collect()));
+            event.keywords = crate::db::DbStringArray::from_strings(decrypted_keywords);
         }
     }
 
