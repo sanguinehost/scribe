@@ -40,9 +40,10 @@ tarpaulin-report.json
 /temp
 /reports
 
-# Claude stuff
+# AI stuff
 .claude
 CLAUDE.md
+GEMINI.md
 
 # AI Assistant configuration
 .serena/

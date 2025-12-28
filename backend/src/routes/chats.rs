@@ -844,6 +844,7 @@ async fn get_default_variant_content(
 
 /// Helper function to decrypt and transform messages for client response with variant support
 async fn process_messages_for_response(
+    state: Arc<AppState>,
     messages_db: Vec<Message>,
     dek: &crate::auth::session_dek::SessionDek,
     pool: DbPool,
@@ -927,6 +928,16 @@ async fn process_messages_for_response(
             _ => None,
         };
 
+        // Robust variant count check: if DB says 0, check the actual table count
+        let actual_variant_count = if msg_db.variant_count > 0 {
+            msg_db.variant_count
+        } else {
+            // Fallback: check DB count directly (ignoring user_id filter as per previous fix)
+            chat::message_variants::get_variant_count(state.clone(), msg_db.id, user_id)
+                .await
+                .unwrap_or(0) as i32
+        };
+
         let message_response = MessageResponse {
             id: msg_db.id,
             session_id: msg_db.session_id,
@@ -953,11 +964,48 @@ async fn process_messages_for_response(
             model_name: Some(msg_db.model_name),
             status: msg_db.status,
             error_message: msg_db.error_message,
-            variant_count: msg_db.variant_count,
+            variant_count: actual_variant_count,
             current_variant_index: msg_db.current_variant_index,
-            is_variant: msg_db.variant_count > 0, // True if this message has variants
+            is_variant: false, // This is a parent message, not a variant itself
             parent_message_id: None,              // TODO: Add parent_message_id to Message struct
-            variants: None,                       // TODO: Load actual variants
+            variants: if actual_variant_count > 0 || msg_db.current_variant_index > 0 {
+                tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})", 
+                    msg_db.id, msg_db.variant_count, actual_variant_count, msg_db.current_variant_index);
+                
+                match chat::message_variants::get_message_variants(
+                    state.clone(),
+                    msg_db.id,
+                    user_id,
+                    &dek.0,
+                )
+                .await
+                {
+                    Ok(variants) => {
+                        tracing::info!("✅ Fetched {} variants for message {}", variants.len(), msg_db.id);
+                        Some(
+                            variants
+                                .into_iter()
+                                .map(|v| {
+                                    let mut resp = crate::models::chats::MessageVariantResponse::from(v);
+                                    resp.content = crate::prompt_builder::replace_template_variables(
+                                        &resp.content,
+                                        character_name,
+                                        user_persona_name,
+                                    );
+                                    resp
+                                })
+                                .collect(),
+                        )
+                    }
+                    Err(e) => {
+                        warn!("Failed to load variants for message {}: {}", msg_db.id, e);
+                        None
+                    }
+                }
+            } else {
+                tracing::info!("ℹ️ No variants to fetch for message {} (count: 0)", msg_db.id);
+                None
+            },
             game_state,
         };
 
@@ -1072,6 +1120,7 @@ pub async fn get_messages_by_chat_id_handler(
 
     // Decrypt and transform messages for response with variant support + template substitution
     let mut responses = process_messages_for_response(
+        Arc::new(state.clone()),
         messages_db,
         &dek,
         state.pool.clone(),

@@ -15,8 +15,6 @@
 		message,
 		_readonly,
 		loading,
-		alternateGreetings = [],
-		currentGreetingIndex = 0,
 		character = null,
 		_user = undefined,
 		substituteTemplateVariables = undefined,
@@ -25,8 +23,6 @@
 		message: ScribeChatMessage;
 		_readonly: boolean;
 		loading: boolean;
-		alternateGreetings?: string[];
-		currentGreetingIndex?: number;
 		character?: CharacterDataForClient | null; // Use CharacterDataForClient
 		_user?: User | undefined; // Use User type
 		substituteTemplateVariables?: (text: string, characterName: string) => string;
@@ -35,46 +31,46 @@
 
 	const dispatch = createEventDispatcher();
 
-	// Filter out null/empty greetings and combine with first_mes
-	// Use character.first_mes as the source of truth for the primary greeting
-	// This ensures the list doesn't change when we switch greetings (which updates message.content)
-	const availableGreetings = $derived(
-		[
-			character?.first_mes || message.content, // Stable primary greeting
-			...(alternateGreetings || [])
-		].filter(Boolean)
-	);
+	// Use message.variants as the source of truth for greetings
+	// If variants are missing, fallback to the message content itself
+	const availableGreetings = $derived.by(() => {
+		const variants = message.variants ? [...message.variants] : [];
+		if (variants.length === 0) {
+			return [message.content || ''];
+		}
+		return variants.map((v) => v.content || '');
+	});
 
+	const currentGreetingIndex = $derived(message.current_variant_index ?? 0);
 	const hasMultipleGreetings = $derived(availableGreetings.length > 1);
 	const canGoPrevious = $derived(currentGreetingIndex > 0);
 	const canGoNext = $derived(currentGreetingIndex < availableGreetings.length - 1);
 
+	$effect(() => {
+		console.log('FirstMessage Debug:', {
+			messageId: message.id,
+			variants: message.variants,
+			availableGreetings,
+			currentGreetingIndex,
+			hasMultipleGreetings,
+			canGoPrevious,
+			canGoNext
+		});
+	});
+
 	// Apply template substitution to the current greeting
-	// Use $state + $effect pattern instead of $derived.by to avoid circular reactivity loops
-	// during component unmount when substituteTemplateVariables accesses reactive state
+	// Note: The backend already applies template substitution to variants,
+	// but we apply it here too for consistency and in case of local updates.
 	let currentGreeting = $state(message.content);
 
 	$effect(() => {
-		const rawGreeting = availableGreetings[currentGreetingIndex] || message.content;
+		const rawGreeting = availableGreetings[currentGreetingIndex] || message.content || '';
 
-		console.log(
-			'🎭 first-message: Computing currentGreeting with userPersonaName =',
-			userPersonaName
-		);
-		console.log('🎭 Raw greeting length:', rawGreeting?.length || 0);
-
-		// Use untrack() to prevent circular reactivity loops during unmount
-		// The substituteTemplateVariables function accesses userPersonaName via closure naturally
-		untrack(() => {
-			if (substituteTemplateVariables && character?.name) {
-				const result = substituteTemplateVariables(rawGreeting, character.name);
-				console.log('🎭 After substitution, greeting length:', result?.length || 0);
-				currentGreeting = result;
-			} else {
-				console.log('🎭 No substitution (missing substituteTemplateVariables or character.name)');
-				currentGreeting = rawGreeting;
-			}
-		});
+		if (substituteTemplateVariables && character?.name) {
+			currentGreeting = substituteTemplateVariables(rawGreeting, character.name);
+		} else {
+			currentGreeting = rawGreeting;
+		}
 	});
 
 	function handlePreviousGreeting() {
@@ -82,7 +78,8 @@
 			const newIndex = currentGreetingIndex - 1;
 			dispatch('greetingChanged', {
 				index: newIndex,
-				content: availableGreetings[newIndex]
+				content: availableGreetings[newIndex],
+				messageId: message.id
 			});
 		}
 	}
@@ -92,7 +89,8 @@
 			const newIndex = currentGreetingIndex + 1;
 			dispatch('greetingChanged', {
 				index: newIndex,
-				content: availableGreetings[newIndex]
+				content: availableGreetings[newIndex],
+				messageId: message.id
 			});
 		}
 	}
@@ -105,7 +103,7 @@
 >
 	<div class="flex w-full gap-4">
 		<div
-			class="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border"
+			class="bg-background ring-border flex size-8 shrink-0 items-center justify-center rounded-full ring-1"
 		>
 			<div class="translate-y-px">
 				<SparklesIcon size={14} />
@@ -116,31 +114,27 @@
 			<!-- Message content -->
 			<div
 				class={_cn(
-					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2'
+					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 bg-background w-full max-w-none break-words rounded-md border px-3 py-2'
 				)}
 			>
-				{#key `${message.id}-greeting-${currentGreetingIndex}-${userPersonaName}`}
+				{#key currentGreeting}
 					<Markdown md={currentGreeting} />
 				{/key}
 				{#if loading}
-					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
+					<span class="bg-foreground ml-1 inline-block h-4 w-0.5 animate-pulse"></span>
 				{/if}
 			</div>
 
 			<!-- Greeting indicator and navigation controls when multiple are available -->
 			{#if hasMultipleGreetings}
-				<div class="flex items-center gap-1 text-xs text-muted-foreground">
-					{#if currentGreetingIndex === 0}
-						Primary greeting
-					{:else}
-						Alternate greeting {currentGreetingIndex}
-					{/if}
+				<div class="text-muted-foreground flex items-center gap-1 text-xs">
+					Greeting {currentGreetingIndex + 1}
 					<Tooltip>
 						<TooltipTrigger>
 							<ButtonComponent
 								variant="ghost"
 								size="icon"
-								class="h-6 w-6 text-foreground"
+								class="text-foreground h-6 w-6"
 								onclick={handlePreviousGreeting}
 								disabled={!canGoPrevious}
 							>
@@ -152,7 +146,7 @@
 						</TooltipContent>
 					</Tooltip>
 
-					<span class="px-1 text-xs text-muted-foreground">
+					<span class="text-muted-foreground px-1 text-xs">
 						{currentGreetingIndex + 1}/{availableGreetings.length}
 					</span>
 
@@ -161,7 +155,7 @@
 							<ButtonComponent
 								variant="ghost"
 								size="icon"
-								class="h-6 w-6 text-foreground"
+								class="text-foreground h-6 w-6"
 								onclick={handleNextGreeting}
 								disabled={!canGoNext}
 							>

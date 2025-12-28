@@ -25,58 +25,37 @@
 
 	let rememberChoice = $state(false);
 
-	// DIAGNOSTIC: Track open state changes
-	$effect(() => {
-		console.log('[ChronicleDialog] $effect: open state changed to:', open);
-	});
-
 	// Handle dialog open state changes from bits-ui Dialog.Root
 	function handleDialogOpenChange(newOpen: boolean) {
-		console.log('[ChronicleDialog] handleDialogOpenChange CALLED', {
-			newOpen,
-			oldOpen: open,
-			rememberChoice
-		});
 		open = newOpen; // Sync via $bindable two-way binding
-		// Also notify parent explicitly (for Tauri compatibility where $bindable may not sync properly)
 		onOpenChange?.(newOpen);
-		// Reset checkbox when dialog closes (via any method: X button, Escape, or our buttons)
+
 		if (!newOpen) {
 			rememberChoice = false;
 		}
-		console.log('[ChronicleDialog] handleDialogOpenChange COMPLETE, open:', open);
 	}
 
 	function handleEnable() {
-		console.log('[ChronicleDialog] handleEnable CALLED', {
-			rememberChoice,
-			openStateBefore: open
-		});
-		// CRITICAL: Close dialog directly FIRST (before parent callback)
-		// This ensures it closes in Tauri WebView where $bindable() across portals may not work properly
-		console.log('[ChronicleDialog] Setting open = false...');
-		open = false;
-		console.log('[ChronicleDialog] open is now:', open);
-		onConfirm(true, rememberChoice);
-		console.log('[ChronicleDialog] Dialog closed and onConfirm(true) executed, open =', open);
+		// Close dialog first via local state update
+		handleDialogOpenChange(false);
+		// Then trigger callback
+		// Use setTimeout to allow UI to update first
+		setTimeout(() => {
+			onConfirm(true, rememberChoice);
+		}, 0);
 	}
 
 	function handleSkip() {
-		console.log('[ChronicleDialog] handleSkip CALLED', {
-			rememberChoice,
-			openStateBefore: open
-		});
-		// CRITICAL: Close dialog directly FIRST (before parent callback)
-		// This ensures it closes in Tauri WebView where $bindable() across portals may not work properly
-		console.log('[ChronicleDialog] Setting open = false...');
-		open = false;
-		console.log('[ChronicleDialog] open is now:', open);
-		onConfirm(false, rememberChoice);
-		console.log('[ChronicleDialog] Dialog closed and onConfirm(false) executed, open =', open);
+		// Close dialog first via local state update
+		handleDialogOpenChange(false);
+		// Then trigger callback
+		setTimeout(() => {
+			onConfirm(false, rememberChoice);
+		}, 0);
 	}
 </script>
 
-<Dialog {open} onOpenChange={handleDialogOpenChange}>
+<Dialog bind:open onOpenChange={handleDialogOpenChange}>
 	<DialogContent class="sm:max-w-[500px]">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
@@ -91,31 +70,31 @@
 
 				<div class="space-y-2 pt-2">
 					<h4 class="text-sm font-medium">Benefits of Chronicles:</h4>
-					<ul class="space-y-2 text-sm text-muted-foreground">
+					<ul class="text-muted-foreground space-y-2 text-sm">
 						<li class="flex items-start gap-2">
-							<BookOpen class="mt-0.5 h-4 w-4 text-primary" />
+							<BookOpen class="text-primary mt-0.5 h-4 w-4" />
 							<span>Automatic story tracking and event extraction</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Search class="mt-0.5 h-4 w-4 text-primary" />
+							<Search class="text-primary mt-0.5 h-4 w-4" />
 							<span>Smart context search across all your sessions</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Sparkles class="mt-0.5 h-4 w-4 text-primary" />
+							<Sparkles class="text-primary mt-0.5 h-4 w-4" />
 							<span>Optional AI agent for automatic context enrichment</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Sparkles class="mt-0.5 h-4 w-4 text-primary" />
+							<Sparkles class="text-primary mt-0.5 h-4 w-4" />
 							<span>Character and world evolution tracking</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Clock class="mt-0.5 h-4 w-4 text-primary" />
+							<Clock class="text-primary mt-0.5 h-4 w-4" />
 							<span>Timeline of significant narrative events</span>
 						</li>
 					</ul>
 				</div>
 
-				<div class="rounded-lg bg-muted/50 p-3 text-sm">
+				<div class="bg-muted/50 rounded-lg p-3 text-sm">
 					<p class="mb-1 font-medium">Recommended for:</p>
 					<p class="text-muted-foreground">
 						Extended roleplays, ongoing stories, world-building sessions, or any conversation you
@@ -123,7 +102,7 @@
 					</p>
 				</div>
 
-				<p class="text-xs italic text-muted-foreground">
+				<p class="text-muted-foreground text-xs italic">
 					You can always enable chronicles later using the re-chronicle feature in chat settings.
 				</p>
 			</DialogDescription>

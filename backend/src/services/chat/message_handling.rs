@@ -901,101 +901,97 @@ async fn update_cumulative_token_counts(
         "Updating cumulative token counts"
     );
 
-    crate::db::with_conn(pool, move |conn| {
-        // Start a transaction to ensure atomicity
-        conn.transaction::<_, diesel::result::Error, _>(|conn| {
-            // Prepare values for update based on backend
-            #[cfg(feature = "sqlite-backend")]
-            let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = {
-                use bigdecimal::ToPrimitive;
-                let cost_f64 = actual_cost.to_f64().unwrap_or(0.0);
-                (
-                    cost_f64,
-                    modified_cost.to_f64().unwrap_or(0.0),
-                    actual_charge.to_f64().unwrap_or(0.0),
-                    cost_f64 as i32,
+    crate::db::with_conn_immediate(pool, move |conn| {
+        // Prepare values for update based on backend
+        #[cfg(feature = "sqlite-backend")]
+        let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = {
+            use bigdecimal::ToPrimitive;
+            let cost_f64 = actual_cost.to_f64().unwrap_or(0.0);
+            (
+                cost_f64,
+                modified_cost.to_f64().unwrap_or(0.0),
+                actual_charge.to_f64().unwrap_or(0.0),
+                cost_f64 as i32,
+            )
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = (
+            actual_cost.0.clone(),
+            modified_cost.0.clone(),
+            actual_charge.0.clone(),
+            actual_cost.0.clone(),
+        );
+
+        // Update chat session cumulative counts
+        diesel::update(chat_sessions::table.find(session_id))
+            .set((
+                chat_sessions::total_prompt_tokens
+                    .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
+                chat_sessions::total_completion_tokens
+                    .eq(chat_sessions::total_completion_tokens + completion_tokens),
+                chat_sessions::estimated_cost_cents
+                    .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
+                // NEW: Track all four cost values properly
+                chat_sessions::total_actual_cost.eq(diesel::dsl::sql::<
+                    crate::schema::sql_types_unified::DbNumericType,
+                >(
+                    "total_actual_cost + "
                 )
-            };
+                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_cost_val)),
+                chat_sessions::total_modified_cost.eq(diesel::dsl::sql::<
+                    crate::schema::sql_types_unified::DbNumericType,
+                >(
+                    "total_modified_cost + "
+                )
+                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(modified_cost_val)),
+                chat_sessions::total_credit_cost
+                    .eq(chat_sessions::total_credit_cost + credit_cost),
+                chat_sessions::total_actual_charge.eq(diesel::dsl::sql::<
+                    crate::schema::sql_types_unified::DbNumericType,
+                >(
+                    "total_actual_charge + "
+                )
+                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_charge_val)),
+                // Keep total_credits_used for backwards compatibility (uses actual_cost)
+                // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
+                // We use credits_used_delta which is typed correctly for each backend.
+                chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
+                    crate::schema::sql_types_unified::DbCreditType,
+                >(
+                    "total_credits_used + "
+                )
+                .bind::<crate::schema::sql_types_unified::DbCreditType, _>(credits_used_delta)),
+                chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)?;
 
-            #[cfg(feature = "postgres-backend")]
-            let (actual_cost_val, modified_cost_val, actual_charge_val, credits_used_delta) = (
-                actual_cost.0.clone(),
-                modified_cost.0.clone(),
-                actual_charge.0.clone(),
-                actual_cost.0.clone(),
-            );
+        // Update user cumulative counts
+        // Note: PostgreSQL uses i64 (BigInt), SQLite uses i32 (Integer) for DbInt
+        #[cfg(feature = "postgres-backend")]
+        let (prompt_db, completion_db, cost_db) = (
+            prompt_tokens as i32,
+            completion_tokens as i32,
+            estimated_cost_cents as i32,
+        );
+        #[cfg(feature = "sqlite-backend")]
+        let (prompt_db, completion_db, cost_db) = (
+            prompt_tokens,        // Already i32, matches SQLite Integer
+            completion_tokens,    // Already i32, matches SQLite Integer
+            estimated_cost_cents, // Already i32, matches SQLite Integer
+        );
 
-            // Update chat session cumulative counts
-            diesel::update(chat_sessions::table.find(session_id))
-                .set((
-                    chat_sessions::total_prompt_tokens
-                        .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
-                    chat_sessions::total_completion_tokens
-                        .eq(chat_sessions::total_completion_tokens + completion_tokens),
-                    chat_sessions::estimated_cost_cents
-                        .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
-                    // NEW: Track all four cost values properly
-                    chat_sessions::total_actual_cost.eq(diesel::dsl::sql::<
-                        crate::schema::sql_types_unified::DbNumericType,
-                    >(
-                        "total_actual_cost + "
-                    )
-                    .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_cost_val)),
-                    chat_sessions::total_modified_cost.eq(diesel::dsl::sql::<
-                        crate::schema::sql_types_unified::DbNumericType,
-                    >(
-                        "total_modified_cost + "
-                    )
-                    .bind::<crate::schema::sql_types_unified::DbNumericType, _>(modified_cost_val)),
-                    chat_sessions::total_credit_cost
-                        .eq(chat_sessions::total_credit_cost + credit_cost),
-                    chat_sessions::total_actual_charge.eq(diesel::dsl::sql::<
-                        crate::schema::sql_types_unified::DbNumericType,
-                    >(
-                        "total_actual_charge + "
-                    )
-                    .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_charge_val)),
-                    // Keep total_credits_used for backwards compatibility (uses actual_cost)
-                    // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
-                    // We use credits_used_delta which is typed correctly for each backend.
-                    chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
-                        crate::schema::sql_types_unified::DbCreditType,
-                    >(
-                        "total_credits_used + "
-                    )
-                    .bind::<crate::schema::sql_types_unified::DbCreditType, _>(credits_used_delta)),
-                    chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
-                ))
-                .execute(conn)?;
+        diesel::update(users::table.find(user_id))
+            .set((
+                users::total_prompt_tokens.eq(users::total_prompt_tokens + prompt_db),
+                users::total_completion_tokens
+                    .eq(users::total_completion_tokens + completion_db),
+                users::total_token_cost_cents.eq(users::total_token_cost_cents + cost_db),
+                users::token_usage_updated_at.eq(diesel::dsl::now),
+            ))
+            .execute(conn)?;
 
-            // Update user cumulative counts
-            // Note: PostgreSQL uses i64 (BigInt), SQLite uses i32 (Integer) for DbInt
-            #[cfg(feature = "postgres-backend")]
-            let (prompt_db, completion_db, cost_db) = (
-                prompt_tokens as i32,
-                completion_tokens as i32,
-                estimated_cost_cents as i32,
-            );
-            #[cfg(feature = "sqlite-backend")]
-            let (prompt_db, completion_db, cost_db) = (
-                prompt_tokens,        // Already i32, matches SQLite Integer
-                completion_tokens,    // Already i32, matches SQLite Integer
-                estimated_cost_cents, // Already i32, matches SQLite Integer
-            );
-
-            diesel::update(users::table.find(user_id))
-                .set((
-                    users::total_prompt_tokens.eq(users::total_prompt_tokens + prompt_db),
-                    users::total_completion_tokens
-                        .eq(users::total_completion_tokens + completion_db),
-                    users::total_token_cost_cents.eq(users::total_token_cost_cents + cost_db),
-                    users::token_usage_updated_at.eq(diesel::dsl::now),
-                ))
-                .execute(conn)?;
-
-            Ok(())
-        })
-        .map_err(Into::into)
+        Ok(())
     })
     .await
     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;

@@ -44,7 +44,10 @@
 			title: 'New Quest',
 			description: '',
 			status: activeTab === 'active' ? 'active' : 'completed',
-			objectives: []
+			objectives: [],
+			is_main: false,
+			giver: '',
+			rewards: ''
 		};
 		editQuests.push(newQuest);
 	}
@@ -57,7 +60,8 @@
 		if (!editQuests[questIndex].objectives) editQuests[questIndex].objectives = [];
 		editQuests[questIndex].objectives.push({
 			description: 'New Objective',
-			completed: false
+			completed: false,
+			progress: '0'
 		});
 	}
 
@@ -86,9 +90,9 @@
 {/snippet}
 
 {#snippet questCard(quest: Quest)}
-	<div class="rounded-lg border border-border bg-muted/50 p-3">
+	<div class="border-border bg-muted/50 rounded-lg border p-3">
 		<div class="mb-2 flex items-start justify-between gap-2">
-			<h4 class="font-medium text-foreground">{quest.title}</h4>
+			<h4 class="text-foreground font-medium">{quest.title}</h4>
 			<span
 				class="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider {quest.status === 'active'
 					? 'bg-primary/20 text-primary'
@@ -99,7 +103,7 @@
 				{quest.status}
 			</span>
 		</div>
-		<p class="mb-3 text-xs text-muted-foreground">{quest.description}</p>
+		<p class="text-muted-foreground mb-3 text-xs">{quest.description}</p>
 
 		{#if quest.objectives && quest.objectives.length > 0}
 			<div class="space-y-1.5">
@@ -109,7 +113,7 @@
 							<CheckCircle2 class="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
 							<span class="text-muted-foreground line-through">{objective.description}</span>
 						{:else}
-							<Circle class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+							<Circle class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
 							<span class="text-foreground">{objective.description}</span>
 						{/if}
 					</div>
@@ -120,7 +124,7 @@
 {/snippet}
 
 {#snippet editQuestCard(quest: Quest, index: number)}
-	<div class="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+	<div class="border-border bg-muted/30 space-y-3 rounded-lg border p-3">
 		<div class="flex items-center gap-2">
 			<Input
 				bind:value={quest.title}
@@ -129,7 +133,7 @@
 			/>
 			<select
 				bind:value={quest.status}
-				class="h-7 rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+				class="border-input bg-background ring-offset-background focus-visible:ring-ring h-7 rounded-md border px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
 			>
 				<option value="active">Active</option>
 				<option value="completed">Completed</option>
@@ -138,7 +142,7 @@
 			<Button
 				variant="ghost"
 				size="icon"
-				class="h-7 w-7 text-destructive"
+				class="text-destructive h-7 w-7"
 				onclick={() => removeQuest(index)}
 			>
 				<Trash2 class="h-3.5 w-3.5" />
@@ -153,7 +157,7 @@
 
 		<div class="space-y-2">
 			<div class="flex items-center justify-between">
-				<Label class="text-[10px] text-muted-foreground">Objectives</Label>
+				<Label class="text-muted-foreground text-[10px]">Objectives</Label>
 				<Button variant="ghost" size="icon" class="h-5 w-5" onclick={() => addObjective(index)}>
 					<Plus class="h-3 w-3" />
 				</Button>
@@ -165,13 +169,13 @@
 							<input
 								type="checkbox"
 								bind:checked={objective.completed}
-								class="rounded border-border"
+								class="border-border rounded"
 							/>
 							<Input bind:value={objective.description} class="h-6 flex-1 text-xs" />
 							<Button
 								variant="ghost"
 								size="icon"
-								class="h-6 w-6 text-destructive"
+								class="text-destructive h-6 w-6"
 								onclick={() => removeObjective(index, objIndex)}
 							>
 								<Trash2 class="h-3 w-3" />
@@ -189,10 +193,10 @@
 		{#if isEditing}
 			<div class="flex gap-1">
 				<Button variant="ghost" size="icon" class="h-6 w-6" onclick={save} title="Save">
-					<Save class="h-3.5 w-3.5 text-primary" />
+					<Save class="text-primary h-3.5 w-3.5" />
 				</Button>
 				<Button variant="ghost" size="icon" class="h-6 w-6" onclick={cancel} title="Cancel">
-					<X class="h-3.5 w-3.5 text-muted-foreground" />
+					<X class="text-muted-foreground h-3.5 w-3.5" />
 				</Button>
 			</div>
 		{:else}
@@ -203,7 +207,7 @@
 				onclick={startEditing}
 				title="Edit Quests"
 			>
-				<Edit2 class="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+				<Edit2 class="text-muted-foreground hover:text-primary h-3.5 w-3.5" />
 			</Button>
 		{/if}
 	{/if}
@@ -211,7 +215,7 @@
 
 <WidgetBase title="Quests" icon={iconSnippet} action={headerAction}>
 	<!-- Tabs -->
-	<div class="mb-3 flex gap-1 rounded-lg bg-muted p-1">
+	<div class="bg-muted mb-3 flex gap-1 rounded-lg p-1">
 		<button
 			class="flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors {activeTab ===
 			'active'
@@ -256,14 +260,14 @@
 			<!-- VIEW MODE -->
 			{#if activeTab === 'active'}
 				{#if activeQuests.length === 0}
-					<p class="py-4 text-center text-sm italic text-muted-foreground">No active quests</p>
+					<p class="text-muted-foreground py-4 text-center text-sm italic">No active quests</p>
 				{:else}
 					{#each activeQuests as quest (quest.id)}
 						{@render questCard(quest)}
 					{/each}
 				{/if}
 			{:else if completedQuests.length === 0}
-				<p class="py-4 text-center text-sm italic text-muted-foreground">No completed quests</p>
+				<p class="text-muted-foreground py-4 text-center text-sm italic">No completed quests</p>
 			{:else}
 				{#each completedQuests as quest (quest.id)}
 					{@render questCard(quest)}

@@ -45,7 +45,7 @@ pub mod sqlite_types;
 pub mod json_wrapper;
 
 pub use backend_trait::DbBackend;
-pub use pool_helpers::{get_conn, with_conn};
+pub use pool_helpers::{get_conn, with_conn, with_conn_immediate};
 
 // Export SQLite extension traits for compatibility
 #[cfg(feature = "sqlite-backend")]

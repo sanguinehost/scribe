@@ -749,6 +749,7 @@ export interface UpdateChatSessionSettingsRequest {
 	rag_chronicles_limit?: number | null;
 	rag_lorebooks_limit?: number | null;
 	rag_older_chat_limit?: number | null;
+	game_master_mode_enabled?: boolean | null;
 }
 
 export interface ChatSessionSettingsResponse {
@@ -778,7 +779,9 @@ export interface ChatSessionSettingsResponse {
 	rag_lorebooks_limit?: number | null;
 	rag_older_chat_limit?: number | null;
 	agent_mode?: string | null;
+	active_custom_persona_id?: string | null;
 	prompt_template_id?: string | null;
+	game_master_mode_enabled?: boolean | null;
 }
 
 // Types for Global User Settings

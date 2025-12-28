@@ -93,9 +93,6 @@
 	const selectedChronicleStore = SelectedChronicleStore.fromContext();
 	const settingsStore = SettingsStore.fromContext();
 
-	// State for managing alternate greetings
-	let currentGreetingIndex = $state(0);
-
 	// Function to detect if a message is the first message from a character
 	function isFirstMessage(message: ScribeChatMessage, index: number): boolean {
 		// If there are more messages to load above, this isn't the true first message
@@ -118,7 +115,6 @@
 
 	function handleGreetingChanged(_event: CustomEvent) {
 		const { index, content } = _event.detail;
-		currentGreetingIndex = index;
 		onGreetingChanged?.({ index, content });
 	}
 
@@ -487,7 +483,7 @@
 			<!-- Loading indicator for loading more messages -->
 			{#if isLoadingMore && hasMoreMessages}
 				<div class="flex justify-center py-4">
-					<div class="flex items-center gap-2 text-muted-foreground">
+					<div class="text-muted-foreground flex items-center gap-2">
 						<Loader2 class="h-4 w-4 animate-spin" />
 						<span class="text-sm">Loading older messages...</span>
 					</div>
@@ -515,8 +511,6 @@
 						{message}
 						_readonly={readonly}
 						loading={false}
-						alternateGreetings={character.alternate_greetings || undefined}
-						{currentGreetingIndex}
 						on:greetingChanged={handleGreetingChanged}
 						{character}
 						_user={user}

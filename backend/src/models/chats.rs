@@ -2503,6 +2503,21 @@ pub struct MessageVariantResponse {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub game_state: Option<serde_json::Value>,
+}
+
+impl From<MessageVariantDto> for MessageVariantResponse {
+    fn from(dto: MessageVariantDto) -> Self {
+        Self {
+            index: dto.variant_index,
+            content: dto.content,
+            created_at: dto.created_at,
+            prompt_tokens: dto.prompt_tokens,
+            completion_tokens: dto.completion_tokens,
+            model_name: dto.model_name,
+            game_state: dto.game_state,
+        }
+    }
 }
 
 // MessageResponse struct for API responses
@@ -3513,6 +3528,7 @@ pub struct MessageVariantDto {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
+    pub game_state: Option<serde_json::Value>,
 }
 
 impl MessageVariantDto {
@@ -3531,6 +3547,21 @@ impl MessageVariantDto {
             prompt_tokens: variant.prompt_tokens,
             completion_tokens: variant.completion_tokens,
             model_name: variant.model_name,
+            game_state: variant.game_state.map(|gs| gs.0),
         })
+    }
+}
+
+impl From<MessageVariantDto> for MessageVariantResponse {
+    fn from(dto: MessageVariantDto) -> Self {
+        Self {
+            index: dto.variant_index,
+            content: dto.content,
+            created_at: dto.created_at.to_rfc3339(),
+            prompt_tokens: dto.prompt_tokens,
+            completion_tokens: dto.completion_tokens,
+            model_name: dto.model_name,
+            game_state: dto.game_state,
+        }
     }
 }

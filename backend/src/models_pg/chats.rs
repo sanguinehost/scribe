@@ -2747,8 +2747,8 @@ pub struct MessageVariantResponse {
     pub prompt_tokens: Option<i32>,
     pub completion_tokens: Option<i32>,
     pub model_name: Option<String>,
-    pub credits_cost: crate::db::DbDecimal,
-    pub game_state: Option<String>,
+
+    pub game_state: Option<serde_json::Value>,
 }
 
 // MessageResponse struct for API responses
@@ -3819,5 +3819,19 @@ impl MessageVariantDto {
             raw_prompt,
             game_state: variant.game_state,
         })
+    }
+}
+
+impl From<MessageVariantDto> for MessageVariantResponse {
+    fn from(dto: MessageVariantDto) -> Self {
+        Self {
+            index: dto.variant_index,
+            content: dto.content,
+            created_at: dto.created_at,
+            prompt_tokens: dto.prompt_tokens,
+            completion_tokens: dto.completion_tokens,
+            model_name: dto.model_name,
+            game_state: dto.game_state,
+        }
     }
 }

@@ -314,7 +314,7 @@
 
 	// --- Template Substitution ---
 	function substituteTemplateVariables(text: string, characterName: string): string {
-		return controller.substituteTemplateVariables(text, characterName);
+		return controller.substituteTemplateVariables(text, characterName, userPersonaName);
 	}
 	function handleInputSubmit(e: Event) {
 		controller.handleInputSubmit(e);
@@ -330,7 +330,11 @@
 	}
 
 	// Handle greeting changes from alternate greetings
-	async function handleGreetingChanged(detail: { index: number; content: string }) {
+	async function handleGreetingChanged(detail: {
+		index: number;
+		content: string;
+		messageId?: string;
+	}) {
 		controller.handleGreetingChanged(detail);
 	}
 
@@ -369,7 +373,7 @@
 	}
 </script>
 
-<div class="flex h-dvh min-w-0 flex-col bg-background">
+<div class="bg-background flex h-dvh min-w-0 flex-col">
 	<ChatHeader
 		{user}
 		{chat}
@@ -377,9 +381,6 @@
 		onOpenExtractDialog={handleOpenExtractDialog}
 		onToggleGameMasterPanel={handleToggleGameMasterPanel}
 	/>
-	{#key `${controller.messages.length}-${controller.firstMessageVariantIndex}`}
-		<!-- Messages component render key - includes variant index to force re-render -->
-	{/key}
 
 	<Messages
 		{readonly}
@@ -416,11 +417,11 @@
 					controller.fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || controller.isLoadingSuggestions || controller.isLoading}
-				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="border-input bg-background ring-offset-background hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 			>
 				{#if controller.isLoadingSuggestions}
 					<svg
-						class="-ml-1 mr-2 h-4 w-4 animate-spin text-primary"
+						class="text-primary -ml-1 mr-2 h-4 w-4 animate-spin"
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
 						viewBox="0 0 24 24"
@@ -580,7 +581,7 @@
 						{@const completionTokens = chat.total_completion_tokens || 0}
 						{@const totalTokens = promptTokens + completionTokens}
 
-						<div class="mt-2 space-y-1 border-t pt-2 text-xs text-muted-foreground">
+						<div class="text-muted-foreground mt-2 space-y-1 border-t pt-2 text-xs">
 							<!-- Main breakdown -->
 							<div class="flex items-center justify-between">
 								<span class="font-medium">Session Usage:</span>
@@ -623,15 +624,48 @@
 		on:settingsUpdated={(event) => {
 			console.log('Chat settings updated:', event.detail);
 			// Update controller.chat to trigger Svelte 5 reactivity
-			if (controller.chat && event.detail?.game_master_mode_enabled !== undefined) {
+			if (controller.chat) {
 				controller.chat = {
 					...controller.chat,
-					game_master_mode_enabled: event.detail.game_master_mode_enabled
+					// Update all relevant fields that might have changed
+					...event.detail,
+					// Ensure game_master_mode_enabled is explicitly handled if present
+					game_master_mode_enabled:
+						event.detail.game_master_mode_enabled ?? controller.chat.game_master_mode_enabled
 				};
 			}
 		}}
 		on:personaChanged={(event) => {
 			console.log('Persona changed:', event.detail);
+			if (controller.chat) {
+				controller.chat = {
+					...controller.chat,
+					active_custom_persona_id: event.detail.personaId
+				};
+			}
+
+			// Update currentUserPersona to reflect the change immediately
+			if (event.detail.personaId) {
+				const persona = availablePersonas.find((p) => p.id === event.detail.personaId);
+				if (persona) {
+					currentUserPersona = persona;
+				}
+			} else {
+				// Revert to default or username
+				const currentUser = getCurrentUser();
+				if (currentUser?.default_persona_id) {
+					const defaultPersona = availablePersonas.find(
+						(p) => p.id === currentUser.default_persona_id
+					);
+					if (defaultPersona) {
+						currentUserPersona = defaultPersona;
+					} else if (currentUser?.username) {
+						currentUserPersona = { name: currentUser.username } as UserPersona;
+					}
+				} else if (currentUser?.username) {
+					currentUserPersona = { name: currentUser.username } as UserPersona;
+				}
+			}
 		}}
 	/>
 {/if}

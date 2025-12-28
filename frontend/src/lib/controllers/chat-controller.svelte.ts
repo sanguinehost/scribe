@@ -45,8 +45,6 @@ export class ChatController {
 		allMessages?: StreamingMessage[];
 	} | null>(null);
 
-	// Greeting
-	firstMessageVariantIndex = $state(0);
 
 	// Suggested Actions
 	dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
@@ -179,7 +177,8 @@ export class ChatController {
 						// Include regeneration flag for loading indicator
 						isRegenerating: msg.isRegenerating,
 						// Preserve shouldAnimate flag for animation control
-						shouldAnimate: msg.shouldAnimate
+						shouldAnimate: msg.shouldAnimate,
+						variants: msg.variants
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -291,6 +290,7 @@ export class ChatController {
 						current_variant_index: rawMsg.current_variant_index,
 						is_variant: rawMsg.is_variant,
 						parent_message_id: rawMsg.parent_message_id,
+						variants: rawMsg.variants,
 						game_state: rawMsg.game_state
 					})
 				);
@@ -318,6 +318,7 @@ export class ChatController {
 						current_variant_index: msg.current_variant_index,
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
+						variants: msg.variants,
 						contentVersion: 0,
 						game_state: msg.game_state as unknown as Record<string, unknown> | null
 					})
@@ -447,20 +448,6 @@ export class ChatController {
 		// This fixes the bug where navigating away and back shows the previous chat's messages
 		this.activeStreamingService.clearMessages();
 
-		if (typeof window !== 'undefined' && this.chat?.id) {
-			const saved = localStorage.getItem(`greeting-variant-${this.chat.id}`);
-			if (saved) {
-				const variantIndex = parseInt(saved, 10);
-				if (!isNaN(variantIndex)) {
-					console.log(
-						`🎭 Immediately loading saved greeting variant ${variantIndex} for chat ${this.chat.id}`
-					);
-					// We need a way to track this state. I'll add it to the class.
-					this.firstMessageVariantIndex = variantIndex;
-				}
-			}
-		}
-
 		// Logic to populate initial messages
 		if (this.chat?.id) {
 			const initialMessages = this.loadedMessagesBatches[0] || [];
@@ -491,6 +478,7 @@ export class ChatController {
 						current_variant_index: msg.current_variant_index,
 						is_variant: msg.is_variant,
 						parent_message_id: msg.parent_message_id,
+						variants: msg.variants,
 						contentVersion: 0, // Initialize for Svelte 5 reactivity
 						game_state: msg.game_state as unknown as Record<string, unknown> | null
 					})
@@ -791,10 +779,10 @@ export class ChatController {
 		}
 	}
 
-	substituteTemplateVariables(text: string, characterName: string): string {
+	substituteTemplateVariables(text: string, characterName: string, userPersonaName?: string): string {
 		if (!text) return text;
-		const userPersonaName = this.user?.username || 'User'; // Simplified for now
-		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, userPersonaName);
+		const nameToUse = userPersonaName || this.user?.username || 'User';
+		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, nameToUse);
 	}
 
 	handleInputSubmit(e: Event) {
@@ -1249,24 +1237,36 @@ export class ChatController {
 		}
 	}
 
-	async handleGreetingChanged(detail: { index: number; content: string }) {
-		const { content, index } = detail;
-		this.firstMessageVariantIndex = index;
+	async handleGreetingChanged(detail: { index: number; content: string; messageId?: string }) {
+		const { content, index, messageId } = detail;
 
 		if (typeof window !== 'undefined' && this.chat?.id) {
 			localStorage.setItem(`greeting-variant-${this.chat.id}`, index.toString());
 		}
 
-		const firstMessageId = `first-message-${this.chat?.id ?? 'initial'}`;
-		const firstMessage = this.activeStreamingService.messages.find(
-			(msg) => msg.id === firstMessageId
-		);
+		// Find the message to update
+		let targetMessage: StreamingMessage | undefined;
 
-		this.activeStreamingService.messages = (
-			this.activeStreamingService.messages as StreamingMessage[]
-		).map((msg) =>
-			msg.id === firstMessageId
-				? {
+		if (messageId) {
+			targetMessage = this.activeStreamingService.messages.find(
+				(msg) => msg.id === messageId || msg.backend_id === messageId
+			);
+		}
+
+		// Fallback: Find the first assistant message (the greeting)
+		if (!targetMessage) {
+			targetMessage = this.activeStreamingService.messages.find(
+				(msg) => msg.sender === 'assistant'
+			);
+		}
+
+		if (targetMessage) {
+			// Update the message in the streaming service
+			this.activeStreamingService.messages = (
+				this.activeStreamingService.messages as StreamingMessage[]
+			).map((msg) =>
+				msg.id === targetMessage!.id
+					? {
 						...msg,
 						content,
 						displayedContent: content,
@@ -1274,17 +1274,25 @@ export class ChatController {
 						_variantChangedAt: Date.now(),
 						shouldAnimate: false // Don't animate greeting changes
 					}
-				: msg
-		);
+					: msg
+			);
 
-		if (firstMessage?.backend_id) {
-			try {
-				await _apiClient.selectMessageVariant(firstMessage.backend_id, {
-					variant_index: index
-				});
-			} catch (_error) {
-				console.warn('⚠️ Error persisting first message variant selection:', _error);
+			// Persist selection to backend
+			const apiMessageId = targetMessage.backend_id || targetMessage.id;
+			if (apiMessageId) {
+				try {
+					console.log(`💾 Persisting greeting variant ${index} for message ${apiMessageId}`);
+					await _apiClient.selectMessageVariant(apiMessageId, {
+						variant_index: index
+					});
+				} catch (_error) {
+					console.warn('⚠️ Error persisting first message variant selection:', _error);
+				}
+			} else {
+				console.warn('⚠️ Could not persist greeting variant: No backend ID found for message', targetMessage.id);
 			}
+		} else {
+			console.warn('⚠️ Could not find message to update greeting variant');
 		}
 	}
 	async loadAgentMode() {

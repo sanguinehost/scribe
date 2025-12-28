@@ -3432,6 +3432,20 @@ impl MessageVariantDto {
     }
 }
 
+impl From<MessageVariantDto> for MessageVariantResponse {
+    fn from(dto: MessageVariantDto) -> Self {
+        Self {
+            index: dto.variant_index,
+            content: dto.content,
+            created_at: dto.created_at,
+            prompt_tokens: dto.prompt_tokens,
+            completion_tokens: dto.completion_tokens,
+            model_name: dto.model_name,
+            game_state: dto.game_state,
+        }
+    }
+}
+
 /// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)
 #[derive(Queryable, Selectable, Clone, Serialize, Deserialize)]
 #[diesel(table_name = chat_sessions)]

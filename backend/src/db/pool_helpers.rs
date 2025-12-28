@@ -142,6 +142,19 @@ where
         .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {}", e)))?
 }
 
+/// Execute a blocking database operation with an IMMEDIATE connection (SQLite only)
+///
+/// For PostgreSQL, this is an alias for with_conn.
+/// For SQLite, this uses BEGIN IMMEDIATE to prevent "database is locked" errors.
+#[cfg(feature = "postgres-backend")]
+pub async fn with_conn_immediate<F, T>(pool: &DbPool, f: F) -> Result<T, AppError>
+where
+    F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    with_conn(pool, f).await
+}
+
 #[cfg(feature = "sqlite-backend")]
 pub async fn with_conn<F, T>(pool: &DbPool, f: F) -> Result<T, AppError>
 where
@@ -154,6 +167,49 @@ where
             AppError::DatabaseQueryError(format!("Failed to get connection: {}", e))
         })?;
         f(&mut conn)
+    })
+    .await
+    .map_err(|e| AppError::DatabaseQueryError(format!("Task join error: {}", e)))?
+}
+
+/// Execute a blocking database operation with an IMMEDIATE connection (SQLite only)
+///
+/// For SQLite, this uses BEGIN IMMEDIATE to prevent "database is locked" errors.
+#[cfg(feature = "sqlite-backend")]
+pub async fn with_conn_immediate<F, T>(pool: &DbPool, f: F) -> Result<T, AppError>
+where
+    F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
+    T: Send + 'static,
+{
+    let pool = pool.clone();
+    tokio::task::spawn_blocking(move || {
+        use diesel::prelude::*;
+        let mut conn = pool.get().map_err(|e| {
+            AppError::DatabaseQueryError(format!("Failed to get connection: {}", e))
+        })?;
+
+        // Start an IMMEDIATE transaction manually to prevent "database is locked"
+        diesel::sql_query("BEGIN IMMEDIATE")
+            .execute(&mut conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to begin immediate transaction: {}", e))
+            })?;
+
+        let result = f(&mut conn);
+
+        if result.is_ok() {
+            diesel::sql_query("COMMIT").execute(&mut conn).map_err(|e| {
+                AppError::DatabaseQueryError(format!(
+                    "Failed to commit immediate transaction: {}",
+                    e
+                ))
+            })?;
+        } else {
+            // Best effort rollback
+            let _ = diesel::sql_query("ROLLBACK").execute(&mut conn);
+        }
+
+        result
     })
     .await
     .map_err(|e| AppError::DatabaseQueryError(format!("Task join error: {}", e)))?

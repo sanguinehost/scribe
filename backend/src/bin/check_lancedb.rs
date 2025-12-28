@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = LanceDbClient::new(config).await?;
 
     // Retrieve some points
-    let points = client.retrieve_points(None, 100).await?;
+    let points = client.retrieve_points(None, 100, None).await?;
     println!("Retrieved {} points from LanceDB", points.len());
 
     for (i, point) in points.iter().enumerate() {

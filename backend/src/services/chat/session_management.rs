@@ -26,7 +26,15 @@ use crate::{
 use super::message_handling::{save_message, SaveMessageParams};
 
 /// Type alias for session creation result
-type SessionCreationResult = Result<(ChatSessionQuery, Option<Vec<u8>>, Option<Vec<u8>>), AppError>;
+type SessionCreationResult = Result<
+    (
+        ChatSessionQuery,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<String>>,
+    ),
+    AppError,
+>;
 
 /// Type alias for encrypted session data result
 type EncryptedSessionData = ((Vec<u8>, Vec<u8>), (Option<Vec<u8>>, Option<Vec<u8>>));
@@ -902,12 +910,22 @@ fn create_session_in_transaction(
 
     let fully_created_session = fetch_created_session(new_session_id, transaction_conn)?;
 
-    // Extract first message data if character exists
-    let (first_mes, first_mes_nonce) = character_opt
-        .map(|c| (c.first_mes, c.first_mes_nonce))
-        .unwrap_or((None, None));
+    // Extract first message data and alternate greetings if character exists
+    let (first_mes, first_mes_nonce, alternate_greetings) = character_opt
+        .map(|c| {
+            let alt_greetings = c.alternate_greetings.0.clone().map(|v| {
+                v.into_iter().flatten().collect::<Vec<String>>()
+            });
+            (c.first_mes, c.first_mes_nonce, alt_greetings)
+        })
+        .unwrap_or((None, None, None));
 
-    Ok((fully_created_session, first_mes, first_mes_nonce))
+    Ok((
+        fully_created_session,
+        first_mes,
+        first_mes_nonce,
+        alternate_greetings,
+    ))
 }
 
 /// Processes the first message for a newly created session
@@ -916,8 +934,13 @@ async fn process_first_message(
     created_session: &ChatSessionQuery,
     first_mes_ciphertext_opt: Option<Vec<u8>>,
     first_mes_nonce_opt: Option<Vec<u8>>,
+    alternate_greetings: Option<Vec<String>>,
     user_dek_secret_box: Option<Arc<SecretBox<Vec<u8>>>>,
 ) -> Result<(), AppError> {
+    tracing::info!(
+        "process_first_message called. Alternate greetings count: {}",
+        alternate_greetings.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
     if let (Some(first_message_ciphertext), Some(first_message_nonce)) =
         (first_mes_ciphertext_opt, first_mes_nonce_opt)
     {
@@ -934,8 +957,8 @@ async fn process_first_message(
                         ) {
                             Ok(decrypted_first_mes_str) => {
                                 if !decrypted_first_mes_str.trim().is_empty() {
-                                    save_message(SaveMessageParams {
-                                        state,
+                                    let first_message = save_message(SaveMessageParams {
+                                        state: state.clone(),
                                         session_id: created_session.id,
                                         user_id: created_session.user_id,
                                         message_type_enum: MessageRole::Assistant,
@@ -955,6 +978,60 @@ async fn process_first_message(
                                     })
                                     .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
+
+                                    // Save alternate greetings as variants of the first message
+                                    if let Some(alts) = alternate_greetings {
+                                        for alt in alts {
+                                            if !alt.trim().is_empty() {
+                                                save_message(SaveMessageParams {
+                                                    state: state.clone(),
+                                                    session_id: created_session.id,
+                                                    user_id: created_session.user_id,
+                                                    message_type_enum: MessageRole::Assistant,
+                                                    content: &alt,
+                                                    role_str: Some("assistant".to_string()),
+                                                    parts: None,
+                                                    attachments: None,
+                                                    user_dek_secret_box: user_dek_secret_box.clone(),
+                                                    model_name: created_session.model_name.clone(),
+                                                    raw_prompt_debug: None,
+                                                    status: crate::models::chats::MessageStatus::Completed,
+                                                    error_message: None,
+                                                    variant_of: Some(first_message.id), // Create as variant of first message
+                                                    charge_credits: false,
+                                                    credits_cost_override: None,
+                                                    game_time: None,
+                                                })
+                                                .await?;
+                                            }
+                                        }
+                                        info!(session_id = %created_session.id, "Successfully saved alternate greetings as variants");
+
+                                        // Reset current_variant_index to 0 so the chat starts with the default greeting
+                                        let msg_id = first_message.id;
+                                        let user_id = created_session.user_id;
+
+                                        crate::db::with_conn(&state.pool, move |conn| {
+                                            use crate::schema::chat_messages;
+                                            diesel::update(chat_messages::table)
+                                                .filter(chat_messages::id.eq(msg_id))
+                                                .filter(chat_messages::user_id.eq(user_id))
+                                                .set(chat_messages::current_variant_index.eq(0))
+                                                .execute(conn)
+                                                .map_err(|e| {
+                                                    AppError::DatabaseQueryError(format!(
+                                                        "Failed to reset variant index: {e}"
+                                                    ))
+                                                })
+                                        })
+                                        .await?;
+
+                                        info!(
+                                            session_id = %created_session.id,
+                                            message_id = %first_message.id,
+                                            "Reset current_variant_index to 0"
+                                        );
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -1057,33 +1134,38 @@ pub async fn create_session_and_maybe_first_message(
 
     info!(%user_id, "Starting database transaction for session creation");
 
-    let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt) =
-        crate::db::with_conn(&pool, move |conn| {
-            conn.transaction(|transaction_conn| {
-                info!("Inside transaction - calling create_session_in_transaction");
-                create_session_in_transaction(
-                    transaction_conn,
-                    user_id,
-                    character_id,
-                    chat_mode,
-                    active_custom_persona_id,
-                    lorebook_ids_for_closure,
-                    user_dek_for_closure.as_ref(),
-                    default_model_name,
-                    default_history_management_strategy,
-                    default_history_management_limit,
-                )
-            })
+    let (
+        created_session,
+        first_mes_ciphertext_opt,
+        first_mes_nonce_opt,
+        alternate_greetings,
+    ) = crate::db::with_conn(&pool, move |conn| {
+        conn.transaction(|transaction_conn| {
+            info!("Inside transaction - calling create_session_in_transaction");
+            create_session_in_transaction(
+                transaction_conn,
+                user_id,
+                character_id,
+                chat_mode,
+                active_custom_persona_id,
+                lorebook_ids_for_closure,
+                user_dek_for_closure.as_ref(),
+                default_model_name,
+                default_history_management_strategy,
+                default_history_management_limit,
+            )
         })
-        .await
-        .map_err(|e| {
-            error!(%user_id, error = ?e, "Database transaction failed during session creation");
-            e
-        })?;
+    })
+    .await
+    .map_err(|e| {
+        error!(%user_id, error = ?e, "Database transaction failed during session creation");
+        e
+    })?;
 
     info!(
         session_id = %created_session.id,
         has_first_message = first_mes_ciphertext_opt.is_some(),
+        alternate_greetings_count = alternate_greetings.as_ref().map(|v| v.len()).unwrap_or(0),
         "Session created successfully, transaction committed"
     );
 
@@ -1095,6 +1177,7 @@ pub async fn create_session_and_maybe_first_message(
             &created_session,
             first_mes_ciphertext_opt,
             first_mes_nonce_opt,
+            alternate_greetings,
             user_dek_secret_box,
         )
         .await
