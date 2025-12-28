@@ -25,7 +25,6 @@ pub struct CharacterAsset {
 #[diesel(table_name = crate::schema::character_assets)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewCharacterAsset {
-    pub id: Option<i32>,
     pub character_id: crate::db::DbId,
     pub asset_type: String,
     pub uri: Option<String>,
@@ -54,7 +53,6 @@ impl NewCharacterAsset {
         });
 
         Self {
-            id: None,
             character_id,
             asset_type: "avatar".to_string(),
             uri: None, // No longer using file paths

@@ -1130,15 +1130,15 @@ AppError::InternalServerErrorGeneric(format!(
         // 1. Get current user
         let user = get_user_from_session(auth_session)?;
 
-        // 2. Fetch lorebook entry and verify ownership in a single query
+        // 2. Delete lorebook entry and verify ownership in a single query
         crate::db::with_conn(&self.pool, move |conn| {
-            use crate::schema::lorebook_entries::dsl::{id, lorebook_entries, lorebook_id, user_id};
+            use crate::schema::lorebook_entries::dsl;
 
             // First, verify the entry exists and belongs to the user
-            let entry_owner = lorebook_entries
-                .filter(id.eq(entry_id))
-                .filter(lorebook_id.eq(lorebook_id))
-                .select(user_id)
+            let entry_owner = dsl::lorebook_entries
+                .filter(dsl::id.eq(entry_id))
+                .filter(dsl::lorebook_id.eq(lorebook_id))
+                .select(dsl::user_id)
                 .first::<crate::db::DbId>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
@@ -1147,15 +1147,15 @@ AppError::InternalServerErrorGeneric(format!(
                 Some(owner_id) if owner_id == user.id => {
                     // User owns this entry, proceed with deletion
                     diesel::delete(
-                        lorebook_entries
-                            .filter(id.eq(entry_id))
-                            .filter(user_id.eq(user.id)),
+                        dsl::lorebook_entries
+                            .filter(dsl::id.eq(entry_id))
+                            .filter(dsl::user_id.eq(user.id)),
                     )
                     .execute(conn)
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
                     tracing::info!(
-                        "Successfully deleted lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
+                        "Successfully deleted lorebook entry [REDACTED_UUID] from database for user [REDACTED_UUID]"
                     );
                     Ok(())
                 }
@@ -1168,7 +1168,85 @@ AppError::InternalServerErrorGeneric(format!(
                     Err(AppError::NotFound("Lorebook entry not found".to_string()))
                 }
             }
-        }).await
+        }).await?;
+
+        // After successful database deletion, clean up vector embeddings
+        tracing::info!(
+            "Cleaning up vector embeddings for lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
+        );
+
+        let vector_filter = Filter {
+            must: vec![
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "original_lorebook_entry_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(entry_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "user_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(user.id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "source_type".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword("lorebook_entry".to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+            ],
+            ..Default::default()
+        };
+
+        if let Err(e) = self
+            .qdrant_service
+            .delete_points_by_filter(vector_filter)
+            .await
+        {
+            // Log the error but don't fail the entire operation since DB deletion succeeded
+            error!(
+                error = %e,
+                entry_id = %entry_id,
+                user_id = %user.id,
+                "Failed to delete vector embeddings for lorebook entry via filter, but database deletion succeeded"
+            );
+        } else {
+            tracing::info!(
+                "Successfully deleted vector embeddings for lorebook entry {} for user {} via filter",
+                entry_id, user.id
+            );
+        }
+
+        // Fallback: Also try deleting by ID directly.
+        // For lorebook entries, the point ID is typically the same as the entry ID.
+        // This is more robust for LanceDB/Desktop environments.
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(entry_id.to_string())),
+        };
+        if let Err(e) = self.qdrant_service.delete_points(vec![point_id]).await {
+            debug!(
+                error = %e,
+                entry_id = %entry_id,
+                "Direct ID deletion for lorebook entry failed (this is expected if already deleted via filter)"
+            );
+        } else {
+            tracing::info!(
+                "Successfully verified/deleted vector embeddings for lorebook entry {} for user {} via direct ID",
+                entry_id, user.id
+            );
+        }
+
+        Ok(())
     }
 
     /// Create a lorebook entry for narrative intelligence processing

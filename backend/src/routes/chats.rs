@@ -1183,6 +1183,7 @@ pub async fn create_message_handler(
             variant_of: None,
             charge_credits: false, // Manual message creation is not charged
             credits_cost_override: None, // Let save_message calculate from tokens
+            game_time: None,
         },
     )
     .await?;
@@ -1277,6 +1278,7 @@ pub async fn create_message_handler(
         user_id: saved_db_message.user_id,
         role: Some(payload.role.clone()), // From the request payload
         parts: payload.parts.clone(),     // From the request payload
+        game_time: saved_db_message.game_time,
         attachments: payload.attachments.clone(), // From the request payload
         prompt_tokens: saved_db_message.prompt_tokens,
         completion_tokens: saved_db_message.completion_tokens,
@@ -2648,7 +2650,12 @@ async fn get_variant_content_by_index(
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;
-        Ok(Some((content, variant.game_state.map(|j| j.0))))
+        #[cfg(feature = "postgres-backend")]
+        let game_state = variant.game_state;
+        #[cfg(feature = "sqlite-backend")]
+        let game_state = variant.game_state.map(|j| j.0);
+
+        Ok(Some((content, game_state)))
     } else {
         Ok(None)
     }

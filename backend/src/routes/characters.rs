@@ -445,18 +445,12 @@ pub async fn upload_character_base64_handler(
 
     // --- Save the character avatar image to database ---
     // Create character asset record with binary data
-    let mut new_asset = NewCharacterAsset::new_avatar(
+    let new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
         &format!("{}_avatar", inserted_character.name),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
-
-    // For SQLite, generate and set the ID before insertion (SQLite doesn't support RETURNING)
-    #[cfg(feature = "sqlite-backend")]
-    {
-        new_asset.id = Some(crate::db::DbId::new_v4());
-    }
 
     // Save asset record to database
     #[cfg(feature = "postgres-backend")]
@@ -483,9 +477,7 @@ pub async fn upload_character_base64_handler(
     let asset_result: Result<CharacterAsset, AppError> = {
         use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
-        let asset_id = new_asset
-            .id
-            .expect("NewCharacterAsset should have id set before insertion");
+        let asset_id = new_asset.id;
 
         crate::db::with_conn(&state.pool, move |conn_asset_block| {
             diesel::insert_into(character_assets)
@@ -1091,18 +1083,12 @@ pub async fn upload_character_handler(
 
     // --- Save the character avatar image to database ---
     // Create character asset record with binary data
-    let mut new_asset = NewCharacterAsset::new_avatar(
+    let new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
         &format!("{}_avatar", inserted_character.name),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
-
-    // For SQLite, generate and set the ID before insertion (SQLite doesn't support RETURNING)
-    #[cfg(feature = "sqlite-backend")]
-    {
-        new_asset.id = Some(crate::db::DbId::new_v4());
-    }
 
     // Save asset record to database
     #[cfg(feature = "postgres-backend")]
@@ -1129,9 +1115,7 @@ pub async fn upload_character_handler(
     let asset_result: Result<CharacterAsset, AppError> = {
         use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
-        let asset_id = new_asset
-            .id
-            .expect("NewCharacterAsset should have id set before insertion");
+        let asset_id = new_asset.id;
 
         crate::db::with_conn(&state.pool, move |conn_asset_block| {
             diesel::insert_into(character_assets)

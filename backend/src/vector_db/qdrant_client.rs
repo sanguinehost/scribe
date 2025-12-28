@@ -59,6 +59,7 @@ pub trait QdrantClientServiceTrait: Send + Sync {
         &self,
         filter: Option<Filter>,
         limit: u64,
+        offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError>; // Added Retrieve Method
     async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError>;
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError>;
@@ -69,6 +70,8 @@ pub trait QdrantClientServiceTrait: Send + Sync {
     ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
     /// Check if Qdrant service is healthy
     async fn health_check(&self) -> Result<(), AppError>;
+    /// Optimize the collection (e.g., compaction, vacuuming)
+    async fn optimize_collection(&self) -> Result<(), AppError>;
 }
 
 impl QdrantClientService {
@@ -615,9 +618,7 @@ impl QdrantClientService {
                 .await?
         } else if text_query.is_some() {
             // Pure text search using scroll/retrieve
-            let retrieved = self
-                .retrieve_points(combined_filter, limit as usize)
-                .await?;
+            let retrieved = self.retrieve_points(combined_filter, limit, None).await?;
 
             // Convert RetrievedPoint to ScoredPoint
             retrieved
@@ -652,10 +653,12 @@ impl QdrantClientService {
     pub async fn retrieve_points(
         &self,
         filter: Option<Filter>,
-        limit: usize,
+        limit: u64,
+        offset: Option<u64>,
     ) -> Result<Vec<qdrant_client::qdrant::RetrievedPoint>, AppError> {
         info!(
             limit,
+            offset = ?offset,
             filter_is_some = filter.is_some(),
             collection = %self.collection_name,
             "Retrieving points from Qdrant using scroll"
@@ -668,8 +671,8 @@ impl QdrantClientService {
             limit: Some(u32::try_from(limit).unwrap_or(u32::MAX)), // Scroll API uses u32 for limit
             with_payload: Some(true.into()),
             with_vectors: Some(true.into()), // Include vectors (optional)
-            offset: None,                    // Start from the beginning
-            read_consistency: None,          // Correct field name
+            offset: offset.map(|o| o.into()), // Convert u64 to PointId (Qdrant uses PointId for offset in scroll)
+            read_consistency: None,           // Correct field name
             shard_key_selector: None,
             // Add missing fields required by ScrollPoints
             order_by: None,
@@ -869,11 +872,10 @@ impl QdrantClientServiceTrait for QdrantClientService {
         &self,
         filter: Option<Filter>,
         limit: u64,
+        offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Call the implementation method which returns RetrievedPoint
-        let retrieved_points = self
-            .retrieve_points(filter, usize::try_from(limit).unwrap_or(usize::MAX))
-            .await?;
+        let retrieved_points = self.retrieve_points(filter, limit, offset).await?;
 
         // Convert RetrievedPoint to ScoredPoint
         let scored_points = retrieved_points
@@ -984,6 +986,14 @@ impl QdrantClientServiceTrait for QdrantClientService {
         })?;
 
         info!("Qdrant health check successful - can list collections");
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        // Qdrant handles optimization automatically via its optimizer settings,
+        // but we can trigger a manual optimization if needed via update_collection.
+        // For now, we'll just log that it's handled by Qdrant.
+        debug!("QdrantClientService: optimize_collection (handled automatically by Qdrant)");
         Ok(())
     }
 }
@@ -1520,6 +1530,7 @@ impl QdrantClientServiceTrait for NoOpQdrantService {
         &self,
         _filter: Option<Filter>,
         _limit: u64,
+        _offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         tracing::debug!("NoOpQdrantService: retrieve_points (no-op)");
         Ok(vec![])
@@ -1550,6 +1561,11 @@ impl QdrantClientServiceTrait for NoOpQdrantService {
 
     async fn health_check(&self) -> Result<(), AppError> {
         tracing::debug!("NoOpQdrantService: health_check (no-op)");
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: optimize_collection (no-op)");
         Ok(())
     }
 }

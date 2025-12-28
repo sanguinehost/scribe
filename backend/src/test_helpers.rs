@@ -523,6 +523,7 @@ pub enum PipelineCall {
         chronicle_id_for_search: Option<crate::db::DbId>,     // New field for chronicle search
         query_text: String,
         limit: u64,
+        max_game_time_day: Option<i64>,
     },
     ProcessAndEmbedMessage {
         message_id: crate::db::DbId,
@@ -683,6 +684,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         chronicle_id_for_search: Option<crate::db::DbId>,     // New parameter for chronicle search
         query_text: &str,
         limit: u64,
+        max_game_time_day: Option<i64>,
         _session_dek: Option<&crate::auth::SessionDek>, // DEK for decryption
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         // Record the call
@@ -696,6 +698,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 chronicle_id_for_search,
                 query_text: query_text.to_string(), // Corrected order
                 limit,                              // Corrected order
+                max_game_time_day,
             });
 
         // Return the next response from the queue
@@ -1046,6 +1049,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         &self,
         _filter: Option<Filter>,
         _limit: u64,
+        _offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Use the search response for retrieve as well
         let mut queue = self.search_response.lock().unwrap();
@@ -1098,6 +1102,15 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         tracing::info!(
             target: "mock_qdrant_client",
             "MockQdrantClientService::health_check called - returning Ok(())"
+        );
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        // Mock optimization always returns Ok
+        tracing::info!(
+            target: "mock_qdrant_client",
+            "MockQdrantClientService::optimize_collection called - returning Ok(())"
         );
         Ok(())
     }

@@ -1,4 +1,4 @@
-#[cfg(all(test, feature = "postgres-backend"))]
+#[cfg(all(test, any(feature = "postgres-backend", feature = "sqlite-backend")))]
 mod tests {
     use crate::auth::session_dek::SessionDek;
     use crate::errors::AppError;
@@ -701,6 +701,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 5,
+                None,
                 Some(&dek),
             )
             .await;
@@ -1918,6 +1919,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 Some(&dek),
             )
             .await;
@@ -2101,6 +2103,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 Some(&dek),
             )
             .await;
@@ -2178,6 +2181,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 Some(&dek),
             )
             .await;
@@ -2239,6 +2243,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 None, // No DEK for this test
             )
             .await;
@@ -2280,6 +2285,7 @@ mod tests {
                 None,         // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 None, // No DEK for this test
             )
             .await;
@@ -2341,6 +2347,7 @@ mod tests {
                 None,             // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 Some(&dek),
             )
             .await;
@@ -2491,6 +2498,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit_per_source,
+                None,
                 Some(&dek),
             )
             .await;
@@ -2584,6 +2592,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 Some(&dek),
             )
             .await;
@@ -2690,6 +2699,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 None, // No DEK for this test
             )
             .await;
@@ -2742,6 +2752,7 @@ mod tests {
                 None, // chronicle_id_for_search
                 query_text,
                 limit,
+                None,
                 None, // No DEK for this test
             )
             .await;
@@ -2773,5 +2784,60 @@ mod tests {
         assert_eq!(matched_lorebook_ids.len(), 2);
         assert!(matched_lorebook_ids.contains(&lorebook_id1.to_string().as_str()));
         assert!(matched_lorebook_ids.contains(&lorebook_id2.to_string().as_str()));
+    }
+    #[tokio::test]
+    async fn test_retrieve_relevant_chunks_with_game_time_filter() {
+        let (state, mock_qdrant, mock_embed_client) = setup_pipeline_test_env().await;
+        let dek = create_test_dek();
+        let user_id = DbId::new();
+        let session_id = DbId::new();
+        let query_text = "What happened recently?";
+        let max_game_time_day = 5;
+
+        mock_embed_client.set_response(Ok(vec![0.1, 0.2]));
+        mock_qdrant.set_search_response(Ok(vec![])); // Return empty, we just want to check the filter
+
+        let _ = state
+            .embedding_pipeline_service
+            .retrieve_relevant_chunks(
+                state.clone(),
+                user_id,
+                Some(session_id),
+                None,
+                None,
+                query_text,
+                5,
+                Some(max_game_time_day),
+                Some(&dek),
+            )
+            .await;
+
+        let last_params = mock_qdrant.get_last_search_params();
+        assert!(last_params.is_some(), "Search should have been called");
+        let (_, _, filter_opt) = last_params.unwrap();
+        assert!(filter_opt.is_some(), "Filter should be present");
+        let filter = filter_opt.unwrap();
+
+        // Check for game_time.day condition
+        let mut found_game_time_filter = false;
+        for condition in filter.must {
+            if let Some(ConditionOneOf::Field(field_condition)) = condition.condition_one_of {
+                if field_condition.key == "game_time.day" {
+                    if let Some(range) = field_condition.range {
+                        if let Some(lte) = range.lte {
+                            if (lte - max_game_time_day as f64).abs() < f64::EPSILON {
+                                found_game_time_filter = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(
+            found_game_time_filter,
+            "Should have found game_time.day <= {} filter",
+            max_game_time_day
+        );
     }
 }

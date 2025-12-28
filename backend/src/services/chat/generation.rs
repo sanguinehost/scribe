@@ -471,6 +471,7 @@ pub async fn get_session_data_for_generation(
                             chat_messages::completion_tokens,
                             chat_messages::model_name,
                             chat_messages::status,
+                            chat_messages::game_time,
                         ));
 
                     #[cfg(feature = "postgres-backend")]
@@ -487,6 +488,7 @@ pub async fn get_session_data_for_generation(
                             Option<i32>,
                             String,
                             String,
+                            Option<crate::DbJson>,
                         )>(conn_interaction)
                     }
 
@@ -504,6 +506,7 @@ pub async fn get_session_data_for_generation(
                             Option<i32>,
                             String,
                             String,
+                            Option<crate::DbJson>,
                         )>(conn_interaction)
                     }
                 }
@@ -530,6 +533,7 @@ pub async fn get_session_data_for_generation(
                             completion_tokens,
                             model_name,
                             status,
+                            game_time,
                         )| {
                             DbChatMessage {
                                 id,
@@ -560,6 +564,7 @@ pub async fn get_session_data_for_generation(
                                 modified_cost: 0.0, // SQLite: f64
                                 credit_cost: 0,
                                 actual_charge: 0.0, // SQLite: f64
+                                game_time,
                             }
                         },
                     )
@@ -581,6 +586,7 @@ pub async fn get_session_data_for_generation(
                             completion_tokens,
                             model_name,
                             status,
+                            game_time,
                         )| {
                             DbChatMessage {
                                 id,
@@ -606,6 +612,7 @@ pub async fn get_session_data_for_generation(
                                 modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                                 credit_cost: 0,
                                 actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                                game_time,
                             }
                         },
                     )
@@ -872,6 +879,7 @@ pub async fn get_session_data_for_generation(
                         modified_cost: 0.0, // SQLite: f64
                         credit_cost: 0,
                         actual_charge: 0.0, // SQLite: f64
+                        game_time: None,
                     }
                 }
 
@@ -903,6 +911,7 @@ pub async fn get_session_data_for_generation(
                         modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                         credit_cost: 0,
                         actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                        game_time: None,
                     }
                 }
             })
@@ -1152,6 +1161,18 @@ pub async fn get_session_data_for_generation(
     debug!(target: "test_debug", %session_id, %available_rag_tokens, "RAG token budget check. available_rag_tokens > 0: {}", available_rag_tokens > 0);
 
     if available_rag_tokens > 0 {
+        // Extract max_game_time_day from game_state for RAG filtering
+        let max_game_time_day: Option<i64> = game_state_from_session.as_ref().and_then(|gs| {
+            // gs is DbJson, which derefs to Json<Value> (or is a wrapper)
+            // Access the inner Value via .0
+            let value = &gs.0;
+            value
+                .get("game_time")
+                .and_then(|gt| gt.get("day"))
+                .and_then(|d| d.as_i64())
+        });
+        debug!(%session_id, ?max_game_time_day, "Determined max_game_time_day for RAG filtering.");
+
         // Retrieve Lorebook Chunks
         if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
             if !lorebook_ids.is_empty() {
@@ -1171,6 +1192,7 @@ pub async fn get_session_data_for_generation(
                         None,                  // Not searching chronicles here (done separately)
                         &user_message_content, // query_text
                         lorebook_search_limit,
+                        max_game_time_day, // Filter by game time
                         session_dek_temp.as_ref(),
                     )
                     .await
@@ -1204,6 +1226,7 @@ pub async fn get_session_data_for_generation(
                     Some(chronicle_id), // Search this chronicle
                     &user_message_content,
                     chronicles_search_limit,
+                    max_game_time_day,         // Filter by game time
                     session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
@@ -1241,6 +1264,7 @@ pub async fn get_session_data_for_generation(
                     None,             // Not searching chronicles here (done separately above)
                     &user_message_content, // query_text
                     older_chat_search_limit,
+                    max_game_time_day,         // Filter by game time
                     session_dek_temp.as_ref(), // DEK for decryption
                 )
                 .await
@@ -1480,6 +1504,7 @@ pub async fn get_session_data_for_generation(
         if let Some(content) = first_mes_content_to_add {
             #[cfg(feature = "sqlite-backend")]
             let first_mes_db_chat_message = DbChatMessage {
+                game_time: None,
                 id: DbId::new().into(),
                 session_id,
                 user_id,
@@ -1535,6 +1560,7 @@ pub async fn get_session_data_for_generation(
                 modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                 credit_cost: 0,
                 actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                game_time: None,
             };
 
             managed_recent_history.insert(0, first_mes_db_chat_message);
@@ -1968,6 +1994,15 @@ pub async fn stream_ai_response_and_save_message(
     } = params;
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
+
+    // Extract game_time from initial_game_state if game master mode is enabled
+    let game_time_to_save = if game_master_mode_enabled {
+        initial_game_state
+            .as_ref()
+            .and_then(|gs| gs.get("game_time").cloned())
+    } else {
+        None
+    };
     trace!(
         ?system_prompt,
         "stream_ai_response_and_save_message received system_prompt argument"
@@ -2224,6 +2259,7 @@ pub async fn stream_ai_response_and_save_message(
                     let state_for_partial_save = stream_state.clone();
                     let service_model_name_clone_partial = service_model_name.clone(); // Clone model name for this task
                     let charge_credits_clone_partial = charge_credits; // Clone charge flag for this task
+                    let game_time_clone_partial = game_time_to_save.clone(); // Clone game_time for this task
 
                     tokio::spawn(async move {
                         if partial_content_clone.is_empty() {
@@ -2249,6 +2285,7 @@ pub async fn stream_ai_response_and_save_message(
                                 variant_of,
                                 charge_credits: charge_credits_clone_partial, // Use charge flag from params
                                 credits_cost_override: None, // Let save_message calculate from tokens
+                                game_time: game_time_clone_partial,
                            }).await {
                                 Ok(saved_message) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
@@ -2322,6 +2359,7 @@ pub async fn stream_ai_response_and_save_message(
             let charge_credits_clone_full = charge_credits; // Clone charge flag for this task
             let game_master_mode_enabled_clone = game_master_mode_enabled; // Copy flag for spawned task
             let initial_game_state_clone = initial_game_state.clone(); // Clone for spawned task
+            let game_time_clone_full = game_time_to_save.clone(); // Clone game_time for this task
 
             tokio::spawn(async move {
                 info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
@@ -2347,6 +2385,7 @@ pub async fn stream_ai_response_and_save_message(
                     variant_of,
                     charge_credits: charge_credits_clone_full, // Use charge flag from params
                     credits_cost_override: None, // Let save_message calculate from tokens
+                    game_time: game_time_clone_full,
                 }).await {
                     Ok(saved_message) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");

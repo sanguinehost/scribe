@@ -873,6 +873,10 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 "session_dek": {
                     "type": "string",
                     "description": "INTERNAL: Hex-encoded session DEK for decrypting encrypted content in search results"
+                },
+                "game_time_day": {
+                    "type": "integer",
+                    "description": "Optional: Filter results to a specific game day (e.g., 5)"
                 }
             },
             "required": ["query", "user_id"]
@@ -937,6 +941,9 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 crate::auth::session_dek::SessionDek(secret)
             });
 
+        // Optional game_time_day for filtering
+        let game_time_day_opt = params.get("game_time_day").and_then(|v| v.as_i64());
+
         if session_dek_opt.is_some() {
             debug!("SessionDek provided for search result decryption");
         } else {
@@ -944,8 +951,8 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         }
 
         info!(
-            "Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}, chronicle: {:?}, session: {:?}",
-            query, search_type, limit, user_id, chronicle_id_opt, session_id_opt
+            "Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}, chronicle: {:?}, session: {:?}, day: {:?}",
+            query, search_type, limit, user_id, chronicle_id_opt, session_id_opt, game_time_day_opt
         );
 
         // Critical debug: Log which scope we're using
@@ -998,7 +1005,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         };
 
         // Build the filter based on search scope and type
-        let search_filter = if let Some(session_id) = session_id_opt {
+        let mut search_filter = if let Some(session_id) = session_id_opt {
             // Session-scoped search: Need to handle lorebooks specially
             debug!(
                 "Building session-scoped search filter for session: {}",
@@ -1235,6 +1242,20 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 ..Default::default()
             }
         };
+
+        // Add game_time_day filter if provided
+        if let Some(day) = game_time_day_opt {
+            debug!("Adding game_time_day filter: {}", day);
+            search_filter.must.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "game_time.day".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Integer(day)),
+                    }),
+                    ..Default::default()
+                })),
+            });
+        }
 
         // Use a score threshold to filter out low-relevance results
         // Different thresholds for different search types to optimize results

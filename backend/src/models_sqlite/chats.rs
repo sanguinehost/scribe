@@ -548,6 +548,7 @@ pub struct ChatMessage {
     pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub credit_cost: i32,
     pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl Default for ChatMessage {
@@ -582,6 +583,7 @@ impl Default for ChatMessage {
             modified_cost: 0.0, // FIXED: f64, not DbDecimal
             credit_cost: 0,
             actual_charge: 0.0, // FIXED: f64, not DbDecimal
+            game_time: None,
         }
     }
 }
@@ -617,6 +619,7 @@ impl std::fmt::Debug for ChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -961,6 +964,7 @@ pub struct Message {
     pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub credit_cost: i32,
     pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for Message {
@@ -1001,6 +1005,7 @@ impl std::fmt::Debug for Message {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1327,6 +1332,7 @@ pub struct NewChatMessage {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: Option<String>, // Added model_name field for consistency
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -1363,6 +1369,7 @@ impl std::fmt::Debug for NewChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1399,6 +1406,7 @@ pub struct DbInsertableChatMessage {
     pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
     pub credit_cost: i32,
     pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1432,6 +1440,7 @@ impl std::fmt::Debug for DbInsertableChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1474,6 +1483,7 @@ impl DbInsertableChatMessage {
             modified_cost: 0.0, // FIXED: f64, not DbDecimal
             credit_cost: 0,
             actual_charge: 0.0, // FIXED: f64, not DbDecimal
+            game_time: None,
         }
     }
 

@@ -1484,6 +1484,19 @@ fn build_rag_context_strings(
             if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
                 &rag_item.metadata
             {
+                let game_time_attr = if let Some(gt_val) = &chat_meta.game_time {
+                    let day = gt_val.get("day").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let hour = gt_val.get("hour").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let minute = gt_val.get("minute").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let period = gt_val.get("period").and_then(|v| v.as_str()).unwrap_or("");
+                    format!(
+                        " game_time=\"Day {}, {:02}:{:02} {}\"",
+                        day, hour, minute, period
+                    )
+                } else {
+                    String::new()
+                };
+
                 if chat_meta.speaker == "Pair" {
                     // Split the pair into User and Assistant tags
                     let text = rag_item.text.trim();
@@ -1491,15 +1504,17 @@ fn build_rag_context_strings(
                         let user_text = user_part.strip_prefix("User: ").unwrap_or(user_part);
                         writeln!(
                             older_chat_context,
-                            "<chat_history speaker=\"User\" timestamp=\"{}\">{}</chat_history>",
+                            "<chat_history speaker=\"User\" timestamp=\"{}\"{}>{}</chat_history>",
                             chat_meta.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                            game_time_attr,
                             escape_xml(user_text.trim())
                         )
                         .unwrap();
                         writeln!(
                             older_chat_context,
-                            "<chat_history speaker=\"Assistant\" timestamp=\"{}\">{}</chat_history>",
+                            "<chat_history speaker=\"Assistant\" timestamp=\"{}\"{}>{}</chat_history>",
                             chat_meta.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                            game_time_attr,
                             escape_xml(assistant_part.trim())
                         )
                         .unwrap();
@@ -1507,8 +1522,9 @@ fn build_rag_context_strings(
                         // Fallback if split fails
                         writeln!(
                             older_chat_context,
-                            "<chat_history speaker=\"Pair\" timestamp=\"{}\">{}</chat_history>",
+                            "<chat_history speaker=\"Pair\" timestamp=\"{}\"{}>{}</chat_history>",
                             chat_meta.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                            game_time_attr,
                             escape_xml(text)
                         )
                         .unwrap();
@@ -1516,9 +1532,10 @@ fn build_rag_context_strings(
                 } else {
                     writeln!(
                         older_chat_context,
-                        "<chat_history speaker=\"{}\" timestamp=\"{}\">{}</chat_history>",
+                        "<chat_history speaker=\"{}\" timestamp=\"{}\"{}>{}</chat_history>",
                         escape_xml(&chat_meta.speaker),
                         chat_meta.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                        game_time_attr,
                         escape_xml(rag_item.text.trim())
                     )
                     .unwrap();

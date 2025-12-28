@@ -911,6 +911,7 @@ impl ChatMessageQuery {
             completion_tokens: self.completion_tokens,
             model_name: self.model_name,
             status: self.status,
+            game_time: None, // Not loaded from query
             // Fields not loaded from query - use defaults
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
@@ -963,6 +964,7 @@ pub struct ChatMessage {
     pub credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub actual_charge: crate::db::DbDecimal,
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl Default for ChatMessage {
@@ -992,6 +994,7 @@ impl Default for ChatMessage {
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
         }
     }
 }
@@ -1334,6 +1337,7 @@ impl ChatMessage {
             modified_cost: self.modified_cost.to_f64(),
             credit_cost: Some(self.credit_cost),
             actual_charge: self.actual_charge.to_f64(),
+            game_time: self.game_time.clone().map(|j| j.0),
         })
     }
 }
@@ -1372,6 +1376,7 @@ pub struct Message {
     pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for Message {
@@ -1412,6 +1417,7 @@ impl std::fmt::Debug for Message {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1641,6 +1647,7 @@ impl Message {
             modified_cost: self.modified_cost.to_f64(),
             credit_cost: Some(self.credit_cost),
             actual_charge: self.actual_charge.to_f64(),
+            game_time: self.game_time.clone().map(|j| j.0),
         })
     }
 }
@@ -1691,6 +1698,7 @@ pub struct ChatMessageForClient {
     pub modified_cost: Option<f64>, // Cost with markup applied (when payment feature enabled)
     pub credit_cost: Option<i32>, // Credits consumed (when credits actually used)
     pub actual_charge: Option<f64>, // Actual dollar amount charged to user
+    pub game_time: Option<serde_json::Value>,
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -1713,6 +1721,7 @@ impl std::fmt::Debug for ChatMessageForClient {
             .field("modified_cost", &self.modified_cost)
             .field("credit_cost", &self.credit_cost)
             .field("actual_charge", &self.actual_charge)
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1738,6 +1747,7 @@ pub struct NewChatMessage {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: Option<String>, // Added model_name field for consistency
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -1774,6 +1784,7 @@ impl std::fmt::Debug for NewChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1809,6 +1820,7 @@ pub struct DbInsertableChatMessage {
     pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1842,6 +1854,7 @@ impl std::fmt::Debug for DbInsertableChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1882,6 +1895,7 @@ impl DbInsertableChatMessage {
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
         }
     }
 

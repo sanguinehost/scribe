@@ -602,7 +602,7 @@ impl UserSettingsService {
                     ui_settings.1,
                     local_settings.0,
                     local_settings.1,
-                    local_settings.2,
+                    local_settings.2.map(crate::db::Json::new),
                 )
             };
 

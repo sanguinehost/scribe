@@ -22,8 +22,8 @@ use crate::{
     schema::{lorebook_entries, lorebooks},
     services::{embeddings::LorebookEntryParams, EncryptionService},
     vector_db::qdrant_client::{
-        Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue,
-        QdrantClientServiceTrait,
+        Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue, PointId,
+        PointIdOptions, QdrantClientServiceTrait,
     },
     AppState,
 };

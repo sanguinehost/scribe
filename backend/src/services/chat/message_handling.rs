@@ -187,6 +187,7 @@ pub struct SaveMessageParams<'a> {
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
     pub credits_cost_override: Option<crate::db::DbDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
+    pub game_time: Option<Value>, // ADDED: The in-game time when the message was sent
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -209,6 +210,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         variant_of,
         charge_credits,
         credits_cost_override,
+        game_time,
     } = params;
 
     // Clone model_name early for later use in token tracking
@@ -605,6 +607,10 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     }
     new_message_to_insert =
         new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
+
+    if let Some(gt) = game_time {
+        new_message_to_insert.game_time = Some(crate::db::Json(gt));
+    }
 
     // Clone cost values early for later use in spawned task (before they're moved into with_cost_tracking)
     #[cfg(all(feature = "payment", feature = "postgres-backend"))]

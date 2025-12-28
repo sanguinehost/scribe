@@ -22,6 +22,7 @@ pub struct ChatMessageChunkMetadata {
     // Encrypted fields for secure storage
     pub encrypted_text: Option<Vec<u8>>, // Encrypted text content
     pub text_nonce: Option<Vec<u8>>,     // Nonce for decrypting text
+    pub game_time: Option<serde_json::Value>, // Game time metadata
 }
 impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
     type Error = AppError;
@@ -88,6 +89,9 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
         let source_type =
             extract_string_from_payload(&payload, "source_type", "ChatMessageChunkMetadata")?;
 
+        let game_time = extract_optional_string_from_payload(&payload, "game_time")
+            .and_then(|s| serde_json::from_str(&s).ok());
+
         Ok(Self {
             message_id,
             session_id,
@@ -99,6 +103,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
             source_type,
             encrypted_text,
             text_nonce,
+            game_time,
         })
     }
 }

@@ -528,7 +528,7 @@ impl TemplatePreferenceService {
                 Some(char_id) => diesel::delete(
                     template_preferences::table
                         .filter(template_preferences::user_id.eq(user_id))
-                        .filter(template_preferences::character_id.eq(char_id)),
+                        .filter(template_preferences::character_id.eq(Some(char_id))),
                 )
                 .execute(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?,

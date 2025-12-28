@@ -661,6 +661,7 @@ pub struct ChatMessage {
     pub credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub actual_charge: crate::db::DbDecimal,
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl Default for ChatMessage {
@@ -689,7 +690,9 @@ impl Default for ChatMessage {
             actual_cost: crate::db::DbDecimal::from(0),
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
+            credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
         }
     }
 }
@@ -724,6 +727,7 @@ impl std::fmt::Debug for ChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1077,7 +1081,9 @@ pub struct Message {
     pub actual_cost: crate::db::DbDecimal,
     pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
+    pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for Message {
@@ -1118,6 +1124,7 @@ impl std::fmt::Debug for Message {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1451,6 +1458,7 @@ pub struct NewChatMessage {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: Option<String>, // Added model_name field for consistency
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -1487,6 +1495,7 @@ impl std::fmt::Debug for NewChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1534,6 +1543,7 @@ pub struct DbInsertableChatMessage {
     pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
+    pub game_time: Option<crate::DbJson>,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -1569,6 +1579,7 @@ impl std::fmt::Debug for DbInsertableChatMessage {
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
+            .field("game_time", &self.game_time)
             .finish()
     }
 }
@@ -1621,6 +1632,7 @@ impl DbInsertableChatMessage {
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
         }
     }
 

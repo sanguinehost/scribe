@@ -310,6 +310,7 @@ diesel::table! {
         modified_cost -> DbNumericType,
         credit_cost -> Integer,
         actual_charge -> DbNumericType,
+        game_time -> Nullable<DbJsonType>,
     }
 }
 

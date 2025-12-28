@@ -27,7 +27,7 @@ pub struct CharacterAsset {
 #[diesel(table_name = crate::schema::character_assets)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewCharacterAsset {
-    pub id: Option<crate::db::DbId>,
+    pub id: crate::db::DbId,
     pub character_id: crate::db::DbId,
     pub asset_type: String,
     pub uri: Option<String>,
@@ -60,7 +60,7 @@ impl NewCharacterAsset {
         let now = DbTimestamp::now();
 
         Self {
-            id: None,
+            id: DbId::new(),
             character_id,
             asset_type: "avatar".to_string(),
             uri: None, // No longer using file paths

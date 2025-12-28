@@ -14,7 +14,7 @@ use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
-    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match, Range,
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -283,6 +283,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 // Encryption fields - populated when SessionDek is available
                 encrypted_text,
                 text_nonce,
+                game_time: message.game_time.clone().map(|gt| gt.0),
             };
 
             // 2c. Create Qdrant point
@@ -536,6 +537,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         chronicle_id_for_search: Option<crate::db::DbId>,
         query_text: &str,
         limit_per_source: u64,
+        max_game_time_day: Option<i64>,
         session_dek: Option<&crate::auth::SessionDek>,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
         info!("Retrieving relevant chunks for query");
@@ -557,7 +559,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Search chat history if session_id is provided
         if let Some(session_id) = session_id_for_chat_history {
             debug!(%user_id, %session_id, "Constructing chat history filter for RAG");
-            let chat_filter = Filter {
+            let mut chat_filter = Filter {
                 must: vec![
                     Condition {
                         condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -589,6 +591,22 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 ],
                 ..Default::default()
             };
+
+            // Add max_game_time_day filter if provided
+            if let Some(max_day) = max_game_time_day {
+                debug!("Adding max_game_time_day filter: {}", max_day);
+                chat_filter.must.push(Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "game_time.day".to_string(),
+                        range: Some(Range {
+                            lte: Some(max_day as f64),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })),
+                });
+            }
+
             debug!(?chat_filter, "Chat history filter for RAG");
 
             match qdrant_service
@@ -853,7 +871,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 // For constant entries, we use retrieve_points to get ALL matches
                 // rather than just the top-k by similarity
                 match qdrant_service
-                    .retrieve_points(Some(constant_filter.clone()), 1000)
+                    .retrieve_points(Some(constant_filter.clone()), 1000, None)
                     .await
                 {
                     Ok(retrieve_results) => {

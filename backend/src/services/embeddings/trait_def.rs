@@ -75,6 +75,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         chronicle_id_for_search: Option<crate::db::DbId>, // If Some, search chronicle events for this chronicle
         query_text: &str,
         limit_per_source: u64, // e.g., retrieve top N from chat, top M from lorebooks, top K from chronicles
+        max_game_time_day: Option<i64>, // Filter chat history by game time day
         session_dek: Option<&crate::auth::SessionDek>, // DEK for decrypting retrieved content
     ) -> Result<Vec<RetrievedChunk>, AppError>;
 }

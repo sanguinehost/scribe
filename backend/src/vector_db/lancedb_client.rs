@@ -105,11 +105,14 @@ impl LanceDbClient {
             // Payload fields as separate columns for filtering
             Field::new("user_id", DataType::Utf8, true),
             Field::new("session_id", DataType::Utf8, true),
+            Field::new("message_id", DataType::Utf8, true),
             Field::new("lorebook_id", DataType::Utf8, true),
+            Field::new("original_lorebook_entry_id", DataType::Utf8, true),
             Field::new("chronicle_id", DataType::Utf8, true),
             Field::new("source_type", DataType::Utf8, true),
             Field::new("chunk_text", DataType::Utf8, true),
             Field::new("entry_title", DataType::Utf8, true),
+            Field::new("speaker", DataType::Utf8, true),
             Field::new("keywords", DataType::Utf8, true),
             Field::new("is_enabled", DataType::Boolean, true),
             Field::new("is_constant", DataType::Boolean, true),
@@ -117,6 +120,8 @@ impl LanceDbClient {
             // Encrypted fields
             Field::new("encrypted_chunk_text", DataType::Utf8, true),
             Field::new("chunk_text_nonce", DataType::Utf8, true),
+            Field::new("encrypted_title", DataType::Utf8, true),
+            Field::new("title_nonce", DataType::Utf8, true),
             // Full payload as JSON for flexibility
             Field::new("payload_json", DataType::Utf8, true),
         ])
@@ -165,11 +170,15 @@ impl LanceDbClient {
         let vector_array = self.create_empty_vector_array();
         let user_id_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let session_id_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
+        let message_id_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let lorebook_id_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
+        let original_lorebook_entry_id_array: ArrayRef =
+            Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let chronicle_id_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let source_type_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let chunk_text_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let entry_title_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
+        let speaker_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let keywords_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let is_enabled_array: ArrayRef =
             Arc::new(arrow::array::BooleanArray::from(Vec::<Option<bool>>::new()));
@@ -180,6 +189,9 @@ impl LanceDbClient {
             Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let chunk_text_nonce_array: ArrayRef =
             Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
+        let encrypted_title_array: ArrayRef =
+            Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
+        let title_nonce_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
         let payload_json_array: ArrayRef = Arc::new(StringArray::from(Vec::<Option<&str>>::new()));
 
         let batch = RecordBatch::try_new(
@@ -189,17 +201,22 @@ impl LanceDbClient {
                 vector_array,
                 user_id_array,
                 session_id_array,
+                message_id_array,
                 lorebook_id_array,
+                original_lorebook_entry_id_array,
                 chronicle_id_array,
                 source_type_array,
                 chunk_text_array,
                 entry_title_array,
+                speaker_array,
                 keywords_array,
                 is_enabled_array,
                 is_constant_array,
                 timestamp_array,
                 encrypted_chunk_text_array,
                 chunk_text_nonce_array,
+                encrypted_title_array,
+                title_nonce_array,
                 payload_json_array,
             ],
         )
@@ -258,17 +275,22 @@ impl LanceDbClient {
         let mut vectors: Vec<f32> = Vec::new();
         let mut user_ids: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut session_ids: Vec<Option<String>> = Vec::with_capacity(num_points);
+        let mut message_ids: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut lorebook_ids: Vec<Option<String>> = Vec::with_capacity(num_points);
+        let mut original_lorebook_entry_ids: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut chronicle_ids: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut source_types: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut chunk_texts: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut entry_titles: Vec<Option<String>> = Vec::with_capacity(num_points);
+        let mut speakers: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut keywords_list: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut is_enabled_list: Vec<Option<bool>> = Vec::with_capacity(num_points);
         let mut is_constant_list: Vec<Option<bool>> = Vec::with_capacity(num_points);
         let mut timestamps: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut encrypted_chunk_texts: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut chunk_text_nonces: Vec<Option<String>> = Vec::with_capacity(num_points);
+        let mut encrypted_titles: Vec<Option<String>> = Vec::with_capacity(num_points);
+        let mut title_nonces: Vec<Option<String>> = Vec::with_capacity(num_points);
         let mut payload_jsons: Vec<Option<String>> = Vec::with_capacity(num_points);
 
         for point in points {
@@ -338,11 +360,17 @@ impl LanceDbClient {
             let payload = &point.payload;
             user_ids.push(Self::extract_string_from_payload(payload, "user_id"));
             session_ids.push(Self::extract_string_from_payload(payload, "session_id"));
+            message_ids.push(Self::extract_string_from_payload(payload, "message_id"));
             lorebook_ids.push(Self::extract_string_from_payload(payload, "lorebook_id"));
+            original_lorebook_entry_ids.push(Self::extract_string_from_payload(
+                payload,
+                "original_lorebook_entry_id",
+            ));
             chronicle_ids.push(Self::extract_string_from_payload(payload, "chronicle_id"));
             source_types.push(Self::extract_string_from_payload(payload, "source_type"));
             chunk_texts.push(Self::extract_string_from_payload(payload, "chunk_text"));
             entry_titles.push(Self::extract_string_from_payload(payload, "entry_title"));
+            speakers.push(Self::extract_string_from_payload(payload, "speaker"));
             keywords_list.push(Self::extract_string_from_payload(payload, "keywords"));
             encrypted_chunk_texts.push(Self::extract_string_from_payload(
                 payload,
@@ -352,6 +380,11 @@ impl LanceDbClient {
                 payload,
                 "chunk_text_nonce",
             ));
+            encrypted_titles.push(Self::extract_string_from_payload(
+                payload,
+                "encrypted_title",
+            ));
+            title_nonces.push(Self::extract_string_from_payload(payload, "title_nonce"));
             is_enabled_list.push(Self::extract_bool_from_payload(payload, "is_enabled"));
             is_constant_list.push(Self::extract_bool_from_payload(payload, "is_constant"));
             timestamps.push(Self::extract_string_from_payload(payload, "timestamp"));
@@ -366,11 +399,15 @@ impl LanceDbClient {
         let vector_array = self.create_vector_array(&vectors, num_points)?;
         let user_id_array: ArrayRef = Arc::new(StringArray::from(user_ids));
         let session_id_array: ArrayRef = Arc::new(StringArray::from(session_ids));
+        let message_id_array: ArrayRef = Arc::new(StringArray::from(message_ids));
         let lorebook_id_array: ArrayRef = Arc::new(StringArray::from(lorebook_ids));
+        let original_lorebook_entry_id_array: ArrayRef =
+            Arc::new(StringArray::from(original_lorebook_entry_ids));
         let chronicle_id_array: ArrayRef = Arc::new(StringArray::from(chronicle_ids));
         let source_type_array: ArrayRef = Arc::new(StringArray::from(source_types));
         let chunk_text_array: ArrayRef = Arc::new(StringArray::from(chunk_texts));
         let entry_title_array: ArrayRef = Arc::new(StringArray::from(entry_titles));
+        let speaker_array: ArrayRef = Arc::new(StringArray::from(speakers));
         let keywords_array: ArrayRef = Arc::new(StringArray::from(keywords_list));
         let is_enabled_array: ArrayRef =
             Arc::new(arrow::array::BooleanArray::from(is_enabled_list));
@@ -380,6 +417,8 @@ impl LanceDbClient {
         let encrypted_chunk_text_array: ArrayRef =
             Arc::new(StringArray::from(encrypted_chunk_texts));
         let chunk_text_nonce_array: ArrayRef = Arc::new(StringArray::from(chunk_text_nonces));
+        let encrypted_title_array: ArrayRef = Arc::new(StringArray::from(encrypted_titles));
+        let title_nonce_array: ArrayRef = Arc::new(StringArray::from(title_nonces));
         let payload_json_array: ArrayRef = Arc::new(StringArray::from(payload_jsons));
 
         RecordBatch::try_new(
@@ -389,17 +428,22 @@ impl LanceDbClient {
                 vector_array,
                 user_id_array,
                 session_id_array,
+                message_id_array,
                 lorebook_id_array,
+                original_lorebook_entry_id_array,
                 chronicle_id_array,
                 source_type_array,
                 chunk_text_array,
                 entry_title_array,
+                speaker_array,
                 keywords_array,
                 is_enabled_array,
                 is_constant_array,
                 timestamp_array,
                 encrypted_chunk_text_array,
                 chunk_text_nonce_array,
+                encrypted_title_array,
+                title_nonce_array,
                 payload_json_array,
             ],
         )
@@ -923,7 +967,8 @@ impl QdrantClientServiceTrait for LanceDbClient {
                 }
             }
 
-            self.retrieve_points(Some(combined_filter), limit).await
+            self.retrieve_points(Some(combined_filter), limit, None)
+                .await
         } else {
             // No search criteria
             Ok(vec![])
@@ -935,6 +980,7 @@ impl QdrantClientServiceTrait for LanceDbClient {
         &self,
         filter: Option<Filter>,
         limit: u64,
+        offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         let table = self.get_table().await?;
 
@@ -949,6 +995,10 @@ impl QdrantClientServiceTrait for LanceDbClient {
         }
 
         query = query.limit(limit as usize);
+
+        if let Some(off) = offset {
+            query = query.offset(off as usize);
+        }
 
         let results = query
             .execute()
@@ -1040,6 +1090,11 @@ impl QdrantClientServiceTrait for LanceDbClient {
         // For now, return None as this is rarely used
         debug!("LanceDbClient: get_point_by_id (returning None - not fully implemented)");
         Ok(None)
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        debug!("LanceDbClient: optimize_collection (no-op)");
+        Ok(())
     }
 
     async fn health_check(&self) -> Result<(), AppError> {

@@ -233,6 +233,7 @@ diesel::table! {
         modified_cost -> Double,
         credit_cost -> Integer,
         actual_charge -> Double,
+        game_time -> Nullable<crate::schema::DbJsonType>,
     }
 }
 

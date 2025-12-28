@@ -826,7 +826,8 @@ Show different scenarios, moods, or personality aspects."#
                 Some(vec![lorebook_id]), // Query the specific lorebook
                 None,                    // No chronicle search for character generation
                 &query_text,
-                10,          // Limit to top 10 most relevant chunks
+                10, // Limit to top 10 most relevant chunks
+                None,
                 session_dek, // SECURITY: Pass SessionDek for decrypting lorebook content
             )
             .await
@@ -935,7 +936,8 @@ Show different scenarios, moods, or personality aspects."#
                 Some(vec![lorebook_id]), // Query the specific lorebook
                 None,                    // No chronicle search for character generation
                 &query_text,
-                10,          // Limit to top 10 most relevant chunks
+                10, // Limit to top 10 most relevant chunks
+                None,
                 session_dek, // SECURITY: Pass SessionDek for decrypting lorebook content
             )
             .await

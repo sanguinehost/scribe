@@ -714,6 +714,7 @@ pub async fn generate_chat_response(
         #[cfg(feature = "sqlite-backend")]
         {
             ChatMessage {
+                game_time: None,
                 id: crate::db::DbId::new_v4(), // Temporary ID
                 session_id,
                 user_id: user_id_value,
@@ -771,6 +772,7 @@ pub async fn generate_chat_response(
                 modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                 credit_cost: 0,
                 actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                game_time: None,
             }
         }
     } else {
@@ -792,6 +794,7 @@ pub async fn generate_chat_response(
             variant_of: None,            // User messages don't create variants
             charge_credits: false,       // User messages are never charged
             credits_cost_override: None, // Let save_message calculate from tokens
+            game_time: None,
         })
         .await
         {
@@ -1842,6 +1845,7 @@ pub async fn generate_chat_response(
                                 }), // Use pre-calculated base API cost in dollars
                                 #[cfg(not(feature = "payment"))]
                                 credits_cost_override: None,
+                                game_time: None,
                             },
                         )
                         .await
