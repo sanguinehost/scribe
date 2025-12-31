@@ -967,11 +967,11 @@ async fn process_messages_for_response(
             variant_count: actual_variant_count,
             current_variant_index: msg_db.current_variant_index,
             is_variant: false, // This is a parent message, not a variant itself
-            parent_message_id: None,              // TODO: Add parent_message_id to Message struct
+            parent_message_id: None, // TODO: Add parent_message_id to Message struct
             variants: if actual_variant_count > 0 || msg_db.current_variant_index > 0 {
                 tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})", 
                     msg_db.id, msg_db.variant_count, actual_variant_count, msg_db.current_variant_index);
-                
+
                 match chat::message_variants::get_message_variants(
                     state.clone(),
                     msg_db.id,
@@ -981,17 +981,23 @@ async fn process_messages_for_response(
                 .await
                 {
                     Ok(variants) => {
-                        tracing::info!("✅ Fetched {} variants for message {}", variants.len(), msg_db.id);
+                        tracing::info!(
+                            "✅ Fetched {} variants for message {}",
+                            variants.len(),
+                            msg_db.id
+                        );
                         Some(
                             variants
                                 .into_iter()
                                 .map(|v| {
-                                    let mut resp = crate::models::chats::MessageVariantResponse::from(v);
-                                    resp.content = crate::prompt_builder::replace_template_variables(
-                                        &resp.content,
-                                        character_name,
-                                        user_persona_name,
-                                    );
+                                    let mut resp =
+                                        crate::models::chats::MessageVariantResponse::from(v);
+                                    resp.content =
+                                        crate::prompt_builder::replace_template_variables(
+                                            &resp.content,
+                                            character_name,
+                                            user_persona_name,
+                                        );
                                     resp
                                 })
                                 .collect(),
@@ -1003,7 +1009,10 @@ async fn process_messages_for_response(
                     }
                 }
             } else {
-                tracing::info!("ℹ️ No variants to fetch for message {} (count: 0)", msg_db.id);
+                tracing::info!(
+                    "ℹ️ No variants to fetch for message {} (count: 0)",
+                    msg_db.id
+                );
                 None
             },
             game_state,

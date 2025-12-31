@@ -70,7 +70,7 @@ impl TemplatePreferenceService {
         user_id: crate::db::DbId,
         character_id: Option<crate::db::DbId>,
     ) -> Result<TemplatePreferenceResponse, AppError> {
-        crate::db::with_conn(pool, move |conn| {
+        crate::db::with_conn_immediate(pool, move |conn| {
             info!(%user_id, ?character_id, "GET: Looking for template preferences");
 
             // Try to find existing preferences for this user+character combination

@@ -173,6 +173,8 @@ pub struct Chat {
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
     pub total_credits_used: crate::db::DbDecimal,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_cost: crate::db::DbDecimal,
@@ -181,11 +183,13 @@ pub struct Chat {
     pub total_credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_charge: crate::db::DbDecimal,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
     // Game Master Agent fields
     pub game_state: Option<crate::db::DbJson>, // JSON-encoded GameState
     pub game_master_mode_enabled: bool,        // Feature flag
+    pub gemini_thinking_level: Option<String>,
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
 }
 
 /// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)
@@ -690,10 +694,20 @@ pub struct NewChat {
     pub total_completion_tokens: i32,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
-    pub total_credits_used: crate::db::DbDecimal,
     pub prompt_template_id: String,
+    pub total_credits_used: crate::db::DbDecimal,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub total_actual_cost: crate::db::DbDecimal,
+    pub total_modified_cost: crate::db::DbDecimal,
+    pub total_credit_cost: i32,
+    pub total_actual_charge: crate::db::DbDecimal,
+    pub game_state: Option<crate::db::DbJson>,
+    pub game_master_mode_enabled: bool,
+    pub gemini_thinking_level: Option<String>,
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -1746,7 +1760,16 @@ pub struct NewChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub model_name: Option<String>, // Added model_name field for consistency
+    pub model_name: String, // Changed to String to match schema
+    pub status: String,
+    pub variant_count: i32,
+    pub current_variant_index: i32,
+    pub credits_charged: i32,
+    pub credits_cost: crate::db::DbDecimal,
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
+    pub credit_cost: i32,
+    pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
 }
 

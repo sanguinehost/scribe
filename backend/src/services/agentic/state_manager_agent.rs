@@ -194,14 +194,23 @@ Replace all [placeholders] with concrete in-world details. Examples:
 DO NOT keep brackets in your response. Every placeholder must become real content.
 
 RATE OF CHANGE:
-Manage values REALISTICALLY based on what happened:
-- 0% change: Only a few minutes passed, nothing significant
-- 1-5% change: Normal activities (walking, conversation, minor effort)
-- 5-15% change: Significant effort (combat, running, hard work)
-- 15%+ change: Major events (serious injury, exhaustion, time skip)
+Manage values REALISTICALLY based on the intensity and duration of activities:
 
-Example: If {{user}} walked to the market (10 minutes), stamina might drop by 2%.
-Example: If {{user}} fought a bandit, health might drop by 15%, stamina by 20%.
+DEPLETION (Loss):
+- 0% change: Idle, short conversation, minor movement.
+- 1-3% change: Normal activities (walking, light work, extended dialogue).
+- 4-10% change: Significant effort (running, combat, heavy labor).
+- 10%+ change: Major events (serious injury, extreme exertion, long travel).
+
+RECOVERY (Gain):
+- 1-5% gain: Short rest (5-15 mins), catching breath, light snack.
+- 10-25% gain: Full meal, long rest (1-2 hours), medical treatment.
+- 50-100% gain: Full night's sleep (8+ hours), magical healing, deep meditation.
+
+Example: If {{user}} walked to the market (10 minutes), stamina might drop by 1%.
+Example: If {{user}} sat down and rested for 10 minutes, stamina should recover by 3%.
+Example: If {{user}} fought a bandit, health might drop by 10%, stamina by 15%.
+Example: If {{user}} slept until morning, health and stamina should recover to 100%.
 
 OUTPUT FORMAT:
 You MUST output a code block with the following sections:

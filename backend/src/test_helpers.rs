@@ -2118,7 +2118,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
+        let mut _conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2239,7 +2239,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
+        let mut _conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2369,13 +2369,13 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let mut conn = crate::db::get_conn(&pool).await?;
+        let mut _conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
         let name_clone_for_error = name.clone();
 
         let new_character_payload = NewCharacter {
-            id: None,
+            id: Some(crate::db::DbId::new()),
             user_id,
             name: name_clone_for_payload.clone(),
             description: Some(
@@ -2468,20 +2468,29 @@ pub mod db {
             world_nonce: None,
         };
 
-        let name_clone_for_second_error = name_clone_for_error.clone();
-        let character: Character = conn
-            .interact(move |conn_actual| {
-                use diesel::{RunQueryDsl, SelectableHelper};
-                #[cfg(feature = "postgres-backend")]
-                {
+        let _name_clone_for_second_error = name_clone_for_error.clone();
+        let character = {
+            #[cfg(feature = "postgres-backend")]
+            {
+                conn.interact(move |conn_actual| {
+                    use diesel::prelude::*;
                     diesel::insert_into(crate::schema::characters::table)
                         .values(new_character_payload)
-                        .returning(Character::as_returning())
                         .get_result::<Character>(conn_actual)
-                }
+                })
+                .await
+                .map_err(move |interact_err| {
+                    anyhow::anyhow!(
+                        "DB interact error for create_test_character '{}': {}",
+                        name_clone_for_error,
+                        interact_err
+                    )
+                })??
+            }
 
-                #[cfg(feature = "sqlite-backend")]
-                {
+            #[cfg(feature = "sqlite-backend")]
+            {
+                crate::db::with_conn_immediate(pool, move |conn_actual| {
                     use diesel::prelude::*;
                     let name_for_query = new_character_payload.name.clone();
                     diesel::insert_into(crate::schema::characters::table)
@@ -2493,23 +2502,18 @@ pub mod db {
                         .filter(crate::schema::characters::name.eq(name_for_query))
                         .order_by(crate::schema::characters::created_at.desc())
                         .first::<Character>(conn_actual)
-                }
-            })
-            .await
-            .map_err(move |interact_err| {
-                anyhow::anyhow!(
-                    "DB interact error for create_test_character '{}': {}",
-                    name_clone_for_error,
-                    interact_err
-                )
-            })?
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "DB query error for create_test_character '{}': {}",
-                    name_clone_for_second_error,
-                    e
-                )
-            })?;
+                        .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
+                })
+                .await
+                .map_err(move |interact_err| {
+                    anyhow::anyhow!(
+                        "DB interact error for create_test_character '{}': {}",
+                        name_clone_for_error,
+                        interact_err
+                    )
+                })?
+            }
+        };
 
         Ok(character)
     }

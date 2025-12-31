@@ -155,35 +155,39 @@ pub struct Chat {
     pub history_management_limit: i32,                             // 18
     pub model_name: String,                                        // 19
     pub gemini_thinking_budget: Option<i32>,                       // 20
-    pub gemini_enable_code_execution: Option<bool>,                // 21
-    pub visibility: Option<String>,                                // 22
-    pub active_custom_persona_id: Option<crate::db::DbId>,         // 23
-    pub active_impersonated_character_id: Option<crate::db::DbId>, // 24
-    pub system_prompt_ciphertext: Option<Vec<u8>>,                 // 25
-    pub system_prompt_nonce: Option<Vec<u8>>,                      // 26
-    pub title_ciphertext: Option<Vec<u8>>,                         // 27
-    pub title_nonce: Option<Vec<u8>>,                              // 28
-    pub stop_sequences: crate::models::OptionalStringArray,        // 29
-    pub chat_mode: ChatMode,                                       // 30
-    pub player_chronicle_id: Option<crate::db::DbId>,              // 31
-    pub agent_mode: Option<String>,                                // 32
-    pub model_provider: Option<String>,                            // 33 - ADDED
-    pub total_prompt_tokens: i32,                                  // 34
-    pub total_completion_tokens: i32,                              // 35
-    pub estimated_cost_cents: i32,                                 // 36
-    pub tokens_counted_at: DbTimestamp,                            // 37
-    pub prompt_template_id: String,                                // 38 - MOVED from position 34
+    pub gemini_thinking_level: Option<String>,                     // 21 - ADDED
+    pub gemini_enable_code_execution: Option<bool>,                // 22 - MOVED
+    pub visibility: Option<String>,                                // 23
+    pub active_custom_persona_id: Option<crate::db::DbId>,         // 24
+    pub active_impersonated_character_id: Option<crate::db::DbId>, // 25
+    pub system_prompt_ciphertext: Option<Vec<u8>>,                 // 26
+    pub system_prompt_nonce: Option<Vec<u8>>,                      // 27
+    pub title_ciphertext: Option<Vec<u8>>,                         // 28
+    pub title_nonce: Option<Vec<u8>>,                              // 29
+    pub stop_sequences: crate::models::OptionalStringArray,        // 30
+    pub chat_mode: ChatMode,                                       // 31
+    pub player_chronicle_id: Option<crate::db::DbId>,              // 32
+    pub agent_mode: Option<String>,                                // 33
+    pub model_provider: Option<String>,                            // 34
+    pub total_prompt_tokens: i32,                                  // 35
+    pub total_completion_tokens: i32,                              // 36
+    pub estimated_cost_cents: i32,                                 // 37
+    pub tokens_counted_at: DbTimestamp,                            // 38
+    pub prompt_template_id: String,                                // 39
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
-    pub total_credits_used: crate::db::DbDecimal, // 39 - MOVED from position 30
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,      // 40 - MOVED from position 38
-    pub narrative_style_override_nonce: Option<Vec<u8>>,           // 41 - MOVED from position 39
-    pub total_actual_cost: f64, // 42 - FIXED: Schema has Double (REAL), not DbDecimal
-    pub total_modified_cost: f64, // 43 - FIXED: Schema has Double (REAL), not DbDecimal
-    pub total_credit_cost: i32, // 44
-    pub total_actual_charge: f64, // 45 - FIXED: Schema has Double (REAL), not DbDecimal
+    pub total_credits_used: crate::db::DbDecimal, // 40
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,      // 41
+    pub narrative_style_override_nonce: Option<Vec<u8>>,           // 42
+    pub total_actual_cost: f64,                                    // 43
+    pub total_modified_cost: f64,                                  // 44
+    pub total_credit_cost: i32,                                    // 45
+    pub total_actual_charge: f64,                                  // 46
     // Game Master Agent fields
-    pub game_state: Option<crate::DbJson>, // 46 - JSON-encoded GameState
-    pub game_master_mode_enabled: bool,    // 47 - Feature flag
+    pub game_state: Option<crate::DbJson>, // 47
+    pub game_master_mode_enabled: bool,    // 48
+    pub rag_chronicles_limit: Option<i32>, // 49
+    pub rag_lorebooks_limit: Option<i32>,  // 50
+    pub rag_older_chat_limit: Option<i32>, // 51
 }
 
 impl std::fmt::Debug for Chat {
@@ -298,6 +302,7 @@ pub struct NewChat {
     pub logit_bias: Option<String>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub gemini_thinking_budget: Option<i32>,
+    pub gemini_thinking_level: Option<String>,
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
@@ -313,8 +318,15 @@ pub struct NewChat {
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub total_actual_cost: f64,
+    pub total_modified_cost: f64,
+    pub total_credit_cost: i32,
+    pub total_actual_charge: f64,
     pub game_state: Option<String>,
     pub game_master_mode_enabled: bool,
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -1331,7 +1343,16 @@ pub struct NewChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub model_name: Option<String>, // Added model_name field for consistency
+    pub model_name: String, // Changed to String to match schema
+    pub status: String,
+    pub variant_count: i32,
+    pub current_variant_index: i32,
+    pub credits_charged: i32,
+    pub credits_cost: i32,
+    pub actual_cost: f64,
+    pub modified_cost: f64,
+    pub credit_cost: i32,
+    pub actual_charge: f64,
     pub game_time: Option<crate::DbJson>,
 }
 

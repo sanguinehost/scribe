@@ -913,9 +913,11 @@ fn create_session_in_transaction(
     // Extract first message data and alternate greetings if character exists
     let (first_mes, first_mes_nonce, alternate_greetings) = character_opt
         .map(|c| {
-            let alt_greetings = c.alternate_greetings.0.clone().map(|v| {
-                v.into_iter().flatten().collect::<Vec<String>>()
-            });
+            let alt_greetings = c
+                .alternate_greetings
+                .0
+                .clone()
+                .map(|v| v.into_iter().flatten().collect::<Vec<String>>());
             (c.first_mes, c.first_mes_nonce, alt_greetings)
         })
         .unwrap_or((None, None, None));
@@ -1134,33 +1136,29 @@ pub async fn create_session_and_maybe_first_message(
 
     info!(%user_id, "Starting database transaction for session creation");
 
-    let (
-        created_session,
-        first_mes_ciphertext_opt,
-        first_mes_nonce_opt,
-        alternate_greetings,
-    ) = crate::db::with_conn(&pool, move |conn| {
-        conn.transaction(|transaction_conn| {
-            info!("Inside transaction - calling create_session_in_transaction");
-            create_session_in_transaction(
-                transaction_conn,
-                user_id,
-                character_id,
-                chat_mode,
-                active_custom_persona_id,
-                lorebook_ids_for_closure,
-                user_dek_for_closure.as_ref(),
-                default_model_name,
-                default_history_management_strategy,
-                default_history_management_limit,
-            )
+    let (created_session, first_mes_ciphertext_opt, first_mes_nonce_opt, alternate_greetings) =
+        crate::db::with_conn(&pool, move |conn| {
+            conn.transaction(|transaction_conn| {
+                info!("Inside transaction - calling create_session_in_transaction");
+                create_session_in_transaction(
+                    transaction_conn,
+                    user_id,
+                    character_id,
+                    chat_mode,
+                    active_custom_persona_id,
+                    lorebook_ids_for_closure,
+                    user_dek_for_closure.as_ref(),
+                    default_model_name,
+                    default_history_management_strategy,
+                    default_history_management_limit,
+                )
+            })
         })
-    })
-    .await
-    .map_err(|e| {
-        error!(%user_id, error = ?e, "Database transaction failed during session creation");
-        e
-    })?;
+        .await
+        .map_err(|e| {
+            error!(%user_id, error = ?e, "Database transaction failed during session creation");
+            e
+        })?;
 
     info!(
         session_id = %created_session.id,

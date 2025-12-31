@@ -458,7 +458,11 @@ pub async fn get_session_data_for_generation(
                     let query_base = chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
                         .order(chat_messages::created_at.desc()) // Get newest first
-                        .limit(1000) // Limit to 1000 messages to prevent OOM
+                        .limit(if hist_limit > 0 {
+                            hist_limit as i64
+                        } else {
+                            10000 // Increased default from 1000 to 10000 to support large context windows
+                        })
                         .select((
                             chat_messages::id,
                             chat_messages::session_id,
@@ -1004,20 +1008,20 @@ pub async fn get_session_data_for_generation(
 
         // Enforce max_context_tokens if set
         if let Some(max_tokens) = plan_features.and_then(|pf| pf.max_context_tokens) {
-            // Skip enforcement for desktop users on free tier to allow local override of context limits
-            let is_desktop_free = cfg!(feature = "desktop") && plan_type == "free";
+            // Skip enforcement for desktop users to allow local override of context limits
+            let is_desktop = cfg!(feature = "desktop");
 
             debug!(
                 %session_id,
                 %user_id,
                 plan_type = %plan_type,
                 plan_max = %max_tokens,
-                is_desktop_free = %is_desktop_free,
+                is_desktop = %is_desktop,
                 current_limit = %context_total_token_limit,
                 "Subscription tier check for context limit"
             );
 
-            if !is_desktop_free && context_total_token_limit > max_tokens as usize {
+            if !is_desktop && context_total_token_limit > max_tokens as usize {
                 info!(
                     %session_id,
                     %user_id,
@@ -1027,13 +1031,13 @@ pub async fn get_session_data_for_generation(
                     "Enforcing subscription tier context limit - capping user's requested limit to plan maximum"
                 );
                 context_total_token_limit = max_tokens as usize;
-            } else if is_desktop_free && context_total_token_limit > max_tokens as usize {
+            } else if is_desktop && context_total_token_limit > max_tokens as usize {
                 info!(
                     %session_id,
                     %user_id,
                     requested = %context_total_token_limit,
                     plan_max = %max_tokens,
-                    "Desktop user on free tier: bypassing subscription context limit to allow local override"
+                    "Desktop user: bypassing subscription context limit to allow local override"
                 );
             }
         } else {
@@ -1147,6 +1151,40 @@ pub async fn get_session_data_for_generation(
     let mut rag_context_items: Vec<RetrievedChunk> = Vec::new();
     let mut combined_rag_candidates: Vec<RetrievedChunk> = Vec::new();
 
+    // Construct a richer query for RAG that includes recent context
+    let mut rag_query_text = user_message_content.clone();
+
+    // Add context from recent history if available (last 3 messages)
+    // managed_recent_history is ordered Oldest -> Newest
+    if !managed_recent_history.is_empty() {
+        let recent_context = managed_recent_history
+            .iter()
+            .rev()
+            .take(3)
+            .rev()
+            .map(|msg| {
+                let role = match msg.message_type {
+                    MessageRole::User => "User",
+                    MessageRole::Assistant => "Assistant",
+                    MessageRole::System => "System",
+                };
+                // Content is already decrypted in managed_recent_history
+                let content = String::from_utf8_lossy(&msg.content);
+                format!("{}: {}", role, content)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if !recent_context.is_empty() {
+            // Prepend context to the query
+            rag_query_text = format!(
+                "Context:\n{}\n\nCurrent Request:\n{}",
+                recent_context, user_message_content
+            );
+            debug!(%session_id, "Enriched RAG query with recent context");
+        }
+    }
+
     // Map token-based RAG limits to entry limits for search (divisor of 500 tokens per chunk)
     let lorebook_search_limit = rag_lorebooks_limit_sess
         .map(|l| (l / 500).max(15) as u64)
@@ -1189,8 +1227,8 @@ pub async fn get_session_data_for_generation(
                         user_id,
                         None, // Not searching chat history here
                         Some(lorebook_ids.clone()),
-                        None,                  // Not searching chronicles here (done separately)
-                        &user_message_content, // query_text
+                        None,            // Not searching chronicles here (done separately)
+                        &rag_query_text, // query_text (enriched)
                         lorebook_search_limit,
                         max_game_time_day, // Filter by game time
                         session_dek_temp.as_ref(),
@@ -1224,7 +1262,7 @@ pub async fn get_session_data_for_generation(
                     None,               // Not searching chat history here
                     None,               // Not searching lorebooks here
                     Some(chronicle_id), // Search this chronicle
-                    &user_message_content,
+                    &rag_query_text,
                     chronicles_search_limit,
                     max_game_time_day,         // Filter by game time
                     session_dek_temp.as_ref(), // DEK for decryption
@@ -1262,7 +1300,7 @@ pub async fn get_session_data_for_generation(
                     Some(session_id), // Searching chat history for the current session
                     None,             // Not searching lorebooks here
                     None,             // Not searching chronicles here (done separately above)
-                    &user_message_content, // query_text
+                    &rag_query_text,  // query_text (enriched)
                     older_chat_search_limit,
                     max_game_time_day,         // Filter by game time
                     session_dek_temp.as_ref(), // DEK for decryption
@@ -1334,22 +1372,6 @@ pub async fn get_session_data_for_generation(
                 Some(context_total_token_limit),
             );
 
-            // Sub-allocate the flexible RAG budget: 40% Lore, 40% Chronicle, 20% Older Chat
-            let lorebook_budget = (available_rag_tokens as f32 * 0.4) as usize;
-            let chronicle_budget = (available_rag_tokens as f32 * 0.4) as usize;
-            let older_chat_budget = available_rag_tokens
-                .saturating_sub(lorebook_budget)
-                .saturating_sub(chronicle_budget);
-
-            debug!(
-                %session_id,
-                %available_rag_tokens,
-                %lorebook_budget,
-                %chronicle_budget,
-                %older_chat_budget,
-                "Sub-allocated flexible RAG budgets."
-            );
-
             // Separate candidates by source type
             let mut lorebook_candidates = Vec::new();
             let mut chronicle_candidates = Vec::new();
@@ -1369,74 +1391,246 @@ pub async fn get_session_data_for_generation(
 
             let query_time = Some(chrono::Utc::now().into());
 
-            // Select from each source independently
+            // Waterfall Budgeting Strategy:
+            // Instead of strict pre-allocation, we use a "waterfall" approach.
+            // We define caps for specific types (Lorebooks, Chronicles) to prevent them from dominating,
+            // but if they use less than their cap, the remaining budget flows down to the next category.
+            // The final category (Older Chat) gets whatever is left.
+
+            let mut remaining_budget = available_rag_tokens;
             let mut selected_items = Vec::new();
 
-            // 1. Lorebooks
+            // 1. Lorebooks (Cap at 40% of TOTAL available, but take from remaining)
+            let lorebook_cap = (available_rag_tokens as f32 * 0.4) as usize;
+            let lorebook_limit = remaining_budget.min(lorebook_cap);
+
             if !lorebook_candidates.is_empty() {
                 match rag_selector
-                    .select_rag_content(lorebook_candidates, query_time, Some(lorebook_budget))
+                    .select_rag_content(lorebook_candidates, query_time, Some(lorebook_limit))
                     .await
                 {
-                    Ok(items) => selected_items.extend(items),
+                    Ok(items) => {
+                        // Calculate actual tokens used to update remaining budget
+                        let mut tokens_used = 0;
+                        for item in &items {
+                            if let Ok(estimate) = state
+                                .token_counter
+                                .count_tokens(
+                                    &item.text,
+                                    CountingMode::LocalOnly,
+                                    Some(&session_model_name_db),
+                                )
+                                .await
+                            {
+                                tokens_used += estimate.total;
+                            }
+                        }
+                        remaining_budget = remaining_budget.saturating_sub(tokens_used);
+                        selected_items.extend(items);
+                        debug!(
+                            %session_id,
+                            tokens_used,
+                            remaining_budget,
+                            "Lorebook selection complete (Waterfall Step 1)"
+                        );
+                    }
                     Err(e) => warn!(%session_id, error = %e, "Lorebook RAG selection failed."),
                 }
             }
 
-            // 2. Chronicles
+            // 2. Chronicles (Cap at 40% of TOTAL available, but take from remaining)
+            let chronicle_cap = (available_rag_tokens as f32 * 0.4) as usize;
+            let chronicle_limit = remaining_budget.min(chronicle_cap);
+
             if !chronicle_candidates.is_empty() {
                 match rag_selector
-                    .select_rag_content(chronicle_candidates, query_time, Some(chronicle_budget))
+                    .select_rag_content(chronicle_candidates, query_time, Some(chronicle_limit))
                     .await
                 {
-                    Ok(items) => selected_items.extend(items),
+                    Ok(items) => {
+                        let mut tokens_used = 0;
+                        for item in &items {
+                            if let Ok(estimate) = state
+                                .token_counter
+                                .count_tokens(
+                                    &item.text,
+                                    CountingMode::LocalOnly,
+                                    Some(&session_model_name_db),
+                                )
+                                .await
+                            {
+                                tokens_used += estimate.total;
+                            }
+                        }
+                        remaining_budget = remaining_budget.saturating_sub(tokens_used);
+                        selected_items.extend(items);
+                        debug!(
+                            %session_id,
+                            tokens_used,
+                            remaining_budget,
+                            "Chronicle selection complete (Waterfall Step 2)"
+                        );
+                    }
                     Err(e) => warn!(%session_id, error = %e, "Chronicle RAG selection failed."),
                 }
             }
 
-            // 3. Older Chat History
+            // 3. Older Chat History (Take ALL remaining budget)
+            // This ensures we fill the context window if other categories were sparse
+            let older_chat_limit = remaining_budget;
+
             if !older_chat_candidates.is_empty() {
                 match rag_selector
-                    .select_rag_content(older_chat_candidates, query_time, Some(older_chat_budget))
+                    .select_rag_content(older_chat_candidates, query_time, Some(older_chat_limit))
                     .await
                 {
-                    Ok(items) => selected_items.extend(items),
+                    Ok(items) => {
+                        selected_items.extend(items);
+                        debug!(
+                            %session_id,
+                            limit = older_chat_limit,
+                            "Older chat selection complete (Waterfall Step 3)"
+                        );
+                    }
                     Err(e) => warn!(%session_id, error = %e, "Older chat RAG selection failed."),
                 }
             }
 
             rag_context_items = selected_items;
-
-            // Calculate actual tokens used for debugging
-            let mut actual_tokens_used = 0;
-            for chunk in &rag_context_items {
-                if let Ok(estimate) = state
-                    .token_counter
-                    .count_tokens(
-                        &chunk.text,
-                        CountingMode::LocalOnly,
-                        Some(&session_model_name_db),
-                    )
-                    .await
-                {
-                    actual_tokens_used += estimate.total;
-                }
-            }
-            let current_rag_tokens_used = actual_tokens_used;
-
-            info!(
-                %session_id,
-                num_rag_items = rag_context_items.len(),
-                %current_rag_tokens_used,
-                %available_rag_tokens,
-                budget_utilization = format!("{:.1}%", (current_rag_tokens_used as f32 / available_rag_tokens as f32) * 100.0),
-                "Flexible RAG context selection complete."
-            );
         }
     } else {
         debug!(target: "test_debug", %session_id, %available_rag_tokens, "Skipping RAG context assembly as available_rag_tokens is not > 0.");
     }
     // --- End of RAG Context ---
+
+    // --- Global Waterfall: Fill remaining context with more linear history ---
+    // If RAG didn't exhaust the available budget, we "loop back" and add more linear history
+    // until the total context limit is reached.
+    let current_rag_tokens_used = if available_rag_tokens > 0 {
+        let mut total = 0;
+        for chunk in &rag_context_items {
+            if let Ok(estimate) = state
+                .token_counter
+                .count_tokens(
+                    &chunk.text,
+                    CountingMode::LocalOnly,
+                    Some(&session_model_name_db),
+                )
+                .await
+            {
+                total += estimate.total;
+            }
+        }
+        total
+    } else {
+        0
+    };
+
+    let global_remaining_budget = context_total_token_limit
+        .saturating_sub(actual_recent_history_tokens)
+        .saturating_sub(current_rag_tokens_used);
+
+    if global_remaining_budget > 1000 {
+        // Only bother if there's significant space (e.g. > 1k tokens)
+        info!(
+            %session_id,
+            %global_remaining_budget,
+            %actual_recent_history_tokens,
+            %current_rag_tokens_used,
+            "Global Waterfall: Filling remaining budget with additional linear history."
+        );
+
+        let mut extra_history_tokens: usize = 0;
+        let mut extra_messages_added: usize = 0;
+
+        // Get IDs of messages already in managed_recent_history to avoid duplicates
+        let already_included_ids: std::collections::HashSet<crate::db::DbId> =
+            managed_recent_history.iter().map(|m| m.id).collect();
+
+        // Iterate newest to oldest again to find messages we skipped
+        for db_msg_raw in final_messages_for_processing.iter().rev() {
+            if already_included_ids.contains(&db_msg_raw.id) {
+                continue;
+            }
+
+            // Decrypt and count (same logic as the first pass)
+            let decrypted_content_str = if let Some(dek_arc) = &user_dek_secret_box {
+                match get_message_content_with_variant(
+                    db_msg_raw,
+                    &state.pool,
+                    user_id,
+                    dek_arc.as_ref(),
+                )
+                .await
+                {
+                    Ok(content) => content,
+                    Err(e) => {
+                        warn!(%session_id, message_id = %db_msg_raw.id, error = %e, "Global Waterfall: Failed to decrypt message, skipping.");
+                        continue;
+                    }
+                }
+            } else {
+                match String::from_utf8(db_msg_raw.content.clone()) {
+                    Ok(content) => content,
+                    Err(_) => continue,
+                }
+            };
+
+            if decrypted_content_str.trim().is_empty() {
+                continue;
+            }
+
+            let token_estimate = match state
+                .token_counter
+                .count_tokens(
+                    &decrypted_content_str,
+                    CountingMode::LocalOnly,
+                    Some(&session_model_name_db),
+                )
+                .await
+            {
+                Ok(est) => est.total,
+                Err(_) => continue,
+            };
+
+            if extra_history_tokens.saturating_add(token_estimate) <= global_remaining_budget {
+                extra_history_tokens += token_estimate;
+                extra_messages_added += 1;
+
+                // Insert at the beginning to maintain Oldest -> Newest order
+                let mut updated_msg = db_msg_raw.clone();
+                updated_msg.content = decrypted_content_str.into_bytes();
+                updated_msg.content_nonce = None;
+                managed_recent_history.insert(0, updated_msg);
+
+                trace!(
+                    %session_id,
+                    message_id = %db_msg_raw.id,
+                    tokens = token_estimate,
+                    "Global Waterfall: Added extra message to history."
+                );
+            } else {
+                debug!(%session_id, "Global Waterfall: Budget exhausted.");
+                break;
+            }
+        }
+
+        actual_recent_history_tokens += extra_history_tokens;
+        info!(
+            %session_id,
+            %extra_messages_added,
+            %extra_history_tokens,
+            total_history_tokens = actual_recent_history_tokens,
+            "Global Waterfall complete."
+        );
+    } else {
+        debug!(
+            %session_id,
+            %global_remaining_budget,
+            "Global Waterfall: Skipping, remaining budget too small."
+        );
+    }
+    // --- End of Global Waterfall ---
 
     // --- Narrative Intelligence Processing ---
     // NOTE: Narrative intelligence processing has been moved to AFTER message saving

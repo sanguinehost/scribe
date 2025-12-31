@@ -148,7 +148,20 @@ impl LanceDbClient {
         let table = match self.connection.open_table(&self.table_name).execute().await {
             Ok(table) => {
                 debug!("Opened existing LanceDB table: {}", self.table_name);
-                table
+                // Validate schema - if incompatible, we need to recreate
+                if self.validate_schema(&table).await {
+                    table
+                } else {
+                    warn!(
+                        "LanceDB table schema mismatch, dropping and recreating table: {}",
+                        self.table_name
+                    );
+                    // Drop the incompatible table using LanceDB API
+                    let _ = self.connection.drop_table(&self.table_name, &[]).await;
+
+                    // Recreate empty table
+                    self.create_empty_table().await?
+                }
             }
             Err(_) => {
                 // Table doesn't exist, create it with empty data
@@ -159,6 +172,27 @@ impl LanceDbClient {
 
         *write_guard = Some(table.clone());
         Ok(table)
+    }
+
+    /// Validate that the table schema matches our expected schema
+    async fn validate_schema(&self, table: &Table) -> bool {
+        let table_schema = match table.schema().await {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Failed to get LanceDB table schema: {}", e);
+                return false;
+            }
+        };
+        let expected_schema = self.get_schema();
+
+        // Check if all expected fields are present in the table schema
+        for field in expected_schema.fields() {
+            if table_schema.field_with_name(field.name()).is_err() {
+                warn!("LanceDB table is missing field: {}", field.name());
+                return false;
+            }
+        }
+        true
     }
 
     /// Create an empty table with the correct schema

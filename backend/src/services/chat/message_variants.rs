@@ -36,7 +36,6 @@ pub async fn get_message_variants(
             .filter(message_variants::parent_message_id.eq(message_id))
             .filter(message_variants::parent_message_id.eq(message_id))
             // .filter(message_variants::user_id.eq(user_id)) // Removed to avoid potential mismatch, parent_message_id is unique enough
-
             .order(message_variants::variant_index.asc())
             .select(MessageVariant::as_select())
             .load::<MessageVariant>(conn)
@@ -131,16 +130,11 @@ pub async fn create_message_variant(
             // Decrypt the original message content to store as variant 0
             let original_content = if let Some(nonce) = &parent_message.content_nonce {
                 // Message is encrypted, decrypt it
-                match crate::crypto::decrypt_gcm(
-                    &parent_message.content,
-                    nonce,
-                    &dek_for_closure,
-                ) {
+                match crate::crypto::decrypt_gcm(&parent_message.content, nonce, &dek_for_closure) {
                     Ok(decrypted_secret_box) => {
                         let decrypted_bytes = decrypted_secret_box.expose_secret();
-                        String::from_utf8(decrypted_bytes.clone()).map_err(|e| {
-                            AppError::DecryptionError(format!("Invalid UTF-8: {e}"))
-                        })?
+                        String::from_utf8(decrypted_bytes.clone())
+                            .map_err(|e| AppError::DecryptionError(format!("Invalid UTF-8: {e}")))?
                     }
                     Err(e) => {
                         return Err(AppError::DecryptionError(format!(
@@ -151,9 +145,7 @@ pub async fn create_message_variant(
             } else {
                 // Message is not encrypted (legacy or test data)
                 String::from_utf8(parent_message.content.clone()).map_err(|e| {
-                    AppError::DecryptionError(format!(
-                        "Invalid UTF-8 in unencrypted message: {e}"
-                    ))
+                    AppError::DecryptionError(format!("Invalid UTF-8 in unencrypted message: {e}"))
                 })?
             };
 
@@ -162,9 +154,7 @@ pub async fn create_message_variant(
                 &parent_message.raw_prompt_ciphertext,
                 &parent_message.raw_prompt_nonce,
             ) {
-                (Some(ciphertext), Some(nonce))
-                    if !ciphertext.is_empty() && !nonce.is_empty() =>
-                {
+                (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
                     match crate::crypto::decrypt_gcm(ciphertext, nonce, &dek_for_closure) {
                         Ok(decrypted_secret_box) => {
                             let decrypted_bytes = decrypted_secret_box.expose_secret();
@@ -198,9 +188,7 @@ pub async fn create_message_variant(
                 .values(&original_variant)
                 .execute(trans_conn)
                 .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
-                        "Failed to insert original variant: {e}"
-                    ))
+                    AppError::DatabaseQueryError(format!("Failed to insert original variant: {e}"))
                 })?;
 
             tracing::info!(
@@ -379,7 +367,6 @@ pub async fn get_message_variant_by_index(
             .filter(message_variants::variant_index.eq(variant_index))
             .filter(message_variants::variant_index.eq(variant_index))
             // .filter(message_variants::user_id.eq(user_id))
-
             .select(MessageVariant::as_select())
             .first::<MessageVariant>(conn)
             .optional()
@@ -408,8 +395,7 @@ pub async fn delete_message_variant(
             .filter(message_variants::parent_message_id.eq(message_id))
             .filter(message_variants::variant_index.eq(variant_index))
             .filter(message_variants::variant_index.eq(variant_index));
-            // .filter(message_variants::user_id.eq(user_id));
-
+        // .filter(message_variants::user_id.eq(user_id));
 
         diesel::delete(query).execute(conn).map_err(|e| {
             AppError::DatabaseQueryError(format!("Failed to delete message variant: {e}"))
@@ -432,7 +418,6 @@ pub async fn get_variant_count(
             .filter(message_variants::parent_message_id.eq(message_id))
             .filter(message_variants::parent_message_id.eq(message_id))
             // .filter(message_variants::user_id.eq(user_id))
-
             .count()
             .get_result::<i64>(conn)
             .map_err(|e| {

@@ -935,32 +935,23 @@ async fn update_cumulative_token_counts(
                 // NEW: Track all four cost values properly
                 chat_sessions::total_actual_cost.eq(diesel::dsl::sql::<
                     crate::schema::sql_types_unified::DbNumericType,
-                >(
-                    "total_actual_cost + "
-                )
+                >("total_actual_cost + ")
                 .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_cost_val)),
                 chat_sessions::total_modified_cost.eq(diesel::dsl::sql::<
                     crate::schema::sql_types_unified::DbNumericType,
-                >(
-                    "total_modified_cost + "
-                )
+                >("total_modified_cost + ")
                 .bind::<crate::schema::sql_types_unified::DbNumericType, _>(modified_cost_val)),
-                chat_sessions::total_credit_cost
-                    .eq(chat_sessions::total_credit_cost + credit_cost),
+                chat_sessions::total_credit_cost.eq(chat_sessions::total_credit_cost + credit_cost),
                 chat_sessions::total_actual_charge.eq(diesel::dsl::sql::<
                     crate::schema::sql_types_unified::DbNumericType,
-                >(
-                    "total_actual_charge + "
-                )
+                >("total_actual_charge + ")
                 .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_charge_val)),
                 // Keep total_credits_used for backwards compatibility (uses actual_cost)
                 // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
                 // We use credits_used_delta which is typed correctly for each backend.
                 chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
                     crate::schema::sql_types_unified::DbCreditType,
-                >(
-                    "total_credits_used + "
-                )
+                >("total_credits_used + ")
                 .bind::<crate::schema::sql_types_unified::DbCreditType, _>(credits_used_delta)),
                 chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
             ))
@@ -984,8 +975,7 @@ async fn update_cumulative_token_counts(
         diesel::update(users::table.find(user_id))
             .set((
                 users::total_prompt_tokens.eq(users::total_prompt_tokens + prompt_db),
-                users::total_completion_tokens
-                    .eq(users::total_completion_tokens + completion_db),
+                users::total_completion_tokens.eq(users::total_completion_tokens + completion_db),
                 users::total_token_cost_cents.eq(users::total_token_cost_cents + cost_db),
                 users::token_usage_updated_at.eq(diesel::dsl::now),
             ))

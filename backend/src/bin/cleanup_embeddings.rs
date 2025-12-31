@@ -13,7 +13,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use diesel::prelude::*;
-use scribe_backend::{config::Config, vector_db::qdrant_client::{QdrantClientService, QdrantClientServiceTrait}};
+use scribe_backend::{
+    config::Config,
+    vector_db::qdrant_client::{QdrantClientService, QdrantClientServiceTrait},
+};
 use std::sync::Arc;
 use tracing::{info, warn};
 

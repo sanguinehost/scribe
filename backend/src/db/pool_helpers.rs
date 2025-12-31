@@ -188,24 +188,55 @@ where
             AppError::DatabaseQueryError(format!("Failed to get connection: {}", e))
         })?;
 
-        // Start an IMMEDIATE transaction manually to prevent "database is locked"
-        diesel::sql_query("BEGIN IMMEDIATE")
-            .execute(&mut conn)
-            .map_err(|e| {
-                AppError::DatabaseQueryError(format!("Failed to begin immediate transaction: {}", e))
-            })?;
+        let mut attempts = 0;
+        let max_attempts = 5;
+        let mut delay = std::time::Duration::from_millis(50);
+
+        loop {
+            // Start an IMMEDIATE transaction manually to prevent "database is locked"
+            let begin_result = diesel::sql_query("BEGIN IMMEDIATE").execute(&mut conn);
+
+            match begin_result {
+                Ok(_) => break,
+                Err(e) => {
+                    attempts += 1;
+                    if attempts >= max_attempts {
+                        return Err(AppError::DatabaseQueryError(format!(
+                            "Failed to begin immediate transaction after {} attempts: {}",
+                            max_attempts, e
+                        )));
+                    }
+
+                    // Check if it's a busy/locked error
+                    let is_locked = e.to_string().contains("database is locked")
+                        || e.to_string().contains("busy");
+                    if !is_locked {
+                        return Err(AppError::DatabaseQueryError(format!(
+                            "Failed to begin immediate transaction: {}",
+                            e
+                        )));
+                    }
+
+                    // Wait and retry
+                    std::thread::sleep(delay);
+                    delay = std::cmp::min(delay * 2, std::time::Duration::from_millis(1000));
+                }
+            }
+        }
 
         let result = f(&mut conn);
 
         if result.is_ok() {
-            diesel::sql_query("COMMIT").execute(&mut conn).map_err(|e| {
-                AppError::DatabaseQueryError(format!(
-                    "Failed to commit immediate transaction: {}",
-                    e
-                ))
-            })?;
+            diesel::sql_query("COMMIT")
+                .execute(&mut conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!(
+                        "Failed to commit immediate transaction: {}",
+                        e
+                    ))
+                })?;
         } else {
-            // Best effort rollback
+            // Rollback on error
             let _ = diesel::sql_query("ROLLBACK").execute(&mut conn);
         }
 

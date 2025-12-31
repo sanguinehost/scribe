@@ -1038,111 +1038,35 @@ pub(crate) fn truncate_recent_history_strategically(
     calculation: &mut TokenCalculation,
     current_total_tokens: &mut usize,
     max_allowed_tokens: usize,
-    min_tail_messages_to_preserve: usize,
+    _min_tail_messages_to_preserve: usize,
 ) {
     if *current_total_tokens <= max_allowed_tokens {
         return;
     }
 
-    let total_messages = calculation.recent_history_with_tokens.len();
     debug!(
-        total_messages,
-        min_tail_messages_to_preserve,
-        "Starting strategic middle-out truncation of recent history."
+        current_total_tokens = *current_total_tokens,
+        max_allowed_tokens, "Starting standard sliding window truncation (oldest-first)."
     );
 
-    // If we have fewer messages than the minimum tail, we can only truncate all or nothing
-    if total_messages <= min_tail_messages_to_preserve {
-        debug!(
-            "Total messages ({}) <= min_tail_to_preserve ({}). Cannot use strategic truncation.",
-            total_messages, min_tail_messages_to_preserve
-        );
-
-        // Fallback: try removing from oldest first, but warn
-        warn!(
-            "Falling back to oldest-first truncation due to insufficient message count for strategic truncation."
-        );
-        while !calculation.recent_history_with_tokens.is_empty()
-            && *current_total_tokens > max_allowed_tokens
-        {
-            let (_, tokens) = calculation.recent_history_with_tokens.remove(0);
-            *current_total_tokens -= tokens;
-        }
-        return;
-    }
-
-    // Strategic middle-out truncation:
-    // Keep the last min_tail_messages_to_preserve messages
-    // Remove messages from the middle (oldest messages before the tail)
-
-    let tail_start_index = total_messages.saturating_sub(min_tail_messages_to_preserve);
-
-    debug!(
-        tail_start_index,
-        "Preserving tail messages from index {} to end", tail_start_index
-    );
-
-    // Remove messages from the middle (working backwards from tail_start_index - 1)
-    let mut removal_index = tail_start_index.saturating_sub(1);
-
-    while *current_total_tokens > max_allowed_tokens && removal_index > 0 {
-        // Make sure we don't go out of bounds due to previous removals
-        if removal_index >= calculation.recent_history_with_tokens.len() {
-            removal_index = calculation
-                .recent_history_with_tokens
-                .len()
-                .saturating_sub(1);
-        }
-
-        if removal_index == 0 {
-            break; // Don't remove the very first message if we can help it
-        }
-
-        let (_, tokens) = calculation.recent_history_with_tokens.remove(removal_index);
-        *current_total_tokens -= tokens;
-
-        debug!(
-            removal_index,
-            tokens,
-            current_total_tokens = *current_total_tokens,
-            "Removed middle message at index {} ({} tokens)",
-            removal_index,
-            tokens
-        );
-
-        // Update removal_index for next iteration (move towards beginning)
-        removal_index = removal_index.saturating_sub(1);
-    }
-
-    // If still over limit, remove from the very beginning (oldest messages)
-    // This preserves the tail but sacrifices the earliest conversation context
     while !calculation.recent_history_with_tokens.is_empty()
         && *current_total_tokens > max_allowed_tokens
     {
-        // Only remove from front if we still have more than min_tail_messages_to_preserve
-        if calculation.recent_history_with_tokens.len() <= min_tail_messages_to_preserve {
-            warn!(
-                "Reached minimum tail preservation limit. Cannot truncate further without breaking continuity."
-            );
-            break;
-        }
-
+        // Remove the oldest message (index 0)
         let (_, tokens) = calculation.recent_history_with_tokens.remove(0);
         *current_total_tokens -= tokens;
 
         debug!(
             tokens,
             current_total_tokens = *current_total_tokens,
-            "Removed oldest message ({} tokens) as final resort",
-            tokens
+            "Removed oldest message"
         );
     }
 
     debug!(
         final_message_count = calculation.recent_history_with_tokens.len(),
         current_total_tokens = *current_total_tokens,
-        max_allowed_tokens,
-        "Strategic history truncation completed."
+        "History truncation completed."
     );
 }
 
