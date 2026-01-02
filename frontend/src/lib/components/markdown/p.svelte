@@ -1,63 +1,71 @@
 <script lang="ts">
 	/* eslint-disable svelte/valid-compile */
-	// Disable custom elements to avoid props inference issues
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import { streamingService } from '$lib/services/StreamingService.svelte';
+	import { desktopStreamingService } from '$lib/services/DesktopStreamingService.svelte';
+	import { isInDesktopMode } from '$lib/api/desktop-auth';
 
 	let { children, ...props }: { children?: Snippet; [key: string]: unknown } = $props();
 	let element = $state<HTMLElement | null>(null);
 
 	let hasProcessed = $state(false);
 
-	onMount(() => {
+	const activeStreamingService = $derived(
+		isInDesktopMode() ? desktopStreamingService : streamingService
+	);
+
+	function processNodes() {
 		const el = element;
-		if (!el || hasProcessed) return;
+		if (!el) return;
 
-		// Simple escape function
-		function escapeHtml(text: string): string {
-			const div = document.createElement('div');
-			div.textContent = text;
-			return div.innerHTML;
-		}
+		const currentHtml = el.innerHTML;
+		// Regex to match:
+		// 1. Code blocks (to skip)
+		// 2. Already highlighted dialogue (to skip)
+		// 3. Other tags (to skip, including Svelte comments)
+		// 4. Quotes (to highlight)
+		//    Group 4: Opening quote
+		//    Group 5: Content (non-greedy, can include tags)
+		//    Group 6: Closing quote
+		// Followed by: End of string or non-alphanumeric character
+		const regex =
+			/(<code[^>]*>.*?<\/code>)|(<span[^>]*class="[^"]*dialogue-text[^"]*"[^>]*>.*?<\/span>)|(<[^>]+>)|([“"])([^“"]+)([”"])(?=[^a-zA-Z0-9]|$)/gs;
 
-		// Process only text nodes to preserve existing elements like <code>
-		const nodes = Array.from(el.childNodes);
-		let changed = false;
+		const newHtml = currentHtml.replace(
+			regex,
+			(match, code, dialogue, tag, open, content, close, offset, fullString) => {
+				if (code || dialogue || tag) return match;
 
-		nodes.forEach((node) => {
-			if (node.nodeType === 3) {
-				// Node.TEXT_NODE
-				const text = node.textContent || '';
-				const quoteRegex = /"[^"]+"/g;
-				let match;
-				let pos = 0;
-				const parts: string[] = [];
+				// Check preceder in the original string
+				const charBefore = offset > 0 ? fullString[offset - 1] : '';
+				// Valid preceders: start of string, whitespace, opening brackets, or end of a tag (like Svelte comments)
+				const isValidPreceder = !charBefore || /\s|[(\[{]|>/.test(charBefore);
 
-				while ((match = quoteRegex.exec(text)) !== null) {
-					if (match.index > pos) {
-						parts.push(escapeHtml(text.slice(pos, match.index)));
-					}
-					parts.push(`<span class="dialogue-text">${escapeHtml(match[0])}</span>`);
-					pos = match.index + match[0].length;
-				}
+				if (!isValidPreceder) return match;
 
-				if (pos < text.length) {
-					parts.push(escapeHtml(text.slice(pos)));
-				}
-
-				if (parts.length > 1 || (parts.length === 1 && parts[0].includes('span'))) {
-					const span = document.createElement('span');
-					span.innerHTML = parts.join('');
-					// Use a document fragment to avoid extra span if possible,
-					// but for simplicity and safety with replaceChild, a span is fine.
-					el.replaceChild(span, node);
-					changed = true;
-				}
+				const fullQuote = open + content + close;
+				return `<span class="dialogue-text" data-highlighted="true">${fullQuote}</span>`;
 			}
-		});
+		);
 
-		if (changed) {
+		if (newHtml !== currentHtml) {
+			el.innerHTML = newHtml;
 			hasProcessed = true;
+		}
+	}
+
+	onMount(() => {
+		// Initial processing for historical messages
+		// We use a small timeout to ensure Svelte has finished rendering the children
+		setTimeout(processNodes, 100);
+	});
+
+	// Run robust processing when streaming finishes
+	$effect(() => {
+		if (!activeStreamingService.isTyping) {
+			// Wait for any final animations or Svelte updates to settle
+			setTimeout(processNodes, 300);
 		}
 	});
 </script>
