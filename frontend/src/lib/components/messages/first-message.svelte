@@ -103,7 +103,7 @@
 >
 	<div class="flex w-full gap-4">
 		<div
-			class="bg-background ring-border flex size-8 shrink-0 items-center justify-center rounded-full ring-1"
+			class="flex size-8 shrink-0 items-center justify-center rounded-full bg-background ring-1 ring-border"
 		>
 			<div class="translate-y-px">
 				<SparklesIcon size={14} />
@@ -114,27 +114,27 @@
 			<!-- Message content -->
 			<div
 				class={_cn(
-					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 bg-background w-full max-w-none break-words rounded-md border px-3 py-2'
+					'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words rounded-md border bg-background px-3 py-2'
 				)}
 			>
 				{#key currentGreeting}
 					<Markdown md={currentGreeting} />
 				{/key}
 				{#if loading}
-					<span class="bg-foreground ml-1 inline-block h-4 w-0.5 animate-pulse"></span>
+					<span class="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground"></span>
 				{/if}
 			</div>
 
 			<!-- Greeting indicator and navigation controls when multiple are available -->
 			{#if hasMultipleGreetings}
-				<div class="text-muted-foreground flex items-center gap-1 text-xs">
+				<div class="flex items-center gap-1 text-xs text-muted-foreground">
 					Greeting {currentGreetingIndex + 1}
 					<Tooltip>
 						<TooltipTrigger>
 							<ButtonComponent
 								variant="ghost"
 								size="icon"
-								class="text-foreground h-6 w-6"
+								class="h-6 w-6 text-foreground"
 								onclick={handlePreviousGreeting}
 								disabled={!canGoPrevious}
 							>
@@ -146,7 +146,7 @@
 						</TooltipContent>
 					</Tooltip>
 
-					<span class="text-muted-foreground px-1 text-xs">
+					<span class="px-1 text-xs text-muted-foreground">
 						{currentGreetingIndex + 1}/{availableGreetings.length}
 					</span>
 
@@ -155,7 +155,7 @@
 							<ButtonComponent
 								variant="ghost"
 								size="icon"
-								class="text-foreground h-6 w-6"
+								class="h-6 w-6 text-foreground"
 								onclick={handleNextGreeting}
 								disabled={!canGoNext}
 							>

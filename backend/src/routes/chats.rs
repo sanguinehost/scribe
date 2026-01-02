@@ -1639,10 +1639,6 @@ pub async fn get_message_by_id_handler(
             })?
     };
 
-    let response_parts = message_db
-        .parts
-        .unwrap_or_else(|| crate::db::Json(json!([{"text": decrypted_content_string}])));
-
     // Decrypt raw prompt if available
     let decrypted_raw_prompt = match (
         &message_db.raw_prompt_ciphertext,
@@ -1679,9 +1675,9 @@ pub async fn get_message_by_id_handler(
         _ => None, // No raw prompt stored or empty/missing fields
     };
 
-    // If this is a variant (index > 0), try to fetch the raw prompt from the variant itself
+    // If this is a variant (index > 0), try to fetch the content and raw prompt from the variant itself
     #[cfg(feature = "sqlite-backend")]
-    let decrypted_raw_prompt = if message_db.current_variant_index > 0 {
+    let (decrypted_content_string, decrypted_raw_prompt) = if message_db.current_variant_index > 0 {
         let pool = state.pool.clone();
         let msg_id = message_db.id;
         let var_idx = message_db.current_variant_index;
@@ -1690,7 +1686,7 @@ pub async fn get_message_by_id_handler(
         let dek_bytes = dek.0.expose_secret().clone();
         let dek_box = SecretBox::new(Box::new(dek_bytes));
 
-        let variant_raw_prompt_res = crate::db::with_conn(&pool, move |conn| {
+        let variant_res = crate::db::with_conn(&pool, move |conn| {
             use crate::models::chats::MessageVariant;
 
             let variant_opt = message_variants::table
@@ -1704,39 +1700,57 @@ pub async fn get_message_by_id_handler(
         })
         .await;
 
-        match variant_raw_prompt_res {
+        match variant_res {
             Ok(Some(variant)) => {
-                match (&variant.raw_prompt_ciphertext, &variant.raw_prompt_nonce) {
-                    (Some(ciphertext), Some(nonce))
-                        if !ciphertext.is_empty() && !nonce.is_empty() =>
-                    {
-                        crypto::decrypt_gcm(ciphertext, nonce, &dek_box)
-                            .map_err(|e| {
-                                tracing::error!("Failed to decrypt variant raw prompt: {}", e);
-                                AppError::DecryptionError(e.to_string())
+                // Decrypt content
+                let content_str = match (&variant.content, &variant.content_nonce) {
+                    (content, Some(nonce)) if !content.is_empty() && !nonce.is_empty() => {
+                        crypto::decrypt_gcm(content, nonce, &dek_box)
+                            .map_err(|e| AppError::DecryptionError(e.to_string()))
+                            .and_then(|bytes| {
+                                String::from_utf8(bytes.expose_secret().clone())
+                                    .map_err(|e| AppError::DecryptionError(e.to_string()))
                             })
-                            .and_then(|secret_bytes| {
-                                String::from_utf8(secret_bytes.expose_secret().clone()).map_err(
-                                    |e| {
-                                        tracing::error!("UTF-8 error variant raw prompt: {}", e);
-                                        AppError::DecryptionError(e.to_string())
-                                    },
-                                )
+                            .unwrap_or_else(|e| {
+                                tracing::error!("Failed to decrypt variant content: {}", e);
+                                decrypted_content_string.clone() // Fallback
                             })
-                            .ok()
                     }
-                    _ => decrypted_raw_prompt,
-                }
+                    _ => decrypted_content_string.clone(), // Fallback
+                };
+
+                // Decrypt raw prompt
+                let raw_prompt_str =
+                    match (&variant.raw_prompt_ciphertext, &variant.raw_prompt_nonce) {
+                        (Some(ciphertext), Some(nonce))
+                            if !ciphertext.is_empty() && !nonce.is_empty() =>
+                        {
+                            crypto::decrypt_gcm(ciphertext, nonce, &dek_box)
+                                .map_err(|e| AppError::DecryptionError(e.to_string()))
+                                .and_then(|bytes| {
+                                    String::from_utf8(bytes.expose_secret().clone())
+                                        .map_err(|e| AppError::DecryptionError(e.to_string()))
+                                })
+                                .ok()
+                        }
+                        _ => decrypted_raw_prompt,
+                    };
+
+                (content_str, raw_prompt_str)
             }
-            Ok(None) => decrypted_raw_prompt,
+            Ok(None) => (decrypted_content_string, decrypted_raw_prompt),
             Err(e) => {
-                tracing::warn!("Failed to fetch variant for raw prompt: {}", e);
-                decrypted_raw_prompt
+                tracing::warn!("Failed to fetch variant: {}", e);
+                (decrypted_content_string, decrypted_raw_prompt)
             }
         }
     } else {
-        decrypted_raw_prompt
+        (decrypted_content_string, decrypted_raw_prompt)
     };
+
+    let response_parts = message_db
+        .parts
+        .unwrap_or_else(|| crate::db::Json(json!([{"text": decrypted_content_string}])));
 
     let response = MessageResponse {
         id: message_db.id,

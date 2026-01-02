@@ -70,31 +70,31 @@
 
 				<div class="space-y-2 pt-2">
 					<h4 class="text-sm font-medium">Benefits of Chronicles:</h4>
-					<ul class="text-muted-foreground space-y-2 text-sm">
+					<ul class="space-y-2 text-sm text-muted-foreground">
 						<li class="flex items-start gap-2">
-							<BookOpen class="text-primary mt-0.5 h-4 w-4" />
+							<BookOpen class="mt-0.5 h-4 w-4 text-primary" />
 							<span>Automatic story tracking and event extraction</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Search class="text-primary mt-0.5 h-4 w-4" />
+							<Search class="mt-0.5 h-4 w-4 text-primary" />
 							<span>Smart context search across all your sessions</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Sparkles class="text-primary mt-0.5 h-4 w-4" />
+							<Sparkles class="mt-0.5 h-4 w-4 text-primary" />
 							<span>Optional AI agent for automatic context enrichment</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Sparkles class="text-primary mt-0.5 h-4 w-4" />
+							<Sparkles class="mt-0.5 h-4 w-4 text-primary" />
 							<span>Character and world evolution tracking</span>
 						</li>
 						<li class="flex items-start gap-2">
-							<Clock class="text-primary mt-0.5 h-4 w-4" />
+							<Clock class="mt-0.5 h-4 w-4 text-primary" />
 							<span>Timeline of significant narrative events</span>
 						</li>
 					</ul>
 				</div>
 
-				<div class="bg-muted/50 rounded-lg p-3 text-sm">
+				<div class="rounded-lg bg-muted/50 p-3 text-sm">
 					<p class="mb-1 font-medium">Recommended for:</p>
 					<p class="text-muted-foreground">
 						Extended roleplays, ongoing stories, world-building sessions, or any conversation you
@@ -102,7 +102,7 @@
 					</p>
 				</div>
 
-				<p class="text-muted-foreground text-xs italic">
+				<p class="text-xs italic text-muted-foreground">
 					You can always enable chronicles later using the re-chronicle feature in chat settings.
 				</p>
 			</DialogDescription>

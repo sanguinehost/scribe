@@ -1281,7 +1281,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid.into());
@@ -2150,7 +2150,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid.into());

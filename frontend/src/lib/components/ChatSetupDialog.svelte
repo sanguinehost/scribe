@@ -71,7 +71,7 @@
 	<DialogContent class="sm:max-w-[600px]">
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2 text-xl">
-				<Sparkles class="text-primary h-5 w-5" />
+				<Sparkles class="h-5 w-5 text-primary" />
 				Customize your Chat Experience
 			</DialogTitle>
 			<DialogDescription>
@@ -83,7 +83,7 @@
 		<div class="grid gap-6 py-4">
 			<!-- Chronicles Section -->
 			<div
-				class="hover:bg-accent/50 flex items-start space-x-4 rounded-lg border p-4 transition-colors"
+				class="flex items-start space-x-4 rounded-lg border p-4 transition-colors hover:bg-accent/50"
 			>
 				<div class="mt-1">
 					<BookOpen class="h-6 w-6 text-blue-500" />
@@ -95,12 +95,12 @@
 						>
 						<Switch id="chronicle-toggle" bind:checked={enableChronicle} />
 					</div>
-					<p class="text-muted-foreground text-sm">
+					<p class="text-sm text-muted-foreground">
 						Tracks the narrative history, creating a searchable timeline of events and story
 						developments.
 					</p>
 					{#if enableChronicle}
-						<ul class="text-muted-foreground mt-2 grid grid-cols-2 gap-1 text-xs">
+						<ul class="mt-2 grid grid-cols-2 gap-1 text-xs text-muted-foreground">
 							<li class="flex items-center gap-1">
 								<Search class="h-3 w-3" /> Smart context search
 							</li>
@@ -114,7 +114,7 @@
 
 			<!-- Game Master Section -->
 			<div
-				class="hover:bg-accent/50 flex items-start space-x-4 rounded-lg border p-4 transition-colors"
+				class="flex items-start space-x-4 rounded-lg border p-4 transition-colors hover:bg-accent/50"
 			>
 				<div class="mt-1">
 					<Crown class="h-6 w-6 text-purple-500" />
@@ -126,11 +126,11 @@
 						>
 						<Switch id="gm-toggle" bind:checked={enableGameMaster} />
 					</div>
-					<p class="text-muted-foreground text-sm">
+					<p class="text-sm text-muted-foreground">
 						Adds RPG mechanics including inventory management, quest tracking, and vital statistics.
 					</p>
 					{#if enableGameMaster}
-						<ul class="text-muted-foreground mt-2 grid grid-cols-2 gap-1 text-xs">
+						<ul class="mt-2 grid grid-cols-2 gap-1 text-xs text-muted-foreground">
 							<li class="flex items-center gap-1">
 								<ScrollText class="h-3 w-3" /> Quest tracking
 							</li>
@@ -145,7 +145,7 @@
 
 		<div class="flex items-center space-x-2 py-2">
 			<CheckboxComponent id="remember-choice" bind:checked={rememberChoice} />
-			<Label for="remember-choice" class="text-muted-foreground cursor-pointer text-sm font-normal">
+			<Label for="remember-choice" class="cursor-pointer text-sm font-normal text-muted-foreground">
 				Remember my choices for future chats
 			</Label>
 		</div>

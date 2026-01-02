@@ -799,6 +799,12 @@ impl DbDecimal {
     }
 }
 
+impl Default for DbDecimal {
+    fn default() -> Self {
+        Self(BigDecimal::from(0))
+    }
+}
+
 impl Deref for DbDecimal {
     type Target = BigDecimal;
 

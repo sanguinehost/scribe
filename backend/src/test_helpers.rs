@@ -2118,7 +2118,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut _conn = crate::db::get_conn(pool)
+        let mut conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2239,7 +2239,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut _conn = crate::db::get_conn(pool)
+        let mut conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2369,7 +2369,7 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let mut _conn = crate::db::get_conn(&pool).await?;
+        let mut conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
         let name_clone_for_error = name.clone();

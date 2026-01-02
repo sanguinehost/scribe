@@ -45,7 +45,6 @@ export class ChatController {
 		allMessages?: StreamingMessage[];
 	} | null>(null);
 
-
 	// Suggested Actions
 	dynamicSuggestedActions = $state<Array<{ action: string }>>([]);
 	isLoadingSuggestions = $state(false);
@@ -779,7 +778,11 @@ export class ChatController {
 		}
 	}
 
-	substituteTemplateVariables(text: string, characterName: string, userPersonaName?: string): string {
+	substituteTemplateVariables(
+		text: string,
+		characterName: string,
+		userPersonaName?: string
+	): string {
 		if (!text) return text;
 		const nameToUse = userPersonaName || this.user?.username || 'User';
 		return text.replace(/\{\{char\}\}/g, characterName).replace(/\{\{user\}\}/g, nameToUse);
@@ -1267,13 +1270,13 @@ export class ChatController {
 			).map((msg) =>
 				msg.id === targetMessage!.id
 					? {
-						...msg,
-						content,
-						displayedContent: content,
-						current_variant_index: index,
-						_variantChangedAt: Date.now(),
-						shouldAnimate: false // Don't animate greeting changes
-					}
+							...msg,
+							content,
+							displayedContent: content,
+							current_variant_index: index,
+							_variantChangedAt: Date.now(),
+							shouldAnimate: false // Don't animate greeting changes
+						}
 					: msg
 			);
 
@@ -1289,7 +1292,10 @@ export class ChatController {
 					console.warn('⚠️ Error persisting first message variant selection:', _error);
 				}
 			} else {
-				console.warn('⚠️ Could not persist greeting variant: No backend ID found for message', targetMessage.id);
+				console.warn(
+					'⚠️ Could not persist greeting variant: No backend ID found for message',
+					targetMessage.id
+				);
 			}
 		} else {
 			console.warn('⚠️ Could not find message to update greeting variant');

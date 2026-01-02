@@ -345,11 +345,11 @@
 						</CardHeader>
 					</Card>
 				{:else if persona}
-					<Card class="border-border border shadow-sm">
+					<Card class="border border-border shadow-sm">
 						<CardHeader class="px-6 py-6">
 							<div class="flex items-start space-x-6">
 								<Avatar
-									class="border-muted h-24 w-24 border-2 transition-transform hover:scale-105 {persona.avatar
+									class="h-24 w-24 border-2 border-muted transition-transform hover:scale-105 {persona.avatar
 										? 'cursor-pointer'
 										: ''}"
 									onclick={() => persona?.avatar && (avatarLightboxOpen = true)}
@@ -368,7 +368,7 @@
 												<h2 class="text-3xl font-bold">{persona.name}</h2>
 												{#if persona.description}
 													<div
-														class="prose prose-sm dark:prose-invert text-muted-foreground [&_*]:!text-muted-foreground mt-2 max-w-none"
+														class="prose prose-sm dark:prose-invert mt-2 max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
 													>
 														{#if containsHtml(persona.description)}
 															<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -451,10 +451,10 @@
 						{#if persona.scenario || persona.personality || persona.first_mes || persona.system_prompt}
 							<CardContent class="space-y-4 px-6 pb-6">
 								{#if persona.scenario}
-									<div class="border-border bg-card rounded-lg border p-4 shadow-sm">
-										<h4 class="text-muted-foreground mb-2 text-sm font-semibold">Scenario</h4>
+									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
 										<div
-											class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground max-w-none text-sm"
+											class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 										>
 											{#if containsHtml(persona.scenario)}
 												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -466,10 +466,10 @@
 									</div>
 								{/if}
 								{#if persona.personality}
-									<div class="border-border bg-card rounded-lg border p-4 shadow-sm">
-										<h4 class="text-muted-foreground mb-2 text-sm font-semibold">Personality</h4>
+									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
 										<div
-											class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground max-w-none text-sm"
+											class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 										>
 											{#if containsHtml(persona.personality)}
 												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -481,10 +481,10 @@
 									</div>
 								{/if}
 								{#if persona.first_mes}
-									<div class="border-border bg-card rounded-lg border p-4 shadow-sm">
-										<h4 class="text-muted-foreground mb-2 text-sm font-semibold">First Message</h4>
+									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">First Message</h4>
 										<div
-											class="prose prose-sm dark:prose-invert [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground max-w-none text-sm italic"
+											class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 										>
 											{#if containsHtml(persona.first_mes)}
 												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -496,10 +496,10 @@
 									</div>
 								{/if}
 								{#if persona.system_prompt}
-									<div class="border-border bg-card rounded-lg border p-4 shadow-sm">
-										<h4 class="text-muted-foreground mb-2 text-sm font-semibold">System Prompt</h4>
+									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">System Prompt</h4>
 										<div
-											class="prose prose-sm dark:prose-invert [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground max-w-none text-sm"
+											class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 										>
 											{#if containsHtml(persona.system_prompt)}
 												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -511,12 +511,12 @@
 									</div>
 								{/if}
 								{#if persona.mes_example}
-									<div class="border-border bg-card rounded-lg border p-4 shadow-sm">
-										<h4 class="text-muted-foreground mb-2 text-sm font-semibold">
+									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
 											Message Example
 										</h4>
 										<div
-											class="prose prose-sm dark:prose-invert [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground max-w-none text-sm"
+											class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 										>
 											{#if containsHtml(persona.mes_example)}
 												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -528,12 +528,12 @@
 									</div>
 								{/if}
 								{#if persona.post_history_instructions}
-									<div class="border-border bg-card rounded-lg border p-4 shadow-sm">
-										<h4 class="text-muted-foreground mb-2 text-sm font-semibold">
+									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
+										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
 											Post-History Instructions
 										</h4>
 										<div
-											class="prose prose-sm dark:prose-invert [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground max-w-none text-sm"
+											class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
 										>
 											{#if containsHtml(persona.post_history_instructions)}
 												<!-- eslint-disable-next-line svelte/no-at-html-tags -->

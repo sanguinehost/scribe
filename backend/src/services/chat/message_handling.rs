@@ -15,9 +15,10 @@ use crate::{
     models::chats::{
         ChatMessage,
         DbInsertableChatMessage,
-        MessageRole, // Changed NewChatMessagePayload to NewChatMessage
+        MessageRole,
+        MessageVariant, // Added
     },
-    schema::{chat_messages, chat_sessions},
+    schema::{chat_messages, chat_sessions, message_variants as message_variants_schema}, // Added message_variants as message_variants_schema
     services::{chat::message_variants, hybrid_token_counter::CountingMode},
     state::DbPool, // Changed db::Db to state::DbPool
     AppState,      // Added AppState
@@ -65,7 +66,7 @@ pub async fn get_messages_for_session(
             |owner_id| {
                 if owner_id == user_id {
                     // Load full ChatMessage using as_select() to avoid SQLite tuple size limits
-                    chat_messages::table
+                    let mut messages = chat_messages::table
                         .filter(chat_messages::session_id.eq(session_id))
                         .order(chat_messages::created_at.asc())
                         .select(ChatMessage::as_select())
@@ -73,7 +74,42 @@ pub async fn get_messages_for_session(
                         .map_err(|e| {
                             error!("Failed to load messages for session {}: {}", session_id, e);
                             AppError::DatabaseQueryError(e.to_string())
-                        })
+                        })?;
+
+                    // Substitute variant content for messages with current_variant_index > 0
+                    for msg in messages.iter_mut() {
+                        if msg.current_variant_index > 0 {
+                            if let Some(variant) = message_variants_schema::table
+                                .filter(message_variants_schema::parent_message_id.eq(msg.id))
+                                .filter(
+                                    message_variants_schema::variant_index
+                                        .eq(msg.current_variant_index),
+                                )
+                                .select(MessageVariant::as_select())
+                                .first::<MessageVariant>(conn)
+                                .optional()
+                                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                            {
+                                msg.content = variant.content;
+                                msg.content_nonce = variant.content_nonce;
+                                msg.prompt_tokens = variant.prompt_tokens;
+                                msg.completion_tokens = variant.completion_tokens;
+                                if let Some(model) = variant.model_name {
+                                    msg.model_name = model;
+                                }
+                                #[cfg(feature = "postgres-backend")]
+                                {
+                                    msg.game_time = variant.game_state.map(crate::db::Json);
+                                }
+                                #[cfg(feature = "sqlite-backend")]
+                                {
+                                    msg.game_time = variant.game_state;
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(messages)
                 } else {
                     Err(AppError::Forbidden(
                         "Access denied to chat session".to_string(),

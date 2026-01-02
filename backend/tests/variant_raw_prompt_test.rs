@@ -1,4 +1,4 @@
-#![cfg(feature = "postgres-backend")]
+#![cfg(any(feature = "postgres-backend", feature = "sqlite-backend"))]
 #![cfg(test)]
 
 //! Integration tests for variant raw prompt retrieval
@@ -66,11 +66,11 @@ async fn create_test_user_with_dek(
         password_hash,
         email,
         kek_salt: kek_salt_str,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -91,7 +91,7 @@ async fn create_test_user_with_dek(
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
 
     let session_dek = SessionDek(SecretBox::new(Box::new(dek.expose_secret().to_vec())));
-    Ok((user_db.id, session_dek))
+    Ok((*user_db.id, session_dek))
 }
 
 async fn create_test_chat_session(
@@ -100,7 +100,7 @@ async fn create_test_chat_session(
     auth_cookie: &str,
 ) -> anyhow::Result<(DbCharacter, Chat, String)> {
     let new_character = NewCharacter {
-        user_id,
+        user_id: user_id.into(),
         spec: "test_char".to_string(),
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
@@ -120,7 +120,8 @@ async fn create_test_chat_session(
                 .returning(DbCharacter::as_returning())
                 .get_result(conn)
         })
-        .await??;
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))??;
 
     let create_session_payload = json!({
         "character_id": character.id,
@@ -160,25 +161,30 @@ async fn create_test_chat_session(
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
         })
-        .await??;
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))??;
 
     Ok((character, chat_session, auth_cookie.to_string()))
 }
 
 async fn create_test_message(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
     content: &str,
     role: MessageRole,
+    session_dek: &SessionDek,
 ) -> anyhow::Result<DbChatMessage> {
+    let (encrypted_content, content_nonce) =
+        crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
+
     let new_message = NewChatMessage {
-        id: Uuid::new_v4(),
+        id: scribe_backend::db::DbId::new(),
         session_id,
         user_id,
         message_type: role.clone(),
-        content: content.as_bytes().to_vec(),
-        content_nonce: None,
+        content: encrypted_content,
+        content_nonce: Some(content_nonce),
         role: Some(role.to_string()),
         parts: None,
         attachments: None,
@@ -189,6 +195,16 @@ async fn create_test_message(
         raw_prompt_ciphertext: None, // Original message has no raw prompt in this test
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        variant_count: 0,
+        current_variant_index: 0,
+        credits_charged: 0,
+        credits_cost: 0.into(),
+        actual_cost: 0.into(),
+        modified_cost: 0.into(),
+        credit_cost: 0,
+        actual_charge: 0.into(),
+        game_time: None,
     };
 
     let message: DbChatMessage = test_app
@@ -201,15 +217,16 @@ async fn create_test_message(
                 .returning(DbChatMessage::as_returning())
                 .get_result(conn)
         })
-        .await??;
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))??;
 
     Ok(message)
 }
 
 async fn create_message_variant_with_raw_prompt(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
-    message_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    message_id: scribe_backend::db::DbId,
     variant_content: &str,
     raw_prompt: &str,
     session_dek: &SecretBox<Vec<u8>>,
@@ -226,7 +243,8 @@ async fn create_message_variant_with_raw_prompt(
                 .map_err(|e| anyhow::anyhow!("Failed to count variants: {}", e))?;
             Ok::<i32, anyhow::Error>(if count == 0 { 1 } else { (count + 1) as i32 })
         })
-        .await??;
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))??;
 
     let new_variant = NewMessageVariant::new(
         message_id,
@@ -237,8 +255,8 @@ async fn create_message_variant_with_raw_prompt(
         None,
         None,
         Some("gemini-1.5-pro".to_string()),
-        #[cfg(feature = "sqlite-backend")]
         Some(raw_prompt),
+        None,
     )?;
 
     test_app
@@ -250,7 +268,8 @@ async fn create_message_variant_with_raw_prompt(
                 .values(&new_variant)
                 .execute(conn)
         })
-        .await??;
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))??;
 
     test_app
         .db_pool
@@ -261,7 +280,8 @@ async fn create_message_variant_with_raw_prompt(
                 .set(chat_messages::variant_count.eq(next_index + 1))
                 .execute(conn)
         })
-        .await??;
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))??;
 
     Ok(())
 }
@@ -269,7 +289,7 @@ async fn create_message_variant_with_raw_prompt(
 async fn select_variant(
     test_app: &test_helpers::TestApp,
     auth_cookie: &str,
-    message_id: Uuid,
+    message_id: scribe_backend::db::DbId,
     variant_index: i32,
 ) -> anyhow::Result<Value> {
     let select_variant_payload = json!({
@@ -310,7 +330,7 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
     let password = "password";
     let (user_id, session_dek) =
         create_test_user_with_dek(&test_app, username.to_string(), password.to_string()).await?;
-    test_data_guard.add_user(user_id);
+    test_data_guard.add_user(user_id.into());
 
     let (_client, auth_cookie) =
         test_helpers::login_user_via_api(&test_app, username, password).await;
@@ -321,10 +341,11 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
     // 1. Create original message (Variant 0)
     let original_message = create_test_message(
         &test_app,
-        user_id,
+        user_id.into(),
         chat_session.id,
         "Original Response",
         MessageRole::Assistant,
+        &session_dek,
     )
     .await?;
 
@@ -333,7 +354,7 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
         "System: You are a helpful assistant.\nUser: Hello\n(SYSTEM INSTRUCTION: Guidance applied)";
     create_message_variant_with_raw_prompt(
         &test_app,
-        user_id,
+        user_id.into(),
         original_message.id,
         "Variant Response",
         variant_raw_prompt,
@@ -347,7 +368,7 @@ async fn test_variant_raw_prompt_retrieval() -> anyhow::Result<()> {
     // 4. Fetch message by ID (the parent ID)
     let get_message_request = Request::builder()
         .method(Method::GET)
-        .uri(format!("/api/chat/messages/{}", original_message.id))
+        .uri(format!("/api/chats/messages/{}", original_message.id))
         .header(header::COOKIE, &auth_cookie)
         .body(Body::empty())?;
 

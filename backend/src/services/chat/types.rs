@@ -73,6 +73,8 @@ pub enum ScribeSseEvent {
     },
     MessageSaved {
         message_id: String,
+        model_name: String,
+        created_at: String,
         variant_count: i32,
         current_variant_index: i32,
     },

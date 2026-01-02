@@ -866,14 +866,17 @@ class StreamingService {
 
 						if (message) {
 							// Update with backend ID and final metadata
-							message.backend_id = savedData.id;
+							message.backend_id = savedData.message_id || savedData.id;
 							message.model_name = savedData.model_name;
 							message.created_at = savedData.created_at;
+							message.variant_count = savedData.variant_count;
+							message.current_variant_index = savedData.current_variant_index;
+							message.isRegenerating = false;
 
 							// Update buffer with metadata
 							const buffer = this.messageBuffers.get(messageId);
 							if (buffer) {
-								buffer.backend_id = savedData.id;
+								buffer.backend_id = savedData.message_id || savedData.id;
 								buffer.model_name = savedData.model_name;
 							}
 						}

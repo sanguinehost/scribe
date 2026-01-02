@@ -2624,6 +2624,8 @@ pub async fn stream_ai_response_and_save_message(
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");
                         let _ = token_sender_clone.send(ScribeSseEvent::MessageSaved {
                             message_id: saved_message.id.to_string(),
+                            model_name: saved_message.model_name.clone(),
+                            created_at: saved_message.created_at.to_string(),
                             variant_count: saved_message.variant_count,
                             current_variant_index: saved_message.current_variant_index,
                         });

@@ -483,7 +483,7 @@
 			<!-- Loading indicator for loading more messages -->
 			{#if isLoadingMore && hasMoreMessages}
 				<div class="flex justify-center py-4">
-					<div class="text-muted-foreground flex items-center gap-2">
+					<div class="flex items-center gap-2 text-muted-foreground">
 						<Loader2 class="h-4 w-4 animate-spin" />
 						<span class="text-sm">Loading older messages...</span>
 					</div>
