@@ -312,12 +312,109 @@ impl GameStateService {
             "Reconciliation complete"
         );
 
+        // Store applied changes summary in custom_data for next turn's prompt
+        // This helps prevent double-counting by letting the AI know what just happened
+        if !applied_changes.is_empty() {
+            let changes_summary = Self::summarize_changes(&applied_changes);
+            final_state.custom_data.insert(
+                "last_turn_changes".to_string(),
+                serde_json::Value::String(changes_summary),
+            );
+        } else {
+            // Clear it if no changes happened, or keep previous?
+            // Better to clear it so we don't keep warning about old changes
+            final_state.custom_data.remove("last_turn_changes");
+        }
+
         ReconciliationResult {
             final_state,
             applied_changes,
             rejected_changes,
             warnings,
         }
+    }
+
+    /// Generate a human-readable summary of state changes
+    fn summarize_changes(changes: &[StateChange]) -> String {
+        let mut summary = Vec::new();
+
+        for change in changes {
+            match change {
+                StateChange::ItemAdded { item } => {
+                    summary.push(format!("Added item: {} (x{})", item.name, item.quantity));
+                }
+                StateChange::ItemRemoved { item_id } => {
+                    summary.push(format!("Removed item ID: {}", item_id));
+                }
+                StateChange::ItemQuantityChanged {
+                    item_id,
+                    old_qty,
+                    new_qty,
+                } => {
+                    let diff = *new_qty as i32 - *old_qty as i32;
+                    let sign = if diff > 0 { "+" } else { "" };
+                    summary.push(format!(
+                        "Item {} quantity: {}{} ({} -> {})",
+                        item_id, sign, diff, old_qty, new_qty
+                    ));
+                }
+                StateChange::VitalChanged {
+                    vital_name,
+                    old_value,
+                    new_value,
+                } => {
+                    let diff = new_value - old_value;
+                    let sign = if diff > 0.0 { "+" } else { "" };
+                    summary.push(format!(
+                        "Vital {}: {}{:.1} ({:.1} -> {:.1})",
+                        vital_name, sign, diff, old_value, new_value
+                    ));
+                }
+                StateChange::LocationChanged {
+                    old_location,
+                    new_location,
+                } => {
+                    let old = old_location.as_deref().unwrap_or("Unknown");
+                    summary.push(format!("Moved from {} to {}", old, new_location));
+                }
+                StateChange::QuestStatusChanged {
+                    quest_id,
+                    old_status,
+                    new_status,
+                } => {
+                    summary.push(format!(
+                        "Quest {} status: {:?} -> {:?}",
+                        quest_id, old_status, new_status
+                    ));
+                }
+                StateChange::QuestAdded { quest } => {
+                    summary.push(format!("New Quest: {}", quest.title));
+                }
+                StateChange::NpcChanged { npc_id, change } => {
+                    summary.push(format!("NPC {} updated: {}", npc_id, change));
+                }
+                StateChange::TimeAdvanced { old_time, new_time } => {
+                    let seconds = new_time.total_seconds_elapsed
+                        - old_time
+                            .as_ref()
+                            .map(|t| t.total_seconds_elapsed)
+                            .unwrap_or(0);
+                    let minutes = seconds / 60;
+                    summary.push(format!("Time advanced by {} minutes", minutes));
+                }
+                StateChange::EnvironmentChanged { field, new_value } => {
+                    summary.push(format!("Environment {} changed to {}", field, new_value));
+                }
+                StateChange::VitalModifierAdded {
+                    vital_name,
+                    modifier,
+                } => {
+                    summary.push(format!("Added modifier {} to {}", modifier, vital_name));
+                }
+            }
+        }
+
+        summary.join("\n")
     }
 
     /// Reconcile location changes
@@ -973,6 +1070,17 @@ mod tests {
                     }
                 }
                 final_state.environment = new.environment.clone();
+
+                // Store applied changes summary in custom_data for next turn's prompt
+                if !applied_changes.is_empty() {
+                    let changes_summary = GameStateService::summarize_changes(&applied_changes);
+                    final_state.custom_data.insert(
+                        "last_turn_changes".to_string(),
+                        serde_json::Value::String(changes_summary),
+                    );
+                } else {
+                    final_state.custom_data.remove("last_turn_changes");
+                }
 
                 ReconciliationResult {
                     final_state,
@@ -1662,5 +1770,43 @@ mod tests {
 
         assert!(result.applied_changes.is_empty());
         assert!(result.rejected_changes.is_empty());
+    }
+
+    #[test]
+    fn test_last_turn_changes_persistence() {
+        let current = GameState::default();
+        let mut new = GameState::default();
+
+        // Add an item in the new state
+        new.inventory.push(InventoryItem {
+            id: "gold_coin".to_string(),
+            name: "Gold Coin".to_string(),
+            quantity: 50,
+            description: None,
+            category: Some("Currency".to_string()),
+            equipped: false,
+            properties: HashMap::new(),
+            staleness_count: 0,
+        });
+
+        let result = reconcile_pure(&current, &new, "Found some gold");
+
+        // Verify changes were applied
+        assert_eq!(result.applied_changes.len(), 1);
+
+        // Verify custom_data contains the summary
+        assert!(result
+            .final_state
+            .custom_data
+            .contains_key("last_turn_changes"));
+        let summary = result
+            .final_state
+            .custom_data
+            .get("last_turn_changes")
+            .unwrap()
+            .as_str()
+            .unwrap();
+
+        assert!(summary.contains("Added item: Gold Coin (x50)"));
     }
 }

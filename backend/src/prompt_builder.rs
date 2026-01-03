@@ -2171,6 +2171,7 @@ mod tests {
             let rag_chunk = RetrievedChunk {
                 text: "Some context".to_string(),
                 metadata: RetrievedMetadata::Chat(ChatMessageChunkMetadata {
+                    game_time: None,
                     message_id: crate::db::DbId::new_v4(),
                     session_id: crate::db::DbId::new_v4(),
                     chronicle_id: None,

@@ -388,6 +388,27 @@ CRITICAL - STATUS EFFECTS:
             None => "(New game session - infer initial state from context)".to_string(),
         };
 
+        // Get recent changes to prevent double-counting
+        let recent_changes_section = if let Some(state) = current_state {
+            if let Some(changes) = state
+                .custom_data
+                .get("last_turn_changes")
+                .and_then(|v| v.as_str())
+            {
+                format!(
+                    "\n=== RECENT CHANGES (DO NOT RE-APPLY) ===\n\
+                    These changes occurred in the LAST turn and are ALREADY reflected in the current state above.\n\
+                    DO NOT apply them again. Only apply NEW changes from the current turn.\n\
+                    <last_turn_changes>\n{}\n</last_turn_changes>\n",
+                    changes
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
         let prompt = format!(
             r#"You are updating the game state based on the MOST RECENT exchange only.
 
@@ -395,6 +416,12 @@ CRITICAL - STATUS EFFECTS:
 CRITICAL: You are tracking the PLAYER's state ({{{{user}}}}), NOT the NPC's state ({{{{char}}}}).
 - inventory, vitals, quests, location = {{{{user}}}}'s stats
 - {{{{char}}}} goes in the "NPCs" section only
+
+TRANSACTION RULES:
+- ONLY deduct/add currency when the transaction is CONFIRMED (e.g. "I'll take it", "Here is the gold").
+- Do NOT deduct currency just because a price was mentioned.
+- Do NOT add items just because they were offered.
+- Wait for the explicit exchange to happen in the text.
 </state_tracking_rules>
 
 === AUTHORITATIVE CURRENT STATE ===
@@ -404,7 +431,7 @@ DO NOT re-apply past events - they are already reflected here.
 <current_game_state>
 {}
 </current_game_state>
-
+{}
 === BACKGROUND CONTEXT (READ ONLY) ===
 This is a summary of prior conversation for context. These events are ALREADY reflected
 in the current state above. DO NOT add time or changes from this section again.
@@ -430,7 +457,11 @@ The time should only change by the amount that passes DURING the current turn,
 NOT including any time from prior_context (that's already in the state).
 
 Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
-            current_state_text, conversation_summary, last_user_message, last_assistant_message
+            current_state_text,
+            recent_changes_section,
+            conversation_summary,
+            last_user_message,
+            last_assistant_message
         );
 
         crate::prompt_builder::replace_template_variables(&prompt, character_name, player_name)

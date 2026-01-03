@@ -3290,7 +3290,17 @@ mod tests {
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
-            model_name: Some("test-model".to_string()),
+            model_name: "test-model".to_string(),
+            status: "completed".to_string(),
+            variant_count: 1,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
         }
     }
 
