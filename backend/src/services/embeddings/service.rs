@@ -189,7 +189,9 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // The content is already combined as "User: ...\n\nAssistant: ..." above.
         let chunks = vec![crate::text_processing::chunking::TextChunk {
             content: content_to_embed.clone(),
-            metadata: None,
+            source_id: Some(message.id.to_string()),
+            start_index: 0,
+            end_index: content_to_embed.len(),
         }];
         info!("Storing chat message atomically as 1 embedding (user+AI pair)");
 
