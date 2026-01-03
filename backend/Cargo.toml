@@ -12,7 +12,7 @@ postgres-backend = ["diesel/postgres", "dep:deadpool-diesel", "deadpool-diesel?/
 embedded-vector = ["dep:lancedb", "dep:arrow", "dep:tokio-stream"]
 remote-vector = []  # qdrant-client is already a direct dependency
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile"]
-payment = ["dep:hmac", "dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
+payment = ["dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
 production = ["payment"]  # Include payment in production builds
 
 [[bin]]
@@ -152,7 +152,7 @@ aws-sdk-ses = "1.75.0"
 tower_governor = "0.5.0"
 
 # Payment processing (optional - only with payment feature)
-hmac = { version = "0.12", optional = true }  # For webhook signature verification
+hmac = { version = "0.12" }  # For blind indexing and webhook signature verification
 subtle = { version = "2.5", optional = true }  # For constant-time comparisons
 
 # Security monitoring and metrics

@@ -37,6 +37,7 @@ use crate::services::agentic::{
 };
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
+use crate::services::cognitive::RecallPipeline;
 use crate::services::hybrid_token_counter::CountingMode;
 use crate::services::template_preference_service::TemplatePreferenceService;
 use crate::services::ChronicleService;
@@ -935,8 +936,9 @@ pub async fn generate_chat_response(
 
                     let agent = ContextEnrichmentAgent::new(
                         state_arc.clone(),
-                        search_tool,
-                        chronicle_service,
+                        search_tool.clone(),
+                        state_arc.recall_pipeline.clone(),
+                        chronicle_service.clone(),
                     );
 
                     // Prepare messages for the agent (last 10 messages)
@@ -1151,6 +1153,34 @@ pub async fn generate_chat_response(
             None
         };
 
+    // --- Secure Cognitive Recall ---
+    let cognitive_context = if let Some(chronicle_id) = player_chronicle_id {
+        // Create a SessionDek reference from the Arc<SecretBox<Vec<u8>>>
+        let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+        match state_arc
+            .recall_pipeline
+            .recall_context(
+                user_id_value,
+                chronicle_id,
+                &current_user_content_text,
+                &session_dek_ref,
+                state_arc.clone(),
+            )
+            .await
+        {
+            Ok(ctx) => {
+                info!(%session_id, "Successfully recalled secure cognitive context");
+                Some(ctx)
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to recall cognitive context, proceeding without it");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Call the new prompt builder
 
     let (final_system_prompt_str, final_genai_message_list) =
@@ -1177,6 +1207,7 @@ pub async fn generate_chat_response(
             context_total_token_limit: Some(context_total_token_limit),
             recent_history_token_budget: Some(recent_history_token_budget),
             rag_token_budget: Some(rag_token_budget),
+            cognitive_context,
         })
         .await
         {
@@ -1379,8 +1410,9 @@ pub async fn generate_chat_response(
 
                                         let agent = ContextEnrichmentAgent::new(
                                             state_clone.clone(),
-                                            search_tool,
-                                            chronicle_service,
+                                            search_tool.clone(),
+                                            state_clone.recall_pipeline.clone(),
+                                            chronicle_service.clone(),
                                         );
 
                                         // Prepare messages for the agent
@@ -1925,8 +1957,9 @@ pub async fn generate_chat_response(
 
                                     let agent = ContextEnrichmentAgent::new(
                                         state_clone.clone(),
-                                        search_tool,
-                                        chronicle_service,
+                                        search_tool.clone(),
+                                        state_clone.recall_pipeline.clone(),
+                                        chronicle_service.clone(),
                                     );
 
                                     // Prepare messages for the agent
@@ -2976,6 +3009,7 @@ pub async fn generate_suggested_actions(
             context_total_token_limit: Some(_context_total_token_limit),
             recent_history_token_budget: Some(_recent_history_token_budget),
             rag_token_budget: Some(_rag_token_budget),
+            cognitive_context: None,
         })
         .await
         {

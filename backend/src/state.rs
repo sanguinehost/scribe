@@ -24,6 +24,7 @@ use crate::llm::llamacpp::{ModelIntegrityVerifier, SecurityAuditLogger}; // Adde
 use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
 use crate::services::ai_client_factory::AiClientFactory;
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
+use crate::services::cognitive::RecallPipeline; // Added for RecallPipeline
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
 use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
 use crate::services::lorebook::LorebookService; // Added for LorebookService
@@ -54,6 +55,7 @@ pub struct AppStateServices {
     pub email_service: Arc<dyn EmailService + Send + Sync>,
     pub ai_client_factory: Arc<AiClientFactory>,
     pub rate_limiter: Arc<LlmRateLimiter>,
+    pub recall_pipeline: Arc<RecallPipeline>,
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
     #[cfg(feature = "local-llm")]
@@ -90,6 +92,7 @@ pub struct AppState {
     pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
     pub ai_client_factory: Arc<AiClientFactory>,    // Added for dynamic AI client selection
     pub rate_limiter: Arc<LlmRateLimiter>,          // Added for rate limiting
+    pub recall_pipeline: Arc<RecallPipeline>,       // Added for secure cognitive recall
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
@@ -127,6 +130,7 @@ impl fmt::Debug for AppState {
             .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
             .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
             .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
+            .field("recall_pipeline", &"<Arc<RecallPipeline>>") // Added for secure cognitive recall
             .field(
                 "narrative_intelligence_service",
                 &"<Option<Arc<NarrativeIntelligenceService>>>",
@@ -175,6 +179,7 @@ impl AppState {
             email_service: services.email_service,
             ai_client_factory: services.ai_client_factory,
             rate_limiter: services.rate_limiter,
+            recall_pipeline: services.recall_pipeline,
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: services.llamacpp_server_manager,

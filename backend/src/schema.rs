@@ -151,6 +151,27 @@ diesel::table! {
     use diesel_derive_enum::DbEnum;
     use super::sql_types_unified::*;
 
+    character_opinions (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        perspective_hash -> DbTextType,
+        perspective_encrypted -> DbBlobType,
+        perspective_nonce -> DbBlobType,
+        opinion_encrypted -> DbBlobType,
+        opinion_nonce -> DbBlobType,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> DbTimestampType,
+        updated_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
     characters (id) {
         id -> DbIdType,
         user_id -> DbIdType,
@@ -484,6 +505,27 @@ diesel::table! {
         token -> Text,
         expires_at -> DbTimestampType,
         created_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
+    entity_observations (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        entity_name_hash -> DbTextType,
+        entity_name_encrypted -> DbBlobType,
+        entity_name_nonce -> DbBlobType,
+        observation_encrypted -> DbBlobType,
+        observation_nonce -> DbBlobType,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> DbTimestampType,
+        updated_at -> DbTimestampType,
     }
 }
 
@@ -987,6 +1029,8 @@ diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(character_lorebooks -> users (user_id));
+diesel::joinable!(character_opinions -> player_chronicles (chronicle_id));
+diesel::joinable!(character_opinions -> users (user_id));
 diesel::joinable!(characters -> users (user_id));
 diesel::joinable!(chat_character_lorebook_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_character_lorebook_overrides -> lorebooks (lorebook_id));
@@ -1003,6 +1047,8 @@ diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
+diesel::joinable!(entity_observations -> player_chronicles (chronicle_id));
+diesel::joinable!(entity_observations -> users (user_id));
 diesel::joinable!(message_variants -> chat_messages (parent_message_id));
 diesel::joinable!(message_variants -> users (user_id));
 diesel::joinable!(old_documents -> users (user_id));
@@ -1030,6 +1076,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     agent_context_analysis,
     character_assets,
     character_lorebooks,
+    character_opinions,
     characters,
     chat_character_lorebook_overrides,
     chat_character_overrides,
@@ -1041,6 +1088,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     credit_transactions,
     daily_usage_tracking,
     email_verification_tokens,
+    entity_observations,
     lorebook_entries,
     lorebooks,
     message_variants,

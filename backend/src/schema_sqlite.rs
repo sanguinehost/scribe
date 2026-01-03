@@ -176,6 +176,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    character_opinions (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        perspective_hash -> Text,
+        perspective_encrypted -> Binary,
+        perspective_nonce -> Binary,
+        opinion_encrypted -> Binary,
+        opinion_nonce -> Binary,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     chat_character_lorebook_overrides (id) {
         id -> Text,
         chat_session_id -> Text,
@@ -514,6 +531,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    entity_observations (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        entity_name_hash -> Text,
+        entity_name_encrypted -> Binary,
+        entity_name_nonce -> Binary,
+        observation_encrypted -> Binary,
+        observation_nonce -> Binary,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     payment_usage_tracking (id) {
         id -> Text,
         user_id -> Text,
@@ -795,7 +829,11 @@ diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(character_lorebooks -> users (user_id));
+diesel::joinable!(character_opinions -> player_chronicles (chronicle_id));
+diesel::joinable!(character_opinions -> users (user_id));
 diesel::joinable!(characters -> users (user_id));
+diesel::joinable!(entity_observations -> player_chronicles (chronicle_id));
+diesel::joinable!(entity_observations -> users (user_id));
 diesel::joinable!(chat_character_lorebook_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_character_lorebook_overrides -> lorebooks (lorebook_id));
 diesel::joinable!(chat_character_lorebook_overrides -> users (user_id));
@@ -842,6 +880,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     agent_context_analysis,
     character_assets,
     character_lorebooks,
+    character_opinions,
     characters,
     chat_character_lorebook_overrides,
     chat_character_overrides,
@@ -853,6 +892,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     credit_transactions,
     daily_usage_tracking,
     email_verification_tokens,
+    entity_observations,
     lorebook_entries,
     lorebooks,
     message_variants,

@@ -3,6 +3,7 @@ use crate::{
     config::Config,
     llm::{AiClient, EmbeddingClient},
     middleware::llm_security::LlmRateLimiter,
+    services::cognitive::RecallPipeline,
     services::{
         chat_override_service::ChatOverrideService,
         chronicle_service::ChronicleService,
@@ -46,6 +47,7 @@ pub struct AppStateServicesBuilder {
     auth_backend: Option<Arc<AuthBackend>>,
     email_service: Option<Arc<dyn EmailService + Send + Sync>>,
     rate_limiter: Option<Arc<LlmRateLimiter>>,
+    recall_pipeline: Option<Arc<RecallPipeline>>,
 }
 
 impl AppStateServicesBuilder {
@@ -66,6 +68,7 @@ impl AppStateServicesBuilder {
             auth_backend: None,
             email_service: None,
             rate_limiter: None,
+            recall_pipeline: None,
         }
     }
 
@@ -127,6 +130,11 @@ impl AppStateServicesBuilder {
 
     pub fn with_email_service(mut self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         self.email_service = Some(service);
+        self
+    }
+
+    pub fn with_recall_pipeline(mut self, pipeline: Arc<RecallPipeline>) -> Self {
+        self.recall_pipeline = Some(pipeline);
         self
     }
 
@@ -241,6 +249,11 @@ impl AppStateServicesBuilder {
             ))
         });
 
+        // Get or create recall pipeline
+        let recall_pipeline = self
+            .recall_pipeline
+            .unwrap_or_else(|| Arc::new(RecallPipeline::new(self.db_pool.clone())));
+
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)
         // We'll create a placeholder for now and set it properly after AppState construction
@@ -259,6 +272,7 @@ impl AppStateServicesBuilder {
             email_service,
             ai_client_factory,
             rate_limiter,
+            recall_pipeline,
             token_service: None, // Will be set in main.rs if configured
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
@@ -376,6 +390,13 @@ impl AppStateBuilder {
     pub fn with_email_service(self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         Self {
             services_builder: self.services_builder.with_email_service(service),
+            ..self
+        }
+    }
+
+    pub fn with_recall_pipeline(self, pipeline: Arc<RecallPipeline>) -> Self {
+        Self {
+            services_builder: self.services_builder.with_recall_pipeline(pipeline),
             ..self
         }
     }

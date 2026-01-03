@@ -27,7 +27,7 @@ impl Default for DeduplicationConfig {
     fn default() -> Self {
         Self {
             time_window_minutes: 3,     // 3 minute window (decreased from 5)
-            similarity_threshold: 0.90, // 90% content similarity (Levenshtein)
+            similarity_threshold: 0.80, // 80% content similarity (Loose Pre-Filter)
             max_events_to_check: 50,
         }
     }
@@ -57,6 +57,37 @@ pub struct ChronicleDeduplicationService {
 }
 
 impl ChronicleDeduplicationService {
+    /// Keywords that trigger the "Safety Valve" (bypass deduplication)
+    const HIGH_INTENSITY_KEYWORDS: &'static [&'static str] = &[
+        "death",
+        "kill",
+        "die",
+        "murder",
+        "blood",
+        "betrayal",
+        "secret",
+        "reveal",
+        "explosion",
+        "attack",
+        "ambush",
+        "kiss",
+        "intimacy",
+        "sex",
+        "love",
+        "confession",
+        "artifact",
+        "relic",
+        "god",
+        "magic",
+        "curse",
+    ];
+
+    fn is_high_intensity(&self, summary: &str) -> bool {
+        let summary_lower = summary.to_lowercase();
+        Self::HIGH_INTENSITY_KEYWORDS
+            .iter()
+            .any(|&kw| summary_lower.contains(kw))
+    }
     /// Create a new deduplication service
     pub fn new(
         db_pool: DbPool,
@@ -80,6 +111,20 @@ impl ChronicleDeduplicationService {
             "Checking for duplicates of event: {} at timestamp: {:?}",
             new_event.id, new_event.timestamp_iso8601
         );
+
+        // Safety Valve: High Intensity Keywords bypass deduplication
+        if self.is_high_intensity(&new_event.summary) {
+            info!(
+                "Safety Valve triggered: high intensity keywords detected in event {}",
+                new_event.id
+            );
+            return Ok(DuplicateDetectionResult {
+                is_duplicate: false,
+                duplicate_event_id: None,
+                confidence: 1.0,
+                reasoning: "Safety Valve: High intensity keywords detected".to_string(),
+            });
+        }
 
         // Get recent events from the same chronicle within the time window
         let candidate_events = self.get_candidate_events(new_event).await?;

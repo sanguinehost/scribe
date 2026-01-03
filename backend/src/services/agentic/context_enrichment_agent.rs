@@ -20,6 +20,7 @@ use tracing::{debug, info, warn};
 use crate::{
     crypto,
     errors::AppError,
+    services::cognitive::RecallPipeline,
     services::{
         agentic::narrative_tools::SearchKnowledgeBaseTool,
         safety_utils::create_unrestricted_safety_settings, ChronicleService,
@@ -94,6 +95,7 @@ pub struct ToolCall {
 pub struct ContextEnrichmentAgent {
     state: Arc<AppState>,
     search_tool: Arc<SearchKnowledgeBaseTool>,
+    recall_pipeline: Arc<RecallPipeline>,
     _chronicle_service: Arc<ChronicleService>,
     model: String, // Flash-Lite for lightweight operation
 }
@@ -103,11 +105,13 @@ impl ContextEnrichmentAgent {
     pub fn new(
         state: Arc<AppState>,
         search_tool: Arc<SearchKnowledgeBaseTool>,
+        recall_pipeline: Arc<RecallPipeline>,
         chronicle_service: Arc<ChronicleService>,
     ) -> Self {
         Self {
             state,
             search_tool,
+            recall_pipeline,
             _chronicle_service: chronicle_service,
             model: "gemini-2.5-flash-lite".to_string(), // Lightweight model for speed
         }
@@ -164,6 +168,52 @@ impl ContextEnrichmentAgent {
             let (agent_reasoning, planned_searches, planning_step) =
                 self.plan_searches(messages, mode).await?;
             execution_log.steps.push(planning_step);
+
+            // Step 1.5: Secure Cognitive Recall
+            let mut cognitive_context = String::new();
+            if let Some(chron_id) = chronicle_id {
+                let step_start = Instant::now();
+                let last_user_message = messages
+                    .iter()
+                    .rev()
+                    .find(|(role, _)| role == "user")
+                    .map(|(_, content)| content.as_str())
+                    .unwrap_or("");
+
+                let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
+                let dek = crate::auth::session_dek::SessionDek(dek_secret);
+
+                match self
+                    .recall_pipeline
+                    .recall_context(
+                        user_id,
+                        chron_id,
+                        last_user_message,
+                        &dek,
+                        self.state.clone(),
+                    )
+                    .await
+                {
+                    Ok(ctx) => {
+                        cognitive_context = ctx;
+                        let recall_step = AgentStep {
+                            step_number: execution_log.steps.len() as u32 + 1,
+                            timestamp: Utc::now().into(),
+                            action_type: "cognitive_recall".to_string(),
+                            thought: "Recalling secure character opinions and observations"
+                                .to_string(),
+                            tool_call: None,
+                            result: Some(json!({"context_len": cognitive_context.len()})),
+                            tokens_used: 50, // Rough estimate
+                            duration_ms: step_start.elapsed().as_millis() as u64,
+                        };
+                        execution_log.steps.push(recall_step);
+                    }
+                    Err(e) => {
+                        warn!("Cognitive recall failed: {}", e);
+                    }
+                }
+            }
 
             // Step 2: Execute searches
             let mut all_search_results = Vec::new();
@@ -239,7 +289,7 @@ impl ContextEnrichmentAgent {
 
             // Step 3: Synthesize results into useful context
             let (retrieved_context, analysis_summary, synthesis_step) = self
-                .synthesize_results(&all_search_results, messages)
+                .synthesize_results(&all_search_results, messages, &cognitive_context)
                 .await?;
             execution_log.steps.push(synthesis_step);
 
@@ -714,6 +764,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         &self,
         search_results: &[Value],
         _messages: &[(String, String)],
+        cognitive_context: &str,
     ) -> Result<(String, String, AgentStep), AppError> {
         let step_start = Instant::now();
 
@@ -731,6 +782,11 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                     }
                 }
             }
+        }
+
+        // Add cognitive context to results if available
+        if !cognitive_context.is_empty() {
+            all_results.push(format!("[COGNITIVE_CONTEXT] {}", cognitive_context));
         }
 
         if all_results.is_empty() {

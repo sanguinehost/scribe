@@ -7,19 +7,26 @@ use diesel::{
 };
 use tracing::{error, info, instrument};
 
+use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
 use crate::models::chronicle::{
     CreateChronicleRequest, NewPlayerChronicle, PlayerChronicle, PlayerChronicleWithCounts,
     UpdateChronicleRequest, UpdatePlayerChronicle,
 };
 use crate::models::chronicle_event::{
-    ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, NewChronicleEvent,
+    ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, EventSource, NewChronicleEvent,
+};
+use crate::models::cognitive_memory::{
+    CharacterOpinion, CognitivePayload, EntityObservation, NewCharacterOpinion,
+    NewEntityObservation,
 };
 use crate::models::OptionalStringArray;
 use crate::schema::{
-    chat_messages, chat_sessions, chronicle_events, message_variants, player_chronicles,
+    character_opinions, chat_messages, chat_sessions, chronicle_events, entity_observations,
+    message_variants, player_chronicles, users,
 };
 use crate::services::ChronicleDeduplicationService;
+use secrecy::ExposeSecret;
 
 use crate::llm::AiClient;
 use std::sync::Arc;
@@ -1607,6 +1614,254 @@ impl ChronicleService {
             "Successfully deleted chronicle {} and all its events for user {}",
             chronicle_id, user_id
         );
+        Ok(())
+    }
+
+    /// Process a cognitive update (Retain Pipeline)
+    pub async fn process_cognitive_update(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        chat_session_id: Option<DbId>,
+        payload: CognitivePayload,
+        session_dek: &SessionDek,
+        state: Arc<crate::state::AppState>,
+    ) -> Result<(), AppError> {
+        info!(
+            "Processing cognitive update for chronicle {} (significance: {})",
+            chronicle_id, payload.significance_score
+        );
+
+        // 1. Strict Post-Filter (Significance Gate)
+        if payload.significance_score < 0.4 {
+            info!(
+                "Cognitive update skipped: significance score {} < 0.4",
+                payload.significance_score
+            );
+            return Ok(());
+        }
+
+        // 2. Create Chronicle Event (Episodic Memory)
+        if payload.should_create_event {
+            let event_request = CreateEventRequest {
+                event_type: "NARRATIVE.EVENT".to_string(),
+                summary: payload.summary.clone(),
+                source: EventSource::AiExtracted,
+                keywords: Some(payload.keywords.clone()),
+                timestamp_iso8601: None,
+                chat_session_id,
+                message_variant_id: None,
+            };
+
+            self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
+                .await?;
+        }
+
+        // 3. Process Opinions (Semantic Memory - Upsert by Topic)
+        for extraction in payload.opinions {
+            self.retain_character_opinion(
+                user_id,
+                chronicle_id,
+                extraction,
+                payload.significance_score,
+                session_dek,
+                state.clone(),
+            )
+            .await?;
+        }
+
+        // 4. Process Observations (Semantic Memory - Vector-First Entity Resolution)
+        for extraction in payload.observations {
+            self.retain_entity_observation(
+                user_id,
+                chronicle_id,
+                extraction,
+                payload.significance_score,
+                session_dek,
+                state.clone(),
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn retain_character_opinion(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        extraction: crate::models::cognitive_memory::OpinionExtraction,
+        significance: f32,
+        session_dek: &SessionDek,
+        state: Arc<crate::state::AppState>,
+    ) -> Result<(), AppError> {
+        use crate::crypto::{encrypt_gcm, generate_hmac};
+        use secrecy::ExposeSecret;
+
+        let dek_bytes = session_dek.expose_bytes();
+        let perspective_hash = generate_hmac(&extraction.perspective, dek_bytes);
+
+        // --- Upsert by Topic (Forgetting Gate) ---
+        // Search for existing opinions with high similarity (> 0.95)
+        use crate::services::embeddings::EmbeddingPipelineServiceTrait;
+        let similar_opinions = state
+            .embedding_pipeline_service
+            .retrieve_similar_opinions(state.clone(), user_id, &extraction.opinion, 1)
+            .await?;
+
+        if let Some((score, meta)) = similar_opinions.first() {
+            if *score > 0.95 {
+                info!(
+                    %user_id,
+                    opinion_id = %meta.opinion_id,
+                    score,
+                    "Found highly similar opinion, triggering Forgetting Gate (Upsert by Topic)"
+                );
+
+                // Delete old opinion from DB
+                let mut conn = self
+                    .db_pool
+                    .get()
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                diesel::delete(
+                    character_opinions::table.filter(character_opinions::id.eq(meta.opinion_id)),
+                )
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+                // Delete old opinion from Vector Store
+                state
+                    .embedding_pipeline_service
+                    .delete_opinion_vector(state.clone(), meta.opinion_id, user_id)
+                    .await?;
+            }
+        }
+
+        let (perspective_encrypted, perspective_nonce) =
+            encrypt_gcm(extraction.perspective.as_bytes(), &session_dek.0)?;
+
+        let (opinion_encrypted, opinion_nonce) =
+            encrypt_gcm(extraction.opinion.as_bytes(), &session_dek.0)?;
+
+        let now = chrono::Utc::now();
+        let opinion_id = DbId::new();
+        let new_opinion = NewCharacterOpinion {
+            id: opinion_id,
+            user_id,
+            chronicle_id,
+            perspective_hash,
+            perspective_encrypted,
+            perspective_nonce,
+            opinion_encrypted,
+            opinion_nonce,
+            confidence: extraction.confidence,
+            significance,
+            created_at: now.into(),
+            updated_at: now.into(),
+        };
+
+        let mut conn = self
+            .db_pool
+            .get()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        diesel::insert_into(character_opinions::table)
+            .values(&new_opinion)
+            .execute(&mut conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        // Embed the opinion for vector search
+        state
+            .embedding_pipeline_service
+            .process_and_embed_opinion(state.clone(), user_id, opinion_id, &extraction.opinion)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn retain_entity_observation(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        extraction: crate::models::cognitive_memory::ObservationExtraction,
+        significance: f32,
+        session_dek: &SessionDek,
+        state: Arc<crate::state::AppState>,
+    ) -> Result<(), AppError> {
+        use crate::crypto::{encrypt_gcm, generate_hmac};
+        use crate::services::embeddings::EmbeddingPipelineServiceTrait;
+        use secrecy::ExposeSecret;
+
+        let dek_bytes = session_dek.expose_bytes();
+
+        // Vector-First Entity Resolution
+        let similar_entities = state
+            .embedding_pipeline_service
+            .retrieve_similar_entities(state.clone(), user_id, &extraction.entity_name, 1)
+            .await?;
+
+        let entity_name_hash = if let Some((score, meta)) = similar_entities.first() {
+            if *score > 0.89 {
+                info!(
+                    "Entity resolution: matched '{}' to existing entity with score {}",
+                    extraction.entity_name, score
+                );
+                meta.entity_name_hash.clone()
+            } else {
+                let hash = generate_hmac(&extraction.entity_name, dek_bytes);
+                state
+                    .embedding_pipeline_service
+                    .process_and_embed_entity(
+                        state.clone(),
+                        user_id,
+                        &extraction.entity_name,
+                        &hash,
+                    )
+                    .await?;
+                hash
+            }
+        } else {
+            let hash = generate_hmac(&extraction.entity_name, dek_bytes);
+            state
+                .embedding_pipeline_service
+                .process_and_embed_entity(state.clone(), user_id, &extraction.entity_name, &hash)
+                .await?;
+            hash
+        };
+
+        let (entity_name_encrypted, entity_name_nonce) =
+            encrypt_gcm(extraction.entity_name.as_bytes(), &session_dek.0)?;
+
+        let (observation_encrypted, observation_nonce) =
+            encrypt_gcm(extraction.observation.as_bytes(), &session_dek.0)?;
+
+        let now = chrono::Utc::now();
+        let new_observation = NewEntityObservation {
+            id: DbId::new(),
+            user_id,
+            chronicle_id,
+            entity_name_hash,
+            entity_name_encrypted,
+            entity_name_nonce,
+            observation_encrypted,
+            observation_nonce,
+            confidence: extraction.confidence,
+            significance,
+            created_at: now.into(),
+            updated_at: now.into(),
+        };
+
+        let mut conn = self
+            .db_pool
+            .get()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        diesel::insert_into(entity_observations::table)
+            .values(&new_observation)
+            .execute(&mut conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
         Ok(())
     }
 }

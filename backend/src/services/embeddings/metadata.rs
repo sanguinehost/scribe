@@ -266,3 +266,49 @@ impl Clone for LorebookEntryParams {
         }
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct EntityMetadata {
+    pub user_id: crate::db::DbId,
+    pub entity_name_hash: String,
+    pub source_type: String,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for EntityMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "EntityMetadata")?;
+        let entity_name_hash =
+            extract_string_from_payload(&payload, "entity_name_hash", "EntityMetadata")?;
+        let source_type = extract_string_from_payload(&payload, "source_type", "EntityMetadata")?;
+
+        Ok(Self {
+            user_id,
+            entity_name_hash,
+            source_type,
+        })
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct OpinionMetadata {
+    pub user_id: crate::db::DbId,
+    pub opinion_id: crate::db::DbId,
+    pub source_type: String,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for OpinionMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "OpinionMetadata")?;
+        let opinion_id = extract_uuid_from_payload(&payload, "opinion_id", "OpinionMetadata")?;
+        let source_type = extract_string_from_payload(&payload, "source_type", "OpinionMetadata")?;
+
+        Ok(Self {
+            user_id,
+            opinion_id,
+            source_type,
+        })
+    }
+}

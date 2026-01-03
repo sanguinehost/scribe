@@ -7,6 +7,7 @@ pub mod chat;
 pub mod chat_override_service;
 pub mod chronicle_deduplication_service;
 pub mod chronicle_service;
+pub mod cognitive;
 pub mod email_service;
 pub mod embeddings;
 pub mod encryption_service;
@@ -40,6 +41,7 @@ pub use chronicle_deduplication_service::{
     ChronicleDeduplicationService, DeduplicationConfig, DuplicateDetectionResult,
 };
 pub use chronicle_service::ChronicleService;
+pub use cognitive::RecallPipeline;
 pub use email_service::{create_email_service, EmailService};
 pub use encryption_service::EncryptionService;
 pub use lorebook::LorebookService;

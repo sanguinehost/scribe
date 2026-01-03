@@ -317,6 +317,12 @@ impl From<DeadpoolDieselPoolError> for AuthBackendError {
     }
 }
 
+impl From<crate::crypto::CryptoError> for AppError {
+    fn from(err: crate::crypto::CryptoError) -> Self {
+        Self::CryptoError(err.to_string())
+    }
+}
+
 // Catch-all for any other error type UserStore might encounter
 impl From<AnyhowError> for AuthBackendError {
     fn from(err: AnyhowError) -> Self {

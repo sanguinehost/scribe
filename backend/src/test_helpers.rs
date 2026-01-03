@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
 use crate::services::embeddings::{
+    metadata::{EntityMetadata, OpinionMetadata},
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
@@ -550,6 +551,30 @@ pub enum PipelineCall {
         chronicle_id: crate::db::DbId,
         user_id: crate::db::DbId,
     },
+    ProcessAndEmbedEntity {
+        user_id: crate::db::DbId,
+        entity_name: String,
+        entity_name_hash: String,
+    },
+    RetrieveSimilarEntities {
+        user_id: crate::db::DbId,
+        entity_name: String,
+        limit: u64,
+    },
+    ProcessAndEmbedOpinion {
+        user_id: crate::db::DbId,
+        opinion_id: crate::db::DbId,
+        opinion_text: String,
+    },
+    RetrieveSimilarOpinions {
+        user_id: crate::db::DbId,
+        opinion_text: String,
+        limit: u64,
+    },
+    DeleteOpinionVector {
+        opinion_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    },
 }
 
 // Updated MockEmbeddingPipelineService
@@ -805,6 +830,94 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             });
         Ok(())
     }
+
+    async fn process_and_embed_entity(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        entity_name_hash: &str,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedEntity {
+                user_id,
+                entity_name: entity_name.to_string(),
+                entity_name_hash: entity_name_hash.to_string(),
+            });
+        Ok(())
+    }
+
+    async fn retrieve_similar_entities(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, EntityMetadata)>, AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveSimilarEntities {
+                user_id,
+                entity_name: entity_name.to_string(),
+                limit,
+            });
+        Ok(vec![])
+    }
+
+    async fn process_and_embed_opinion(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        opinion_id: crate::db::DbId,
+        opinion_text: &str,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedOpinion {
+                user_id,
+                opinion_id,
+                opinion_text: opinion_text.to_string(),
+            });
+        Ok(())
+    }
+
+    async fn retrieve_similar_opinions(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        opinion_text: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, OpinionMetadata)>, AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveSimilarOpinions {
+                user_id,
+                opinion_text: opinion_text.to_string(),
+                limit,
+            });
+        Ok(vec![])
+    }
+
+    async fn delete_opinion_vector(
+        &self,
+        _state: Arc<AppState>,
+        opinion_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::DeleteOpinionVector {
+                opinion_id,
+                user_id,
+            });
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -978,6 +1091,14 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
+    async fn store_points_to_collection(
+        &self,
+        _collection_name: &str,
+        points: Vec<PointStruct>,
+    ) -> Result<(), AppError> {
+        self.store_points(points).await
+    }
+
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -1015,6 +1136,16 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
                 Err(e) => Err(e), // Pass through errors
             }
         })
+    }
+
+    async fn search_points_in_collection(
+        &self,
+        _collection_name: &str,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        self.search_points(vector, limit, filter).await
     }
 
     async fn search_points_with_threshold(
@@ -1078,6 +1209,22 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         Ok(())
     }
 
+    async fn delete_points_from_collection(
+        &self,
+        _collection_name: &str,
+        _points: Vec<PointId>,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn delete_points_by_filter_from_collection(
+        &self,
+        _collection_name: &str,
+        filter: Filter,
+    ) -> Result<(), AppError> {
+        self.delete_points_by_filter(filter).await
+    }
+
     async fn get_point_by_id(
         &self,
         point_id: PointId,
@@ -1114,6 +1261,10 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         );
         Ok(())
     }
+
+    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        Ok(())
+    }
 }
 
 // --- END Placeholder Mock Definitions ---
@@ -1131,6 +1282,7 @@ pub struct TestAppStateBuilder {
     lorebook_service: Option<Arc<crate::services::lorebook::LorebookService>>, // Fully qualify
     auth_backend: Arc<AuthBackend>, // Add auth_backend to builder
     token_service: Option<Arc<crate::auth::TokenService>>, // Add token_service field
+    recall_pipeline: Option<Arc<crate::services::cognitive::RecallPipeline>>,
 }
 
 impl TestAppStateBuilder {
@@ -1156,6 +1308,7 @@ impl TestAppStateBuilder {
             lorebook_service: None,
             auth_backend,
             token_service: None, // Initialize token_service field
+            recall_pipeline: None,
         }
     }
 
@@ -1186,12 +1339,20 @@ impl TestAppStateBuilder {
         self
     }
 
-    #[must_use]
     pub fn with_lorebook_service(
         mut self,
         service: Arc<crate::services::lorebook::LorebookService>, // Fully qualify
     ) -> Self {
         self.lorebook_service = Some(service);
+        self
+    }
+
+    #[must_use]
+    pub fn with_recall_pipeline(
+        mut self,
+        pipeline: Arc<crate::services::cognitive::RecallPipeline>,
+    ) -> Self {
+        self.recall_pipeline = Some(pipeline);
         self
     }
 
@@ -1277,6 +1438,12 @@ impl TestAppStateBuilder {
             Arc::new(crate::auth::TokenService::new(&jwt_secret))
         });
 
+        let recall_pipeline = self.recall_pipeline.unwrap_or_else(|| {
+            Arc::new(crate::services::cognitive::RecallPipeline::new(
+                self.db_pool.clone(),
+            ))
+        });
+
         let services = AppStateServices {
             ai_client: self.ai_client,
             embedding_client: self.embedding_client,
@@ -1298,6 +1465,7 @@ impl TestAppStateBuilder {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            recall_pipeline,
             token_service: Some(token_service), // Use initialized token service for JWT tests
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
@@ -1394,6 +1562,7 @@ pub struct TestApp {
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     // user_persona_service field removed as per plan
     // embedding_call_tracker field removed as per plan
+    pub recall_pipeline: Arc<crate::services::cognitive::RecallPipeline>,
     pub state: Arc<AppState>, // Added state field
 }
 
@@ -1951,6 +2120,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         mock_embedding_pipeline_service: mock_embedding_pipeline_service_for_test_app.clone(),
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
+        recall_pipeline: app_state_inner.recall_pipeline.clone(),
         state: Arc::new(app_state_inner.clone()), // Populate state field
     };
 
@@ -3380,6 +3550,7 @@ impl TestApp {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            recall_pipeline: self.recall_pipeline.clone(),
             token_service: None, // Not available in this test context
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests

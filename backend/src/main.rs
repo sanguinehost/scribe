@@ -41,6 +41,7 @@ use scribe_backend::routes::{
     user_persona_routes::user_personas_router,                // Added for user persona routes
     user_settings_routes::user_settings_routes,
 };
+use scribe_backend::services::cognitive::RecallPipeline;
 use scribe_backend::state::{AppState, AppStateServices};
 use std::env; // Added for current_dir
 
@@ -411,6 +412,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     // --- Initialize Chronicle Service ---
     let _chronicle_service = Arc::new(ChronicleService::new(pool.clone(), ai_client_arc.clone()));
 
+    // --- Initialize Recall Pipeline ---
+    let recall_pipeline = Arc::new(RecallPipeline::new(pool.clone()));
+
     let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
 
     // --- Initialize Token Service ---
@@ -524,6 +528,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
                 config.security.max_requests_per_hour,
             ),
         ),
+        recall_pipeline,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: llamacpp_server_manager,
         #[cfg(feature = "local-llm")]

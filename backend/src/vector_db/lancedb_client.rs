@@ -702,13 +702,6 @@ impl LanceDbClient {
                 continue;
             }
 
-            info!(
-                point_id = ?id,
-                distance = ?distance,
-                score = %score,
-                "LanceDB raw result"
-            );
-
             results.push(ScoredPoint {
                 id,
                 payload,
@@ -1092,11 +1085,82 @@ impl QdrantClientServiceTrait for LanceDbClient {
 
     #[instrument(skip(self), name = "lancedb_delete_by_filter")]
     async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
-        let table = self.get_table().await?;
+        self.delete_points_by_filter_from_collection(&self.table_name, filter)
+            .await
+    }
+
+    async fn delete_points_from_collection(
+        &self,
+        collection_name: &str,
+        points: Vec<PointId>,
+    ) -> Result<(), AppError> {
+        let table = self
+            .connection
+            .open_table(collection_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!(
+                    "Failed to open table {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        // Convert PointIds to a format LanceDB can use for deletion
+        // For now, we'll just use a filter with 'id IN (...)'
+        let ids: Vec<String> = points
+            .into_iter()
+            .filter_map(|p| match p.point_id_options {
+                Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u)) => Some(u),
+                _ => None,
+            })
+            .collect();
+
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let sql_filter = format!(
+            "id IN ({})",
+            ids.iter()
+                .map(|id| format!("'{}'", id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        table
+            .delete(&sql_filter)
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Delete by IDs failed: {}", e)))?;
+
+        debug!(
+            "Deleted points by IDs from LanceDB table {}",
+            collection_name
+        );
+        Ok(())
+    }
+
+    async fn delete_points_by_filter_from_collection(
+        &self,
+        collection_name: &str,
+        filter: Filter,
+    ) -> Result<(), AppError> {
+        let table = self
+            .connection
+            .open_table(collection_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!(
+                    "Failed to open table {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
         let sql_filter = self.filter_to_sql(&filter);
 
         if sql_filter.is_empty() {
-            warn!("Empty filter for delete_points_by_filter, skipping");
+            warn!("Empty filter for delete_points_by_filter_from_collection, skipping");
             return Ok(());
         }
 
@@ -1105,7 +1169,10 @@ impl QdrantClientServiceTrait for LanceDbClient {
             .await
             .map_err(|e| AppError::DatabaseQueryError(format!("Delete by filter failed: {}", e)))?;
 
-        debug!("Deleted points matching filter from LanceDB");
+        debug!(
+            "Deleted points matching filter from LanceDB table {}",
+            collection_name
+        );
         Ok(())
     }
 
@@ -1136,6 +1203,128 @@ impl QdrantClientServiceTrait for LanceDbClient {
         self.get_table().await?;
         debug!("LanceDB health check passed");
         Ok(())
+    }
+
+    async fn store_points_to_collection(
+        &self,
+        collection_name: &str,
+        points: Vec<PointStruct>,
+    ) -> Result<(), AppError> {
+        if points.is_empty() {
+            return Ok(());
+        }
+
+        // In LanceDB, we treat collection_name as table_name
+        let table = self
+            .connection
+            .open_table(collection_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!(
+                    "Failed to open table {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        let batch = self.points_to_record_batch(&points)?;
+        let batches = arrow::record_batch::RecordBatchIterator::new(
+            vec![Ok(batch)],
+            Arc::new(self.get_schema()),
+        );
+
+        table.add(Box::new(batches)).execute().await.map_err(|e| {
+            AppError::DatabaseQueryError(format!(
+                "Failed to store points to {}: {}",
+                collection_name, e
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn search_points_in_collection(
+        &self,
+        collection_name: &str,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        let table = self
+            .connection
+            .open_table(collection_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!(
+                    "Failed to open table {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        let mut query = table
+            .query()
+            .nearest_to(vector)
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to create query: {}", e)))?
+            .limit(limit as usize);
+
+        if let Some(f) = filter {
+            let sql_filter = self.filter_to_sql(&f);
+            if !sql_filter.is_empty() {
+                query = query.only_if(sql_filter);
+            }
+        }
+
+        let results = query
+            .execute()
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Search failed: {}", e)))?;
+
+        use futures::StreamExt;
+        let batches: Vec<RecordBatch> = results
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to collect search results: {}", e))
+            })?;
+
+        let mut scored_points = Vec::new();
+        for batch in batches {
+            scored_points.extend(self.rows_to_scored_points(&batch, None)?);
+        }
+
+        Ok(scored_points)
+    }
+
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        // Check if table exists
+        match self.connection.open_table(collection_name).execute().await {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                // Table doesn't exist, create it
+                // This is a bit complex as create_empty_table uses self.table_name
+                // I'll just use a simplified version here or refactor create_empty_table
+                let schema = Arc::new(self.get_schema());
+                let batches = arrow::record_batch::RecordBatchIterator::new(
+                    vec![], // Empty
+                    schema.clone(),
+                );
+
+                self.connection
+                    .create_table(collection_name, Box::new(batches))
+                    .execute()
+                    .await
+                    .map_err(|e| {
+                        AppError::DatabaseQueryError(format!(
+                            "Failed to create table {}: {}",
+                            collection_name, e
+                        ))
+                    })?;
+                Ok(())
+            }
+        }
     }
 }
 
