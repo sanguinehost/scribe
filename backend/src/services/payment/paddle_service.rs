@@ -963,9 +963,9 @@ impl PaddleService {
 
         // Extract data field if it exists
         if let Some(data) = response_json.get("data") {
-            Ok(data.clone())
+            Ok(crate::db::Json(data.clone()))
         } else {
-            Ok(response_json)
+            Ok(crate::db::Json(response_json.0))
         }
     }
 
@@ -1118,7 +1118,7 @@ impl PaddleService {
             .and_then(|token| token.as_str())
             .ok_or_else(|| {
                 error!(
-                    response_json = %response_json,
+                    response_json = ?response_json,
                     "Customer auth token not found in Paddle response"
                 );
                 AppError::ExternalServiceError(

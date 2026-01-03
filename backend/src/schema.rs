@@ -315,8 +315,8 @@ diesel::table! {
         role -> Nullable<DbTextType>,
         parts -> Nullable<DbJsonType>,
         attachments -> Nullable<DbJsonType>,
-        prompt_tokens -> Nullable<Integer>,
-        completion_tokens -> Nullable<Integer>,
+        prompt_tokens -> Nullable<BigInt>,
+        completion_tokens -> Nullable<BigInt>,
         raw_prompt_ciphertext -> Nullable<DbBinaryType>,
         raw_prompt_nonce -> Nullable<DbBinaryType>,
         model_name -> DbTextType,
@@ -388,8 +388,8 @@ diesel::table! {
         player_chronicle_id -> Nullable<DbIdType>,
         agent_mode -> Nullable<DbTextType>,
         model_provider -> Nullable<DbTextType>,
-        total_prompt_tokens -> Integer,
-        total_completion_tokens -> Integer,
+        total_prompt_tokens -> BigInt,
+        total_completion_tokens -> BigInt,
         estimated_cost_cents -> Integer,
         tokens_counted_at -> DbTimestampType,
         prompt_template_id -> DbTextType,
@@ -441,7 +441,7 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     credit_packages (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         package_id -> Text,
         name -> Text,
         credits -> Integer,
@@ -461,10 +461,10 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     credit_transactions (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         user_id -> DbIdType,
-        amount -> DbNumericType,
-        balance_after -> DbNumericType,
+        amount -> Integer,
+        balance_after -> Integer,
         transaction_type -> Text,
         description_encrypted -> Binary,
         description_nonce -> Binary,
@@ -482,11 +482,11 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     daily_usage_tracking (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         user_id -> DbIdType,
         date -> Date,
         message_count -> Integer,
-        token_count -> Integer,
+        token_count -> BigInt,
         model_breakdown -> Nullable<DbJsonType>,
         soft_limit_triggered_at -> Nullable<Integer>,
         created_at -> Nullable<DbTimestampType>,
@@ -590,8 +590,8 @@ diesel::table! {
         user_id -> DbIdType,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
-        prompt_tokens -> Nullable<Integer>,
-        completion_tokens -> Nullable<Integer>,
+        prompt_tokens -> Nullable<BigInt>,
+        completion_tokens -> Nullable<BigInt>,
         model_name -> Nullable<Text>,
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
@@ -859,8 +859,8 @@ diesel::table! {
         user_id -> DbIdType,
         period_start -> DbTimestampType,
         period_end -> DbTimestampType,
-        prompt_tokens_used -> Integer,
-        completion_tokens_used -> Integer,
+        prompt_tokens_used -> BigInt,
+        completion_tokens_used -> BigInt,
         estimated_cost_cents -> Integer,
         model_breakdown -> Nullable<DbJsonType>,
         created_at -> DbTimestampType,
@@ -894,10 +894,10 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     user_credits (user_id) {
-        user_id -> Nullable<DbIdType>,
-        balance -> DbNumericType,
-        lifetime_earned -> DbNumericType,
-        lifetime_spent -> DbNumericType,
+        user_id -> DbIdType,
+        balance -> Integer,
+        lifetime_earned -> Integer,
+        lifetime_spent -> Integer,
         last_monthly_grant -> Nullable<DbTimestampType>,
         created_at -> Nullable<DbTimestampType>,
         updated_at -> Nullable<DbTimestampType>,
@@ -995,8 +995,8 @@ diesel::table! {
         role -> DbUserRole,
         account_status -> DbAccountStatus,
         default_persona_id -> Nullable<DbIdType>,
-        total_prompt_tokens -> Integer,
-        total_completion_tokens -> Integer,
+        total_prompt_tokens -> BigInt,
+        total_completion_tokens -> BigInt,
         total_token_cost_cents -> Integer,
         tokens_last_reset_at -> Nullable<DbTimestampType>,
         token_usage_updated_at -> DbTimestampType,
@@ -1012,7 +1012,7 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     webhook_events (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         event_id -> Text,
         event_type -> Text,
         paddle_signature -> Text,

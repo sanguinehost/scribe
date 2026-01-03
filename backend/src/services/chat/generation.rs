@@ -488,8 +488,8 @@ pub async fn get_session_data_for_generation(
                             Option<Vec<u8>>,
                             crate::db::DbTimestamp,
                             crate::db::DbId,
-                            Option<i32>,
-                            Option<i32>,
+                            Option<i64>,
+                            Option<i64>,
                             String,
                             String,
                             Option<crate::DbJson>,
@@ -506,8 +506,8 @@ pub async fn get_session_data_for_generation(
                             Option<Vec<u8>>,
                             crate::db::DbTimestamp,
                             crate::db::DbId,
-                            Option<i32>,
-                            Option<i32>,
+                            Option<i64>,
+                            Option<i64>,
                             String,
                             String,
                             Option<crate::DbJson>,
@@ -563,7 +563,7 @@ pub async fn get_session_data_for_generation(
                                 variant_count: 0,
                                 current_variant_index: 0,
                                 credits_charged: 0,
-                                credits_cost: 0,    // SQLite: i32
+                                credits_cost: 0.0,  // SQLite: f64
                                 actual_cost: 0.0,   // SQLite: f64
                                 modified_cost: 0.0, // SQLite: f64
                                 credit_cost: 0,
@@ -809,7 +809,7 @@ pub async fn get_session_data_for_generation(
     info!(%session_id, character_id = ?session_character_id_db, ?active_lorebook_ids_for_search, "Comprehensive active lorebook IDs determined (session + character linked).");
 
     // --- Calculate User Prompt Tokens (Now that model_name is available) ---
-    let user_prompt_tokens_val: Option<i32> = match state
+    let user_prompt_tokens_val: Option<i64> = match state
         .token_counter
         .count_tokens(
             &user_message_content,
@@ -818,7 +818,7 @@ pub async fn get_session_data_for_generation(
         )
         .await
     {
-        Ok(estimate) => Some(i32::try_from(estimate.total).unwrap_or(i32::MAX)),
+        Ok(estimate) => Some(i64::try_from(estimate.total).unwrap_or(i64::MAX)),
         Err(e) => {
             warn!("Failed to count prompt tokens for new user message: {e}");
             None
@@ -878,7 +878,7 @@ pub async fn get_session_data_for_generation(
                         variant_count: 0,
                         current_variant_index: 0,
                         credits_charged: 0,
-                        credits_cost: 0,    // SQLite: i32
+                        credits_cost: 0.0,  // SQLite: f64
                         actual_cost: 0.0,   // SQLite: f64
                         modified_cost: 0.0, // SQLite: f64
                         credit_cost: 0,
@@ -975,7 +975,7 @@ pub async fn get_session_data_for_generation(
     debug!(%session_id, %user_id, "Retrieved user settings for context management");
 
     // Use user-configured values or fall back to config defaults
-    let context_total_token_limit = user_settings
+    let mut context_total_token_limit = user_settings
         .default_context_total_token_limit
         .map(|v| v as usize)
         .unwrap_or(state.config.context_total_token_limit);
@@ -1722,7 +1722,7 @@ pub async fn get_session_data_for_generation(
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: 0,    // SQLite: i32
+                credits_cost: 0.0,  // SQLite: f64
                 actual_cost: 0.0,   // SQLite: f64
                 modified_cost: 0.0, // SQLite: f64
                 credit_cost: 0,
@@ -1792,7 +1792,7 @@ pub async fn get_session_data_for_generation(
         .with_parts(crate::db::Json(
             serde_json::json!([{"text": user_message_content}]),
         ))
-        .with_token_counts(user_prompt_tokens_val, None);
+        .with_token_counts(user_prompt_tokens_val.map(|t| t as i64), None);
 
     // --- Construct Final Tuple ---
     Ok((
@@ -2643,8 +2643,8 @@ pub async fn stream_ai_response_and_save_message(
                                 service_model_name_clone_full
                             );
                             let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
-                                prompt_tokens,
-                                completion_tokens,
+                                prompt_tokens: prompt_tokens as i32,
+                                completion_tokens: completion_tokens as i32,
                                 model_name: service_model_name_clone_full.clone(),
                             });
                             info!(session_id = %full_session_id_clone, "TokenUsage SSE event sent successfully");

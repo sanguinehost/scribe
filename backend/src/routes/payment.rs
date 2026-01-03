@@ -18,7 +18,7 @@ use crate::privacy::logging::{loggable_user_id, sanitize_json_value, sanitize_pe
 use axum::{
     extract::{Path, Query, State},
     http::HeaderMap,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json as AxumJson},
     routing::{get, post},
     Router,
 };
@@ -267,7 +267,7 @@ pub async fn payment_transaction_to_response(
 pub async fn get_subscription(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<SubscriptionResponse>, AppError> {
+) -> Result<AxumJson<SubscriptionResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -502,16 +502,16 @@ pub async fn get_subscription(
         response.customer_portal_url.is_some()
     );
 
-    Ok(Json(response))
+    Ok(AxumJson(response))
 }
 
 /// Get available subscription plans
 #[cfg(feature = "payment")]
 pub async fn get_plans(
     State(_app_state): State<AppState>,
-) -> Result<Json<PlansResponse>, AppError> {
+) -> Result<AxumJson<PlansResponse>, AppError> {
     // TODO: This is a simplified implementation for now
-    Ok(Json(PlansResponse { plans: vec![] }))
+    Ok(AxumJson(PlansResponse { plans: vec![] }))
 }
 
 /// Get current user's usage information
@@ -519,7 +519,7 @@ pub async fn get_plans(
 pub async fn get_usage(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<UsageLimitsResponse>, AppError> {
+) -> Result<AxumJson<UsageLimitsResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -571,7 +571,7 @@ pub async fn get_usage(
 
     match usage_result {
         Ok(usage_limit) => {
-            Ok(Json(UsageLimitsResponse {
+            Ok(AxumJson(UsageLimitsResponse {
                 tokens_used_total: usage_limit.tokens_used_total,
                 period_start: usage_limit.period_start,
                 period_end: usage_limit.period_end,
@@ -589,7 +589,7 @@ pub async fn get_usage(
                 e
             );
             // Fallback to safe defaults
-            Ok(Json(UsageLimitsResponse {
+            Ok(AxumJson(UsageLimitsResponse {
                 tokens_used_total: 0,
                 period_start: crate::DbTimestamp::now(),
                 period_end: crate::DbTimestamp::from_datetime(
@@ -609,8 +609,8 @@ pub async fn get_usage(
 pub async fn create_payment(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-    Json(request): Json<CreatePaymentRequest>,
-) -> Result<Json<CreatePaymentResponse>, AppError> {
+    AxumJson(request): AxumJson<CreatePaymentRequest>,
+) -> Result<AxumJson<CreatePaymentResponse>, AppError> {
     tracing::debug!(
         plan_type = %request.plan_type,
         success_url = %request.success_url.as_deref().unwrap_or("None"),
@@ -745,7 +745,7 @@ pub async fn create_payment(
         "Successfully created transaction, returning response"
     );
 
-    Ok(Json(CreatePaymentResponse {
+    Ok(AxumJson(CreatePaymentResponse {
         transaction_id: transaction.transaction_id,
         checkout_url: transaction.checkout_url,
         status: transaction.status,
@@ -758,7 +758,7 @@ pub async fn verify_transaction(
     Path(transaction_id): Path<String>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<crate::DbJson>, AppError> {
+) -> Result<AxumJson<crate::DbJson>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -782,11 +782,11 @@ pub async fn verify_transaction(
             transaction_id,
             loggable_user_id(user.id)
         );
-        return Ok(Json(serde_json::json!({
+        return Ok(AxumJson(crate::db::Json(serde_json::json!({
             "success": false,
             "message": "Invalid transaction ID format",
             "error": "Transaction ID appears to be a placeholder or invalid format"
-        })));
+        }))));
     }
 
     // First, check if we have the transaction in our database
@@ -851,11 +851,11 @@ pub async fn verify_transaction(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             if existing_subscription.is_some() {
-                return Ok(Json(serde_json::json!({
+                return Ok(AxumJson(crate::db::Json(serde_json::json!({
                     "success": true,
                     "message": "Transaction already verified and subscription exists",
                     "source": "database"
-                })));
+                }))));
             }
 
             // Create subscription from stored transaction data
@@ -926,7 +926,7 @@ pub async fn verify_transaction(
                 transaction_id
             );
 
-            return Ok(Json(serde_json::json!({
+            return Ok(AxumJson(crate::db::Json(serde_json::json!({
                 "success": true,
                 "message": "Transaction verified from database",
                 "subscription": {
@@ -935,7 +935,7 @@ pub async fn verify_transaction(
                     "status": new_subscription.status
                 },
                 "source": "database"
-            })));
+            }))));
         }
     }
 
@@ -993,11 +993,11 @@ pub async fn verify_transaction(
                     status,
                     total_str
                 );
-                return Ok(Json(serde_json::json!({
+                return Ok(AxumJson(crate::db::Json(serde_json::json!({
                     "success": false,
                     "message": format!("Transaction is not completed: {}", status),
                     "status": status
-                })));
+                }))));
             }
 
             // Extract customer_id from transaction
@@ -1094,7 +1094,7 @@ pub async fn verify_transaction(
                         transaction_id,
                         user.id
                     );
-                    return Ok(Json(serde_json::json!({
+                    return Ok(AxumJson(crate::db::Json(serde_json::json!({
                         "success": true,
                         "message": "Transaction already processed",
                         "subscription": {
@@ -1104,7 +1104,7 @@ pub async fn verify_transaction(
                             "trial_end": existing.trial_end
                         },
                         "source": "existing"
-                    })));
+                    }))));
                 }
 
                 // Determine if we should upgrade or prevent duplicate
@@ -1128,7 +1128,7 @@ pub async fn verify_transaction(
                 };
 
                 if !should_upgrade {
-                    return Ok(Json(serde_json::json!({
+                    return Ok(AxumJson(crate::db::Json(serde_json::json!({
                         "success": true,
                         "message": "User already has an active subscription",
                         "subscription": {
@@ -1138,7 +1138,7 @@ pub async fn verify_transaction(
                             "trial_end": existing.trial_end
                         },
                         "source": "existing"
-                    })));
+                    }))));
                 }
 
                 // Update existing subscription (upgrade scenario)
@@ -1202,7 +1202,7 @@ pub async fn verify_transaction(
                     .map_err(|e| AppError::DbInteractError(e.to_string()))?
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
-                Ok(Json(serde_json::json!({
+                Ok(AxumJson(crate::db::Json(serde_json::json!({
                     "success": true,
                     "message": if is_trial { "Trial subscription updated successfully" } else { "Subscription upgraded successfully" },
                     "subscription": {
@@ -1211,7 +1211,7 @@ pub async fn verify_transaction(
                         "status": updated.status,
                         "trial_end": updated.trial_end
                     }
-                })))
+                }))))
             } else {
                 // Create new subscription
                 let subscription_service = crate::services::payment::SubscriptionService::new(
@@ -1246,7 +1246,7 @@ pub async fn verify_transaction(
                     user.id
                 );
 
-                Ok(Json(serde_json::json!({
+                Ok(AxumJson(crate::db::Json(serde_json::json!({
                     "success": true,
                     "message": if is_trial { "Trial subscription created successfully" } else { "Subscription created successfully" },
                     "subscription": {
@@ -1255,7 +1255,7 @@ pub async fn verify_transaction(
                         "status": new_subscription.status,
                         "trial_end": new_subscription.trial_end
                     }
-                })))
+                }))))
             }
         }
         Err(e) => {
@@ -1269,11 +1269,11 @@ pub async fn verify_transaction(
                     loggable_user_id(user.id)
                 );
 
-                return Ok(Json(serde_json::json!({
+                return Ok(AxumJson(crate::db::Json(serde_json::json!({
                     "success": false,
                     "message": "Transaction not found",
                     "error": "External service error: Paddle API error: 404 Not Found - Transaction does not exist or is not accessible"
-                })));
+                }))));
             }
 
             // Check if this is an authentication/authorization error
@@ -1284,22 +1284,22 @@ pub async fn verify_transaction(
                     e
                 );
 
-                return Ok(Json(serde_json::json!({
+                return Ok(AxumJson(crate::db::Json(serde_json::json!({
                     "success": false,
                     "message": "Payment service authentication error",
                     "error": "External service error: Unable to authenticate with payment processor"
-                })));
+                }))));
             }
 
             // Generic error logging and response
             tracing::error!("Failed to verify transaction {}: {}", transaction_id, e);
 
             // Still return a response but indicate verification failed
-            Ok(Json(serde_json::json!({
+            Ok(AxumJson(crate::db::Json(serde_json::json!({
                 "success": false,
                 "message": format!("Failed to verify transaction: {}", e),
                 "error": e.to_string()
-            })))
+            }))))
         }
     }
 }
@@ -1309,8 +1309,8 @@ pub async fn verify_transaction(
 pub async fn preview_order(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-    Json(request): Json<OrderPreviewRequest>,
-) -> Result<Json<OrderPreview>, AppError> {
+    AxumJson(request): AxumJson<OrderPreviewRequest>,
+) -> Result<AxumJson<OrderPreview>, AppError> {
     let _user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -1385,7 +1385,7 @@ pub async fn preview_order(
         cancellation_policy: "Cancel anytime. No cancellation fees.".to_string(),
     };
 
-    Ok(Json(order_preview))
+    Ok(AxumJson(order_preview))
 }
 
 /// Create a new subscription for the user (legacy - now uses transactions)
@@ -1393,8 +1393,8 @@ pub async fn preview_order(
 pub async fn create_subscription(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-    Json(request): Json<CreateSubscriptionRequest>,
-) -> Result<Json<CreateSubscriptionResponse>, AppError> {
+    AxumJson(request): AxumJson<CreateSubscriptionRequest>,
+) -> Result<AxumJson<CreateSubscriptionResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -1464,7 +1464,7 @@ pub async fn create_subscription(
         .create_transaction(&transaction_request)
         .await?;
 
-    Ok(Json(CreateSubscriptionResponse {
+    Ok(AxumJson(CreateSubscriptionResponse {
         checkout_url: transaction.checkout_url,
         subscription_id: transaction.transaction_id, // Using transaction_id as subscription identifier
     }))
@@ -1475,14 +1475,14 @@ pub async fn create_subscription(
 pub async fn cancel_subscription(
     auth_session: CurrentAuthSession,
     State(_app_state): State<AppState>,
-    Json(_request): Json<CancelSubscriptionRequest>,
-) -> Result<Json<SubscriptionResponse>, AppError> {
+    AxumJson(_request): AxumJson<CancelSubscriptionRequest>,
+) -> Result<AxumJson<SubscriptionResponse>, AppError> {
     let _user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // TODO: This is a simplified implementation for now
-    Ok(Json(SubscriptionResponse {
+    Ok(AxumJson(SubscriptionResponse {
         subscription: None,
         plan_features: None,
         usage_limits: None,
@@ -1495,13 +1495,13 @@ pub async fn cancel_subscription(
 pub async fn reactivate_subscription(
     auth_session: CurrentAuthSession,
     State(_app_state): State<AppState>,
-) -> Result<Json<SubscriptionResponse>, AppError> {
+) -> Result<AxumJson<SubscriptionResponse>, AppError> {
     let _user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // TODO: This is a simplified implementation for now
-    Ok(Json(SubscriptionResponse {
+    Ok(AxumJson(SubscriptionResponse {
         subscription: None,
         plan_features: None,
         usage_limits: None,
@@ -1515,7 +1515,7 @@ pub async fn paddle_webhook(
     State(app_state): State<AppState>,
     headers: HeaderMap,
     body: axum::body::Bytes,
-) -> Result<Json<WebhookResponse>, AppError> {
+) -> Result<AxumJson<WebhookResponse>, AppError> {
     // Start timing webhook processing (for security monitoring)
     let start_time = std::time::Instant::now();
 
@@ -1700,7 +1700,7 @@ pub async fn paddle_webhook(
             "Webhook already processed - returning idempotent success"
         );
 
-        return Ok(Json(WebhookResponse {
+        return Ok(AxumJson(WebhookResponse {
             success: true,
             message: "Webhook already processed (idempotent)".to_string(),
         }));
@@ -1844,7 +1844,7 @@ pub async fn paddle_webhook(
         "Webhook processed successfully"
     );
 
-    Ok(Json(WebhookResponse {
+    Ok(AxumJson(WebhookResponse {
         success: true,
         message: "Webhook processed successfully".to_string(),
     }))
@@ -2158,10 +2158,12 @@ async fn process_transaction_completed(
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let items = transaction_data
-            .get("items")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!([]));
+        let items = crate::db::Json(
+            transaction_data
+                .get("items")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([])),
+        );
 
         // Prepare customer data for encryption (PII)
         let customer_data = serde_json::json!({
@@ -4007,7 +4009,7 @@ async fn process_subscription_cancelled(
 pub async fn get_credit_balance(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<CreditBalanceResponse>, AppError> {
+) -> Result<AxumJson<CreditBalanceResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -4027,7 +4029,7 @@ pub async fn get_credit_balance(
             AppError::DatabaseQueryError(format!("Failed to get credit balance: {}", e))
         })?;
 
-    Ok(Json(CreditBalanceResponse {
+    Ok(AxumJson(CreditBalanceResponse {
         balance: balance.balance,
         lifetime_earned: balance.lifetime_earned,
         lifetime_spent: balance.lifetime_spent,
@@ -4040,8 +4042,8 @@ pub async fn get_credit_balance(
 pub async fn purchase_credits(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-    Json(request): Json<PurchaseCreditsRequest>,
-) -> Result<Json<PurchaseCreditsResponse>, AppError> {
+    AxumJson(request): AxumJson<PurchaseCreditsRequest>,
+) -> Result<AxumJson<PurchaseCreditsResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -4101,14 +4103,14 @@ pub async fn purchase_credits(
             cancel_url: Some(format!("{}/credits", app_state.config.frontend_base_url)),
         }),
         billing_details: None,
-        custom_data: Some(custom_data),
+        custom_data: Some(crate::db::Json(custom_data)),
     };
 
     let transaction = paddle_service
         .create_transaction(&transaction_request)
         .await?;
 
-    Ok(Json(PurchaseCreditsResponse {
+    Ok(AxumJson(PurchaseCreditsResponse {
         checkout_url: transaction.checkout_url,
         transaction_id: transaction.transaction_id,
     }))
@@ -4118,7 +4120,7 @@ pub async fn purchase_credits(
 #[cfg(feature = "payment")]
 pub async fn get_credit_packages(
     State(app_state): State<AppState>,
-) -> Result<Json<CreditPackagesResponse>, AppError> {
+) -> Result<AxumJson<CreditPackagesResponse>, AppError> {
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4140,7 +4142,7 @@ pub async fn get_credit_packages(
             AppError::DatabaseQueryError(format!("Failed to get credit packages: {}", e))
         })?;
 
-    Ok(Json(CreditPackagesResponse { packages }))
+    Ok(AxumJson(CreditPackagesResponse { packages }))
 }
 
 /// Get user's credit transaction history
@@ -4149,7 +4151,7 @@ pub async fn get_credit_transactions(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
     Query(query): Query<TransactionListQuery>,
-) -> Result<Json<Vec<CreditTransactionResponse>>, AppError> {
+) -> Result<AxumJson<Vec<CreditTransactionResponse>>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -4216,7 +4218,7 @@ pub async fn get_credit_transactions(
         });
     }
 
-    Ok(Json(decrypted_transactions))
+    Ok(AxumJson(decrypted_transactions))
 }
 
 /// Get user's payment transaction history
@@ -4225,7 +4227,7 @@ pub async fn get_payment_transactions(
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
     Query(query): Query<TransactionListQuery>,
-) -> Result<Json<Vec<PaymentTransactionResponse>>, AppError> {
+) -> Result<AxumJson<Vec<PaymentTransactionResponse>>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -4285,7 +4287,7 @@ pub async fn get_payment_transactions(
         "Retrieved and decrypted payment transactions for user"
     );
 
-    Ok(Json(responses))
+    Ok(AxumJson(responses))
 }
 
 /// Get a single payment transaction by ID
@@ -4294,7 +4296,7 @@ pub async fn get_payment_transaction(
     Path(transaction_id): Path<crate::db::DbId>,
     auth_session: CurrentAuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<PaymentTransactionResponse>, AppError> {
+) -> Result<AxumJson<PaymentTransactionResponse>, AppError> {
     let user = auth_session
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
@@ -4348,14 +4350,14 @@ pub async fn get_payment_transaction(
         "Retrieved and decrypted payment transaction"
     );
 
-    Ok(Json(response))
+    Ok(AxumJson(response))
 }
 
 /// Get model credit costs configuration
 #[cfg(feature = "payment")]
 pub async fn get_model_costs(
     State(_app_state): State<AppState>,
-) -> Result<Json<crate::DbJson>, AppError> {
+) -> Result<AxumJson<crate::DbJson>, AppError> {
     use std::fs;
 
     // Load the subscription tiers configuration
@@ -4380,7 +4382,7 @@ pub async fn get_model_costs(
         "context_multipliers": config["credit_system"]["context_multipliers"]
     });
 
-    Ok(Json(response))
+    Ok(AxumJson(crate::db::Json(response)))
 }
 
 /// Create authenticated payment routes (require login)

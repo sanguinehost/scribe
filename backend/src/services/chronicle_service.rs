@@ -1719,16 +1719,38 @@ impl ChronicleService {
                 );
 
                 // Delete old opinion from DB
-                let mut conn = self
-                    .db_pool
-                    .get()
+                #[cfg(feature = "postgres-backend")]
+                {
+                    let conn = self
+                        .db_pool
+                        .get()
+                        .await
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    let opinion_id_clone = meta.opinion_id;
+                    conn.interact(move |conn| {
+                        diesel::delete(
+                            character_opinions::table
+                                .filter(character_opinions::id.eq(opinion_id_clone)),
+                        )
+                        .execute(conn)
+                    })
+                    .await
+                    .map_err(|e| AppError::DbInteractError(e.to_string()))?
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-                diesel::delete(
-                    character_opinions::table.filter(character_opinions::id.eq(meta.opinion_id)),
-                )
-                .execute(&mut conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                }
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    let mut conn = self
+                        .db_pool
+                        .get()
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    diesel::delete(
+                        character_opinions::table
+                            .filter(character_opinions::id.eq(meta.opinion_id)),
+                    )
+                    .execute(&mut conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                }
 
                 // Delete old opinion from Vector Store
                 state
@@ -1761,15 +1783,33 @@ impl ChronicleService {
             updated_at: now.into(),
         };
 
-        let mut conn = self
-            .db_pool
-            .get()
+        #[cfg(feature = "postgres-backend")]
+        {
+            let conn = self
+                .db_pool
+                .get()
+                .await
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            conn.interact(move |conn| {
+                diesel::insert_into(character_opinions::table)
+                    .values(&new_opinion)
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-        diesel::insert_into(character_opinions::table)
-            .values(&new_opinion)
-            .execute(&mut conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let mut conn = self
+                .db_pool
+                .get()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            diesel::insert_into(character_opinions::table)
+                .values(&new_opinion)
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
 
         // Embed the opinion for vector search
         state
@@ -1852,15 +1892,33 @@ impl ChronicleService {
             updated_at: now.into(),
         };
 
-        let mut conn = self
-            .db_pool
-            .get()
+        #[cfg(feature = "postgres-backend")]
+        {
+            let conn = self
+                .db_pool
+                .get()
+                .await
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            conn.interact(move |conn| {
+                diesel::insert_into(entity_observations::table)
+                    .values(&new_observation)
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
-
-        diesel::insert_into(entity_observations::table)
-            .values(&new_observation)
-            .execute(&mut conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let mut conn = self
+                .db_pool
+                .get()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            diesel::insert_into(entity_observations::table)
+                .values(&new_observation)
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
 
         Ok(())
     }

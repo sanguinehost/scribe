@@ -1,4 +1,4 @@
-use crate::db::{DbBlob, DbId, DbInt, DbTimestamp};
+use crate::db::{DbBigInt, DbBlob, DbId, DbInt, DbTimestamp};
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -200,8 +200,8 @@ pub struct UserDbQuery {
     pub role: UserRole,
     pub account_status: AccountStatus,
     pub default_persona_id: Option<DbId>,
-    pub total_prompt_tokens: DbInt,
-    pub total_completion_tokens: DbInt,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_token_cost_cents: DbInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
@@ -283,8 +283,8 @@ pub struct User {
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
     pub default_persona_id: Option<DbId>,
-    pub total_prompt_tokens: DbInt,
-    pub total_completion_tokens: DbInt,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_token_cost_cents: DbInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
@@ -429,8 +429,8 @@ pub struct NewUser {
     pub recovery_dek_nonce: Option<DbBlob>,
     pub role: UserRole,
     pub account_status: AccountStatus,
-    pub total_prompt_tokens: DbInt,
-    pub total_completion_tokens: DbInt,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_token_cost_cents: DbInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,

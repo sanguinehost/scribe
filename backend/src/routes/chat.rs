@@ -614,7 +614,7 @@ pub async fn generate_chat_response(
                     user_id_value,
                     credits_required,
                     &description,
-                    Some(metadata)
+                    Some(crate::db::Json(metadata))
                 )
             }).await.map_err(|e| {
                 error!("Database interaction error during credit reservation: {}", e);
@@ -739,7 +739,7 @@ pub async fn generate_chat_response(
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: 0,    // SQLite: i32
+                credits_cost: 0.0,  // SQLite: f64
                 actual_cost: 0.0,   // SQLite: f64
                 modified_cost: 0.0, // SQLite: f64
                 credit_cost: 0,

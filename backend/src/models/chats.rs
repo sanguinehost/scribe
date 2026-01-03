@@ -1902,8 +1902,8 @@ pub struct ChatForClient {
     pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub chat_mode: ChatMode,
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     pub game_state: Option<crate::DbJson>,

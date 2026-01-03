@@ -969,7 +969,7 @@ async fn process_messages_for_response(
             is_variant: false, // This is a parent message, not a variant itself
             parent_message_id: None, // TODO: Add parent_message_id to Message struct
             variants: if actual_variant_count > 0 || msg_db.current_variant_index > 0 {
-                tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})", 
+                tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})",
                     msg_db.id, msg_db.variant_count, actual_variant_count, msg_db.current_variant_index);
 
                 match chat::message_variants::get_message_variants(
@@ -1256,7 +1256,7 @@ pub async fn create_message_handler(
             UsageTrackingService::new((*state.config).clone(), EncryptionService::new());
 
         let user_id_for_payment = user_id;
-        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0);
+        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0) as i32; // Cast to i32 for payment tracking
         let model_name_for_tracking = chat.model_name.clone();
 
         // Get a database connection for the usage tracking
@@ -2570,9 +2570,9 @@ async fn get_chat_token_usage_handler(
 
     let token_usage = ChatTokenUsage {
         chat_id: id,
-        total_prompt_tokens: chat.total_prompt_tokens,
-        total_completion_tokens: chat.total_completion_tokens,
-        total_tokens,
+        total_prompt_tokens: chat.total_prompt_tokens as i32, // Cast to i32 for API compatibility
+        total_completion_tokens: chat.total_completion_tokens as i32, // Cast to i32 for API compatibility
+        total_tokens: total_tokens as i32, // Cast to i32 for API compatibility
         estimated_cost_cents: chat.estimated_cost_cents,
         estimated_cost_dollars,
         tokens_counted_at: chat.tokens_counted_at,

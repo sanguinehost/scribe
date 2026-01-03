@@ -278,8 +278,8 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // Calculate token counts FIRST (before variant check)
     // This ensures variants get their own token counts
-    let mut prompt_tokens_val: Option<i32> = None;
-    let mut completion_tokens_val: Option<i32> = None;
+    let mut prompt_tokens_val: Option<i64> = None;
+    let mut completion_tokens_val: Option<i64> = None;
 
     // Always calculate token counts (needed for frontend streaming completion even if free)
     // For user messages, count tokens for just the user's input content
@@ -290,7 +290,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             .await
         {
             Ok(estimate) => {
-                prompt_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
+                prompt_tokens_val = Some(i64::try_from(estimate.total).unwrap_or(i64::MAX));
             }
             Err(e) => warn!("Failed to count prompt tokens for user message: {}", e), // Log and continue
         }
@@ -302,7 +302,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             .await
         {
             Ok(estimate) => {
-                completion_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
+                completion_tokens_val = Some(i64::try_from(estimate.total).unwrap_or(i64::MAX));
             }
             Err(e) => warn!(
                 "Failed to count completion tokens for assistant message: {}",
@@ -323,7 +323,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
             {
                 Ok(estimate) => {
                     // Override the prompt_tokens with the full prompt token count
-                    prompt_tokens_val = Some(i32::try_from(estimate.total).unwrap_or(i32::MAX));
+                    prompt_tokens_val = Some(i64::try_from(estimate.total).unwrap_or(i64::MAX));
                     info!(%session_id, prompt_tokens = estimate.total,
                           "Counted tokens for full AI prompt (system + RAG + history + user input)");
                 }
@@ -785,6 +785,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                 use std::collections::HashMap;
 
                 let total_tokens = prompt_tokens + completion_tokens;
+                let total_tokens_i32 = total_tokens as i32; // Cast for payment tracking
                 if total_tokens > 0 {
                     let model_name_clone = model_name_for_tracking.clone();
 
@@ -796,7 +797,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
                         // Create metadata about this token usage
                         let mut model_usage = HashMap::new();
-                        model_usage.insert(model_name_clone, total_tokens);
+                        model_usage.insert(model_name_clone, total_tokens_i32);
 
                         let mut feature_usage = HashMap::new();
                         feature_usage.insert("chat_message".to_string(), 1);
@@ -813,7 +814,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
                                 conn,
                                 user_id_for_tokens,
                                 None, // subscription_id will be looked up by the service
-                                total_tokens,
+                                total_tokens_i32,
                                 Some(metadata),
                             )
                             .map_err(|e| {
@@ -877,7 +878,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 }
 
 /// Calculate estimated cost in cents based on model pricing
-fn calculate_token_cost_cents(prompt_tokens: i32, completion_tokens: i32, model_name: &str) -> i32 {
+fn calculate_token_cost_cents(prompt_tokens: i64, completion_tokens: i64, model_name: &str) -> i32 {
     // Gemini pricing (per 1M tokens) - Updated with correct official pricing
     let (input_cost, output_cost) = match model_name {
         "gemini-2.5-flash" | "gemini-2.5-flash-lite" => (0.3, 2.5),
@@ -916,8 +917,8 @@ async fn update_cumulative_token_counts(
     pool: &crate::db::DbPool,
     session_id: crate::db::DbId,
     user_id: crate::db::DbId,
-    prompt_tokens: i32,
-    completion_tokens: i32,
+    prompt_tokens: i64,
+    completion_tokens: i64,
     estimated_cost_cents: i32,
     actual_cost: crate::db::DbDecimal,
     modified_cost: crate::db::DbDecimal,
@@ -947,7 +948,7 @@ async fn update_cumulative_token_counts(
                 cost_f64,
                 modified_cost.to_f64().unwrap_or(0.0),
                 actual_charge.to_f64().unwrap_or(0.0),
-                cost_f64 as i32,
+                cost_f64,
             )
         };
 
@@ -963,9 +964,9 @@ async fn update_cumulative_token_counts(
         diesel::update(chat_sessions::table.find(session_id))
             .set((
                 chat_sessions::total_prompt_tokens
-                    .eq(chat_sessions::total_prompt_tokens + prompt_tokens),
+                    .eq(chat_sessions::total_prompt_tokens + prompt_tokens as i64),
                 chat_sessions::total_completion_tokens
-                    .eq(chat_sessions::total_completion_tokens + completion_tokens),
+                    .eq(chat_sessions::total_completion_tokens + completion_tokens as i64),
                 chat_sessions::estimated_cost_cents
                     .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
                 // NEW: Track all four cost values properly
@@ -986,9 +987,9 @@ async fn update_cumulative_token_counts(
                 // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
                 // We use credits_used_delta which is typed correctly for each backend.
                 chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbCreditType,
+                    crate::schema::sql_types_unified::DbNumericType,
                 >("total_credits_used + ")
-                .bind::<crate::schema::sql_types_unified::DbCreditType, _>(credits_used_delta)),
+                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(credits_used_delta)),
                 chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
             ))
             .execute(conn)?;
@@ -997,15 +998,15 @@ async fn update_cumulative_token_counts(
         // Note: PostgreSQL uses i64 (BigInt), SQLite uses i32 (Integer) for DbInt
         #[cfg(feature = "postgres-backend")]
         let (prompt_db, completion_db, cost_db) = (
-            prompt_tokens as i32,
-            completion_tokens as i32,
+            prompt_tokens as i64,
+            completion_tokens as i64,
             estimated_cost_cents as i32,
         );
         #[cfg(feature = "sqlite-backend")]
         let (prompt_db, completion_db, cost_db) = (
-            prompt_tokens,        // Already i32, matches SQLite Integer
-            completion_tokens,    // Already i32, matches SQLite Integer
-            estimated_cost_cents, // Already i32, matches SQLite Integer
+            prompt_tokens as i64,
+            completion_tokens as i64,
+            estimated_cost_cents,
         );
 
         diesel::update(users::table.find(user_id))

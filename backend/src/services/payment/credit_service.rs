@@ -627,7 +627,8 @@ impl CreditService {
             let new_balance = balance.balance - amount;
 
             // Encrypt transaction data with user DEK
-            let mut metadata_with_status = metadata.clone().unwrap_or_else(|| json!({}));
+            let metadata_inner = metadata.clone().map(|j| j.0).unwrap_or_else(|| json!({}));
+            let mut metadata_with_status = metadata_inner;
             metadata_with_status["status"] = json!("pending");
             metadata_with_status["reservation_id"] = json!(reservation_id.to_string());
 
@@ -635,7 +636,7 @@ impl CreditService {
                 conn,
                 user_id,
                 description,
-                Some(metadata_with_status),
+                Some(crate::db::Json(metadata_with_status)),
             )?;
 
             // Create pending transaction record
@@ -869,10 +870,10 @@ impl CreditService {
             conn,
             user_id,
             &refund_description,
-            Some(json!({
+            Some(crate::db::Json(json!({
                 "original_reservation": reservation_id.to_string(),
                 "reason": reason
-            })),
+            }))),
         )?;
 
         let created_at = Utc::now();
@@ -1045,10 +1046,10 @@ impl CreditService {
             "monthly_grant",
             &format!("Monthly credit grant for {} tier", tier),
             None,
-            Some(json!({
+            Some(crate::db::Json(json!({
                 "tier": tier,
                 "credits": monthly_credits
-            })),
+            }))),
         )
     }
 
@@ -1066,7 +1067,7 @@ impl CreditService {
         config["tiers"][tier]
             .as_object()
             .ok_or_else(|| AppError::BadRequest(format!("Invalid tier: {}", tier)))
-            .map(|o| crate::DbJson::Object(o.clone()))
+            .map(|o| crate::db::Json(serde_json::Value::Object(o.clone())))
     }
 
     /// Get transaction history for a user
@@ -1150,13 +1151,13 @@ impl CreditService {
             "purchase",
             &format!("Purchased {} credit package", package.name),
             Some(paddle_transaction_id.to_string()),
-            Some(json!({
+            Some(crate::db::Json(json!({
                 "package_id": package_id,
                 "base_credits": package.credits,
                 "bonus_credits": bonus_credits,
                 "total_credits": total_credits,
                 "price_cents": package.price_cents
-            })),
+            }))),
         )?;
 
         // Log the payment processed event (separate from credit addition)

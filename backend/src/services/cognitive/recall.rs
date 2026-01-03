@@ -159,11 +159,23 @@ impl RecallPipeline {
         chronicle_id: DbId,
         opinion_id: DbId,
     ) -> Result<Option<CharacterOpinion>, AppError> {
-        let mut conn = self
-            .db_pool
-            .get()
+        let mut conn = crate::db::get_conn(&self.db_pool).await?;
+
+        #[cfg(feature = "postgres-backend")]
+        let result = conn
+            .interact(move |conn| {
+                character_opinions::table
+                    .filter(character_opinions::user_id.eq(user_id))
+                    .filter(character_opinions::chronicle_id.eq(chronicle_id))
+                    .filter(character_opinions::id.eq(opinion_id))
+                    .first::<CharacterOpinion>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
+        #[cfg(feature = "sqlite-backend")]
         let result = character_opinions::table
             .filter(character_opinions::user_id.eq(user_id))
             .filter(character_opinions::chronicle_id.eq(chronicle_id))
@@ -181,15 +193,29 @@ impl RecallPipeline {
         chronicle_id: DbId,
         entity_name_hash: &str,
     ) -> Result<Vec<EntityObservation>, AppError> {
-        let mut conn = self
-            .db_pool
-            .get()
+        let mut conn = crate::db::get_conn(&self.db_pool).await?;
+        let entity_name_hash = entity_name_hash.to_string();
+
+        #[cfg(feature = "postgres-backend")]
+        let results = conn
+            .interact(move |conn| {
+                entity_observations::table
+                    .filter(entity_observations::user_id.eq(user_id))
+                    .filter(entity_observations::chronicle_id.eq(chronicle_id))
+                    .filter(entity_observations::entity_name_hash.eq(&entity_name_hash))
+                    .order(entity_observations::created_at.desc())
+                    .limit(5)
+                    .load::<EntityObservation>(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
+        #[cfg(feature = "sqlite-backend")]
         let results = entity_observations::table
             .filter(entity_observations::user_id.eq(user_id))
             .filter(entity_observations::chronicle_id.eq(chronicle_id))
-            .filter(entity_observations::entity_name_hash.eq(entity_name_hash))
+            .filter(entity_observations::entity_name_hash.eq(&entity_name_hash))
             .order(entity_observations::created_at.desc())
             .limit(5)
             .load::<EntityObservation>(&mut conn)
