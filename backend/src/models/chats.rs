@@ -205,6 +205,7 @@ pub struct Chat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -348,6 +349,7 @@ pub struct NewChat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -2299,6 +2301,8 @@ pub struct UpdateChatSettingsRequest {
     pub rag_lorebooks_limit: Option<i32>,
     #[validate(range(min = 0, max = 1000000))]
     pub rag_older_chat_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {

@@ -1955,6 +1955,8 @@ mod tests {
                 current_user_message_tokens: current_user_tokens,
                 rag_items_with_tokens: rag_items,
                 recent_history_with_tokens: history_messages,
+                cognitive_context: None,
+                cognitive_context_tokens: 0,
             }
         }
 

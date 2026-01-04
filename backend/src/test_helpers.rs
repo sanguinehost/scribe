@@ -3454,6 +3454,10 @@ pub async fn set_history_settings(
         active_custom_persona_id: None,
         prompt_template_id: None,
         game_master_mode_enabled: None,
+        rag_chronicles_limit: None,
+        rag_lorebooks_limit: None,
+        rag_older_chat_limit: None,
+        rag_cognitive_context_limit: None,
     };
 
     let client = reqwest::Client::new();

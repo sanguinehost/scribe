@@ -183,11 +183,12 @@ pub struct Chat {
     pub total_credit_cost: i32,                                    // 45
     pub total_actual_charge: f64,                                  // 46
     // Game Master Agent fields
-    pub game_state: Option<crate::DbJson>, // 47
-    pub game_master_mode_enabled: bool,    // 48
-    pub rag_chronicles_limit: Option<i32>, // 49
-    pub rag_lorebooks_limit: Option<i32>,  // 50
-    pub rag_older_chat_limit: Option<i32>, // 51
+    pub game_state: Option<crate::DbJson>,        // 47
+    pub game_master_mode_enabled: bool,           // 48
+    pub rag_chronicles_limit: Option<i32>,        // 49
+    pub rag_lorebooks_limit: Option<i32>,         // 50
+    pub rag_older_chat_limit: Option<i32>,        // 51
+    pub rag_cognitive_context_limit: Option<i32>, // 52
 }
 
 impl std::fmt::Debug for Chat {
@@ -327,6 +328,7 @@ pub struct NewChat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -2158,6 +2160,15 @@ pub struct UpdateChatSettingsRequest {
     pub prompt_template_id: Option<String>,
     // Game Master mode enable/disable
     pub game_master_mode_enabled: Option<bool>,
+    // RAG Limits
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_chronicles_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_lorebooks_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_older_chat_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {

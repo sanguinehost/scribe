@@ -406,6 +406,7 @@ diesel::table! {
         rag_chronicles_limit -> Nullable<Integer>,
         rag_lorebooks_limit -> Nullable<Integer>,
         rag_older_chat_limit -> Nullable<Integer>,
+        rag_cognitive_context_limit -> Nullable<Integer>,
     }
 }
 
