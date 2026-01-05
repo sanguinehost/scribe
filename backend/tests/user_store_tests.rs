@@ -48,7 +48,7 @@ mod user_store_tests {
             pool,
             &username,
             password_secret.clone(),
-            Ok(created_user.id),
+            Ok(created_user.id.into()),
             "username",
         )
         .await?;
@@ -56,7 +56,7 @@ mod user_store_tests {
             pool,
             actual_email,
             password_secret.clone(),
-            Ok(created_user.id),
+            Ok(created_user.id.into()),
             "email",
         )
         .await?;
@@ -141,7 +141,7 @@ mod user_store_tests {
         let obj = pool.get().await?;
         let invalid_salt = "!!!invalid_base64_salt!!!".to_string();
         obj.interact({
-            let user_id_c = user_id;
+            let user_id_c: scribe_backend::db::DbId = user_id.into();
             let salt_c = invalid_salt;
             move |conn| {
                 diesel::update(scribe_backend::schema::users::table.find(user_id_c))
@@ -496,7 +496,9 @@ mod user_store_tests {
         let obj_get_non_existent = pool.get().await?;
         let not_found_user_result: Result<User, scribe_backend::auth::AuthError> =
             obj_get_non_existent
-                .interact(move |conn| scribe_backend::auth::get_user(conn, non_existent_uuid))
+                .interact(move |conn| {
+                    scribe_backend::auth::get_user(conn, non_existent_uuid.into())
+                })
                 .await?;
 
         assert!(
@@ -540,7 +542,8 @@ mod user_store_tests {
         .await?;
         guard.add_user(created_user.id);
 
-        test_crypto_failure_scenarios(pool, created_user.id, &username, password_secret).await?;
+        test_crypto_failure_scenarios(pool, created_user.id.into(), &username, password_secret)
+            .await?;
 
         guard.cleanup().await?;
         Ok(())

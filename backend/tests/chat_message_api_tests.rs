@@ -58,8 +58,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         spec_version: "1.0".to_string(),
         name: "Character A for Chat Message Integ Test (Owned by User A)".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now()),
-        updated_at: Some(chrono::Utc::now()),
+        created_at: Some(chrono::Utc::now().into()),
+        updated_at: Some(chrono::Utc::now().into()),
         ..Default::default()
     };
     let char_a: DbCharacter = test_app
@@ -78,14 +78,14 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
 
     // Create Session A (owned by user_a, with char_a)
     let new_session_a = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user_a.id,
         character_id: char_a.id,
         // Aligning with chat_session_api_tests.rs test_get_chat_session_details_forbidden
         title_ciphertext: None,
         title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         history_management_strategy: "truncate_summary".to_string(),
         history_management_limit: 15,
         model_name: "gemini-test-model".to_string(),
@@ -108,8 +108,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: chrono::Utc::now().into(),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
         narrative_style_override_nonce: None,
@@ -131,17 +131,17 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
     // Insert a dummy message for session_a to ensure it's not empty
     let dummy_message_content = "Initial message for session_a";
     let new_dummy_message = NewChatMessage {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         session_id: session_a.id,
         user_id: user_a.id, // Message from user_a
         message_type: MessageRole::User,
-        content: dummy_message_content.as_bytes().to_vec(),
+        content: dummy_message_content.as_bytes().to_vec().into(),
         content_nonce: None, // Plaintext for this test message
         role: Some("user".to_string()),
         parts: None,
         attachments: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,

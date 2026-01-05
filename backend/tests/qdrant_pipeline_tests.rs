@@ -149,7 +149,11 @@ async fn test_qdrant_upsert_points() -> Result<(), AnyhowError> {
             }
         });
 
-        let point = create_qdrant_point(id, vector.clone(), Some(payload))?;
+        let point = create_qdrant_point(
+            id.into(),
+            vector.clone(),
+            Some(scribe_backend::db::Json(payload)),
+        )?;
         points.push(point);
     }
 
@@ -188,7 +192,11 @@ async fn test_qdrant_search_points() -> Result<(), AnyhowError> {
             }
         });
 
-        let point = create_qdrant_point(id, vector.clone(), Some(payload))?;
+        let point = create_qdrant_point(
+            id.into(),
+            vector.clone(),
+            Some(scribe_backend::db::Json(payload)),
+        )?;
         points.push(point);
     }
 
@@ -348,7 +356,11 @@ async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
         }
     });
 
-    let initial_point = create_qdrant_point(point_id, vector.clone(), Some(initial_payload))?;
+    let initial_point = create_qdrant_point(
+        point_id.into(),
+        vector.clone(),
+        Some(scribe_backend::db::Json(initial_payload)),
+    )?;
     service.upsert_points(vec![initial_point]).await?;
 
     // Create a filter to find this point
@@ -393,7 +405,11 @@ async fn test_qdrant_update_existing_point() -> Result<(), AnyhowError> {
         }
     });
 
-    let updated_point = create_qdrant_point(point_id, vector.clone(), Some(updated_payload))?;
+    let updated_point = create_qdrant_point(
+        point_id.into(),
+        vector.clone(),
+        Some(scribe_backend::db::Json(updated_payload)),
+    )?;
     service.upsert_points(vec![updated_point]).await?;
 
     // Create a filter to find the updated point
@@ -513,8 +529,16 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
     let point_id_2 = Uuid::new_v4();
     let payload_1 = json!({"retrieve_key": "value_a"});
     let payload_2 = json!({"retrieve_key": "value_b"});
-    let point_1 = create_qdrant_point(point_id_1, test_vectors[0].clone(), Some(payload_1))?;
-    let point_2 = create_qdrant_point(point_id_2, test_vectors[1].clone(), Some(payload_2))?;
+    let point_1 = create_qdrant_point(
+        point_id_1.into(),
+        test_vectors[0].clone(),
+        Some(scribe_backend::db::Json(payload_1)),
+    )?;
+    let point_2 = create_qdrant_point(
+        point_id_2.into(),
+        test_vectors[1].clone(),
+        Some(scribe_backend::db::Json(payload_2)),
+    )?;
     service.upsert_points(vec![point_1, point_2]).await?;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Allow indexing
 
@@ -533,7 +557,7 @@ async fn test_qdrant_retrieve_points() -> Result<(), AnyhowError> {
     };
 
     // Retrieve points (covers lines 269, 300 in qdrant_client.rs)
-    let retrieved_points = service.retrieve_points(Some(filter), 5).await?;
+    let retrieved_points = service.retrieve_points(Some(filter), 5, None).await?;
     drop(service);
 
     assert_eq!(retrieved_points.len(), 1, "Expected to retrieve 1 point");
@@ -579,8 +603,11 @@ async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
     let test_vectors = generate_test_vectors(768, 1);
     let point_id_trait = Uuid::new_v4();
     let payload_trait = json!({"trait_key": "trait_value"});
-    let point_trait =
-        create_qdrant_point(point_id_trait, test_vectors[0].clone(), Some(payload_trait))?;
+    let point_trait = create_qdrant_point(
+        point_id_trait.into(),
+        test_vectors[0].clone(),
+        Some(scribe_backend::db::Json(payload_trait)),
+    )?;
     trait_service.store_points(vec![point_trait]).await?;
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Allow indexing
 
@@ -597,7 +624,9 @@ async fn test_qdrant_trait_methods() -> Result<(), AnyhowError> {
         }],
         ..Default::default()
     };
-    let retrieved_trait_points = trait_service.retrieve_points(Some(filter_trait), 5).await?;
+    let retrieved_trait_points = trait_service
+        .retrieve_points(Some(filter_trait), 5, None)
+        .await?;
     assert_eq!(
         retrieved_trait_points.len(),
         1,

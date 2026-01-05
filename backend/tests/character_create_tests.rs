@@ -60,11 +60,11 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -235,7 +235,7 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         created_char.tags,
-        Some(vec![]),
+        scribe_backend::db::DbStringArray(Some(vec![])),
         "Tags should default to Some(vec![])"
     );
     assert_eq!(
@@ -247,7 +247,9 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
     // Assert extensions default
     assert_eq!(
         created_char.extensions,
-        Some(DieselJson(JsonValue::Object(serde_json::Map::new()))),
+        Some(scribe_backend::db::Json(JsonValue::Object(
+            serde_json::Map::new()
+        ))),
         "Extensions should default to an empty JSON object"
     );
 
@@ -259,13 +261,13 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
 
     let now = chrono::Utc::now();
     assert!(
-        created_char.created_at <= now
-            && created_char.created_at > now - chrono::Duration::seconds(5),
+        created_char.created_at <= now.into()
+            && created_char.created_at > (now - chrono::Duration::seconds(5)).into(),
         "created_at is not recent"
     );
     assert!(
-        created_char.updated_at <= now
-            && created_char.updated_at > now - chrono::Duration::seconds(5),
+        created_char.updated_at <= now.into()
+            && created_char.updated_at > (now - chrono::Duration::seconds(5)).into(),
         "updated_at is not recent"
     );
 
@@ -426,11 +428,11 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         created_char.tags,
-        Some(vec![
+        scribe_backend::models::OptionalStringArray(Some(vec![
             Some("test".to_string()),
             Some("api".to_string()),
             Some("manual_creation".to_string())
-        ])
+        ]))
     );
     assert_eq!(created_char.creator.as_deref(), Some("API Tester"));
     assert_eq!(created_char.character_version.as_deref(), Some("1.0.0"));
@@ -449,7 +451,7 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
         json!({"custom_field": "custom_value", "nested": {"value": 123}});
     assert_eq!(
         created_char.extensions,
-        Some(DieselJson(expected_extensions_json_value))
+        Some(scribe_backend::db::Json(expected_extensions_json_value))
     );
 
     assert_eq!(created_char.user_id, user.id);

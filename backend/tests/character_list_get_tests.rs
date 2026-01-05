@@ -55,11 +55,11 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -246,14 +246,14 @@ async fn test_list_characters_success() -> Result<(), anyhow::Error> {
     let user_id_for_insert = user.id;
     let dek_clone1 = dek.clone();
     let char1 = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, user_id_for_insert, "Character One", &dek_clone1)
+        insert_test_character(conn, *user_id_for_insert, "Character One", &dek_clone1)
     })
     .await?;
     guard.add_character(char1.id);
 
     let dek_clone2 = dek.clone();
     let char2 = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, user_id_for_insert, "Character Two", &dek_clone2)
+        insert_test_character(conn, *user_id_for_insert, "Character Two", &dek_clone2)
     })
     .await?;
     guard.add_character(char2.id);
@@ -389,7 +389,7 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
     let owned_character = run_db_op(&pool, move |conn| {
         insert_test_character(
             conn,
-            owner_id_for_insert,
+            *owner_id_for_insert,
             "Character A For Get",
             &owner_dek_clone,
         )

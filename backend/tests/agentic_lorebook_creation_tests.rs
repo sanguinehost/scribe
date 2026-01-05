@@ -116,6 +116,10 @@ async fn create_test_app_state(
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -145,13 +149,13 @@ fn create_chat_message(
             .expect("Failed to encrypt test content");
 
     ChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         message_type: role,
         content: encrypted_content,
         content_nonce: Some(content_nonce),
         created_at: Utc::now().into(),
-        user_id,
+        user_id: user_id.into(),
         prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
             Some(20)

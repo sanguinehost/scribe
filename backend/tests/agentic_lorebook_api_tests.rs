@@ -803,13 +803,13 @@ mod extract_from_chat_api_tests {
         let chat_id = Uuid::new_v4();
         let now = Utc::now();
         let new_chat = NewChat {
-            id: chat_id,
-            user_id,
-            character_id,
+            id: chat_id.into(),
+            user_id: user_id.into(),
+            character_id: character_id.into(),
             title_ciphertext: None,
             title_nonce: None,
-            created_at: now,
-            updated_at: now,
+            created_at: now.into(),
+            updated_at: now.into(),
             history_management_strategy: "sliding_window".to_string(),
             history_management_limit: 20,
             model_name: "gemini-2.5-flash".to_string(),
@@ -832,11 +832,22 @@ mod extract_from_chat_api_tests {
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
-            tokens_counted_at: now,
-            total_credits_used: bigdecimal::BigDecimal::from(0),
+            tokens_counted_at: now.into(),
+            total_credits_used: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
+            game_state: None,
+            game_master_mode_enabled: false,
+            gemini_thinking_level: 0,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
+            total_actual_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            total_modified_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            total_credit_cost: 0,
+            total_actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
         };
 
         run_db_op(pool, move |conn| {
@@ -889,12 +900,12 @@ mod extract_from_chat_api_tests {
             };
 
             let new_message = NewChatMessage {
-                id: Uuid::new_v4(),
-                session_id,
-                user_id,
+                id: Uuid::new_v4().into(),
+                session_id: session_id.into(),
+                user_id: user_id.into(),
                 message_type: message_role,
-                content: content_ciphertext,
-                content_nonce: Some(content_nonce),
+                content: content_ciphertext.into(),
+                content_nonce: Some(content_nonce.into()),
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 role: Some(role.to_string()),
@@ -905,6 +916,16 @@ mod extract_from_chat_api_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-flash".to_string(),
+                status: "completed".to_string(),
+                variant_count: 1,
+                current_variant_index: 0,
+                credits_charged: 0,
+                credits_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                actual_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                modified_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                credit_cost: 0,
+                actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                game_time: None,
             };
 
             run_db_op(pool, move |conn| {

@@ -1,5 +1,6 @@
 #![cfg(feature = "postgres-backend")]
 use diesel::prelude::*;
+use scribe_backend::db::{DbId, DbTimestamp};
 use scribe_backend::models::agent_context_analysis::{
     AgentContextAnalysis, AnalysisStatus, AnalysisType,
 };
@@ -23,10 +24,8 @@ async fn test_agent_analysis_error_handling() {
     .await
     .unwrap();
 
-    let user_id = user.id;
-
-    // Create a chat session
-    let session_id = Uuid::new_v4();
+    let user_id: DbId = user.id.into();
+    let session_id: DbId = Uuid::new_v4().into();
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
         use scribe_backend::models::chats::ChatMode;
@@ -40,8 +39,8 @@ async fn test_agent_analysis_error_handling() {
                 chat_sessions::chat_mode.eq(ChatMode::Character.to_string()), // Use Character mode
                 chat_sessions::history_management_strategy.eq("sliding_window"),
                 chat_sessions::history_management_limit.eq(50),
-                chat_sessions::created_at.eq(diesel::dsl::now),
-                chat_sessions::updated_at.eq(diesel::dsl::now),
+                chat_sessions::created_at.eq(diesel::dsl::now.into()),
+                chat_sessions::updated_at.eq(diesel::dsl::now.into()),
             ))
             .execute(conn)
     })
@@ -50,7 +49,7 @@ async fn test_agent_analysis_error_handling() {
     .unwrap();
 
     // Create a message first (since message_id has a foreign key constraint)
-    let message_id = Uuid::new_v4();
+    let message_id: DbId = Uuid::new_v4().into();
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
         // Use raw SQL to insert message since the enum handling is complex
@@ -58,9 +57,9 @@ async fn test_agent_analysis_error_handling() {
             "INSERT INTO chat_messages (id, session_id, user_id, message_type, content, model_name, created_at, updated_at)
              VALUES ($1, $2, $3, 'User', $4, $5, NOW(), NOW())"
         )
-        .bind::<diesel::sql_types::Uuid, _>(message_id)
-        .bind::<diesel::sql_types::Uuid, _>(session_id)
-        .bind::<diesel::sql_types::Uuid, _>(user_id)
+        .bind::<diesel::sql_types::Uuid, _>(message_id.into_uuid())
+        .bind::<diesel::sql_types::Uuid, _>(session_id.into_uuid())
+        .bind::<diesel::sql_types::Uuid, _>(user_id.into_uuid())
         .bind::<diesel::sql_types::Bytea, _>(b"Test message".to_vec())
         .bind::<diesel::sql_types::Text, _>("gemini-2.5-flash")
         .execute(conn)
@@ -70,7 +69,7 @@ async fn test_agent_analysis_error_handling() {
     .unwrap();
 
     // Test 1: Create a pending analysis
-    let analysis_id = Uuid::new_v4();
+    let analysis_id: DbId = Uuid::new_v4().into();
 
     let conn = test_app.db_pool.get().await.unwrap();
     conn.interact(move |conn| {
@@ -85,8 +84,8 @@ async fn test_agent_analysis_error_handling() {
                 agent_context_analysis::message_id.eq(message_id),
                 agent_context_analysis::status.eq(AnalysisStatus::Pending.to_string()),
                 agent_context_analysis::retry_count.eq(0),
-                agent_context_analysis::created_at.eq(diesel::dsl::now),
-                agent_context_analysis::updated_at.eq(diesel::dsl::now),
+                agent_context_analysis::created_at.eq(diesel::dsl::now.into()),
+                agent_context_analysis::updated_at.eq(diesel::dsl::now.into()),
             ))
             .execute(conn)
     })
@@ -194,8 +193,8 @@ async fn test_agent_analysis_error_handling() {
                 dsl::status.eq(AnalysisStatus::Success.to_string()),
                 dsl::retry_count.eq(1),
                 dsl::analysis_summary.eq(Some("Test successful analysis".to_string())),
-                dsl::superseded_at.eq::<Option<chrono::DateTime<chrono::Utc>>>(None), // Make it active again
-                dsl::updated_at.eq(diesel::dsl::now),
+                dsl::superseded_at.eq::<Option<DbTimestamp>>(None), // Make it active again
+                dsl::updated_at.eq(diesel::dsl::now.into()),
             ))
             .execute(conn)
     })

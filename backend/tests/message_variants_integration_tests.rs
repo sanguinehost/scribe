@@ -26,6 +26,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
+    db::DbId,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -42,7 +43,7 @@ async fn create_test_user_with_dek(
     test_app: &test_helpers::TestApp,
     username: String,
     password: String,
-) -> anyhow::Result<(Uuid, SessionDek)> {
+) -> anyhow::Result<(DbId, SessionDek)> {
     let conn = test_app.db_pool.get().await?;
 
     // Hash password
@@ -72,18 +73,18 @@ async fn create_test_user_with_dek(
         password_hash,
         email,
         kek_salt: kek_salt_str,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: chrono::Utc::now(),
+        token_usage_updated_at: chrono::Utc::now().into(),
     };
 
     let user_db: UserDbQuery = conn
@@ -103,7 +104,7 @@ async fn create_test_user_with_dek(
 /// Helper function to create a test chat session with a character
 async fn create_test_chat_session(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
+    user_id: DbId,
     auth_cookie: &str,
 ) -> anyhow::Result<(DbCharacter, Chat, String)> {
     // Create a test character
@@ -113,8 +114,8 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Variant Character".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now()),
-        updated_at: Some(chrono::Utc::now()),
+        created_at: Some(chrono::Utc::now().into()),
+        updated_at: Some(chrono::Utc::now().into()),
         ..Default::default()
     };
 
@@ -164,7 +165,7 @@ async fn create_test_chat_session(
     let session_id = session_response["id"] // Changed from "session_id" to "id"
         .as_str()
         .unwrap()
-        .parse::<Uuid>()?;
+        .parse::<DbId>()?;
 
     // Get the created chat session
     let chat_session: Chat = test_app
@@ -188,13 +189,13 @@ async fn create_test_chat_session(
 /// Helper function to create a message in the chat session
 async fn create_test_message(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: DbId,
+    session_id: DbId,
     content: &str,
     role: MessageRole,
 ) -> anyhow::Result<DbChatMessage> {
     let new_message = NewChatMessage {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         session_id,
         user_id,
         message_type: role.clone(),
@@ -203,8 +204,8 @@ async fn create_test_message(
         role: Some(role.to_string()),
         parts: None,
         attachments: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -233,8 +234,8 @@ async fn create_test_message(
 /// Helper function to create a variant for a message using the user's DEK
 async fn create_message_variant(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
-    message_id: Uuid,
+    user_id: DbId,
+    message_id: DbId,
     variant_content: &str,
     session_dek: &SecretBox<Vec<u8>>,
 ) -> anyhow::Result<()> {
@@ -302,7 +303,7 @@ async fn create_message_variant(
 async fn select_variant(
     test_app: &test_helpers::TestApp,
     auth_cookie: &str,
-    message_id: Uuid,
+    message_id: DbId,
     variant_index: i32,
 ) -> anyhow::Result<Value> {
     let select_variant_payload = json!({
@@ -363,19 +364,19 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce: vec![],
+        dek_nonce: vec![].into(),
         recovery_dek_nonce: None,
         dek: None,
         recovery_phrase: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         account_status: Some("active".to_string()),
         default_persona_id: None,
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
-        token_usage_updated_at: chrono::Utc::now(),
+        token_usage_updated_at: chrono::Utc::now().into(),
     };
 
     // Create chat session with character

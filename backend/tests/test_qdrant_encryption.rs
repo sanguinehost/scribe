@@ -119,8 +119,8 @@ fn test_mixed_mode_encrypted_and_plaintext() {
     let (encrypted_text, nonce) = encrypt_gcm(original_text.as_bytes(), &dek).unwrap();
 
     let metadata = LorebookChunkMetadata {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id: Uuid::new_v4(),
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: Uuid::new_v4().into(),
         user_id: DbId::new(),
         chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
         entry_title: Some("Entry Title".to_string()), // Can be plaintext

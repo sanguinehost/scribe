@@ -91,40 +91,19 @@ async fn setup_test_env(
         .expect("Diesel char insert failed");
 
     let new_chat_data = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some("Test Chat".as_bytes().to_vec()),
-        title_nonce: Some(vec![0u8; 12]),
         created_at: Utc::now().into(),
         updated_at: Utc::now().into(),
         history_management_strategy: "token_limit".to_string(),
         history_management_limit: 10,
-        model_name: "initial-model".to_string(),
+        model_name: Some("initial-model".to_string()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: Utc::now().into(),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        ..Default::default()
     };
 
     let session: DbChat = test_app
@@ -208,6 +187,7 @@ async fn test_partial_update_preserves_chronicle_id() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let set_request = Request::builder()
@@ -257,6 +237,7 @@ async fn test_partial_update_preserves_chronicle_id() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: None,
+        ..Default::default()
     };
 
     let partial_request = Request::builder()
@@ -360,6 +341,7 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
         model_provider: None,
         active_custom_persona_id: Some(persona_uuid),
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let set_request = Request::builder()
@@ -412,6 +394,7 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
         model_provider: None,
         active_custom_persona_id: None, // NOT PROVIDED - should preserve existing value
         prompt_template_id: None,
+        ..Default::default()
     };
 
     let partial_request = Request::builder()

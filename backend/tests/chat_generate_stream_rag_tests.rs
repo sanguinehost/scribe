@@ -71,13 +71,13 @@ async fn setup_rag_test_context() -> TestContext {
                 name: char_name_rag,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some(b"Test description".to_vec()),
-                greeting: Some(b"Hello".to_vec()),
+                description: Some("Test description".to_string()),
+                greeting: Some("Hello".to_string()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -97,7 +97,7 @@ async fn setup_rag_test_context() -> TestContext {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
                 title_ciphertext: None,

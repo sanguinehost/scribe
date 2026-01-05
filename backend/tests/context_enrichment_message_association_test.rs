@@ -54,8 +54,8 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         spec_version: "1.0".to_string(),
         name: "Test Character for Message Association".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now()),
-        updated_at: Some(chrono::Utc::now()),
+        created_at: Some(chrono::Utc::now().into()),
+        updated_at: Some(chrono::Utc::now().into()),
         ..Default::default()
     };
 
@@ -106,10 +106,11 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
         narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let session: Chat = test_app
@@ -189,6 +190,10 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -231,6 +236,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        ..Default::default()
     };
 
     test_app
@@ -287,6 +293,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        ..Default::default()
     };
 
     test_app
@@ -491,10 +498,11 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
         narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     test_app
@@ -530,6 +538,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        ..Default::default()
     };
 
     test_app
@@ -608,6 +617,10 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -628,7 +641,12 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let context_agent = ContextEnrichmentAgent::new(
+        app_state.clone(),
+        search_tool,
+        app_state.services.recall_pipeline.clone(),
+        chronicle_service,
+    );
 
     let messages = vec![("user".to_string(), message_content.to_string())];
 
@@ -637,13 +655,16 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     // Run pre-processing analysis
     let _pre_result = context_agent
         .enrich_context(
-            session_id,
-            user.id,
+            session_id.into(),
+            user.id.into(),
             None, // chronicle_id
             &messages,
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
-            message_id, // Required message ID
+            message_id.into(), // Required message ID
+            None,
+            None,
+            None,
         )
         .await;
 
@@ -660,13 +681,16 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
 
     let _post_result = context_agent
         .enrich_context(
-            session_id,
-            user.id,
+            session_id.into(),
+            user.id.into(),
             None, // chronicle_id
             &messages_with_response,
             EnrichmentMode::PostProcessing,
             user_dek.0.expose_secret(),
-            message_id, // Required message ID // Same message ID
+            message_id.into(), // Required message ID // Same message ID
+            None,
+            None,
+            None,
         )
         .await;
 
@@ -700,7 +724,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         for analysis in &analyses {
             assert_eq!(
                 analysis.message_id,
-                message_id, // Required message ID
+                message_id.into(), // Required message ID
                 "All analyses should be associated with the same message"
             );
         }

@@ -658,7 +658,7 @@ impl std::fmt::Debug for Chat {
 }
 
 // New Chat for insertion
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Default)]
 #[diesel(table_name = chat_sessions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewChat {
@@ -3107,6 +3107,11 @@ mod tests {
             narrative_style_override_nonce: None,
             game_master_mode_enabled: false,
             game_state: None,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_cognitive_context_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
         }
     }
 
@@ -3168,6 +3173,7 @@ mod tests {
             model_name: "test-model".to_string(),
             status: "completed".to_string(),
             current_variant_index: 0,
+            game_time: None,
             variant_count: 1,
             error_message: None,
             superseded_at: None,
@@ -3444,6 +3450,10 @@ mod tests {
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: Some("neutral_roleplay".to_string()),
+            rag_chronicles_limit: None,
+            rag_cognitive_context_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
         }
     }
 

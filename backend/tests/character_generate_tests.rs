@@ -57,11 +57,11 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -193,7 +193,7 @@ async fn test_generate_character() -> Result<(), anyhow::Error> {
     let character = run_db_op(&pool, move |conn| {
         insert_test_character(
             conn,
-            user_id_for_insert,
+            *user_id_for_insert,
             "Generated Wizard Character",
             &dek_for_insert,
         )

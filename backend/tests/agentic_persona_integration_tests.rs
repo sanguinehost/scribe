@@ -45,8 +45,8 @@ async fn create_test_chat_session(
 
         diesel::insert_into(chat_sessions::table)
             .values((
-                chat_sessions::id.eq(session_id),
-                chat_sessions::user_id.eq(user_id),
+                chat_sessions::id.eq(session_id.into()),
+                chat_sessions::user_id.eq(user_id.into()),
                 chat_sessions::model_name.eq("gemini-2.5-pro"),
                 chat_sessions::history_management_strategy.eq("token_limit"),
                 chat_sessions::history_management_limit.eq(10),
@@ -85,11 +85,11 @@ async fn create_test_user_with_persona(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -188,13 +188,13 @@ fn create_lucas_roleplay_messages(
             scribe_backend::crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
         messages.push(ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: message_role,
             content: encrypted_content,
             content_nonce: Some(nonce),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(50),
             completion_tokens: Some(200),
             raw_prompt_ciphertext: None,
@@ -205,7 +205,17 @@ fn create_lucas_roleplay_messages(
             superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
-            ..Default::default()
+            updated_at: Utc::now().into(),
+            role: None,
+            parts: None,
+            attachments: None,
+            credits_charged: 0,
+            credits_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            actual_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            modified_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            credit_cost: 0,
+            actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            game_time: None,
         });
     }
 
@@ -380,9 +390,9 @@ async fn test_persona_context_missing_in_events() {
     // Execute the narrative workflow
     let workflow_result = agentic_system
         .process_narrative_event(
-            user_id,
-            session_id,
-            Some(chronicle_id),
+            user_id.into(),
+            session_id.into(),
+            Some(chronicle_id.into()),
             &messages,
             &session_dek,
             None, // No persona context for this test
@@ -395,7 +405,7 @@ async fn test_persona_context_missing_in_events() {
     {
         let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
         let events = chronicle_service
-            .get_chronicle_events(user_id, chronicle_id, EventFilter::default())
+            .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
             .await
             .expect("Should retrieve events");
 

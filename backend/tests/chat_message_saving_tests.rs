@@ -35,16 +35,8 @@ async fn create_test_user_manual(
         kek_salt: kek_salt.clone(),
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek.clone()),
         dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce.clone()),
-        encrypted_dek_by_recovery: None,
-        recovery_kek_salt: None,
-        recovery_dek_nonce: None,
-        role: scribe_backend::models::users::UserRole::User,
-        account_status: scribe_backend::models::users::AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
-        tokens_last_reset_at: None,
         token_usage_updated_at: scribe_backend::db::DbTimestamp::now(),
+        ..Default::default()
     };
 
     scribe_backend::db::with_conn(pool, move |conn| {
@@ -98,51 +90,19 @@ async fn test_save_message_with_game_time() {
     // Create chat session manually
     let session_id = scribe_backend::db::DbId::new();
     let new_session = NewChat {
-        #[cfg(feature = "sqlite-backend")]
         id: session_id,
         user_id: user.id,
         character_id: scribe_backend::db::DbId::nil(),
-        title_ciphertext: None,
-        title_nonce: None,
         created_at: scribe_backend::db::DbTimestamp::now(),
         updated_at: scribe_backend::db::DbTimestamp::now(),
         history_management_strategy: "sliding_window".to_string(),
         history_management_limit: 10,
         model_name: Some("test-model".to_string()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: scribe_backend::models::OptionalStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
         tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
         total_credits_used: scribe_backend::db::DbDecimal::from(0),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
-        game_state: None,
-        game_master_mode_enabled: false,
-        // Missing fields added
-        agent_mode: None,
-        logit_bias: None,
-        min_p: None,
-        top_a: None,
-        repetition_penalty: None,
-        model_provider: None,
-        // Removed missing fields: rag_chronicles_limit, rag_lorebooks_limit, rag_older_chat_limit
+        ..Default::default()
     };
 
     scribe_backend::db::with_conn(&pool, move |conn| {

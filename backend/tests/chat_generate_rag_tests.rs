@@ -66,8 +66,8 @@ async fn create_test_character(
         .interact(move |conn| {
             diesel::insert_into(schema::characters::table)
                 .values(&DbCharacter {
-                    id: character_id,
-                    user_id,
+                    id: character_id.into(),
+                    user_id: user_id.into(),
                     spec: "chara_card_v3_spec".to_string(),
                     spec_version: "1.0.0".to_string(),
                     name,
@@ -113,7 +113,7 @@ When asked about RAG or embeddings, {{char}} will provide relevant information b
 The chunking process also preserves metadata about the source document, position, and relationships between chunks. This helps maintain context when multiple chunks from the same document are retrieved.
 <START>".to_vec()
                     ),
-                    extensions: Some(json!({})),
+                    extensions: Some(json!({}).into()),
                     // All other fields set to None
                     chat: None,
                     greeting: None,
@@ -138,7 +138,7 @@ The chunking process also preserves metadata about the source document, position
                     sharing_visibility: None,
                     status: None,
                     system_prompt_visibility: None,
-                    system_tags: None,
+                    system_tags: scribe_backend::db::DbStringArray(None),
                     usage_hints: None,
                     user_persona: None,
                     user_persona_visibility: None,
@@ -165,8 +165,8 @@ The chunking process also preserves metadata about the source document, position
                     alternate_greetings: None,
                     nickname: None,
                     creator_notes_multilingual: None,
-                    source: None,
-                    group_only_greetings: None,
+                    source: scribe_backend::db::DbStringArray(None),
+                    group_only_greetings: scribe_backend::db::DbStringArray(None),
                     creation_date: None,
                     modification_date: None,
                     persona: None,
@@ -650,8 +650,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 alternate_greetings: None,
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
+                source: scribe_backend::db::DbStringArray(None),
+                group_only_greetings: scribe_backend::db::DbStringArray(None),
                 creation_date: None,
                 modification_date: None,
                 created_at: now,
@@ -684,7 +684,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 sharing_visibility: None,
                 status: None,
                 system_prompt_visibility: None,
-                system_tags: None,
+                system_tags: scribe_backend::db::DbStringArray(None),
                 token_budget: None,
                 usage_hints: None,
                 user_persona: None,
@@ -2060,9 +2060,11 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         .next_back()
         .expect("No user message found in AI request");
 
-    if let genai::chat::MessageContent::Text(text_content) =
-        &last_user_message_in_ai_request.content
-    {
+    let text_content = last_user_message_in_ai_request
+        .content
+        .texts()
+        .unwrap_or_default();
+    if !text_content.is_empty() {
         assert!(
             text_content.contains(&user_query_no_chunks),
             "User message should contain the original query. Expected to find: '{}', Got: '{}'",
@@ -2081,13 +2083,12 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        contents: vec![MessageContent::Text(
-            "Mock AI response to RAG query".to_string(),
-        )],
+        content: MessageContent::from_text("Mock AI response to RAG query".to_string()),
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
+        captured_raw_body: None,
     };
     context
         .app
@@ -2123,13 +2124,12 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
 
     let mock_response = genai::chat::ChatResponse {
         /* ... */
-        contents: vec![MessageContent::Text(
-            "Mock AI response to RAG query".to_string(),
-        )],
+        content: MessageContent::from_text("Mock AI response to RAG query".to_string()),
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
+        captured_raw_body: None,
     };
     context
         .app

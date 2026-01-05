@@ -12,6 +12,7 @@ use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
+    db::DbId,
     models::{
         characters::Character as DbCharacter,
         chats::{DbInsertableChatMessage, MessageRole, NewChat},
@@ -48,7 +49,7 @@ async fn parse_json_response<T: serde::de::DeserializeOwned>(
 }
 
 // Helper function to create authenticated user and get session cookie
-async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, Uuid)> {
+async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, DbId)> {
     let username = format!("testuser_{}", Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
     let password = "TestPassword123!";
@@ -84,7 +85,7 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
     let user_id = auth_response["user_id"]
         .as_str()
         .context("No user_id in registration response")?;
-    let user_uuid = Uuid::parse_str(user_id)?;
+    let user_uuid = DbId::from_uuid(Uuid::parse_str(user_id)?);
 
     // Get the verification token from the database
     let conn = test_app.db_pool.get().await?;
@@ -155,15 +156,15 @@ async fn create_authenticated_user(test_app: &TestApp) -> AnyhowResult<(String, 
 // Helper function to create a chat session with messages
 async fn create_chat_session_with_messages(
     test_app: &TestApp,
-    user_id: Uuid,
-    chronicle_id: Option<Uuid>,
+    user_id: DbId,
+    chronicle_id: Option<DbId>,
     message_count: usize,
-) -> AnyhowResult<Uuid> {
+) -> AnyhowResult<DbId> {
     let conn = test_app.db_pool.get().await?;
-    let session_id = Uuid::new_v4();
+    let session_id = DbId::new();
 
     // Create a dummy character first (required for NewChat)
-    let character_id = Uuid::new_v4();
+    let character_id = DbId::new();
     let character = DbCharacter {
         id: character_id,
         user_id,
@@ -178,18 +179,18 @@ async fn create_chat_session_with_messages(
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: scribe_backend::models::OptionalStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: scribe_backend::models::OptionalStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: scribe_backend::models::OptionalStringArray(None),
+        group_only_greetings: scribe_backend::models::OptionalStringArray(None),
         creation_date: None,
         modification_date: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         persona: None,
         world_scenario: None,
         avatar: None,
@@ -218,7 +219,7 @@ async fn create_chat_session_with_messages(
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: scribe_backend::models::OptionalStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -272,22 +273,30 @@ async fn create_chat_session_with_messages(
         character_id, // Use the created character
         title_ciphertext: None,
         title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         history_management_strategy: "recent_first".to_string(),
         history_management_limit: 10000,
-        model_name: "gemini-2.5-pro".to_string(),
+        model_name: Some("gemini-2.5-pro".to_string()),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
-        temperature: Some(BigDecimal::from_str("0.7").unwrap()),
+        temperature: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.7").unwrap(),
+        )),
         max_output_tokens: Some(1000),
-        frequency_penalty: Some(BigDecimal::from_str("0.0").unwrap()),
-        presence_penalty: Some(BigDecimal::from_str("0.0").unwrap()),
+        frequency_penalty: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.0").unwrap(),
+        )),
+        presence_penalty: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.0").unwrap(),
+        )),
         top_k: Some(40),
-        top_p: Some(BigDecimal::from_str("0.9").unwrap()),
+        top_p: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.9").unwrap(),
+        )),
         seed: Some(42),
-        stop_sequences: None,
+        stop_sequences: scribe_backend::models::OptionalStringArray(None),
         gemini_thinking_budget: Some(1000),
         gemini_enable_code_execution: Some(false),
         system_prompt_ciphertext: None,
@@ -296,11 +305,12 @@ async fn create_chat_session_with_messages(
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: chrono::Utc::now().into(),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
         narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     conn.interact(move |conn| {
@@ -315,7 +325,7 @@ async fn create_chat_session_with_messages(
 
     // Create messages
     for i in 0..message_count {
-        let _message_id = Uuid::new_v4();
+        let _message_id = DbId::new();
         let role = if i % 2 == 0 {
             MessageRole::User
         } else {
@@ -357,11 +367,12 @@ async fn create_chat_session_with_messages(
             variant_count: 1,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: BigDecimal::from(0),
-            actual_cost: BigDecimal::from(0),
-            modified_cost: BigDecimal::from(0),
+            credits_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             credit_cost: 0,
-            actual_charge: BigDecimal::from(0),
+            actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            game_time: None,
         };
 
         conn.interact(move |conn| {

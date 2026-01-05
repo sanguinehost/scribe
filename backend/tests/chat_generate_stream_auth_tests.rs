@@ -202,7 +202,7 @@ async fn generate_chat_response_streaming_forbidden() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
                 title_ciphertext: None,

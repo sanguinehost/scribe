@@ -434,6 +434,7 @@ impl AuthUser for User {
     feature = "sqlite-backend",
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
+#[derive(Insertable, Default)] // Removed Debug for custom impl
 pub struct NewUser {
     // Only SQLite needs explicit ID (Postgres generates UUID via gen_random_uuid())
     #[cfg(feature = "sqlite-backend")]

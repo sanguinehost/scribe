@@ -304,10 +304,8 @@ mod tests {
                 10, 100,
             )), // Test rate limiter
             token_service: None,
-            recall_pipeline: Arc::new(crate::services::recall_pipeline::RecallPipeline::new(
+            recall_pipeline: Arc::new(crate::services::cognitive::RecallPipeline::new(
                 pool.clone(),
-                config.clone(),
-                ai_client.clone(),
             )),
         };
 

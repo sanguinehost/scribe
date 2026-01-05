@@ -880,10 +880,11 @@ fn test_chat_session_insert_and_query() {
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
             tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
+            ..Default::default()
         };
 
         let inserted_session: Chat = diesel::insert_into(chat_sessions::table)
@@ -985,41 +986,19 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
         let interact_result = conn_insert_session_msg
             .interact(move |conn_interaction| {
                 let new_session = NewChat {
-                    id: Uuid::new_v4(),
+                    id: Uuid::new_v4().into(),
                     user_id: user_id_clone,
                     character_id: char_id_clone,
-                    title_ciphertext: None,
-                    title_nonce: None,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
+                    created_at: chrono::Utc::now().into(),
+                    updated_at: chrono::Utc::now().into(),
                     history_management_strategy: "message_window".to_string(),
                     history_management_limit: 20,
                     visibility: Some("private".to_string()),
-                    model_name: "gemini-2.5-flash".to_string(), // Added model_name field
-                    active_custom_persona_id: None,
-                    active_impersonated_character_id: None,
-                    // Additional optional fields
-                    temperature: None,
-                    max_output_tokens: None,
-                    frequency_penalty: None,
-                    presence_penalty: None,
-                    top_k: None,
-                    top_p: None,
-                    seed: None,
-                    stop_sequences: None,
-                    gemini_thinking_budget: None,
-                    gemini_enable_code_execution: None,
-                    system_prompt_ciphertext: None,
-                    system_prompt_nonce: None,
-                    player_chronicle_id: None,
-                    total_prompt_tokens: 0,
-                    total_completion_tokens: 0,
-                    estimated_cost_cents: 0,
-                    tokens_counted_at: chrono::Utc::now(),
-                    total_credits_used: BigDecimal::from(0),
+                    model_name: Some("gemini-2.5-flash".to_string()),
+                    tokens_counted_at: chrono::Utc::now().into(),
+                    total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                     prompt_template_id: "default".to_string(),
-                    narrative_style_override_ciphertext: None,
-                    narrative_style_override_nonce: None,
+                    ..Default::default()
                 };
                 diesel::insert_into(chat_sessions::table)
                     .values(&new_session)
@@ -1059,8 +1038,8 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     "gemini-1.5-pro".to_string(),
                 )
                 .with_role("user".to_string())
-                .with_parts(json!({"type": "text", "text": "Hello, character!"}))
-                .with_attachments(serde_json::Value::Null)
+                .with_parts(json!({"type": "text", "text": "Hello, character!"}).into())
+                .with_attachments(scribe_backend::db::Json(serde_json::Value::Null))
                 .with_token_counts(None, None);
 
                 // Use DbInsertableChatMessage and provide user_id
@@ -1073,8 +1052,8 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     "gemini-1.5-pro".to_string(),
                 )
                 .with_role("assistant".to_string())
-                .with_parts(json!({"type": "text", "text": "Hello, user!"}))
-                .with_attachments(serde_json::Value::Null)
+                .with_parts(json!({"type": "text", "text": "Hello, user!"}).into())
+                .with_attachments(scribe_backend::db::Json(serde_json::Value::Null))
                 .with_token_counts(None, None);
 
                 let messages_to_insert = vec![user_message, ai_message];
@@ -1171,7 +1150,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
             .expect("Interact failed inserting user")
             .context("DB error inserting user for cleanup test")?
     };
-    guard.add_user(user.id);
+    guard.add_user(*user.id);
 
     // Create character using local helper within interact
     let character = {
@@ -1179,52 +1158,28 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         let char_name = "Guard Char Cleanup".to_string();
         conn_setup
             .interact(move |conn_inner| {
-                insert_test_character(conn_inner, user_id_clone, &char_name) // Use local helper
+                insert_test_character(conn_inner, *user_id_clone, &char_name) // Use local helper
             })
             .await
             .expect("Interact failed inserting character")
             .context("DB error inserting character for cleanup test")?
     };
-    guard.add_character(character.id);
+    guard.add_character(*character.id);
 
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        // scribe_backend::models::chats::NewChat
-        id: session_id,
-        user_id: user.id,
+        id: session_id.into(),
+        user_id: user.id.into(),
         character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
         created_at: Utc::now().into(),
         updated_at: Utc::now().into(),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test_cleanup_model".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        // Additional optional fields
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("test_cleanup_model".to_string()),
+        tokens_counted_at: chrono::Utc::now().into(),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     conn_setup
@@ -1241,9 +1196,9 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
     let message_id = Uuid::new_v4();
     // Use scribe_backend::models::chats::NewChatMessage
     let new_message = NewChatMessage {
-        id: message_id,
-        session_id,
-        user_id: user.id, // Fix: NewChatMessage expects Uuid directly, not Option<Uuid>
+        id: message_id.into(),
+        session_id: session_id.into(),
+        user_id: user.id.into(), // Fix: NewChatMessage expects Uuid directly, not Option<Uuid>
         message_type: MessageRole::User,
         content: b"Guard message content".to_vec(),
         content_nonce: None,
@@ -1257,6 +1212,16 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-pro".to_string(),
+        status: "sent".to_string(),
+        variant_count: 1,
+        current_variant_index: 0,
+        credits_charged: 0,
+        credits_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        credit_cost: 0,
+        actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        game_time: None,
     };
 
     conn_setup

@@ -77,6 +77,7 @@ impl TestAppExt for TestAppGuard {
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                ..Default::default()
             };
 
             #[cfg(feature = "postgres-backend")]

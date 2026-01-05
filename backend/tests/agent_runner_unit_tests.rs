@@ -84,6 +84,12 @@ async fn create_test_app_state(
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        recall_pipeline: Arc::new(scribe_backend::services::embeddings::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: Arc::new(scribe_backend::services::TokenService::new(
+            test_app.db_pool.clone(),
+        )),
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -117,13 +123,13 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
         };
 
         messages.push(ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: role,
-            content: content.as_bytes().to_vec(),
+            content: content.as_bytes().to_vec().into(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(20),
             completion_tokens: Some(if i % 2 == 0 { 0 } else { 30 }),
             raw_prompt_ciphertext: None,
@@ -288,13 +294,16 @@ mod agent_runner_conversation_tests {
         // Create messages with different roles including System messages
         let messages = vec![
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::System,
-                content: "System: You are a helpful assistant.".as_bytes().to_vec(),
+                content: "System: You are a helpful assistant."
+                    .as_bytes()
+                    .to_vec()
+                    .into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(10),
                 completion_tokens: Some(0),
                 raw_prompt_ciphertext: None,
@@ -308,13 +317,13 @@ mod agent_runner_conversation_tests {
                 ..Default::default()
             },
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::User,
-                content: "User: What's the weather like?".as_bytes().to_vec(),
+                content: "User: What's the weather like?".as_bytes().to_vec().into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(8),
                 completion_tokens: Some(0),
                 raw_prompt_ciphertext: None,
@@ -328,15 +337,16 @@ mod agent_runner_conversation_tests {
                 ..Default::default()
             },
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::Assistant,
                 content: "Assistant: I don't have access to real-time weather data."
                     .as_bytes()
-                    .to_vec(),
+                    .to_vec()
+                    .into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(15),
                 completion_tokens: Some(12),
                 raw_prompt_ciphertext: None,
@@ -431,13 +441,13 @@ mod agent_runner_conversation_tests {
         // Create messages with HTML entities that need sanitization
         let messages = vec![
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::User,
-                content: "I&apos;m testing &quot;HTML entities&quot; like &lt;brackets&gt; &amp; ampersands.".as_bytes().to_vec(),
+                content: "I&apos;m testing &quot;HTML entities&quot; like &lt;brackets&gt; &amp; ampersands.".as_bytes().to_vec().into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(15),
                 completion_tokens: Some(0),
                 raw_prompt_ciphertext: None,
@@ -451,13 +461,13 @@ mod agent_runner_conversation_tests {
             ..Default::default()
             },
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::Assistant,
-                content: "I understand you&apos;re testing HTML entities. They should be converted to normal characters.".as_bytes().to_vec(),
+                content: "I understand you&apos;re testing HTML entities. They should be converted to normal characters.".as_bytes().to_vec().into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(18),
                 completion_tokens: Some(20),
                 raw_prompt_ciphertext: None,
@@ -763,13 +773,13 @@ mod agent_runner_duplicate_prevention_tests {
             .expect("Failed to encrypt test content");
 
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
+            session_id: Uuid::new_v4().into(),
             user_id: DbId::new(),
             message_type,
-            content: encrypted_content,
+            content: encrypted_content.into(),
             content_nonce: Some(content_nonce),
-            created_at,
+            created_at: created_at.into(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,

@@ -304,6 +304,7 @@ impl std::fmt::Debug for Chat {
     feature = "sqlite-backend",
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
+#[derive(Debug, Clone, Insertable, Default)]
 pub struct NewChat {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,

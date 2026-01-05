@@ -44,7 +44,7 @@ async fn create_test_user_with_dek(
     username: String,
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
-    let mut conn = test_app.db_pool.get()?;
+    let conn = test_app.db_pool.get().await?;
 
     let password_hash = bcrypt::hash(&password, bcrypt::DEFAULT_COST)
         .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
@@ -58,7 +58,6 @@ async fn create_test_user_with_dek(
     let kek_salt_str = kek_salt.clone();
 
     let new_user = NewUser {
-        id: Uuid::new_v4().into(),
         username,
         password_hash,
         email,
@@ -79,14 +78,10 @@ async fn create_test_user_with_dek(
 
     let user_db: UserDbQuery = conn
         .interact(move |conn| {
-            let user_id = new_user.id;
             diesel::insert_into(users::table)
                 .values(&new_user)
-                .execute(conn)?;
-            users::table
-                .find(user_id)
-                .select(UserDbQuery::as_select())
-                .first(conn)
+                .returning(UserDbQuery::as_returning())
+                .get_result(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;

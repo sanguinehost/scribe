@@ -188,15 +188,18 @@ async fn verify_qdrant_points(
             "Metadata source_type mismatch"
         );
         assert_eq!(
-            metadata.message_id, test_message_id,
+            metadata.message_id,
+            test_message_id.into(),
             "Metadata message_id mismatch"
         );
         assert_eq!(
-            metadata.session_id, test_session_id,
+            metadata.session_id,
+            test_session_id.into(),
             "Metadata session_id mismatch"
         );
         assert_eq!(
-            metadata.user_id, test_message_user_id,
+            metadata.user_id,
+            test_message_user_id.into(),
             "Metadata user_id mismatch"
         );
         assert_eq!(
@@ -535,6 +538,8 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
             None, // chronicle_id_for_search
             query,
             5,
+            None,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -603,6 +608,8 @@ async fn test_retrieve_relevant_chunks_no_results() {
             None,                 // chronicle_id_for_search
             "A query that finds nothing",
             5,
+            None,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -719,6 +726,7 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
             None, // chronicle_id_for_search
             "Query leading to Qdrant error",
             2,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -942,6 +950,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             None,                                // chronicle_id_for_search
             query_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -1136,6 +1145,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -1302,6 +1312,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -1472,6 +1483,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             None, // chronicle_id_for_search
             query_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await;
@@ -1704,7 +1716,8 @@ async fn test_rag_context_injection_with_qdrant() {
             None,                    // chronicle_id_for_search
             query_text,              // query_text
             limit_per_source,        // limit_per_source
-            Some(&session_dek),      // Provide DEK to decrypt encrypted content
+            None,
+            Some(&session_dek), // Provide DEK to decrypt encrypted content
         )
         .await;
 
@@ -2038,13 +2051,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let content_a1 = "User A Session 1 secret dragon plans";
     let message_a1_id = Uuid::new_v4();
     let chat_message_a1 = ChatMessage {
-        id: message_a1_id,
-        session_id: session_a1_id,
+        id: message_a1_id.into(),
+        session_id: session_a1_id.into(),
         message_type: MessageRole::User,
-        content: content_a1.as_bytes().to_vec(),
+        content: content_a1.as_bytes().to_vec().into(),
         content_nonce: None,
         created_at: Utc::now().into(),
-        user_id: user_a_id,
+        user_id: user_a_id.into(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -2061,13 +2074,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let content_a2 = "User A Session 2 confidential cat strategies";
     let message_a2_id = Uuid::new_v4();
     let chat_message_a2 = ChatMessage {
-        id: message_a2_id,
-        session_id: session_a2_id,
+        id: message_a2_id.into(),
+        session_id: session_a2_id.into(),
         message_type: MessageRole::User,
-        content: content_a2.as_bytes().to_vec(),
+        content: content_a2.as_bytes().to_vec().into(),
         content_nonce: None,
         created_at: Utc::now().into(),
-        user_id: user_a_id,
+        user_id: user_a_id.into(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -2084,13 +2097,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
     let content_b1 = "User B Session 1 private alien agenda";
     let message_b1_id = Uuid::new_v4();
     let chat_message_b1 = ChatMessage {
-        id: message_b1_id,
-        session_id: session_b1_id,
+        id: message_b1_id.into(),
+        session_id: session_b1_id.into(),
         message_type: MessageRole::User,
-        content: content_b1.as_bytes().to_vec(),
+        content: content_b1.as_bytes().to_vec().into(),
         content_nonce: None,
         created_at: Utc::now().into(),
-        user_id: user_b_id,
+        user_id: user_b_id.into(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -2152,12 +2165,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_a_id,
-            Some(session_a1_id),
+            user_a_id.into(),
+            Some(session_a1_id.into()),
             None,
             None, // chronicle_id_for_search
             query1_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await
@@ -2168,8 +2182,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         "Query 1: Expected 1 chunk for User A, Session A1"
     );
     if let RetrievedMetadata::Chat(meta) = &chunks1[0].metadata {
-        assert_eq!(meta.user_id, user_a_id);
-        assert_eq!(meta.session_id, session_a1_id);
+        assert_eq!(meta.user_id, user_a_id.into());
+        assert_eq!(meta.session_id, session_a1_id.into());
         assert!(meta.text.contains("dragon plans"));
     } else {
         panic!("Query 1: Expected Chat metadata");
@@ -2181,12 +2195,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_a_id,
-            Some(session_a2_id),
+            user_a_id.into(),
+            Some(session_a2_id.into()),
             None,
             None, // chronicle_id_for_search
             query2_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await
@@ -2197,8 +2212,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         "Query 2: Expected 1 chunk for User A, Session A2"
     );
     if let RetrievedMetadata::Chat(meta) = &chunks2[0].metadata {
-        assert_eq!(meta.user_id, user_a_id);
-        assert_eq!(meta.session_id, session_a2_id);
+        assert_eq!(meta.user_id, user_a_id.into());
+        assert_eq!(meta.session_id, session_a2_id.into());
         assert!(meta.text.contains("cat strategies"));
     } else {
         panic!("Query 2: Expected Chat metadata");
@@ -2210,12 +2225,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_a_id,
-            Some(session_b1_id),
+            user_a_id.into(),
+            Some(session_b1_id.into()),
             None,
             None, // chronicle_id_for_search
             query3_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await
@@ -2231,12 +2247,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_b_id,
-            Some(session_b1_id),
+            user_b_id.into(),
+            Some(session_b1_id.into()),
             None,
             None, // chronicle_id_for_search
             query4_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await
@@ -2247,8 +2264,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         "Query 4: Expected 1 chunk for User B, Session B1"
     );
     if let RetrievedMetadata::Chat(meta) = &chunks4[0].metadata {
-        assert_eq!(meta.user_id, user_b_id);
-        assert_eq!(meta.session_id, session_b1_id);
+        assert_eq!(meta.user_id, user_b_id.into());
+        assert_eq!(meta.session_id, session_b1_id.into());
         assert!(meta.text.contains("alien agenda"));
     } else {
         panic!("Query 4: Expected Chat metadata");
@@ -2260,12 +2277,13 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_b_id,
-            Some(session_a1_id),
+            user_b_id.into(),
+            Some(session_a1_id.into()),
             None,
             None, // chronicle_id_for_search
             query5_text,
             limit,
+            None,
             None, // No DEK for integration test
         )
         .await
@@ -2440,17 +2458,15 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
 
     // 5. Process and Embed Lorebook Entries
     let params_c1 = LorebookEntryParams {
-        original_lorebook_entry_id: entry_c1_id,
-        lorebook_id: lorebook_c1_id,
-        user_id: user_c_id,
+        original_lorebook_entry_id: entry_c1_id.into(),
+        lorebook_id: lorebook_c1_id.into(),
+        user_id: user_c_id.into(),
         decrypted_content: entry_c1_content.to_string(),
         decrypted_title: Some("Elves".to_string()),
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(SecretBox::new(Box::new(
-            user_c_session_dek.0.expose_secret().to_vec(),
-        ))),
+        session_dek: Some(user_c_session_dek.clone()),
     };
 
     app_state
@@ -2459,17 +2475,15 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .await
         .unwrap();
     let params_c2 = LorebookEntryParams {
-        original_lorebook_entry_id: entry_c2_id,
-        lorebook_id: lorebook_c2_id,
-        user_id: user_c_id,
+        original_lorebook_entry_id: entry_c2_id.into(),
+        lorebook_id: lorebook_c2_id.into(),
+        user_id: user_c_id.into(),
         decrypted_content: entry_c2_content.to_string(),
         decrypted_title: Some("Dwarves".to_string()),
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(SecretBox::new(Box::new(
-            user_c_session_dek.0.expose_secret().to_vec(),
-        ))),
+        session_dek: Some(user_c_session_dek.clone()),
     };
 
     app_state
@@ -2478,17 +2492,15 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .await
         .unwrap();
     let params_d1 = LorebookEntryParams {
-        original_lorebook_entry_id: entry_d1_id,
-        lorebook_id: lorebook_d1_id,
-        user_id: user_d_id,
+        original_lorebook_entry_id: entry_d1_id.into(),
+        lorebook_id: lorebook_d1_id.into(),
+        user_id: user_d_id.into(),
         decrypted_content: entry_d1_content.to_string(),
         decrypted_title: Some("Orcs".to_string()),
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(SecretBox::new(Box::new(
-            user_d_session_dek.0.expose_secret().to_vec(),
-        ))),
+        session_dek: Some(user_d_session_dek.clone()),
     };
 
     app_state
@@ -2508,12 +2520,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_c_id,
+            user_c_id.into(),
             None,
-            Some(vec![lorebook_c1_id]),
+            Some(vec![lorebook_c1_id.into()]),
             None, // chronicle_id_for_search
             query1_text,
             limit,
+            None,
             Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
@@ -2524,8 +2537,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         "Query 1: Expected 1 chunk for User C, Lorebook C1"
     );
     if let RetrievedMetadata::Lorebook(meta) = &chunks1[0].metadata {
-        assert_eq!(meta.user_id, user_c_id);
-        assert_eq!(meta.lorebook_id, lorebook_c1_id);
+        assert_eq!(meta.user_id, user_c_id.into());
+        assert_eq!(meta.lorebook_id, lorebook_c1_id.into());
         assert!(
             chunks1[0].text.contains("Elves"),
             "Expected decrypted text to contain 'Elves'"
@@ -2540,12 +2553,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_c_id,
+            user_c_id.into(),
             None,
-            Some(vec![lorebook_c2_id]),
+            Some(vec![lorebook_c2_id.into()]),
             None, // chronicle_id_for_search
             query2_text,
             limit,
+            None,
             Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
@@ -2556,8 +2570,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         "Query 2: Expected 1 chunk for User C, Lorebook C2"
     );
     if let RetrievedMetadata::Lorebook(meta) = &chunks2[0].metadata {
-        assert_eq!(meta.user_id, user_c_id);
-        assert_eq!(meta.lorebook_id, lorebook_c2_id);
+        assert_eq!(meta.user_id, user_c_id.into());
+        assert_eq!(meta.lorebook_id, lorebook_c2_id.into());
         assert!(
             chunks2[0].text.contains("Dwarves"),
             "Expected decrypted text to contain 'Dwarves'"
@@ -2572,12 +2586,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_c_id,
+            user_c_id.into(),
             None,
-            Some(vec![lorebook_d1_id]),
+            Some(vec![lorebook_d1_id.into()]),
             None, // chronicle_id_for_search
             query3_text,
             limit,
+            None,
             Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
@@ -2593,12 +2608,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_d_id,
+            user_d_id.into(),
             None,
-            Some(vec![lorebook_d1_id]),
+            Some(vec![lorebook_d1_id.into()]),
             None, // chronicle_id_for_search
             query4_text,
             limit,
+            None,
             Some(&user_d_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
@@ -2609,8 +2625,8 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         "Query 4: Expected 1 chunk for User D, Lorebook D1"
     );
     if let RetrievedMetadata::Lorebook(meta) = &chunks4[0].metadata {
-        assert_eq!(meta.user_id, user_d_id);
-        assert_eq!(meta.lorebook_id, lorebook_d1_id);
+        assert_eq!(meta.user_id, user_d_id.into());
+        assert_eq!(meta.lorebook_id, lorebook_d1_id.into());
         assert!(
             chunks4[0].text.contains("Orcs"),
             "Expected decrypted text to contain 'Orcs'"
@@ -2625,12 +2641,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_d_id,
+            user_d_id.into(),
             None,
-            Some(vec![lorebook_c1_id]),
+            Some(vec![lorebook_c1_id.into()]),
             None, // chronicle_id_for_search
             query5_text,
             limit,
+            None,
             Some(&user_d_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
@@ -2652,12 +2669,13 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            user_c_id,
+            user_c_id.into(),
             None,
-            Some(vec![lorebook_c1_id, lorebook_c2_id]),
+            Some(vec![lorebook_c1_id.into(), lorebook_c2_id.into()]),
             None, // chronicle_id_for_search
             query6_text,
             limit,
+            None,
             Some(&user_c_session_dek), // Provide DEK to decrypt encrypted content
         )
         .await
@@ -2673,10 +2691,10 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
     let mut found_c2_in_q6 = false;
     for chunk in chunks6 {
         if let RetrievedMetadata::Lorebook(meta) = &chunk.metadata {
-            if meta.lorebook_id == lorebook_c1_id && chunk.text.contains("Elves") {
+            if meta.lorebook_id == lorebook_c1_id.into() && chunk.text.contains("Elves") {
                 found_c1_in_q6 = true;
             }
-            if meta.lorebook_id == lorebook_c2_id && chunk.text.contains("Dwarves") {
+            if meta.lorebook_id == lorebook_c2_id.into() && chunk.text.contains("Dwarves") {
                 found_c2_in_q6 = true;
             }
         }

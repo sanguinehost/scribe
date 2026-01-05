@@ -73,7 +73,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     let session_id = Uuid::new_v4();
 
     // Create chat session (required for foreign key constraint)
-    create_test_chat_session(&test_app.db_pool, user_id, session_id)
+    create_test_chat_session(&test_app.db_pool, *user_id, session_id)
         .await
         .unwrap();
 
@@ -123,7 +123,10 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     ));
 
     // Create agentic system with mock AI client using the same pattern as working tests
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
@@ -278,7 +281,10 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
     let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
 
     // Create agentic system using the same pattern as working tests
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
@@ -391,7 +397,10 @@ async fn test_dual_mode_extraction_comparison() {
     let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
 
     // Create agentic system using the same pattern as working tests
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),
@@ -511,7 +520,10 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
     let mock_ai_client = Arc::new(MockAiClient::new()); // Returns "Mock AI response" - not valid JSON
 
     // Create agentic system using the same pattern as working tests
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),
         Arc::new(EncryptionService::new()),

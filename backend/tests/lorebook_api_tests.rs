@@ -1,5 +1,6 @@
 #![cfg(feature = "postgres-backend")]
 use axum::http::StatusCode;
+use scribe_backend::db::DbId;
 use scribe_backend::models::chats::CreateChatRequest;
 use scribe_backend::models::lorebook_dtos::{
     AssociateLorebookToChatPayload as AssociateLorebookDto, // Assuming this is the DTO name
@@ -18,9 +19,9 @@ use uuid::Uuid; // Added for creating chat sessions
 // Helper function to create a dummy lorebook for tests that need one to exist
 async fn create_dummy_lorebook(
     test_app: &TestApp,
-    user_id: Uuid,
+    user_id: DbId,
     auth_client: &reqwest::Client,
-) -> Uuid {
+) -> DbId {
     let payload = CreateLorebookDto {
         // Use DTO
         name: format!("Dummy Lorebook for User {user_id}"),
@@ -46,16 +47,16 @@ async fn create_dummy_lorebook(
         .json()
         .await
         .expect("Parsing failed in create_dummy_lorebook"); // Use DTO
-    lorebook.id
+    lorebook.id.into()
 }
 
 // Helper function to create a dummy lorebook entry
 async fn create_dummy_lorebook_entry(
     test_app: &TestApp,
-    user_id: Uuid,
+    user_id: DbId,
     auth_client: &reqwest::Client,
-    lorebook_id: Uuid,
-) -> Uuid {
+    lorebook_id: DbId,
+) -> DbId {
     let payload = CreateLorebookEntryDto {
         // Use DTO
         entry_title: format!("Dummy Title for user {user_id}"),
@@ -90,7 +91,7 @@ async fn create_dummy_lorebook_entry(
         .json()
         .await
         .expect("Parsing failed in create_dummy_lorebook_entry"); // Use DTO
-    entry.id
+    entry.id.into()
 }
 
 mod lorebook_tests {
@@ -1013,7 +1014,7 @@ mod lorebook_entry_tests {
                 is_constant,
             } => {
                 assert_eq!(original_lorebook_entry_id, &entry.id);
-                assert_eq!(called_lorebook_id, &lorebook_id);
+                assert_eq!(called_lorebook_id, &lorebook_id.into());
                 assert_eq!(called_user_id, &user_data.id);
                 assert_eq!(decrypted_content, &payload.content);
                 assert_eq!(decrypted_title, &Some(payload.entry_title));

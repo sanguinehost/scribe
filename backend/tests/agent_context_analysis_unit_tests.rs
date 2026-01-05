@@ -7,9 +7,9 @@ use uuid::Uuid;
 
 #[test]
 fn test_new_agent_context_analysis_with_message_id() {
-    let session_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-    let message_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
+    let user_id = Uuid::new_v4().into();
+    let message_id = Uuid::new_v4().into();
     let session_dek = SecretBox::new(Box::new(vec![0u8; 32]));
 
     // Test creating a new analysis with message_id
@@ -18,8 +18,8 @@ fn test_new_agent_context_analysis_with_message_id() {
         user_id,
         AnalysisType::PreProcessing,
         "test reasoning",
-        &serde_json::json!([]),
-        &serde_json::json!({"steps": []}),
+        &scribe_backend::db::Json(serde_json::json!([])),
+        &scribe_backend::db::Json(serde_json::json!({"steps": []})),
         "test context",
         "test summary",
         100,
@@ -42,9 +42,9 @@ fn test_new_agent_context_analysis_with_message_id() {
 
 #[test]
 fn test_new_agent_context_analysis_with_required_message_id() {
-    let session_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-    let message_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
+    let user_id = Uuid::new_v4().into();
+    let message_id = Uuid::new_v4().into();
     let session_dek = SecretBox::new(Box::new(vec![0u8; 32]));
 
     // Test creating a new analysis with required message_id
@@ -53,8 +53,8 @@ fn test_new_agent_context_analysis_with_required_message_id() {
         user_id,
         AnalysisType::PostProcessing,
         "test reasoning",
-        &serde_json::json!([]),
-        &serde_json::json!({"steps": []}),
+        &scribe_backend::db::Json(serde_json::json!([])),
+        &scribe_backend::db::Json(serde_json::json!({"steps": []})),
         "test context",
         "test summary",
         100,
@@ -87,8 +87,8 @@ fn test_analysis_type_conversion() {
 fn test_message_id_field_is_required() {
     // This test verifies that the message_id field is required
     // and each analysis is linked to a specific message
-    let session_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
+    let user_id = Uuid::new_v4().into();
     let session_dek = SecretBox::new(Box::new(vec![0u8; 32]));
 
     // Create multiple analyses with different message_id values
@@ -98,15 +98,15 @@ fn test_message_id_field_is_required() {
             user_id,
             AnalysisType::PreProcessing,
             "reasoning 1",
-            &serde_json::json!([]),
-            &serde_json::json!({}),
+            &scribe_backend::db::Json(serde_json::json!([])),
+            &scribe_backend::db::Json(serde_json::json!({})),
             "context 1",
             "summary 1",
             10,
             5,
             "model",
             &session_dek,
-            Uuid::new_v4(),
+            Uuid::new_v4().into(),
         )
         .expect("Should create analysis 1"),
         NewAgentContextAnalysis::new_encrypted(
@@ -114,15 +114,15 @@ fn test_message_id_field_is_required() {
             user_id,
             AnalysisType::PostProcessing,
             "reasoning 2",
-            &serde_json::json!([]),
-            &serde_json::json!({}),
+            &scribe_backend::db::Json(serde_json::json!([])),
+            &scribe_backend::db::Json(serde_json::json!({})),
             "context 2",
             "summary 2",
             20,
             10,
             "model",
             &session_dek,
-            Uuid::new_v4(),
+            Uuid::new_v4().into(),
         )
         .expect("Should create analysis 2"),
         NewAgentContextAnalysis::new_encrypted(
@@ -130,15 +130,15 @@ fn test_message_id_field_is_required() {
             user_id,
             AnalysisType::PreProcessing,
             "reasoning 3",
-            &serde_json::json!([]),
-            &serde_json::json!({}),
+            &scribe_backend::db::Json(serde_json::json!([])),
+            &scribe_backend::db::Json(serde_json::json!({})),
             "context 3",
             "summary 3",
             30,
             15,
             "model",
             &session_dek,
-            Uuid::new_v4(),
+            Uuid::new_v4().into(),
         )
         .expect("Should create analysis 3"),
     ];

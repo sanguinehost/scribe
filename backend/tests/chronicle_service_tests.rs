@@ -203,7 +203,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user
         let user = setup_test_user(&test_app).await.unwrap();
@@ -282,7 +283,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user and chronicle
         let user = setup_test_user(&test_app).await.unwrap();
@@ -411,7 +413,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user and chronicle
         let user = setup_test_user(&test_app).await.unwrap();
@@ -464,7 +467,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup two test users
         let user1 = setup_test_user(&test_app).await.unwrap();

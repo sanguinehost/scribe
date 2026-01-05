@@ -94,7 +94,7 @@ async fn create_test_character_and_session(
         .expect("Failed to get DB conn for char create")
         .interact(move |conn_sync| {
             let new_char_card = scribe_backend::models::character_card::NewCharacter {
-                user_id: user_id_clone,
+                user_id: user_id_clone.into(),
                 name: character_name,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
@@ -103,8 +103,8 @@ async fn create_test_character_and_session(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -124,40 +124,19 @@ async fn create_test_character_and_session(
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
-                user_id: user_id_clone_session,
+                id: Uuid::new_v4().into(),
+                user_id: user_id_clone_session.into(),
                 character_id: character_id_clone_session,
-                title_ciphertext: None,
-                title_nonce: None,
-                created_at: Utc::now().into(),
-                updated_at: Utc::now().into(),
+                created_at: scribe_backend::db::DbTimestamp::from(Utc::now()),
+                updated_at: scribe_backend::db::DbTimestamp::from(Utc::now()),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "gemini-2.5-flash".to_string(),
+                model_name: Some("gemini-2.5-flash".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: scribe_backend::db::DbTimestamp::from(chrono::Utc::now()),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -283,11 +262,11 @@ async fn generate_chat_response_streaming_success() {
 
     // Set up test data using helper functions
     let (user, auth_cookie) = create_authenticated_user(&test_app).await;
-    let (_character, session) = create_test_character_and_session(&test_app, user.id).await;
+    let (_character, session) = create_test_character_and_session(&test_app, *user.id).await;
     setup_mock_ai_responses(&test_app);
 
     // Send chat request and verify response
-    let response = send_chat_request(&test_app, session.id, &auth_cookie).await;
+    let response = send_chat_request(&test_app, *session.id, &auth_cookie).await;
     verify_streaming_response(response).await;
 
     // Verify that mock calls were made as expected
@@ -385,8 +364,8 @@ async fn test_first_mes_included_in_history() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -407,40 +386,19 @@ async fn test_first_mes_included_in_history() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title_ciphertext: None,
-                title_nonce: None,
-                created_at: Utc::now().into(),
-                updated_at: Utc::now().into(),
+                created_at: scribe_backend::db::DbTimestamp::from(Utc::now()),
+                updated_at: scribe_backend::db::DbTimestamp::from(Utc::now()),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: scribe_backend::db::DbTimestamp::from(chrono::Utc::now()),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -505,6 +463,10 @@ async fn test_first_mes_included_in_history() {
     let rate_limiter =
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
@@ -516,6 +478,7 @@ async fn test_first_mes_included_in_history() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
+        token_service: None,
         email_service: Arc::new(
             scribe_backend::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
@@ -523,6 +486,7 @@ async fn test_first_mes_included_in_history() {
         ),
         ai_client_factory,
         rate_limiter,
+        recall_pipeline,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -557,8 +521,41 @@ async fn test_first_mes_included_in_history() {
     .expect("Failed to get session data for generation");
 
     // Extract the managed history from the generation data
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
-        generation_data;
+    let (
+        managed_history,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+    ) = generation_data;
 
     // Assert that the history contains the character's first_mes
     assert!(

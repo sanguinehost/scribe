@@ -171,8 +171,8 @@ async fn test_chronicle_naming_with_real_llm() {
                 encrypt_gcm(content.as_bytes(), &test_dek).expect("Failed to encrypt content");
 
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
+                session_id: Uuid::new_v4().into(),
                 user_id: DbId::new(),
                 message_type: MessageRole::System,
                 content: encrypted_content,
@@ -180,6 +180,8 @@ async fn test_chronicle_naming_with_real_llm() {
                 created_at: Utc::now().into(),
                 model_name: "test".to_string(),
                 status: "completed".to_string(),
+                variant_count: 1,
+                current_variant_index: 0,
                 ..Default::default()
             }
         },
@@ -189,8 +191,8 @@ async fn test_chronicle_naming_with_real_llm() {
                 encrypt_gcm(content.as_bytes(), &test_dek).expect("Failed to encrypt content");
 
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
+                session_id: Uuid::new_v4().into(),
                 user_id: DbId::new(),
                 message_type: MessageRole::User,
                 content: encrypted_content,
@@ -198,13 +200,18 @@ async fn test_chronicle_naming_with_real_llm() {
                 created_at: Utc::now().into(),
                 model_name: "test".to_string(),
                 status: "completed".to_string(),
+                variant_count: 1,
+                current_variant_index: 0,
                 ..Default::default()
             }
         },
     ];
 
     // Set up required services for NarrativeAgentRunner
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
 
     let tokenizer = TokenizerService::new(&test_app.config.tokenizer_model_path)
         .expect("Failed to create tokenizer");

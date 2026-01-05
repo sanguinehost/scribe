@@ -1,4 +1,5 @@
 #![cfg(feature = "postgres-backend")]
+use scribe_backend::db::Json;
 use scribe_backend::models::chats::UpdateChatSettingsRequest;
 use scribe_backend::prompt_templates::TEMPLATE_MANAGER;
 use validator::Validate;
@@ -54,7 +55,7 @@ fn test_template_rendering() {
     let result = TEMPLATE_MANAGER
         .read()
         .unwrap()
-        .render("neutral_roleplay", context.clone());
+        .render("neutral_roleplay", Json(context.clone()));
     assert!(
         result.is_ok(),
         "Failed to render neutral_roleplay template: {:?}",
@@ -71,7 +72,7 @@ fn test_template_rendering() {
     let result = TEMPLATE_MANAGER
         .read()
         .unwrap()
-        .render("non_existent", context);
+        .render("non_existent", Json(context));
     assert!(
         result.is_ok(),
         "Should fallback to neutral_roleplay for non-existent template"
@@ -81,25 +82,8 @@ fn test_template_rendering() {
 #[test]
 fn test_template_id_validation_valid() {
     let valid_request = UpdateChatSettingsRequest {
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        model_name: None,
-        model_provider: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        chronicle_id: None,
-        agent_mode: None,
-        active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let result = valid_request.validate();
@@ -114,25 +98,8 @@ fn test_template_id_validation_valid() {
 fn test_template_id_validation_invalid() {
     // Test empty template ID
     let invalid_request = UpdateChatSettingsRequest {
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        model_name: None,
-        model_provider: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        chronicle_id: None,
-        agent_mode: None,
-        active_custom_persona_id: None,
         prompt_template_id: Some("".to_string()),
+        ..Default::default()
     };
 
     let result = invalid_request.validate();
@@ -140,25 +107,8 @@ fn test_template_id_validation_invalid() {
 
     // Test invalid characters
     let invalid_request = UpdateChatSettingsRequest {
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        model_name: None,
-        model_provider: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        chronicle_id: None,
-        agent_mode: None,
-        active_custom_persona_id: None,
         prompt_template_id: Some("invalid-template".to_string()),
+        ..Default::default()
     };
 
     let result = invalid_request.validate();
@@ -169,25 +119,8 @@ fn test_template_id_validation_invalid() {
 
     // Test non-existent template
     let invalid_request = UpdateChatSettingsRequest {
-        system_prompt: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        history_management_strategy: None,
-        history_management_limit: None,
-        model_name: None,
-        model_provider: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        chronicle_id: None,
-        agent_mode: None,
-        active_custom_persona_id: None,
         prompt_template_id: Some("non_existent_template".to_string()),
+        ..Default::default()
     };
 
     let result = invalid_request.validate();
@@ -262,7 +195,7 @@ fn test_all_templates_have_valid_structure() {
         let result = TEMPLATE_MANAGER
             .read()
             .unwrap()
-            .render(&template.id, context);
+            .render(&template.id, Json(context));
         assert!(
             result.is_ok(),
             "Template {} should be renderable: {:?}",

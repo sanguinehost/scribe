@@ -91,13 +91,13 @@ async fn test_update_user_persona_success() -> AnyhowResult<()> {
         service: &UserPersonaService,
         user: &User,
         dek: &SecretBox<Vec<u8>>,
-        persona_id: Uuid,
+        persona_id: DbId,
         expected_name: &str,
         expected_description: &str,
         expected_spec: Option<&str>,
         expected_personality: Option<&str>,
         expected_scenario: Option<&str>,
-        expected_updated_at: Option<chrono::DateTime<chrono::Utc>>,
+        expected_updated_at: Option<DbTimestamp>,
     ) -> AnyhowResult<UserPersonaDataForClient> {
         let fetched_persona = service
             .get_user_persona(user, Some(dek), persona_id)
@@ -280,7 +280,7 @@ async fn test_update_user_persona_no_changes() -> AnyhowResult<()> {
 #[tokio::test]
 async fn test_update_user_persona_not_found() -> AnyhowResult<()> {
     let ctx = setup_service_test().await?;
-    let random_uuid = Uuid::new_v4();
+    let random_uuid = Uuid::new_v4().into();
     let update_dto = UpdateUserPersonaDto {
         name: Some("New Name".to_string()),
         ..Default::default()
@@ -387,7 +387,7 @@ async fn test_delete_user_persona_success() -> AnyhowResult<()> {
 #[tokio::test]
 async fn test_delete_user_persona_not_found() -> AnyhowResult<()> {
     let ctx = setup_service_test().await?;
-    let random_uuid = Uuid::new_v4();
+    let random_uuid = Uuid::new_v4().into();
 
     let delete_result = ctx
         .service
@@ -587,7 +587,7 @@ async fn test_user_persona_service_set_default_persona() -> AnyhowResult<()> {
 
     // 4. Set default persona to a non-existent (but valid UUID) persona ID
     // The service method itself doesn't validate existence, only the route handler does.
-    let non_existent_persona_id = Uuid::new_v4();
+    let non_existent_persona_id = Uuid::new_v4().into();
     let user_with_non_existent_default = UserPersonaService::set_default_persona(
         &ctx.db_pool,
         ctx.user.id,

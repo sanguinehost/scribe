@@ -89,6 +89,12 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp)
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        recall_pipeline: Arc::new(scribe_backend::services::embeddings::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: Arc::new(scribe_backend::services::token_service::TokenService::new(
+            test_app.db_pool.clone(),
+        )),
     };
     Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -117,13 +123,20 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
 
     // Create context enrichment agent
     let app_state = create_test_app_state(&test_app).await;
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let context_agent =
+        ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
     let session_id = Uuid::new_v4();
 
@@ -257,13 +270,20 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
 
     // Create context enrichment agent
     let app_state = create_test_app_state(&test_app).await;
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let context_agent =
+        ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
     let session_id = Uuid::new_v4();
 
@@ -375,13 +395,20 @@ async fn test_context_enrichment_search_types() {
 
     // Create context enrichment agent
     let app_state = create_test_app_state(&test_app).await;
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let context_agent =
+        ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
     let session_id = Uuid::new_v4();
 
@@ -486,13 +513,20 @@ async fn test_context_enrichment_error_handling() {
 
     // Create context enrichment agent
     let app_state = create_test_app_state(&test_app).await;
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let context_agent =
+        ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
     let session_id = Uuid::new_v4();
 
@@ -578,13 +612,20 @@ async fn test_context_enrichment_analysis_storage() {
 
     // Create context enrichment agent
     let app_state = create_test_app_state(&test_app).await;
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let context_agent =
+        ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
     let session_id = Uuid::new_v4();
 
@@ -755,13 +796,20 @@ async fn test_context_enrichment_message_patterns() {
 
     // Create context enrichment agent
     let app_state = create_test_app_state(&test_app).await;
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let context_agent =
+        ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
     // Test different message patterns
     let test_cases = vec![
@@ -834,13 +882,16 @@ async fn test_context_enrichment_message_patterns() {
 
         let result = context_agent
             .enrich_context(
-                session_id,
-                user.id,
+                session_id.into(),
+                user.id.into(),
                 None, // chronicle_id
                 &messages,
                 EnrichmentMode::PreProcessing,
                 user_dek.0.expose_secret(),
-                message_id, // Required message ID
+                message_id.into(), // Required message ID
+                None,
+                None,
+                None,
             )
             .await;
 

@@ -77,17 +77,18 @@ async fn create_user_and_login(
 /// Helper to create a minimal character for testing
 async fn create_test_character(
     conn_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
+    user_id: scribe_backend::db::DbId,
     name: &str,
 ) -> anyhow::Result<DbCharacter> {
     let new_character_data = NewCharacter {
+        id: None,
         user_id,
         spec: "character_card_v2".to_string(),
         spec_version: "2.0.0".to_string(),
         name: name.to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
         description: None,
         description_nonce: None,
         personality: None,
@@ -104,14 +105,14 @@ async fn create_test_character(
         system_prompt_nonce: None,
         post_history_instructions: None,
         post_history_instructions_nonce: None,
-        tags: Some(vec![Some("test".to_string())]),
+        tags: scribe_backend::db::DbStringArray(Some(vec![Some("test".to_string())])),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: scribe_backend::db::DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: scribe_backend::db::DbStringArray(None),
+        group_only_greetings: scribe_backend::db::DbStringArray(None),
         creation_date: None,
         modification_date: None,
         extensions: None,
@@ -140,7 +141,7 @@ async fn create_test_character(
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: scribe_backend::db::DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -180,11 +181,11 @@ async fn create_test_character(
 /// Helper to create a minimal chat session for testing
 async fn create_test_chat_session(
     conn_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    character_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    character_id: scribe_backend::db::DbId,
 ) -> anyhow::Result<DbChat> {
     let new_chat_data = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id,
         character_id,
         title_ciphertext: None,
@@ -193,7 +194,7 @@ async fn create_test_chat_session(
         updated_at: Utc::now().into(),
         history_management_strategy: "token_limit".to_string(),
         history_management_limit: 10,
-        model_name: "test-model".to_string(),
+        model_name: Some("test-model".to_string()),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
@@ -207,7 +208,7 @@ async fn create_test_chat_session(
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: None,
+        stop_sequences: scribe_backend::db::DbStringArray(None),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
@@ -216,8 +217,19 @@ async fn create_test_chat_session(
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: chrono::Utc::now().into(),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        game_state: None,
+        game_master_mode_enabled: false,
+        gemini_thinking_level: None,
+        rag_chronicles_limit: None,
+        rag_lorebooks_limit: None,
+        rag_older_chat_limit: None,
+        rag_cognitive_context_limit: None,
+        total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        total_credit_cost: 0,
+        total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
     };
 
     let chat_session = conn_pool
@@ -284,8 +296,8 @@ async fn setup_chat_settings_test_env(
         spec_version: "2.0.0".to_string(),
         name: character_name.to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
         ..Default::default()
     };
 
@@ -309,7 +321,7 @@ async fn setup_chat_settings_test_env(
             provided_data
         }
         None => NewChat {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             user_id: user.id,
             character_id: character.id,
             title_ciphertext: Some(format!("Chat for {username_prefix}").as_bytes().to_vec()),
@@ -318,7 +330,7 @@ async fn setup_chat_settings_test_env(
             updated_at: Utc::now().into(),
             history_management_strategy: "truncate_summary".to_string(),
             history_management_limit: 20,
-            model_name: "initial-model".to_string(),
+            model_name: Some("initial-model".to_string()),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: "default".to_string(),
@@ -332,7 +344,7 @@ async fn setup_chat_settings_test_env(
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: None,
+            stop_sequences: scribe_backend::db::DbStringArray(None),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
@@ -341,8 +353,19 @@ async fn setup_chat_settings_test_env(
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
-            tokens_counted_at: Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            tokens_counted_at: Utc::now().into(),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            game_state: None,
+            game_master_mode_enabled: false,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
+            total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            total_credit_cost: 0,
+            total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         },
     };
 
@@ -388,12 +411,20 @@ async fn get_chat_settings_success() {
                         chat_sessions::system_prompt_ciphertext.eq(None::<Vec<u8>>),
                         chat_sessions::system_prompt_nonce.eq(None::<Vec<u8>>),
                     ),
-                    chat_sessions::temperature.eq(Some(BigDecimal::from_str("0.9").unwrap())),
+                    chat_sessions::temperature.eq(Some(scribe_backend::db::DbDecimal(
+                        BigDecimal::from_str("0.9").unwrap(),
+                    ))),
                     chat_sessions::max_output_tokens.eq(Some(1024_i32)),
-                    chat_sessions::frequency_penalty.eq(Some(BigDecimal::from_str("0.3").unwrap())),
-                    chat_sessions::presence_penalty.eq(Some(BigDecimal::from_str("0.2").unwrap())),
+                    chat_sessions::frequency_penalty.eq(Some(scribe_backend::db::DbDecimal(
+                        BigDecimal::from_str("0.3").unwrap(),
+                    ))),
+                    chat_sessions::presence_penalty.eq(Some(scribe_backend::db::DbDecimal(
+                        BigDecimal::from_str("0.2").unwrap(),
+                    ))),
                     chat_sessions::top_k.eq(Some(40_i32)),
-                    chat_sessions::top_p.eq(Some(BigDecimal::from_str("0.95").unwrap())),
+                    chat_sessions::top_p.eq(Some(scribe_backend::db::DbDecimal(
+                        BigDecimal::from_str("0.95").unwrap(),
+                    ))),
                     chat_sessions::seed.eq(Some(12345_i32)),
                     chat_sessions::model_name.eq("gemini-2.5-flash".to_string()),
                     chat_sessions::history_management_strategy.eq("truncate_summary".to_string()),
@@ -424,24 +455,35 @@ async fn get_chat_settings_success() {
     assert_eq!(settings_resp.system_prompt, None);
     assert_eq!(
         settings_resp.temperature,
-        Some(BigDecimal::from_str("0.9").unwrap())
+        Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.9").unwrap()
+        ))
     );
     assert_eq!(settings_resp.max_output_tokens, Some(1024_i32));
     assert_eq!(
         settings_resp.frequency_penalty,
-        Some(BigDecimal::from_str("0.3").unwrap())
+        Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.3").unwrap()
+        ))
     );
     assert_eq!(
         settings_resp.presence_penalty,
-        Some(BigDecimal::from_str("0.2").unwrap())
+        Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.2").unwrap()
+        ))
     );
     assert_eq!(settings_resp.top_k, Some(40_i32));
     assert_eq!(
         settings_resp.top_p,
-        Some(BigDecimal::from_str("0.95").unwrap())
+        Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.95").unwrap()
+        ))
     );
     assert_eq!(settings_resp.seed, Some(12345_i32));
-    assert_eq!(settings_resp.model_name, "gemini-2.5-flash".to_string());
+    assert_eq!(
+        settings_resp.model_name,
+        Some("gemini-2.5-flash".to_string())
+    );
     assert_eq!(
         settings_resp.history_management_strategy,
         "truncate_summary"
@@ -494,6 +536,13 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
     let rate_limiter =
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
+    let recall_pipeline = Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+        test_app.db_pool.clone(),
+    ));
+    let token_service = Some(Arc::new(
+        scribe_backend::auth::token_service::TokenService::new("test-secret"),
+    ));
+
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
@@ -505,6 +554,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         encryption_service: encryption_service_for_test,
         lorebook_service: lorebook_service_for_test,
         auth_backend: auth_backend_for_test,
+        token_service,
         email_service: Arc::new(
             scribe_backend::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
@@ -512,6 +562,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         ),
         ai_client_factory,
         rate_limiter,
+        recall_pipeline,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -536,16 +587,16 @@ async fn get_chat_settings_defaults() {
         "get_defaults",
         "Get Defaults Char",
         Some(NewChat {
-            id: Uuid::new_v4(),
-            user_id: DbId::new(), // Will be overwritten by setup_chat_settings_test_env
-            character_id: Uuid::new_v4(), // Will be overwritten
+            id: Uuid::new_v4().into(),
+            user_id: scribe_backend::db::DbId::new(), // Will be overwritten by setup_chat_settings_test_env
+            character_id: Uuid::new_v4().into(),      // Will be overwritten
             title_ciphertext: Some(b"Chat for get_chat_settings_defaults".to_vec()),
             title_nonce: Some(vec![0u8; 12]), // Dummy nonce
             created_at: Utc::now().into(),
             updated_at: Utc::now().into(),
             history_management_strategy: "token_limit".to_string(),
             history_management_limit: 1000,
-            model_name: "scribe-default-model".to_string(),
+            model_name: Some("scribe-default-model".to_string()),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: "default".to_string(),
@@ -559,7 +610,7 @@ async fn get_chat_settings_defaults() {
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: None,
+            stop_sequences: scribe_backend::db::DbStringArray(None),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
@@ -568,8 +619,19 @@ async fn get_chat_settings_defaults() {
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            tokens_counted_at: chrono::Utc::now().into(),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            game_state: None,
+            game_master_mode_enabled: false,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
+            total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            total_credit_cost: 0,
+            total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         }),
     )
     .await
@@ -633,7 +695,10 @@ async fn get_chat_settings_defaults() {
     assert_eq!(settings_resp.top_p, None);
     assert_eq!(settings_resp.seed, None);
 
-    assert_eq!(settings_resp.model_name, "gemini-2.5-flash");
+    assert_eq!(
+        settings_resp.model_name,
+        Some("gemini-2.5-flash".to_string())
+    );
     assert_eq!(settings_resp.history_management_strategy, "message_window");
     assert_eq!(settings_resp.history_management_limit, 20);
 
@@ -788,8 +853,8 @@ async fn setup_update_test_env(
         spec_version: "2.0.0".to_string(),
         name: char_name.to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
         ..Default::default()
     };
     let character: DbCharacter = test_app
@@ -807,16 +872,21 @@ async fn setup_update_test_env(
         .expect("Diesel char insert failed");
 
     let new_chat_data = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: Some(format!("Chat for {chat_title_suffix}").as_bytes().to_vec()),
+        title_ciphertext: Some(
+            format!("Chat for {chat_title_suffix}")
+                .as_bytes()
+                .to_vec()
+                .into(),
+        ),
         title_nonce: Some(vec![0u8; 12]), // Dummy nonce
         created_at: Utc::now().into(),
         updated_at: Utc::now().into(),
         history_management_strategy: initial_hist_strat.to_string(),
         history_management_limit: initial_hist_limit,
-        model_name: initial_model_name.to_string(),
+        model_name: Some(initial_model_name.to_string()),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
@@ -830,7 +900,7 @@ async fn setup_update_test_env(
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: None,
+        stop_sequences: scribe_backend::db::DbStringArray(None),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
@@ -839,8 +909,19 @@ async fn setup_update_test_env(
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
-        tokens_counted_at: Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: Utc::now().into(),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        game_state: None,
+        game_master_mode_enabled: false,
+        gemini_thinking_level: None,
+        rag_chronicles_limit: None,
+        rag_lorebooks_limit: None,
+        rag_older_chat_limit: None,
+        rag_cognitive_context_limit: None,
+        total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        total_credit_cost: 0,
+        total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
     };
     let session: DbChat = test_app
         .db_pool
@@ -877,12 +958,20 @@ async fn update_chat_settings_success_full() {
 
     let update_data = UpdateChatSettingsRequest {
         system_prompt: Some("Updated System Prompt".to_string()),
-        temperature: Some(BigDecimal::from_str("0.75").unwrap()),
+        temperature: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.75").unwrap(),
+        )),
         max_output_tokens: Some(512_i32),
-        frequency_penalty: Some(BigDecimal::from_str("0.15").unwrap()),
-        presence_penalty: Some(BigDecimal::from_str("0.12").unwrap()),
+        frequency_penalty: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.15").unwrap(),
+        )),
+        presence_penalty: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.12").unwrap(),
+        )),
         top_k: Some(30_i32),
-        top_p: Some(BigDecimal::from_str("0.88").unwrap()),
+        top_p: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.88").unwrap(),
+        )),
         seed: Some(54321_i32),
         stop_sequences: None,
         model_name: Some("updated-model-name".to_string()),
@@ -895,6 +984,7 @@ async fn update_chat_settings_success_full() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -918,10 +1008,15 @@ async fn update_chat_settings_success_full() {
     );
     assert_eq!(
         settings_resp.temperature,
-        Some(BigDecimal::from_str("0.75").unwrap())
+        Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.75").unwrap()
+        ))
     );
     assert_eq!(settings_resp.max_output_tokens, Some(512_i32));
-    assert_eq!(settings_resp.model_name, "updated-model-name".to_string());
+    assert_eq!(
+        settings_resp.model_name,
+        Some("updated-model-name".to_string())
+    );
     assert_eq!(settings_resp.history_management_strategy, "token_limit");
     assert_eq!(settings_resp.history_management_limit, 100);
     assert_eq!(settings_resp.gemini_thinking_budget, Some(60_i32));
@@ -989,6 +1084,7 @@ async fn update_chat_settings_success_partial() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -1011,10 +1107,13 @@ async fn update_chat_settings_success_partial() {
         Some("Partially Updated System Prompt".to_string())
     );
     assert_eq!(settings_resp.max_output_tokens, Some(200));
-    assert_eq!(settings_resp.temperature, Some(initial_temp_val));
+    assert_eq!(
+        settings_resp.temperature,
+        Some(scribe_backend::db::DbDecimal(initial_temp_val))
+    );
     assert_eq!(
         settings_resp.model_name,
-        "initial-partial-model".to_string()
+        Some("initial-partial-model".to_string())
     );
     assert_eq!(settings_resp.history_management_strategy, "none");
     assert_eq!(settings_resp.history_management_limit, 0);
@@ -1104,6 +1203,7 @@ async fn update_chat_settings_forbidden() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     // User2 tries to update user1's chat session settings
@@ -1175,6 +1275,7 @@ async fn update_chat_settings_not_found() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -1232,6 +1333,7 @@ async fn update_chat_settings_unauthorized() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -1279,8 +1381,8 @@ async fn debug_system_prompt_encryption_decryption() {
                 spec_version: "2.0.0".to_string(),
                 name: "Debug Character".to_string(),
                 visibility: Some("private".to_string()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
 
@@ -1304,7 +1406,7 @@ async fn debug_system_prompt_encryption_decryption() {
             use scribe_backend::schema::chat_sessions;
 
             let new_chat = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user.id,
                 character_id: character.id,
                 title_ciphertext: None,
@@ -1313,7 +1415,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 updated_at: Utc::now().into(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
-                model_name: "gemini-2.5-flash".to_string(),
+                model_name: Some("gemini-2.5-flash".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 prompt_template_id: "default".to_string(),
@@ -1327,7 +1429,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: scribe_backend::db::DbStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -1336,8 +1438,19 @@ async fn debug_system_prompt_encryption_decryption() {
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_credit_cost: 0,
+                total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                game_master_mode_enabled: false,
+                game_state: None,
+                gemini_thinking_level: None,
+                rag_chronicles_limit: None,
+                rag_lorebooks_limit: None,
+                rag_older_chat_limit: None,
+                rag_cognitive_context_limit: None,
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1355,7 +1468,9 @@ async fn debug_system_prompt_encryption_decryption() {
     let system_prompt_text = "You are a helpful assistant for debugging encryption.";
     let update_request = UpdateChatSettingsRequest {
         system_prompt: Some(system_prompt_text.to_string()),
-        temperature: Some(BigDecimal::from_str("0.8").unwrap()),
+        temperature: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.8").unwrap(),
+        )),
         max_output_tokens: Some(1000),
         frequency_penalty: None,
         presence_penalty: None,
@@ -1373,6 +1488,7 @@ async fn debug_system_prompt_encryption_decryption() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     println!(
@@ -1521,8 +1637,8 @@ async fn test_actual_api_route_for_system_prompt() {
                 spec_version: "2.0.0".to_string(),
                 name: "API Debug Character".to_string(),
                 visibility: Some("private".to_string()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
 
@@ -1546,7 +1662,7 @@ async fn test_actual_api_route_for_system_prompt() {
             use scribe_backend::schema::chat_sessions;
 
             let new_chat = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user.id,
                 character_id: character.id,
                 title_ciphertext: None,
@@ -1555,7 +1671,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 updated_at: Utc::now().into(),
                 history_management_strategy: "message_window".to_string(),
                 history_management_limit: 20,
-                model_name: "gemini-2.5-flash".to_string(),
+                model_name: Some("gemini-2.5-flash".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 prompt_template_id: "default".to_string(),
@@ -1569,7 +1685,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: scribe_backend::db::DbStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -1578,8 +1694,19 @@ async fn test_actual_api_route_for_system_prompt() {
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_credit_cost: 0,
+                total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                game_master_mode_enabled: false,
+                game_state: None,
+                gemini_thinking_level: None,
+                rag_chronicles_limit: None,
+                rag_lorebooks_limit: None,
+                rag_older_chat_limit: None,
+                rag_cognitive_context_limit: None,
             };
 
             diesel::insert_into(chat_sessions::table)
@@ -1613,6 +1740,7 @@ async fn test_actual_api_route_for_system_prompt() {
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     println!(
@@ -1761,11 +1889,12 @@ async fn test_chat_chronicle_association() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
-        chronicle_id: Some(chronicle_uuid),
+        chronicle_id: Some(chronicle_uuid.into()),
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
         prompt_template_id: Some("neutral_roleplay".to_string()),
+        ..Default::default()
     };
 
     let update_request = Request::builder()
@@ -1795,7 +1924,7 @@ async fn test_chat_chronicle_association() {
         serde_json::from_slice(&update_body).expect("Failed to deserialize settings response");
 
     // Verify the chronicle association was saved
-    assert_eq!(settings_resp.chronicle_id, Some(chronicle_uuid));
+    assert_eq!(settings_resp.chronicle_id, Some(chronicle_uuid.into()));
 
     // Now get the settings again to verify persistence
     let get_request = Request::builder()
@@ -1813,7 +1942,7 @@ async fn test_chat_chronicle_association() {
         serde_json::from_slice(&get_body).expect("Failed to deserialize get settings response");
 
     // Verify the chronicle association persisted
-    assert_eq!(get_settings_resp.chronicle_id, Some(chronicle_uuid));
+    assert_eq!(get_settings_resp.chronicle_id, Some(chronicle_uuid.into()));
 
     // NOTE: The old test section that tried to "remove" the association by setting chronicle_id to None
     // has been removed because that was incorrect behavior.

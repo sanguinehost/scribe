@@ -21,7 +21,7 @@ use diesel::RunQueryDsl;
 use anyhow::Error as AnyhowError;
 use scribe_backend::models::character_card::NewCharacter;
 use scribe_backend::models::characters::Character as DbCharacter;
-use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, NewChat};
+use scribe_backend::models::chats::{Chat as DbChatSession, ChatMode, ChatSessionQuery, NewChat};
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers; // For spawn_app, create_test_user
 use secrecy::{ExposeSecret, SecretBox};
@@ -29,12 +29,14 @@ use std::sync::Arc;
 use tracing::debug;
 
 use scribe_backend::crypto;
+use scribe_backend::db::{DbId, DbStringArray, DbTimestamp};
 use scribe_backend::models::{
     // scribe_backend::models::chats::Chat is already aliased as DbChatSession in this file
     chats::{Message as DbChatMessage, MessageRole},
     users::User,
 };
 use scribe_backend::schema::chat_messages;
+use scribe_backend::services::cognitive::RecallPipeline;
 use scribe_backend::services::lorebook::LorebookService;
 use scribe_backend::state::{AppState, AppStateServices};
 // scribe_backend::test_helpers is already imported. TestDataGuard will be used as test_helpers::TestDataGuard.
@@ -89,7 +91,8 @@ async fn test_create_chat_session_success() {
     let character: DbCharacter = character_conn_obj
         .interact(move |actual_pg_conn| {
             let new_character_values = NewCharacter {
-                user_id: user_id_clone,
+                id: None,
+                user_id: user_id_clone.into(),
                 spec: "character_card_v3_example".to_string(),
                 spec_version: "1.0.0".to_string(),
                 name: "TestCharacter".to_string(),
@@ -109,14 +112,14 @@ async fn test_create_chat_session_success() {
                 system_prompt_nonce: None,
                 post_history_instructions: None,
                 post_history_instructions_nonce: None,
-                tags: Some(vec![Some("test".to_string())]),
+                tags: DbStringArray(Some(vec![Some("test".to_string())])),
                 creator: None,
                 character_version: None,
-                alternate_greetings: None,
+                alternate_greetings: DbStringArray(None),
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
+                source: DbStringArray(None),
+                group_only_greetings: DbStringArray(None),
                 creation_date: None,
                 modification_date: None,
                 extensions: None,
@@ -145,7 +148,7 @@ async fn test_create_chat_session_success() {
                 sharing_visibility: None,
                 status: None,
                 system_prompt_visibility: None,
-                system_tags: None,
+                system_tags: DbStringArray(None),
                 token_budget: None,
                 usage_hints: None,
                 user_persona: None,
@@ -165,8 +168,8 @@ async fn test_create_chat_session_success() {
                 depth_prompt_nonce: None,
                 world_ciphertext: None,
                 world_nonce: None,
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
             };
             diesel::insert_into(characters::table)
                 .values(&new_character_values)
@@ -319,7 +322,8 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
     let character_user1: DbCharacter = character_conn_obj
         .interact(move |actual_pg_conn| {
             let new_character_values = NewCharacter {
-                user_id: user1_id_clone,
+                id: None,
+                user_id: user1_id_clone.into(),
                 spec: "character_card_v3_example".to_string(),
                 spec_version: "1.0.0".to_string(),
                 name: "TestCharacter".to_string(),
@@ -339,14 +343,14 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
                 system_prompt_nonce: None,
                 post_history_instructions: None,
                 post_history_instructions_nonce: None,
-                tags: Some(vec![Some("test".to_string())]),
+                tags: DbStringArray(Some(vec![Some("test".to_string())])),
                 creator: None,
                 character_version: None,
-                alternate_greetings: None,
+                alternate_greetings: DbStringArray(None),
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
+                source: DbStringArray(None),
+                group_only_greetings: DbStringArray(None),
                 creation_date: None,
                 modification_date: None,
                 extensions: None,
@@ -375,7 +379,7 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
                 sharing_visibility: None,
                 status: None,
                 system_prompt_visibility: None,
-                system_tags: None,
+                system_tags: DbStringArray(None),
                 token_budget: None,
                 usage_hints: None,
                 user_persona: None,
@@ -395,8 +399,8 @@ async fn test_create_chat_session_character_other_user() -> anyhow::Result<()> {
                 depth_prompt_nonce: None,
                 world_ciphertext: None,
                 world_nonce: None,
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
             };
             diesel::insert_into(characters::table)
                 .values(&new_character_values)
@@ -563,7 +567,8 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
     let character_user1: DbCharacter = character_conn_obj
         .interact(move |actual_pg_conn| {
             let new_character_values = NewCharacter {
-                user_id: user1_id_clone,
+                id: None,
+                user_id: user1_id_clone.into(),
                 spec: "character_card_v3_example".to_string(),
                 spec_version: "1.0.0".to_string(),
                 name: "TestCharacter".to_string(),
@@ -583,14 +588,14 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
                 system_prompt_nonce: None,
                 post_history_instructions: None,
                 post_history_instructions_nonce: None,
-                tags: Some(vec![Some("test".to_string())]),
+                tags: DbStringArray(Some(vec![Some("test".to_string())])),
                 creator: None,
                 character_version: None,
-                alternate_greetings: None,
+                alternate_greetings: DbStringArray(None),
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
+                source: DbStringArray(None),
+                group_only_greetings: DbStringArray(None),
                 creation_date: None,
                 modification_date: None,
                 extensions: None,
@@ -619,7 +624,7 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
                 sharing_visibility: None,
                 status: None,
                 system_prompt_visibility: None,
-                system_tags: None,
+                system_tags: DbStringArray(None),
                 token_budget: None,
                 usage_hints: None,
                 user_persona: None,
@@ -639,8 +644,8 @@ async fn create_chat_session_character_not_owned_integration() -> anyhow::Result
                 depth_prompt_nonce: None,
                 world_ciphertext: None,
                 world_nonce: None,
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
             };
             diesel::insert_into(characters::table)
                 .values(&new_character_values)
@@ -724,7 +729,8 @@ async fn test_get_chat_session_details_unauthorized() {
     let character: DbCharacter = character_conn_obj
         .interact(move |actual_pg_conn| {
             let new_char_values = NewCharacter {
-                user_id: user_id_clone,
+                id: None,
+                user_id: user_id_clone.into(),
                 spec: "character_card_v3_example".to_string(),
                 spec_version: "1.0.0".to_string(),
                 name: "Char for Unauth Get".to_string(),
@@ -744,14 +750,14 @@ async fn test_get_chat_session_details_unauthorized() {
                 system_prompt_nonce: None,
                 post_history_instructions: None,
                 post_history_instructions_nonce: None,
-                tags: Some(vec![Some("test".to_string())]),
+                tags: DbStringArray(Some(vec![Some("test".to_string())])),
                 creator: None,
                 character_version: None,
-                alternate_greetings: None,
+                alternate_greetings: DbStringArray(None),
                 nickname: None,
                 creator_notes_multilingual: None,
-                source: None,
-                group_only_greetings: None,
+                source: DbStringArray(None),
+                group_only_greetings: DbStringArray(None),
                 creation_date: None,
                 modification_date: None,
                 extensions: None,
@@ -780,7 +786,7 @@ async fn test_get_chat_session_details_unauthorized() {
                 sharing_visibility: None,
                 status: None,
                 system_prompt_visibility: None,
-                system_tags: None,
+                system_tags: DbStringArray(None),
                 token_budget: None,
                 usage_hints: None,
                 user_persona: None,
@@ -800,8 +806,8 @@ async fn test_get_chat_session_details_unauthorized() {
                 depth_prompt_nonce: None,
                 world_ciphertext: None,
                 world_nonce: None,
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
             };
             diesel::insert_into(characters::table)
                 .values(&new_char_values)
@@ -821,40 +827,19 @@ async fn test_get_chat_session_details_unauthorized() {
     let session: DbChatSession = conn_guard_session_unauth
         .interact(move |actual_pg_conn| {
             let new_chat_values = NewChat {
-                id: Uuid::new_v4(),
-                user_id: session_user_id_clone,
-                character_id: session_char_id_clone,
-                title_ciphertext: None,
-                title_nonce: None,
+                id: Uuid::new_v4().into(),
+                user_id: session_user_id_clone.into(),
+                character_id: session_char_id_clone.into(),
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate_summary".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions::table)
                 .values(&new_chat_values)
@@ -956,8 +941,8 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "Empty First Mes Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -971,14 +956,14 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -1009,7 +994,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1058,7 +1043,7 @@ async fn test_create_chat_session_with_empty_first_mes() -> Result<(), AnyhowErr
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let request_body = json!({ "character_id": character_id });
 
@@ -1125,8 +1110,8 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "Null First Mes Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -1140,14 +1125,14 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -1178,7 +1163,7 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1227,7 +1212,7 @@ async fn test_create_chat_session_with_null_first_mes() -> anyhow::Result<()> {
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let request_body = json!({ "character_id": character_id });
 
@@ -1306,8 +1291,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
             .expect("Test: Failed to encrypt first_mes");
 
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "Save First Mes Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -1321,14 +1306,14 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -1359,7 +1344,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1408,7 +1393,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     // Create dependent services for AppState
     let encryption_service_for_test =
@@ -1471,6 +1456,8 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         ),
         ai_client_factory,
         rate_limiter,
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -1492,11 +1479,11 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
             app_state_arc,
             user.id,
-            Some(character_id),     // character_id is now Option<Uuid>
-            ChatMode::Character,    // chat_mode
-            None,                   // active_custom_persona_id
-            None,                   // lorebook_ids
-            Some(user_dek.clone()), // user_dek_secret_box
+            Some(character_id.into()), // character_id is now Option<Uuid>
+            ChatMode::Character,       // chat_mode
+            None,                      // active_custom_persona_id
+            None,                      // lorebook_ids
+            Some(user_dek.clone()),    // user_dek_secret_box
         )
         .await;
 
@@ -1505,11 +1492,11 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         "create_session_and_maybe_first_message failed: {:?}",
         result.err()
     );
-    let session: DbChatSession = result.unwrap(); // Explicitly type if needed, or let inference work.
+    let session: ChatSessionQuery = result.unwrap(); // Explicitly type if needed, or let inference work.
     test_data_guard.add_chat(session.id);
 
     assert_eq!(session.user_id, user.id);
-    assert_eq!(session.character_id, Some(character_id));
+    assert_eq!(session.character_id, Some(character_id.into()));
 
     let conn = test_app.db_pool.get().await?;
     let messages_result = conn
@@ -1577,14 +1564,14 @@ async fn create_test_lorebook(
     // Based on models/lorebooks.rs, NewLorebook and Lorebook store plain name/description.
 
     let new_lorebook = NewLorebook {
-        id: Uuid::new_v4(),
-        user_id,
+        id: Uuid::new_v4().into(),
+        user_id: user_id.into(),
         name: name.to_string(),
         description: None, // Set to None as per NewLorebook definition
         source_format: "test_data".to_string(), // Provide a default source_format
         is_public: false,  // Corrected field name from 'public'
-        created_at: Some(Utc::now()), // Corrected to Option<DateTime<Utc>>
-        updated_at: Some(Utc::now()), // Corrected to Option<DateTime<Utc>>
+        created_at: Some(Utc::now().into()), // Corrected to Option<DateTime<Utc>>
+        updated_at: Some(Utc::now().into()), // Corrected to Option<DateTime<Utc>>
     };
 
     let lorebook = db_pool
@@ -1640,8 +1627,8 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
     // Create a character
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "No Lorebooks Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -1655,14 +1642,14 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -1693,7 +1680,7 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1738,7 +1725,7 @@ async fn test_create_chat_session_no_lorebook_ids() -> Result<(), AnyhowError> {
         })
         .await
         .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     // Create chat session request without lorebook_ids
     let request_body = json!({
@@ -1806,8 +1793,8 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
     // Create a character
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "One Lorebook Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -1821,14 +1808,14 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -1859,7 +1846,7 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1904,7 +1891,7 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
         })
         .await
         .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     // Create a Lorebook
     let encryption_service_for_lorebook =
@@ -1919,7 +1906,7 @@ async fn test_create_chat_session_one_valid_lorebook_id() -> Result<(), AnyhowEr
     let lorebook1 = create_test_lorebook(
         &test_app.db_pool,
         encryption_service_for_lorebook.clone(),
-        user.id,
+        *user.id,
         "Test Lorebook 1",
         user_dek_lorebook.clone(),
         &mut test_data_guard,
@@ -1995,8 +1982,8 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
     // Create a character
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "Multi Lorebooks Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -2010,14 +1997,14 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -2048,7 +2035,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -2093,7 +2080,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
         })
         .await
         .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     // Create Lorebooks
     let encryption_service_for_lorebook =
@@ -2108,7 +2095,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
     let lorebook1 = create_test_lorebook(
         &test_app.db_pool,
         encryption_service_for_lorebook.clone(),
-        user.id,
+        *user.id,
         "Test Lorebook Multi 1",
         user_dek_lorebook.clone(),
         &mut test_data_guard,
@@ -2117,7 +2104,7 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
     let lorebook2 = create_test_lorebook(
         &test_app.db_pool,
         encryption_service_for_lorebook.clone(),
-        user.id,
+        *user.id,
         "Test Lorebook Multi 2",
         user_dek_lorebook.clone(),
         &mut test_data_guard,
@@ -2165,9 +2152,12 @@ async fn test_create_chat_session_multiple_valid_lorebook_ids() -> Result<(), An
     );
 
     // Sort expected and actual IDs to ensure order doesn't matter for the content of the list
-    let mut actual_linked_ids: Vec<Uuid> = linked_lorebooks.iter().map(|l| l.lorebook_id).collect();
+    let mut actual_linked_ids: Vec<Uuid> = linked_lorebooks
+        .iter()
+        .map(|l| l.lorebook_id.into_uuid())
+        .collect();
     actual_linked_ids.sort();
-    let mut expected_ids = vec![lorebook1.id, lorebook2.id];
+    let mut expected_ids = vec![lorebook1.id.into_uuid(), lorebook2.id.into_uuid()];
     expected_ids.sort();
 
     assert_eq!(
@@ -2208,8 +2198,8 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
     // Create a character
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "Empty Lorebook List Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -2223,14 +2213,14 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -2261,7 +2251,7 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -2306,7 +2296,7 @@ async fn test_create_chat_session_empty_lorebook_ids_list() -> Result<(), Anyhow
         })
         .await
         .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     // Create chat session request with an empty lorebook_ids list
     let request_body = json!({
@@ -2374,8 +2364,8 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
     // Create a character
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: user.id,
+        id: character_id.into(),
+        user_id: user.id.into(),
         name: "Non-Existent Lorebook Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -2389,14 +2379,14 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -2427,7 +2417,7 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -2472,7 +2462,7 @@ async fn test_create_chat_session_non_existent_lorebook_id() -> Result<(), Anyho
         })
         .await
         .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let non_existent_lorebook_id = Uuid::new_v4();
 
@@ -2548,8 +2538,8 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
     // Create a character for the requester_user
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
-        user_id: requester_user.id, // Character owned by requester
+        id: character_id.into(),
+        user_id: requester_user.id.into(), // Character owned by requester
         name: "Requester Char For Unowned Lorebook".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
@@ -2563,14 +2553,14 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: DbStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: DbStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: DbStringArray(None),
+        group_only_greetings: DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -2601,7 +2591,7 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -2646,7 +2636,7 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
         })
         .await
         .map_err(|e| AnyhowError::msg(format!("DB interaction error: {e}")))?;
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     // Create a Lorebook owned by owner_user
     let encryption_service_for_lorebook =
@@ -2661,7 +2651,7 @@ async fn test_create_chat_session_lorebook_owned_by_another_user() -> Result<(),
     let lorebook_other_owner = create_test_lorebook(
         &test_app.db_pool,
         encryption_service_for_lorebook.clone(),
-        owner_user.id, // Lorebook owned by owner_user
+        *owner_user.id, // Lorebook owned by owner_user
         "Lorebook Of Other User",
         owner_user_dek.clone(),
         &mut test_data_guard,

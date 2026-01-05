@@ -414,7 +414,7 @@ impl AuthUser for User {
 }
 
 /// Represents data needed to create a new user.
-#[derive(Insertable)] // Removed Debug for custom impl
+#[derive(Insertable, Default)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewUser {

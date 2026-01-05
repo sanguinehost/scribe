@@ -115,10 +115,14 @@ async fn test_chat_session_uses_user_default_model() {
         default_top_k: None,
         default_seed: None,
         default_gemini_thinking_budget: None,
+        default_gemini_thinking_level: None,
         default_gemini_enable_code_execution: None,
         default_context_total_token_limit: None,
         default_context_recent_history_budget: None,
         default_context_rag_budget: None,
+        default_rag_chronicles_limit: None,
+        default_rag_lorebooks_limit: None,
+        default_rag_older_chat_limit: None,
         auto_save_chats: None,
         theme: None,
         notifications_enabled: None,
@@ -247,12 +251,12 @@ async fn test_chat_session_uses_user_default_model() {
     let chat_session =
         scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
             app_state_for_session, // Use the correctly constructed AppState
-            user_db.id,
-            Some(character.id),   // character_id is now Option<Uuid>
-            ChatMode::Character,  // chat_mode
-            None,                 // No custom persona
-            None,                 // No lorebooks
-            user_dek_for_session, // Use the DEK from the test user
+            user_db.id.into(),
+            Some(character.id.into()), // character_id is now Option<Uuid>
+            ChatMode::Character,       // chat_mode
+            None,                      // No custom persona
+            None,                      // No lorebooks
+            user_dek_for_session,      // Use the DEK from the test user
         )
         .await
         .expect("Failed to create chat session");
