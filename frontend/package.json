@@ -27,7 +27,7 @@
 		"@sejohnson/svelte-themes": "^0.0.6",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/adapter-vercel": "^5.10.2",
-		"@sveltejs/kit": "^2.36.1",
+		"@sveltejs/kit": "^2.49.2",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@tauri-apps/api": "^2.9.0",
 		"@tauri-apps/plugin-shell": "^2.3.3",
