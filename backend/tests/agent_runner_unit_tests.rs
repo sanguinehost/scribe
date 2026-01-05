@@ -10,7 +10,11 @@ use scribe_backend::{
     auth::session_dek::SessionDek,
     db::DbId,
     models::chats::{ChatMessage, MessageRole},
-    services::agentic::factory::AgenticNarrativeFactory,
+    services::{
+        agentic::factory::AgenticNarrativeFactory, cognitive::RecallPipeline,
+    },
+    auth::token_service::TokenService,
+    },
     test_helpers::{MockAiClient, TestDataGuard},
 };
 use secrecy::SecretBox;
@@ -84,12 +88,8 @@ async fn create_test_app_state(
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
-        recall_pipeline: Arc::new(scribe_backend::services::embeddings::RecallPipeline::new(
-            test_app.db_pool.clone(),
-        )),
-        token_service: Arc::new(scribe_backend::services::TokenService::new(
-            test_app.db_pool.clone(),
-        )),
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new(test_app.db_pool.clone()))),
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -99,7 +99,7 @@ async fn create_test_app_state(
 }
 
 /// Helper to create test messages with varying content lengths
-fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -> Vec<ChatMessage> {
+fn create_conversation_messages(user_id: DbId, session_id: DbId, count: usize) -> Vec<ChatMessage> {
     let mut messages = Vec::new();
 
     for i in 0..count {
@@ -124,12 +124,12 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
 
         messages.push(ChatMessage {
             id: Uuid::new_v4().into(),
-            session_id: session_id.into(),
+            session_id,
             message_type: role,
-            content: content.as_bytes().to_vec().into(),
+            content: content.as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id: user_id.into(),
+            user_id,
             prompt_tokens: Some(20),
             completion_tokens: Some(if i % 2 == 0 { 0 } else { 30 }),
             raw_prompt_ciphertext: None,
@@ -150,8 +150,8 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
 /// Helper function to create a chat session in the database for testing
 async fn create_test_chat_session(
     db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: DbId,
+    session_id: DbId,
 ) -> anyhow::Result<()> {
     let conn = db_pool
         .get()
@@ -163,8 +163,8 @@ async fn create_test_chat_session(
 
         diesel::insert_into(chat_sessions::table)
             .values((
-                chat_sessions::id.eq(session_id),
-                chat_sessions::user_id.eq(user_id),
+                chat_sessions::id.eq(session_id.into_uuid()),
+                chat_sessions::user_id.eq(user_id.into_uuid()),
                 chat_sessions::model_name.eq("gemini-2.5-pro"),
                 chat_sessions::history_management_strategy.eq("sliding_window"),
                 chat_sessions::history_management_limit.eq(50),
@@ -200,7 +200,7 @@ mod agent_runner_conversation_tests {
         .await
         .expect("Failed to create test user");
         let user_id = user.id;
-        let chat_session_id = Uuid::new_v4();
+        let chat_session_id = Uuid::new_v4().into();
 
         // Create chat session in database
         create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
@@ -218,6 +218,7 @@ mod agent_runner_conversation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -287,7 +288,7 @@ mod agent_runner_conversation_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session in database
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id.into())
             .await
             .expect("Failed to create test chat session");
 
@@ -374,6 +375,7 @@ mod agent_runner_conversation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -398,7 +400,7 @@ mod agent_runner_conversation_tests {
         let result = agent_runner
             .process_narrative_event(
                 user_id,
-                chat_session_id,
+                chat_session_id.into(),
                 None,
                 &messages,
                 &session_dek,
@@ -434,7 +436,7 @@ mod agent_runner_conversation_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session in database
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id.into())
             .await
             .expect("Failed to create test chat session");
 
@@ -495,6 +497,7 @@ mod agent_runner_conversation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -519,7 +522,7 @@ mod agent_runner_conversation_tests {
         let result = agent_runner
             .process_narrative_event(
                 user_id,
-                chat_session_id,
+                chat_session_id.into(),
                 None,
                 &messages,
                 &session_dek,
@@ -571,9 +574,20 @@ mod agent_runner_duplicate_prevention_tests {
         .expect("Failed to create test user");
         let user_id = user.id;
 
+        // Create mock AI client
+        let mock_response = serde_json::json!({
+            "is_significant": false,
+            "summary": "Test summary",
+            "event_type": "CONVERSATION",
+            "confidence": 0.5,
+            "reasoning": "Test reasoning"
+        });
+        let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
+
         // Create test chronicle directly using the service
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let create_request = scribe_backend::models::chronicle::CreateChronicleRequest {
             name: "Test Chronicle".to_string(),
@@ -626,7 +640,7 @@ mod agent_runner_duplicate_prevention_tests {
 
         // Create first chat session for the test
         let first_session_id = Uuid::new_v4();
-        create_test_chat_session(&test_app.db_pool, user_id, first_session_id)
+        create_test_chat_session(&test_app.db_pool, (*user_id).into(), first_session_id.into())
             .await
             .expect("Failed to create first test chat session");
 
@@ -634,7 +648,7 @@ mod agent_runner_duplicate_prevention_tests {
         let first_result = agent_runner
             .process_narrative_event(
                 user_id,
-                first_session_id,
+                first_session_id.into(),
                 Some(chronicle_id),
                 &messages,
                 &session_dek,
@@ -680,14 +694,14 @@ mod agent_runner_duplicate_prevention_tests {
 
         // Create second chat session for the test
         let second_session_id = Uuid::new_v4();
-        create_test_chat_session(&test_app.db_pool, user_id, second_session_id)
+        create_test_chat_session(&test_app.db_pool, (*user_id).into(), second_session_id.into())
             .await
             .expect("Failed to create second test chat session");
 
         let second_result = second_agent_runner
             .process_narrative_event(
                 user_id,
-                second_session_id,
+                second_session_id.into(),
                 Some(chronicle_id),
                 &similar_messages,
                 &session_dek,

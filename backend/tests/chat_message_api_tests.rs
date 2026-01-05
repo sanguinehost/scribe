@@ -98,8 +98,10 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         presence_penalty: None,
         top_k: None,
         top_p: None,
+        ..Default::default()
+    };
         seed: None,
-        stop_sequences: None,
+        stop_sequences: scribe_backend::models::OptionalStringArray(None),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
@@ -113,6 +115,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
         narrative_style_override_nonce: None,
+        ..Default::default()
     };
     let session_a: Chat = test_app
         .db_pool

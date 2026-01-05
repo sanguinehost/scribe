@@ -39,8 +39,8 @@ async fn test_agent_analysis_error_handling() {
                 chat_sessions::chat_mode.eq(ChatMode::Character.to_string()), // Use Character mode
                 chat_sessions::history_management_strategy.eq("sliding_window"),
                 chat_sessions::history_management_limit.eq(50),
-                chat_sessions::created_at.eq(diesel::dsl::now.into()),
-                chat_sessions::updated_at.eq(diesel::dsl::now.into()),
+                chat_sessions::created_at.eq(DbTimestamp::now()),
+                chat_sessions::updated_at.eq(DbTimestamp::now()),
             ))
             .execute(conn)
     })
@@ -84,8 +84,8 @@ async fn test_agent_analysis_error_handling() {
                 agent_context_analysis::message_id.eq(message_id),
                 agent_context_analysis::status.eq(AnalysisStatus::Pending.to_string()),
                 agent_context_analysis::retry_count.eq(0),
-                agent_context_analysis::created_at.eq(diesel::dsl::now.into()),
-                agent_context_analysis::updated_at.eq(diesel::dsl::now.into()),
+                agent_context_analysis::created_at.eq(DbTimestamp::now()),
+                agent_context_analysis::updated_at.eq(DbTimestamp::now()),
             ))
             .execute(conn)
     })
@@ -194,7 +194,7 @@ async fn test_agent_analysis_error_handling() {
                 dsl::retry_count.eq(1),
                 dsl::analysis_summary.eq(Some("Test successful analysis".to_string())),
                 dsl::superseded_at.eq::<Option<DbTimestamp>>(None), // Make it active again
-                dsl::updated_at.eq(diesel::dsl::now.into()),
+                dsl::updated_at.eq(DbTimestamp::now()),
             ))
             .execute(conn)
     })

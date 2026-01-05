@@ -3,15 +3,20 @@
 
 use diesel::prelude::*;
 use scribe_backend::{
+    auth::{session_dek::SessionDek, token_service::TokenService},
+    db::DbId,
+    models::chats::{ChatMessage, MessageRole},
     services::{
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
         },
+        agentic::factory::AgenticNarrativeFactory,
+        cognitive::RecallPipeline,
         ChronicleService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
+    test_helpers::{db::create_test_user, spawn_app, MockAiClient, TestDataGuard},
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -89,12 +94,8 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp)
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
-        recall_pipeline: Arc::new(scribe_backend::services::embeddings::RecallPipeline::new(
-            test_app.db_pool.clone(),
-        )),
-        token_service: Arc::new(scribe_backend::services::token_service::TokenService::new(
-            test_app.db_pool.clone(),
-        )),
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
     };
     Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -138,7 +139,7 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
     let context_agent =
         ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Test messages simulating a roleplay conversation
     let messages = vec![
@@ -159,7 +160,7 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
     info!("Testing complete context enrichment workflow in pre-processing mode...");
 
     // Create a message ID for this analysis
-    let message_id = Uuid::new_v4();
+    let message_id = Uuid::new_v4().into();
 
     // Execute context enrichment
     let result = context_agent
@@ -171,6 +172,9 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
             message_id, // Required message ID
+            None,       // rag_chronicles_limit
+            None,       // rag_lorebooks_limit
+            None,       // rag_older_chat_limit
         )
         .await;
 
@@ -285,7 +289,7 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
     let context_agent =
         ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Test messages simulating a completed conversation
     let messages = vec![
@@ -298,7 +302,7 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
     info!("Testing complete context enrichment workflow in post-processing mode...");
 
     // Create a message ID for this analysis
-    let message_id = Uuid::new_v4();
+    let message_id = Uuid::new_v4().into();
 
     // Execute context enrichment
     let result = context_agent
@@ -310,6 +314,9 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
             EnrichmentMode::PostProcessing,
             user_dek.0.expose_secret(),
             message_id, // Required message ID
+            None,       // rag_chronicles_limit
+            None,       // rag_lorebooks_limit
+            None,       // rag_older_chat_limit
         )
         .await;
 
@@ -410,7 +417,7 @@ async fn test_context_enrichment_search_types() {
     let context_agent =
         ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Messages that should trigger different search types
     let messages = vec![
@@ -431,7 +438,7 @@ async fn test_context_enrichment_search_types() {
     info!("Testing search type diversity...");
 
     // Create a message ID for this analysis
-    let message_id = Uuid::new_v4();
+    let message_id = Uuid::new_v4().into();
 
     // Execute context enrichment
     let result = context_agent
@@ -443,6 +450,9 @@ async fn test_context_enrichment_search_types() {
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
             message_id, // Required message ID
+            None,       // rag_chronicles_limit
+            None,       // rag_lorebooks_limit
+            None,       // rag_older_chat_limit
         )
         .await;
 
@@ -528,7 +538,7 @@ async fn test_context_enrichment_error_handling() {
     let context_agent =
         ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Empty messages to test minimal input handling
     let empty_messages = vec![];
@@ -536,7 +546,7 @@ async fn test_context_enrichment_error_handling() {
     info!("Testing error handling with empty messages...");
 
     // Create a message ID for this analysis
-    let message_id = Uuid::new_v4();
+    let message_id = Uuid::new_v4().into();
 
     // Execute context enrichment with empty messages
     let result = context_agent
@@ -548,6 +558,9 @@ async fn test_context_enrichment_error_handling() {
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
             message_id, // Required message ID
+            None,       // rag_chronicles_limit
+            None,       // rag_lorebooks_limit
+            None,       // rag_older_chat_limit
         )
         .await;
 
@@ -627,7 +640,7 @@ async fn test_context_enrichment_analysis_storage() {
     let context_agent =
         ContextEnrichmentAgent::new(app_state, search_tool, recall_pipeline, chronicle_service);
 
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Test messages
     let messages = vec![
@@ -644,7 +657,7 @@ async fn test_context_enrichment_analysis_storage() {
     info!("Testing agent analysis storage...");
 
     // Create a message ID for this analysis
-    let message_id = Uuid::new_v4();
+    let message_id = Uuid::new_v4().into();
 
     // Execute context enrichment
     let result = context_agent
@@ -656,6 +669,9 @@ async fn test_context_enrichment_analysis_storage() {
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
             message_id, // Required message ID
+            None,       // rag_chronicles_limit
+            None,       // rag_lorebooks_limit
+            None,       // rag_older_chat_limit
         )
         .await;
 

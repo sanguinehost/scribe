@@ -71,8 +71,8 @@ async fn setup_test_env(
         spec_version: "2.0.0".to_string(),
         name: "Test Character".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
         ..Default::default()
     };
 
@@ -182,7 +182,7 @@ async fn test_partial_update_preserves_chronicle_id() {
         history_management_limit: None,
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
-        chronicle_id: Some(chronicle_uuid),
+        chronicle_id: Some(chronicle_uuid.into()),
         agent_mode: None,
         model_provider: None,
         active_custom_persona_id: None,
@@ -212,7 +212,7 @@ async fn test_partial_update_preserves_chronicle_id() {
     let set_body = set_response.into_body().collect().await.unwrap().to_bytes();
     let set_settings_resp: ChatSettingsResponse =
         serde_json::from_slice(&set_body).expect("Failed to deserialize settings response");
-    assert_eq!(set_settings_resp.chronicle_id, Some(chronicle_uuid));
+    assert_eq!(set_settings_resp.chronicle_id, Some(chronicle_uuid.into()));
 
     // NOW THE BUG: Update a DIFFERENT setting (model_name) without including chronicle_id
     // The chronicle_id field is omitted (None), which should mean "don't change it"
@@ -272,12 +272,12 @@ async fn test_partial_update_preserves_chronicle_id() {
     // The chronicle_id should still be present (preserved), but the bug clears it
     assert_eq!(
         partial_settings_resp.chronicle_id,
-        Some(chronicle_uuid),
+        Some(chronicle_uuid.into()),
         "chronicle_id should be preserved when not included in partial update"
     );
 
     // Verify the model_name was updated
-    assert_eq!(partial_settings_resp.model_name, "updated-model-name");
+    assert_eq!(partial_settings_resp.model_name, Some("updated-model-name".to_string()));
 }
 
 #[tokio::test]
@@ -339,7 +339,7 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
-        active_custom_persona_id: Some(persona_uuid),
+        active_custom_persona_id: Some(persona_uuid.into()),
         prompt_template_id: Some("neutral_roleplay".to_string()),
         ..Default::default()
     };
@@ -368,7 +368,7 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
         serde_json::from_slice(&set_body).expect("Failed to deserialize settings response");
     assert_eq!(
         set_settings_resp.active_custom_persona_id,
-        Some(persona_uuid)
+        Some(persona_uuid.into())
     );
 
     // NOW THE BUG: Update a DIFFERENT setting (temperature) without including active_custom_persona_id
@@ -376,7 +376,7 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
     // But the bug causes it to be cleared
     let partial_update_data = UpdateChatSettingsRequest {
         system_prompt: None,
-        temperature: Some(BigDecimal::from_str("0.8").unwrap()), // Only updating temperature
+        temperature: Some(scribe_backend::db::DbDecimal(BigDecimal::from_str("0.8").unwrap())), // Only updating temperature
         max_output_tokens: None,
         frequency_penalty: None,
         presence_penalty: None,
@@ -429,13 +429,13 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
     // The active_custom_persona_id should still be present (preserved), but the bug clears it
     assert_eq!(
         partial_settings_resp.active_custom_persona_id,
-        Some(persona_uuid),
+        Some(persona_uuid.into()),
         "active_custom_persona_id should be preserved when not included in partial update"
     );
 
     // Verify the temperature was updated
     assert_eq!(
         partial_settings_resp.temperature,
-        Some(BigDecimal::from_str("0.8").unwrap())
+        Some(scribe_backend::db::DbDecimal(BigDecimal::from_str("0.8").unwrap()))
     );
 }

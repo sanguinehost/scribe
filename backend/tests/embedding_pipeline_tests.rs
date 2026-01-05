@@ -16,6 +16,8 @@ use scribe_backend::{
         encryption_service::EncryptionService,
         hybrid_token_counter::HybridTokenCounter,
         lorebook::LorebookService,
+        // token_service::TokenService, // Removed invalid import
+
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },
@@ -25,6 +27,8 @@ use scribe_backend::{
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::{create_message_id_filter, QdrantClientServiceTrait, ScoredPoint},
 };
+use scribe_backend::auth::token_service::TokenService;
+use scribe_backend::services::cognitive::RecallPipeline;
 use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
 // Removed unused std::convert::TryFrom
@@ -36,10 +40,10 @@ use uuid::Uuid; // For mock assertions and Qdrant point IDs
 #[allow(deprecated)]
 fn assert_retrieved_chunks_content(
     retrieved_chunks: &[scribe_backend::services::embeddings::RetrievedChunk],
-    test_session_id: Uuid,
-    message_id_1: Uuid,
-    message_id_2: Uuid,
-    test_user_id: Uuid,
+    test_session_id: scribe_backend::db::DbId,
+    message_id_1: scribe_backend::db::DbId,
+    message_id_2: scribe_backend::db::DbId,
+    test_user_id: scribe_backend::db::DbId,
 ) {
     assert_eq!(
         retrieved_chunks.len(),
@@ -148,9 +152,9 @@ async fn verify_qdrant_points(
 ) {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await; // Allow indexing
 
-    let filter = create_message_id_filter(test_message_id);
+    let filter = create_message_id_filter(test_message_id.into());
     let retrieved_points: Vec<ScoredPoint> = qdrant_service_trait
-        .retrieve_points(Some(filter), 10)
+        .retrieve_points(Some(filter), 10, None)
         .await
         .expect("Failed to retrieve points from Qdrant");
 
@@ -532,13 +536,12 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            test_user_id,
-            Some(test_session_id),
+            test_user_id.into(),
+            Some(test_session_id.into()),
             None,
             None, // chronicle_id_for_search
             query,
             5,
-            None,
             None,
             None, // No DEK for integration test
         )
@@ -553,10 +556,10 @@ async fn test_retrieve_relevant_chunks_success_with_real_execution() {
 
     assert_retrieved_chunks_content(
         &retrieved_chunks,
-        test_session_id,
-        message_id_1,
-        message_id_2,
-        test_user_id,
+        test_session_id.into(),
+        message_id_1.into(),
+        message_id_2.into(),
+        test_user_id.into(),
     );
 
     let embed_calls = test_app.mock_embedding_client.get_calls();
@@ -602,13 +605,12 @@ async fn test_retrieve_relevant_chunks_no_results() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            Uuid::new_v4(),       // user_id
-            Some(Uuid::new_v4()), // session_id_for_chat_history
+            Uuid::new_v4().into(),       // user_id
+            Some(Uuid::new_v4().into()), // session_id_for_chat_history
             None,                 // active_lorebook_ids_for_search
             None,                 // chronicle_id_for_search
             "A query that finds nothing",
             5,
-            None,
             None,
             None, // No DEK for integration test
         )
@@ -701,6 +703,8 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
                 "http://localhost:3000".to_string(),
             ),
         ),
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
     };
 
     let app_state = Arc::new(AppState::new(
@@ -720,10 +724,10 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state.clone(),
-            Uuid::new_v4(),
-            Some(Uuid::new_v4()),
-            None,
+            Uuid::new_v4().into(),
+            Some(Uuid::new_v4().into()),
             None, // chronicle_id_for_search
+            None,
             "Query leading to Qdrant error",
             2,
             None,
@@ -814,6 +818,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
                 "http://localhost:3000".to_string(),
             ),
         ),
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
     };
 
     let app_state_arc = Arc::new(AppState::new(
@@ -834,7 +840,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             score: 0.9,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: DbId::new(),
+            user_id: Uuid::new_v4(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Valid text".to_string(),
@@ -846,7 +852,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
             score: 0.9,
             session_id,
             message_id: Uuid::new_v4(), // message_id - this should be the one made invalid for the test's purpose
-            user_id: DbId::new(),
+            user_id: Uuid::new_v4(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Valid text with invalid message_id in payload".to_string(),
@@ -868,6 +874,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 
     // Create a new AppState with the real service
     let services_for_metadata_test = AppStateServices {
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -915,7 +923,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         score: 0.9,
         session_id,
         message_id: Uuid::new_v4(),
-        user_id: DbId::new(),
+        user_id: Uuid::new_v4(),
         speaker: "User".to_string(),
         timestamp: Utc::now(),
         text: "Valid text 1".to_string(),
@@ -926,7 +934,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         score: 0.8,
         session_id,
         message_id: Uuid::new_v4(),
-        user_id: DbId::new(),
+        user_id: Uuid::new_v4(),
         speaker: "User".to_string(),
         timestamp: Utc::now(),
         text: "Text for invalid point".to_string(),
@@ -944,8 +952,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_metadata_test.clone(), // Use the correct app_state
-            Uuid::new_v4(),                      // user_id
-            Some(session_id),                    // session_id_for_chat_history
+            Uuid::new_v4().into(),                      // user_id
+            Some(session_id.into()),                    // session_id_for_chat_history
             None,                                // active_lorebook_ids_for_search
             None,                                // chronicle_id_for_search
             query_text,
@@ -1019,6 +1027,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_test_7 = AppStateServices {
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -1064,7 +1074,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
             score: 0.85,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: DbId::new(),
+            user_id: Uuid::new_v4(),
             speaker: "Assistant".to_string(),
             timestamp: Utc::now(),
             text: "More text".to_string(),
@@ -1078,7 +1088,7 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
                     score: 0.85,
                     session_id,
                     message_id: Uuid::new_v4(),
-                    user_id: DbId::new(),
+                    user_id: Uuid::new_v4(),
                     speaker: "Assistant".to_string(),
                     timestamp: Utc::now(),
                     text: "Text for invalid TS".to_string(),
@@ -1122,6 +1132,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -1139,8 +1151,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_metadata_test.clone(),
-            Uuid::new_v4(),
-            Some(session_id),
+            Uuid::new_v4().into(),
+            Some(session_id.into()),
             None,
             None, // chronicle_id_for_search
             query_text,
@@ -1241,7 +1253,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
             score: 0.8,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: DbId::new(),
+            user_id: Uuid::new_v4().into(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Some text".to_string(),
@@ -1255,7 +1267,7 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
                     score: 0.8,
                     session_id,
                     message_id: Uuid::new_v4(),
-                    user_id: DbId::new(),
+                    user_id: Uuid::new_v4().into(),
                     speaker: "User".to_string(),
                     timestamp: Utc::now(),
                     text: "Text for missing field".to_string(),
@@ -1282,6 +1294,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         encryption_service: encryption_service_for_test_8.clone(),
         lorebook_service: lorebook_service_for_test_8,
         auth_backend: auth_backend_8,
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         email_service: Arc::new(
             scribe_backend::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
@@ -1306,8 +1320,8 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_metadata_test.clone(),
-            Uuid::new_v4(),
-            Some(session_id),
+            Uuid::new_v4().into(),
+            Some(session_id.into()),
             None,
             None, // chronicle_id_for_search
             query_text,
@@ -1409,7 +1423,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
             score: 0.75,
             session_id,
             message_id: Uuid::new_v4(),
-            user_id: DbId::new(),
+            user_id: Uuid::new_v4().into(),
             speaker: "User".to_string(),
             timestamp: Utc::now(),
             text: "Final text".to_string(),
@@ -1423,7 +1437,7 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
                     score: 0.75,
                     session_id,
                     message_id: Uuid::new_v4(),
-                    user_id: DbId::new(),
+                    user_id: Uuid::new_v4().into(),
                     speaker: "User".to_string(),
                     timestamp: Utc::now(),
                     text: "Text for wrong type".to_string(),
@@ -1460,6 +1474,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         ),
         ai_client_factory: ai_client_factory_9,
         rate_limiter: rate_limiter_9,
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -1477,8 +1493,8 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_metadata_test.clone(),
-            Uuid::new_v4(),
-            Some(session_id),
+            Uuid::new_v4().into(),
+            Some(session_id.into()),
             None,
             None, // chronicle_id_for_search
             query_text,
@@ -1561,13 +1577,13 @@ async fn test_rag_context_injection_with_qdrant() {
 
     // Create a valid ChatMessage to process
     let chat_message = ChatMessage {
-        id: chat_message_id,
-        session_id: chat_session_id,
+        id: chat_message_id.into(),
+        session_id: chat_session_id.into(),
         message_type: MessageRole::User,
         content: chat_message_content.as_bytes().to_vec(),
         content_nonce: None,
         created_at: Utc::now().into(),
-        user_id, // Use consistent user_id
+        user_id: user_id.into(), // Use consistent user_id
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -1629,6 +1645,8 @@ async fn test_rag_context_injection_with_qdrant() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_rag = AppStateServices {
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
@@ -1676,9 +1694,9 @@ async fn test_rag_context_injection_with_qdrant() {
 
     // Step 1b: Process and embed a lorebook entry
     let params = LorebookEntryParams {
-        original_lorebook_entry_id: original_lore_entry_id,
-        lorebook_id,
-        user_id, // Use consistent user_id
+        original_lorebook_entry_id: original_lore_entry_id.into(),
+        lorebook_id: lorebook_id.into(),
+        user_id: user_id.into(), // Use consistent user_id
         decrypted_content: lore_entry_content.to_string(),
         decrypted_title: lore_entry_title.clone(),
         decrypted_keywords: None, // No keywords for this test
@@ -1710,9 +1728,9 @@ async fn test_rag_context_injection_with_qdrant() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_rag.clone(),
-            user_id,                 // user_id
-            Some(chat_session_id),   // session_id_for_chat_history
-            Some(vec![lorebook_id]), // active_lorebook_ids_for_search
+            user_id.into(),                 // user_id
+            Some(chat_session_id.into()),   // session_id_for_chat_history
+            Some(vec![lorebook_id.into()]), // active_lorebook_ids_for_search
             None,                    // chronicle_id_for_search
             query_text,              // query_text
             limit_per_source,        // limit_per_source
@@ -1746,14 +1764,14 @@ async fn test_rag_context_injection_with_qdrant() {
         match &chunk.metadata {
             RetrievedMetadata::Chat(meta) => {
                 assert_eq!(
-                    meta.session_id, chat_session_id,
+                    meta.session_id, chat_session_id.into(),
                     "Chat metadata session_id mismatch"
                 );
                 assert_eq!(
-                    meta.message_id, chat_message_id,
+                    meta.message_id, chat_message_id.into(),
                     "Chat metadata message_id mismatch"
                 );
-                assert_eq!(meta.user_id, user_id, "Chat metadata user_id mismatch");
+                assert_eq!(meta.user_id, user_id.into(), "Chat metadata user_id mismatch");
                 assert_eq!(meta.speaker, "User", "Chat metadata speaker mismatch");
                 assert_eq!(
                     meta.source_type, "chat_message",
@@ -1766,15 +1784,9 @@ async fn test_rag_context_injection_with_qdrant() {
                 found_chat_chunk = true;
             }
             RetrievedMetadata::Lorebook(meta) => {
-                assert_eq!(
-                    meta.lorebook_id, lorebook_id,
-                    "Lorebook metadata lorebook_id mismatch"
-                );
-                assert_eq!(
-                    meta.original_lorebook_entry_id, original_lore_entry_id,
-                    "Lorebook metadata original_lorebook_entry_id mismatch"
-                );
-                assert_eq!(meta.user_id, user_id, "Lorebook metadata user_id mismatch");
+                assert_eq!(meta.lorebook_id, lorebook_id.into(), "Lorebook metadata lorebook_id mismatch");
+                assert_eq!(meta.original_lorebook_entry_id, original_lore_entry_id.into(), "Lorebook metadata original_lorebook_entry_id mismatch");
+                assert_eq!(meta.user_id, user_id.into(), "Lorebook metadata user_id mismatch");
                 // entry_title is encrypted in metadata, but we can verify the decrypted content
                 assert_eq!(
                     meta.source_type, "lorebook_entry",
@@ -1880,7 +1892,7 @@ async fn test_mock_qdrant_retrieve_points() {
         score: 0.9,
         session_id: Uuid::new_v4(),
         message_id: Uuid::new_v4(),
-        user_id: DbId::new(),
+        user_id: Uuid::new_v4(),
         speaker: "TestSpeaker".to_string(),
         timestamp: chrono::Utc::now(),
         text: "Retrieved text".to_string(),
@@ -1889,8 +1901,8 @@ async fn test_mock_qdrant_retrieve_points() {
     mock_qdrant.set_search_response(Ok(vec![mock_retrieved_point.clone()]));
 
     // Call retrieve_points
-    let filter = create_message_id_filter(Uuid::new_v4()); // Example filter
-    let retrieve_result = qdrant_trait.retrieve_points(Some(filter), 5).await;
+    let filter = create_message_id_filter(Uuid::new_v4().into()); // Example filter
+    let retrieve_result = qdrant_trait.retrieve_points(Some(filter), 5, None).await;
 
     assert!(retrieve_result.is_ok(), "retrieve_points failed");
     let retrieved_points = retrieve_result.unwrap();
@@ -2032,6 +2044,8 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(scribe_backend::services::token_service::TokenService::new("test_secret"))),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2387,19 +2401,15 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
-        email_service: Arc::new(
-            scribe_backend::services::email_service::LoggingEmailService::new(
-                "http://localhost:3000".to_string(),
-            ),
         ),
         ai_client_factory,
         rate_limiter,
         #[cfg(feature = "local-llm")]
-        llamacpp_server_manager: None,
-        #[cfg(feature = "local-llm")]
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(scribe_backend::services::token_service::TokenService::new("test_secret"))),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2466,7 +2476,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(user_c_session_dek.clone()),
+        session_dek: Some(secrecy::SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().clone()))),
     };
 
     app_state
@@ -2483,7 +2493,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(user_c_session_dek.clone()),
+        session_dek: Some(secrecy::SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().clone()))),
     };
 
     app_state
@@ -2500,7 +2510,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(user_d_session_dek.clone()),
+        session_dek: Some(secrecy::SecretBox::new(Box::new(user_d_session_dek.0.expose_secret().clone()))),
     };
 
     app_state

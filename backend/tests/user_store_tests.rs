@@ -119,7 +119,7 @@ mod user_store_tests {
         match expected {
             Ok(expected_id) => {
                 let (user, dek) = result.map_err(|e| format!("Test {test_name} failed: {e:?}"))?;
-                assert_eq!(user.id, expected_id, "Test {test_name}: ID mismatch");
+                assert_eq!(user.id, expected_id.into(), "Test {test_name}: ID mismatch");
                 assert!(dek.is_some(), "Test {test_name}: DEK missing");
             }
             Err(expected_err) => {

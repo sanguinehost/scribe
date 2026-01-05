@@ -223,8 +223,8 @@ mod agentic_chronicle_tests {
                         chat_sessions::id.eq(chat_session_id),
                         chat_sessions::user_id.eq(user_id),
                         chat_sessions::character_id.eq::<Option<Uuid>>(None),
-                        chat_sessions::created_at.eq(chrono::Utc::now().into()),
-                        chat_sessions::updated_at.eq(chrono::Utc::now().into()),
+                        chat_sessions::created_at.eq(scribe_backend::db::DbTimestamp::now()),
+                        chat_sessions::updated_at.eq(scribe_backend::db::DbTimestamp::now()),
                         chat_sessions::history_management_strategy.eq("truncate".to_string()),
                         chat_sessions::history_management_limit.eq(4000),
                         chat_sessions::model_name.eq("gemini-2.5-pro".to_string()),
@@ -310,20 +310,20 @@ mod agentic_chronicle_tests {
 
         // Link the chronicle to the chat session (simulating the dialog opt-in flow)
         chronicle_service
-            .link_chat_session(user_id, chat_session_id, chronicle.id)
+            .link_chat_session(user_id.into(), chat_session_id.into(), chronicle.id.into())
             .await
             .expect("Failed to link chronicle to chat session");
 
         // Create test messages representing a new adventure starting
-        let messages = create_test_messages(user_id, chat_session_id);
+        let messages = create_test_messages(user_id.into_uuid(), chat_session_id);
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
         // Run the agentic workflow - now WITH chronicle_id (simulating post-dialog flow)
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
-                Some(chronicle.id), // Chronicle exists after user opted in
+                user_id.into(),
+                chat_session_id.into(),
+                Some(chronicle.id.into()), // Chronicle exists after user opted in
                 &messages,
                 &session_dek,
                 None,
@@ -498,13 +498,13 @@ mod agentic_chronicle_tests {
         );
 
         // Create messages and run workflow with existing chronicle
-        let messages = create_test_messages(user_id, chat_session_id);
+        let messages = create_test_messages(user_id.into(), chat_session_id.into());
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(existing_chronicle.id),
                 &messages,
                 &session_dek,
@@ -640,14 +640,14 @@ mod agentic_chronicle_tests {
             None, // Use default config
         );
 
-        let messages = create_test_messages(user_id, chat_session_id);
+        let messages = create_test_messages(user_id.into(), chat_session_id.into());
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
         // Run workflow that should fail gracefully
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 None,
                 &messages,
                 &session_dek,

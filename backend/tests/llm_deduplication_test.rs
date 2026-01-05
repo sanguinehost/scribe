@@ -164,7 +164,7 @@ async fn test_llm_deduplication_elara_example() {
     let pool = app.db_pool.clone();
 
     // 2. Create User
-    let user_id = DbId::new();
+    let mut user_id = DbId::new();
     {
         let mut conn = get_conn(&pool).await.expect("Failed to get connection");
         let new_user = NewUser {
@@ -258,11 +258,12 @@ async fn test_llm_deduplication_elara_example() {
         });
 
         let chat_response = ChatResponse {
-            contents: vec![MessageContent::Text(json_response.to_string())],
+            content: MessageContent::from(json_response.to_string()),
             reasoning_content: None,
             model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             usage: Usage::default(),
+            captured_raw_body: None,
         };
 
         mock_client.set_response(Ok(chat_response));

@@ -211,6 +211,7 @@ async fn create_test_message(
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        ..Default::default()
     };
 
     let message: DbChatMessage = test_app
@@ -264,6 +265,11 @@ async fn create_message_variant(
         variant_content,
         user_id,
         session_dek,
+        None,
+        None,
+        None,
+        None,
+        None,
     )?;
 
     // Insert the variant
@@ -360,7 +366,7 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
         email: format!("{}@example.com", username),
         password_hash: "dummy".to_string(),
         kek_salt: "dummy".to_string(),
-        encrypted_dek: vec![],
+        encrypted_dek: scribe_backend::db::DbBlob::from(vec![]),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,

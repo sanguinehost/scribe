@@ -102,14 +102,15 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
-        created_at: chrono::Utc::now().into(),
-        updated_at: chrono::Utc::now().into(),
+        created_at: Some(chrono::Utc::now().into()),
+        updated_at: Some(chrono::Utc::now().into()),
         ..Default::default()
     };
 
     let character: DbCharacter = test_app
         .db_pool
-        .get()?
+        .get()
+        .await?
         .interact(move |conn| {
             let char_id = new_character.id.expect("Character ID must be set");
             diesel::insert_into(characters::table)
@@ -120,7 +121,8 @@ async fn create_test_chat_session(
                 .select(DbCharacter::as_select())
                 .first(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
 
     let create_session_payload = json!({
         "character_id": character.id,
@@ -152,14 +154,17 @@ async fn create_test_chat_session(
 
     let chat_session: Chat = test_app
         .db_pool
-        .get()?
+        .get()
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
     let chat_id = chat_session.id;
     println!("Created chat_id: {}", chat_id);
     Ok((character, chat_session, auth_cookie.to_string()))
@@ -175,7 +180,6 @@ async fn create_test_message(
     use scribe_backend::models::chats::DbInsertableChatMessage;
 
     let new_message = DbInsertableChatMessage {
-        id: Uuid::new_v4().into(),
         chat_id: session_id.into(),
         user_id: user_id.into(),
         msg_type: role.clone(),
@@ -194,27 +198,25 @@ async fn create_test_message(
         variant_count: 1,
         current_variant_index: 0,
         credits_charged: 0,
-        credits_cost: 0,
-        actual_cost: 0.0,
-        modified_cost: 0.0,
+        credits_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+        actual_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+        modified_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
         credit_cost: 0,
-        actual_charge: 0.0,
+        actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+        game_time: None,
     };
 
     let message: DbChatMessage = test_app
         .db_pool
-        .get()?
+        .get()
+        .await?
         .interact(move |conn| {
-            let msg_id = new_message.id;
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
-                .execute(conn)?;
-            chat_messages::table
-                .find(msg_id)
-                .select(DbChatMessage::as_select())
-                .first(conn)
+                .get_result::<DbChatMessage>(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
 
     Ok(message)
 }
@@ -257,13 +259,15 @@ async fn test_hidden_streaming_message() -> anyhow::Result<()> {
     // 2. Set status to "streaming" (or anything other than "completed")
     test_app
         .db_pool
-        .get()?
+        .get()
+        .await?
         .interact(move |conn| {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message.id)))
                 .set(chat_messages::status.eq("streaming"))
                 .execute(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
 
     // 3. Fetch messages using the API
     let get_messages_request = Request::builder()

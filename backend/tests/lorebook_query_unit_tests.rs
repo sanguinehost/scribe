@@ -31,7 +31,7 @@ async fn test_lorebook_query_text_building() {
             associated_persona: None,
         }),
         generation_options: None,
-        lorebook_id: Some(Uuid::new_v4()),
+        lorebook_id: Some(Uuid::new_v4().into()),
     };
 
     // Verify that query building logic works as expected

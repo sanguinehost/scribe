@@ -272,7 +272,7 @@ mod chat_overrides_api_tests {
             .build()
             .unwrap();
 
-        let non_existent_session_id = Uuid::new_v4().into();
+        let non_existent_session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
 
         let override_dto = CharacterOverrideDto {
             field_name: "description".to_string(),

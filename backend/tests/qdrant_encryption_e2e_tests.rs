@@ -131,7 +131,7 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10)
+        .retrieve_points(Some(filter), 10, None)
         .await?;
 
     // Verify we got results
@@ -192,14 +192,14 @@ async fn test_search_without_dek_returns_placeholders() -> Result<()> {
     // Create and embed encrypted content (same setup as above)
     let lorebook_id = Uuid::new_v4();
     let lorebook = scribe_backend::models::NewLorebook {
-        id: lorebook_id,
+        id: lorebook_id.into(),
         user_id: user.id,
         name: "Secret Lorebook".to_string(),
         description: Some("Contains secrets".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
     };
 
     let conn = test_app.db_pool.get().await?;
@@ -295,6 +295,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
     // Create a chronicle first
     let _chronicle_id = Uuid::new_v4();
     let new_chronicle = scribe_backend::models::chronicle::NewPlayerChronicle {
+        id: Some(_chronicle_id.into()),
         user_id: user.id,
         name: "Test Chronicle".to_string(),
         description: Some("Test chronicle for encryption".to_string()),
@@ -330,6 +331,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
         scribe_backend::models::chronicle_event::EventSource::AiExtracted,
         Some(event_keywords),
         None, // No chat session
+        None, // No message variant
     );
 
     // Insert event into database
@@ -402,7 +404,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10)
+        .retrieve_points(Some(filter), 10, None)
         .await?;
 
     // Verify we got results

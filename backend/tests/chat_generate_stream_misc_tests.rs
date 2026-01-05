@@ -159,10 +159,13 @@ async fn create_test_chat_session(
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now().into(),
-                total_credits_used: BigDecimal::from(0).into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -772,6 +775,8 @@ async fn create_real_client_test_session(
                 tokens_counted_at: chrono::Utc::now().into(),
                 total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
+                game_master_mode_enabled: false,
+                game_state: None,
                 ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)

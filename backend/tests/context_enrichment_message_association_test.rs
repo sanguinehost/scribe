@@ -76,16 +76,16 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     // Create chat session
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
         character_id: character.id,
         title_ciphertext: None,
         title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         history_management_strategy: "truncate_summary".to_string(),
         history_management_limit: 15,
-        model_name: "gemini-test-model".to_string(),
+        model_name: Some("gemini-test-model".to_string()),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
@@ -96,7 +96,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: None,
+        stop_sequences: scribe_backend::models::OptionalStringArray(None),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
@@ -105,7 +105,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
+        tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
@@ -208,19 +208,27 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         services,
     ));
 
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
         app_state.clone(),
     ));
-    let context_agent = ContextEnrichmentAgent::new(app_state, search_tool, chronicle_service);
+    let context_agent = ContextEnrichmentAgent::new(
+        app_state.clone(),
+        search_tool,
+        app_state.recall_pipeline.clone(),
+        chronicle_service,
+    );
 
     // Create first message and enrich it
     let message1_id = Uuid::new_v4();
     let message1_content = "Tell me about dragons";
     let new_message1 = NewChatMessage {
-        id: message1_id,
+        id: message1_id.into(),
         session_id: session.id,
         user_id: user.id,
         message_type: MessageRole::User,
@@ -229,8 +237,8 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         role: Some("user".to_string()),
         parts: None,
         attachments: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -258,13 +266,16 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
 
     let result1 = context_agent
         .enrich_context(
-            session_id,
+            session_id.into(),
             user.id,
             None, // chronicle_id
             &messages1,
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
-            message1_id, // Required: Associate with message 1
+            message1_id.into(), // Required: Associate with message 1
+            None,        // rag_chronicles_limit
+            None,        // rag_lorebooks_limit
+            None,        // rag_older_chat_limit
         )
         .await;
 
@@ -277,7 +288,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
     let message2_id = Uuid::new_v4();
     let message2_content = "What about wizards?";
     let new_message2 = NewChatMessage {
-        id: message2_id,
+        id: message2_id.into(),
         session_id: session.id,
         user_id: user.id,
         message_type: MessageRole::User,
@@ -286,8 +297,8 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         role: Some("user".to_string()),
         parts: None,
         attachments: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -322,13 +333,16 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
 
     let result2 = context_agent
         .enrich_context(
-            session_id,
+            session_id.into(),
             user.id,
             None, // chronicle_id
             &messages2,
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
-            message2_id, // Required: Associate with message 2
+            message2_id.into(), // Required: Associate with message 2
+            None,        // rag_chronicles_limit
+            None,        // rag_lorebooks_limit
+            None,        // rag_older_chat_limit
         )
         .await;
 
@@ -372,7 +386,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
             // Verify the message_id matches one of our test messages
             let msg_id = analysis.message_id; // Already a Uuid, not Option<Uuid>
             assert!(
-                msg_id == message1_id || msg_id == message2_id,
+                msg_id == message1_id.into() || msg_id == message2_id.into(),
                 "Analysis message_id should match one of our test messages"
             );
         }
@@ -446,8 +460,8 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         spec_version: "1.0".to_string(),
         name: "Test Character for Multiple Analyses".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now()),
-        updated_at: Some(chrono::Utc::now()),
+        created_at: Some(scribe_backend::db::DbTimestamp::now()),
+        updated_at: Some(scribe_backend::db::DbTimestamp::now()),
         ..Default::default()
     };
 
@@ -468,16 +482,16 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     // Create chat session
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
         character_id: character.id,
         title_ciphertext: None,
         title_nonce: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         history_management_strategy: "truncate_summary".to_string(),
         history_management_limit: 15,
-        model_name: "gemini-test-model".to_string(),
+        model_name: Some("gemini-test-model".to_string()),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
@@ -488,7 +502,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: None,
+        stop_sequences: scribe_backend::db::DbStringArray(None),
         gemini_thinking_budget: None,
         gemini_enable_code_execution: None,
         system_prompt_ciphertext: None,
@@ -497,7 +511,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         total_prompt_tokens: 0,
         total_completion_tokens: 0,
         estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
+        tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
         narrative_style_override_ciphertext: None,
@@ -522,8 +536,8 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     let message_id = Uuid::new_v4();
     let message_content = "Tell me a story";
     let new_message = NewChatMessage {
-        id: message_id,
-        session_id,
+        id: message_id.into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: MessageRole::User,
         content: message_content.as_bytes().to_vec(),
@@ -531,8 +545,8 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         role: Some("user".to_string()),
         parts: None,
         attachments: None,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         prompt_tokens: None,
         completion_tokens: None,
         raw_prompt_ciphertext: None,
@@ -629,13 +643,15 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         model_integrity_verifier: None,
     };
 
+    let recall_pipeline = services.recall_pipeline.clone();
+
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
         test_app.config.clone(),
         services,
     ));
 
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone()));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -644,7 +660,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
     let context_agent = ContextEnrichmentAgent::new(
         app_state.clone(),
         search_tool,
-        app_state.services.recall_pipeline.clone(),
+        recall_pipeline,
         chronicle_service,
     );
 

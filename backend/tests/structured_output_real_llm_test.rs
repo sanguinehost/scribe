@@ -224,12 +224,87 @@ async fn test_chronicle_naming_with_real_llm() {
     let tool_registry = Arc::new(ToolRegistry::new());
     let config = NarrativeWorkflowConfig::default();
 
+    // Create AppState for the runner
+    let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+        test_app.qdrant_service.clone(),
+    ));
+
+    let services = scribe_backend::state::AppStateServices {
+        ai_client: test_app.ai_client.clone(),
+        embedding_client: test_app.mock_embedding_client.clone()
+            as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
+        qdrant_service: test_app.qdrant_service.clone(),
+        embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone()
+            as Arc<
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >,
+        chat_override_service: Arc::new(scribe_backend::services::ChatOverrideService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        user_persona_service: Arc::new(scribe_backend::services::UserPersonaService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        )),
+        token_counter: token_counter.clone(),
+        encryption_service: encryption_service.clone(),
+        lorebook_service: lorebook_service.clone(),
+        auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
+            test_app.db_pool.clone(),
+        )),
+        email_service: scribe_backend::services::email_service::create_email_service(
+            &"development".to_string(),
+            "http://localhost:3000".to_string(),
+            None,
+        )
+        .await
+        .unwrap(),
+        ai_client_factory: Arc::new(
+            scribe_backend::services::ai_client_factory::AiClientFactory::new(
+                test_app.db_pool.clone(),
+                test_app.config.clone(),
+                test_app.ai_client.clone(),
+            ),
+        ),
+        rate_limiter: Arc::new(
+            scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
+        ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
+        #[cfg(feature = "local-llm")]
+        llamacpp_server_manager: None,
+        #[cfg(feature = "local-llm")]
+        security_audit_logger: None,
+        #[cfg(feature = "local-llm")]
+        model_integrity_verifier: None,
+    };
+
+    let app_state = Arc::new(scribe_backend::state::AppState::new(
+        test_app.db_pool.clone(),
+        test_app.config.clone(),
+        services,
+    ));
+
     // Create agent runner with real AI client
     let agent = NarrativeAgentRunner::new(
         test_app.ai_client.clone(),
         tool_registry,
         config,
         chronicle_service,
+        test_app.mock_embedding_pipeline_service.clone()
+            as Arc<
+                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
+                    + Send
+                    + Sync,
+            >,
+        app_state,
         token_counter,
     );
 

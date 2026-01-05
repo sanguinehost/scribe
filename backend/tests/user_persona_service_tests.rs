@@ -15,7 +15,7 @@ use diesel::prelude::*; // For direct DB queries
 use scribe_backend::schema::users::dsl as users_dsl;
 use scribe_backend::state::DbPool; // Make sure DbPool is in scope
 use scribe_backend::{
-    db::DbId,
+    db::{DbId, DbTimestamp},
     errors::AppError,
     // state::DbPool, // Marked as unused
     models::{

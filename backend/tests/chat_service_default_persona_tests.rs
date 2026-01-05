@@ -157,7 +157,7 @@ async fn create_session_uses_default_persona_when_active_persona_is_none() {
 
     character = update_character_system_prompt(
         &setup.app.db_pool,
-        character.id,
+        character.id.into(),
         character_system_prompt_val.clone(),
     )
     .await;
@@ -261,7 +261,7 @@ async fn create_session_no_default_persona_falls_back_to_character_prompt() {
 
     character = update_character_system_prompt(
         &setup.app.db_pool,
-        character.id,
+        character.id.into_uuid(),
         character_system_prompt_val.clone(),
     )
     .await;
@@ -377,7 +377,7 @@ async fn create_session_default_persona_deleted_falls_back_to_character_prompt()
 
     character = update_character_system_prompt(
         &setup.app.db_pool,
-        character.id,
+        character.id.into_uuid(),
         character_system_prompt_val.clone(),
     )
     .await;

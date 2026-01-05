@@ -27,8 +27,8 @@ use scribe_backend::{
 /// Helper to create a chat session in the database (required for foreign key constraint)
 async fn create_test_chat_session(
     db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
 ) -> anyhow::Result<()> {
     let conn = db_pool
         .get()
@@ -73,7 +73,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     let session_id = Uuid::new_v4();
 
     // Create chat session (required for foreign key constraint)
-    create_test_chat_session(&test_app.db_pool, *user_id, session_id)
+    create_test_chat_session(&test_app.db_pool, (*user_id).into(), session_id.into())
         .await
         .unwrap();
 
@@ -146,8 +146,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     // Create test chat messages representing a new adventure
     let messages = vec![
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::User,
             content:
                 "Hello! I want to start a new adventure where I play as a young wizard named Alex."
@@ -155,7 +155,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                     .to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(20),
             completion_tokens: Some(0),
             raw_prompt_ciphertext: None,
@@ -169,8 +169,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             ..Default::default()
         },
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::Assistant,
             content:
                 "Welcome, Alex! You find yourself at the entrance to an ancient magical academy..."
@@ -200,8 +200,8 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     // Run the agentic workflow
     let result = agentic_runner
         .process_narrative_event(
-            user_id,
-            session_id,
+            user_id.into(),
+            session_id.into(),
             None, // No existing chronicle
             &messages,
             &session_dek,
@@ -254,7 +254,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
     .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Create chat session (required for foreign key constraint)
     create_test_chat_session(&test_app.db_pool, user_id, session_id)
@@ -307,15 +307,15 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 
     // Create test messages
     let messages = vec![ChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         message_type: MessageRole::User,
         content: "Alex looks around the magical academy courtyard nervously."
             .as_bytes()
             .to_vec(),
         content_nonce: Some(vec![1, 2, 3, 4]),
         created_at: Utc::now().into(),
-        user_id,
+        user_id: user_id.into(),
         prompt_tokens: Some(15),
         completion_tokens: Some(0),
         raw_prompt_ciphertext: None,
@@ -370,7 +370,7 @@ async fn test_dual_mode_extraction_comparison() {
     .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Create chat session (required for foreign key constraint)
     create_test_chat_session(&test_app.db_pool, user_id, session_id)
@@ -424,7 +424,7 @@ async fn test_dual_mode_extraction_comparison() {
     // Create test messages (mundane conversation)
     let messages = vec![
         ChatMessage {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             session_id,
             message_type: MessageRole::User,
             content: "How are you today?".as_bytes().to_vec(),
@@ -444,13 +444,13 @@ async fn test_dual_mode_extraction_comparison() {
             ..Default::default()
         },
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::Assistant,
             content: "I'm doing well, thank you for asking!".as_bytes().to_vec(),
             content_nonce: Some(vec![5, 6, 7, 8]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(0),
             completion_tokens: Some(10),
             raw_prompt_ciphertext: None,
@@ -502,7 +502,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
     .unwrap();
     _guard.add_user(user.id);
     let user_id = user.id;
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
 
     // Create chat session (required for foreign key constraint)
     create_test_chat_session(&test_app.db_pool, user_id, session_id)
@@ -546,7 +546,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
 
     // Create test messages
     let messages = vec![ChatMessage {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         session_id,
         message_type: MessageRole::User,
         content: "This should cause JSON parsing failure".as_bytes().to_vec(),

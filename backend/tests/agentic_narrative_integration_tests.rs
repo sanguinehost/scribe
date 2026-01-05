@@ -30,7 +30,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Helper to create a test user in the database
-async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
+async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
     let conn = test_app.db_pool.get().await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -52,11 +52,11 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -83,8 +83,8 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
 /// Helper to create test chat messages with realistic roleplay content
 #[allow(dead_code)]
 fn create_roleplay_messages(
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
     session_dek: &SessionDek,
 ) -> AnyhowResult<Vec<ChatMessage>> {
     let messages_content = vec![
@@ -125,7 +125,7 @@ fn create_roleplay_messages(
             scribe_backend::crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
         messages.push(ChatMessage {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             session_id,
             message_type: message_role,
             content: encrypted_content,
@@ -150,8 +150,8 @@ fn create_roleplay_messages(
 }
 
 /// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+async fn create_test_chronicle(user_id: scribe_backend::db::DbId, test_app: &TestApp) -> AnyhowResult<Uuid> {
+    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "Test Adventure Chronicle".to_string(),
@@ -162,7 +162,7 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
         .create_chronicle(user_id, create_request)
         .await?;
 
-    Ok(chronicle.id)
+    Ok(*chronicle.id)
 }
 
 /// Helper to get first available lorebook for user (or skip if none)
@@ -196,7 +196,7 @@ async fn test_agentic_narrative_end_to_end_real_ai() {
     // Create the agentic narrative system with development config
     let agentic_system = AgenticNarrativeFactory::create_system(
         test_app.ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone())),
         Arc::new(LorebookService::new(
             test_app.db_pool.clone(),
             test_app.app_state.encryption_service.clone(),
@@ -210,7 +210,7 @@ async fn test_agentic_narrative_end_to_end_real_ai() {
     let workflow_result = agentic_system
         .process_narrative_event(
             user_id,
-            session_id,
+            session_id.into(),
             Some(chronicle_id),
             &messages,
             &session_dek,
@@ -240,7 +240,7 @@ async fn test_agentic_narrative_end_to_end_real_ai() {
     assert!(successful_executions > 0, "At least one tool execution should be successful");
 
     // Validate that chronicle events were actually created in the database
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
         .get_chronicle_events(user_id, chronicle_id, EventFilter::default())
         .await
@@ -280,7 +280,7 @@ async fn test_agentic_tools_with_mock_ai() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
-    let _session_id = Uuid::new_v4();
+    let session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Test messages that should trigger significance
@@ -300,7 +300,7 @@ async fn test_agentic_tools_with_mock_ai() {
     println!("✅ Triage tool working: {:?}", triage_result);
 
     // Test 2: Create Chronicle Event Tool
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone()));
     let encryption_service =
         Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let lorebook_service = Arc::new(LorebookService::new(
@@ -361,6 +361,10 @@ async fn test_agentic_tools_with_mock_ai() {
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -426,9 +430,9 @@ async fn test_agentic_tools_with_mock_ai() {
     );
 
     // Verify the event was actually created in the database
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
-        .get_chronicle_events(user_id, chronicle_id, Default::default())
+        .get_chronicle_events(user_id, chronicle_id.into(), Default::default())
         .await
         .unwrap();
 
@@ -459,13 +463,13 @@ async fn test_workflow_orchestration() {
     let mut guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create non-significant messages
     let mundane_messages = vec![
         ChatMessage {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             session_id,
             message_type: MessageRole::User,
             content: "Hello there".as_bytes().to_vec(),
@@ -477,9 +481,10 @@ async fn test_workflow_orchestration() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            ..Default::default()
         },
         ChatMessage {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             session_id,
             message_type: MessageRole::Assistant,
             content: "Hello! How are you?".as_bytes().to_vec(),
@@ -491,6 +496,7 @@ async fn test_workflow_orchestration() {
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
+            ..Default::default()
         },
     ];
 
@@ -500,7 +506,7 @@ async fn test_workflow_orchestration() {
     // Create the agentic system
     let agentic_system = AgenticNarrativeFactory::create_system(
         test_app.ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone())),
         Arc::new(LorebookService::new(
             test_app.db_pool.clone(),
             test_app.app_state.encryption_service.clone(),

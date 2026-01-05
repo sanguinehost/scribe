@@ -107,6 +107,8 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         tokens_counted_at: chrono::Utc::now().into(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
+        game_master_mode_enabled: false,
+        game_state: None,
         ..Default::default()
     };
 
@@ -168,11 +170,12 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
+            content: genai::chat::MessageContent::from_text(
                 mock_suggestions.to_string(),
-            )],
+            ),
             reasoning_content: None,
             usage: genai::chat::Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = SuggestedActionsRequest {};
@@ -273,7 +276,7 @@ impl Default for TestCharacterOptions<'_> {
 
 async fn create_test_character_for_suggested_actions(
     pool: &PgPool,
-    user_id: Uuid,
+    user_id: scribe_backend::db::DbId,
     char_name: &str,
     options: TestCharacterOptions<'_>,
 ) -> anyhow::Result<DbCharacter> {
@@ -287,7 +290,76 @@ async fn create_test_character_for_suggested_actions(
         avatar: options.avatar.map(ToString::to_string),
         token_budget: options.token_budget,
         visibility: options.visibility.map(ToString::to_string),
-        ..Default::default()
+        id: None,
+        description_nonce: None,
+        personality: None,
+        personality_nonce: None,
+        scenario: None,
+        scenario_nonce: None,
+        first_mes: None,
+        first_mes_nonce: None,
+        mes_example: None,
+        mes_example_nonce: None,
+        creator_notes: None,
+        creator_notes_nonce: None,
+        system_prompt_nonce: None,
+        post_history_instructions: None,
+        post_history_instructions_nonce: None,
+        tags: scribe_backend::models::OptionalStringArray(None),
+        creator: None,
+        character_version: None,
+        alternate_greetings: scribe_backend::models::OptionalStringArray(None),
+        nickname: None,
+        creator_notes_multilingual: None,
+        source: scribe_backend::models::OptionalStringArray(None),
+        group_only_greetings: scribe_backend::models::OptionalStringArray(None),
+        creation_date: None,
+        modification_date: None,
+        extensions: None,
+        persona: None,
+        persona_nonce: None,
+        world_scenario: None,
+        world_scenario_nonce: None,
+        chat: None,
+        greeting: None,
+        greeting_nonce: None,
+        definition: None,
+        definition_nonce: None,
+        default_voice: None,
+        category: None,
+        definition_visibility: None,
+        example_dialogue: None,
+        example_dialogue_nonce: None,
+        favorite: None,
+        first_message_visibility: None,
+        migrated_from: None,
+        model_prompt: None,
+        model_prompt_nonce: None,
+        model_prompt_visibility: None,
+        persona_visibility: None,
+        sharing_visibility: None,
+        status: None,
+        system_prompt_visibility: None,
+        system_tags: scribe_backend::models::OptionalStringArray(None),
+        usage_hints: None,
+        user_persona: None,
+        user_persona_nonce: None,
+        user_persona_visibility: None,
+        world_scenario_visibility: None,
+        fav: None,
+        world: None,
+        creator_comment: None,
+        creator_comment_nonce: None,
+        depth_prompt: None,
+        depth_prompt_depth: None,
+        depth_prompt_role: None,
+        talkativeness: None,
+        depth_prompt_ciphertext: None,
+        depth_prompt_nonce: None,
+        world_ciphertext: None,
+        world_nonce: None,
+        created_at: None,
+        updated_at: None,
     };
 
     pool.get()
@@ -306,8 +378,8 @@ async fn create_test_character_for_suggested_actions(
 
 async fn create_test_chat_session_for_suggested_actions(
     pool: &PgPool,
-    user_id: Uuid,
-    character_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    character_id: scribe_backend::db::DbId,
     session_model_name: &str,
 ) -> anyhow::Result<Chat> {
     let new_chat_session = NewChat {
@@ -323,6 +395,8 @@ async fn create_test_chat_session_for_suggested_actions(
         tokens_counted_at: chrono::Utc::now().into(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
+        game_master_mode_enabled: false,
+        game_state: None,
         ..Default::default()
     };
 
@@ -452,11 +526,12 @@ async fn run_suggested_actions_logic(
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
+            content: genai::chat::MessageContent::from_text(
                 mock_suggestions.to_string(),
-            )],
+            ),
             reasoning_content: None,
             usage: genai::chat::Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = SuggestedActionsRequest {};
@@ -695,11 +770,12 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
+            content: genai::chat::MessageContent::from_text(
                 malformed_json_string.to_string(),
-            )],
+            ),
             reasoning_content: None,
             usage: genai::chat::Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = SuggestedActionsRequest {};

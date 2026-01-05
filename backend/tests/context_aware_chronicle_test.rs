@@ -13,6 +13,7 @@ use scribe_backend::test_helpers::{
 use secrecy::SecretBox;
 use std::sync::Arc;
 use uuid::Uuid;
+use scribe_backend::db::DbId;
 
 use scribe_backend::test_helpers::spawn_app;
 
@@ -37,11 +38,12 @@ async fn test_chronicle_creation_refusal() {
         use genai::ModelIden;
 
         let chat_response = ChatResponse {
-            contents: vec![MessageContent::Text(refusal_response.to_string())],
+            content: MessageContent::from_text(refusal_response.to_string()),
             reasoning_content: None,
             model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             usage: Usage::default(),
+            captured_raw_body: None,
         };
         mock_client.set_response(Ok(chat_response));
     } else {
@@ -107,6 +109,7 @@ async fn test_chronicle_creation_refusal() {
         modified_cost: scribe_backend::db::DbDecimal::from(0),
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
+        game_time: None,
     };
 
     // Encrypt the content
@@ -171,11 +174,12 @@ async fn test_chronicle_creation_success() {
         use genai::ModelIden;
 
         let chat_response = ChatResponse {
-            contents: vec![MessageContent::Text(success_response.to_string())],
+            content: MessageContent::from_text(success_response.to_string()),
             reasoning_content: None,
             model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             usage: Usage::default(),
+            captured_raw_body: None,
         };
         mock_client.set_response(Ok(chat_response));
     } else {
@@ -287,6 +291,7 @@ async fn test_chronicle_creation_success() {
         modified_cost: scribe_backend::db::DbDecimal::from(0),
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
+        game_time: None,
     };
 
     let _ = message.encrypt_content_field(&session_dek.0, "Something happened");

@@ -5,7 +5,10 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::SecretBox; // Removed SecretString
 
 use scribe_backend::{
-    auth::user_store::Backend as AuthBackend, // Added
+    auth::{
+        token_service::TokenService,
+        user_store::Backend as AuthBackend,
+    },
     llm::EmbeddingClient,                     // Removed AiClient, Added EmbeddingClient
     models::{
         chats::ChatMode,
@@ -22,6 +25,7 @@ use scribe_backend::{
         tokenizer_service::TokenizerService,        // Added
         user_persona_service::UserPersonaService,   // Added
         UserSettingsService,
+        cognitive::RecallPipeline,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
     test_helpers::{db, spawn_app, TestDataGuard}, // Removed QdrantClientServiceTrait from here
@@ -209,6 +213,8 @@ async fn test_chat_session_uses_user_default_model() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let app_services = AppStateServices {
+        recall_pipeline: Arc::new(RecallPipeline::new(db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client,
         embedding_client,
         qdrant_service,

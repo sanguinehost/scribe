@@ -215,7 +215,7 @@ async fn test_game_state_string_sanitization() -> anyhow::Result<()> {
     })
     .await?;
 
-    let saved_state: GameState = serde_json::from_value(saved_state_json.into()).unwrap();
+    let saved_state: GameState = serde_json::from_value(saved_state_json.0).unwrap();
     assert_eq!(saved_state.location.unwrap().name, "Safe NameDangerous");
 
     Ok(())

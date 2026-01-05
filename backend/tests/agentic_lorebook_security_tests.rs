@@ -52,7 +52,7 @@ async fn create_test_lorebook_with_entries(
     };
 
     let lorebook = lorebook_service
-        .create_lorebook_for_test(user_id, create_lorebook_request)
+        .create_lorebook_for_test(user_id.into(), create_lorebook_request)
         .await
         .expect("Failed to create test lorebook");
 
@@ -174,7 +174,7 @@ async fn test_a01_analyze_prevents_cross_user_lorebook_access() {
 
     // User 1 creates a lorebook with entries
     let (user1_lorebook, _session_dek, _lorebook_service) =
-        create_test_lorebook_with_entries(&test_app, user1.id, 2).await;
+        create_test_lorebook_with_entries(&test_app, user1.id.into(), 2).await;
 
     // User 2 tries to analyze User 1's lorebook
     let mock_ai_client = Arc::new(MockAiClient::new_with_response(
@@ -205,6 +205,10 @@ async fn test_a01_analyze_prevents_cross_user_lorebook_access() {
                     + Send
                     + Sync,
             >,
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         chat_override_service: Arc::new(
             scribe_backend::services::chat_override_service::ChatOverrideService::new(
                 test_app.db_pool.clone(),
@@ -539,6 +543,10 @@ async fn test_a02_wrong_session_dek_fails_analysis() {
                     + Send
                     + Sync,
             >,
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         chat_override_service: Arc::new(
             scribe_backend::services::chat_override_service::ChatOverrideService::new(
                 test_app.db_pool.clone(),

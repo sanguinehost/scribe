@@ -16,7 +16,7 @@ use scribe_backend::{
 #[tokio::test]
 async fn test_simple_deduplication() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     // Create a test user first
     let user = test_helpers::db::create_test_user(
@@ -35,7 +35,7 @@ async fn test_simple_deduplication() {
     };
 
     let chronicle = chronicle_service
-        .create_chronicle(user_id, chronicle_request)
+        .create_chronicle(user_id.into(), chronicle_request)
         .await
         .expect("Failed to create chronicle");
 
@@ -63,7 +63,7 @@ async fn test_simple_deduplication() {
     };
 
     let first_event = chronicle_service
-        .create_event(user_id, chronicle.id, event_request.clone(), None)
+        .create_event(user_id.into(), chronicle.id, event_request.clone(), None)
         .await
         .expect("Failed to create first event");
 
@@ -71,7 +71,7 @@ async fn test_simple_deduplication() {
 
     // Try to create the same event again
     let second_event = chronicle_service
-        .create_event(user_id, chronicle.id, event_request, None)
+        .create_event(user_id.into(), chronicle.id, event_request, None)
         .await
         .expect("Failed to create second event");
 

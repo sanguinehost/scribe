@@ -71,8 +71,8 @@ async fn setup_rag_test_context() -> TestContext {
                 name: char_name_rag,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
-                description: Some("Test description".to_string()),
-                greeting: Some("Hello".to_string()),
+                description: Some("Test description".as_bytes().to_vec()),
+                greeting: Some("Hello".as_bytes().to_vec()),
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
@@ -98,15 +98,15 @@ async fn setup_rag_test_context() -> TestContext {
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
                 id: Uuid::new_v4().into(),
-                user_id: user_id_clone_session,
-                character_id: character_id_clone_session,
+                user_id: user_id_clone_session.into(),
+                character_id: character_id_clone_session.into(),
                 title_ciphertext: None,
                 title_nonce: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -117,7 +117,7 @@ async fn setup_rag_test_context() -> TestContext {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: scribe_backend::models::OptionalStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -126,11 +126,14 @@ async fn setup_rag_test_context() -> TestContext {
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -153,9 +156,9 @@ async fn setup_rag_test_context() -> TestContext {
         .expect("Failed to get DB conn for msg save")
         .interact(move |conn_sync| {
             let new_message = NewChatMessage {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 session_id: session_id_clone_msg,
-                user_id: user_id_clone_msg,
+                user_id: user_id_clone_msg.into(),
                 message_type: MessageRole::Assistant,
                 content: document_content_clone.as_bytes().to_vec(),
                 content_nonce: None,
@@ -169,6 +172,7 @@ async fn setup_rag_test_context() -> TestContext {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                ..Default::default()
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)
