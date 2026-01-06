@@ -802,7 +802,7 @@ diesel::table! {
         default_persona_id -> Nullable<Text>,
         total_prompt_tokens -> BigInt,
         total_completion_tokens -> BigInt,
-        total_token_cost_cents -> Integer,
+        total_token_cost_cents -> BigInt,
         tokens_last_reset_at -> Nullable<Timestamp>,
         token_usage_updated_at -> Timestamp,
         cached_credit_balance -> Nullable<Integer>,

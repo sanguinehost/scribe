@@ -5,8 +5,6 @@ use chrono::Utc;
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
 
 use crate::auth::session_dek::SessionDek;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::chat_override::{ChatCharacterOverride, NewChatCharacterOverride};

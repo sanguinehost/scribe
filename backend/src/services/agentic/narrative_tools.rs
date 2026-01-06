@@ -11,7 +11,6 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         embeddings::{ChatMessageChunkMetadata, ChronicleEventMetadata, LorebookChunkMetadata},
-        safety_utils::create_unrestricted_safety_settings,
         ChronicleService, LorebookService,
     },
     state::AppState,
@@ -2186,9 +2185,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
         ));
 
         // Use AI to generate entries with structured outputs
-        use crate::services::character_generation::structured_output::{
-            get_batch_lorebook_entries_schema, BatchLorebookEntriesOutput,
-        };
+        use crate::services::character_generation::structured_output::BatchLorebookEntriesOutput;
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
             ChatResponseFormat, ChatRole, MessageContent,

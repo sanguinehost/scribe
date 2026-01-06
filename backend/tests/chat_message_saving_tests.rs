@@ -1,5 +1,5 @@
 use diesel::prelude::*;
-use scribe_backend::models::chats::{Chat, MessageRole, NewChat};
+use scribe_backend::models::chats::{MessageRole, NewChat};
 use scribe_backend::services::chat::message_handling::{save_message, SaveMessageParams};
 use scribe_backend::test_helpers::spawn_app;
 use secrecy::{ExposeSecret, SecretString};
@@ -62,9 +62,9 @@ async fn create_test_user_manual(
         recovery_dek_nonce: None,
         role: scribe_backend::models::users::UserRole::User,
         account_status: Some("active".to_string()),
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: scribe_backend::db::DbTimestamp::now(),
         created_at: scribe_backend::db::DbTimestamp::now(),

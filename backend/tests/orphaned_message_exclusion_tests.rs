@@ -190,9 +190,9 @@ async fn test_frontend_history_vs_database_history() {
         recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
             test_app.db_pool.clone(),
         )),
-        token_service: Some(Arc::new(scribe_backend::auth::token_service::TokenService::new(
-            "test_secret",
-        ))),
+        token_service: Some(Arc::new(
+            scribe_backend::auth::token_service::TokenService::new("test_secret"),
+        )),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -376,9 +376,9 @@ async fn test_orphaned_message_exclusion_scenario() {
         recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
             test_app.db_pool.clone(),
         )),
-        token_service: Some(Arc::new(scribe_backend::auth::token_service::TokenService::new(
-            "test_secret",
-        ))),
+        token_service: Some(Arc::new(
+            scribe_backend::auth::token_service::TokenService::new("test_secret"),
+        )),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]

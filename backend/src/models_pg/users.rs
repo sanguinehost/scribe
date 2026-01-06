@@ -183,7 +183,14 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct UserDbQuery {
     pub id: DbId,
     pub username: String,
@@ -202,7 +209,7 @@ pub struct UserDbQuery {
     pub default_persona_id: Option<DbId>,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
     pub cached_credit_balance: Option<i32>,
@@ -285,7 +292,7 @@ pub struct User {
     pub default_persona_id: Option<DbId>,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
 }
@@ -416,7 +423,14 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable, Default)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    diesel(check_for_backend(diesel::sqlite::Sqlite))
+)]
 pub struct NewUser {
     pub username: String,
     pub password_hash: String,
@@ -431,7 +445,7 @@ pub struct NewUser {
     pub account_status: AccountStatus,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
 }
@@ -517,9 +531,9 @@ mod tests {
                 default_persona_id: params.default_persona_id,
                 token_usage_updated_at: chrono::Utc::now().into(),
                 tokens_last_reset_at: None,
-                total_completion_tokens: 0,
-                total_token_cost_cents: 0,
-                total_prompt_tokens: 0,
+                total_completion_tokens: crate::db::DbBigInt::from(0),
+                total_token_cost_cents: crate::db::DbBigInt::from(0),
+                total_prompt_tokens: crate::db::DbBigInt::from(0),
             }
         }
     }
@@ -614,9 +628,9 @@ mod tests {
             account_status: AccountStatus::Active,
             token_usage_updated_at: chrono::Utc::now().into(),
             tokens_last_reset_at: None,
-            total_completion_tokens: 0,
-            total_prompt_tokens: 0,
-            total_token_cost_cents: 0,
+            total_completion_tokens: crate::db::DbBigInt::from(0),
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_token_cost_cents: crate::db::DbBigInt::from(0),
         };
 
         assert_eq!(new_user.username, username);

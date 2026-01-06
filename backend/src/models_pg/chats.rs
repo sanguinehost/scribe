@@ -685,6 +685,7 @@ pub struct NewChat {
     pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub stop_sequences: crate::models::OptionalStringArray,
+    pub chat_mode: ChatMode,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,

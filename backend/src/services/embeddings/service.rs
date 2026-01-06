@@ -12,7 +12,7 @@ use crate::errors::AppError;
 use crate::models::chats::{ChatMessage, MessageRole};
 use crate::schema::chat_messages;
 use crate::state::AppState;
-use crate::text_processing::chunking::{chunk_text, ChunkConfig};
+use crate::text_processing::chunking::ChunkConfig;
 use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use diesel::prelude::*;
@@ -711,14 +711,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                 ..Default::default()
                             })),
                         },
-                        // Ensure we only get entries from the requested lorebooks
-                        Condition {
-                            condition_one_of: Some(ConditionOneOf::Filter(Filter {
-                                should: lorebook_id_conditions,
-                                ..Default::default()
-                            })),
-                        },
                     ],
+                    should: lorebook_id_conditions,
                     ..Default::default()
                 };
                 debug!(?lorebook_filter, "Lorebook filter for RAG");

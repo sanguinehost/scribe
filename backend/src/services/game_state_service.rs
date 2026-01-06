@@ -11,9 +11,7 @@
 
 use crate::db::DbPool;
 use crate::errors::AppError;
-use crate::models::game_state::{
-    GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus, Vital,
-};
+use crate::models::game_state::{GameState, GameTime, InventoryItem, Quest, QuestStatus};
 use crate::schema::chat_sessions;
 use crate::services::reconciliation_detector::{ReconciliationAction, ReconciliationDetector};
 use diesel::prelude::*;
@@ -552,7 +550,7 @@ impl GameStateService {
         final_state: &mut GameState,
     ) -> (Vec<StateChange>, Vec<(StateChange, String)>) {
         let mut applied = Vec::new();
-        let mut rejected = Vec::new();
+        let rejected = Vec::new();
 
         for (name, new_vital) in &new.vitals {
             let current_vital = current.vitals.get(name);
@@ -785,6 +783,7 @@ impl GameStateService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::game_state::{Location, NpcState, Vital};
 
     // ========================================================================
     // Test Helpers
@@ -818,8 +817,8 @@ mod tests {
             ) -> ReconciliationResult {
                 let mut final_state = current.clone();
                 let mut applied_changes = Vec::new();
-                let mut rejected_changes = Vec::new();
-                let mut warnings = Vec::new();
+                let rejected_changes = Vec::new();
+                let warnings = Vec::new();
 
                 // 0. Run Reconciliation Detector (Intent-Based Correction)
                 let detector = ReconciliationDetector::new();

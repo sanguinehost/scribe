@@ -14,9 +14,9 @@ use crate::models::users::{AccountStatus, NewUser, SerializableSecretDek, User, 
 use crate::privacy::logging::loggable_user_id;
 // Remove UserCredentials import if no longer needed elsewhere in this file
 use crate::state::DbPool; // Assuming you use a DbPool
-use diesel::RunQueryDsl;
-use diesel::SelectableHelper; // Added for as_returning // Added for get_result
-                              // use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
+use diesel::{RunQueryDsl, SelectableHelper};
+// Added for as_returning // Added for get_result
+// use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
 use crate::schema;
 use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -313,9 +313,9 @@ pub async fn create_user_in_db(
         recovery_dek_nonce: None,
         role: crate::models::users::UserRole::User, // 'User' enum variant for DB
         account_status: AccountStatus::Active,      // Default to Active account status
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: crate::db::DbBigInt::from(0),
+        total_completion_tokens: crate::db::DbBigInt::from(0),
+        total_token_cost_cents: crate::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: crate::db::DbTimestamp::now(),
     };

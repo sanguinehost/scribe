@@ -37,7 +37,6 @@ use crate::services::agentic::{
 };
 use crate::services::chat;
 use crate::services::chat::types::ScribeSseEvent;
-use crate::services::cognitive::RecallPipeline;
 use crate::services::hybrid_token_counter::CountingMode;
 use crate::services::template_preference_service::TemplatePreferenceService;
 use crate::services::ChronicleService;

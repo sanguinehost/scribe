@@ -1,5 +1,5 @@
 use crate::db::DbId;
-use std::{cmp::min, pin::Pin, sync::Arc};
+use std::{pin::Pin, sync::Arc};
 
 use bigdecimal::ToPrimitive;
 use diesel::{
@@ -30,8 +30,7 @@ use crate::{
         embeddings::{RetrievedChunk, RetrievedMetadata}, // For RAG chunks
         // history_manager::HistoryManager, // Removed, manage_history is a free function
         hybrid_token_counter::CountingMode,
-        rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector}, // For unified RAG budget management
-        safety_utils::create_unrestricted_safety_settings,
+        rag_budget_manager::{ContextBudgetPlanner, DynamicRagSelector},
         tokenizer_service::TokenEstimate,
         user_settings_service::UserSettingsService, // For retrieving user context settings
     },
@@ -2978,7 +2977,6 @@ fn build_raw_prompt_debug(
     _chat_options: &GenAiChatOptions,
     tools: &[genai::chat::Tool],
 ) -> String {
-    use genai::chat::{ContentPart, MessageContent};
     use std::fmt::Write;
 
     let mut debug_prompt = String::new();

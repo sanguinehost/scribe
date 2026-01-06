@@ -1,5 +1,5 @@
 use crate::models::game_state::GameState;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Actions that can be taken to reconcile LLM-generated state
 #[derive(Debug, Clone, PartialEq)]

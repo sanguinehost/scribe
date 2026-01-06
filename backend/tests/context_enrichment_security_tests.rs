@@ -3,6 +3,7 @@
 
 use diesel::prelude::*;
 use scribe_backend::{
+    db::{DbId, DbTimestamp},
     models::{
         chronicle::CreateChronicleRequest, AnalysisType, MessageRole, NewAgentContextAnalysis,
         NewChatMessage,
@@ -12,7 +13,6 @@ use scribe_backend::{
         ChronicleService,
     },
     test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
-    db::{DbId, DbTimestamp},
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -138,7 +138,8 @@ async fn test_search_knowledge_base_user_isolation() {
     let _user2_dek = &user2.dek.as_ref().expect("User2 should have DEK").0;
 
     // Create lorebooks for each user (not needed for basic security test)
-    let _lorebook_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let _lorebook_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     // Since we need to bypass the auth session, let's create lorebooks directly via DB
     // For now, let's skip the lorebook creation and focus on the basic security test
@@ -212,7 +213,8 @@ async fn test_context_enrichment_agent_security() {
     let _session_dek = &user.dek.as_ref().expect("User should have DEK").0;
 
     // Create chronicle for user
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let chronicle = chronicle_service
         .create_chronicle(
             user.id,

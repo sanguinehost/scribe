@@ -2,7 +2,7 @@
 // API routes for local LLM management
 
 use crate::{
-    auth::{session_dek::SessionDek, token_auth::UnifiedAuth},
+    auth::token_auth::UnifiedAuth,
     errors::AppError,
     models::user_settings::{UpdateUserSettingsRequest, UserSettingsResponse},
     services::user_settings_service::UserSettingsService,

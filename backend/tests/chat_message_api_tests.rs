@@ -88,7 +88,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         updated_at: chrono::Utc::now().into(),
         history_management_strategy: "truncate_summary".to_string(),
         history_management_limit: 15,
-        model_name: "gemini-test-model".to_string(),
+        model_name: Some("gemini-test-model".to_string()),
         visibility: Some("private".to_string()),
         active_custom_persona_id: None,
         active_impersonated_character_id: None,
@@ -98,8 +98,6 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         presence_penalty: None,
         top_k: None,
         top_p: None,
-        ..Default::default()
-    };
         seed: None,
         stop_sequences: scribe_backend::models::OptionalStringArray(None),
         gemini_thinking_budget: None,
@@ -150,6 +148,16 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-1.5-pro".to_string(),
+        status: "completed".to_string(),
+        variant_count: 0,
+        current_variant_index: 0,
+        credits_charged: 0,
+        credits_cost: scribe_backend::db::DbDecimal::from(0),
+        actual_cost: scribe_backend::db::DbDecimal::from(0),
+        modified_cost: scribe_backend::db::DbDecimal::from(0),
+        credit_cost: 0,
+        actual_charge: scribe_backend::db::DbDecimal::from(0),
+        game_time: None,
     };
 
     test_app

@@ -6,8 +6,6 @@
 use crate::auth::session_dek::SessionDek;
 use crate::auth::token_auth::UnifiedAuth;
 use crate::crypto;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::character_assets::{CharacterAsset, NewCharacterAsset};

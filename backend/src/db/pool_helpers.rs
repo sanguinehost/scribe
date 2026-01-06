@@ -208,8 +208,10 @@ where
                     }
 
                     // Check if it's a busy/locked error
-                    let is_locked = e.to_string().contains("database is locked")
-                        || e.to_string().contains("busy");
+                    let error_string = e.to_string();
+                    let is_locked = error_string.contains("database is locked")
+                        || error_string.contains("database table is locked")
+                        || error_string.contains("busy");
                     if !is_locked {
                         return Err(AppError::DatabaseQueryError(format!(
                             "Failed to begin immediate transaction: {}",

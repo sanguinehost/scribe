@@ -11,7 +11,7 @@ use diesel::result::Error as DieselError;
 // use secrecy::{ExposeSecret, SecretString};
 use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
-use crate::db::DbTimestamp; // Import backend-agnostic DateTime type
+// Import backend-agnostic DateTime type
 use crate::state::DbPool; // Import DbPool type alias
 use axum_login::tower_sessions::{
     session::{Id, Record}, // Use tower_sessions::session types

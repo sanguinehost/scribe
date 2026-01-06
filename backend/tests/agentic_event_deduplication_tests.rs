@@ -27,7 +27,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Helper to create a test user
-async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
+async fn create_test_user(
+    test_app: &TestApp,
+) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
     let mut conn = scribe_backend::db::get_conn(&test_app.db_pool).await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -56,9 +58,9 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(scribe_backend::d
         dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -88,8 +90,12 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(scribe_backend::d
 }
 
 /// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: scribe_backend::db::DbId, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+async fn create_test_chronicle(
+    user_id: scribe_backend::db::DbId,
+    test_app: &TestApp,
+) -> AnyhowResult<Uuid> {
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "De-duplication Test Chronicle".to_string(),
@@ -215,7 +221,8 @@ async fn create_existing_everest_events(
     test_app: &TestApp,
     session_dek: &SessionDek,
 ) -> AnyhowResult<()> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     // Create a few existing events about Mount Everest cleansing
     let existing_events = vec![
@@ -241,7 +248,12 @@ async fn create_existing_everest_events(
 
     for event_request in existing_events {
         chronicle_service
-            .create_event(user_id, chronicle_id.into(), event_request, Some(&session_dek))
+            .create_event(
+                user_id,
+                chronicle_id.into(),
+                event_request,
+                Some(&session_dek),
+            )
             .await?;
     }
 
@@ -458,7 +470,10 @@ async fn test_deduplication_failure_multiple_everest_events() {
     let app_state = create_test_app_state(test_app.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone(), mock_ai_client.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            mock_ai_client.clone(),
+        )),
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -602,7 +617,8 @@ async fn test_chronicle_context_retrieval_for_deduplication() {
 
     // This test would require access to the NarrativeAgentRunner's internal methods
     // For now, we test the chronicle service directly
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
         .get_chronicle_events(user_id, chronicle_id.into(), EventFilter::default())
         .await
@@ -648,7 +664,8 @@ async fn test_ai_triage_with_existing_context() {
         .unwrap();
 
     // Get the existing events as context
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let existing_events = chronicle_service
         .get_chronicle_events(user_id, chronicle_id.into(), EventFilter::default())
         .await

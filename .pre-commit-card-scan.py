@@ -189,10 +189,10 @@ IGNORE_PATTERNS = [
     re.compile(r'desktop/src/storage\.rs', re.IGNORECASE),
 ]
 
-def scan_file(file_path):
+def scan_file(file_path_in):
     """Scan a single file for card data patterns."""
     # Ensure file_path is a Path object and convert to string
-    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+    file_path = Path(file_path_in) if not isinstance(file_path_in, Path) else file_path_in
     file_path_str = str(file_path)
 
     # Skip files by path patterns

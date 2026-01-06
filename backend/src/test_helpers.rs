@@ -79,7 +79,7 @@ use axum::{
 };
 use axum_login::{login_required, AuthManagerLayerBuilder, AuthSession};
 use diesel::prelude::*;
-use diesel::{RunQueryDsl, SelectableHelper};
+use diesel::RunQueryDsl;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
@@ -1807,6 +1807,15 @@ pub async fn spawn_app_with_rate_limiting_options(
         .unwrap_or_else(|| std::path::PathBuf::from(".."));
     dotenvy::from_path(project_root.join(".env")).ok();
 
+    // Ensure COOKIE_SIGNING_KEY is set for tests
+    if std::env::var("COOKIE_SIGNING_KEY").is_err() {
+        // 64 bytes (128 hex chars) dummy key for tests
+        std::env::set_var(
+            "COOKIE_SIGNING_KEY",
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+        );
+    }
+
     // PostgreSQL: Create unique test database per test (if multi-threaded)
     #[cfg(feature = "postgres-backend")]
     let (pool, test_db_name) = {
@@ -1826,14 +1835,35 @@ pub async fn spawn_app_with_rate_limiting_options(
 
         let database_url = if multi_thread {
             // Each test gets a unique in-memory database with shared cache to allow multiple connections
-            format!("file:memdb{}?mode=memory&cache=shared", DbId::new())
+            format!(
+                "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+                DbId::new()
+            )
         } else {
-            "file:memdb_shared?mode=memory&cache=shared".to_string()
+            "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
         };
+
+        // Customizer to set busy_timeout
+        #[derive(Debug)]
+        struct SqliteConnectionCustomizer;
+
+        impl diesel::r2d2::CustomizeConnection<crate::db::DbConnection, diesel::r2d2::Error>
+            for SqliteConnectionCustomizer
+        {
+            fn on_acquire(
+                &self,
+                conn: &mut crate::db::DbConnection,
+            ) -> Result<(), diesel::r2d2::Error> {
+                use diesel::connection::SimpleConnection;
+                conn.batch_execute("PRAGMA busy_timeout = 5000;")
+                    .map_err(diesel::r2d2::Error::QueryError)
+            }
+        }
 
         let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
         let pool = Pool::builder()
             .max_size(5)
+            .connection_customizer(Box::new(SqliteConnectionCustomizer))
             .build(manager)
             .expect("Failed to create SQLite test pool");
 
@@ -2133,23 +2163,21 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
-    use diesel::{RunQueryDsl, SelectableHelper};
+    use diesel::RunQueryDsl;
     use diesel_migrations::MigrationHarness;
     // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
-    use crate::db::{DbId, DbTimestamp}; // Import unified types from crate::db
+    use crate::db::{DbId, DbTimestamp, MIGRATIONS}; // Import unified types and MIGRATIONS from crate::db
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
     use crate::PgPool;
 
     // SQLite-specific imports
-    #[cfg(feature = "sqlite-backend")]
-    use crate::db::pool_helpers::SqliteInteractExt;
 
     // For logging macros
-    use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
+    // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
     use crate::auth::{self};
     #[cfg(feature = "postgres-backend")]
     use deadpool_diesel::postgres::{
@@ -2183,14 +2211,35 @@ pub mod db {
             use diesel::r2d2::{ConnectionManager, Pool};
 
             let database_url = if db_name_suffix.is_some() {
-                format!("file:memdb{}?mode=memory&cache=shared", DbId::new())
+                format!(
+                    "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+                    DbId::new()
+                )
             } else {
-                "file:memdb_shared?mode=memory&cache=shared".to_string()
+                "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
             };
+
+            // Customizer to set busy_timeout
+            #[derive(Debug)]
+            struct SqliteConnectionCustomizer;
+
+            impl diesel::r2d2::CustomizeConnection<crate::db::DbConnection, diesel::r2d2::Error>
+                for SqliteConnectionCustomizer
+            {
+                fn on_acquire(
+                    &self,
+                    conn: &mut crate::db::DbConnection,
+                ) -> Result<(), diesel::r2d2::Error> {
+                    use diesel::connection::SimpleConnection;
+                    conn.batch_execute("PRAGMA busy_timeout = 5000;")
+                        .map_err(diesel::r2d2::Error::QueryError)
+                }
+            }
 
             let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
             let pool = Pool::builder()
                 .max_size(5)
+                .connection_customizer(Box::new(SqliteConnectionCustomizer))
                 .build(manager)
                 .expect("Failed to create SQLite test pool");
 
@@ -2288,7 +2337,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
+        let conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2331,9 +2380,9 @@ pub mod db {
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
             account_status: AccountStatus::Active,      // Default to Active account status
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_completion_tokens: crate::db::DbBigInt::from(0),
+            total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
@@ -2409,7 +2458,7 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
+        let conn = crate::db::get_conn(pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
@@ -2452,9 +2501,9 @@ pub mod db {
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
             account_status: AccountStatus::Pending,     // Set to Pending for email verification
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_completion_tokens: crate::db::DbBigInt::from(0),
+            total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
@@ -2539,7 +2588,7 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let mut conn = crate::db::get_conn(&pool).await?;
+        let conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
         let name_clone_for_error = name.clone();

@@ -1,8 +1,7 @@
+use crate::db::DbBigInt;
 use crate::db::DbTimestamp;
-use crate::db::{DbBigInt, DbId};
 use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::{BigDecimal, ToPrimitive};
-use chrono::Utc;
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
 use diesel::{BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
@@ -22,7 +21,7 @@ use secrecy::SecretBox;
 
 /// Custom serializers for BigDecimal types
 mod bigdecimal_serde {
-    use bigdecimal::BigDecimal;
+
     use serde::Serializer;
     use std::str::FromStr;
 
@@ -329,6 +328,64 @@ pub struct NewChat {
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
     pub rag_cognitive_context_limit: Option<i32>,
+}
+
+impl Default for NewChat {
+    fn default() -> Self {
+        Self {
+            id: crate::db::DbId::new(),
+            user_id: crate::db::DbId::nil(),
+            character_id: crate::db::DbId::nil(),
+            title_ciphertext: None,
+            title_nonce: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+            history_management_strategy: "token_limit".to_string(),
+            history_management_limit: 4096,
+            model_name: Some("gemini-1.5-pro".to_string()),
+            visibility: Some("private".to_string()),
+            active_custom_persona_id: None,
+            active_impersonated_character_id: None,
+            temperature: None,
+            max_output_tokens: None,
+            frequency_penalty: None,
+            presence_penalty: None,
+            top_k: None,
+            top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
+            seed: None,
+            logit_bias: None,
+            stop_sequences: crate::models::OptionalStringArray(None),
+            gemini_thinking_budget: None,
+            gemini_thinking_level: None,
+            gemini_enable_code_execution: None,
+            system_prompt_ciphertext: None,
+            system_prompt_nonce: None,
+            player_chronicle_id: None,
+            agent_mode: None,
+            model_provider: None,
+            total_prompt_tokens: DbBigInt::from(0),
+            total_completion_tokens: DbBigInt::from(0),
+            estimated_cost_cents: 0,
+            tokens_counted_at: chrono::Utc::now().into(),
+            total_credits_used: crate::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            prompt_template_id: "default".to_string(),
+            narrative_style_override_ciphertext: None,
+            narrative_style_override_nonce: None,
+            total_actual_cost: 0.0,
+            total_modified_cost: 0.0,
+            total_credit_cost: 0,
+            total_actual_charge: 0.0,
+            game_state: None,
+            game_master_mode_enabled: false,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for NewChat {
@@ -2956,7 +3013,7 @@ mod tests {
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
-            prompt_template_id: "neutral_roleplay".to_string(),
+            prompt_template_id: Some("neutral_roleplay".to_string()),
         }
     }
 
@@ -3013,7 +3070,7 @@ mod tests {
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
-            prompt_template_id: "neutral_roleplay".to_string(),
+            prompt_template_id: Some("neutral_roleplay".to_string()),
         }
     }
 

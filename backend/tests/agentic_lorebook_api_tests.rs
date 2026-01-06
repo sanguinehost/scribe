@@ -263,9 +263,7 @@ mod generate_entries_api_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from_text(
-                    batch_response.to_string(),
-                ),
+                content: genai::chat::MessageContent::from_text(batch_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(100),
@@ -455,9 +453,7 @@ mod analyze_lorebook_api_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from_text(
-                    analysis_response.to_string(),
-                ),
+                content: genai::chat::MessageContent::from_text(analysis_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(150),
@@ -587,9 +583,7 @@ mod token_tracking_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from_text(
-                    batch_response.to_string(),
-                ),
+                content: genai::chat::MessageContent::from_text(batch_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(1250),
@@ -669,9 +663,7 @@ mod token_tracking_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from_text(
-                    analysis_response.to_string(),
-                ),
+                content: genai::chat::MessageContent::from_text(analysis_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(800),
@@ -748,9 +740,7 @@ mod token_tracking_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from_text(
-                    batch_response.to_string(),
-                ),
+                content: genai::chat::MessageContent::from_text(batch_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: None,

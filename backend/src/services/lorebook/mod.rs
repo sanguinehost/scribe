@@ -220,7 +220,6 @@ impl LorebookService {
         let lorebook_id = new_lorebook_id; // Rename for closure capture
         let lorebook = conn
             .interact(move |conn_sync| {
-                use diesel::RunQueryDsl;
                 #[cfg(feature = "postgres-backend")]
                 {
                     diesel::insert_into(lorebooks::table)

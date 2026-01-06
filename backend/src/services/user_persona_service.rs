@@ -1,5 +1,5 @@
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
@@ -535,7 +535,7 @@ impl UserPersonaService {
         persona_id_val: Option<crate::db::DbId>,
     ) -> Result<User, AppError> {
         // Return the updated User
-        let mut conn = crate::db::get_conn(&pool)
+        let conn = crate::db::get_conn(&pool)
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 

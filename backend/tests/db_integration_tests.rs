@@ -16,6 +16,7 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenvy::dotenv;
 use reqwest::{header, Client, StatusCode};
 use scribe_backend::crypto; // For generate_salt
+use scribe_backend::db::DbBigInt;
 use scribe_backend::models::character_card::NewCharacter; // Keep NewCharacter import from card
 use scribe_backend::models::characters::Character; // Import canonical Character struct
 use scribe_backend::models::chats::{
@@ -163,9 +164,9 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active, // Default to Active account status
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -400,9 +401,9 @@ fn test_user_character_insert_and_query() {
             dek_nonce: scribe_backend::db::DbBlob::from(dummy_dek_nonce),
             recovery_dek_nonce: None,
             account_status: AccountStatus::Active, // Default to Active account status
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: DbBigInt::from(0),
+            total_completion_tokens: DbBigInt::from(0),
+            total_token_cost_cents: DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: Utc::now().into(),
         };
@@ -504,9 +505,9 @@ fn insert_test_user_with_password(
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active, // Default to Active account status
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -1158,7 +1159,8 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         let char_name = "Guard Char Cleanup".to_string();
         conn_setup
             .interact(move |conn_inner| {
-                insert_test_character(conn_inner, (*user_id_clone).into(), &char_name) // Use local helper
+                insert_test_character(conn_inner, (*user_id_clone).into(), &char_name)
+                // Use local helper
             })
             .await
             .expect("Interact failed inserting character")

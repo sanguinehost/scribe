@@ -10,11 +10,9 @@ use serde::Deserialize;
 use tracing::debug;
 
 use crate::{
-    auth::{session_dek::SessionDek, token_auth::UnifiedAuth},
-    errors::AppError,
+    auth::token_auth::UnifiedAuth, errors::AppError,
     models::template_preferences::UpdateTemplatePreferenceRequest,
-    services::TemplatePreferenceService,
-    state::AppState,
+    services::TemplatePreferenceService, state::AppState,
 };
 
 #[derive(Deserialize)]

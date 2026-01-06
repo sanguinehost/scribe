@@ -5,7 +5,6 @@ use secrecy::ExposeSecret;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 use crate::{
     auth::session_dek::SessionDek,
@@ -13,20 +12,17 @@ use crate::{
     llm::AiClient,
     models::{
         chats::{ChatMessage, MessageRole},
-        chronicle_event::CreateEventRequest,
-        cognitive_memory::{CognitivePayload, ObservationExtraction, OpinionExtraction},
+        cognitive_memory::CognitivePayload,
     },
     services::{
         embeddings::EmbeddingPipelineServiceTrait,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
-        safety_utils::create_unrestricted_safety_settings,
         ChronicleService,
     },
     state::AppState,
 };
 
 use super::{
-    narrative_tools::CreateChronicleEventTool,
     registry::ToolRegistry,
     state_manager_agent::StateManagerAgent,
     tools::{ScribeTool, ToolParams, ToolResult},

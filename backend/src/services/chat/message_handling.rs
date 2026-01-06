@@ -995,18 +995,10 @@ async fn update_cumulative_token_counts(
             .execute(conn)?;
 
         // Update user cumulative counts
-        // Note: PostgreSQL uses i64 (BigInt), SQLite uses i32 (Integer) for DbInt
-        #[cfg(feature = "postgres-backend")]
         let (prompt_db, completion_db, cost_db) = (
             prompt_tokens as i64,
             completion_tokens as i64,
-            estimated_cost_cents as i32,
-        );
-        #[cfg(feature = "sqlite-backend")]
-        let (prompt_db, completion_db, cost_db) = (
-            prompt_tokens as i64,
-            completion_tokens as i64,
-            estimated_cost_cents,
+            estimated_cost_cents as i64,
         );
 
         diesel::update(users::table.find(user_id))

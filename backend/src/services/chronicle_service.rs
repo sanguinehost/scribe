@@ -17,16 +17,14 @@ use crate::models::chronicle_event::{
     ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, EventSource, NewChronicleEvent,
 };
 use crate::models::cognitive_memory::{
-    CharacterOpinion, CognitivePayload, EntityObservation, NewCharacterOpinion,
-    NewEntityObservation,
+    CognitivePayload, NewCharacterOpinion, NewEntityObservation,
 };
 use crate::models::OptionalStringArray;
 use crate::schema::{
     character_opinions, chat_messages, chat_sessions, chronicle_events, entity_observations,
-    message_variants, player_chronicles, users,
+    message_variants, player_chronicles,
 };
 use crate::services::ChronicleDeduplicationService;
-use secrecy::ExposeSecret;
 
 use crate::llm::AiClient;
 use std::sync::Arc;
@@ -133,7 +131,7 @@ impl ChronicleService {
         chronicle_id: DbId,
     ) -> Result<PlayerChronicle, AppError> {
         use diesel::prelude::*;
-        use diesel::{delete, insert_into, update};
+
         diesel::insert_into(player_chronicles::table)
             .values(chronicle)
             .execute(conn)
@@ -612,8 +610,6 @@ impl ChronicleService {
 
         #[cfg(feature = "sqlite-backend")]
         let chronicle = {
-            use chrono::Utc;
-
             crate::db::with_conn(&self.db_pool, move |conn| {
                 let target = player_chronicles::table.filter(
                     player_chronicles::id
@@ -1696,7 +1692,6 @@ impl ChronicleService {
         state: Arc<crate::state::AppState>,
     ) -> Result<(), AppError> {
         use crate::crypto::{encrypt_gcm, generate_hmac};
-        use secrecy::ExposeSecret;
 
         let dek_bytes = session_dek.expose_bytes();
         let perspective_hash = generate_hmac(&extraction.perspective, dek_bytes);
@@ -1831,7 +1826,6 @@ impl ChronicleService {
     ) -> Result<(), AppError> {
         use crate::crypto::{encrypt_gcm, generate_hmac};
         use crate::services::embeddings::EmbeddingPipelineServiceTrait;
-        use secrecy::ExposeSecret;
 
         let dek_bytes = session_dek.expose_bytes();
 

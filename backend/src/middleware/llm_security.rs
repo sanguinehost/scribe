@@ -1,18 +1,13 @@
 // backend/src/middleware/llm_security.rs
 // Security middleware for LLM operations
 
-use crate::{
-    auth::{token_auth::UnifiedAuth, user_store::Backend as AuthBackend},
-    errors::AppError,
-    state::AppState,
-};
+use crate::{auth::token_auth::UnifiedAuth, errors::AppError, state::AppState};
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
     response::Response,
 };
-use axum_login::AuthSession;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

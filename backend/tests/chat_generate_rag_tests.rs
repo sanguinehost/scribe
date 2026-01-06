@@ -231,6 +231,7 @@ async fn create_test_chat_session(
                 top_p: None,
                 seed: None,
                 stop_sequences: scribe_backend::models::OptionalStringArray(None),
+                chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -705,6 +706,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 top_p: None,
                 seed: None,
                 stop_sequences: scribe_backend::db::DbStringArray(None),
+                chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -747,7 +749,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         message_id: Uuid::new_v4().into(),
         session_id: session.id,
         chronicle_id: None,
-        user_id: user.id.into(),                 // Added user_id
+        user_id: user.id.into(),          // Added user_id
         speaker: "Assistant".to_string(), // Assuming speaker is not encrypted
         timestamp: Utc::now().into(),
         text: mock_chunk_text.clone(), // Use String directly (deprecated but still needed)
@@ -774,9 +776,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             genai::adapter::AdapterKind::Gemini,
             "mock-rag-model",
         ),
-        content: genai::chat::MessageContent::from(
-            "Mock AI response to RAG query".to_string(),
-        ),
+        content: genai::chat::MessageContent::from("Mock AI response to RAG query".to_string()),
         reasoning_content: None,
         usage: genai::chat::Usage::default(),
         captured_raw_body: None,
@@ -923,8 +923,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         .find(|m| matches!(m.role, genai::chat::ChatRole::User))
         .expect("No user message found in AI request");
 
-    if let Some(user_content) = last_user_message_in_ai_request.content.first_text()
-    {
+    if let Some(user_content) = last_user_message_in_ai_request.content.first_text() {
         assert!(
             user_content.contains(query_text),
             "User message content should contain the original query. Expected to find: '{query_text}'. Got: '{user_content}'"
@@ -1041,6 +1040,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 top_p: None,
                 seed: None,
                 stop_sequences: scribe_backend::db::DbStringArray(None),
+                chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -1341,6 +1341,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 top_p: None,
                 seed: None,
                 stop_sequences: scribe_backend::db::DbStringArray(None),
+                chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -1500,9 +1501,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?; // Use mock AI
 
     let mock_response = genai::chat::ChatResponse {
-        content: MessageContent::from(
-            "Mock AI response to RAG query".to_string(),
-        ),
+        content: MessageContent::from("Mock AI response to RAG query".to_string()),
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
@@ -1619,8 +1618,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         .next_back()
         .expect("No user message found in AI request");
 
-    if let Some(text_content) = last_user_message_in_ai_request.content.first_text()
-    {
+    if let Some(text_content) = last_user_message_in_ai_request.content.first_text() {
         assert!(
             text_content.contains(&user_query),
             "User message should contain the original query. Expected to find: '{}', Got: '{}'",
@@ -1639,9 +1637,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
     let context = setup_test_data(false).await?;
 
     let mock_response = genai::chat::ChatResponse {
-        content: MessageContent::from(
-            "Mock AI response to RAG query".to_string(),
-        ),
+        content: MessageContent::from("Mock AI response to RAG query".to_string()),
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,
@@ -1750,8 +1746,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         .next_back()
         .expect("No user message found in AI request");
 
-    if let Some(text_content) = last_user_message_in_ai_request.content.first_text()
-    {
+    if let Some(text_content) = last_user_message_in_ai_request.content.first_text() {
         assert!(
             text_content.contains(&user_query_empty_hist),
             "User message should contain the original query. Expected to find: '{}', Got: '{}'",
@@ -1770,9 +1765,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
     let context = setup_test_data(false).await?;
 
     let mock_response = genai::chat::ChatResponse {
-        content: MessageContent::from(
-            "Mock AI response to RAG query".to_string(),
-        ),
+        content: MessageContent::from("Mock AI response to RAG query".to_string()),
         model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
         reasoning_content: None,

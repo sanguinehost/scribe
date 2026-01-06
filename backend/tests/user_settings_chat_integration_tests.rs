@@ -5,11 +5,8 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::SecretBox; // Removed SecretString
 
 use scribe_backend::{
-    auth::{
-        token_service::TokenService,
-        user_store::Backend as AuthBackend,
-    },
-    llm::EmbeddingClient,                     // Removed AiClient, Added EmbeddingClient
+    auth::{token_service::TokenService, user_store::Backend as AuthBackend},
+    llm::EmbeddingClient, // Removed AiClient, Added EmbeddingClient
     models::{
         chats::ChatMode,
         user_settings::{NewUserSettings, UserSettings},
@@ -17,15 +14,15 @@ use scribe_backend::{
     schema::user_settings,
     services::{
         chat_override_service::ChatOverrideService, // Added
-        embeddings::EmbeddingPipelineServiceTrait,  // Added
-        encryption_service::EncryptionService,      // Added
-        gemini_token_client::GeminiTokenClient,     // Added
-        hybrid_token_counter::HybridTokenCounter,   // Added
-        lorebook::LorebookService,                  // Added
-        tokenizer_service::TokenizerService,        // Added
-        user_persona_service::UserPersonaService,   // Added
-        UserSettingsService,
         cognitive::RecallPipeline,
+        embeddings::EmbeddingPipelineServiceTrait, // Added
+        encryption_service::EncryptionService,     // Added
+        gemini_token_client::GeminiTokenClient,    // Added
+        hybrid_token_counter::HybridTokenCounter,  // Added
+        lorebook::LorebookService,                 // Added
+        tokenizer_service::TokenizerService,       // Added
+        user_persona_service::UserPersonaService,  // Added
+        UserSettingsService,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
     test_helpers::{db, spawn_app, TestDataGuard}, // Removed QdrantClientServiceTrait from here

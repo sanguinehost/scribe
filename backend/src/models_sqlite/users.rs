@@ -1,8 +1,7 @@
-use crate::db::{DbBigInt, DbBlob, DbId, DbInt, DbTimestamp};
+use crate::db::{DbBigInt, DbBlob, DbId, DbTimestamp};
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::Utc;
 use diesel::Insertable;
 use diesel::{Identifiable, Queryable, Selectable};
 use secrecy::ExposeSecret;
@@ -10,7 +9,6 @@ use secrecy::{SecretBox, SecretString};
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use tracing;
-use uuid::Uuid;
 
 // User role enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -189,7 +187,7 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+
 pub struct UserDbQuery {
     pub id: DbId,
     pub username: String,
@@ -208,7 +206,7 @@ pub struct UserDbQuery {
     pub default_persona_id: Option<DbId>,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
     pub cached_credit_balance: Option<i32>,
@@ -291,7 +289,7 @@ pub struct User {
     pub default_persona_id: Option<DbId>,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
 }
@@ -422,7 +420,7 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+
 pub struct NewUser {
     // Always provide explicit ID (required for SQLite)
     pub id: DbId,
@@ -439,9 +437,33 @@ pub struct NewUser {
     pub account_status: AccountStatus,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
+}
+
+impl Default for NewUser {
+    fn default() -> Self {
+        Self {
+            id: crate::db::DbId::new(),
+            username: "default_user".to_string(),
+            password_hash: "hash".to_string(),
+            email: "default@example.com".to_string(),
+            kek_salt: "salt".to_string(),
+            encrypted_dek: crate::db::DbBlob::from_bytes(vec![]),
+            encrypted_dek_by_recovery: None,
+            recovery_kek_salt: None,
+            dek_nonce: crate::db::DbBlob::from_bytes(vec![]),
+            recovery_dek_nonce: None,
+            role: UserRole::User,
+            account_status: AccountStatus::Active,
+            total_prompt_tokens: DbBigInt::from(0),
+            total_completion_tokens: DbBigInt::from(0),
+            total_token_cost_cents: DbBigInt::from(0),
+            tokens_last_reset_at: None,
+            token_usage_updated_at: chrono::Utc::now().into(),
+        }
+    }
 }
 
 impl std::fmt::Debug for NewUser {

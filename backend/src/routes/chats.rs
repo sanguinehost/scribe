@@ -22,9 +22,7 @@ use crate::models::chats::{
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-use crate::schema::{
-    agent_context_analysis, chat_messages, chat_sessions, chronicle_events, message_variants,
-};
+use crate::schema::{chat_messages, chat_sessions, message_variants};
 use axum::{
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
@@ -42,11 +40,9 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, Select
 use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, warn}; // Added for logging
+use tracing::warn; // Added for logging
 use tracing::{error, info};
 // ExposeSecret already imported above
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde::{Deserialize, Serialize}; // Added Deserialize
 use validator::Validate; // Added for cursor-based pagination
 
@@ -1204,7 +1200,7 @@ pub async fn create_message_handler(
 
         match _daily_usage_result {
             Ok(_) => {
-                debug!(
+                tracing::debug!(
                     user_id = %user_id_for_daily_tracking,
                     chat_id = %chat_id,
                     "Successfully incremented daily usage for user message"
@@ -1290,7 +1286,7 @@ pub async fn create_message_handler(
 
                 match track_result {
                     Ok(Ok(_)) => {
-                        debug!(
+                        tracing::debug!(
                             chat_id = %chat_id,
                             tokens_used = tokens_used,
                             "Successfully tracked token usage for manually created user message"

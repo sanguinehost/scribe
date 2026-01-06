@@ -3,7 +3,6 @@ use scribe_backend::models::lorebook_dtos::{
     CreateLorebookEntryPayload, CreateLorebookPayload, LorebookEntryResponse, LorebookResponse,
 };
 use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
-use uuid::Uuid;
 
 #[tokio::test]
 async fn test_delete_lorebook_entry_cleans_up_qdrant() {

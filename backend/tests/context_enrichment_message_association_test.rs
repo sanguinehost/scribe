@@ -273,9 +273,9 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
             message1_id.into(), // Required: Associate with message 1
-            None,        // rag_chronicles_limit
-            None,        // rag_lorebooks_limit
-            None,        // rag_older_chat_limit
+            None,               // rag_chronicles_limit
+            None,               // rag_lorebooks_limit
+            None,               // rag_older_chat_limit
         )
         .await;
 
@@ -340,9 +340,9 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
             EnrichmentMode::PreProcessing,
             user_dek.0.expose_secret(),
             message2_id.into(), // Required: Associate with message 2
-            None,        // rag_chronicles_limit
-            None,        // rag_lorebooks_limit
-            None,        // rag_older_chat_limit
+            None,               // rag_chronicles_limit
+            None,               // rag_lorebooks_limit
+            None,               // rag_older_chat_limit
         )
         .await;
 
@@ -651,7 +651,10 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         services,
     ));
 
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),

@@ -174,7 +174,7 @@ async fn lock_user_handler(
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::account_status.eq(AccountStatus::Locked))
-                .returning(UserDbQuery::as_select())
+                .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -238,7 +238,7 @@ async fn unlock_user_handler(
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::account_status.eq(AccountStatus::Active))
-                .returning(UserDbQuery::as_select())
+                .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -313,7 +313,7 @@ async fn update_user_role_handler(
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::role.eq(payload.role))
-                .returning(UserDbQuery::as_select())
+                .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {

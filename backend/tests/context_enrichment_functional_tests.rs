@@ -7,11 +7,11 @@ use scribe_backend::{
     db::DbId,
     models::chats::{ChatMessage, MessageRole},
     services::{
+        agentic::factory::AgenticNarrativeFactory,
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
         },
-        agentic::factory::AgenticNarrativeFactory,
         cognitive::RecallPipeline,
         ChronicleService,
     },

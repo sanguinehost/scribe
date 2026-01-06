@@ -15,7 +15,6 @@ use scribe_backend::models::chats::NewChat;
 use scribe_backend::models::game_state::{GameState, GameTime, Location, Vital};
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers;
-use std::collections::HashMap;
 use tower::ServiceExt;
 
 // Helper to create a user and log them in

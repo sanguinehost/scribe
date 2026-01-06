@@ -8,13 +8,10 @@ use chrono::Utc;
 use diesel::prelude::*;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    auth::token_service::TokenService,
     db::DbId,
     models::chats::{ChatMessage, MessageRole},
-    services::{
-        agentic::factory::AgenticNarrativeFactory, cognitive::RecallPipeline,
-    },
-    auth::token_service::TokenService,
-    },
+    services::{agentic::factory::AgenticNarrativeFactory, cognitive::RecallPipeline},
     test_helpers::{MockAiClient, TestDataGuard},
 };
 use secrecy::SecretBox;
@@ -89,7 +86,7 @@ async fn create_test_app_state(
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
         recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
-        token_service: Some(Arc::new(TokenService::new(test_app.db_pool.clone()))),
+        token_service: Some(Arc::new(TokenService::new("test-secret"))),
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -640,9 +637,13 @@ mod agent_runner_duplicate_prevention_tests {
 
         // Create first chat session for the test
         let first_session_id = Uuid::new_v4();
-        create_test_chat_session(&test_app.db_pool, (*user_id).into(), first_session_id.into())
-            .await
-            .expect("Failed to create first test chat session");
+        create_test_chat_session(
+            &test_app.db_pool,
+            (*user_id).into(),
+            first_session_id.into(),
+        )
+        .await
+        .expect("Failed to create first test chat session");
 
         // First run - should create chronicle events for this conversation
         let first_result = agent_runner
@@ -694,9 +695,13 @@ mod agent_runner_duplicate_prevention_tests {
 
         // Create second chat session for the test
         let second_session_id = Uuid::new_v4();
-        create_test_chat_session(&test_app.db_pool, (*user_id).into(), second_session_id.into())
-            .await
-            .expect("Failed to create second test chat session");
+        create_test_chat_session(
+            &test_app.db_pool,
+            (*user_id).into(),
+            second_session_id.into(),
+        )
+        .await
+        .expect("Failed to create second test chat session");
 
         let second_result = second_agent_runner
             .process_narrative_event(

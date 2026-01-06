@@ -1,7 +1,7 @@
 use super::get_user_from_session;
 use super::*;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 
 impl LorebookService {
@@ -385,7 +385,7 @@ impl LorebookService {
             );
 
             info!("Getting database connection for batch insert...");
-            let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
                 error!("Failed to get DB connection for batch insert: {e}");
                 AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
             })?;

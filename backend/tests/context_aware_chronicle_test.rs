@@ -1,5 +1,6 @@
 #![cfg(feature = "postgres-backend")]
 use scribe_backend::auth::session_dek::SessionDek;
+use scribe_backend::db::DbId;
 use scribe_backend::models::chats::{ChatMessage, MessageRole};
 use scribe_backend::services::agentic::{
     agent_runner::{NarrativeAgentRunner, NarrativeWorkflowConfig},
@@ -13,7 +14,6 @@ use scribe_backend::test_helpers::{
 use secrecy::SecretBox;
 use std::sync::Arc;
 use uuid::Uuid;
-use scribe_backend::db::DbId;
 
 use scribe_backend::test_helpers::spawn_app;
 

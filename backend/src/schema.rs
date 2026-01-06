@@ -68,6 +68,11 @@ pub mod sql_types_unified {
     #[cfg(feature = "postgres-backend")]
     pub use diesel::sql_types::Bytea as DbBinaryType;
 
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::BigInt as DbBigIntType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::BigInt as DbBigIntType;
+
     #[cfg(feature = "postgres-backend")]
     pub use diesel::sql_types::Text as DbTextType;
     #[cfg(feature = "sqlite-backend")]
@@ -998,7 +1003,7 @@ diesel::table! {
         default_persona_id -> Nullable<DbIdType>,
         total_prompt_tokens -> BigInt,
         total_completion_tokens -> BigInt,
-        total_token_cost_cents -> Integer,
+        total_token_cost_cents -> BigInt,
         tokens_last_reset_at -> Nullable<DbTimestampType>,
         token_usage_updated_at -> DbTimestampType,
         cached_credit_balance -> Nullable<Integer>,

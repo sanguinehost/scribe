@@ -2,7 +2,6 @@
 
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
-use crate::models::OptionalStringArray;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,

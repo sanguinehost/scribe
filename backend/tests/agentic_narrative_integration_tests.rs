@@ -30,7 +30,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Helper to create a test user in the database
-async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
+async fn create_test_user(
+    test_app: &TestApp,
+) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
     let conn = test_app.db_pool.get().await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -59,9 +61,9 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(scribe_backend::d
         dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -150,8 +152,12 @@ fn create_roleplay_messages(
 }
 
 /// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: scribe_backend::db::DbId, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+async fn create_test_chronicle(
+    user_id: scribe_backend::db::DbId,
+    test_app: &TestApp,
+) -> AnyhowResult<Uuid> {
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "Test Adventure Chronicle".to_string(),
@@ -300,7 +306,10 @@ async fn test_agentic_tools_with_mock_ai() {
     println!("✅ Triage tool working: {:?}", triage_result);
 
     // Test 2: Create Chronicle Event Tool
-    let chronicle_service = Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone()));
+    let chronicle_service = Arc::new(ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app.ai_client.clone(),
+    ));
     let encryption_service =
         Arc::new(scribe_backend::services::encryption_service::EncryptionService::new());
     let lorebook_service = Arc::new(LorebookService::new(
@@ -430,7 +439,8 @@ async fn test_agentic_tools_with_mock_ai() {
     );
 
     // Verify the event was actually created in the database
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
         .get_chronicle_events(user_id, chronicle_id.into(), Default::default())
         .await

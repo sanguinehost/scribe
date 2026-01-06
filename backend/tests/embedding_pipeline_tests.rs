@@ -4,6 +4,8 @@
 use chrono::Utc;
 use mockall::predicate::*;
 use qdrant_client::qdrant::{point_id::PointIdOptions, PointId, Value};
+use scribe_backend::auth::token_service::TokenService;
+use scribe_backend::services::cognitive::RecallPipeline;
 use scribe_backend::{
     db::DbId,
     models::chats::{ChatMessage, MessageRole},
@@ -17,7 +19,6 @@ use scribe_backend::{
         hybrid_token_counter::HybridTokenCounter,
         lorebook::LorebookService,
         // token_service::TokenService, // Removed invalid import
-
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },
@@ -27,8 +28,6 @@ use scribe_backend::{
     text_processing::chunking::ChunkConfig,
     vector_db::qdrant_client::{create_message_id_filter, QdrantClientServiceTrait, ScoredPoint},
 };
-use scribe_backend::auth::token_service::TokenService;
-use scribe_backend::services::cognitive::RecallPipeline;
 use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
 // Removed unused std::convert::TryFrom
@@ -607,8 +606,8 @@ async fn test_retrieve_relevant_chunks_no_results() {
             app_state.clone(),
             Uuid::new_v4().into(),       // user_id
             Some(Uuid::new_v4().into()), // session_id_for_chat_history
-            None,                 // active_lorebook_ids_for_search
-            None,                 // chronicle_id_for_search
+            None,                        // active_lorebook_ids_for_search
+            None,                        // chronicle_id_for_search
             "A query that finds nothing",
             5,
             None,
@@ -952,8 +951,8 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         .embedding_pipeline_service
         .retrieve_relevant_chunks(
             app_state_for_metadata_test.clone(), // Use the correct app_state
-            Uuid::new_v4().into(),                      // user_id
-            Some(session_id.into()),                    // session_id_for_chat_history
+            Uuid::new_v4().into(),               // user_id
+            Some(session_id.into()),             // session_id_for_chat_history
             None,                                // active_lorebook_ids_for_search
             None,                                // chronicle_id_for_search
             query_text,
@@ -1731,9 +1730,9 @@ async fn test_rag_context_injection_with_qdrant() {
             user_id.into(),                 // user_id
             Some(chat_session_id.into()),   // session_id_for_chat_history
             Some(vec![lorebook_id.into()]), // active_lorebook_ids_for_search
-            None,                    // chronicle_id_for_search
-            query_text,              // query_text
-            limit_per_source,        // limit_per_source
+            None,                           // chronicle_id_for_search
+            query_text,                     // query_text
+            limit_per_source,               // limit_per_source
             None,
             Some(&session_dek), // Provide DEK to decrypt encrypted content
         )
@@ -1764,14 +1763,20 @@ async fn test_rag_context_injection_with_qdrant() {
         match &chunk.metadata {
             RetrievedMetadata::Chat(meta) => {
                 assert_eq!(
-                    meta.session_id, chat_session_id.into(),
+                    meta.session_id,
+                    chat_session_id.into(),
                     "Chat metadata session_id mismatch"
                 );
                 assert_eq!(
-                    meta.message_id, chat_message_id.into(),
+                    meta.message_id,
+                    chat_message_id.into(),
                     "Chat metadata message_id mismatch"
                 );
-                assert_eq!(meta.user_id, user_id.into(), "Chat metadata user_id mismatch");
+                assert_eq!(
+                    meta.user_id,
+                    user_id.into(),
+                    "Chat metadata user_id mismatch"
+                );
                 assert_eq!(meta.speaker, "User", "Chat metadata speaker mismatch");
                 assert_eq!(
                     meta.source_type, "chat_message",
@@ -1784,9 +1789,21 @@ async fn test_rag_context_injection_with_qdrant() {
                 found_chat_chunk = true;
             }
             RetrievedMetadata::Lorebook(meta) => {
-                assert_eq!(meta.lorebook_id, lorebook_id.into(), "Lorebook metadata lorebook_id mismatch");
-                assert_eq!(meta.original_lorebook_entry_id, original_lore_entry_id.into(), "Lorebook metadata original_lorebook_entry_id mismatch");
-                assert_eq!(meta.user_id, user_id.into(), "Lorebook metadata user_id mismatch");
+                assert_eq!(
+                    meta.lorebook_id,
+                    lorebook_id.into(),
+                    "Lorebook metadata lorebook_id mismatch"
+                );
+                assert_eq!(
+                    meta.original_lorebook_entry_id,
+                    original_lore_entry_id.into(),
+                    "Lorebook metadata original_lorebook_entry_id mismatch"
+                );
+                assert_eq!(
+                    meta.user_id,
+                    user_id.into(),
+                    "Lorebook metadata user_id mismatch"
+                );
                 // entry_title is encrypted in metadata, but we can verify the decrypted content
                 assert_eq!(
                     meta.source_type, "lorebook_entry",
@@ -2044,8 +2061,12 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
-        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(test_app.db_pool.clone())),
-        token_service: Some(Arc::new(scribe_backend::services::token_service::TokenService::new("test_secret"))),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: Some(Arc::new(
+            scribe_backend::services::token_service::TokenService::new("test_secret"),
+        )),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2401,15 +2422,18 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         encryption_service: encryption_service.clone(),
         lorebook_service,
         auth_backend,
-        ),
         ai_client_factory,
         rate_limiter,
         #[cfg(feature = "local-llm")]
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
-        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(test_app.db_pool.clone())),
-        token_service: Some(Arc::new(scribe_backend::services::token_service::TokenService::new("test_secret"))),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: Some(Arc::new(
+            scribe_backend::services::token_service::TokenService::new("test_secret"),
+        )),
     };
     let app_state = Arc::new(AppState::new(
         test_app.db_pool.clone(),
@@ -2476,7 +2500,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(secrecy::SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().clone()))),
+        session_dek: Some(secrecy::SecretBox::new(Box::new(
+            user_c_session_dek.0.expose_secret().clone(),
+        ))),
     };
 
     app_state
@@ -2493,7 +2519,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(secrecy::SecretBox::new(Box::new(user_c_session_dek.0.expose_secret().clone()))),
+        session_dek: Some(secrecy::SecretBox::new(Box::new(
+            user_c_session_dek.0.expose_secret().clone(),
+        ))),
     };
 
     app_state
@@ -2510,7 +2538,9 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         decrypted_keywords: None,
         is_enabled: true,
         is_constant: false,
-        session_dek: Some(secrecy::SecretBox::new(Box::new(user_d_session_dek.0.expose_secret().clone()))),
+        session_dek: Some(secrecy::SecretBox::new(Box::new(
+            user_d_session_dek.0.expose_secret().clone(),
+        ))),
     };
 
     app_state

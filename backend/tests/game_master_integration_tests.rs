@@ -12,11 +12,9 @@ use http_body_util::BodyExt; // For collect()
 use scribe_backend::db::{with_conn, DbId, DbPool};
 use scribe_backend::errors::AppError;
 use scribe_backend::models::character_card::NewCharacter;
-use scribe_backend::models::characters::Character as DbCharacter;
-use scribe_backend::models::chats::{Chat as DbChat, NewChat};
+use scribe_backend::models::chats::NewChat;
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers;
-use std::time::Duration;
 use tower::ServiceExt;
 
 // Helper to create a user and log them in
@@ -75,8 +73,8 @@ async fn create_test_character(
         spec_version: "2.0.0".to_string(),
         name: name.to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(Utc::now().into()),
-        updated_at: Some(Utc::now().into()),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         ..Default::default()
     };
 

@@ -633,7 +633,7 @@ impl CharacterService {
                 {
                     diesel::update(characters::table.find(character_id_to_update))
                         .set(&existing_character)
-                        .returning(Character::as_select())
+                        .returning(Character::as_returning())
                         .get_result::<Character>(conn_update_block)
                         .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))
                 }

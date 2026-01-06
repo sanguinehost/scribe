@@ -9,6 +9,7 @@ use diesel::{prelude::*, RunQueryDsl};
 use hex;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    db::DbBigInt,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
@@ -63,7 +64,11 @@ async fn create_test_chat_session(
 /// Helper to create a test user with a specific persona
 async fn create_test_user_with_persona(
     test_app: &TestApp,
-) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek, UserPersonaDataForClient)> {
+) -> AnyhowResult<(
+    scribe_backend::db::DbId,
+    SessionDek,
+    UserPersonaDataForClient,
+)> {
     let conn = test_app.db_pool.get().await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -92,9 +97,9 @@ async fn create_test_user_with_persona(
         dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -209,8 +214,12 @@ fn create_lucas_roleplay_messages(
 }
 
 /// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: scribe_backend::db::DbId, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+async fn create_test_chronicle(
+    user_id: scribe_backend::db::DbId,
+    test_app: &TestApp,
+) -> AnyhowResult<Uuid> {
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "Cosmic Awakening: A World on the Brink".to_string(),
@@ -369,7 +378,10 @@ async fn test_persona_context_missing_in_events() {
     let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
+        )),
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -393,7 +405,8 @@ async fn test_persona_context_missing_in_events() {
     // Check if events were created
     if workflow_result.triage_result.is_significant && !workflow_result.execution_results.is_empty()
     {
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
         let events = chronicle_service
             .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
             .await
@@ -477,7 +490,10 @@ async fn test_create_chronicle_event_tool_without_persona() {
     ));
     let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
     let create_event_tool = CreateChronicleEventTool::new(
-        Arc::new(ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
+        )),
         app_state,
     );
 
@@ -505,7 +521,8 @@ async fn test_create_chronicle_event_tool_without_persona() {
     assert_eq!(create_result.get("success").unwrap(), true);
 
     // Verify the event was created with generic reference
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
         .get_chronicle_events(user_id, chronicle_id.into(), Default::default())
         .await

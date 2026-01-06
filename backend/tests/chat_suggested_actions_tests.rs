@@ -170,9 +170,7 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash",
             ),
-            content: genai::chat::MessageContent::from_text(
-                mock_suggestions.to_string(),
-            ),
+            content: genai::chat::MessageContent::from_text(mock_suggestions.to_string()),
             reasoning_content: None,
             usage: genai::chat::Usage::default(),
             captured_raw_body: None,
@@ -526,9 +524,7 @@ async fn run_suggested_actions_logic(
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash",
             ),
-            content: genai::chat::MessageContent::from_text(
-                mock_suggestions.to_string(),
-            ),
+            content: genai::chat::MessageContent::from_text(mock_suggestions.to_string()),
             reasoning_content: None,
             usage: genai::chat::Usage::default(),
             captured_raw_body: None,
@@ -770,9 +766,7 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini-2.5-flash",
             ),
-            content: genai::chat::MessageContent::from_text(
-                malformed_json_string.to_string(),
-            ),
+            content: genai::chat::MessageContent::from_text(malformed_json_string.to_string()),
             reasoning_content: None,
             usage: genai::chat::Usage::default(),
             captured_raw_body: None,

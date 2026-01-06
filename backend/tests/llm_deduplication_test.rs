@@ -5,7 +5,7 @@ use genai::chat::{ChatResponse, MessageContent, Usage};
 use genai::ModelIden;
 #[cfg(feature = "sqlite-backend")]
 use scribe_backend::db::SqliteInteractExt;
-use scribe_backend::db::{get_conn, DbBlob, DbId, DbTimestamp};
+use scribe_backend::db::{get_conn, DbBigInt, DbBlob, DbId, DbTimestamp};
 use scribe_backend::models::chronicle::{CreateChronicleRequest, NewPlayerChronicle};
 use scribe_backend::models::chronicle_event::{CreateEventRequest, EventFilter, EventSource};
 use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
@@ -32,9 +32,9 @@ async fn test_llm_deduplication_solomon_example() {
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };
@@ -179,9 +179,9 @@ async fn test_llm_deduplication_elara_example() {
             recovery_dek_nonce: None,
             role: UserRole::User,
             account_status: AccountStatus::Active,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: DbBigInt::from(0),
+            total_completion_tokens: DbBigInt::from(0),
+            total_token_cost_cents: DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: chrono::Utc::now().into(),
         };

@@ -15,7 +15,7 @@ use secrecy::ExposeSecret;
 use serde_json;
 use std::fmt::Write;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
@@ -788,7 +788,7 @@ async fn perform_initial_token_calculation(
 ) -> Result<TokenCalculation, AppError> {
     let PromptBuildParams {
         token_counter,
-        recent_history,
+
         rag_items,
         system_prompt_base,
         raw_character_system_prompt,
@@ -2577,7 +2577,6 @@ mod tests {
 #[cfg(test)]
 mod scene_context_tests {
     use crate::models::game_state::{EnvironmentState, GameState, GameTime, Location, NpcState};
-    use std::collections::HashMap;
 
     #[test]
     fn test_build_scene_context_xml_empty_state() {

@@ -277,7 +277,10 @@ async fn test_partial_update_preserves_chronicle_id() {
     );
 
     // Verify the model_name was updated
-    assert_eq!(partial_settings_resp.model_name, Some("updated-model-name".to_string()));
+    assert_eq!(
+        partial_settings_resp.model_name,
+        Some("updated-model-name".to_string())
+    );
 }
 
 #[tokio::test]
@@ -376,7 +379,9 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
     // But the bug causes it to be cleared
     let partial_update_data = UpdateChatSettingsRequest {
         system_prompt: None,
-        temperature: Some(scribe_backend::db::DbDecimal(BigDecimal::from_str("0.8").unwrap())), // Only updating temperature
+        temperature: Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.8").unwrap(),
+        )), // Only updating temperature
         max_output_tokens: None,
         frequency_penalty: None,
         presence_penalty: None,
@@ -436,6 +441,8 @@ async fn test_partial_update_preserves_active_custom_persona_id() {
     // Verify the temperature was updated
     assert_eq!(
         partial_settings_resp.temperature,
-        Some(scribe_backend::db::DbDecimal(BigDecimal::from_str("0.8").unwrap()))
+        Some(scribe_backend::db::DbDecimal(
+            BigDecimal::from_str("0.8").unwrap()
+        ))
     );
 }

@@ -21,10 +21,7 @@ use crate::{
     crypto,
     errors::AppError,
     services::cognitive::RecallPipeline,
-    services::{
-        agentic::narrative_tools::SearchKnowledgeBaseTool,
-        safety_utils::create_unrestricted_safety_settings, ChronicleService,
-    },
+    services::{agentic::narrative_tools::SearchKnowledgeBaseTool, ChronicleService},
     AppState,
 };
 use secrecy::SecretBox;

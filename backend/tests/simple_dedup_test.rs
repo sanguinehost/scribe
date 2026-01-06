@@ -16,7 +16,8 @@ use scribe_backend::{
 #[tokio::test]
 async fn test_simple_deduplication() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     // Create a test user first
     let user = test_helpers::db::create_test_user(

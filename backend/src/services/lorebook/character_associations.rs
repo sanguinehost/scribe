@@ -1,7 +1,5 @@
 use super::get_user_from_session;
 use super::*;
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use crate::db::DbTimestamp;
 
 impl LorebookService {

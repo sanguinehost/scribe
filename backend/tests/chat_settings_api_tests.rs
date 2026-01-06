@@ -230,6 +230,7 @@ async fn create_test_chat_session(
         total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         total_credit_cost: 0,
         total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        chat_mode: ChatMode::Character,
     };
 
     let chat_session = conn_pool
@@ -366,6 +367,7 @@ async fn setup_chat_settings_test_env(
             total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             total_credit_cost: 0,
             total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            chat_mode: ChatMode::Character,
         },
     };
 
@@ -632,6 +634,7 @@ async fn get_chat_settings_defaults() {
             total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             total_credit_cost: 0,
             total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            chat_mode: ChatMode::Character,
         }),
     )
     .await
@@ -922,6 +925,7 @@ async fn setup_update_test_env(
         total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         total_credit_cost: 0,
         total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        chat_mode: ChatMode::Character,
     };
     let session: DbChat = test_app
         .db_pool
@@ -1451,6 +1455,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 rag_lorebooks_limit: None,
                 rag_older_chat_limit: None,
                 rag_cognitive_context_limit: None,
+                chat_mode: ChatMode::Character,
             };
 
             diesel::insert_into(chat_sessions::table)
