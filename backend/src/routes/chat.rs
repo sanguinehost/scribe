@@ -650,10 +650,12 @@ pub async fn generate_chat_response(
 
     // Convert DbChatMessage history to GenAiChatMessage history
     let mut gen_ai_recent_history: Vec<GenAiChatMessage> = Vec::new();
+    let mut recent_text_history: Vec<String> = Vec::new();
     for db_msg in managed_db_history {
         // managed_db_history is Vec<DbChatMessage>
         // Content in managed_db_history from get_session_data_for_generation should already be decrypted
         let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+        recent_text_history.push(content_str.clone());
         let chat_role = match db_msg.message_type {
             MessageRole::User => ChatRole::User,
             MessageRole::Assistant => ChatRole::Assistant,
@@ -1156,14 +1158,24 @@ pub async fn generate_chat_response(
     let cognitive_context = if let Some(chronicle_id) = player_chronicle_id {
         // Create a SessionDek reference from the Arc<SecretBox<Vec<u8>>>
         let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+
+        // Build a richer recall query using recent history for better semantic matching
+        let mut recall_query_parts = Vec::new();
+        for text in recent_text_history.iter().rev().take(2).rev() {
+            recall_query_parts.push(text.clone());
+        }
+        recall_query_parts.push(current_user_content_text.clone());
+        let recall_query = recall_query_parts.join("\n");
+
         match state_arc
             .recall_pipeline
             .recall_context(
                 user_id_value,
                 chronicle_id,
-                &current_user_content_text,
+                &recall_query,
                 &session_dek_ref,
                 state_arc.clone(),
+                None, // target_actors (optional)
             )
             .await
         {
@@ -1173,6 +1185,40 @@ pub async fn generate_chat_response(
             }
             Err(e) => {
                 warn!(%session_id, error = %e, "Failed to recall cognitive context, proceeding without it");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // --- Secure Core Memory Retrieval (TITANS/MIRAS) ---
+    let core_memory = if let Some(chronicle_id) = player_chronicle_id {
+        let chronicle_service = crate::services::chronicle_service::ChronicleService::new(
+            state_arc.pool.clone(),
+            state_arc.ai_client.clone(),
+        );
+
+        match chronicle_service
+            .get_core_memory(user_id_value, chronicle_id)
+            .await
+        {
+            Ok(Some(mem)) => {
+                let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+                match mem.decrypt(&session_dek_ref) {
+                    Ok(decrypted) => {
+                        info!(%session_id, "Successfully retrieved and decrypted core memory");
+                        Some(decrypted)
+                    }
+                    Err(e) => {
+                        warn!(%session_id, error = %e, "Failed to decrypt core memory");
+                        None
+                    }
+                }
+            }
+            Ok(None) => None,
+            Err(e) => {
+                warn!(%session_id, error = %e, "Failed to retrieve core memory");
                 None
             }
         }
@@ -1207,6 +1253,7 @@ pub async fn generate_chat_response(
             recent_history_token_budget: Some(recent_history_token_budget),
             rag_token_budget: Some(rag_token_budget),
             cognitive_context,
+            core_memory,
         })
         .await
         {
@@ -3009,6 +3056,7 @@ pub async fn generate_suggested_actions(
             recent_history_token_budget: Some(_recent_history_token_budget),
             rag_token_budget: Some(_rag_token_budget),
             cognitive_context: None,
+            core_memory: None,
         })
         .await
         {

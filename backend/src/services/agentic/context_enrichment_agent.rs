@@ -188,6 +188,7 @@ impl ContextEnrichmentAgent {
                         last_user_message,
                         &dek,
                         self.state.clone(),
+                        None, // target_actors (optional)
                     )
                     .await
                 {

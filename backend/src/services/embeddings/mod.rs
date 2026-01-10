@@ -10,7 +10,9 @@ pub mod utils;
 pub mod tests;
 
 // Re-export the main types and traits for easy access
-pub use metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
+pub use metadata::{
+    ChatMessageChunkMetadata, CognitiveFactMetadata, LorebookChunkMetadata, LorebookEntryParams,
+};
 pub use retrieval::{
     decrypt_lorebook_content, decrypt_lorebook_title, ChronicleEventMetadata, RetrievedChunk,
     RetrievedMetadata,

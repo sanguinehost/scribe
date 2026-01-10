@@ -2,8 +2,8 @@ use crate::auth::session_dek::SessionDek;
 use crate::db::DbId;
 use crate::db::DbPool;
 use crate::errors::AppError;
-use crate::models::cognitive_memory::{CharacterOpinion, EntityObservation};
-use crate::schema::{character_opinions, entity_observations};
+use crate::models::cognitive_memory::{CharacterOpinion, CognitiveFact, EntityObservation};
+use crate::schema::{character_opinions, cognitive_facts, entity_observations};
 use crate::services::hybrid_token_counter::CountingMode;
 use crate::state::AppState;
 use diesel::prelude::*;
@@ -28,8 +28,48 @@ impl RecallPipeline {
         query: &str,
         session_dek: &SessionDek,
         state: Arc<AppState>,
+        target_actors: Option<Vec<String>>, // Added for actor-specific filtering
     ) -> Result<String, AppError> {
         info!("Recalling cognitive context for query: {}", query);
+
+        // 0. Hindsight Head: Search for Cognitive Facts via Vector DB
+        let similar_facts = state
+            .embedding_pipeline_service
+            .retrieve_similar_facts(state.clone(), user_id, chronicle_id, query, 5)
+            .await?;
+
+        let mut matching_facts = Vec::new();
+        let mut other_facts = Vec::new();
+        for (score, meta) in similar_facts {
+            if score > 0.55 {
+                // Lowered threshold for facts
+                if let Some(fact) = self
+                    .get_fact_by_id(user_id, chronicle_id, meta.fact_id)
+                    .await?
+                {
+                    let mut is_match = false;
+                    // If target_actors is provided, prioritize facts involving them
+                    if let Some(ref actors) = target_actors {
+                        if let Ok(decrypted) = fact.decrypt(session_dek) {
+                            if actors.iter().any(|a| {
+                                decrypted.who.to_lowercase().contains(&a.to_lowercase())
+                                    || decrypted.what.to_lowercase().contains(&a.to_lowercase())
+                            }) {
+                                is_match = true;
+                            }
+                        }
+                    }
+
+                    if is_match {
+                        matching_facts.push(fact);
+                    } else {
+                        other_facts.push(fact);
+                    }
+                }
+            }
+        }
+        let mut facts = matching_facts;
+        facts.extend(other_facts);
 
         // 1. Dogmatic Head: Search for Opinions via Vector DB
         let similar_opinions = state
@@ -37,17 +77,38 @@ impl RecallPipeline {
             .retrieve_similar_opinions(state.clone(), user_id, query, 5)
             .await?;
 
-        let mut opinions = Vec::new();
+        let mut matching_opinions = Vec::new();
+        let mut other_opinions = Vec::new();
         for (score, meta) in similar_opinions {
-            if score > 0.70 {
+            if score > 0.65 {
+                // Lowered threshold
                 if let Some(opinion) = self
                     .get_opinion_by_id(user_id, chronicle_id, meta.opinion_id)
                     .await?
                 {
-                    opinions.push(opinion);
+                    let mut is_match = false;
+                    // If target_actors is provided, prioritize opinions from/about them
+                    if let Some(ref actors) = target_actors {
+                        if let Ok(decrypted) = opinion.decrypt(session_dek) {
+                            if actors
+                                .iter()
+                                .any(|a| decrypted.to_lowercase().contains(&a.to_lowercase()))
+                            {
+                                is_match = true;
+                            }
+                        }
+                    }
+
+                    if is_match {
+                        matching_opinions.push(opinion);
+                    } else {
+                        other_opinions.push(opinion);
+                    }
                 }
             }
         }
+        let mut opinions = matching_opinions;
+        opinions.extend(other_opinions);
 
         // --- Dedup-on-Read for Opinions ---
         // Group by perspective_hash and take the latest
@@ -98,7 +159,27 @@ impl RecallPipeline {
         // 3. Decrypt and Format
         let mut context_parts = Vec::new();
         let mut current_tokens: usize = 0;
-        const TOKEN_LIMIT: usize = 500;
+        const TOKEN_LIMIT: usize = 1000; // Increased limit for richer context
+
+        // Format Facts (Hindsight)
+        if !facts.is_empty() {
+            context_parts.push("### Narrative Facts".to_string());
+            for fact in facts {
+                if let Ok(decrypted) = fact.decrypt(session_dek) {
+                    let entry = format!("- {}", decrypted);
+                    let estimate = state
+                        .token_counter
+                        .count_tokens(&entry, CountingMode::LocalOnly, None)
+                        .await?;
+                    let tokens = estimate.total;
+                    if current_tokens + tokens > TOKEN_LIMIT {
+                        break;
+                    }
+                    context_parts.push(entry);
+                    current_tokens += tokens;
+                }
+            }
+        }
 
         // Format Opinions
         if !final_opinions.is_empty() {
@@ -222,5 +303,39 @@ impl RecallPipeline {
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         Ok(results)
+    }
+
+    pub async fn get_fact_by_id(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        fact_id: DbId,
+    ) -> Result<Option<CognitiveFact>, AppError> {
+        let mut conn = crate::db::get_conn(&self.db_pool).await?;
+
+        #[cfg(feature = "postgres-backend")]
+        let result = conn
+            .interact(move |conn| {
+                cognitive_facts::table
+                    .filter(cognitive_facts::user_id.eq(user_id))
+                    .filter(cognitive_facts::chronicle_id.eq(chronicle_id))
+                    .filter(cognitive_facts::id.eq(fact_id))
+                    .first::<CognitiveFact>(conn)
+                    .optional()
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        #[cfg(feature = "sqlite-backend")]
+        let result = cognitive_facts::table
+            .filter(cognitive_facts::user_id.eq(user_id))
+            .filter(cognitive_facts::chronicle_id.eq(chronicle_id))
+            .filter(cognitive_facts::id.eq(fact_id))
+            .first::<CognitiveFact>(&mut conn)
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+        Ok(result)
     }
 }

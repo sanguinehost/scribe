@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
 use crate::services::embeddings::{
-    metadata::{EntityMetadata, OpinionMetadata},
+    metadata::{CognitiveFactMetadata, EntityMetadata, OpinionMetadata},
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
@@ -132,6 +132,8 @@ type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>
 type ChatEventStream =
     std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
 type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
+type FactResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, CognitiveFactMetadata)>, AppError>>>>;
+type OpinionResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, OpinionMetadata)>, AppError>>>>;
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -575,12 +577,26 @@ pub enum PipelineCall {
         opinion_id: crate::db::DbId,
         user_id: crate::db::DbId,
     },
+    ProcessAndEmbedCognitiveFact {
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: String,
+    },
+    RetrieveSimilarFacts {
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: String,
+        limit: u64,
+    },
 }
 
 // Updated MockEmbeddingPipelineService
 #[derive(Clone)] // Added Clone
 pub struct MockEmbeddingPipelineService {
     retrieve_response_queue: RetrievalResponseQueue,
+    fact_response_queue: FactResponseQueue,
+    opinion_response_queue: OpinionResponseQueue,
     calls: Arc<Mutex<Vec<PipelineCall>>>, // Track calls
 }
 
@@ -595,6 +611,8 @@ impl MockEmbeddingPipelineService {
     pub fn new() -> Self {
         Self {
             retrieve_response_queue: Arc::new(Mutex::new(VecDeque::new())),
+            fact_response_queue: Arc::new(Mutex::new(VecDeque::new())),
+            opinion_response_queue: Arc::new(Mutex::new(VecDeque::new())),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -642,6 +660,30 @@ impl MockEmbeddingPipelineService {
         responses: Vec<Result<Vec<RetrievedChunk>, AppError>>,
     ) {
         let mut queue = self.retrieve_response_queue.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
+    }
+
+    /// Sets a sequence of fact responses for the mock service
+    pub fn set_fact_responses_sequence(
+        &self,
+        responses: Vec<Result<Vec<(f32, CognitiveFactMetadata)>, AppError>>,
+    ) {
+        let mut queue = self.fact_response_queue.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
+    }
+
+    /// Sets a sequence of opinion responses for the mock service
+    pub fn set_opinion_responses_sequence(
+        &self,
+        responses: Vec<Result<Vec<(f32, OpinionMetadata)>, AppError>>,
+    ) {
+        let mut queue = self.opinion_response_queue.lock().unwrap();
         queue.clear();
         for response in responses {
             queue.push_back(response);
@@ -900,7 +942,9 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 opinion_text: opinion_text.to_string(),
                 limit,
             });
-        Ok(vec![])
+
+        let mut queue = self.opinion_response_queue.lock().unwrap();
+        queue.pop_front().unwrap_or(Ok(vec![]))
     }
 
     async fn delete_opinion_vector(
@@ -917,6 +961,54 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 user_id,
             });
         Ok(())
+    }
+
+    async fn process_and_embed_cognitive_fact(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: &str,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedCognitiveFact {
+                user_id,
+                fact_id,
+                chronicle_id,
+                fact_text: fact_text.to_string(),
+            });
+        Ok(())
+    }
+
+    async fn retrieve_similar_facts(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+    ) -> Result<
+        Vec<(
+            f32,
+            crate::services::embeddings::metadata::CognitiveFactMetadata,
+        )>,
+        AppError,
+    > {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveSimilarFacts {
+                user_id,
+                chronicle_id,
+                query: query.to_string(),
+                limit,
+            });
+
+        let mut queue = self.fact_response_queue.lock().unwrap();
+        queue.pop_front().unwrap_or(Ok(vec![]))
     }
 }
 

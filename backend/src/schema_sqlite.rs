@@ -549,6 +549,40 @@ diesel::table! {
 }
 
 diesel::table! {
+    cognitive_facts (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        who_encrypted -> Binary,
+        who_nonce -> Binary,
+        what_encrypted -> Binary,
+        what_nonce -> Binary,
+        where_encrypted -> Binary,
+        where_nonce -> Binary,
+        when_encrypted -> Binary,
+        when_nonce -> Binary,
+        why_encrypted -> Binary,
+        why_nonce -> Binary,
+        fact_type -> Text,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    cognitive_core_memory (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        memory_state_encrypted -> Binary,
+        memory_state_nonce -> Binary,
+        version -> Integer,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     payment_usage_tracking (id) {
         id -> Text,
         user_id -> Text,

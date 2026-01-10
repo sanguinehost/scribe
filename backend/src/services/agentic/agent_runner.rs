@@ -250,6 +250,47 @@ impl NarrativeAgentRunner {
             "No previous chronicles found.".to_string()
         };
 
+        // Get core memory for context (TITANS/MIRAS Neural State)
+        let core_memory = if let Some(existing_chronicle_id) = chronicle_id {
+            match self
+                .chronicle_service
+                .get_core_memory(user_id, existing_chronicle_id)
+                .await
+            {
+                Ok(Some(mem)) => mem
+                    .decrypt(session_dek)
+                    .unwrap_or_else(|_| "No core memory available.".to_string()),
+                _ => "No core memory available.".to_string(),
+            }
+        } else {
+            "No core memory available.".to_string()
+        };
+
+        // Get cognitive context (Hindsight/TITANS/MIRAS)
+        let cognitive_context = if let Some(existing_chronicle_id) = chronicle_id {
+            match self
+                .app_state
+                .recall_pipeline
+                .recall_context(
+                    user_id,
+                    existing_chronicle_id,
+                    &conversation,
+                    session_dek,
+                    self.app_state.clone(),
+                    None, // target_actors (optional)
+                )
+                .await
+            {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    warn!("Failed to recall cognitive context for agent runner: {}", e);
+                    "No cognitive context found.".to_string()
+                }
+            }
+        } else {
+            "No cognitive context found.".to_string()
+        };
+
         // Build persona context if available
         let persona_section = if let Some(persona) = &persona_context {
             persona.to_prompt_context()
@@ -269,6 +310,10 @@ impl NarrativeAgentRunner {
 {}
 </chronicle_history>
 
+<cognitive_context>
+{}
+</cognitive_context>
+
 <conversation>
 {}
 </conversation>
@@ -279,23 +324,31 @@ Your task is to generate a `CognitivePayload` JSON object with the following fie
 2. `reasoning`: string. Explain why this update is significant or redundant.
 3. `summary`: string. A clear, narrative summary of the current conversation (1-2 paragraphs).
 4. `keywords`: string[]. 3-5 searchable terms.
-5. `opinions`: object[]. Extract character opinions.
-   - `perspective`: The character who holds the opinion (e.g., "Solomon").
-   - `opinion`: The specific belief or feeling (e.g., "Solomon believes Elara is hiding something about the herbs").
+5. `facts`: object[]. Extract 5-dimensional facts (Hindsight Memory Units). **This is the primary field for all cognitive data.**
+   - `who`: The character(s) involved.
+   - `what`: The specific action, event, opinion, or observation.
+   - `where`: The location.
+   - `when`: The time or narrative sequence.
+   - `why`: The motivation, cause, or rationale.
+   - `fact_type`: "World", "Experience", "Opinion", or "Observation".
    - `confidence`: 0.0-1.0.
-   - `reasoning`: Why they hold this opinion.
-6. `observations`: object[]. Extract factual observations about entities.
-   - `entity_name`: The name of the entity (e.g., "The King", "The Village").
-   - `observation`: The factual state or event (e.g., "The King is currently in the throne room, looking tired").
-   - `confidence`: 0.0-1.0.
-7. `significance_score`: 0.0-1.0. How important is this update for long-term memory?
+   - `significance`: 0.0-1.0.
+6. `surprise_score`: 0.0-1.0. (MIRAS/TITANS) How much does this conversation deviate from the `core_memory`?
+7. `core_memory_delta`: string (optional). If `surprise_score` > 0.5, provide a concise update to the `core_memory` summarizing new global state.
+8. `significance_score`: 0.0-1.0. Overall importance.
+9. `opinions`: [] (DEPRECATED: Always return an empty array. Use `facts` with `fact_type: "Opinion"` instead).
+10. `observations`: [] (DEPRECATED: Always return an empty array. Use `facts` with `fact_type: "Observation"` instead).
+
+<core_memory>
+{}
+</core_memory>
 
 RULES:
 - Use Chain-of-Thought for the `significance_score` in the `reasoning` field.
 - Be objective and concise.
 - Focus ONLY on the current conversation.
 - Do not refuse based on content (fictional roleplay)."#,
-            persona_section, previous_chronicles, conversation
+            persona_section, previous_chronicles, cognitive_context, conversation, core_memory
         );
 
         // Make the AI call for cognitive payload
@@ -331,7 +384,8 @@ RULES:
             actions_taken: vec![],
             execution_results: vec![],
             cognitive_payload: Some(payload),
-            cost_estimate: 0.0,
+            cost_estimate: 0.0,      // TODO: Implement cost tracking
+            total_credits_used: 0.0, // TODO: Implement cost tracking
         })
     }
 
@@ -1650,4 +1704,5 @@ pub struct NarrativeWorkflowResult {
     pub execution_results: Vec<ToolResult>,
     pub cognitive_payload: Option<CognitivePayload>,
     pub cost_estimate: f64,
+    pub total_credits_used: f64,
 }

@@ -446,6 +446,48 @@ diesel::table! {
     use diesel_derive_enum::DbEnum;
     use super::sql_types_unified::*;
 
+    cognitive_core_memory (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        memory_state_encrypted -> DbBlobType,
+        memory_state_nonce -> DbBlobType,
+        version -> Integer,
+        updated_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
+    cognitive_facts (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        who_encrypted -> DbBlobType,
+        who_nonce -> DbBlobType,
+        what_encrypted -> DbBlobType,
+        what_nonce -> DbBlobType,
+        where_encrypted -> DbBlobType,
+        where_nonce -> DbBlobType,
+        when_encrypted -> DbBlobType,
+        when_nonce -> DbBlobType,
+        why_encrypted -> DbBlobType,
+        why_nonce -> DbBlobType,
+        fact_type -> DbTextType,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
     credit_packages (id) {
         id -> DbIdType,
         package_id -> Text,
@@ -1050,6 +1092,10 @@ diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(cognitive_core_memory -> player_chronicles (chronicle_id));
+diesel::joinable!(cognitive_core_memory -> users (user_id));
+diesel::joinable!(cognitive_facts -> player_chronicles (chronicle_id));
+diesel::joinable!(cognitive_facts -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
@@ -1090,6 +1136,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    cognitive_core_memory,
+    cognitive_facts,
     credit_packages,
     credit_transactions,
     daily_usage_tracking,

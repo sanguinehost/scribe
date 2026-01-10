@@ -1,6 +1,6 @@
 use super::metadata::{
-    ChatMessageChunkMetadata, EntityMetadata, LorebookChunkMetadata, LorebookEntryParams,
-    OpinionMetadata,
+    ChatMessageChunkMetadata, CognitiveFactMetadata, EntityMetadata, LorebookChunkMetadata,
+    LorebookEntryParams, OpinionMetadata,
 };
 use super::retrieval::{
     decrypt_chat_content, decrypt_lorebook_content, RetrievedChunk, RetrievedMetadata,
@@ -1802,5 +1802,108 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .await?;
 
         Ok(())
+    }
+
+    /// Processes a cognitive fact: embeds and stores it in the fact_vectors collection.
+    async fn process_and_embed_cognitive_fact(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: &str,
+    ) -> Result<(), AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "fact_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        // Get embedding
+        let embedding_vector = embedding_client
+            .embed_content(fact_text, "RETRIEVAL_DOCUMENT", None)
+            .await?;
+
+        let metadata = CognitiveFactMetadata {
+            user_id,
+            fact_id,
+            chronicle_id,
+            source_type: "cognitive_fact".to_string(),
+        };
+
+        let point = create_qdrant_point(
+            fact_id.into(),
+            embedding_vector,
+            Some(serde_json::to_value(metadata)?.into()),
+        )?;
+
+        qdrant_service
+            .store_points_to_collection(collection_name, vec![point])
+            .await?;
+
+        Ok(())
+    }
+
+    /// Retrieves similar cognitive facts from the fact_vectors collection.
+    async fn retrieve_similar_facts(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "fact_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        let query_embedding = embedding_client
+            .embed_content(query, "RETRIEVAL_QUERY", None)
+            .await?;
+
+        let filter = Filter {
+            must: vec![
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "user_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "chronicle_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+            ],
+            ..Default::default()
+        };
+
+        let search_results = qdrant_service
+            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+            .await?;
+
+        let mut results = Vec::new();
+        for scored_point in search_results {
+            if let Ok(meta) = CognitiveFactMetadata::try_from(scored_point.payload) {
+                results.push((scored_point.score, meta));
+            }
+        }
+
+        Ok(results)
     }
 }

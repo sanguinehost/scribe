@@ -312,3 +312,31 @@ impl TryFrom<HashMap<String, QdrantValue>> for OpinionMetadata {
         })
     }
 }
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct CognitiveFactMetadata {
+    pub user_id: crate::db::DbId,
+    pub fact_id: crate::db::DbId,
+    pub chronicle_id: crate::db::DbId,
+    pub source_type: String,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "CognitiveFactMetadata")?;
+        let fact_id = extract_uuid_from_payload(&payload, "fact_id", "CognitiveFactMetadata")?;
+        let chronicle_id =
+            extract_uuid_from_payload(&payload, "chronicle_id", "CognitiveFactMetadata")?;
+        let source_type =
+            extract_string_from_payload(&payload, "source_type", "CognitiveFactMetadata")?;
+
+        Ok(Self {
+            user_id,
+            fact_id,
+            chronicle_id,
+            source_type,
+        })
+    }
+}

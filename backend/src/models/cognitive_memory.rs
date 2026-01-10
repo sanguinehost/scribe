@@ -130,9 +130,159 @@ pub struct CognitivePayload {
     pub reasoning: String,
     pub summary: String,
     pub keywords: Vec<String>,
+    pub facts: Vec<ExtractedFact>,
+    pub surprise_score: f32,
+    pub core_memory_delta: Option<String>,
+    pub significance_score: f32,
+    // Backward compatibility
     pub opinions: Vec<OpinionExtraction>,
     pub observations: Vec<ObservationExtraction>,
-    pub significance_score: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractedFact {
+    pub who: String,
+    pub what: String,
+    #[serde(rename = "where")]
+    pub r#where: String,
+    pub when: String,
+    pub why: String,
+    pub fact_type: String,
+    pub confidence: f32,
+    pub significance: f32,
+}
+
+impl std::fmt::Display for ExtractedFact {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {}: {} (Where: {}, When: {}, Why: {})",
+            self.fact_type, self.who, self.what, self.r#where, self.when, self.why
+        )
+    }
+}
+
+#[derive(
+    Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Identifiable, Associations,
+)]
+#[diesel(table_name = crate::schema::cognitive_facts)]
+#[diesel(belongs_to(crate::models::users::User, foreign_key = user_id))]
+#[diesel(belongs_to(crate::models::chronicle::PlayerChronicle, foreign_key = chronicle_id))]
+pub struct CognitiveFact {
+    pub id: DbId,
+    pub user_id: DbId,
+    pub chronicle_id: DbId,
+    pub who_encrypted: Vec<u8>,
+    pub who_nonce: Vec<u8>,
+    pub what_encrypted: Vec<u8>,
+    pub what_nonce: Vec<u8>,
+    pub where_encrypted: Vec<u8>,
+    pub where_nonce: Vec<u8>,
+    pub when_encrypted: Vec<u8>,
+    pub when_nonce: Vec<u8>,
+    pub why_encrypted: Vec<u8>,
+    pub why_nonce: Vec<u8>,
+    pub fact_type: String,
+    pub confidence: f32,
+    pub significance: f32,
+    pub created_at: DbTimestamp,
+}
+
+impl CognitiveFact {
+    pub fn decrypt(&self, session_dek: &SessionDek) -> Result<ExtractedFact, CryptoError> {
+        let who = String::from_utf8_lossy(
+            decrypt_gcm(&self.who_encrypted, &self.who_nonce, &session_dek.0)?.expose_secret(),
+        )
+        .to_string();
+        let what = String::from_utf8_lossy(
+            decrypt_gcm(&self.what_encrypted, &self.what_nonce, &session_dek.0)?.expose_secret(),
+        )
+        .to_string();
+        let where_ = String::from_utf8_lossy(
+            decrypt_gcm(&self.where_encrypted, &self.where_nonce, &session_dek.0)?.expose_secret(),
+        )
+        .to_string();
+        let when = String::from_utf8_lossy(
+            decrypt_gcm(&self.when_encrypted, &self.when_nonce, &session_dek.0)?.expose_secret(),
+        )
+        .to_string();
+        let why = String::from_utf8_lossy(
+            decrypt_gcm(&self.why_encrypted, &self.why_nonce, &session_dek.0)?.expose_secret(),
+        )
+        .to_string();
+
+        Ok(ExtractedFact {
+            who,
+            what,
+            r#where: where_,
+            when,
+            why,
+            fact_type: self.fact_type.clone(),
+            confidence: self.confidence,
+            significance: self.significance,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = crate::schema::cognitive_facts)]
+pub struct NewCognitiveFact {
+    pub id: DbId,
+    pub user_id: DbId,
+    pub chronicle_id: DbId,
+    pub who_encrypted: Vec<u8>,
+    pub who_nonce: Vec<u8>,
+    pub what_encrypted: Vec<u8>,
+    pub what_nonce: Vec<u8>,
+    pub where_encrypted: Vec<u8>,
+    pub where_nonce: Vec<u8>,
+    pub when_encrypted: Vec<u8>,
+    pub when_nonce: Vec<u8>,
+    pub why_encrypted: Vec<u8>,
+    pub why_nonce: Vec<u8>,
+    pub fact_type: String,
+    pub confidence: f32,
+    pub significance: f32,
+    pub created_at: DbTimestamp,
+}
+
+#[derive(
+    Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Identifiable, Associations,
+)]
+#[diesel(table_name = crate::schema::cognitive_core_memory)]
+#[diesel(belongs_to(crate::models::users::User, foreign_key = user_id))]
+#[diesel(belongs_to(crate::models::chronicle::PlayerChronicle, foreign_key = chronicle_id))]
+pub struct CoreMemory {
+    pub id: DbId,
+    pub user_id: DbId,
+    pub chronicle_id: DbId,
+    pub memory_state_encrypted: Vec<u8>,
+    pub memory_state_nonce: Vec<u8>,
+    pub version: i32,
+    pub updated_at: DbTimestamp,
+}
+
+impl CoreMemory {
+    pub fn decrypt(&self, session_dek: &SessionDek) -> Result<String, CryptoError> {
+        let state_decrypted = decrypt_gcm(
+            &self.memory_state_encrypted,
+            &self.memory_state_nonce,
+            &session_dek.0,
+        )?;
+        Ok(String::from_utf8_lossy(state_decrypted.expose_secret()).to_string())
+    }
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = crate::schema::cognitive_core_memory)]
+pub struct NewCoreMemory {
+    pub id: DbId,
+    pub user_id: DbId,
+    pub chronicle_id: DbId,
+    pub memory_state_encrypted: Vec<u8>,
+    pub memory_state_nonce: Vec<u8>,
+    pub version: i32,
+    pub updated_at: DbTimestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

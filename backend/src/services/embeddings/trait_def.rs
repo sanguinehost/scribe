@@ -1,4 +1,6 @@
-use super::metadata::{EntityMetadata, LorebookEntryParams, OpinionMetadata};
+use super::metadata::{
+    CognitiveFactMetadata, EntityMetadata, LorebookEntryParams, OpinionMetadata,
+};
 use super::retrieval::RetrievedChunk;
 use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
@@ -122,4 +124,24 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         opinion_id: crate::db::DbId,
         user_id: crate::db::DbId,
     ) -> Result<(), AppError>;
+
+    /// Processes a cognitive fact: embeds and stores it in the fact_vectors collection.
+    async fn process_and_embed_cognitive_fact(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: &str,
+    ) -> Result<(), AppError>;
+
+    /// Retrieves similar cognitive facts from the fact_vectors collection.
+    async fn retrieve_similar_facts(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError>;
 }
