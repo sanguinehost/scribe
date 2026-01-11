@@ -2459,7 +2459,6 @@ pub mod db {
         let user_id = crate::db::DbId::new();
 
         let new_user_payload = NewUser {
-            #[cfg(feature = "sqlite-backend")]
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
@@ -2580,7 +2579,6 @@ pub mod db {
         let user_id = crate::db::DbId::new();
 
         let new_user_payload = NewUser {
-            #[cfg(feature = "sqlite-backend")]
             id: user_id,
             username: username_clone_for_payload,
             password_hash,

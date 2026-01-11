@@ -418,9 +418,8 @@ impl AuthUser for User {
 }
 
 /// Represents data needed to create a new user.
-#[derive(Insertable)] // Removed Debug for custom impl
+#[derive(Insertable, Default)]
 #[diesel(table_name = users)]
-
 pub struct NewUser {
     // Always provide explicit ID (required for SQLite)
     pub id: DbId,
@@ -440,30 +439,6 @@ pub struct NewUser {
     pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
-}
-
-impl Default for NewUser {
-    fn default() -> Self {
-        Self {
-            id: crate::db::DbId::new(),
-            username: "default_user".to_string(),
-            password_hash: "hash".to_string(),
-            email: "default@example.com".to_string(),
-            kek_salt: "salt".to_string(),
-            encrypted_dek: crate::db::DbBlob::from_bytes(vec![]),
-            encrypted_dek_by_recovery: None,
-            recovery_kek_salt: None,
-            dek_nonce: crate::db::DbBlob::from_bytes(vec![]),
-            recovery_dek_nonce: None,
-            role: UserRole::User,
-            account_status: AccountStatus::Active,
-            total_prompt_tokens: DbBigInt::from(0),
-            total_completion_tokens: DbBigInt::from(0),
-            total_token_cost_cents: DbBigInt::from(0),
-            tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now().into(),
-        }
-    }
 }
 
 impl std::fmt::Debug for NewUser {
@@ -622,6 +597,7 @@ mod tests {
         let dek_nonce = vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // Example 12-byte nonce
 
         let new_user = NewUser {
+            id: crate::db::DbId::new(),
             username: username.clone(),
             password_hash: password_hash.clone(),
             email: email.clone(),

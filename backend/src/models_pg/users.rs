@@ -432,6 +432,7 @@ impl AuthUser for User {
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewUser {
+    pub id: DbId,
     pub username: String,
     pub password_hash: String,
     pub email: String,
@@ -615,6 +616,7 @@ mod tests {
         let dek_nonce = vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // Example 12-byte nonce
 
         let new_user = NewUser {
+            id: crate::db::DbId::new(),
             username: username.clone(),
             password_hash: password_hash.clone(),
             email: email.clone(),

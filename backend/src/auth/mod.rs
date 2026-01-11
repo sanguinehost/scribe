@@ -326,7 +326,6 @@ pub fn create_user_sync(
     let user_id = crate::db::DbId::new();
 
     let new_user = NewUser {
-        #[cfg(feature = "sqlite-backend")]
         id: user_id,
         username: credentials.username.clone(), // Clone username from credentials
         password_hash,                          // Use the pre-hashed password

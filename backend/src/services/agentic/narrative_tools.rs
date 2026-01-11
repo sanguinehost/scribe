@@ -2000,34 +2000,6 @@ Return your analysis as a JSON object with these four arrays."#,
             serde_json::to_string_pretty(&entry_summaries).unwrap()
         );
 
-        // Define structured output schema for the analysis
-        let analysis_schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "gaps": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Missing information or themes that would strengthen the lorebook"
-                },
-                "consistency_issues": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Contradictions or inconsistencies found between entries"
-                },
-                "improvement_suggestions": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Specific suggestions for enhancing existing entries"
-                },
-                "recommended_themes": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "New entry themes that would add value to the lorebook"
-                }
-            },
-            "required": ["gaps", "consistency_issues", "improvement_suggestions", "recommended_themes"]
-        });
-
         // Call AI with structured output
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,

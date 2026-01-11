@@ -807,21 +807,6 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
     /// Headers are case-insensitive keywords followed by optional "---"
     fn parse_sections(text: &str) -> HashMap<String, String> {
         let mut sections: HashMap<String, String> = HashMap::new();
-        let known_headers = [
-            "location",
-            "environment",
-            "time",
-            "vitals",
-            "currency",
-            "inventory",
-            "equipment",
-            "main quest",
-            "optional quests",
-            "quests",
-            "npcs",
-            "status effects",
-        ];
-
         // Match section headers: "Location", "Location\n---", "## Location", etc.
         let header_re = Regex::new(r"(?mi)^(?:#*\s*)?(location|environment|time|vitals|currency|inventory|equipment|main quest|optional quests|quests|npcs|status effects)\s*$").unwrap();
 

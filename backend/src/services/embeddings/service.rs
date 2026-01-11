@@ -25,9 +25,7 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
 
-pub struct EmbeddingPipelineService {
-    chunk_config: ChunkConfig, // Store chunking configuration
-}
+pub struct EmbeddingPipelineService {}
 
 /// Default score threshold for standard RAG retrieval
 const RAG_SCORE_THRESHOLD: f32 = 0.20;
@@ -35,8 +33,8 @@ const RAG_SCORE_THRESHOLD: f32 = 0.20;
 impl EmbeddingPipelineService {
     /// Creates a new `EmbeddingPipelineService`.
     #[must_use]
-    pub const fn new(chunk_config: ChunkConfig) -> Self {
-        Self { chunk_config }
+    pub const fn new(_chunk_config: ChunkConfig) -> Self {
+        Self {}
     }
 }
 
@@ -1788,7 +1786,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         &self,
         state: Arc<AppState>,
         opinion_id: crate::db::DbId,
-        user_id: crate::db::DbId,
+        _user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let qdrant_service = state.qdrant_service.clone();
         let collection_name = "opinion_vectors";
