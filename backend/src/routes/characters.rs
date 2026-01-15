@@ -30,9 +30,10 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
+use diesel::prelude::*;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
-    QueryDsl, RunQueryDsl, SelectableHelper,
+    QueryDsl, RunQueryDsl,
 }; // Needed for .filter(), .load(), .first(), etc.
 use std::sync::Arc;
 use tracing::{debug, error, info, instrument, trace, warn}; // Use needed tracing macros

@@ -1,7 +1,5 @@
 // backend/src/routes/chronicles.rs
-
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::SqliteInteractExt;
+// Note: SqliteInteractExt is imported locally in functions that need it
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,

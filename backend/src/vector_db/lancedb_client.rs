@@ -35,7 +35,6 @@ pub struct LanceDbClient {
     table: Arc<RwLock<Option<Table>>>,
     table_name: String,
     embedding_dimension: u64,
-    data_dir: PathBuf,
 }
 
 impl LanceDbClient {
@@ -79,7 +78,6 @@ impl LanceDbClient {
             table: Arc::new(RwLock::new(None)),
             table_name,
             embedding_dimension,
-            data_dir,
         };
 
         info!(
@@ -1339,7 +1337,6 @@ mod tests {
             table: Arc::new(RwLock::new(None)),
             table_name: "test".to_string(),
             embedding_dimension: 768,
-            data_dir: PathBuf::from("/tmp"),
         };
 
         assert_eq!(client.sanitize_column_name("user_id"), "user_id");
@@ -1357,7 +1354,6 @@ mod tests {
             table: Arc::new(RwLock::new(None)),
             table_name: "test".to_string(),
             embedding_dimension: 768,
-            data_dir: PathBuf::from("/tmp"),
         };
 
         assert_eq!(client.escape_sql_string("hello"), "hello");
@@ -1375,7 +1371,6 @@ mod tests {
             table: Arc::new(RwLock::new(None)),
             table_name: "test".to_string(),
             embedding_dimension: 4, // Small dimension for testing
-            data_dir: PathBuf::from("/tmp"),
         };
 
         // Correct data: 2 rows × 4 dimensions = 8 floats
@@ -1394,7 +1389,6 @@ mod tests {
             table: Arc::new(RwLock::new(None)),
             table_name: "test".to_string(),
             embedding_dimension: 4,
-            data_dir: PathBuf::from("/tmp"),
         };
 
         // Wrong data: 2 rows × 4 dimensions expected = 8 floats, but only 6 provided

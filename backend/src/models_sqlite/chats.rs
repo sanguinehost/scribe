@@ -12,7 +12,6 @@ use validator::{Validate, ValidationError};
 use diesel::deserialize::{self, FromSql, FromSqlRow};
 use diesel::expression::AsExpression;
 use diesel::serialize::{self, IsNull, Output, ToSql};
-use std::io::Write;
 
 use crate::crypto::{decrypt_gcm, encrypt_gcm};
 use crate::errors::AppError;

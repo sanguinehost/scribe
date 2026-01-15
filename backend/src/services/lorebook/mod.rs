@@ -1,5 +1,5 @@
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 
 use crate::db::DbPool;
@@ -222,6 +222,7 @@ impl LorebookService {
             .interact(move |conn_sync| {
                 #[cfg(feature = "postgres-backend")]
                 {
+                    use diesel::prelude::*;
                     diesel::insert_into(lorebooks::table)
                         .values(&new_lorebook_db)
                         .returning(Lorebook::as_returning())
@@ -377,11 +378,13 @@ impl LorebookService {
         let lorebook_entry = {
             conn.interact(move |conn_sync| {
                 use crate::schema::lorebook_entries;
-                use diesel::RunQueryDsl;
-                diesel::insert_into(lorebook_entries::table)
-                    .values(&new_entry_db)
-                    .returning(LorebookEntry::as_returning())
-                    .get_result(conn_sync)
+                {
+                    use diesel::prelude::*;
+                    diesel::insert_into(lorebook_entries::table)
+                        .values(&new_entry_db)
+                        .returning(LorebookEntry::as_returning())
+                        .get_result(conn_sync)
+                }
             })
             .await
             .map_err(|e| {

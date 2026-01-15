@@ -14,9 +14,9 @@ use crate::models::users::{AccountStatus, NewUser, SerializableSecretDek, User, 
 use crate::privacy::logging::loggable_user_id;
 // Remove UserCredentials import if no longer needed elsewhere in this file
 use crate::state::DbPool; // Assuming you use a DbPool
-use diesel::{RunQueryDsl, SelectableHelper};
-// Added for as_returning // Added for get_result
-// use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
+                          // diesel imports are used in cfg blocks where they're imported locally
+                          // Added for as_returning // Added for get_result
+                          // use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
 use crate::schema;
 use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -322,6 +322,7 @@ pub async fn create_user_in_db(
     let user_from_db: UserDbQuery = crate::db::with_conn(pool, move |conn| {
         #[cfg(feature = "postgres-backend")]
         {
+            use diesel::prelude::*;
             diesel::insert_into(schema::users::table)
                 .values(new_user_payload)
                 .returning(UserDbQuery::as_returning())

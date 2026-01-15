@@ -2,7 +2,8 @@ use crate::db::DbId;
 use std::sync::Arc;
 
 use chrono::Utc;
-use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
+use diesel::prelude::*;
+use diesel::ExpressionMethods;
 
 use crate::auth::session_dek::SessionDek;
 use crate::db::DbPool;

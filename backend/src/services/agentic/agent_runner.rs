@@ -25,7 +25,7 @@ use crate::{
 use super::{
     registry::ToolRegistry,
     state_manager_agent::StateManagerAgent,
-    tools::{ScribeTool, ToolParams, ToolResult},
+    tools::{ToolParams, ToolResult},
 };
 
 /// Configuration for the narrative intelligence workflow
@@ -53,6 +53,7 @@ impl Default for NarrativeWorkflowConfig {
 }
 
 /// JSON schema for triage results (conversation summary)
+#[allow(dead_code)]
 fn get_triage_schema() -> crate::DbJson {
     crate::db::Json(serde_json::json!({
         "type": "object",
@@ -67,6 +68,7 @@ fn get_triage_schema() -> crate::DbJson {
 }
 
 /// JSON schema for action plans (chronicle event creation)
+#[allow(dead_code)]
 fn get_action_plan_schema() -> crate::DbJson {
     crate::db::Json(serde_json::json!({
         "type": "object",
@@ -120,6 +122,7 @@ fn get_action_plan_schema() -> crate::DbJson {
 }
 
 /// JSON schema for chronicle naming
+#[allow(dead_code)]
 fn get_chronicle_naming_schema() -> crate::DbJson {
     crate::db::Json(serde_json::json!({
         "type": "object",
@@ -164,7 +167,6 @@ pub struct NarrativeAgentRunner {
     config: NarrativeWorkflowConfig,
 
     chronicle_service: Arc<ChronicleService>,
-    embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
     app_state: Arc<AppState>,
     token_counter: Arc<HybridTokenCounter>,
 }
@@ -177,7 +179,6 @@ impl NarrativeAgentRunner {
         config: NarrativeWorkflowConfig,
 
         chronicle_service: Arc<ChronicleService>,
-        embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
         app_state: Arc<AppState>,
         token_counter: Arc<HybridTokenCounter>,
     ) -> Self {
@@ -186,7 +187,6 @@ impl NarrativeAgentRunner {
             tool_registry,
             config,
             chronicle_service,
-            embedding_pipeline_service,
             app_state,
             token_counter,
         }

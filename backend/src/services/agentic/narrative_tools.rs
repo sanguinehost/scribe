@@ -23,6 +23,7 @@ use crate::{
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
 /// Generate JSON schema for text significance triage response
+#[allow(dead_code)]
 fn get_text_significance_triage_schema() -> crate::DbJson {
     crate::db::Json(serde_json::json!({
         "type": "object",
@@ -1749,19 +1750,13 @@ pub struct CreateBatchLorebookEntriesTool {
 /// Tool for analyzing existing lorebook entries and identifying gaps, inconsistencies, or improvement opportunities
 /// Uses AI to provide strategic recommendations for lorebook enhancement
 pub struct AnalyzeLorebookTool {
-    lorebook_service: Arc<LorebookService>,
     ai_client: Arc<dyn AiClient>,
     app_state: Arc<AppState>,
 }
 
 impl AnalyzeLorebookTool {
-    pub fn new(
-        lorebook_service: Arc<LorebookService>,
-        ai_client: Arc<dyn AiClient>,
-        app_state: Arc<AppState>,
-    ) -> Self {
+    pub fn new(ai_client: Arc<dyn AiClient>, app_state: Arc<AppState>) -> Self {
         Self {
-            lorebook_service,
             ai_client,
             app_state,
         }

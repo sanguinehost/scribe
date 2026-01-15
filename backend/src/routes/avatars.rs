@@ -15,7 +15,8 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::prelude::*;
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use image::ImageFormat;
 use tracing::{debug, error, info, instrument, warn};
 

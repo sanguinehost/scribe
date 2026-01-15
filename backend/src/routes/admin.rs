@@ -10,7 +10,8 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::prelude::*;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
 

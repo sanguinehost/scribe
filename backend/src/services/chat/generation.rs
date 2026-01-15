@@ -2,9 +2,7 @@ use crate::db::DbId;
 use std::{pin::Pin, sync::Arc};
 
 use bigdecimal::ToPrimitive;
-use diesel::{
-    result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
-};
+use diesel::{result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl};
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
