@@ -11,6 +11,7 @@ use crate::models::characters::{Character, CharacterMetadata}; // Added Characte
 use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::models::chats::CreateChatSessionPayload;
 use crate::models::chats::{
+    ChatMessage,
     ChatMode,
     ChatSessionQuery, // Added for queries to avoid tuple limit
     CreateMessageVariantPayload,
@@ -69,8 +70,6 @@ use std::sync::Arc;
 use tracing::field;
 use tracing::{debug, error, info, instrument, trace, warn};
 use validator::Validate;
-
-// Define CurrentAuthSession type alias
 
 // Credit value in dollars per credit (1 credit = $0.02)
 const CREDIT_VALUE_DOLLARS: f64 = 0.02;
@@ -414,6 +413,18 @@ pub async fn generate_chat_response(
         use crate::services::encryption_service::EncryptionService;
         use crate::services::payment::{CreditService, SubscriptionService};
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
         // Get user's subscription tier
@@ -713,70 +724,17 @@ pub async fn generate_chat_response(
         // In the future, we might want to find the actual user message that prompted the variant
         use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
 
-        #[cfg(feature = "sqlite-backend")]
-        {
-            ChatMessage {
-                game_time: None,
-                id: crate::db::DbId::new_v4(), // Temporary ID
-                session_id,
-                user_id: user_id_value,
-                message_type: DbMessageRole::User,
-                content: current_user_content_text.as_bytes().to_vec(),
-                rag_embedding_id: None,
-                content_nonce: None,
-                created_at: chrono::Utc::now().into(),
-                updated_at: chrono::Utc::now().into(),
-                role: None,
-                parts: None,
-                attachments: None,
-                prompt_tokens: None,
-                completion_tokens: None,
-                raw_prompt_ciphertext: None,
-                raw_prompt_nonce: None,
-                model_name: model_to_use.clone(),
-                status: "completed".to_string(),
-                error_message: None,
-                superseded_at: None,
-                variant_count: 0,
-                current_variant_index: 0,
-                credits_charged: 0,
-                credits_cost: 0.0,  // SQLite: f64
-                actual_cost: 0.0,   // SQLite: f64
-                modified_cost: 0.0, // SQLite: f64
-                credit_cost: 0,
-                actual_charge: 0.0, // SQLite: f64
-            }
-        }
+        let mut msg = ChatMessage::default();
+        msg.id = crate::db::DbId::new_v4(); // Temporary ID
+        msg.session_id = session_id;
+        msg.user_id = user_id_value;
+        msg.message_type = DbMessageRole::User;
+        msg.content = current_user_content_text.as_bytes().to_vec();
 
-        #[cfg(feature = "postgres-backend")]
-        {
-            ChatMessage {
-                id: crate::db::DbId::new_v4(), // Temporary ID
-                session_id,
-                user_id: user_id_value,
-                message_type: DbMessageRole::User,
-                content: current_user_content_text.as_bytes().to_vec(),
-                content_nonce: None,
-                created_at: chrono::Utc::now().into(),
-                prompt_tokens: None,
-                completion_tokens: None,
-                raw_prompt_ciphertext: None,
-                raw_prompt_nonce: None,
-                model_name: model_to_use.clone(),
-                status: "completed".to_string(),
-                error_message: None,
-                superseded_at: None,
-                variant_count: 0,
-                current_variant_index: 0,
-                credits_charged: 0,
-                credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
-                modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                credit_cost: 0,
-                actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                game_time: None,
-            }
-        }
+        msg.model_name = model_to_use.clone();
+
+        msg.status = "completed".to_string();
+        msg
     } else {
         // Normal flow: save new user message
         match chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
@@ -869,6 +827,18 @@ pub async fn generate_chat_response(
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
                 let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
                 let _ = conn
@@ -888,6 +858,18 @@ pub async fn generate_chat_response(
 
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
+                #[cfg(feature = "postgres-backend")]
+                let conn = crate::db::get_conn(&state_arc.pool).await?;
+                #[cfg(feature = "sqlite-backend")]
                 let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
                 conn.interact(move |conn| {
@@ -975,6 +957,7 @@ pub async fn generate_chat_response(
                             rag_chronicles_limit,
                             rag_lorebooks_limit,
                             rag_older_chat_limit,
+                            None, // max_game_time_day (not yet loaded at this point)
                         )
                         .await
                     {
@@ -1024,6 +1007,18 @@ pub async fn generate_chat_response(
     let session_override_opt = {
         use diesel::prelude::*;
         let pool_clone = state_arc.pool.clone();
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&pool_clone).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&pool_clone).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&pool_clone).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&pool_clone).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&pool_clone).await?;
 
         conn.interact(move |conn| {
@@ -1176,6 +1171,10 @@ pub async fn generate_chat_response(
                 &session_dek_ref,
                 state_arc.clone(),
                 None, // target_actors (optional)
+                game_state_for_prompt
+                    .as_ref()
+                    .and_then(|gs| gs.game_time.as_ref())
+                    .map(|gt| gt.day as i64),
             )
             .await
         {
@@ -1494,6 +1493,7 @@ pub async fn generate_chat_response(
                                             rag_chronicles_limit,
                                             rag_lorebooks_limit,
                                             rag_older_chat_limit,
+                                            game_state_for_prompt.as_ref().and_then(|gs| gs.game_time.as_ref()).map(|gt| gt.day as i64),
                                         ).await {
                                             Ok(result) => {
                                                 info!(
@@ -2050,6 +2050,7 @@ pub async fn generate_chat_response(
                                             rag_chronicles_limit,
                                             rag_lorebooks_limit,
                                             rag_older_chat_limit,
+                                            None, // max_game_time_day (not available in this context)
                                         )
                                         .await
                                     {
@@ -2339,6 +2340,18 @@ pub async fn update_session_narrative_style_handler(
 
     // Load session, verify ownership, set override, and save in a transaction
     let pool_clone = state.pool.clone();
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool_clone).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool_clone).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool_clone).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool_clone).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&pool_clone).await?;
 
     conn.interact(move |conn| {
@@ -2376,6 +2389,9 @@ pub async fn update_session_narrative_style_handler(
 
     // Fetch and return the effective preferences (with override applied)
     // This requires fetching character ID and applying the cascade
+    #[cfg(feature = "postgres-backend")]
+    let conn2 = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn2 = crate::db::get_conn(&state.pool).await?;
     let (character_id_opt, override_ciphertext, override_nonce) = conn2
         .interact(move |conn| {
@@ -2575,6 +2591,18 @@ pub async fn get_agent_analysis_handler(
     let user_id = user.id;
 
     // Verify the chat session belongs to the user
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state.pool).await?;
     let session_exists = conn
         .interact(move |conn| {
@@ -2607,6 +2635,18 @@ pub async fn get_agent_analysis_handler(
         .and_then(|s| s.parse::<crate::db::DbId>().ok());
 
     // Get all analysis records for the session
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state.pool).await?;
     let analysis_records = conn
         .interact(move |conn| {
@@ -2910,6 +2950,18 @@ pub async fn generate_suggested_actions(
             "Suggested actions not supported for non-character chat modes".to_string(),
         )
     })?;
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state_arc.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state_arc.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state_arc.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state_arc.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state_arc.pool).await?;
     let character_db_model = conn
         .interact(move |conn| {
@@ -3181,6 +3233,18 @@ pub async fn get_chat_session_with_dek(
         AppError::Unauthorized("User not found in session".to_string())
     })?;
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&pool).await?;
     let chat_session_db = conn
         .interact(move |conn| {
@@ -3249,6 +3313,18 @@ pub async fn create_or_update_chat_character_override_handler(
     tracing::Span::current().record("user_id", tracing::field::display(user_id));
 
     // 1. Verify ownership of the chat_session and get original_character_id
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state.pool).await?;
     let chat_session_details = conn
         .interact(move |conn| {
@@ -3332,6 +3408,18 @@ pub async fn expand_text_handler(
 
     // Verify chat session ownership
     let chat_session_owner_id = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&state.pool).await?;
 
         conn.interact(move |conn| {
@@ -3359,6 +3447,18 @@ pub async fn expand_text_handler(
 
     // Get the active persona for this chat session
     let _chat_settings = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&state.pool).await?;
 
         conn.interact(move |conn| {
@@ -3432,6 +3532,18 @@ pub async fn expand_text_handler(
 
     // Get session data and model configuration like the normal chat flow does
     let session_data = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
         conn.interact(move |conn| {
@@ -3572,6 +3684,18 @@ pub async fn expand_text_handler(
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
     let _ = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&delete_state.pool).await?;
 
         conn.interact(move |conn| {
@@ -3645,6 +3769,18 @@ pub async fn impersonate_handler(
 
     // Verify chat session ownership
     let chat_session_owner_id = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&state.pool).await?;
 
         conn.interact(move |conn| {
@@ -3741,6 +3877,18 @@ pub async fn impersonate_handler(
 
     // Get session data and model configuration like the normal chat flow does
     let session_data = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&state_arc.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&state_arc.pool).await?;
 
         conn.interact(move |conn| {
@@ -3872,6 +4020,18 @@ pub async fn impersonate_handler(
     // The generation service will have just created a message, so we find and delete the most recent one
     let delete_session_id = session_id;
     let _ = {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&delete_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&delete_state.pool).await?;
 
         conn.interact(move |conn| {

@@ -41,6 +41,7 @@ pub struct AppStateServicesBuilder {
     embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
+    character_service: Option<Arc<crate::services::character_service::CharacterService>>,
     token_counter: Option<Arc<HybridTokenCounter>>,
     encryption_service: Option<Arc<EncryptionService>>,
     lorebook_service: Option<Arc<LorebookService>>,
@@ -62,6 +63,7 @@ impl AppStateServicesBuilder {
             embedding_pipeline_service: None,
             chat_override_service: None,
             user_persona_service: None,
+            character_service: None,
             token_counter: None,
             encryption_service: None,
             lorebook_service: None,
@@ -105,6 +107,14 @@ impl AppStateServicesBuilder {
 
     pub fn with_user_persona_service(mut self, service: Arc<UserPersonaService>) -> Self {
         self.user_persona_service = Some(service);
+        self
+    }
+
+    pub fn with_character_service(
+        mut self,
+        service: Arc<crate::services::character_service::CharacterService>,
+    ) -> Self {
+        self.character_service = Some(service);
         self
     }
 
@@ -208,6 +218,14 @@ impl AppStateServicesBuilder {
             ))
         });
 
+        // Get or create character service
+        let character_service = self.character_service.unwrap_or_else(|| {
+            Arc::new(crate::services::character_service::CharacterService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
+
         // For required external services, we need them to be provided
         let ai_client = self.ai_client.expect("AI client must be provided");
 
@@ -265,6 +283,7 @@ impl AppStateServicesBuilder {
             embedding_pipeline_service,
             chat_override_service,
             user_persona_service,
+            character_service,
             token_counter,
             encryption_service,
             lorebook_service,
@@ -355,6 +374,16 @@ impl AppStateBuilder {
     pub fn with_user_persona_service(self, service: Arc<UserPersonaService>) -> Self {
         Self {
             services_builder: self.services_builder.with_user_persona_service(service),
+            ..self
+        }
+    }
+
+    pub fn with_character_service(
+        self,
+        service: Arc<crate::services::character_service::CharacterService>,
+    ) -> Self {
+        Self {
+            services_builder: self.services_builder.with_character_service(service),
             ..self
         }
     }

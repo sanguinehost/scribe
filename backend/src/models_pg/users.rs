@@ -1,4 +1,4 @@
-use crate::db::{DbBigInt, DbBlob, DbId, DbInt, DbTimestamp};
+use crate::db::{DbBigInt, DbBlob, DbId, DbTimestamp};
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};

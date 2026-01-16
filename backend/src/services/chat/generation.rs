@@ -1761,6 +1761,7 @@ pub async fn get_session_data_for_generation(
 
     // --- Prepare User Message Struct ---
     // Generate new ID for SQLite (no DEFAULT in schema)
+    #[cfg(feature = "sqlite-backend")]
     let user_message_id = crate::db::DbId::new();
 
     #[cfg(feature = "sqlite-backend")]
@@ -2852,6 +2853,8 @@ pub async fn stream_ai_response_and_save_message(
                                 };
 
                                 match gm_state.narrative_intelligence_service.as_ref().unwrap().process_game_state(
+                                    full_user_id_clone,
+                                    &session_dek_for_narrative,
                                     gm_session_id,
                                     &last_user_message,
                                     &last_assistant_message,

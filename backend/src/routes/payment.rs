@@ -273,6 +273,11 @@ pub async fn get_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -525,6 +530,11 @@ pub async fn get_usage(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -656,6 +666,12 @@ pub async fn create_payment(
     );
 
     tracing::debug!("Getting database connection");
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to get database connection");
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to get database connection");
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
@@ -1316,6 +1332,11 @@ pub async fn preview_order(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -1400,6 +1421,11 @@ pub async fn create_subscription(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get database connection
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -2940,6 +2966,12 @@ async fn process_subscription_created(
 
     // Find user by paddle_customer_id or email
     tracing::debug!("Step 7: Getting database connection from pool");
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
+        AppError::DbPoolError(e.to_string())
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
         AppError::DbPoolError(e.to_string())
@@ -3108,6 +3140,15 @@ async fn process_subscription_created(
             plan_type,
             subscription_id
         );
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+            tracing::error!(
+                "Step 11 FAILED: Failed to get DB connection for update: {}",
+                e
+            );
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for update: {}",
@@ -3213,6 +3254,15 @@ async fn process_subscription_created(
             (*app_state.encryption_service).clone(),
         );
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+            tracing::error!(
+                "Step 11 FAILED: Failed to get DB connection for create: {}",
+                e
+            );
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for create: {}",
@@ -3489,10 +3539,9 @@ async fn process_subscription_updated(
                                 // Determine upgrade or downgrade
                                 match is_higher_tier(&new_plan, old_plan) {
                                     Ok(is_upgrade) => {
-                                        let mut conn =
-                                            crate::db::get_conn(&app_state.pool).await.map_err(
-                                                |e| AppError::DbPoolError(e.to_string()),
-                                            )?;
+                                        let conn = crate::db::get_conn(&app_state.pool)
+                                            .await
+                                            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
                                         let credit_service =
                                             Arc::new(CreditService::new(app_state.config.clone()));
@@ -4014,6 +4063,11 @@ pub async fn get_credit_balance(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4049,6 +4103,11 @@ pub async fn purchase_credits(
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
     // Get credit package details
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4121,6 +4180,11 @@ pub async fn purchase_credits(
 pub async fn get_credit_packages(
     State(app_state): State<AppState>,
 ) -> Result<AxumJson<CreditPackagesResponse>, AppError> {
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4156,6 +4220,11 @@ pub async fn get_credit_transactions(
         .user
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4242,6 +4311,11 @@ pub async fn get_payment_transactions(
             AppError::ConfigurationError("Payment data encryption key not configured".to_string())
         })?;
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4258,7 +4332,7 @@ pub async fn get_payment_transactions(
             use diesel::prelude::*;
 
             payment_transactions
-                .filter(user_id.eq(user_id))
+                .filter(crate::schema::payment_transactions::dsl::user_id.eq(user_id))
                 .order(created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -4311,6 +4385,11 @@ pub async fn get_payment_transaction(
             AppError::ConfigurationError("Payment data encryption key not configured".to_string())
         })?;
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
+        AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
+    })?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4326,7 +4405,7 @@ pub async fn get_payment_transaction(
 
             payment_transactions
                 .filter(id.eq(transaction_id))
-                .filter(user_id.eq(user_id))
+                .filter(crate::schema::payment_transactions::dsl::user_id.eq(user_id))
                 .select(PaymentTransaction::as_select())
                 .first::<PaymentTransaction>(conn)
         })

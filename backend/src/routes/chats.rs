@@ -16,13 +16,15 @@ use crate::models::chats::{
     SelectVariantRequest, // Added for variant selection
     UpdateChatSettingsRequest,
     UpdateChatVisibilityRequest, // Now available
-    Vote,                        // Now available
-    VoteRequest,                 // Now available
 };
+#[cfg(feature = "postgres-backend")]
+use crate::models::chats::{Vote, VoteRequest};
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-use crate::schema::{chat_messages, chat_sessions, message_variants};
+#[cfg(feature = "sqlite-backend")]
+use crate::schema::message_variants;
+use crate::schema::{chat_messages, chat_sessions};
 use axum::{
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
@@ -50,7 +52,7 @@ use validator::Validate; // Added for cursor-based pagination
 
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
-    let mut router = Router::new()
+    let router = Router::new()
         .route("/", get(get_chats_handler)) // Keep GET / for listing
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
@@ -94,11 +96,9 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 
     // Postgres-only routes (voting feature not yet implemented for SQLite)
     #[cfg(feature = "postgres-backend")]
-    {
-        router = router
-            .route("/messages/:id/vote", post(vote_message_handler))
-            .route("/:id/votes", get(get_votes_by_chat_id_handler));
-    }
+    let router = router
+        .route("/messages/:id/vote", post(vote_message_handler))
+        .route("/:id/votes", get(get_votes_by_chat_id_handler));
 
     router
 }
@@ -2205,7 +2205,7 @@ pub async fn delete_message_handler(
     }
 
     let message_id = message.id;
-    let chat_id = message.session_id;
+    let _chat_id = message.session_id;
 
     // Delete associated votes first (PostgreSQL only - old_votes table)
     #[cfg(feature = "postgres-backend")]
@@ -2213,7 +2213,7 @@ pub async fn delete_message_handler(
         crate::db::with_conn(&pool, move |conn| {
             diesel::delete(
                 crate::schema::old_votes::table
-                    .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id))
+                    .filter(crate::schema::old_votes::dsl::chat_id.eq(_chat_id))
                     .filter(crate::schema::old_votes::dsl::message_id.eq(message_id)),
             )
             .execute(conn)

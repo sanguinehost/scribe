@@ -59,6 +59,7 @@ use scribe_backend::config::Config; // Import Config instead
 use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::ai_client_factory::AiClientFactory;
+use scribe_backend::services::character_service::CharacterService;
 use scribe_backend::services::chat_override_service::ChatOverrideService;
 use scribe_backend::services::chronicle_service::ChronicleService;
 use scribe_backend::services::embeddings::{
@@ -354,6 +355,10 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         pool.clone(),
         encryption_service.clone(),
     ));
+    let character_service = Arc::new(CharacterService::new(
+        pool.clone(),
+        encryption_service.clone(),
+    ));
 
     // --- Create Chunking Config and Embedding Pipeline ---
     let chunk_config = create_chunk_config(config);
@@ -505,6 +510,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         qdrant_service,
         embedding_pipeline_service,
         chat_override_service,
+        character_service,
         user_persona_service,
         token_counter: hybrid_token_counter,
         encryption_service,

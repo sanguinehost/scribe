@@ -108,6 +108,11 @@ impl LorebookService {
             user_id, lorebook_id
         );
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -213,11 +218,15 @@ impl LorebookService {
             updated_at: Some(current_time.into()),
         };
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
-        let lorebook_id = new_lorebook_id; // Rename for closure capture
         let lorebook = conn
             .interact(move |conn_sync| {
                 #[cfg(feature = "postgres-backend")]
@@ -275,6 +284,11 @@ impl LorebookService {
             user_id, lorebook_id
         );
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;

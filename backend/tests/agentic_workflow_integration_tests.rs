@@ -206,6 +206,7 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
             &messages,
             &session_dek,
             None, // No persona context
+            None, // No game state
         )
         .await;
 
@@ -334,7 +335,7 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 
     // Run extraction through dispatcher
     let result = dispatcher
-        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek)
+        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek, None)
         .await;
 
     // Verify extraction succeeded
@@ -470,7 +471,7 @@ async fn test_dual_mode_extraction_comparison() {
 
     // Run dual mode extraction
     let result = dispatcher
-        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek)
+        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek, None)
         .await;
 
     // Verify dual mode ran (even though manual is placeholder)
@@ -571,7 +572,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
 
     // Run extraction (should fail due to JSON parsing error in mock AI response)
     let result = dispatcher
-        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek)
+        .extract_events_from_chat(user_id, session_id, None, &messages, &session_dek, None)
         .await;
 
     // Currently, JSON parsing errors cause the entire extraction to fail

@@ -874,6 +874,10 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     "type": "integer",
                     "description": "Maximum number of results to return",
                     "default": 10
+                },
+                "max_game_time_day": {
+                    "type": "integer",
+                    "description": "Optional maximum game day to filter facts for (temporal filtering)"
                 }
             },
             "required": ["query", "user_id"]
@@ -940,6 +944,9 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
         // Optional actor filter for facts
         let actor_opt = params.get("actor").and_then(|v| v.as_str());
+
+        // Optional temporal filter for facts
+        let max_game_time_day = params.get("max_game_time_day").and_then(|v| v.as_i64());
 
         if session_dek_opt.is_some() {
             debug!("SessionDek provided for search result decryption");
@@ -1124,7 +1131,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
                 // Add condition for cognitive facts (if searching all or facts)
                 if matches!(search_type, "all" | "facts") {
-                    should_conditions.push(Condition {
+                    let mut fact_must = vec![Condition {
                         condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
                             key: "source_type".to_string(),
                             r#match: Some(Match {
@@ -1132,6 +1139,30 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                     "cognitive_fact".to_string(),
                                 )),
                             }),
+                            ..Default::default()
+                        })),
+                    }];
+
+                    // Add temporal filter if provided
+                    if let Some(max_day) = max_game_time_day {
+                        use qdrant_client::qdrant::{
+                            condition::ConditionOneOf as QConditionOneOf, Range,
+                        };
+                        fact_must.push(Condition {
+                            condition_one_of: Some(QConditionOneOf::Field(FieldCondition {
+                                key: "game_time.day".to_string(),
+                                range: Some(Range {
+                                    lte: Some(max_day as f64),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            })),
+                        });
+                    }
+
+                    should_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                            must: fact_must,
                             ..Default::default()
                         })),
                     });
@@ -2488,7 +2519,7 @@ impl ScribeTool for UpdateLorebookEntryTool {
 pub struct QueryRulesTool {
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>,
 }
 
 impl QueryRulesTool {
@@ -2500,7 +2531,7 @@ impl QueryRulesTool {
         Self {
             qdrant_service,
             embedding_client,
-            app_state,
+            _app_state: app_state,
         }
     }
 }

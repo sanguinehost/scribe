@@ -35,11 +35,16 @@ impl LorebookService {
             updated_at: Some(current_time.into()),
         };
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
 
-        let lorebook_id = new_lorebook_id; // Rename for closure capture
+        let _lorebook_id = new_lorebook_id; // Rename for closure capture
         let inserted_lorebook = conn
             .interact(move |conn_sync| {
                 #[cfg(feature = "postgres-backend")]
@@ -91,6 +96,11 @@ impl LorebookService {
         debug!("Attempting to list lorebooks");
         let user = get_user_from_session(auth_session)?;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -143,6 +153,11 @@ impl LorebookService {
         debug!(%lorebook_id, "Attempting to get lorebook");
         let user = get_user_from_session(auth_session)?;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;

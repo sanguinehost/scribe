@@ -265,6 +265,12 @@ mod tests {
         ));
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
+        let character_service =
+            Arc::new(crate::services::character_service::CharacterService::new(
+                pool.clone(),
+                encryption_service.clone(),
+            ));
+
         // Create chronicle service for narrative intelligence
         let _chronicle_service =
             Arc::new(crate::services::chronicle_service::ChronicleService::new(
@@ -289,6 +295,7 @@ mod tests {
             token_counter: token_counter_service,
             encryption_service,
             lorebook_service: lorebook_service.clone(),
+            character_service,
             auth_backend,
             email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),

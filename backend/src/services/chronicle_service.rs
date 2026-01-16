@@ -404,8 +404,8 @@ impl ChronicleService {
     ) -> Result<Vec<PlayerChronicle>, AppError> {
         #[cfg(feature = "postgres-backend")]
         let chronicles = crate::db::with_conn(&self.db_pool, move |conn| {
-            player_chronicles::table
-                .filter(player_chronicles::user_id.eq(user_id))
+            let target = player_chronicles::table.filter(player_chronicles::user_id.eq(user_id));
+            target
                 .order(player_chronicles::updated_at.desc())
                 .load(conn)
                 .map_err(|e| {
@@ -684,15 +684,11 @@ impl ChronicleService {
     ) -> Result<(), AppError> {
         let deleted_count = crate::db::with_conn(&self.db_pool, move |conn| {
             // Note: chronicle_events will be deleted by CASCADE
-            diesel::delete(
-                player_chronicles::table.filter(
-                    player_chronicles::id
-                        .eq(chronicle_id)
-                        .and(player_chronicles::user_id.eq(user_id)),
-                ),
-            )
-            .execute(conn)
-            .map_err(|e| {
+            let target = player_chronicles::table
+                .filter(player_chronicles::id.eq(chronicle_id))
+                .filter(player_chronicles::user_id.eq(user_id));
+
+            diesel::delete(target).execute(conn).map_err(|e| {
                 error!("Diesel error when deleting chronicle: {}", e);
                 AppError::DatabaseQueryError(format!("Failed to delete chronicle: {e}"))
             })
@@ -1060,8 +1056,6 @@ impl ChronicleService {
 
             // We have to construct the update manually because we have extra fields (encrypted ones)
             // that are not in UpdateChronicleEvent
-            let mut query = diesel::update(target).into_boxed();
-
             // This is getting complicated because we can't easily chain .set() calls conditionally
             // with different types in Diesel without a lot of boilerplate.
             // A simpler approach is to fetch, update in memory, and save back? No, race conditions.
@@ -1622,6 +1616,7 @@ impl ChronicleService {
         payload: CognitivePayload,
         session_dek: &SessionDek,
         state: Arc<crate::state::AppState>,
+        game_time: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
         info!(
             "Processing cognitive update for chronicle {} (significance: {})",
@@ -1679,6 +1674,7 @@ impl ChronicleService {
                     fact_id,
                     chronicle_id,
                     &fact_text,
+                    game_time.clone(),
                 )
                 .await
             {
@@ -1741,7 +1737,6 @@ impl ChronicleService {
 
         // --- Upsert by Topic (Forgetting Gate) ---
         // Search for existing opinions with high similarity (> 0.95)
-        use crate::services::embeddings::EmbeddingPipelineServiceTrait;
         let similar_opinions = state
             .embedding_pipeline_service
             .retrieve_similar_opinions(state.clone(), user_id, &extraction.opinion, 1)
@@ -1868,7 +1863,6 @@ impl ChronicleService {
         state: Arc<crate::state::AppState>,
     ) -> Result<(), AppError> {
         use crate::crypto::{encrypt_gcm, generate_hmac};
-        use crate::services::embeddings::EmbeddingPipelineServiceTrait;
 
         let dek_bytes = session_dek.expose_bytes();
 

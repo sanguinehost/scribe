@@ -26,13 +26,14 @@ use super::backend_traits::DbType;
 use super::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteUuid};
 
 // Diesel SQL types and serialization imports
-use diesel::serialize::IsNull;
-use diesel::sql_types::Timestamp;
-
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::deserialize::{self, FromSql};
+#[cfg(feature = "sqlite-backend")]
+use diesel::serialize::IsNull;
 use diesel::serialize::{self, Output, ToSql};
+#[cfg(feature = "sqlite-backend")]
+use diesel::sql_types::Timestamp;
 use diesel::sql_types::{BigInt, Nullable, Numeric, Text};
 
 #[cfg(feature = "postgres-backend")]

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 // Re-export Qdrant types that we need to implement the trait
 use qdrant_client::qdrant::{
@@ -1183,7 +1183,7 @@ impl QdrantClientServiceTrait for LanceDbClient {
     #[instrument(skip(self), name = "lancedb_get_point_by_id")]
     async fn get_point_by_id(
         &self,
-        point_id: PointId,
+        _point_id: PointId,
     ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
         // LanceDB doesn't return RetrievedPoint directly - this would need conversion
         // For now, return None as this is rarely used

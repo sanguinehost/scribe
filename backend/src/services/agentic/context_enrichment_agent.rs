@@ -7,6 +7,7 @@
 
 use crate::db::DbId;
 use chrono::Utc;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
     MessageContent,
@@ -127,6 +128,7 @@ impl ContextEnrichmentAgent {
         rag_chronicles_limit: Option<i32>,
         rag_lorebooks_limit: Option<i32>,
         rag_older_chat_limit: Option<i32>,
+        max_game_time_day: Option<i64>, // Added for temporal filtering
     ) -> Result<ContextEnrichmentResult, AppError> {
         let start_time = Instant::now();
         let mut execution_log = AgentExecutionLog {
@@ -189,6 +191,7 @@ impl ContextEnrichmentAgent {
                         &dek,
                         self.state.clone(),
                         None, // target_actors (optional)
+                        max_game_time_day,
                     )
                     .await
                 {
@@ -228,6 +231,7 @@ impl ContextEnrichmentAgent {
                         rag_chronicles_limit,
                         rag_lorebooks_limit,
                         rag_older_chat_limit,
+                        max_game_time_day,
                     )
                     .await
                 {
@@ -287,7 +291,12 @@ impl ContextEnrichmentAgent {
 
             // Step 3: Synthesize results into useful context
             let (retrieved_context, analysis_summary, synthesis_step) = self
-                .synthesize_results(&all_search_results, messages, &cognitive_context)
+                .synthesize_results(
+                    &all_search_results,
+                    messages,
+                    &cognitive_context,
+                    max_game_time_day,
+                )
                 .await?;
             execution_log.steps.push(synthesis_step);
 
@@ -378,7 +387,7 @@ impl ContextEnrichmentAgent {
         );
 
         // Create structured output schema for planning
-        let planning_schema = json!({
+        let _planning_schema = json!({
             "type": "object",
             "properties": {
                 "reasoning": {
@@ -695,6 +704,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         rag_chronicles_limit: Option<i32>,
         rag_lorebooks_limit: Option<i32>,
         rag_older_chat_limit: Option<i32>,
+        max_game_time_day: Option<i64>,
     ) -> Result<(Value, u32), AppError> {
         debug!(
             "Executing search: '{}' for user {}, session: {}, chronicle: {:?}",
@@ -722,7 +732,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
             "query": search.query,
             "search_type": search.search_type,
             "limit": limit,
-            "user_id": user_id.to_string()  // SECURITY: Always pass user_id for filtering
+            "user_id": user_id.to_string(),  // SECURITY: Always pass user_id for filtering
+            "max_game_time_day": max_game_time_day
         });
 
         // Determine search scope:
@@ -763,6 +774,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         search_results: &[Value],
         _messages: &[(String, String)],
         cognitive_context: &str,
+        max_game_time_day: Option<i64>,
     ) -> Result<(String, String, AgentStep), AppError> {
         let step_start = Instant::now();
 
@@ -807,8 +819,12 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         }
 
         // Build synthesis prompt
+        let time_context = max_game_time_day
+            .map(|d| format!("The current game time is Day {}.\n\n", d))
+            .unwrap_or_default();
+
         let user_message_content = format!(
-            "You have found {} pieces of relevant context from searching chronicles and lorebooks. \
+            "{}You have found {} pieces of relevant context from searching chronicles and lorebooks. \
              Your task is to synthesize this into a concise summary (2-3 paragraphs) that highlights \
              the most relevant information for the ongoing roleplay conversation.\n\n\
              Focus on:\n\
@@ -823,12 +839,13 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
                \"key_points\": [\"fact 1\", \"fact 2\"]\n\
              }}\n\n\
              Provide the JSON synthesis:",
+            time_context,
             all_results.len(),
             all_results.join("\n\n")
         );
 
         // Create structured output schema for synthesis
-        let synthesis_schema = json!({
+        let _synthesis_schema = json!({
             "type": "object",
             "properties": {
                 "summary": {
@@ -988,7 +1005,6 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     ) -> Result<crate::db::DbId, AppError> {
         use crate::models::{AnalysisStatus, AnalysisType};
         use crate::schema::agent_context_analysis;
-        use diesel::prelude::*;
 
         // Convert session_dek to SecretBox
         let _dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));
@@ -1030,7 +1046,6 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
 
         #[cfg(feature = "sqlite-backend")]
         let analysis_id = {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING, so we generate UUID before insert
             let generated_id = DbId::new().into();
 
@@ -1083,7 +1098,6 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     ) -> Result<(), AppError> {
         use crate::models::AnalysisStatus;
         use crate::schema::agent_context_analysis;
-        use diesel::prelude::*;
 
         // Convert session_dek to SecretBox
         let dek_secret = SecretBox::new(Box::new(session_dek.to_vec()));

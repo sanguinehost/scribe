@@ -10,7 +10,8 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use diesel::prelude::*;
+#[cfg(feature = "postgres-backend")]
+use diesel::SelectableHelper;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
@@ -188,7 +189,6 @@ async fn lock_user_handler(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
@@ -252,7 +252,6 @@ async fn unlock_user_handler(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
@@ -327,7 +326,6 @@ async fn update_user_role_handler(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))

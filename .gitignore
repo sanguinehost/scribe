@@ -43,7 +43,6 @@ tarpaulin-report.json
 # AI stuff
 .claude
 CLAUDE.md
-GEMINI.md
 
 # AI Assistant configuration
 .serena/

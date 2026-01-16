@@ -133,6 +133,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         fact_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
         fact_text: &str,
+        game_time: Option<serde_json::Value>,
     ) -> Result<(), AppError>;
 
     /// Retrieves similar cognitive facts from the fact_vectors collection.
@@ -143,5 +144,6 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         chronicle_id: crate::db::DbId,
         query: &str,
         limit: u64,
+        max_game_time_day: Option<i64>,
     ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError>;
 }

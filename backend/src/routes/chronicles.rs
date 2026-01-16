@@ -589,6 +589,15 @@ async fn get_character_name_for_session(
     use crate::schema::{characters, chat_sessions};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let character_name = conn
@@ -625,6 +634,15 @@ async fn get_character_for_session(
         RunQueryDsl, SelectableHelper,
     };
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let character = conn
@@ -662,6 +680,15 @@ async fn get_chat_messages(
         SelectableHelper,
     };
 
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
+    #[cfg(feature = "postgres-backend")]
+    let conn = crate::db::get_conn(&state.pool).await?;
+    #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let mut messages = conn

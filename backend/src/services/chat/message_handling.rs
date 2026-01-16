@@ -161,7 +161,6 @@ pub fn save_chat_message_internal(
     {
         use diesel::prelude::*;
         // SQLite doesn't support RETURNING, so we generate ID first then query back
-        let new_id = crate::db::DbId::new_v4();
 
         match diesel::insert_into(chat_messages::table)
             .values(&message)
@@ -244,8 +243,14 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         status,
         error_message,
         variant_of,
+        #[cfg(feature = "payment")]
         charge_credits,
+        #[cfg(not(feature = "payment"))]
+            charge_credits: _,
+        #[cfg(feature = "postgres-backend")]
         credits_cost_override,
+        #[cfg(not(feature = "postgres-backend"))]
+            credits_cost_override: _,
         game_time,
     } = params;
 
@@ -553,11 +558,6 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     let actual_charge_bd = crate::db::DbDecimal::from(0); // TODO: Implement actual charge tracking
 
     #[cfg(feature = "postgres-backend")]
-    {
-        use bigdecimal::BigDecimal;
-        use std::str::FromStr;
-    }
-    #[cfg(feature = "postgres-backend")]
     let actual_cost_bd = credits_cost_override.clone().unwrap_or_else(|| {
         use bigdecimal::BigDecimal;
         use std::str::FromStr;
@@ -578,14 +578,14 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // For backwards compatibility with old code
     #[cfg(all(feature = "payment", feature = "sqlite-backend"))]
-    let (credits_cost, credits_charged) = (credit_cost_val, credits_charged_val);
+    let (_credits_cost, _credits_charged) = (credit_cost_val, credits_charged_val);
     #[cfg(all(feature = "payment", feature = "postgres-backend"))]
-    let (credits_cost, credits_charged) = (actual_cost_bd.clone(), credits_charged_val);
+    let (_credits_cost, _credits_charged) = (actual_cost_bd.clone(), credits_charged_val);
 
     #[cfg(all(not(feature = "payment"), feature = "sqlite-backend"))]
-    let (credits_cost, credits_charged) = (0_i32, 0);
+    let (_credits_cost, _credits_charged) = (0_i32, 0);
     #[cfg(all(not(feature = "payment"), feature = "postgres-backend"))]
-    let (credits_cost, credits_charged) = (actual_cost_bd.clone(), 0);
+    let (_credits_cost, _credits_charged) = (actual_cost_bd.clone(), 0);
 
     let (content_to_save, nonce_to_save) = if let Some(dek_arc) = &user_dek_secret_box {
         trace!(%session_id, "User DEK present, encrypting message content.");
@@ -602,6 +602,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
     };
 
     // Generate new ID for SQLite (no DEFAULT in schema)
+    #[cfg(feature = "sqlite-backend")]
     let message_id = crate::db::DbId::new();
 
     #[cfg(feature = "sqlite-backend")]
@@ -658,7 +659,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // SQLite uses f64, but update_cumulative_token_counts expects DbDecimal
     #[cfg(feature = "sqlite-backend")]
-    let actual_cost_bd_clone = {
+    let _actual_cost_bd_clone = {
         use bigdecimal::BigDecimal;
         use std::str::FromStr;
         let bd = BigDecimal::from_str(&actual_cost_bd.to_string())
@@ -666,7 +667,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         crate::db::DbDecimal::from_bigdecimal(bd)
     };
     #[cfg(feature = "sqlite-backend")]
-    let modified_cost_bd_clone = {
+    let _modified_cost_bd_clone = {
         use bigdecimal::BigDecimal;
         use std::str::FromStr;
         let bd = BigDecimal::from_str(&modified_cost_bd.to_string())
@@ -674,7 +675,7 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         crate::db::DbDecimal::from_bigdecimal(bd)
     };
     #[cfg(feature = "sqlite-backend")]
-    let actual_charge_bd_clone = {
+    let _actual_charge_bd_clone = {
         use bigdecimal::BigDecimal;
         use std::str::FromStr;
         let bd = BigDecimal::from_str(&actual_charge_bd.to_string())

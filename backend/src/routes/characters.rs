@@ -30,7 +30,8 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-use diesel::prelude::*;
+#[cfg(feature = "postgres-backend")]
+use diesel::SelectableHelper;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
     QueryDsl, RunQueryDsl,
@@ -107,7 +108,6 @@ fn insert_character_sync(
     character: &NewCharacter,
 ) -> Result<crate::db::DbId, AppError> {
     use crate::schema::characters::dsl::characters;
-    use diesel::prelude::*;
 
     diesel::insert_into(characters)
         .values(character)
@@ -474,7 +474,6 @@ pub async fn upload_character_base64_handler(
 
     #[cfg(feature = "sqlite-backend")]
     let asset_result: Result<CharacterAsset, AppError> = {
-        use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
         let asset_id = new_asset.id;
 
@@ -1112,7 +1111,6 @@ pub async fn upload_character_handler(
 
     #[cfg(feature = "sqlite-backend")]
     let asset_result: Result<CharacterAsset, AppError> = {
-        use diesel::prelude::*;
         let new_asset_clone = new_asset.clone();
         let asset_id = new_asset.id;
 

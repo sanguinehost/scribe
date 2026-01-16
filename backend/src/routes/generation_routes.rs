@@ -459,7 +459,7 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
 pub async fn generate_lorebook_entries_handler(
     State(state): State<AppState>,
     auth: UnifiedAuth,
-    dek: SessionDek, // SECURITY: SessionDek for potential lorebook context
+    _dek: SessionDek, // SECURITY: SessionDek for potential lorebook context
     Json(payload): Json<BatchLorebookGenerationRequest>,
 ) -> Result<Json<BatchLorebookGenerationResponse>, AppError> {
     let user = auth
@@ -648,7 +648,7 @@ pub async fn generate_lorebook_entries_handler(
 pub async fn generate_lorebook_entry_handler(
     State(state): State<AppState>,
     auth: UnifiedAuth,
-    dek: SessionDek, // SECURITY: SessionDek for potential lorebook context
+    _dek: SessionDek, // SECURITY: SessionDek for potential lorebook context
     Json(payload): Json<LorebookGenerationRequest>,
 ) -> Result<Json<LorebookGenerationResponse>, AppError> {
     let user = auth

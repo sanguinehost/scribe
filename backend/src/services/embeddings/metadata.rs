@@ -319,6 +319,7 @@ pub struct CognitiveFactMetadata {
     pub fact_id: crate::db::DbId,
     pub chronicle_id: crate::db::DbId,
     pub source_type: String,
+    pub game_time: Option<serde_json::Value>,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
@@ -332,11 +333,15 @@ impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
         let source_type =
             extract_string_from_payload(&payload, "source_type", "CognitiveFactMetadata")?;
 
+        let game_time = extract_optional_string_from_payload(&payload, "game_time")
+            .and_then(|s| serde_json::from_str(&s).ok());
+
         Ok(Self {
             user_id,
             fact_id,
             chronicle_id,
             source_type,
+            game_time,
         })
     }
 }

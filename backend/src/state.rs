@@ -23,6 +23,7 @@ use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server m
 use crate::llm::llamacpp::{ModelIntegrityVerifier, SecurityAuditLogger}; // Added for LLM security
 use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
 use crate::services::ai_client_factory::AiClientFactory;
+use crate::services::character_service::CharacterService;
 use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
 use crate::services::cognitive::RecallPipeline; // Added for RecallPipeline
 use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
@@ -46,6 +47,7 @@ pub struct AppStateServices {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
     pub chat_override_service: Arc<ChatOverrideService>,
+    pub character_service: Arc<CharacterService>,
     pub user_persona_service: Arc<UserPersonaService>,
     pub token_counter: Arc<HybridTokenCounter>,
     pub encryption_service: Arc<EncryptionService>,
@@ -81,7 +83,8 @@ pub struct AppState {
     pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
-    pub user_persona_service: Arc<UserPersonaService>,   // <<< ADDED THIS FIELD
+    pub character_service: Arc<CharacterService>,
+    pub user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS FIELD
     // Remove #[cfg(test)]
     pub embedding_call_tracker: Arc<TokioMutex<Vec<crate::db::DbId>>>, // Track message IDs for embedding calls
     pub token_counter: Arc<HybridTokenCounter>,                        // Added for token counting
@@ -117,6 +120,7 @@ impl fmt::Debug for AppState {
                 &"<Arc<dyn EmbeddingPipelineServiceTrait>>",
             )
             .field("chat_override_service", &"<Arc<ChatOverrideService>>") // <<< ADDED THIS LINE FOR DEBUG
+            .field("character_service", &"<Arc<CharacterService>>")
             .field("user_persona_service", &"<Arc<UserPersonaService>>") // <<< ADDED THIS LINE FOR DEBUG
             .field(
                 "embedding_call_tracker",
@@ -169,6 +173,7 @@ impl AppState {
             qdrant_service: services.qdrant_service,
             embedding_pipeline_service: services.embedding_pipeline_service,
             chat_override_service: services.chat_override_service,
+            character_service: services.character_service,
             user_persona_service: services.user_persona_service,
             embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())),
             token_counter: services.token_counter,

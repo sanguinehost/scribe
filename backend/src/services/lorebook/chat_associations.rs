@@ -21,6 +21,12 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let lorebook_id_to_associate = payload.lorebook_id;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
@@ -428,6 +434,12 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
@@ -530,6 +542,12 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
@@ -741,6 +759,12 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())
@@ -920,6 +944,12 @@ impl LorebookService {
         let user = get_user_from_session(auth_session)?;
         let current_user_id = user.id;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            error!("Failed to get DB connection: {}", e);
+            AppError::DbPoolError(e.to_string())
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             error!("Failed to get DB connection: {}", e);
             AppError::DbPoolError(e.to_string())

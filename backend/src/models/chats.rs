@@ -122,9 +122,9 @@ pub type SettingsTuple = (
     i32,                                        // history_management_limit
     String,                                     // model_name
     // -- Gemini Specific Options --
-    Option<i32>,  // gemini_thinking_budget
+    Option<i32>,    // gemini_thinking_budget
     Option<String>, // gemini_thinking_level
-    Option<bool>, // gemini_enable_code_execution
+    Option<bool>,   // gemini_enable_code_execution
     // -- Chronicle Support --
     Option<crate::db::DbId>, // player_chronicle_id
     // -- Agent Mode --
@@ -433,7 +433,17 @@ impl std::fmt::Debug for NewChat {
 
 // MessageRole enum for database storage
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow, diesel::query_builder::QueryId,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Default,
+    AsExpression,
+    FromSqlRow,
+    diesel::query_builder::QueryId,
 )]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
 pub enum MessageRole {
@@ -645,10 +655,7 @@ pub struct ChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    #[cfg(feature = "postgres-backend")]
     pub model_name: String,
-    #[cfg(feature = "sqlite-backend")]
-    pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
     pub superseded_at: Option<DbTimestamp>,
@@ -2041,7 +2048,11 @@ impl Chat {
             total_actual_cost: self.total_actual_cost,
             game_state: {
                 if let Some(ref gs) = self.game_state {
-                    tracing::info!("SERIALIZATION_DEBUG: Chat {} has game_state: {:?}", self.id, gs);
+                    tracing::info!(
+                        "SERIALIZATION_DEBUG: Chat {} has game_state: {:?}",
+                        self.id,
+                        gs
+                    );
                 } else {
                     tracing::info!("SERIALIZATION_DEBUG: Chat {} has NO game_state", self.id);
                 }
@@ -3409,7 +3420,9 @@ mod tests {
     feature = "sqlite-backend",
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
-#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Associations, Identifiable)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Associations, Identifiable,
+)]
 pub struct MessageVariant {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,

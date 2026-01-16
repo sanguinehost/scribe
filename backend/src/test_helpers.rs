@@ -582,12 +582,14 @@ pub enum PipelineCall {
         fact_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
         fact_text: String,
+        game_time: Option<serde_json::Value>,
     },
     RetrieveSimilarFacts {
         user_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
         query: String,
         limit: u64,
+        max_game_time_day: Option<i64>,
     },
 }
 
@@ -970,6 +972,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         fact_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
         fact_text: &str,
+        game_time: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
         self.calls
             .lock()
@@ -979,6 +982,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 fact_id,
                 chronicle_id,
                 fact_text: fact_text.to_string(),
+                game_time,
             });
         Ok(())
     }
@@ -990,6 +994,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         chronicle_id: crate::db::DbId,
         query: &str,
         limit: u64,
+        max_game_time_day: Option<i64>,
     ) -> Result<
         Vec<(
             f32,
@@ -1005,6 +1010,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 chronicle_id,
                 query: query.to_string(),
                 limit,
+                max_game_time_day,
             });
 
         let mut queue = self.fact_response_queue.lock().unwrap();
@@ -1536,6 +1542,12 @@ impl TestAppStateBuilder {
             ))
         });
 
+        let character_service =
+            Arc::new(crate::services::character_service::CharacterService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ));
+
         let services = AppStateServices {
             ai_client: self.ai_client,
             embedding_client: self.embedding_client,
@@ -1543,6 +1555,7 @@ impl TestAppStateBuilder {
             embedding_pipeline_service,
             chat_override_service,
             user_persona_service,
+            character_service,
             token_counter,
             encryption_service,
             lorebook_service,
@@ -2255,12 +2268,15 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
+    #[cfg(feature = "postgres-backend")]
     use diesel::RunQueryDsl;
     use diesel_migrations::MigrationHarness;
     // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
-    use crate::db::{DbId, DbTimestamp, MIGRATIONS}; // Import unified types and MIGRATIONS from crate::db
+    #[cfg(feature = "postgres-backend")]
+    use crate::db::MIGRATIONS;
+    use crate::db::{DbId, DbTimestamp}; // Import unified types
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
@@ -2385,7 +2401,6 @@ pub mod db {
         let db_name_clone_create = db_name.clone();
         conn_default
             .interact(move |conn| {
-                use diesel::RunQueryDsl;
                 diesel::sql_query(format!(
                     "DROP DATABASE IF EXISTS \"{db_name_clone_drop}\" WITH (FORCE)"
                 ))
@@ -2406,7 +2421,8 @@ pub mod db {
             .expect("Failed to create test DB pool");
 
         // Run migrations on the test database
-        let mut conn = crate::db::get_conn(&pool)
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&pool)
             .await
             .expect("Failed to get test DB connection for migration");
         conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
@@ -2429,9 +2445,6 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = crate::db::get_conn(pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
@@ -2478,11 +2491,12 @@ pub mod db {
             token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
 
-        // Clone username for SQLite query-back
-        let username_for_query = new_user_payload.username.clone();
-
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
+            let conn = crate::db::get_conn(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+
             conn.interact(move |conn_actual| {
                 use diesel::{RunQueryDsl, SelectableHelper};
                 diesel::insert_into(crate::schema::users::table)
@@ -2499,6 +2513,7 @@ pub mod db {
         #[cfg(feature = "sqlite-backend")]
         let user_from_db: UserDbQuery = {
             use diesel::prelude::*;
+            let username_for_query = new_user_payload.username.clone();
 
             crate::db::with_conn(&pool, move |conn_actual| {
                 diesel::insert_into(crate::schema::users::table)
@@ -2549,9 +2564,6 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let conn = crate::db::get_conn(pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
@@ -2598,11 +2610,12 @@ pub mod db {
             token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
 
-        // Clone username for SQLite query-back
-        let username_for_query = new_user_payload.username.clone();
-
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
+            let conn = crate::db::get_conn(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+
             conn.interact(move |conn_actual| {
                 use diesel::{RunQueryDsl, SelectableHelper};
                 diesel::insert_into(crate::schema::users::table)
@@ -2622,6 +2635,7 @@ pub mod db {
         #[cfg(feature = "sqlite-backend")]
         let user_from_db: UserDbQuery = {
             use diesel::prelude::*;
+            let username_for_query = new_user_payload.username.clone();
 
             crate::db::with_conn(&pool, move |conn_actual| {
                 diesel::insert_into(crate::schema::users::table)
@@ -2678,10 +2692,9 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let conn = crate::db::get_conn(&pool).await?;
+        let _conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
-        let name_clone_for_error = name.clone();
 
         let new_character_payload = NewCharacter {
             id: Some(crate::db::DbId::new()),
@@ -2777,10 +2790,14 @@ pub mod db {
             world_nonce: None,
         };
 
-        let _name_clone_for_second_error = name_clone_for_error.clone();
+        let _name_clone_for_second_error = name_clone_for_payload.clone();
         let character = {
             #[cfg(feature = "postgres-backend")]
             {
+                let conn = crate::db::get_conn(pool)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+
                 conn.interact(move |conn_actual| {
                     use diesel::prelude::*;
                     diesel::insert_into(crate::schema::characters::table)
@@ -2791,7 +2808,7 @@ pub mod db {
                 .map_err(move |interact_err| {
                     anyhow::anyhow!(
                         "DB interact error for create_test_character '{}': {}",
-                        name_clone_for_error,
+                        name_clone_for_payload,
                         interact_err
                     )
                 })??
@@ -2817,7 +2834,7 @@ pub mod db {
                 .map_err(move |interact_err| {
                     anyhow::anyhow!(
                         "DB interact error for create_test_character '{}': {}",
-                        name_clone_for_error,
+                        name_clone_for_payload,
                         interact_err
                     )
                 })?
@@ -2941,6 +2958,11 @@ impl TestDataGuard {
     /// - Database connection cannot be obtained
     /// - Any of the database deletion operations fail
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool)
+            .await
+            .context("Failed to get DB connection for cleanup")?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool)
             .await
             .context("Failed to get DB connection for cleanup")?;
@@ -3654,6 +3676,12 @@ impl TestApp {
             self.ai_client.clone(), // Use test AI client as fallback
         ));
 
+        let character_service =
+            Arc::new(crate::services::character_service::CharacterService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ));
+
         let services = crate::state::AppStateServices {
             ai_client: self.ai_client.clone(),
             embedding_client: self.mock_embedding_client.clone()
@@ -3675,6 +3703,7 @@ impl TestApp {
                     encryption_service.clone(),
                 ),
             ),
+            character_service,
             token_counter: Arc::new(
                 crate::services::hybrid_token_counter::HybridTokenCounter::new(
                     crate::services::tokenizer_service::TokenizerService::new(

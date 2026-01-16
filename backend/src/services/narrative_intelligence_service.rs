@@ -11,6 +11,7 @@
 
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
+use secrecy::ExposeSecret;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, instrument, warn};
@@ -28,7 +29,9 @@ use crate::{
         users::dsl as users_dsl,
     },
     services::{
-        agentic::{AgenticNarrativeFactory, NarrativeAgentRunner, UserPersonaContext},
+        agentic::{
+            AgenticNarrativeFactory, CharacterContext, NarrativeAgentRunner, UserPersonaContext,
+        },
         embeddings::RetrievedChunk,
         ChronicleService, LorebookService,
     },
@@ -249,6 +252,34 @@ impl NarrativeIntelligenceService {
             .await
             .ok();
 
+        // Fetch current game state from DB
+        let current_state_json = crate::db::with_conn(&self.app_state.pool, move |db_conn| {
+            chat_sessions_dsl::chat_sessions
+                .select(chat_sessions_dsl::game_state)
+                .filter(chat_sessions_dsl::id.eq(session_id))
+                .first::<Option<crate::DbJson>>(db_conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?
+        .flatten()
+        .map(|j| j.0);
+
+        let game_state = if let Some(json) = current_state_json {
+            serde_json::from_value::<GameState>(json).ok()
+        } else {
+            None
+        };
+
+        // Fetch character context if available
+        let character_context = if let Some(_msg) = messages_to_analyze.last() {
+            // Try to find the character name from the last assistant message
+            // This is a heuristic, in a real scenario we might have the character ID in the session
+            None // For now, we'll need to pass character_name to this function too if we want it here
+        } else {
+            None
+        };
+
         // Execute the context enrichment workflow
         match self
             .narrative_runner
@@ -259,6 +290,8 @@ impl NarrativeIntelligenceService {
                 messages_to_analyze,
                 session_dek,
                 persona_context,
+                game_state,
+                character_context,
             )
             .await
         {
@@ -328,6 +361,25 @@ impl NarrativeIntelligenceService {
             .await
             .ok();
 
+        // Fetch current game state from DB
+        let current_state_json = crate::db::with_conn(&self.app_state.pool, move |db_conn| {
+            chat_sessions_dsl::chat_sessions
+                .select(chat_sessions_dsl::game_state)
+                .filter(chat_sessions_dsl::id.eq(session_id))
+                .first::<Option<crate::DbJson>>(db_conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await?
+        .flatten()
+        .map(|j| j.0);
+
+        let game_state = if let Some(json) = current_state_json {
+            serde_json::from_value::<GameState>(json).ok()
+        } else {
+            None
+        };
+
         // Execute the context enrichment workflow for this batch of messages
         match self
             .narrative_runner
@@ -338,6 +390,8 @@ impl NarrativeIntelligenceService {
                 &messages,
                 session_dek,
                 persona_context,
+                game_state,
+                None, // character_context (not easily available here without more refactoring)
             )
             .await
         {
@@ -386,6 +440,8 @@ impl NarrativeIntelligenceService {
     /// 4. Persists new state to DB
     pub async fn process_game_state(
         &self,
+        user_id: crate::db::DbId,
+        session_dek: &crate::auth::session_dek::SessionDek,
         chat_session_id: crate::db::DbId,
         last_user_message: &str,
         last_assistant_message: &str,
@@ -420,6 +476,15 @@ impl NarrativeIntelligenceService {
             None
         };
 
+        // 1. Fetch character context if available
+        let character_context = if let Some(name) = character_name {
+            self.get_character_context_by_name(user_id, name, session_dek)
+                .await
+                .ok()
+        } else {
+            None
+        };
+
         // 2. Execute the game state update workflow
         let result = self
             .narrative_runner
@@ -430,6 +495,7 @@ impl NarrativeIntelligenceService {
                 last_assistant_message,
                 player_name,
                 character_name,
+                character_context.as_ref(),
             )
             .await?;
 
@@ -693,6 +759,15 @@ impl NarrativeIntelligenceService {
         session_dek: &SessionDek,
     ) -> Result<UserPersonaContext, AppError> {
         // Get the user from the database to access their default_persona_id
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.app_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.app_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.app_state.pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.app_state.pool).await?;
 
         let user_db = conn
@@ -733,5 +808,44 @@ impl NarrativeIntelligenceService {
                 "User has no default persona set".to_string(),
             ))
         }
+    }
+
+    /// Get character context by name for a user
+    async fn get_character_context_by_name(
+        &self,
+        user_id: crate::db::DbId,
+        character_name: &str,
+        session_dek: &SessionDek,
+    ) -> Result<CharacterContext, AppError> {
+        let character_service = self.app_state.character_service.clone();
+
+        let character = character_service
+            .get_character_by_name(user_id, character_name)
+            .await?;
+
+        let dek_key = session_dek.0.expose_secret();
+
+        let description = match (&character.description, &character.description_nonce) {
+            (Some(c), Some(n)) => character_service.decrypt_field(c, n, dek_key).ok(),
+            _ => None,
+        };
+
+        let personality = match (&character.personality, &character.personality_nonce) {
+            (Some(c), Some(n)) => character_service.decrypt_field(c, n, dek_key).ok(),
+            _ => None,
+        };
+
+        let scenario = match (&character.scenario, &character.scenario_nonce) {
+            (Some(c), Some(n)) => character_service.decrypt_field(c, n, dek_key).ok(),
+            _ => None,
+        };
+
+        Ok(CharacterContext::new(
+            character.id,
+            character.name,
+            description,
+            personality,
+            scenario,
+        ))
     }
 }

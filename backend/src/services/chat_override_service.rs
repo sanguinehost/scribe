@@ -91,7 +91,6 @@ impl ChatOverrideService {
 
             #[cfg(feature = "sqlite-backend")]
             {
-                use diesel::prelude::*;
                 // SQLite doesn't support RETURNING on UPSERT, so we upsert and query back
                 let session_id_clone = new_override_for_db.chat_session_id;
                 let char_id_clone = new_override_for_db.original_character_id;

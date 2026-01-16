@@ -17,9 +17,10 @@ use crate::models::OptionalStringArray;
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
+#[cfg(feature = "postgres-backend")]
+use diesel::SelectableHelper;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl,
-    SelectableHelper,
 }; // For .values(), .returning(), .get_result(), etc.
 use serde_json; // For json!({}) macro
 
@@ -40,6 +41,46 @@ impl CharacterService {
             db_pool,
             encryption_service,
         }
+    }
+
+    /// Retrieves a character by name for a specific user.
+    pub async fn get_character_by_name(
+        &self,
+        user_id: crate::db::DbId,
+        name: &str,
+    ) -> Result<Character, AppError> {
+        let name = name.to_string();
+        let pool = self.db_pool.clone();
+
+        crate::db::with_conn(&pool, move |conn| {
+            characters::table
+                .filter(characters::user_id.eq(user_id))
+                .filter(characters::name.eq(name))
+                .first::<Character>(conn)
+                .map_err(|e| {
+                    if e == diesel::NotFound {
+                        AppError::NotFound(format!("Character not found"))
+                    } else {
+                        AppError::DatabaseQueryError(e.to_string())
+                    }
+                })
+        })
+        .await
+    }
+
+    /// Decrypts a field using the provided ciphertext, nonce, and DEK.
+    pub fn decrypt_field(
+        &self,
+        ciphertext: &[u8],
+        nonce: &[u8],
+        dek_key: &[u8],
+    ) -> Result<String, AppError> {
+        let decrypted_bytes = self
+            .encryption_service
+            .decrypt(ciphertext, nonce, dek_key)?;
+        String::from_utf8(decrypted_bytes).map_err(|e| {
+            AppError::EncryptionError(format!("Invalid UTF-8 in decrypted field: {e}"))
+        })
     }
 
     /// Encrypts a non-empty plaintext string using the provided Data Encryption Key (DEK).

@@ -38,7 +38,7 @@ pub use narrative_tools::{
     CreateChronicleEventTool, CreateLorebookEntryTool, SearchKnowledgeBaseTool,
     UpdateLorebookEntryTool,
 };
-pub use persona_context::UserPersonaContext;
+pub use persona_context::{CharacterContext, UserPersonaContext};
 pub use registry::ToolRegistry;
 pub use state_manager_agent::{StateManagerAgent, StateManagerConfig};
 pub use tools::{ScribeTool, ToolError, ToolParams, ToolResult};

@@ -812,6 +812,7 @@ pub(crate) struct TokenCalculation {
     recent_history_with_tokens: Vec<(GenAiChatMessage, usize)>,
     cognitive_context: Option<String>,
     cognitive_context_tokens: usize,
+    #[allow(dead_code)]
     core_memory: Option<String>,
     core_memory_tokens: usize,
 }

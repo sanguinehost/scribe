@@ -29,13 +29,21 @@ impl RecallPipeline {
         session_dek: &SessionDek,
         state: Arc<AppState>,
         target_actors: Option<Vec<String>>, // Added for actor-specific filtering
+        max_game_time_day: Option<i64>,     // Added for temporal filtering
     ) -> Result<String, AppError> {
         info!("Recalling cognitive context for query: {}", query);
 
         // 0. Hindsight Head: Search for Cognitive Facts via Vector DB
         let similar_facts = state
             .embedding_pipeline_service
-            .retrieve_similar_facts(state.clone(), user_id, chronicle_id, query, 5)
+            .retrieve_similar_facts(
+                state.clone(),
+                user_id,
+                chronicle_id,
+                query,
+                5,
+                max_game_time_day,
+            )
             .await?;
 
         let mut matching_facts = Vec::new();
@@ -161,6 +169,12 @@ impl RecallPipeline {
         let mut current_tokens: usize = 0;
         const TOKEN_LIMIT: usize = 1000; // Increased limit for richer context
 
+        // Add Current Game Time header if available
+        if let Some(day) = max_game_time_day {
+            context_parts.push(format!("### Current Game Time: Day {}", day));
+            context_parts.push("".to_string());
+        }
+
         // Format Facts (Hindsight)
         if !facts.is_empty() {
             context_parts.push("### Narrative Facts".to_string());
@@ -240,6 +254,18 @@ impl RecallPipeline {
         chronicle_id: DbId,
         opinion_id: DbId,
     ) -> Result<Option<CharacterOpinion>, AppError> {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.db_pool).await?;
 
         #[cfg(feature = "postgres-backend")]
@@ -274,6 +300,18 @@ impl RecallPipeline {
         chronicle_id: DbId,
         entity_name_hash: &str,
     ) -> Result<Vec<EntityObservation>, AppError> {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.db_pool).await?;
         let entity_name_hash = entity_name_hash.to_string();
 
@@ -311,6 +349,18 @@ impl RecallPipeline {
         chronicle_id: DbId,
         fact_id: DbId,
     ) -> Result<Option<CognitiveFact>, AppError> {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.db_pool).await?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.db_pool).await?;
 
         #[cfg(feature = "postgres-backend")]

@@ -5,18 +5,13 @@ use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
 
+#[cfg(feature = "postgres-backend")]
+use crate::models::chats::Chat;
 use crate::{
     errors::AppError,
     models::{
         characters::Character,
-        chats::{
-            Chat,
-            ChatMode,
-            ChatSessionQuery,
-            MessageRole,
-            // ChatSessionSettings, // Removed, settings are part of Chat struct
-            // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
-        },
+        chats::{ChatMode, ChatSessionQuery, MessageRole},
     },
     schema::{characters, chat_session_lorebooks, chat_sessions, users::dsl as users_dsl},
     state::DbPool,

@@ -1810,6 +1810,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         fact_id: crate::db::DbId,
         chronicle_id: crate::db::DbId,
         fact_text: &str,
+        game_time: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1830,6 +1831,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             fact_id,
             chronicle_id,
             source_type: "cognitive_fact".to_string(),
+            game_time,
         };
 
         let point = create_qdrant_point(
@@ -1853,6 +1855,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         chronicle_id: crate::db::DbId,
         query: &str,
         limit: u64,
+        max_game_time_day: Option<i64>,
     ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1867,7 +1870,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .embed_content(query, "RETRIEVAL_QUERY", None)
             .await?;
 
-        let filter = Filter {
+        let mut filter = Filter {
             must: vec![
                 Condition {
                     condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -1890,6 +1893,21 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             ],
             ..Default::default()
         };
+
+        // Add max_game_time_day filter if provided
+        if let Some(max_day) = max_game_time_day {
+            debug!("Adding max_game_time_day filter for facts: {}", max_day);
+            filter.must.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "game_time.day".to_string(),
+                    range: Some(Range {
+                        lte: Some(max_day as f64),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })),
+            });
+        }
 
         let search_results = qdrant_service
             .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))

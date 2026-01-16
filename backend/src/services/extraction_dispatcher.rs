@@ -63,6 +63,7 @@ impl ExtractionDispatcher {
         chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
+        game_state: Option<crate::models::game_state::GameState>,
     ) -> Result<ExtractionResult, AppError> {
         let decision = self
             .feature_flags
@@ -93,6 +94,7 @@ impl ExtractionDispatcher {
                     chronicle_id,
                     messages,
                     session_dek,
+                    game_state,
                 )
                 .await
             }
@@ -103,6 +105,7 @@ impl ExtractionDispatcher {
                     chronicle_id,
                     messages,
                     session_dek,
+                    game_state,
                 )
                 .await
             }
@@ -148,6 +151,7 @@ impl ExtractionDispatcher {
         chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
+        game_state: Option<crate::models::game_state::GameState>,
     ) -> Result<ExtractionResult, AppError> {
         let start_time = Instant::now();
 
@@ -174,6 +178,8 @@ impl ExtractionDispatcher {
             messages,
             session_dek,
             persona_context,
+            game_state,
+            None, // character_context
         );
 
         let workflow_result = match tokio::time::timeout(timeout_duration, extraction_future).await
@@ -248,6 +254,7 @@ impl ExtractionDispatcher {
         chronicle_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
+        game_state: Option<crate::models::game_state::GameState>,
     ) -> Result<ExtractionResult, AppError> {
         debug!("Running dual-mode extraction for comparison");
 
@@ -265,6 +272,7 @@ impl ExtractionDispatcher {
             chronicle_id,
             messages,
             session_dek,
+            game_state.clone(),
         );
 
         let (manual_result, agentic_result) = tokio::join!(manual_future, agentic_future);

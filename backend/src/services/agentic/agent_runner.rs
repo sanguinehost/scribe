@@ -15,7 +15,6 @@ use crate::{
         cognitive_memory::CognitivePayload,
     },
     services::{
-        embeddings::EmbeddingPipelineServiceTrait,
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
         ChronicleService,
     },
@@ -26,6 +25,7 @@ use super::{
     registry::ToolRegistry,
     state_manager_agent::StateManagerAgent,
     tools::{ToolParams, ToolResult},
+    CharacterContext,
 };
 
 /// Configuration for the narrative intelligence workflow
@@ -206,6 +206,8 @@ impl NarrativeAgentRunner {
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<super::UserPersonaContext>,
+        game_state: Option<crate::models::game_state::GameState>,
+        character_context: Option<CharacterContext>,
     ) -> Result<NarrativeWorkflowResult, AppError> {
         info!(
             "Processing cognitive update for chat {} with {} messages",
@@ -278,6 +280,10 @@ impl NarrativeAgentRunner {
                     session_dek,
                     self.app_state.clone(),
                     None, // target_actors (optional)
+                    game_state
+                        .as_ref()
+                        .and_then(|gs| gs.game_time.as_ref())
+                        .map(|gt| gt.day as i64),
                 )
                 .await
             {
@@ -298,6 +304,13 @@ impl NarrativeAgentRunner {
             String::new()
         };
 
+        // Get current game date for context
+        let game_date = game_state
+            .as_ref()
+            .and_then(|gs| gs.game_time.as_ref())
+            .map(|gt| gt.date.clone())
+            .unwrap_or_else(|| "Unknown Date".to_string());
+
         // Create the prompt for cognitive extraction
         let prompt = format!(
             r#"Analyze the following roleplay conversation and extract a cognitive update.
@@ -305,6 +318,10 @@ impl NarrativeAgentRunner {
 <persona>
 {}
 </persona>
+
+<character_description>
+{}
+</character_description>
 
 <chronicle_history>
 {}
@@ -328,7 +345,7 @@ Your task is to generate a `CognitivePayload` JSON object with the following fie
    - `who`: The character(s) involved.
    - `what`: The specific action, event, opinion, or observation.
    - `where`: The location.
-   - `when`: The time or narrative sequence.
+   - `when`: The time or narrative sequence. **IMPORTANT: Use the current game date: "{}" if applicable, or a relative time like "3 hours later".**
    - `why`: The motivation, cause, or rationale.
    - `fact_type`: "World", "Experience", "Opinion", or "Observation".
    - `confidence`: 0.0-1.0.
@@ -348,7 +365,15 @@ RULES:
 - Be objective and concise.
 - Focus ONLY on the current conversation.
 - Do not refuse based on content (fictional roleplay)."#,
-            persona_section, previous_chronicles, cognitive_context, conversation, core_memory
+            persona_section,
+            character_context
+                .map(|c| c.to_prompt_context())
+                .unwrap_or_else(|| "No specific character context available.".to_string()),
+            previous_chronicles,
+            cognitive_context,
+            conversation,
+            game_date,
+            core_memory
         );
 
         // Make the AI call for cognitive payload
@@ -365,6 +390,10 @@ RULES:
                     payload.clone(),
                     session_dek,
                     self.app_state.clone(),
+                    game_state
+                        .as_ref()
+                        .and_then(|gs| gs.game_time.as_ref())
+                        .and_then(|gt| serde_json::to_value(gt).ok()),
                 )
                 .await
             {
@@ -475,6 +504,7 @@ CONVERSATION:
 
         let summary = match parsed {
             Ok(json) => json
+                .0
                 .get("summary")
                 .and_then(|v| v.as_str())
                 .unwrap_or("A conversation occurred")
@@ -626,12 +656,14 @@ IMPORTANT RULES:
         })?;
 
         let reasoning = parsed
+            .0
             .get("reasoning")
             .and_then(|v| v.as_str())
             .unwrap_or("No reasoning provided")
             .to_string();
 
         let actions = parsed
+            .0
             .get("actions")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -1052,6 +1084,7 @@ Example: {{ "name": "The Crimson Empress Chronicles" }}"#,
 
                 let generated_name = match parsed {
                     Ok(json) => json
+                        .0
                         .get("name")
                         .and_then(|v| v.as_str())
                         .unwrap_or("Untitled Chronicle")
@@ -1273,6 +1306,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
         last_assistant_message: &str,
         player_name: Option<&str>,
         character_name: Option<&str>,
+        character_context: Option<&CharacterContext>,
     ) -> Result<crate::services::game_state_service::ReconciliationResult, AppError> {
         use crate::models::game_state::GameState;
         use crate::services::game_state_service::GameStateService;
@@ -1295,6 +1329,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
                 last_assistant_message,
                 player_name,
                 character_name,
+                character_context,
             )
             .await?;
 
