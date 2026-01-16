@@ -61,6 +61,59 @@ impl UserPersonaContext {
     }
 }
 
+/// Context information about an NPC character for narrative intelligence processing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterContext {
+    /// The character ID
+    pub id: crate::db::DbId,
+    /// The name of the character (e.g., "Elowen")
+    pub name: String,
+    /// Detailed description of the character
+    pub description: Option<String>,
+    /// Personality traits and characteristics
+    pub personality: Option<String>,
+    /// Current scenario or context
+    pub scenario: Option<String>,
+}
+
+impl CharacterContext {
+    /// Create a new CharacterContext
+    pub fn new(
+        id: crate::db::DbId,
+        name: String,
+        description: Option<String>,
+        personality: Option<String>,
+        scenario: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            description,
+            personality,
+            scenario,
+        }
+    }
+
+    /// Get a formatted string for use in AI prompts
+    pub fn to_prompt_context(&self) -> String {
+        let mut context = format!("CHARACTER DESCRIPTION: {}\n", self.name);
+
+        if let Some(description) = &self.description {
+            context.push_str(&format!("Description: {}\n", description));
+        }
+
+        if let Some(personality) = &self.personality {
+            context.push_str(&format!("Personality: {}\n", personality));
+        }
+
+        if let Some(scenario) = &self.scenario {
+            context.push_str(&format!("Scenario: {}\n", scenario));
+        }
+
+        context
+    }
+}
+
 impl From<UserPersonaDataForClient> for UserPersonaContext {
     fn from(persona: UserPersonaDataForClient) -> Self {
         Self {

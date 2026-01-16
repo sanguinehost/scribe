@@ -1108,7 +1108,7 @@ async fn test_session_store_load_invalid_json() -> AnyhowResult<()> {
             let record_to_insert = SessionRecord {
                 // Renamed to avoid conflict
                 id: sid, // Use String ID
-                expires: Some(Utc::now() + chrono::Duration::hours(1)),
+                expires: Some((Utc::now() + chrono::Duration::hours(1)).into()),
                 session: invalid_json.to_string(),
             };
             diesel::insert_into(scribe_backend::schema::sessions::table)
@@ -1273,7 +1273,8 @@ async fn test_auth_backend_get_user_not_found() -> AnyhowResult<()> {
     info!(user_id = %non_existent_user_id, "Attempting to get non-existent user via AuthBackend");
 
     // Call get_user directly on the backend instance
-    let result = backend.get_user(&non_existent_user_id).await;
+    let non_existent_user_db_id: scribe_backend::db::DbId = non_existent_user_id.into();
+    let result = backend.get_user(&non_existent_user_db_id).await;
 
     info!(user_id = %non_existent_user_id, ?result, "Result from AuthBackend::get_user");
 

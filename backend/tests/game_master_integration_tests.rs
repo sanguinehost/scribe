@@ -12,11 +12,9 @@ use http_body_util::BodyExt; // For collect()
 use scribe_backend::db::{with_conn, DbId, DbPool};
 use scribe_backend::errors::AppError;
 use scribe_backend::models::character_card::NewCharacter;
-use scribe_backend::models::characters::Character as DbCharacter;
-use scribe_backend::models::chats::{Chat as DbChat, NewChat};
+use scribe_backend::models::chats::NewChat;
 use scribe_backend::schema::{characters, chat_sessions};
 use scribe_backend::test_helpers;
-use std::time::Duration;
 use tower::ServiceExt;
 
 // Helper to create a user and log them in
@@ -102,45 +100,16 @@ async fn create_test_chat_session(
         id: chat_id,
         user_id,
         character_id,
-        title_ciphertext: None,
-        title_nonce: None,
         created_at: Utc::now().into(),
         updated_at: Utc::now().into(),
         history_management_strategy: "token_limit".to_string(),
         history_management_limit: 10,
         model_name: Some("test-model".to_string()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        repetition_penalty: None,
-        min_p: None,
-        top_a: None,
-        seed: None,
-        logit_bias: None,
-        stop_sequences: scribe_backend::db::DbStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        agent_mode: None,
-        model_provider: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now().into(),
-        total_credits_used: BigDecimal::from(0).into(),
-        game_state: None,
-        game_master_mode_enabled: false,
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+        ..Default::default()
     };
 
     with_conn(conn_pool, move |conn| {

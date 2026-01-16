@@ -10,6 +10,7 @@ use axum::{
     body::Body,
     http::{header, Method, Request, StatusCode},
 };
+use chrono::Utc;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -23,6 +24,7 @@ use diesel::RunQueryDsl;
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHasher};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use scribe_backend::db::SqliteInteractExt;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
@@ -30,7 +32,7 @@ use scribe_backend::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
         chats::{Chat, Message as DbChatMessage, MessageRole, NewChatMessage, NewMessageVariant},
-        users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
+        users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::{characters, chat_messages, chat_sessions, message_variants, users},
     test_helpers,
@@ -44,14 +46,15 @@ async fn create_test_user_with_dek(
     username: String,
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
-    let conn = test_app.db_pool.get().await?;
+    let mut conn = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
 
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let password_hash = argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?
-        .to_string();
+    let password_hash =
+        scribe_backend::auth::hash_password(SecretString::new(password.clone().into()))
+            .await
+            .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
 
     let email = format!("{}@example.com", username);
     let kek_salt = crypto::generate_salt()?;
@@ -59,13 +62,14 @@ async fn create_test_user_with_dek(
     let secret_password = SecretString::new(password.into());
     let kek = crypto::derive_kek(&secret_password, &kek_salt)?;
     let (encrypted_dek, dek_nonce) = crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
-    let kek_salt_str = BASE64.encode(&kek_salt);
+    // kek_salt is already a Base64 string from generate_salt()
 
     let new_user = NewUser {
+        id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
         email,
-        kek_salt: kek_salt_str,
+        kek_salt,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
@@ -73,9 +77,9 @@ async fn create_test_user_with_dek(
         dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };
@@ -84,8 +88,12 @@ async fn create_test_user_with_dek(
         .interact(move |conn| {
             diesel::insert_into(users::table)
                 .values(&new_user)
-                .returning(UserDbQuery::as_returning())
-                .get_result(conn)
+                .execute(conn)?;
+
+            users::table
+                .filter(users::id.eq(new_user.id))
+                .select(UserDbQuery::as_select())
+                .first(conn)
         })
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
@@ -100,25 +108,30 @@ async fn create_test_chat_session(
     auth_cookie: &str,
 ) -> anyhow::Result<(DbCharacter, Chat, String)> {
     let new_character = NewCharacter {
+        id: Some(Uuid::new_v4().into()),
         user_id: user_id.into(),
         spec: "test_char".to_string(),
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
-        created_at: None,
-        updated_at: None,
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         ..Default::default()
     };
 
     let character: DbCharacter = test_app
         .db_pool
         .get()
-        .await?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(characters::table)
                 .values(&new_character)
-                .returning(DbCharacter::as_returning())
-                .get_result(conn)
+                .execute(conn)?;
+
+            characters::table
+                .filter(characters::id.eq(new_character.id.unwrap()))
+                .select(DbCharacter::as_select())
+                .first(conn)
         })
         .await
         .map_err(|_| anyhow::anyhow!("Interact error"))??;
@@ -154,10 +167,10 @@ async fn create_test_chat_session(
     let chat_session: Chat = test_app
         .db_pool
         .get()
-        .await?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             chat_sessions::table
-                .filter(chat_sessions::id.eq(session_id))
+                .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
         })
@@ -210,12 +223,15 @@ async fn create_test_message(
     let message: DbChatMessage = test_app
         .db_pool
         .get()
-        .await?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
-                .returning(DbChatMessage::as_returning())
-                .get_result(conn)
+                .execute(conn)?;
+
+            chat_messages::table
+                .order(chat_messages::created_at.desc())
+                .first::<DbChatMessage>(conn)
         })
         .await
         .map_err(|_| anyhow::anyhow!("Interact error"))??;
@@ -234,7 +250,7 @@ async fn create_message_variant_with_raw_prompt(
     let next_index = test_app
         .db_pool
         .get()
-        .await?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             let count: i64 = message_variants::table
                 .filter(message_variants::parent_message_id.eq(message_id))
@@ -262,7 +278,7 @@ async fn create_message_variant_with_raw_prompt(
     test_app
         .db_pool
         .get()
-        .await?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(message_variants::table)
                 .values(&new_variant)
@@ -274,7 +290,7 @@ async fn create_message_variant_with_raw_prompt(
     test_app
         .db_pool
         .get()
-        .await?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))
                 .set(chat_messages::variant_count.eq(next_index + 1))

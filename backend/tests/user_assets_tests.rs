@@ -41,40 +41,40 @@ async fn test_user_asset_model_creation() -> Result<()> {
 
     // Test creating user avatar asset
     let new_user_avatar = NewUserAsset::new_user_avatar(
-        user_id,
+        user_id.into(),
         "test_user_avatar",
-        image_data.clone(),
+        image_data.clone().into(),
         Some("image/png".to_string()),
     );
 
     // Verify the asset properties
-    assert_eq!(new_user_avatar.user_id, user_id);
+    assert_eq!(new_user_avatar.user_id, user_id.into());
     assert_eq!(new_user_avatar.persona_id, None);
     assert_eq!(new_user_avatar.asset_type, "avatar");
     assert_eq!(new_user_avatar.ext, "png");
     assert_eq!(new_user_avatar.content_type, Some("image/png".to_string()));
-    assert_eq!(new_user_avatar.data, Some(image_data.clone()));
+    assert_eq!(new_user_avatar.data, Some(image_data.clone().into()));
 
     // Test creating persona avatar asset
     let persona_id = Uuid::new_v4();
     let new_persona_avatar = NewUserAsset::new_persona_avatar(
-        user_id,
-        persona_id,
+        user_id.into(),
+        persona_id.into(),
         "test_persona_avatar",
-        image_data.clone(),
+        image_data.clone().into(),
         Some("image/png".to_string()),
     );
 
     // Verify the persona asset properties
-    assert_eq!(new_persona_avatar.user_id, user_id);
-    assert_eq!(new_persona_avatar.persona_id, Some(persona_id));
+    assert_eq!(new_persona_avatar.user_id, user_id.into());
+    assert_eq!(new_persona_avatar.persona_id, Some(persona_id.into()));
     assert_eq!(new_persona_avatar.asset_type, "avatar");
     assert_eq!(new_persona_avatar.ext, "png");
     assert_eq!(
         new_persona_avatar.content_type,
         Some("image/png".to_string())
     );
-    assert_eq!(new_persona_avatar.data, Some(image_data));
+    assert_eq!(new_persona_avatar.data, Some(image_data.into()));
 
     tracing::info!("User asset model creation tests completed successfully");
     Ok(())
@@ -91,32 +91,32 @@ async fn test_user_asset_helper_methods() -> Result<()> {
 
     // Create mock UserAsset for user avatar
     let user_avatar = UserAsset {
-        id: 1,
-        user_id,
+        id: Some(1),
+        user_id: user_id.into(),
         persona_id: None,
         asset_type: "avatar".to_string(),
         uri: None,
         name: "user_avatar".to_string(),
         ext: "png".to_string(),
-        data: Some(vec![1, 2, 3]),
+        data: Some(vec![1, 2, 3].into()),
         content_type: Some("image/png".to_string()),
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
     };
 
     // Create mock UserAsset for persona avatar
     let persona_avatar = UserAsset {
-        id: 2,
-        user_id,
-        persona_id: Some(persona_id),
+        id: Some(2),
+        user_id: user_id.into(),
+        persona_id: Some(persona_id.into()),
         asset_type: "avatar".to_string(),
         uri: None,
         name: "persona_avatar".to_string(),
         ext: "png".to_string(),
-        data: Some(vec![4, 5, 6]),
+        data: Some(vec![4, 5, 6].into()),
         content_type: Some("image/png".to_string()),
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
     };
 
     // Test helper methods
@@ -141,17 +141,17 @@ async fn test_different_asset_types() -> Result<()> {
 
     // Create mock UserAsset for non-avatar asset
     let other_asset = UserAsset {
-        id: 3,
-        user_id,
-        persona_id: Some(persona_id),
+        id: Some(3),
+        user_id: user_id.into(),
+        persona_id: Some(persona_id.into()),
         asset_type: "banner".to_string(), // Not an avatar
         uri: None,
         name: "persona_banner".to_string(),
         ext: "png".to_string(),
-        data: Some(vec![7, 8, 9]),
+        data: Some(vec![7, 8, 9].into()),
         content_type: Some("image/png".to_string()),
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
     };
 
     // Asset with persona_id but not avatar type should not be considered avatar
@@ -174,37 +174,37 @@ async fn test_new_user_asset_constructors() -> Result<()> {
 
     // Test user avatar constructor
     let user_avatar = NewUserAsset::new_user_avatar(
-        user_id,
+        user_id.into(),
         "my_user_avatar",
-        image_data.clone(),
+        image_data.clone().into(),
         Some("image/png".to_string()),
     );
 
-    assert_eq!(user_avatar.user_id, user_id);
+    assert_eq!(user_avatar.user_id, user_id.into());
     assert_eq!(user_avatar.persona_id, None);
     assert_eq!(user_avatar.asset_type, "avatar");
     assert_eq!(user_avatar.name, "my_user_avatar");
     assert_eq!(user_avatar.ext, "png");
     assert_eq!(user_avatar.content_type, Some("image/png".to_string()));
-    assert_eq!(user_avatar.data, Some(image_data.clone()));
+    assert_eq!(user_avatar.data, Some(image_data.clone().into()));
     assert_eq!(user_avatar.uri, None);
 
     // Test persona avatar constructor
     let persona_avatar = NewUserAsset::new_persona_avatar(
-        user_id,
-        persona_id,
+        user_id.into(),
+        persona_id.into(),
         "my_persona_avatar",
-        image_data.clone(),
+        image_data.clone().into(),
         Some("image/png".to_string()),
     );
 
-    assert_eq!(persona_avatar.user_id, user_id);
-    assert_eq!(persona_avatar.persona_id, Some(persona_id));
+    assert_eq!(persona_avatar.user_id, user_id.into());
+    assert_eq!(persona_avatar.persona_id, Some(persona_id.into()));
     assert_eq!(persona_avatar.asset_type, "avatar");
     assert_eq!(persona_avatar.name, "my_persona_avatar");
     assert_eq!(persona_avatar.ext, "png");
     assert_eq!(persona_avatar.content_type, Some("image/png".to_string()));
-    assert_eq!(persona_avatar.data, Some(image_data));
+    assert_eq!(persona_avatar.data, Some(image_data.into()));
     assert_eq!(persona_avatar.uri, None);
 
     tracing::info!("NewUserAsset constructors test completed successfully");

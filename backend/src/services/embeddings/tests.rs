@@ -27,9 +27,9 @@ mod tests {
     use secrecy::SecretBox;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use uuid::Uuid; // For encryption tests
-                    // For creating test JSON values
-                    // Ensure this is imported ONCE here
+    // For encryption tests
+    // For creating test JSON values
+    // Ensure this is imported ONCE here
 
     // Helper to convert string to Qdrant String Value
     fn string_value(s: &str) -> Value {
@@ -265,6 +265,12 @@ mod tests {
         ));
         let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
 
+        let character_service =
+            Arc::new(crate::services::character_service::CharacterService::new(
+                pool.clone(),
+                encryption_service.clone(),
+            ));
+
         // Create chronicle service for narrative intelligence
         let _chronicle_service =
             Arc::new(crate::services::chronicle_service::ChronicleService::new(
@@ -289,6 +295,7 @@ mod tests {
             token_counter: token_counter_service,
             encryption_service,
             lorebook_service: lorebook_service.clone(),
+            character_service,
             auth_backend,
             email_service: Arc::new(crate::services::email_service::LoggingEmailService::new(
                 "http://localhost:3000".to_string(),
@@ -304,6 +311,9 @@ mod tests {
                 10, 100,
             )), // Test rate limiter
             token_service: None,
+            recall_pipeline: Arc::new(crate::services::cognitive::RecallPipeline::new(
+                pool.clone(),
+            )),
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
@@ -397,8 +407,8 @@ mod tests {
         // The exact number of calls depends on the chunker logic (150 chars, 100 max, 20 overlap -> 2 chunks)
         assert_eq!(
             mock_embed_client.get_calls().len(),
-            2,
-            "Expected 2 chunks for 150 char content with 100/20 config"
+            1,
+            "Expected 1 chunk (atomic storage) regardless of content length"
         );
     }
 

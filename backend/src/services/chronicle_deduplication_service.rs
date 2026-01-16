@@ -27,7 +27,7 @@ impl Default for DeduplicationConfig {
     fn default() -> Self {
         Self {
             time_window_minutes: 3,     // 3 minute window (decreased from 5)
-            similarity_threshold: 0.90, // 90% content similarity (Levenshtein)
+            similarity_threshold: 0.80, // 80% content similarity (Loose Pre-Filter)
             max_events_to_check: 50,
         }
     }
@@ -57,6 +57,37 @@ pub struct ChronicleDeduplicationService {
 }
 
 impl ChronicleDeduplicationService {
+    /// Keywords that trigger the "Safety Valve" (bypass deduplication)
+    const HIGH_INTENSITY_KEYWORDS: &'static [&'static str] = &[
+        "death",
+        "kill",
+        "die",
+        "murder",
+        "blood",
+        "betrayal",
+        "secret",
+        "reveal",
+        "explosion",
+        "attack",
+        "ambush",
+        "kiss",
+        "intimacy",
+        "sex",
+        "love",
+        "confession",
+        "artifact",
+        "relic",
+        "god",
+        "magic",
+        "curse",
+    ];
+
+    fn is_high_intensity(&self, summary: &str) -> bool {
+        let summary_lower = summary.to_lowercase();
+        Self::HIGH_INTENSITY_KEYWORDS
+            .iter()
+            .any(|&kw| summary_lower.contains(kw))
+    }
     /// Create a new deduplication service
     pub fn new(
         db_pool: DbPool,
@@ -80,6 +111,20 @@ impl ChronicleDeduplicationService {
             "Checking for duplicates of event: {} at timestamp: {:?}",
             new_event.id, new_event.timestamp_iso8601
         );
+
+        // Safety Valve: High Intensity Keywords bypass deduplication
+        if self.is_high_intensity(&new_event.summary) {
+            info!(
+                "Safety Valve triggered: high intensity keywords detected in event {}",
+                new_event.id
+            );
+            return Ok(DuplicateDetectionResult {
+                is_duplicate: false,
+                duplicate_event_id: None,
+                confidence: 1.0,
+                reasoning: "Safety Valve: High intensity keywords detected".to_string(),
+            });
+        }
 
         // Get recent events from the same chronicle within the time window
         let candidate_events = self.get_candidate_events(new_event).await?;
@@ -285,43 +330,6 @@ impl ChronicleDeduplicationService {
         }
     }
 
-    /// Calculate similarity between two events based on Levenshtein distance of summaries
-    fn calculate_content_similarity(
-        &self,
-        event1: &ChronicleEvent,
-        event2: &ChronicleEvent,
-    ) -> f32 {
-        let s1 = event1.summary.trim().to_lowercase();
-        let s2 = event2.summary.trim().to_lowercase();
-
-        if s1.is_empty() && s2.is_empty() {
-            return 1.0; // Both empty = identical
-        }
-        if s1.is_empty() || s2.is_empty() {
-            return 0.0; // One empty = completely different
-        }
-
-        // Use strsim for normalized Levenshtein distance (0.0 = different, 1.0 = identical)
-        let similarity = strsim::normalized_levenshtein(&s1, &s2);
-
-        debug!(
-            "Content similarity (Levenshtein): {:.4} for '{}' vs '{}'",
-            similarity,
-            if s1.len() > 20 {
-                format!("{}...", &s1[0..20])
-            } else {
-                s1
-            },
-            if s2.len() > 20 {
-                format!("{}...", &s2[0..20])
-            } else {
-                s2
-            }
-        );
-
-        similarity as f32
-    }
-
     /// Calculate temporal similarity between two events
     fn calculate_temporal_similarity(
         &self,
@@ -422,37 +430,6 @@ mod tests {
         let service = ChronicleDeduplicationService::new(pool, mock_ai_client, None);
         assert_eq!(service.config.time_window_minutes, 3);
         assert_eq!(service.config.similarity_threshold, 0.90);
-    }
-
-    #[tokio::test]
-    async fn test_content_similarity_calculation() {
-        let test_app = crate::test_helpers::spawn_app(false, false, false).await;
-        let pool = test_app.db_pool.clone();
-        let mock_ai_client = std::sync::Arc::new(crate::test_helpers::MockAiClient::new());
-        let service = ChronicleDeduplicationService::new(pool, mock_ai_client, None);
-
-        // Test exact match
-        assert_eq!(
-            service.calculate_content_similarity(
-                &create_test_event("Solomon punches Midoriya."),
-                &create_test_event("Solomon punches Midoriya.")
-            ),
-            1.0
-        );
-
-        // Test near match (typo/punctuation)
-        let sim = service.calculate_content_similarity(
-            &create_test_event("Solomon punches Midoriya"),
-            &create_test_event("Solomon punches Midoriya."),
-        );
-        assert!(sim > 0.95);
-
-        // Test distinct events
-        let sim = service.calculate_content_similarity(
-            &create_test_event("Solomon punches Midoriya"),
-            &create_test_event("Midoriya punches back"),
-        );
-        assert!(sim < 0.5);
     }
 
     fn create_test_event(summary: &str) -> ChronicleEvent {

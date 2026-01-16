@@ -176,6 +176,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    character_opinions (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        perspective_hash -> Text,
+        perspective_encrypted -> Binary,
+        perspective_nonce -> Binary,
+        opinion_encrypted -> Binary,
+        opinion_nonce -> Binary,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     chat_character_lorebook_overrides (id) {
         id -> Text,
         chat_session_id -> Text,
@@ -217,8 +234,8 @@ diesel::table! {
         role -> Nullable<Text>,
         parts -> Nullable<Text>,
         attachments -> Nullable<Text>,
-        prompt_tokens -> Nullable<Integer>,
-        completion_tokens -> Nullable<Integer>,
+        prompt_tokens -> Nullable<BigInt>,
+        completion_tokens -> Nullable<BigInt>,
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
         model_name -> Text,
@@ -228,7 +245,7 @@ diesel::table! {
         variant_count -> Integer,
         current_variant_index -> Integer,
         credits_charged -> Integer,
-        credits_cost -> Integer,
+        credits_cost -> Double,
         actual_cost -> Double,
         modified_cost -> Double,
         credit_cost -> Integer,
@@ -283,12 +300,12 @@ diesel::table! {
         player_chronicle_id -> Nullable<Text>,
         agent_mode -> Nullable<Text>,
         model_provider -> Nullable<Text>,
-        total_prompt_tokens -> Integer,
-        total_completion_tokens -> Integer,
+        total_prompt_tokens -> BigInt,
+        total_completion_tokens -> BigInt,
         estimated_cost_cents -> Integer,
         tokens_counted_at -> Timestamp,
         prompt_template_id -> Text,
-        total_credits_used -> Integer,
+        total_credits_used -> Double,
         narrative_style_override_ciphertext -> Nullable<Binary>,
         narrative_style_override_nonce -> Nullable<Binary>,
         total_actual_cost -> Double,
@@ -301,6 +318,7 @@ diesel::table! {
         rag_chronicles_limit -> Nullable<Integer>,
         rag_lorebooks_limit -> Nullable<Integer>,
         rag_older_chat_limit -> Nullable<Integer>,
+        rag_cognitive_context_limit -> Nullable<Integer>,
     }
 }
 
@@ -365,7 +383,7 @@ diesel::table! {
         user_id -> Text,
         date -> Date,
         message_count -> Integer,
-        token_count -> Integer,
+        token_count -> BigInt,
         model_breakdown -> Nullable<Text>,
         soft_limit_triggered_at -> Nullable<Integer>,
         created_at -> Nullable<Timestamp>,
@@ -432,8 +450,8 @@ diesel::table! {
         user_id -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        prompt_tokens -> Nullable<Integer>,
-        completion_tokens -> Nullable<Integer>,
+        prompt_tokens -> Nullable<BigInt>,
+        completion_tokens -> Nullable<BigInt>,
         model_name -> Nullable<Text>,
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
@@ -510,6 +528,57 @@ diesel::table! {
         paddle_data_nonce -> Nullable<Binary>,
         created_at -> Nullable<Timestamp>,
         updated_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    entity_observations (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        entity_name_hash -> Text,
+        entity_name_encrypted -> Binary,
+        entity_name_nonce -> Binary,
+        observation_encrypted -> Binary,
+        observation_nonce -> Binary,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    cognitive_facts (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        who_encrypted -> Binary,
+        who_nonce -> Binary,
+        what_encrypted -> Binary,
+        what_nonce -> Binary,
+        where_encrypted -> Binary,
+        where_nonce -> Binary,
+        when_encrypted -> Binary,
+        when_nonce -> Binary,
+        why_encrypted -> Binary,
+        why_nonce -> Binary,
+        fact_type -> Text,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    cognitive_core_memory (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        memory_state_encrypted -> Binary,
+        memory_state_nonce -> Binary,
+        version -> Integer,
+        updated_at -> Timestamp,
     }
 }
 
@@ -765,9 +834,9 @@ diesel::table! {
         role -> Text,
         account_status -> Text,
         default_persona_id -> Nullable<Text>,
-        total_prompt_tokens -> Integer,
-        total_completion_tokens -> Integer,
-        total_token_cost_cents -> Integer,
+        total_prompt_tokens -> BigInt,
+        total_completion_tokens -> BigInt,
+        total_token_cost_cents -> BigInt,
         tokens_last_reset_at -> Nullable<Timestamp>,
         token_usage_updated_at -> Timestamp,
         cached_credit_balance -> Nullable<Integer>,
@@ -795,7 +864,11 @@ diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(character_lorebooks -> users (user_id));
+diesel::joinable!(character_opinions -> player_chronicles (chronicle_id));
+diesel::joinable!(character_opinions -> users (user_id));
 diesel::joinable!(characters -> users (user_id));
+diesel::joinable!(entity_observations -> player_chronicles (chronicle_id));
+diesel::joinable!(entity_observations -> users (user_id));
 diesel::joinable!(chat_character_lorebook_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_character_lorebook_overrides -> lorebooks (lorebook_id));
 diesel::joinable!(chat_character_lorebook_overrides -> users (user_id));
@@ -842,6 +915,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     agent_context_analysis,
     character_assets,
     character_lorebooks,
+    character_opinions,
     characters,
     chat_character_lorebook_overrides,
     chat_character_overrides,
@@ -853,6 +927,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     credit_transactions,
     daily_usage_tracking,
     email_verification_tokens,
+    entity_observations,
     lorebook_entries,
     lorebooks,
     message_variants,

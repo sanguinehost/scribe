@@ -5,8 +5,8 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::SecretBox; // Removed SecretString
 
 use scribe_backend::{
-    auth::user_store::Backend as AuthBackend, // Added
-    llm::EmbeddingClient,                     // Removed AiClient, Added EmbeddingClient
+    auth::{token_service::TokenService, user_store::Backend as AuthBackend},
+    llm::EmbeddingClient, // Removed AiClient, Added EmbeddingClient
     models::{
         chats::ChatMode,
         user_settings::{NewUserSettings, UserSettings},
@@ -14,13 +14,14 @@ use scribe_backend::{
     schema::user_settings,
     services::{
         chat_override_service::ChatOverrideService, // Added
-        embeddings::EmbeddingPipelineServiceTrait,  // Added
-        encryption_service::EncryptionService,      // Added
-        gemini_token_client::GeminiTokenClient,     // Added
-        hybrid_token_counter::HybridTokenCounter,   // Added
-        lorebook::LorebookService,                  // Added
-        tokenizer_service::TokenizerService,        // Added
-        user_persona_service::UserPersonaService,   // Added
+        cognitive::RecallPipeline,
+        embeddings::EmbeddingPipelineServiceTrait, // Added
+        encryption_service::EncryptionService,     // Added
+        gemini_token_client::GeminiTokenClient,    // Added
+        hybrid_token_counter::HybridTokenCounter,  // Added
+        lorebook::LorebookService,                 // Added
+        tokenizer_service::TokenizerService,       // Added
+        user_persona_service::UserPersonaService,  // Added
         UserSettingsService,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
@@ -115,10 +116,14 @@ async fn test_chat_session_uses_user_default_model() {
         default_top_k: None,
         default_seed: None,
         default_gemini_thinking_budget: None,
+        default_gemini_thinking_level: None,
         default_gemini_enable_code_execution: None,
         default_context_total_token_limit: None,
         default_context_recent_history_budget: None,
         default_context_rag_budget: None,
+        default_rag_chronicles_limit: None,
+        default_rag_lorebooks_limit: None,
+        default_rag_older_chat_limit: None,
         auto_save_chats: None,
         theme: None,
         notifications_enabled: None,
@@ -205,6 +210,8 @@ async fn test_chat_session_uses_user_default_model() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let app_services = AppStateServices {
+        recall_pipeline: Arc::new(RecallPipeline::new(db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client,
         embedding_client,
         qdrant_service,
@@ -247,12 +254,12 @@ async fn test_chat_session_uses_user_default_model() {
     let chat_session =
         scribe_backend::services::chat::session_management::create_session_and_maybe_first_message(
             app_state_for_session, // Use the correctly constructed AppState
-            user_db.id,
-            Some(character.id),   // character_id is now Option<Uuid>
-            ChatMode::Character,  // chat_mode
-            None,                 // No custom persona
-            None,                 // No lorebooks
-            user_dek_for_session, // Use the DEK from the test user
+            user_db.id.into(),
+            Some(character.id.into()), // character_id is now Option<Uuid>
+            ChatMode::Character,       // chat_mode
+            None,                      // No custom persona
+            None,                      // No lorebooks
+            user_dek_for_session,      // Use the DEK from the test user
         )
         .await
         .expect("Failed to create chat session");

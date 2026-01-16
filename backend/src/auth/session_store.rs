@@ -11,7 +11,7 @@ use diesel::result::Error as DieselError;
 // use secrecy::{ExposeSecret, SecretString};
 use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
-use crate::db::DbTimestamp; // Import backend-agnostic DateTime type
+// Import backend-agnostic DateTime type
 use crate::state::DbPool; // Import DbPool type alias
 use axum_login::tower_sessions::{
     session::{Id, Record}, // Use tower_sessions::session types
@@ -76,27 +76,6 @@ impl DieselSessionStore {
             }
             _ => session_store::Error::Backend(e.to_string()),
         }
-    }
-
-    // Helper to convert Deadpool pool error to session_store::Error
-    #[cfg(feature = "postgres-backend")]
-    fn map_pool_error(e: &deadpool_diesel::PoolError) -> session_store::Error {
-        error!(error = ?e, "Failed to get connection from pool");
-        session_store::Error::Backend(e.to_string())
-    }
-
-    // Helper to convert Interact error to session_store::Error
-    #[cfg(feature = "postgres-backend")]
-    fn map_interact_error(e: &deadpool_diesel::InteractError) -> session_store::Error {
-        error!(error = ?e, "Interact error during DB operation");
-        session_store::Error::Backend(e.to_string())
-    }
-
-    // Helper to convert r2d2 pool error to session_store::Error (SQLite backend)
-    #[cfg(feature = "sqlite-backend")]
-    fn map_pool_error_sqlite(e: &diesel::r2d2::PoolError) -> session_store::Error {
-        error!(error = ?e, "Failed to get connection from r2d2 pool");
-        session_store::Error::Backend(e.to_string())
     }
 
     // Helper to convert JSON error to session_store::Error

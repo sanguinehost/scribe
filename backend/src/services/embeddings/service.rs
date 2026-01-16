@@ -1,4 +1,7 @@
-use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata, LorebookEntryParams};
+use super::metadata::{
+    ChatMessageChunkMetadata, CognitiveFactMetadata, EntityMetadata, LorebookChunkMetadata,
+    LorebookEntryParams, OpinionMetadata,
+};
 use super::retrieval::{
     decrypt_chat_content, decrypt_lorebook_content, RetrievedChunk, RetrievedMetadata,
 };
@@ -9,21 +12,20 @@ use crate::errors::AppError;
 use crate::models::chats::{ChatMessage, MessageRole};
 use crate::schema::chat_messages;
 use crate::state::AppState;
-use crate::text_processing::chunking::{chunk_text, ChunkConfig};
+use crate::text_processing::chunking::ChunkConfig;
 use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
-    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match, Range,
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
+    PointId, Range,
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument, warn};
 
-pub struct EmbeddingPipelineService {
-    chunk_config: ChunkConfig, // Store chunking configuration
-}
+pub struct EmbeddingPipelineService {}
 
 /// Default score threshold for standard RAG retrieval
 const RAG_SCORE_THRESHOLD: f32 = 0.20;
@@ -31,8 +33,8 @@ const RAG_SCORE_THRESHOLD: f32 = 0.20;
 impl EmbeddingPipelineService {
     /// Creates a new `EmbeddingPipelineService`.
     #[must_use]
-    pub const fn new(chunk_config: ChunkConfig) -> Self {
-        Self { chunk_config }
+    pub const fn new(_chunk_config: ChunkConfig) -> Self {
+        Self {}
     }
 }
 
@@ -180,25 +182,16 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             return Ok(());
         }
 
-        let chunks = match chunk_text(
-            &content_to_embed,  // Use potentially decrypted content
-            &self.chunk_config, // Use stored config
-            None,
-            0,
-        ) {
-            Ok(chunks) => {
-                if chunks.is_empty() {
-                    warn!("Chunking produced no chunks for message content. Skipping embedding.");
-                    return Ok(());
-                }
-                chunks
-            }
-            Err(e) => {
-                error!(error = %e, "Failed to chunk message content");
-                return Err(e);
-            }
-        };
-        info!("Message content split into {} chunks", chunks.len());
+        // ATOMIC STORAGE: Store the entire User+AI pair as a single embedding
+        // This preserves conversation context and prevents fragmenting related exchanges.
+        // The content is already combined as "User: ...\n\nAssistant: ..." above.
+        let chunks = vec![crate::text_processing::chunking::TextChunk {
+            content: content_to_embed.clone(),
+            source_id: Some(message.id.to_string()),
+            start_index: 0,
+            end_index: content_to_embed.len(),
+        }];
+        info!("Storing chat message atomically as 1 embedding (user+AI pair)");
 
         let mut points_to_upsert = Vec::new();
 
@@ -716,14 +709,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                                 ..Default::default()
                             })),
                         },
-                        // Ensure we only get entries from the requested lorebooks
-                        Condition {
-                            condition_one_of: Some(ConditionOneOf::Filter(Filter {
-                                should: lorebook_id_conditions,
-                                ..Default::default()
-                            })),
-                        },
                     ],
+                    should: lorebook_id_conditions,
                     ..Default::default()
                 };
                 debug!(?lorebook_filter, "Lorebook filter for RAG");
@@ -1613,5 +1600,326 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             chronicle_id, user_id
         );
         Ok(())
+    }
+
+    /// Processes an entity: embeds and stores it in the entity_vectors collection.
+    async fn process_and_embed_entity(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        entity_name_hash: &str,
+    ) -> Result<(), AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "entity_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        // Get embedding
+        let embedding_vector = embedding_client
+            .embed_content(entity_name, "RETRIEVAL_DOCUMENT", None)
+            .await?;
+
+        let metadata = EntityMetadata {
+            user_id,
+            entity_name_hash: entity_name_hash.to_string(),
+            source_type: "entity".to_string(),
+        };
+
+        let point_id = DbId::new();
+        let point = create_qdrant_point(
+            point_id.into(),
+            embedding_vector,
+            Some(serde_json::to_value(metadata)?.into()),
+        )?;
+
+        qdrant_service
+            .store_points_to_collection(collection_name, vec![point])
+            .await?;
+
+        Ok(())
+    }
+
+    /// Retrieves similar entities from the entity_vectors collection.
+    async fn retrieve_similar_entities(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, EntityMetadata)>, AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "entity_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        let query_embedding = embedding_client
+            .embed_content(entity_name, "RETRIEVAL_QUERY", None)
+            .await?;
+
+        let filter = Filter {
+            must: vec![Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "user_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            }],
+            ..Default::default()
+        };
+
+        let search_results = qdrant_service
+            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+            .await?;
+
+        let mut results = Vec::new();
+        for scored_point in search_results {
+            if let Ok(meta) = EntityMetadata::try_from(scored_point.payload) {
+                results.push((scored_point.score, meta));
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Processes an opinion: embeds and stores it in the opinion_vectors collection.
+    async fn process_and_embed_opinion(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        opinion_id: crate::db::DbId,
+        opinion_text: &str,
+    ) -> Result<(), AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "opinion_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        // Get embedding
+        let embedding_vector = embedding_client
+            .embed_content(opinion_text, "RETRIEVAL_DOCUMENT", None)
+            .await?;
+
+        let metadata = OpinionMetadata {
+            user_id,
+            opinion_id,
+            source_type: "opinion".to_string(),
+        };
+
+        let point = create_qdrant_point(
+            opinion_id.into(),
+            embedding_vector,
+            Some(serde_json::to_value(metadata)?.into()),
+        )?;
+
+        qdrant_service
+            .store_points_to_collection(collection_name, vec![point])
+            .await?;
+
+        Ok(())
+    }
+
+    /// Retrieves similar opinions from the opinion_vectors collection.
+    async fn retrieve_similar_opinions(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, OpinionMetadata)>, AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "opinion_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        let query_embedding = embedding_client
+            .embed_content(query, "RETRIEVAL_QUERY", None)
+            .await?;
+
+        let filter = Filter {
+            must: vec![Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "user_id".to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                    }),
+                    ..Default::default()
+                })),
+            }],
+            ..Default::default()
+        };
+
+        let search_results = qdrant_service
+            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+            .await?;
+
+        let mut results = Vec::new();
+        for scored_point in search_results {
+            if let Ok(meta) = OpinionMetadata::try_from(scored_point.payload) {
+                results.push((scored_point.score, meta));
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Deletes an opinion vector from the opinion_vectors collection.
+    async fn delete_opinion_vector(
+        &self,
+        state: Arc<AppState>,
+        opinion_id: crate::db::DbId,
+        _user_id: crate::db::DbId,
+    ) -> Result<(), AppError> {
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "opinion_vectors";
+
+        // We can delete by point ID since we use opinion_id as the point ID
+        qdrant_service
+            .delete_points_from_collection(
+                collection_name,
+                vec![PointId::from(opinion_id.to_string())],
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    /// Processes a cognitive fact: embeds and stores it in the fact_vectors collection.
+    async fn process_and_embed_cognitive_fact(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: &str,
+        game_time: Option<serde_json::Value>,
+    ) -> Result<(), AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "fact_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        // Get embedding
+        let embedding_vector = embedding_client
+            .embed_content(fact_text, "RETRIEVAL_DOCUMENT", None)
+            .await?;
+
+        let metadata = CognitiveFactMetadata {
+            user_id,
+            fact_id,
+            chronicle_id,
+            source_type: "cognitive_fact".to_string(),
+            game_time,
+        };
+
+        let point = create_qdrant_point(
+            fact_id.into(),
+            embedding_vector,
+            Some(serde_json::to_value(metadata)?.into()),
+        )?;
+
+        qdrant_service
+            .store_points_to_collection(collection_name, vec![point])
+            .await?;
+
+        Ok(())
+    }
+
+    /// Retrieves similar cognitive facts from the fact_vectors collection.
+    async fn retrieve_similar_facts(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+        max_game_time_day: Option<i64>,
+    ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError> {
+        let embedding_client = state.embedding_client.clone();
+        let qdrant_service = state.qdrant_service.clone();
+        let collection_name = "fact_vectors";
+
+        // Ensure collection exists
+        qdrant_service
+            .ensure_collection_exists_named(collection_name)
+            .await?;
+
+        let query_embedding = embedding_client
+            .embed_content(query, "RETRIEVAL_QUERY", None)
+            .await?;
+
+        let mut filter = Filter {
+            must: vec![
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "user_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(user_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+                Condition {
+                    condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                        key: "chronicle_id".to_string(),
+                        r#match: Some(Match {
+                            match_value: Some(MatchValue::Keyword(chronicle_id.to_string())),
+                        }),
+                        ..Default::default()
+                    })),
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Add max_game_time_day filter if provided
+        if let Some(max_day) = max_game_time_day {
+            debug!("Adding max_game_time_day filter for facts: {}", max_day);
+            filter.must.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: "game_time.day".to_string(),
+                    range: Some(Range {
+                        lte: Some(max_day as f64),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })),
+            });
+        }
+
+        let search_results = qdrant_service
+            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+            .await?;
+
+        let mut results = Vec::new();
+        for scored_point in search_results {
+            if let Ok(meta) = CognitiveFactMetadata::try_from(scored_point.payload) {
+                results.push((scored_point.score, meta));
+            }
+        }
+
+        Ok(results)
     }
 }

@@ -3,6 +3,7 @@ use crate::{
     config::Config,
     llm::{AiClient, EmbeddingClient},
     middleware::llm_security::LlmRateLimiter,
+    services::cognitive::RecallPipeline,
     services::{
         chat_override_service::ChatOverrideService,
         chronicle_service::ChronicleService,
@@ -40,12 +41,14 @@ pub struct AppStateServicesBuilder {
     embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
+    character_service: Option<Arc<crate::services::character_service::CharacterService>>,
     token_counter: Option<Arc<HybridTokenCounter>>,
     encryption_service: Option<Arc<EncryptionService>>,
     lorebook_service: Option<Arc<LorebookService>>,
     auth_backend: Option<Arc<AuthBackend>>,
     email_service: Option<Arc<dyn EmailService + Send + Sync>>,
     rate_limiter: Option<Arc<LlmRateLimiter>>,
+    recall_pipeline: Option<Arc<RecallPipeline>>,
 }
 
 impl AppStateServicesBuilder {
@@ -60,12 +63,14 @@ impl AppStateServicesBuilder {
             embedding_pipeline_service: None,
             chat_override_service: None,
             user_persona_service: None,
+            character_service: None,
             token_counter: None,
             encryption_service: None,
             lorebook_service: None,
             auth_backend: None,
             email_service: None,
             rate_limiter: None,
+            recall_pipeline: None,
         }
     }
 
@@ -105,6 +110,14 @@ impl AppStateServicesBuilder {
         self
     }
 
+    pub fn with_character_service(
+        mut self,
+        service: Arc<crate::services::character_service::CharacterService>,
+    ) -> Self {
+        self.character_service = Some(service);
+        self
+    }
+
     pub fn with_token_counter(mut self, counter: Arc<HybridTokenCounter>) -> Self {
         self.token_counter = Some(counter);
         self
@@ -127,6 +140,11 @@ impl AppStateServicesBuilder {
 
     pub fn with_email_service(mut self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         self.email_service = Some(service);
+        self
+    }
+
+    pub fn with_recall_pipeline(mut self, pipeline: Arc<RecallPipeline>) -> Self {
+        self.recall_pipeline = Some(pipeline);
         self
     }
 
@@ -200,6 +218,14 @@ impl AppStateServicesBuilder {
             ))
         });
 
+        // Get or create character service
+        let character_service = self.character_service.unwrap_or_else(|| {
+            Arc::new(crate::services::character_service::CharacterService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ))
+        });
+
         // For required external services, we need them to be provided
         let ai_client = self.ai_client.expect("AI client must be provided");
 
@@ -241,6 +267,11 @@ impl AppStateServicesBuilder {
             ))
         });
 
+        // Get or create recall pipeline
+        let recall_pipeline = self
+            .recall_pipeline
+            .unwrap_or_else(|| Arc::new(RecallPipeline::new(self.db_pool.clone())));
+
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
         // due to circular dependency (service needs AppState, but AppState is built from services)
         // We'll create a placeholder for now and set it properly after AppState construction
@@ -252,6 +283,7 @@ impl AppStateServicesBuilder {
             embedding_pipeline_service,
             chat_override_service,
             user_persona_service,
+            character_service,
             token_counter,
             encryption_service,
             lorebook_service,
@@ -259,6 +291,7 @@ impl AppStateServicesBuilder {
             email_service,
             ai_client_factory,
             rate_limiter,
+            recall_pipeline,
             token_service: None, // Will be set in main.rs if configured
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
@@ -345,6 +378,16 @@ impl AppStateBuilder {
         }
     }
 
+    pub fn with_character_service(
+        self,
+        service: Arc<crate::services::character_service::CharacterService>,
+    ) -> Self {
+        Self {
+            services_builder: self.services_builder.with_character_service(service),
+            ..self
+        }
+    }
+
     pub fn with_token_counter(self, counter: Arc<HybridTokenCounter>) -> Self {
         Self {
             services_builder: self.services_builder.with_token_counter(counter),
@@ -376,6 +419,13 @@ impl AppStateBuilder {
     pub fn with_email_service(self, service: Arc<dyn EmailService + Send + Sync>) -> Self {
         Self {
             services_builder: self.services_builder.with_email_service(service),
+            ..self
+        }
+    }
+
+    pub fn with_recall_pipeline(self, pipeline: Arc<RecallPipeline>) -> Self {
+        Self {
+            services_builder: self.services_builder.with_recall_pipeline(pipeline),
             ..self
         }
     }

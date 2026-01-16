@@ -8,7 +8,7 @@ use diesel::{prelude::*, RunQueryDsl};
 use scribe_backend::db;
 use scribe_backend::{
     auth::session_dek::SessionDek,
-    db::{DbId, DbPool, SqliteInteractExt},
+    db::{DbBigInt, DbId, DbPool},
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
@@ -42,9 +42,7 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
     let (encrypted_dek, dek_nonce) =
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
-    let user_id = Uuid::new_v4();
     let new_user = NewUser {
-        id: user_id.into(),
         username,
         password_hash: hashed_password,
         email,
@@ -56,20 +54,24 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
 
-    conn.interact(move |conn| {
-        diesel::insert_into(users::table)
-            .values(&new_user)
-            .execute(conn)
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
+    let user_db: UserDbQuery = conn
+        .interact(move |conn| {
+            diesel::insert_into(users::table)
+                .values(&new_user)
+                .returning(UserDbQuery::as_returning())
+                .get_result(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
+
+    let user_id = *user_db.id;
 
     let session_dek = SessionDek(SecretBox::new(Box::new(dek.expose_secret().to_vec())));
     Ok((user_id, session_dek))
@@ -77,7 +79,8 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
 
 /// Helper to create a test chronicle
 async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "Variant Test Chronicle".to_string(),
@@ -183,13 +186,16 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
-        token_service: None,
     };
 
     let app_state = scribe_backend::state::AppState::new(
@@ -238,7 +244,10 @@ async fn test_variant_handling_updates_event() {
     let app_state = create_test_app_state(test_app.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
+        )),
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -274,7 +283,8 @@ async fn test_variant_handling_updates_event() {
         .expect("First workflow failed");
 
     // Verify first event created
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
         .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
         .await
@@ -314,7 +324,10 @@ async fn test_variant_handling_updates_event() {
 
     let agentic_system_variant = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client_variant.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
+        )),
         Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
             Arc::new(scribe_backend::services::EncryptionService::new()),

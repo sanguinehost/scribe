@@ -115,6 +115,107 @@
 		if (ms < 1000) return `${ms}ms`;
 		return `${(ms / 1000).toFixed(2)}s`;
 	}
+
+	interface ParsedContext {
+		cognitiveContext: string[];
+		lorebookEntries: string[];
+		chronicleEvents: string[];
+		chatHistory: string[];
+		other: string[];
+		totalItems: number;
+	}
+
+	function parseRetrievedContext(context: string): ParsedContext {
+		const result: ParsedContext = {
+			cognitiveContext: [],
+			lorebookEntries: [],
+			chronicleEvents: [],
+			chatHistory: [],
+			other: [],
+			totalItems: 0
+		};
+
+		if (!context) return result;
+
+		// Split by common section markers
+		const lines = context.split('\n');
+		let currentSection: 'cognitive' | 'lorebook' | 'chronicle' | 'chat' | 'other' = 'other';
+		let currentEntry = '';
+
+		for (const line of lines) {
+			// Detect section markers
+			if (
+				line.includes('[COGNITIVE_CONTEXT]') ||
+				line.includes('### Character Opinions') ||
+				line.includes('### Entity Observations')
+			) {
+				if (currentEntry.trim()) {
+					pushToSection(result, currentSection, currentEntry.trim());
+				}
+				currentSection = 'cognitive';
+				currentEntry = line.replace('[COGNITIVE_CONTEXT]', '').trim();
+			} else if (line.includes('[LOREBOOK]') || line.includes('Lorebook:')) {
+				if (currentEntry.trim()) {
+					pushToSection(result, currentSection, currentEntry.trim());
+				}
+				currentSection = 'lorebook';
+				currentEntry = line.replace('[LOREBOOK]', '').trim();
+			} else if (line.includes('[CHRONICLE]') || line.includes('Chronicle Event:')) {
+				if (currentEntry.trim()) {
+					pushToSection(result, currentSection, currentEntry.trim());
+				}
+				currentSection = 'chronicle';
+				currentEntry = line.replace('[CHRONICLE]', '').trim();
+			} else if (line.includes('[CHAT]') || line.includes('Previous Message:')) {
+				if (currentEntry.trim()) {
+					pushToSection(result, currentSection, currentEntry.trim());
+				}
+				currentSection = 'chat';
+				currentEntry = line.replace('[CHAT]', '').trim();
+			} else if (line.startsWith('- ') && currentSection !== 'other') {
+				// Bullet point within a section - start new entry
+				if (currentEntry.trim()) {
+					pushToSection(result, currentSection, currentEntry.trim());
+				}
+				currentEntry = line.substring(2);
+			} else if (line.trim()) {
+				currentEntry += (currentEntry ? '\n' : '') + line;
+			}
+		}
+
+		// Push final entry
+		if (currentEntry.trim()) {
+			pushToSection(result, currentSection, currentEntry.trim());
+		}
+
+		result.totalItems =
+			result.cognitiveContext.length +
+			result.lorebookEntries.length +
+			result.chronicleEvents.length +
+			result.chatHistory.length +
+			result.other.length;
+
+		return result;
+	}
+
+	function pushToSection(result: ParsedContext, section: string, entry: string) {
+		switch (section) {
+			case 'cognitive':
+				result.cognitiveContext.push(entry);
+				break;
+			case 'lorebook':
+				result.lorebookEntries.push(entry);
+				break;
+			case 'chronicle':
+				result.chronicleEvents.push(entry);
+				break;
+			case 'chat':
+				result.chatHistory.push(entry);
+				break;
+			default:
+				result.other.push(entry);
+		}
+	}
 </script>
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
@@ -330,14 +431,131 @@
 
 					<!-- Retrieved Context -->
 					{#if agentAnalysis.retrieved_context}
-						<div class="rounded-lg border p-4">
-							<h3 class="mb-2 flex items-center gap-2 font-medium">
+						{@const parsedContext = parseRetrievedContext(agentAnalysis.retrieved_context)}
+						<div class="space-y-3 rounded-lg border p-4">
+							<h3 class="flex items-center gap-2 font-medium">
 								<Search size={16} />
 								Retrieved Context
+								<span class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+									{parsedContext.totalItems} items
+								</span>
 							</h3>
-							<div class="rounded bg-muted/30 p-3">
-								<p class="whitespace-pre-wrap text-sm">{agentAnalysis.retrieved_context}</p>
-							</div>
+
+							<!-- Cognitive Context (Opinions/Observations) -->
+							{#if parsedContext.cognitiveContext.length > 0}
+								<details class="rounded border bg-purple-500/5" open>
+									<summary
+										class="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium hover:bg-muted/50"
+									>
+										<Brain size={14} class="text-purple-500" />
+										<span>Cognitive Memory</span>
+										<span
+											class="ml-auto rounded bg-purple-500/20 px-1.5 py-0.5 text-xs text-purple-600 dark:text-purple-400"
+										>
+											{parsedContext.cognitiveContext.length}
+										</span>
+									</summary>
+									<div class="space-y-1 border-t p-3">
+										{#each parsedContext.cognitiveContext as item}
+											<div class="rounded bg-muted/30 p-2 text-sm">
+												<p class="whitespace-pre-wrap">{item}</p>
+											</div>
+										{/each}
+									</div>
+								</details>
+							{/if}
+
+							<!-- Lorebook Entries -->
+							{#if parsedContext.lorebookEntries.length > 0}
+								<details class="rounded border bg-amber-500/5">
+									<summary
+										class="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium hover:bg-muted/50"
+									>
+										<Search size={14} class="text-amber-500" />
+										<span>Lorebook Entries</span>
+										<span
+											class="ml-auto rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-600 dark:text-amber-400"
+										>
+											{parsedContext.lorebookEntries.length}
+										</span>
+									</summary>
+									<div class="space-y-1 border-t p-3">
+										{#each parsedContext.lorebookEntries as item}
+											<div class="rounded bg-muted/30 p-2 text-sm">
+												<p class="whitespace-pre-wrap">{item}</p>
+											</div>
+										{/each}
+									</div>
+								</details>
+							{/if}
+
+							<!-- Chronicle Events -->
+							{#if parsedContext.chronicleEvents.length > 0}
+								<details class="rounded border bg-blue-500/5">
+									<summary
+										class="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium hover:bg-muted/50"
+									>
+										<Search size={14} class="text-blue-500" />
+										<span>Chronicle Events</span>
+										<span
+											class="ml-auto rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-600 dark:text-blue-400"
+										>
+											{parsedContext.chronicleEvents.length}
+										</span>
+									</summary>
+									<div class="space-y-1 border-t p-3">
+										{#each parsedContext.chronicleEvents as item}
+											<div class="rounded bg-muted/30 p-2 text-sm">
+												<p class="whitespace-pre-wrap">{item}</p>
+											</div>
+										{/each}
+									</div>
+								</details>
+							{/if}
+
+							<!-- Chat History -->
+							{#if parsedContext.chatHistory.length > 0}
+								<details class="rounded border bg-green-500/5">
+									<summary
+										class="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium hover:bg-muted/50"
+									>
+										<Search size={14} class="text-green-500" />
+										<span>Chat History</span>
+										<span
+											class="ml-auto rounded bg-green-500/20 px-1.5 py-0.5 text-xs text-green-600 dark:text-green-400"
+										>
+											{parsedContext.chatHistory.length}
+										</span>
+									</summary>
+									<div class="space-y-1 border-t p-3">
+										{#each parsedContext.chatHistory as item}
+											<div class="rounded bg-muted/30 p-2 text-sm">
+												<p class="whitespace-pre-wrap">{item}</p>
+											</div>
+										{/each}
+									</div>
+								</details>
+							{/if}
+
+							<!-- Other/Unparsed Context -->
+							{#if parsedContext.other.length > 0}
+								<details class="rounded border">
+									<summary
+										class="flex cursor-pointer items-center gap-2 p-3 text-sm font-medium hover:bg-muted/50"
+									>
+										<Search size={14} class="text-muted-foreground" />
+										<span>Other Context</span>
+										<span
+											class="ml-auto rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+										>
+											{parsedContext.other.length}
+										</span>
+									</summary>
+									<div class="border-t p-3">
+										<p class="whitespace-pre-wrap text-sm">{parsedContext.other.join('\n\n')}</p>
+									</div>
+								</details>
+							{/if}
 						</div>
 					{/if}
 

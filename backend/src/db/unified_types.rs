@@ -26,14 +26,14 @@ use super::backend_traits::DbType;
 use super::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteUuid};
 
 // Diesel SQL types and serialization imports
-use diesel::serialize::IsNull;
-use diesel::sql_types::{Binary, Timestamp};
-
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use diesel::deserialize::{self, FromSql, FromSqlRow};
-use diesel::expression::AsExpression;
+use diesel::deserialize::{self, FromSql};
+#[cfg(feature = "sqlite-backend")]
+use diesel::serialize::IsNull;
 use diesel::serialize::{self, Output, ToSql};
+#[cfg(feature = "sqlite-backend")]
+use diesel::sql_types::Timestamp;
 use diesel::sql_types::{BigInt, Nullable, Numeric, Text};
 
 #[cfg(feature = "postgres-backend")]
@@ -933,7 +933,6 @@ impl FromSql<diesel::sql_types::Double, Sqlite> for DbDecimal {
 #[cfg(feature = "sqlite-backend")]
 impl ToSql<diesel::sql_types::Double, Sqlite> for DbDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        use bigdecimal::ToPrimitive;
         use std::str::FromStr;
         let value = f64::from_str(&self.0.to_string())
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
@@ -970,7 +969,6 @@ impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbDecimal 
         &'b self,
         mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
     ) -> diesel::QueryResult<()> {
-        use bigdecimal::ToPrimitive;
         use std::str::FromStr;
         let value = f64::from_str(&self.0.to_string()).unwrap_or(0.0);
         pass.unsafe_to_cache_prepared();
@@ -1563,5 +1561,162 @@ mod tests {
         assert_eq!(original, restored);
     }
 }
+// ============================================================================
+// DbBigInt - Unified BigInt Type
+// ============================================================================
+
+/// Backend-agnostic large integer
+///
+/// Stores 64-bit integers in both PostgreSQL (BIGINT) and SQLite (INTEGER).
+/// Provides transparent access to the underlying `i64` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = BigInt))]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = diesel::sql_types::Integer))]
+#[repr(transparent)]
+pub struct DbBigInt(pub i64);
+
+impl DbBigInt {
+    pub fn new(val: i64) -> Self {
+        Self(val)
+    }
+
+    pub fn into_inner(self) -> i64 {
+        self.0
+    }
+}
+
+impl Default for DbBigInt {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
+impl Deref for DbBigInt {
+    type Target = i64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for DbBigInt {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<i64> for DbBigInt {
+    fn from(val: i64) -> Self {
+        Self(val)
+    }
+}
+
+impl From<DbBigInt> for i64 {
+    fn from(val: DbBigInt) -> Self {
+        val.0
+    }
+}
+
+impl std::fmt::Display for DbBigInt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+// Expression trait implementation for DbBigInt
+#[cfg(feature = "postgres-backend")]
+impl diesel::expression::Expression for DbBigInt {
+    type SqlType = BigInt;
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbBigInt {
+    fn walk_ast<'b>(
+        &'b self,
+        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
+    ) -> diesel::QueryResult<()> {
+        pass.push_bind_param::<BigInt, _>(&self.0)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::AsExpression<diesel::sql_types::Nullable<BigInt>> for DbBigInt {
+    type Expression = <Option<i64> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<BigInt>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<i64> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<BigInt>,
+        >>::as_expression(Some(self.0))
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<BigInt>> for &'a DbBigInt {
+    type Expression = <Option<i64> as diesel::expression::AsExpression<
+        diesel::sql_types::Nullable<BigInt>,
+    >>::Expression;
+    fn as_expression(self) -> Self::Expression {
+        <Option<i64> as diesel::expression::AsExpression<
+            diesel::sql_types::Nullable<BigInt>,
+        >>::as_expression(Some(self.0))
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::serialize::ToSql<BigInt, diesel::sqlite::Sqlite> for DbBigInt {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, diesel::sqlite::Sqlite>,
+    ) -> diesel::serialize::Result {
+        diesel::serialize::ToSql::<BigInt, diesel::sqlite::Sqlite>::to_sql(&self.0, out)
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::deserialize::FromSql<BigInt, diesel::sqlite::Sqlite> for DbBigInt {
+    fn from_sql(
+        bytes: diesel::sqlite::SqliteValue<'_, '_, '_>,
+    ) -> diesel::deserialize::Result<Self> {
+        let val = diesel::deserialize::FromSql::<BigInt, diesel::sqlite::Sqlite>::from_sql(bytes)?;
+        Ok(DbBigInt(val))
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl diesel::expression::Expression for DbBigInt {
+    type SqlType = BigInt;
+}
+
+impl DbType for DbBigInt {
+    type PgType = i64;
+    type SqliteType = i64;
+
+    #[cfg(feature = "postgres-backend")]
+    type PgSqlType = BigInt;
+    #[cfg(not(feature = "postgres-backend"))]
+    type PgSqlType = ();
+
+    type SqliteSqlType = BigInt;
+
+    fn to_pg_type(&self) -> Self::PgType {
+        self.0
+    }
+
+    fn from_pg_type(value: Self::PgType) -> Self {
+        Self(value)
+    }
+
+    fn to_sqlite_type(&self) -> Self::SqliteType {
+        self.0
+    }
+
+    fn from_sqlite_type(value: Self::SqliteType) -> Self {
+        Self(value)
+    }
+}
+
 /// Unified JSON type
 pub type DbJson = super::Json<serde_json::Value>;

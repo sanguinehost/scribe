@@ -8,7 +8,6 @@ use chrono::Utc;
 use diesel::{prelude::*, RunQueryDsl};
 use scribe_backend::{
     auth::session_dek::SessionDek,
-    db::SqliteInteractExt,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
@@ -28,7 +27,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Helper to create a test user
-async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
+async fn create_test_user(
+    test_app: &TestApp,
+) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
     let mut conn = scribe_backend::db::get_conn(&test_app.db_pool).await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -46,21 +47,20 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
-        id: scribe_backend::db::DbId::new(),
         username: username.clone(),
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek: encrypted_dek.into(),
+        encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce: dek_nonce.into(),
+        dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -86,12 +86,16 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query user ID: {}", e))??;
 
-    Ok((*user_id, session_dek))
+    Ok((user_id, session_dek))
 }
 
 /// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+async fn create_test_chronicle(
+    user_id: scribe_backend::db::DbId,
+    test_app: &TestApp,
+) -> AnyhowResult<Uuid> {
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "De-duplication Test Chronicle".to_string(),
@@ -99,7 +103,7 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
     };
 
     let chronicle = chronicle_service
-        .create_chronicle(user_id.into(), create_request)
+        .create_chronicle(user_id, create_request)
         .await?;
 
     Ok(*chronicle.id)
@@ -108,8 +112,8 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
 /// Helper function to create a chat session in the database for testing
 async fn create_test_chat_session(
     db_pool: &scribe_backend::db::DbPool,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
 ) -> AnyhowResult<()> {
     let mut conn = scribe_backend::db::get_conn(db_pool)
         .await
@@ -120,8 +124,8 @@ async fn create_test_chat_session(
 
         diesel::insert_into(chat_sessions::table)
             .values((
-                chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)),
-                chat_sessions::user_id.eq(scribe_backend::db::DbId::from(user_id)),
+                chat_sessions::id.eq(session_id),
+                chat_sessions::user_id.eq(user_id),
                 chat_sessions::model_name.eq("gemini-2.5-pro"),
                 chat_sessions::history_management_strategy.eq("sliding_window"),
                 chat_sessions::history_management_limit.eq(50),
@@ -139,8 +143,8 @@ async fn create_test_chat_session(
 
 /// Helper to create duplicate Everest cleansing messages
 fn create_duplicate_everest_messages(
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
     session_dek: &SessionDek,
 ) -> AnyhowResult<Vec<ChatMessage>> {
     // These messages describe essentially the same Mount Everest cleansing action
@@ -187,14 +191,14 @@ fn create_duplicate_everest_messages(
 
         messages.push(ChatMessage {
             id: Uuid::new_v4().into(),
-            session_id: session_id.into(),
+            session_id,
             message_type: message_role,
             content: encrypted_content,
             content_nonce: Some(nonce),
-            created_at: (Utc::now() + chrono::Duration::seconds(i as i64)).into(), // Spread across time
-            user_id: user_id.into(),
-            prompt_tokens: Some(30),
-            completion_tokens: Some(100),
+            created_at: Utc::now().into(),
+            user_id,
+            prompt_tokens: Some(20),
+            completion_tokens: Some(50),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
@@ -212,11 +216,13 @@ fn create_duplicate_everest_messages(
 
 /// Helper to create existing chronicle events to test deduplication against
 async fn create_existing_everest_events(
-    user_id: Uuid,
+    user_id: scribe_backend::db::DbId,
     chronicle_id: Uuid,
     test_app: &TestApp,
+    session_dek: &SessionDek,
 ) -> AnyhowResult<()> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     // Create a few existing events about Mount Everest cleansing
     let existing_events = vec![
@@ -242,7 +248,12 @@ async fn create_existing_everest_events(
 
     for event_request in existing_events {
         chronicle_service
-            .create_event(user_id.into(), chronicle_id.into(), event_request, None)
+            .create_event(
+                user_id,
+                chronicle_id.into(),
+                event_request,
+                Some(&session_dek),
+            )
             .await?;
     }
 
@@ -292,6 +303,9 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
         auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
             test_app.db_pool.clone(),
         )),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
         token_service: None,
         email_service: scribe_backend::services::email_service::create_email_service(
             &"development".to_string(),
@@ -332,6 +346,7 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
             test_app.ai_client.clone(),
             Arc::new(scribe_backend::services::ChronicleService::new(
                 test_app.db_pool.clone(),
+                test_app.ai_client.clone(),
             )),
             lorebook_service,
             app_state_arc.clone(),
@@ -354,7 +369,8 @@ async fn test_search_knowledge_base_tool_functionality() {
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create some existing events
-    create_existing_everest_events(user_id, chronicle_id, &test_app)
+    let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))); // Dummy for search test
+    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
         .await
         .unwrap();
 
@@ -409,7 +425,7 @@ async fn test_deduplication_failure_multiple_everest_events() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
-    let session_id = Uuid::new_v4();
+    let session_id = Uuid::new_v4().into();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create chat session in database (required for foreign key constraint)
@@ -418,7 +434,7 @@ async fn test_deduplication_failure_multiple_everest_events() {
         .expect("Failed to create test chat session");
 
     // Create existing events that should prevent duplicates
-    create_existing_everest_events(user_id, chronicle_id, &test_app)
+    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
         .await
         .unwrap();
 
@@ -454,7 +470,10 @@ async fn test_deduplication_failure_multiple_everest_events() {
     let app_state = create_test_app_state(test_app.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            mock_ai_client.clone(),
+        )),
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -463,7 +482,7 @@ async fn test_deduplication_failure_multiple_everest_events() {
     );
 
     // Get initial event count
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service = ChronicleService::new(test_app.db_pool.clone(), mock_ai_client.clone());
     let initial_events = chronicle_service
         .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
         .await
@@ -588,19 +607,20 @@ async fn test_chronicle_context_retrieval_for_deduplication() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
-    let (user_id, _session_dek) = create_test_user(&test_app).await.unwrap();
+    let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create existing events
-    create_existing_everest_events(user_id, chronicle_id, &test_app)
+    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
         .await
         .unwrap();
 
     // This test would require access to the NarrativeAgentRunner's internal methods
     // For now, we test the chronicle service directly
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
-        .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
+        .get_chronicle_events(user_id, chronicle_id.into(), EventFilter::default())
         .await
         .unwrap();
 
@@ -639,20 +659,21 @@ async fn test_ai_triage_with_existing_context() {
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create existing events
-    create_existing_everest_events(user_id, chronicle_id, &test_app)
+    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
         .await
         .unwrap();
 
     // Get the existing events as context
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let existing_events = chronicle_service
-        .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
+        .get_chronicle_events(user_id, chronicle_id.into(), EventFilter::default())
         .await
         .unwrap();
 
     // Create new duplicate messages
     let duplicate_messages =
-        create_duplicate_everest_messages(user_id, Uuid::new_v4(), &session_dek).unwrap();
+        create_duplicate_everest_messages(user_id, Uuid::new_v4().into(), &session_dek).unwrap();
 
     // Format the messages for AI analysis
     let mut conversation_text = String::new();

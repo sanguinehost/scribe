@@ -696,7 +696,7 @@ impl Config {
     fn validate_tier_config(
         &self,
         tier_name: &str,
-        tier_config: &crate::DbJson,
+        tier_config: &serde_json::Value,
     ) -> Result<(), anyhow::Error> {
         // Required fields for all tiers
         let required_fields = ["display_name", "limits", "credits", "models"];
@@ -777,7 +777,7 @@ impl Config {
     #[cfg(feature = "payment")]
     fn validate_credit_system_config(
         &self,
-        credit_system: &crate::DbJson,
+        credit_system: &serde_json::Value,
     ) -> Result<(), anyhow::Error> {
         // Check required fields
         if credit_system.get("enabled").is_none() {
@@ -829,7 +829,10 @@ impl Config {
     }
 
     #[cfg(feature = "payment")]
-    fn validate_feature_flags(&self, feature_flags: &crate::DbJson) -> Result<(), anyhow::Error> {
+    fn validate_feature_flags(
+        &self,
+        feature_flags: &serde_json::Value,
+    ) -> Result<(), anyhow::Error> {
         // Check required feature flags exist
         let required_flags = ["credits_enabled", "soft_limits_enabled"];
         for flag in &required_flags {

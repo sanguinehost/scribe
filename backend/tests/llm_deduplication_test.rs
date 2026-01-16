@@ -5,7 +5,7 @@ use genai::chat::{ChatResponse, MessageContent, Usage};
 use genai::ModelIden;
 #[cfg(feature = "sqlite-backend")]
 use scribe_backend::db::SqliteInteractExt;
-use scribe_backend::db::{get_conn, DbBlob, DbId, DbTimestamp};
+use scribe_backend::db::{get_conn, DbBigInt, DbBlob, DbId, DbTimestamp};
 use scribe_backend::models::chronicle::{CreateChronicleRequest, NewPlayerChronicle};
 use scribe_backend::models::chronicle_event::{CreateEventRequest, EventFilter, EventSource};
 use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
@@ -20,9 +20,7 @@ async fn test_llm_deduplication_solomon_example() {
     let app = spawn_app(false, false, false).await;
 
     // 2. Manually create User
-    let user_id = DbId::new();
     let new_user = NewUser {
-        id: user_id,
         username: "testuser".to_string(),
         password_hash: "hash".to_string(),
         email: "test@example.com".to_string(),
@@ -34,9 +32,9 @@ async fn test_llm_deduplication_solomon_example() {
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };
@@ -49,8 +47,8 @@ async fn test_llm_deduplication_solomon_example() {
         .interact(move |conn| {
             diesel::insert_into(users::table)
                 .values(&new_user)
-                .execute(conn)?;
-            users::table.find(user_id).first::<UserDbQuery>(conn)
+                .returning(UserDbQuery::as_returning())
+                .get_result(conn)
         })
         .await
         .expect("Failed to interact with DB")
@@ -119,11 +117,12 @@ async fn test_llm_deduplication_solomon_example() {
         });
 
         let chat_response = ChatResponse {
-            contents: vec![MessageContent::Text(json_response.to_string())],
+            content: MessageContent::from(json_response.to_string()),
             reasoning_content: None,
             model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             usage: Usage::default(),
+            captured_raw_body: None,
         };
 
         mock_client.set_response(Ok(chat_response));
@@ -165,38 +164,39 @@ async fn test_llm_deduplication_elara_example() {
     let pool = app.db_pool.clone();
 
     // 2. Create User
-    let user_id = DbId::new();
+    let mut user_id = DbId::new();
     {
         let mut conn = get_conn(&pool).await.expect("Failed to get connection");
         let new_user = NewUser {
-            id: user_id,
-            username: "test_elara".to_string(), // Add username
+            username: "test_elara".to_string(),
             email: "test_elara@example.com".to_string(),
             password_hash: "hash".to_string(),
-            kek_salt: "salt".to_string(),               // Add kek_salt
-            encrypted_dek: DbBlob::from(vec![1, 2, 3]), // Add encrypted_dek
+            kek_salt: "salt".to_string(),
+            encrypted_dek: DbBlob::from(vec![1, 2, 3]),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
-            dek_nonce: DbBlob::from(vec![4, 5, 6]), // Add dek_nonce
+            dek_nonce: DbBlob::from(vec![4, 5, 6]),
             recovery_dek_nonce: None,
-            role: UserRole::User,                  // Add role
-            account_status: AccountStatus::Active, // Add account_status
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            role: UserRole::User,
+            account_status: AccountStatus::Active,
+            total_prompt_tokens: DbBigInt::from(0),
+            total_completion_tokens: DbBigInt::from(0),
+            total_token_cost_cents: DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: chrono::Utc::now().into(),
         };
 
-        conn.interact(move |conn| {
-            // Use interact for DB operations
-            diesel::insert_into(users::table)
-                .values(&new_user)
-                .execute(conn)
-        })
-        .await
-        .expect("Failed to interact with DB")
-        .expect("Failed to create user");
+        let user_db: UserDbQuery = conn
+            .interact(move |conn| {
+                diesel::insert_into(users::table)
+                    .values(&new_user)
+                    .returning(UserDbQuery::as_returning())
+                    .get_result(conn)
+            })
+            .await
+            .expect("Failed to interact with DB")
+            .expect("Failed to create user");
+        user_id = user_db.id;
     }
 
     // 3. Create Chronicle
@@ -258,11 +258,12 @@ async fn test_llm_deduplication_elara_example() {
         });
 
         let chat_response = ChatResponse {
-            contents: vec![MessageContent::Text(json_response.to_string())],
+            content: MessageContent::from(json_response.to_string()),
             reasoning_content: None,
             model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
             usage: Usage::default(),
+            captured_raw_body: None,
         };
 
         mock_client.set_response(Ok(chat_response));

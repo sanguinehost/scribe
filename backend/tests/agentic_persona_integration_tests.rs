@@ -9,6 +9,7 @@ use diesel::{prelude::*, RunQueryDsl};
 use hex;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    db::DbBigInt,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
@@ -31,8 +32,8 @@ use uuid::Uuid;
 /// Create a test chat session in the database to satisfy foreign key constraints
 async fn create_test_chat_session(
     db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
 ) -> anyhow::Result<()> {
     let conn = db_pool
         .get()
@@ -63,7 +64,11 @@ async fn create_test_chat_session(
 /// Helper to create a test user with a specific persona
 async fn create_test_user_with_persona(
     test_app: &TestApp,
-) -> AnyhowResult<(Uuid, SessionDek, UserPersonaDataForClient)> {
+) -> AnyhowResult<(
+    scribe_backend::db::DbId,
+    SessionDek,
+    UserPersonaDataForClient,
+)> {
     let conn = test_app.db_pool.get().await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -85,16 +90,16 @@ async fn create_test_user_with_persona(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -151,8 +156,8 @@ Highly self-absorbed, his focus is on his ambitions, primarily through his compa
 
 /// Helper to create roleplay messages that should reference Lucas by name
 fn create_lucas_roleplay_messages(
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
     session_dek: &SessionDek,
 ) -> AnyhowResult<Vec<ChatMessage>> {
     let messages_content = vec![
@@ -188,21 +193,17 @@ fn create_lucas_roleplay_messages(
             scribe_backend::crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
         messages.push(ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: message_role,
             content: encrypted_content,
             content_nonce: Some(nonce),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(50),
             completion_tokens: Some(200),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
             status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
             ..Default::default()
@@ -213,8 +214,12 @@ fn create_lucas_roleplay_messages(
 }
 
 /// Helper to create a test chronicle
-async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResult<Uuid> {
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+async fn create_test_chronicle(
+    user_id: scribe_backend::db::DbId,
+    test_app: &TestApp,
+) -> AnyhowResult<Uuid> {
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     let create_request = CreateChronicleRequest {
         name: "Cosmic Awakening: A World on the Brink".to_string(),
@@ -225,7 +230,7 @@ async fn create_test_chronicle(user_id: Uuid, test_app: &TestApp) -> AnyhowResul
         .create_chronicle(user_id, create_request)
         .await?;
 
-    Ok(chronicle.id)
+    Ok(*chronicle.id)
 }
 
 // Helper to create AppState for tests
@@ -286,6 +291,10 @@ async fn create_test_app_state(
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -311,7 +320,7 @@ async fn test_persona_context_missing_in_events() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek, persona) = create_test_user_with_persona(&test_app).await.unwrap();
-    let session_id = Uuid::new_v4();
+    let session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create chat session in database (required for foreign key constraint)
@@ -369,7 +378,10 @@ async fn test_persona_context_missing_in_events() {
     let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
     let agentic_system = AgenticNarrativeFactory::create_system_with_deps(
         mock_ai_client.clone(),
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
+        )),
         lorebook_service,
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -380,9 +392,9 @@ async fn test_persona_context_missing_in_events() {
     // Execute the narrative workflow
     let workflow_result = agentic_system
         .process_narrative_event(
-            user_id,
-            session_id,
-            Some(chronicle_id),
+            user_id.into(),
+            session_id.into(),
+            Some(chronicle_id.into()),
             &messages,
             &session_dek,
             None, // No persona context for this test
@@ -393,9 +405,10 @@ async fn test_persona_context_missing_in_events() {
     // Check if events were created
     if workflow_result.triage_result.is_significant && !workflow_result.execution_results.is_empty()
     {
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
         let events = chronicle_service
-            .get_chronicle_events(user_id, chronicle_id, EventFilter::default())
+            .get_chronicle_events(user_id.into(), chronicle_id.into(), EventFilter::default())
             .await
             .expect("Should retrieve events");
 
@@ -477,7 +490,10 @@ async fn test_create_chronicle_event_tool_without_persona() {
     ));
     let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
     let create_event_tool = CreateChronicleEventTool::new(
-        Arc::new(ChronicleService::new(test_app.db_pool.clone())),
+        Arc::new(ChronicleService::new(
+            test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
+        )),
         app_state,
     );
 
@@ -505,9 +521,10 @@ async fn test_create_chronicle_event_tool_without_persona() {
     assert_eq!(create_result.get("success").unwrap(), true);
 
     // Verify the event was created with generic reference
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let events = chronicle_service
-        .get_chronicle_events(user_id, chronicle_id, Default::default())
+        .get_chronicle_events(user_id, chronicle_id.into(), Default::default())
         .await
         .unwrap();
 

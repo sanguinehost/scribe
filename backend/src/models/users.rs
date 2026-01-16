@@ -1,4 +1,4 @@
-use crate::db::{DbBlob, DbId, DbInt, DbTimestamp};
+use crate::db::{DbBigInt, DbBlob, DbId, DbInt, DbTimestamp};
 use crate::schema::users;
 use axum_login::AuthUser;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -19,7 +19,10 @@ use uuid::Uuid;
     feature = "postgres-backend",
     ExistingTypePath = "crate::schema::sql_types::UserRole"
 )]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)
+)]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum UserRole {
     #[default]
@@ -47,7 +50,10 @@ impl std::fmt::Display for UserRole {
     feature = "postgres-backend",
     ExistingTypePath = "crate::schema::sql_types::AccountStatus"
 )]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow))]
+#[cfg_attr(
+    feature = "sqlite-backend",
+    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)
+)]
 #[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 pub enum AccountStatus {
     #[default]
@@ -210,8 +216,8 @@ pub struct UserDbQuery {
     pub role: UserRole,
     pub account_status: AccountStatus,
     pub default_persona_id: Option<DbId>,
-    pub total_prompt_tokens: DbInt,
-    pub total_completion_tokens: DbInt,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_token_cost_cents: DbInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
@@ -293,8 +299,8 @@ pub struct User {
     pub role: UserRole,
     pub account_status: Option<String>, // Added for CLI compatibility
     pub default_persona_id: Option<DbId>,
-    pub total_prompt_tokens: DbInt,
-    pub total_completion_tokens: DbInt,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_token_cost_cents: DbInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
@@ -424,7 +430,7 @@ impl AuthUser for User {
 }
 
 /// Represents data needed to create a new user.
-#[derive(Insertable)] // Removed Debug for custom impl
+#[derive(Insertable, Default)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
 #[cfg_attr(
     feature = "postgres-backend",
@@ -435,8 +441,6 @@ impl AuthUser for User {
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewUser {
-    // Only SQLite needs explicit ID (Postgres generates UUID via gen_random_uuid())
-    #[cfg(feature = "sqlite-backend")]
     pub id: DbId,
     pub username: String,
     pub password_hash: String,
@@ -449,8 +453,8 @@ pub struct NewUser {
     pub recovery_dek_nonce: Option<DbBlob>,
     pub role: UserRole,
     pub account_status: AccountStatus,
-    pub total_prompt_tokens: DbInt,
-    pub total_completion_tokens: DbInt,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_token_cost_cents: DbInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
@@ -612,6 +616,7 @@ mod tests {
         let dek_nonce = vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // Example 12-byte nonce
 
         let new_user = NewUser {
+            id: crate::db::DbId::new(),
             username: username.clone(),
             password_hash: password_hash.clone(),
             email: email.clone(),

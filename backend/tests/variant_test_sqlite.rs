@@ -8,16 +8,12 @@ use axum::{
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
-use uuid::Uuid;
 
 // Diesel imports
 use diesel::prelude::*;
 use diesel::RunQueryDsl;
 
 // Crate imports
-use argon2::password_hash::{rand_core::OsRng, SaltString};
-use argon2::{Argon2, PasswordHasher};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
@@ -25,16 +21,15 @@ use scribe_backend::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
         chats::{Chat, Message as DbChatMessage, MessageRole, NewChatMessage, NewMessageVariant},
-        users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
     },
-    schema::{characters, chat_messages, chat_sessions, message_variants, users},
+    schema::{characters, chat_messages, chat_sessions, message_variants},
     test_helpers,
 };
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
 // --- Helpers ---
 
-use scribe_backend::db::{DbBlob, DbId, DbTimestamp};
+use scribe_backend::db::{DbId, DbTimestamp};
 
 use scribe_backend::auth::user_store::create_user_in_db;
 
@@ -201,7 +196,7 @@ async fn create_test_message(
         variant_count: 0,
         current_variant_index: 0,
         credits_charged: 0,
-        credits_cost: 0,
+        credits_cost: 0.0,
         actual_cost: 0.0,
         modified_cost: 0.0,
         credit_cost: 0,

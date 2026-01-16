@@ -1,4 +1,6 @@
-use super::metadata::LorebookEntryParams;
+use super::metadata::{
+    CognitiveFactMetadata, EntityMetadata, LorebookEntryParams, OpinionMetadata,
+};
 use super::retrieval::RetrievedChunk;
 use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
@@ -78,4 +80,70 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         max_game_time_day: Option<i64>, // Filter chat history by game time day
         session_dek: Option<&crate::auth::SessionDek>, // DEK for decrypting retrieved content
     ) -> Result<Vec<RetrievedChunk>, AppError>;
+
+    /// Processes an entity: embeds and stores it in the entity_vectors collection.
+    async fn process_and_embed_entity(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        entity_name_hash: &str,
+    ) -> Result<(), AppError>;
+
+    /// Retrieves similar entities from the entity_vectors collection.
+    async fn retrieve_similar_entities(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, EntityMetadata)>, AppError>;
+
+    /// Processes an opinion: embeds and stores it in the opinion_vectors collection.
+    async fn process_and_embed_opinion(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        opinion_id: crate::db::DbId,
+        opinion_text: &str,
+    ) -> Result<(), AppError>;
+
+    /// Retrieves similar opinions from the opinion_vectors collection.
+    async fn retrieve_similar_opinions(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, OpinionMetadata)>, AppError>;
+
+    /// Deletes an opinion vector from the opinion_vectors collection.
+    async fn delete_opinion_vector(
+        &self,
+        state: Arc<AppState>,
+        opinion_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    ) -> Result<(), AppError>;
+
+    /// Processes a cognitive fact: embeds and stores it in the fact_vectors collection.
+    async fn process_and_embed_cognitive_fact(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: &str,
+        game_time: Option<serde_json::Value>,
+    ) -> Result<(), AppError>;
+
+    /// Retrieves similar cognitive facts from the fact_vectors collection.
+    async fn retrieve_similar_facts(
+        &self,
+        state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+        max_game_time_day: Option<i64>,
+    ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError>;
 }

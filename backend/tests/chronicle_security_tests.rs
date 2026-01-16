@@ -14,6 +14,7 @@ use axum::{
 use diesel::prelude::*;
 use http_body_util::BodyExt;
 use scribe_backend::{
+    db::DbId,
     models::{chronicle::PlayerChronicle, chronicle_event::ChronicleEvent},
     schema,
     test_helpers::{self, TestApp, TestDataGuard},
@@ -70,7 +71,7 @@ async fn extract_error_message(response: Response) -> AnyhowResult<String> {
 async fn create_authenticated_user(
     test_app: &TestApp,
     username_suffix: &str,
-) -> AnyhowResult<(String, Uuid)> {
+) -> AnyhowResult<(String, DbId)> {
     let username = format!("testuser_{}_{}", username_suffix, Uuid::new_v4().simple());
     let email = format!("{}@test.com", username);
     let password = "TestPassword123!";
@@ -103,7 +104,7 @@ async fn create_authenticated_user(
     let register_body_str = std::str::from_utf8(&register_body_bytes)?;
     let auth_response: serde_json::Value = serde_json::from_str(register_body_str)?;
     let user_id = auth_response["user_id"].as_str().context("No user_id")?;
-    let user_uuid = Uuid::parse_str(user_id)?;
+    let user_uuid = DbId::from_uuid(Uuid::parse_str(user_id)?);
 
     // Verify email
     let conn = test_app.db_pool.get().await?;
@@ -202,7 +203,7 @@ async fn create_chronicle(
 async fn create_chronicle_event(
     test_app: &TestApp,
     session_cookie: &str,
-    chronicle_id: Uuid,
+    chronicle_id: DbId,
     event_type: &str,
     summary: &str,
     keywords: Option<Vec<String>>,
@@ -1208,8 +1209,8 @@ async fn test_a08_chronicle_data_integrity() {
     // Verify all events belong to the same chronicle
     assert_eq!(event1.chronicle_id, chronicle.id);
     assert_eq!(event2.chronicle_id, chronicle.id);
-    assert_eq!(event1.user_id, user_id);
-    assert_eq!(event2.user_id, user_id);
+    assert_eq!(event1.user_id, user_id.into());
+    assert_eq!(event2.user_id, user_id.into());
 
     // Delete chronicle
     let delete_response = test_app

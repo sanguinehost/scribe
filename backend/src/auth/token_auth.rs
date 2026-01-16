@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_login::{AuthSession, AuthnBackend};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::db::unified_types::DbId;

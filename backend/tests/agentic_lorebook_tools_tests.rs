@@ -26,9 +26,9 @@ use uuid::Uuid;
 /// Helper to create test lorebook with some existing entries
 async fn create_test_lorebook_with_entries(
     test_app: &scribe_backend::test_helpers::TestApp,
-    user_id: Uuid,
+    user_id: scribe_backend::db::DbId,
     entry_count: usize,
-) -> (Uuid, SessionDek) {
+) -> (scribe_backend::db::DbId, SessionDek) {
     let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
     let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
         test_app.db_pool.clone(),
@@ -497,6 +497,10 @@ mod lorebook_analysis_tests {
             rate_limiter: Arc::new(
                 scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
             ),
+            recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+                test_app.db_pool.clone(),
+            )),
+            token_service: None,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]
@@ -623,6 +627,10 @@ mod lorebook_analysis_tests {
             rate_limiter: Arc::new(
                 scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
             ),
+            recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+                test_app.db_pool.clone(),
+            )),
+            token_service: None,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]
@@ -724,6 +732,10 @@ mod lorebook_analysis_tests {
             rate_limiter: Arc::new(
                 scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
             ),
+            recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+                test_app.db_pool.clone(),
+            )),
+            token_service: None,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]
@@ -872,6 +884,10 @@ mod lorebook_analysis_tests {
             rate_limiter: Arc::new(
                 scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
             ),
+            recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+                test_app.db_pool.clone(),
+            )),
+            token_service: None,
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]

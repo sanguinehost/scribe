@@ -27,6 +27,7 @@ use crate::services::encryption_service::EncryptionService; // Added
     Clone,
     PartialEq,
     AsChangeset,
+    Default,
 )] // Removed Debug for custom impl
 #[diesel(belongs_to(User, foreign_key = user_id))]
 #[diesel(table_name = crate::schema::characters)]

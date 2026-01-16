@@ -60,7 +60,6 @@ impl AgenticNarrativeFactory {
             registry,
             config,
             chronicle_service,
-            app_state.embedding_pipeline_service.clone(),
             app_state.clone(),
             app_state.token_counter.clone(),
         )
@@ -110,7 +109,6 @@ impl AgenticNarrativeFactory {
             registry,
             config,
             chronicle_service,
-            app_state.embedding_pipeline_service.clone(),
             app_state.clone(),
             app_state.token_counter.clone(),
         )
@@ -164,7 +162,6 @@ impl AgenticNarrativeFactory {
 
         // Lorebook analysis tool
         let analyze_lorebook_tool = Arc::new(AnalyzeLorebookTool::new(
-            lorebook_service.clone(),
             ai_client.clone(),
             app_state.clone(),
         ));
@@ -225,7 +222,6 @@ impl AgenticNarrativeFactory {
 
         // Lorebook analysis tool
         let analyze_lorebook_tool = Arc::new(AnalyzeLorebookTool::new(
-            lorebook_service.clone(),
             ai_client.clone(),
             app_state.clone(),
         ));

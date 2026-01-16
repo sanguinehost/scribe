@@ -104,8 +104,8 @@ async fn generate_chat_response_streaming_ai_error() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()), // Add created_at
-                updated_at: Some(Utc::now()), // Add updated_at
+                created_at: Some(Utc::now().into()), // Add created_at
+                updated_at: Some(Utc::now().into()), // Add updated_at
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -125,16 +125,16 @@ async fn generate_chat_response_streaming_ai_error() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
-                user_id: user_id_clone_session,
-                character_id: character_id_clone_session,
+                id: Uuid::new_v4().into(),
+                user_id: user_id_clone_session.into(),
+                character_id: character_id_clone_session.into(),
                 title_ciphertext: None,
                 title_nonce: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -145,7 +145,7 @@ async fn generate_chat_response_streaming_ai_error() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: scribe_backend::models::OptionalStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -154,11 +154,14 @@ async fn generate_chat_response_streaming_ai_error() {
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -435,8 +438,8 @@ async fn generate_chat_response_streaming_initiation_error() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -456,40 +459,19 @@ async fn generate_chat_response_streaming_initiation_error() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title_ciphertext: None,
-                title_nonce: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -689,8 +671,8 @@ async fn generate_chat_response_streaming_error_before_content() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -710,40 +692,21 @@ async fn generate_chat_response_streaming_error_before_content() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
-                user_id: user_id_clone_session,
-                character_id: character_id_clone_session,
-                title_ciphertext: None,
-                title_nonce: None,
+                id: Uuid::new_v4().into(),
+                user_id: user_id_clone_session.into(),
+                character_id: character_id_clone_session.into(),
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -952,8 +915,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -973,40 +936,19 @@ async fn generate_chat_response_streaming_genai_json_error() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
-                title_ciphertext: None,
-                title_nonce: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -1027,8 +969,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
         .expect("Failed to get DB conn for msg save")
         .interact(move |conn_sync| {
             let new_message = NewChatMessage {
-                id: Uuid::new_v4(),
-                session_id: session_id_clone_msg,
+                id: Uuid::new_v4().into(),
+                session_id: session_id_clone_msg.into(),
                 user_id: user_id_clone_msg,
                 message_type: MessageRole::User,
                 content: initial_user_message_content.as_bytes().to_vec(),
@@ -1036,13 +978,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 role: Some("user".to_string()),
-                parts: None,
-                attachments: None,
-                prompt_tokens: None,
-                completion_tokens: None,
-                raw_prompt_ciphertext: None,
-                raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
+                ..Default::default()
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)

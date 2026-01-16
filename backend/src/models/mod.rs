@@ -21,6 +21,7 @@ mod backend_models {
 
 // Unified model modules (backend-agnostic)
 pub mod agent_context_analysis;
+pub mod cognitive_memory;
 // DEPRECATED: array_types module replaced by db::DbStringArray
 // pub mod array_types;
 pub mod auth;
@@ -56,6 +57,7 @@ pub use backend_models::users::*;
 
 // Re-export unified models
 pub use agent_context_analysis::*;
+pub use cognitive_memory::*;
 // Type alias for backwards compatibility - OptionalStringArray is now DbStringArray
 pub use crate::db::DbStringArray as OptionalStringArray;
 pub use auth::*;

@@ -1,7 +1,7 @@
 use super::get_user_from_session;
 use super::*;
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 
 impl LorebookService {
@@ -183,6 +183,11 @@ impl LorebookService {
             updated_at: Some(current_time.into()),
         };
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -222,7 +227,6 @@ impl LorebookService {
 
         // Prepare all entries for batch insertion
         let mut new_entries_batch = Vec::new();
-        let mut embedding_tasks = Vec::new();
 
         for (uid, entry) in payload.entries {
             // Merge both 'key' and 'keys' fields from SillyTavern format
@@ -366,14 +370,6 @@ impl LorebookService {
                 updated_at: Some(current_time.into()),
             };
 
-            // Store the entry data for embedding generation
-            embedding_tasks.push((
-                new_entry_db.id,
-                entry_payload.entry_title.clone(),
-                entry_payload.content.clone(),
-                entry_payload.keys_text.clone(),
-            ));
-
             new_entries_batch.push(new_entry_db);
         }
 
@@ -385,7 +381,8 @@ impl LorebookService {
             );
 
             info!("Getting database connection for batch insert...");
-            let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            #[cfg(feature = "postgres-backend")]
+            let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
                 error!("Failed to get DB connection for batch insert: {e}");
                 AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
             })?;

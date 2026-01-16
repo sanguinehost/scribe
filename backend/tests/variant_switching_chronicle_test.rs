@@ -1,6 +1,7 @@
 #![cfg(feature = "postgres-backend")]
 use diesel::prelude::*;
 use scribe_backend::auth::session_dek::SessionDek;
+use scribe_backend::db::{DbBigInt, DbId};
 use scribe_backend::models::chats::{Chat, NewChat};
 use scribe_backend::models::chats::{DbInsertableChatMessage, MessageRole, NewMessageVariant};
 use scribe_backend::models::chronicle::{CreateChronicleRequest, PlayerChronicle};
@@ -29,8 +30,10 @@ impl TestAppExt for TestAppGuard {
         user_id: DbId,
         name: &str,
     ) -> Result<PlayerChronicle, scribe_backend::errors::AppError> {
-        let chronicle_service =
-            scribe_backend::services::ChronicleService::new(self.db_pool.clone());
+        let chronicle_service = scribe_backend::services::ChronicleService::new(
+            self.db_pool.clone(),
+            self.ai_client.clone(),
+        );
         let request = CreateChronicleRequest {
             name: name.to_string(),
             description: None,
@@ -69,14 +72,18 @@ impl TestAppExt for TestAppGuard {
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
+                total_prompt_tokens: DbBigInt::from(0),
+                total_completion_tokens: DbBigInt::from(0),
+                estimated_cost_cents: DbBigInt::from(0),
                 tokens_counted_at: chrono::Utc::now().into(),
                 total_credits_used: 0.into(),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                gemini_thinking_level: None,
+                ..Default::default()
             };
 
             #[cfg(feature = "postgres-backend")]
@@ -127,7 +134,8 @@ async fn test_variant_switching_chronicle_filtering() {
     // 1. Setup
     let app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let (user, _session, session_dek) = app.create_user_and_session().await;
-    let chronicle_service = scribe_backend::services::ChronicleService::new(app.db_pool.clone());
+    let chronicle_service =
+        scribe_backend::services::ChronicleService::new(app.db_pool.clone(), app.ai_client.clone());
 
     // Create a chronicle
     let chronicle = app
@@ -150,8 +158,6 @@ async fn test_variant_switching_chronicle_filtering() {
 
             // Insert Message
             let new_message = DbInsertableChatMessage::new(
-                #[cfg(feature = "sqlite-backend")]
-                _message_id.clone(),
                 chat_session.id,
                 user.id,
                 MessageRole::Assistant,
@@ -190,9 +196,10 @@ async fn test_variant_switching_chronicle_filtering() {
                 user_id: user.id,
                 prompt_tokens: None,
                 completion_tokens: None,
-                model_name: None,
+                model_name: Some("gpt-4".to_string()),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                game_state: None,
             };
 
             #[cfg(feature = "postgres-backend")]
@@ -229,9 +236,10 @@ async fn test_variant_switching_chronicle_filtering() {
                 user_id: user.id,
                 prompt_tokens: None,
                 completion_tokens: None,
-                model_name: None,
+                model_name: Some("gpt-4".to_string()),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
+                game_state: None,
             };
 
             #[cfg(feature = "postgres-backend")]

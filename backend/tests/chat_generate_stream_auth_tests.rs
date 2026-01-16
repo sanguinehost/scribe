@@ -181,8 +181,8 @@ async fn generate_chat_response_streaming_forbidden() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()), // Add created_at
-                updated_at: Some(Utc::now()), // Add updated_at
+                created_at: Some(scribe_backend::db::DbTimestamp::now()), // Add created_at
+                updated_at: Some(scribe_backend::db::DbTimestamp::now()), // Add updated_at
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -202,7 +202,7 @@ async fn generate_chat_response_streaming_forbidden() {
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: user_id_clone_session,
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
@@ -211,7 +211,7 @@ async fn generate_chat_response_streaming_forbidden() {
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -222,7 +222,7 @@ async fn generate_chat_response_streaming_forbidden() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: scribe_backend::models::OptionalStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -231,11 +231,12 @@ async fn generate_chat_response_streaming_forbidden() {
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)

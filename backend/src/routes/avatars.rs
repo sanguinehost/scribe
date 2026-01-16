@@ -15,7 +15,9 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
+#[cfg(feature = "postgres-backend")]
+use diesel::SelectableHelper;
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
 use image::ImageFormat;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -187,7 +189,6 @@ pub async fn upload_user_avatar(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING, so we insert and query back
             diesel::insert_into(user_assets)
                 .values(&new_asset)
@@ -405,7 +406,6 @@ pub async fn upload_persona_avatar(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING, so we insert and query back
             diesel::insert_into(user_assets)
                 .values(&new_asset)

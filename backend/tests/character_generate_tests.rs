@@ -14,7 +14,7 @@ use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
-    db::DbId,
+    db::{DbBigInt, DbId},
     models::{
         characters::Character as DbCharacter,
         users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
@@ -57,16 +57,16 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -193,7 +193,7 @@ async fn test_generate_character() -> Result<(), anyhow::Error> {
     let character = run_db_op(&pool, move |conn| {
         insert_test_character(
             conn,
-            user_id_for_insert,
+            *user_id_for_insert,
             "Generated Wizard Character",
             &dek_for_insert,
         )

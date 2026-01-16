@@ -8,7 +8,7 @@ use crate::auth::{create_user_sync, get_user, hash_password};
 use crate::desktop::config::{get_default_user_id, set_default_user_id};
 use crate::errors::AppError;
 use crate::models::auth::RegisterPayload;
-use crate::models::users::{AccountStatus, User};
+use crate::models::users::User;
 use crate::schema::users;
 use diesel::prelude::*;
 use secrecy::SecretString;

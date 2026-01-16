@@ -10,6 +10,8 @@ use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
 use diesel::prelude::*;
 use genai::chat::{ChatRole, MessageContent, Usage};
+use scribe_backend::db::{DbId, DbTimestamp};
+use scribe_backend::models::OptionalStringArray;
 use serde_json::json;
 use std::str::FromStr;
 use tower::ServiceExt;
@@ -259,75 +261,11 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         character_version: Some("2.0".to_string()),
         spec: "test".to_string(),
         spec_version: "test".to_string(),
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        created_at: Some(now),
-        creator_notes_multilingual: None,
-        nickname: None,
-        personality: None,
-        tags: None,
-        updated_at: Some(now),
-        creation_date: Some(now),
-        modification_date: Some(now),
-        greeting_nonce: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        category: None,
-        definition_visibility: None,
-        example_dialogue_nonce: None,
-        favorite: None,
-        first_message_visibility: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        persona_visibility: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        definition_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        post_history_instructions_nonce: None,
-        post_history_instructions: None,
-        scenario: None,
-        mes_example: None,
-        first_mes: None,
-        creator_notes: None,
-        system_prompt: None,
-        alternate_greetings: None,
-        creator: None,
-        source: None,
-        group_only_greetings: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: Some(now.into()),
+        updated_at: Some(now.into()),
+        creation_date: Some(now.into()),
+        modification_date: Some(now.into()),
+        ..Default::default()
     };
 
     info!("Creating test character");
@@ -347,40 +285,19 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     info!("Created test character with ID: {}", character.id);
 
     let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        history_management_strategy: "truncate_summary".to_string(), // Default
-        history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash".to_string(),                  // Default
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        history_management_strategy: "truncate_summary".to_string(),
+        history_management_limit: 20,
+        model_name: Some("gemini-2.5-flash".to_string()),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     info!(
@@ -457,11 +374,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 
     // --- Mock RAG Response ---
     let mock_metadata1 = ChatMessageChunkMetadata {
-        message_id: Uuid::new_v4(),
+        message_id: DbId::from(Uuid::new_v4()),
         session_id: session.id,
         user_id: user.id, // Added user_id
         speaker: "user".to_string(),
-        timestamp: Utc::now(),
+        timestamp: DbTimestamp::from(Utc::now()),
+        game_time: None,
         text: "This is relevant chunk 1.".to_string(),
         encrypted_text: Some(b"encrypted_chunk_1".to_vec()),
         text_nonce: Some(b"nonce1234567890ab".to_vec()),
@@ -469,11 +387,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         source_type: "chat_message".to_string(),
     };
     let mock_metadata2 = ChatMessageChunkMetadata {
-        message_id: Uuid::new_v4(),
+        message_id: DbId::from(Uuid::new_v4()),
         session_id: session.id,
         user_id: user.id, // Added user_id
         speaker: "ai".to_string(),
-        timestamp: Utc::now(),
+        timestamp: DbTimestamp::from(Utc::now()),
+        game_time: None,
         text: "This is relevant chunk 2, slightly longer.".to_string(),
         encrypted_text: Some(b"encrypted_chunk_2".to_vec()),
         text_nonce: Some(b"nonce1234567890cd".to_vec()),
@@ -509,9 +428,10 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
                 genai::adapter::AdapterKind::Gemini,
                 "gemini/mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(ai_response_content)],
+            content: genai::chat::MessageContent::from(ai_response_content),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         };
         mock_client.set_response(Ok(successful_response));
     } else {
@@ -587,19 +507,16 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 
     let last_message_content = last_request.messages.last().unwrap().content.clone();
 
-    let MessageContent::Text(prompt_text) = last_message_content else {
-        panic!("Expected last message content to be text");
-    };
+    let prompt_text = last_message_content
+        .first_text()
+        .expect("Expected last message content to be text");
     info!(
         "--- DEBUG: Prompt Text Content ---\n{}\n--- END DEBUG ---",
         prompt_text
     );
     info!("--- DEBUG: All Messages ---");
     for (i, msg) in last_request.messages.iter().enumerate() {
-        let content_text = match &msg.content {
-            MessageContent::Text(text) => text.clone(), // Cloned to match String type
-            _ => "Non-text content".to_string(),        // Converted to String
-        };
+        let content_text = msg.content.first_text().unwrap_or("Non-text content");
         info!(
             "Message {}: Role={:?}, Content={}",
             i, msg.role, content_text
@@ -681,12 +598,18 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         decrypted_system_prompt,
         Some("Test system prompt for session".to_string())
     );
-    assert_eq!(db_chat_settings.temperature, Some(test_temp));
+    assert_eq!(db_chat_settings.temperature, Some(test_temp.into()));
     assert_eq!(db_chat_settings.max_output_tokens, Some(test_tokens));
-    assert_eq!(db_chat_settings.frequency_penalty, Some(test_freq_penalty));
-    assert_eq!(db_chat_settings.presence_penalty, Some(test_pres_penalty));
+    assert_eq!(
+        db_chat_settings.frequency_penalty,
+        Some(test_freq_penalty.into())
+    );
+    assert_eq!(
+        db_chat_settings.presence_penalty,
+        Some(test_pres_penalty.into())
+    );
     assert_eq!(db_chat_settings.top_k, Some(test_top_k));
-    assert_eq!(db_chat_settings.top_p, Some(test_top_p));
+    assert_eq!(db_chat_settings.top_p, Some(test_top_p.into()));
     assert_eq!(db_chat_settings.seed, test_seed);
     assert_eq!(
         Some(db_chat_settings.history_management_strategy.as_str()),
@@ -861,76 +784,13 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         character_version: Some("2.0".to_string()),
         spec: "test".to_string(),
         spec_version: "test".to_string(),
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        created_at: Some(now),
-        creator_notes_multilingual: None,
-        nickname: None,
-        personality: None,
-        tags: None,
-        updated_at: Some(now),
-        creation_date: Some(now),
-        modification_date: Some(now),
-        greeting_nonce: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        category: None,
-        definition_visibility: None,
-        example_dialogue_nonce: None,
-        favorite: None,
-        first_message_visibility: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        persona_visibility: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        definition_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        post_history_instructions_nonce: None,
-        post_history_instructions: None,
-        scenario: None,
-        mes_example: None,
-        first_mes: None,
-        creator_notes: None,
-        system_prompt: None,
-        alternate_greetings: None,
-        creator: None,
-        source: None,
-        group_only_greetings: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: Some(now.into()),
+        updated_at: Some(now.into()),
+        creation_date: Some(now.into()),
+        modification_date: Some(now.into()),
+        ..Default::default()
     };
+
     let character: Character = {
         let interact_result = conn
             .interact(move |conn_actual| {
@@ -946,40 +806,19 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     };
 
     let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        history_management_strategy: "truncate_summary".to_string(), // Default
-        history_management_limit: 20,                                // Default
-        model_name: "gemini-2.5-flash".to_string(),                  // Default
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        history_management_strategy: "truncate_summary".to_string(),
+        history_management_limit: 20,
+        model_name: Some("gemini-2.5-flash".to_string()),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
     let session: DbChat = {
         let interact_result = conn
@@ -1112,9 +951,9 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
 
     let last_message_content = last_request.messages.last().unwrap().content.clone();
 
-    let MessageContent::Text(prompt_text) = last_message_content else {
-        panic!("Expected last message content to be text");
-    };
+    let prompt_text = last_message_content
+        .first_text()
+        .expect("Expected last message content to be text");
     eprintln!(
         "--- DEBUG: Prompt Text Content ---
 {prompt_text}
@@ -1122,10 +961,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     );
     eprintln!("--- DEBUG: All Messages ---");
     for (i, msg) in last_request.messages.iter().enumerate() {
-        let content_text = match &msg.content {
-            MessageContent::Text(text) => text.clone(), // Cloned to match String type
-            _ => "Non-text content".to_string(),        // Converted to String
-        };
+        let content_text = msg.content.first_text().unwrap_or("Non-text content");
         eprintln!(
             "Message {}: Role={:?}, Content={}",
             i, msg.role, content_text
@@ -1210,12 +1046,18 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         decrypted_system_prompt_err_test,
         Some("Error test system prompt".to_string())
     );
-    assert_eq!(db_chat_settings.temperature, Some(test_temp));
+    assert_eq!(db_chat_settings.temperature, Some(test_temp.into()));
     assert_eq!(db_chat_settings.max_output_tokens, Some(test_tokens));
-    assert_eq!(db_chat_settings.frequency_penalty, Some(test_freq_penalty));
-    assert_eq!(db_chat_settings.presence_penalty, Some(test_pres_penalty));
+    assert_eq!(
+        db_chat_settings.frequency_penalty,
+        Some(test_freq_penalty.into())
+    );
+    assert_eq!(
+        db_chat_settings.presence_penalty,
+        Some(test_pres_penalty.into())
+    );
     assert_eq!(db_chat_settings.top_k, Some(test_top_k));
-    assert_eq!(db_chat_settings.top_p, Some(test_top_p));
+    assert_eq!(db_chat_settings.top_p, Some(test_top_p.into()));
     assert_eq!(db_chat_settings.seed, test_seed);
     assert_eq!(
         Some(db_chat_settings.history_management_strategy.as_str()),
@@ -1303,94 +1145,14 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
+        id: character_id.into(),
         user_id: user.id,
         name: "Hist Slide Msg Char".to_string(),
         spec: "test".to_string(),
         spec_version: "1".to_string(),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
-        description: None,
-        personality: None,
-        scenario: None,
-        first_mes: None,
-        mes_example: None,
-        creator_notes: None,
-        system_prompt: None,
-        post_history_instructions: None,
-        tags: None,
-        creator: None,
-        character_version: None,
-        alternate_greetings: None,
-        nickname: None,
-        creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
-        creation_date: None,
-        modification_date: None,
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        greeting: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        data_id: None,
-        category: None,
-        definition_visibility: None,
-        depth: None,
-        example_dialogue: None,
-        favorite: None,
-        first_message_visibility: None,
-        height: None,
-        last_activity: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        model_temperature: None,
-        num_interactions: None,
-        permanence: None,
-        persona_visibility: None,
-        revision: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        visibility: None,
-        weight: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        post_history_instructions_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        greeting_nonce: None,
-        definition_nonce: None,
-        example_dialogue_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
+        ..Default::default()
     };
 
     let result = conn
@@ -1405,44 +1167,22 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
-        character_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("test".to_string()),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let result = conn
@@ -1457,25 +1197,20 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted session: {} rows affected", insert_result);
-    test_data_guard.add_chat(session_id);
+    test_data_guard.add_chat(session_id.into());
 
     let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: role,
         content: content.as_bytes().to_vec(),
-        content_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         role: Some(role.to_string().to_lowercase()),
-        parts: Some(json!([{"text": content}])),
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
+        parts: Some(scribe_backend::db::DbJson::from(json!([{"text": content}]))),
         model_name: "gemini-2.5-pro".to_string(),
+        ..Default::default()
     };
 
     // Insert message 1 (User)
@@ -1586,11 +1321,10 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -1661,94 +1395,14 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
+        id: character_id.into(),
         user_id: user.id,
         name: "Hist Slide Tok Char".to_string(),
         spec: "test".to_string(),
         spec_version: "1".to_string(),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
-        description: None,
-        personality: None,
-        scenario: None,
-        first_mes: None,
-        mes_example: None,
-        creator_notes: None,
-        system_prompt: None,
-        post_history_instructions: None,
-        tags: None,
-        creator: None,
-        character_version: None,
-        alternate_greetings: None,
-        nickname: None,
-        creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
-        creation_date: None,
-        modification_date: None,
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        greeting: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        data_id: None,
-        category: None,
-        definition_visibility: None,
-        depth: None,
-        example_dialogue: None,
-        favorite: None,
-        first_message_visibility: None,
-        height: None,
-        last_activity: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        model_temperature: None,
-        num_interactions: None,
-        permanence: None,
-        persona_visibility: None,
-        revision: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        visibility: None,
-        weight: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        post_history_instructions_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        greeting_nonce: None,
-        definition_nonce: None,
-        example_dialogue_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
+        ..Default::default()
     };
 
     let result = conn
@@ -1763,44 +1417,22 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
-        character_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("test".to_string()),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let result = conn
@@ -1815,25 +1447,20 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted session: {} rows affected", insert_result);
-    test_data_guard.add_chat(session_id);
+    test_data_guard.add_chat(session_id.into());
 
     let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: role,
         content: content.as_bytes().to_vec(),
-        content_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         role: Some(role.to_string().to_lowercase()),
-        parts: Some(json!([{"text": content}])),
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
+        parts: Some(scribe_backend::db::DbJson::from(json!([{"text": content}]))),
         model_name: "gemini-2.5-pro".to_string(),
+        ..Default::default()
     };
 
     // Insert message 1 (User)
@@ -1929,11 +1556,10 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -2003,94 +1629,14 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
+        id: character_id.into(),
         user_id: user.id,
         name: "Hist Trunc Tok Char".to_string(),
         spec: "test".to_string(),
         spec_version: "1".to_string(),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
-        description: None,
-        personality: None,
-        scenario: None,
-        first_mes: None,
-        mes_example: None,
-        creator_notes: None,
-        system_prompt: None,
-        post_history_instructions: None,
-        tags: None,
-        creator: None,
-        character_version: None,
-        alternate_greetings: None,
-        nickname: None,
-        creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
-        creation_date: None,
-        modification_date: None,
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        greeting: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        data_id: None,
-        category: None,
-        definition_visibility: None,
-        depth: None,
-        example_dialogue: None,
-        favorite: None,
-        first_message_visibility: None,
-        height: None,
-        last_activity: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        model_temperature: None,
-        num_interactions: None,
-        permanence: None,
-        persona_visibility: None,
-        revision: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        visibility: None,
-        weight: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        post_history_instructions_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        greeting_nonce: None,
-        definition_nonce: None,
-        example_dialogue_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
+        ..Default::default()
     };
 
     let result = conn
@@ -2105,44 +1651,22 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
-        character_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("test".to_string()),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let result = conn
@@ -2157,25 +1681,20 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted session: {} rows affected", insert_result);
-    test_data_guard.add_chat(session_id);
+    test_data_guard.add_chat(session_id.into());
 
     let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: role,
         content: content.as_bytes().to_vec(),
-        content_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         role: Some(role.to_string().to_lowercase()),
-        parts: Some(json!([{"text": content}])),
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
+        parts: Some(scribe_backend::db::DbJson::from(json!([{"text": content}]))),
         model_name: "gemini-2.5-pro".to_string(),
+        ..Default::default()
     };
 
     // Insert message 1 (User)
@@ -2272,11 +1791,10 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -2342,11 +1860,10 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response 2".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response 2"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
     // Client is reused from above
     let response_2 = client
@@ -2408,94 +1925,14 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
+        id: character_id.into(),
         user_id: user.id,
         name: "Hist None Char".to_string(),
         spec: "test".to_string(),
         spec_version: "1".to_string(),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
-        description: None,
-        personality: None,
-        scenario: None,
-        first_mes: None,
-        mes_example: None,
-        creator_notes: None,
-        system_prompt: None,
-        post_history_instructions: None,
-        tags: None,
-        creator: None,
-        character_version: None,
-        alternate_greetings: None,
-        nickname: None,
-        creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
-        creation_date: None,
-        modification_date: None,
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        greeting: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        data_id: None,
-        category: None,
-        definition_visibility: None,
-        depth: None,
-        example_dialogue: None,
-        favorite: None,
-        first_message_visibility: None,
-        height: None,
-        last_activity: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        model_temperature: None,
-        num_interactions: None,
-        permanence: None,
-        persona_visibility: None,
-        revision: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        visibility: None,
-        weight: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        post_history_instructions_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        greeting_nonce: None,
-        definition_nonce: None,
-        example_dialogue_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
+        ..Default::default()
     };
 
     let result = conn
@@ -2510,44 +1947,22 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
-        character_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("test".to_string()),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let result = conn
@@ -2562,25 +1977,20 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted session: {} rows affected", insert_result);
-    test_data_guard.add_chat(session_id);
+    test_data_guard.add_chat(session_id.into());
 
     let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: role,
         content: content.as_bytes().to_vec(),
-        content_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         role: Some(role.to_string().to_lowercase()),
-        parts: Some(json!([{"text": content}])),
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
+        parts: Some(scribe_backend::db::DbJson::from(json!([{"text": content}]))),
         model_name: "gemini-2.5-pro".to_string(),
+        ..Default::default()
     };
 
     // Insert message 1 (User)
@@ -2618,7 +2028,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
 
     test_helpers::set_history_settings(
         &test_app,
-        session_id,
+        session_id.into(),
         &auth_cookie,
         Some("none".to_string()),
         Some(1),
@@ -2641,11 +2051,10 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -2715,94 +2124,14 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
 
     let character_id = Uuid::new_v4();
     let new_character = DbCharacter {
-        id: character_id,
+        id: character_id.into(),
         user_id: user.id,
         name: "Hist Trunc Tok Char".to_string(),
         spec: "test".to_string(),
         spec_version: "1".to_string(),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
-        description: None,
-        personality: None,
-        scenario: None,
-        first_mes: None,
-        mes_example: None,
-        creator_notes: None,
-        system_prompt: None,
-        post_history_instructions: None,
-        tags: None,
-        creator: None,
-        character_version: None,
-        alternate_greetings: None,
-        nickname: None,
-        creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
-        creation_date: None,
-        modification_date: None,
-        persona: None,
-        world_scenario: None,
-        avatar: None,
-        chat: None,
-        greeting: None,
-        definition: None,
-        default_voice: None,
-        extensions: None,
-        data_id: None,
-        category: None,
-        definition_visibility: None,
-        depth: None,
-        example_dialogue: None,
-        favorite: None,
-        first_message_visibility: None,
-        height: None,
-        last_activity: None,
-        migrated_from: None,
-        model_prompt: None,
-        model_prompt_visibility: None,
-        model_temperature: None,
-        num_interactions: None,
-        permanence: None,
-        persona_visibility: None,
-        revision: None,
-        sharing_visibility: None,
-        status: None,
-        system_prompt_visibility: None,
-        system_tags: None,
-        token_budget: None,
-        usage_hints: None,
-        user_persona: None,
-        user_persona_visibility: None,
-        visibility: None,
-        weight: None,
-        world_scenario_visibility: None,
-        description_nonce: None,
-        personality_nonce: None,
-        scenario_nonce: None,
-        first_mes_nonce: None,
-        mes_example_nonce: None,
-        creator_notes_nonce: None,
-        system_prompt_nonce: None,
-        post_history_instructions_nonce: None,
-        persona_nonce: None,
-        world_scenario_nonce: None,
-        greeting_nonce: None,
-        definition_nonce: None,
-        example_dialogue_nonce: None,
-        model_prompt_nonce: None,
-        user_persona_nonce: None,
-        fav: None,
-        world: None,
-        creator_comment: None,
-        creator_comment_nonce: None,
-        depth_prompt: None,
-        depth_prompt_depth: None,
-        depth_prompt_role: None,
-        talkativeness: None,
-        depth_prompt_ciphertext: None,
-        depth_prompt_nonce: None,
-        world_ciphertext: None,
-        world_nonce: None,
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
+        ..Default::default()
     };
 
     let result = conn
@@ -2817,44 +2146,22 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     let session_id = Uuid::new_v4();
     let new_session = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
-        character_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("test".to_string()),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let result = conn
@@ -2869,25 +2176,20 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted session: {} rows affected", insert_result);
-    test_data_guard.add_chat(session_id);
+    test_data_guard.add_chat(session_id.into());
 
     let common_msg_fields = |role: MessageRole, content: &str| NewChatMessage {
-        id: Uuid::new_v4(),
-        session_id,
+        id: Uuid::new_v4().into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: role,
         content: content.as_bytes().to_vec(),
-        content_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         role: Some(role.to_string().to_lowercase()),
-        parts: Some(json!([{"text": content}])),
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
+        parts: Some(scribe_backend::db::DbJson::from(json!([{"text": content}]))),
         model_name: "gemini-2.5-pro".to_string(),
+        ..Default::default()
     };
 
     // Insert message 1 (User)
@@ -2984,11 +2286,10 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -3054,11 +2355,10 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
                 genai::adapter::AdapterKind::Gemini,
                 "mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(
-                "Mock response 2".to_string(),
-            )],
+            content: genai::chat::MessageContent::from("Mock response 2"),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         }));
     // Client is reused from above
     let response_2 = client
@@ -3130,50 +2430,29 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
         test_helpers::db::create_test_character(&test_app.db_pool, user.id, character_name).await?;
     let character_id = character.id;
     tracing::info!("Created test character with ID: {}", character_id);
-    test_data_guard.add_character(character_id);
+    test_data_guard.add_character(character_id.into());
 
     tracing::info!("Creating chat session");
     // Create a new chat session for this user
     let session_id = Uuid::new_v4();
     tracing::info!("Generated session_id: {}", session_id);
-    test_data_guard.add_chat(session_id);
+    test_data_guard.add_chat(session_id.into());
 
     let conn = test_app.db_pool.get().await?;
     let new_chat = NewChat {
-        id: session_id,
+        id: session_id.into(),
         user_id: user.id,
-        character_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test_model".to_string(),
+        model_name: Some("test_model".to_string()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: BigDecimal::from(0).into(),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let create_session_result = conn
@@ -3197,22 +2476,19 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
 
     let conn = test_app.db_pool.get().await?;
     let new_message = NewChatMessage {
-        id: message_id,
-        session_id,
+        id: message_id.into(),
+        session_id: session_id.into(),
         user_id: user.id,
         message_type: MessageRole::User,
         content: b"Test message content".to_vec(),
-        content_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         role: Some("user".to_string()),
-        parts: Some(serde_json::json!([{"text": "Test message content"}])),
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
+        parts: Some(scribe_backend::db::DbJson::from(
+            json!([{"text": "Test message content"}]),
+        )),
         model_name: "gemini-2.5-pro".to_string(),
+        ..Default::default()
     };
 
     let create_message_result = conn
@@ -3252,9 +2528,10 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
                 genai::adapter::AdapterKind::Gemini,
                 "gemini/mock-model",
             ),
-            contents: vec![genai::chat::MessageContent::Text(ai_response_content)],
+            content: genai::chat::MessageContent::from(ai_response_content),
             reasoning_content: None,
             usage: Usage::default(),
+            captured_raw_body: None,
         };
         mock_client.set_response(Ok(successful_response));
     } else {
@@ -3324,13 +2601,13 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     let character_a_id = Uuid::new_v4();
     let new_character_a = DbCharacter {
         // Using DbCharacter alias
-        id: character_a_id,
+        id: character_a_id.into(),
         user_id: user_a.id,
         name: "User A Char".to_string(),
         spec: "test_spec".to_string(),
         spec_version: "1.0".to_string(),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         description: None,
         personality: None,
         scenario: None,
@@ -3339,14 +2616,14 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None,
+        tags: OptionalStringArray(None),
         creator: None,
         character_version: None,
-        alternate_greetings: None,
+        alternate_greetings: OptionalStringArray(None),
         nickname: None,
         creator_notes_multilingual: None,
-        source: None,
-        group_only_greetings: None,
+        source: OptionalStringArray(None),
+        group_only_greetings: scribe_backend::db::DbStringArray(None),
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -3377,7 +2654,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None,
+        system_tags: scribe_backend::db::DbStringArray(None),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -3426,44 +2703,23 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted character: {} rows affected", insert_result);
-    test_data_guard.add_character(character_a_id);
+    test_data_guard.add_character(character_a_id.into());
 
     let session_a_id = Uuid::new_v4();
     let new_session_a = NewChat {
-        id: session_a_id,
+        id: session_a_id.into(),
         user_id: user_a.id,
-        character_id: character_a_id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        character_id: character_a_id.into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "none".to_string(),
         history_management_limit: 10,
-        model_name: "test_model".to_string(),
+        model_name: Some("test_model".to_string()),
         visibility: Some("private".to_string()),
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let conn_clone = test_app.db_pool.get().await?; // Re-acquire connection as it was moved
@@ -3479,7 +2735,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
     }
     let insert_result = result.unwrap()?;
     debug!("Inserted session: {} rows affected", insert_result);
-    test_data_guard.add_chat(session_a_id);
+    test_data_guard.add_chat(session_a_id.into());
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
@@ -3607,40 +2863,18 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
     };
 
     let new_chat_session = NewChat {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         user_id: user.id,
         character_id: character.id,
-        title_ciphertext: None,
-        title_nonce: None,
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: DbTimestamp::from(Utc::now()),
+        updated_at: DbTimestamp::from(Utc::now()),
         history_management_strategy: "standard".to_string(),
         history_management_limit: 50,
-        model_name: "gemini-2.0-flash-exp".to_string(),
-        visibility: None,
-        active_custom_persona_id: None,
-        active_impersonated_character_id: None,
-        temperature: None,
-        max_output_tokens: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        top_k: None,
-        top_p: None,
-        seed: None,
-        stop_sequences: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
-        system_prompt_ciphertext: None,
-        system_prompt_nonce: None,
-        player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        estimated_cost_cents: 0,
-        tokens_counted_at: chrono::Utc::now(),
-        total_credits_used: BigDecimal::from(0),
+        model_name: Some("gemini-2.0-flash-exp".to_string()),
+        tokens_counted_at: DbTimestamp::from(chrono::Utc::now()),
+        total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         prompt_template_id: "default".to_string(),
-        narrative_style_override_ciphertext: None,
-        narrative_style_override_nonce: None,
+        ..Default::default()
     };
 
     let session: DbChat = {
@@ -3664,9 +2898,8 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
 
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
         let successful_response = genai::chat::ChatResponse {
-            contents: vec![genai::chat::MessageContent::Text(
-                "AI response.".to_string(),
-            )],
+            captured_raw_body: None,
+            content: genai::chat::MessageContent::from("AI response."),
             usage: genai::chat::Usage {
                 prompt_tokens: None,
                 prompt_tokens_details: None,

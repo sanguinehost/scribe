@@ -45,14 +45,14 @@ async fn test_context_enrichment_with_encryption() -> Result<()> {
     // Create a lorebook with some content about dragons
     let lorebook_id = Uuid::new_v4();
     let lorebook = scribe_backend::models::NewLorebook {
-        id: lorebook_id,
-        user_id: user.id,
+        id: lorebook_id.into(),
+        user_id: user.id.into(),
         name: "Dragon Lore".to_string(),
         description: Some("Knowledge about dragons".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
     };
 
     // Insert lorebook into database
@@ -70,9 +70,9 @@ async fn test_context_enrichment_with_encryption() -> Result<()> {
     let entry_title = "Dragon Knowledge";
 
     let params = LorebookEntryParams {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id,
-        user_id: user.id,
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: lorebook_id.into(),
+        user_id: user.id.into(),
         decrypted_content: entry_content.to_string(),
         decrypted_title: Some(entry_title.to_string()),
         decrypted_keywords: Some(vec![

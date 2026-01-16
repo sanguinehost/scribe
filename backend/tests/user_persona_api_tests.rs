@@ -22,7 +22,7 @@ fn default_create_dto() -> CreateUserPersonaDto {
         mes_example: Some("User: How does this work?\nAI: Like this!".to_string()),
         system_prompt: Some("You are a helpful assistant.".to_string()),
         post_history_instructions: Some("Summarize the key points.".to_string()),
-        tags: Some(vec![Some("test".to_string()), Some("api".to_string())]), // Corrected tags
+        tags: Some(vec!["test".to_string(), "api".to_string()]),
         avatar: Some("avatar_url_or_data".to_string()),
     }
 }
@@ -263,7 +263,7 @@ async fn update_user_persona_success() {
         mes_example: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: Some(vec![Some("updated".to_string())]), // Corrected tags
+        tags: Some(vec!["updated".to_string()]),
         avatar: None,
         spec: None,
         spec_version: None,

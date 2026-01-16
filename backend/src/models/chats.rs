@@ -122,9 +122,9 @@ pub type SettingsTuple = (
     i32,                                        // history_management_limit
     String,                                     // model_name
     // -- Gemini Specific Options --
-    Option<i32>,  // gemini_thinking_budget
+    Option<i32>,    // gemini_thinking_budget
     Option<String>, // gemini_thinking_level
-    Option<bool>, // gemini_enable_code_execution
+    Option<bool>,   // gemini_enable_code_execution
     // -- Chronicle Support --
     Option<crate::db::DbId>, // player_chronicle_id
     // -- Agent Mode --
@@ -205,6 +205,7 @@ pub struct Chat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for Chat {
@@ -303,6 +304,7 @@ impl std::fmt::Debug for Chat {
     feature = "sqlite-backend",
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
+#[derive(Debug, Clone, Insertable, Default)]
 pub struct NewChat {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
@@ -348,6 +350,7 @@ pub struct NewChat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -430,7 +433,17 @@ impl std::fmt::Debug for NewChat {
 
 // MessageRole enum for database storage
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow, diesel::query_builder::QueryId,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Default,
+    AsExpression,
+    FromSqlRow,
+    diesel::query_builder::QueryId,
 )]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
 pub enum MessageRole {
@@ -642,10 +655,7 @@ pub struct ChatMessage {
     pub completion_tokens: Option<i32>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    #[cfg(feature = "postgres-backend")]
     pub model_name: String,
-    #[cfg(feature = "sqlite-backend")]
-    pub model_name: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
     pub superseded_at: Option<DbTimestamp>,
@@ -1902,8 +1912,8 @@ pub struct ChatForClient {
     pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub chat_mode: ChatMode,
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     pub game_state: Option<crate::DbJson>,
@@ -2038,7 +2048,11 @@ impl Chat {
             total_actual_cost: self.total_actual_cost,
             game_state: {
                 if let Some(ref gs) = self.game_state {
-                    tracing::info!("SERIALIZATION_DEBUG: Chat {} has game_state: {:?}", self.id, gs);
+                    tracing::info!(
+                        "SERIALIZATION_DEBUG: Chat {} has game_state: {:?}",
+                        self.id,
+                        gs
+                    );
                 } else {
                     tracing::info!("SERIALIZATION_DEBUG: Chat {} has NO game_state", self.id);
                 }
@@ -2299,6 +2313,8 @@ pub struct UpdateChatSettingsRequest {
     pub rag_lorebooks_limit: Option<i32>,
     #[validate(range(min = 0, max = 1000000))]
     pub rag_older_chat_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -3404,7 +3420,9 @@ mod tests {
     feature = "sqlite-backend",
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
-#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Associations, Identifiable)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Associations, Identifiable,
+)]
 pub struct MessageVariant {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,

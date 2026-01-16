@@ -6,14 +6,13 @@ use crate::schema::chat_sessions;
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
     routing::put,
     Json, Router,
 };
 use diesel::prelude::*;
 use regex::Regex;
 use serde::Deserialize;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]

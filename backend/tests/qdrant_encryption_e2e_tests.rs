@@ -50,14 +50,14 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
     // Create a lorebook
     let lorebook_id = Uuid::new_v4();
     let lorebook = scribe_backend::models::NewLorebook {
-        id: lorebook_id,
-        user_id: user.id,
+        id: lorebook_id.into(),
+        user_id: user.id.into(),
         name: "Test Lorebook".to_string(),
         description: Some("Test description".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
     };
 
     // Insert lorebook into database
@@ -76,9 +76,9 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
     let entry_title = "Dragon Secrets";
 
     let params = LorebookEntryParams {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id,
-        user_id: user.id,
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: lorebook_id.into(),
+        user_id: user.id.into(),
         decrypted_content: entry_content.to_string(),
         decrypted_title: Some(entry_title.to_string()),
         decrypted_keywords: Some(vec!["dragon".to_string(), "secret".to_string()]),
@@ -131,7 +131,7 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10)
+        .retrieve_points(Some(filter), 10, None)
         .await?;
 
     // Verify we got results
@@ -192,14 +192,14 @@ async fn test_search_without_dek_returns_placeholders() -> Result<()> {
     // Create and embed encrypted content (same setup as above)
     let lorebook_id = Uuid::new_v4();
     let lorebook = scribe_backend::models::NewLorebook {
-        id: lorebook_id,
+        id: lorebook_id.into(),
         user_id: user.id,
         name: "Secret Lorebook".to_string(),
         description: Some("Contains secrets".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now()),
-        updated_at: Some(Utc::now()),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
     };
 
     let conn = test_app.db_pool.get().await?;
@@ -213,9 +213,9 @@ async fn test_search_without_dek_returns_placeholders() -> Result<()> {
     .map_err(|e| anyhow::anyhow!("Failed to insert: {}", e))?;
 
     let params = LorebookEntryParams {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id,
-        user_id: user.id,
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: lorebook_id.into(),
+        user_id: user.id.into(),
         decrypted_content: "Top secret information that should never leak".to_string(),
         decrypted_title: Some("Secret Information".to_string()),
         decrypted_keywords: Some(vec!["secret".to_string(), "classified".to_string()]),
@@ -295,6 +295,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
     // Create a chronicle first
     let _chronicle_id = Uuid::new_v4();
     let new_chronicle = scribe_backend::models::chronicle::NewPlayerChronicle {
+        id: Some(_chronicle_id.into()),
         user_id: user.id,
         name: "Test Chronicle".to_string(),
         description: Some("Test chronicle for encryption".to_string()),
@@ -330,6 +331,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
         scribe_backend::models::chronicle_event::EventSource::AiExtracted,
         Some(event_keywords),
         None, // No chat session
+        None, // No message variant
     );
 
     // Insert event into database
@@ -402,7 +404,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10)
+        .retrieve_points(Some(filter), 10, None)
         .await?;
 
     // Verify we got results

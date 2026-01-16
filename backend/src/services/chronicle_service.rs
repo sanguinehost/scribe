@@ -7,17 +7,22 @@ use diesel::{
 };
 use tracing::{error, info, instrument};
 
+use crate::auth::session_dek::SessionDek;
 use crate::errors::AppError;
 use crate::models::chronicle::{
     CreateChronicleRequest, NewPlayerChronicle, PlayerChronicle, PlayerChronicleWithCounts,
     UpdateChronicleRequest, UpdatePlayerChronicle,
 };
 use crate::models::chronicle_event::{
-    ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, NewChronicleEvent,
+    ChronicleEvent, CreateEventRequest, EventFilter, EventOrderBy, EventSource, NewChronicleEvent,
+};
+use crate::models::cognitive_memory::{
+    CognitivePayload, NewCharacterOpinion, NewEntityObservation,
 };
 use crate::models::OptionalStringArray;
 use crate::schema::{
-    chat_messages, chat_sessions, chronicle_events, message_variants, player_chronicles,
+    character_opinions, chat_messages, chat_sessions, chronicle_events, cognitive_core_memory,
+    cognitive_facts, entity_observations, message_variants, player_chronicles,
 };
 use crate::services::ChronicleDeduplicationService;
 
@@ -126,7 +131,7 @@ impl ChronicleService {
         chronicle_id: DbId,
     ) -> Result<PlayerChronicle, AppError> {
         use diesel::prelude::*;
-        use diesel::{delete, insert_into, update};
+
         diesel::insert_into(player_chronicles::table)
             .values(chronicle)
             .execute(conn)
@@ -399,8 +404,8 @@ impl ChronicleService {
     ) -> Result<Vec<PlayerChronicle>, AppError> {
         #[cfg(feature = "postgres-backend")]
         let chronicles = crate::db::with_conn(&self.db_pool, move |conn| {
-            player_chronicles::table
-                .filter(player_chronicles::user_id.eq(user_id))
+            let target = player_chronicles::table.filter(player_chronicles::user_id.eq(user_id));
+            target
                 .order(player_chronicles::updated_at.desc())
                 .load(conn)
                 .map_err(|e| {
@@ -605,8 +610,6 @@ impl ChronicleService {
 
         #[cfg(feature = "sqlite-backend")]
         let chronicle = {
-            use chrono::Utc;
-
             crate::db::with_conn(&self.db_pool, move |conn| {
                 let target = player_chronicles::table.filter(
                     player_chronicles::id
@@ -681,15 +684,11 @@ impl ChronicleService {
     ) -> Result<(), AppError> {
         let deleted_count = crate::db::with_conn(&self.db_pool, move |conn| {
             // Note: chronicle_events will be deleted by CASCADE
-            diesel::delete(
-                player_chronicles::table.filter(
-                    player_chronicles::id
-                        .eq(chronicle_id)
-                        .and(player_chronicles::user_id.eq(user_id)),
-                ),
-            )
-            .execute(conn)
-            .map_err(|e| {
+            let target = player_chronicles::table
+                .filter(player_chronicles::id.eq(chronicle_id))
+                .filter(player_chronicles::user_id.eq(user_id));
+
+            diesel::delete(target).execute(conn).map_err(|e| {
                 error!("Diesel error when deleting chronicle: {}", e);
                 AppError::DatabaseQueryError(format!("Failed to delete chronicle: {e}"))
             })
@@ -1057,8 +1056,6 @@ impl ChronicleService {
 
             // We have to construct the update manually because we have extra fields (encrypted ones)
             // that are not in UpdateChronicleEvent
-            let mut query = diesel::update(target).into_boxed();
-
             // This is getting complicated because we can't easily chain .set() calls conditionally
             // with different types in Diesel without a lot of boilerplate.
             // A simpler approach is to fetch, update in memory, and save back? No, race conditions.
@@ -1607,6 +1604,506 @@ impl ChronicleService {
             "Successfully deleted chronicle {} and all its events for user {}",
             chronicle_id, user_id
         );
+        Ok(())
+    }
+
+    /// Process a cognitive update (Retain Pipeline)
+    pub async fn process_cognitive_update(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        chat_session_id: Option<DbId>,
+        payload: CognitivePayload,
+        session_dek: &SessionDek,
+        state: Arc<crate::state::AppState>,
+        game_time: Option<serde_json::Value>,
+    ) -> Result<(), AppError> {
+        info!(
+            "Processing cognitive update for chronicle {} (significance: {})",
+            chronicle_id, payload.significance_score
+        );
+
+        // 1. Strict Post-Filter (Significance Gate)
+        if payload.significance_score < 0.4 {
+            info!(
+                "Cognitive update skipped: significance score {} < 0.4",
+                payload.significance_score
+            );
+            return Ok(());
+        }
+
+        // 2. Create Chronicle Event (Episodic Memory)
+        if payload.should_create_event {
+            let event_request = CreateEventRequest {
+                event_type: "NARRATIVE.EVENT".to_string(),
+                summary: payload.summary.clone(),
+                source: EventSource::AiExtracted,
+                keywords: Some(payload.keywords.clone()),
+                timestamp_iso8601: None,
+                chat_session_id,
+                message_variant_id: None,
+            };
+
+            self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
+                .await?;
+        }
+
+        // 3. Process Facts (Hindsight Retain)
+        for extraction in payload.facts {
+            let fact_id = DbId::new();
+            if let Err(e) = self
+                .retain_cognitive_fact(
+                    user_id,
+                    chronicle_id,
+                    fact_id,
+                    extraction.clone(),
+                    session_dek,
+                )
+                .await
+            {
+                error!("Failed to retain cognitive fact: {}", e);
+            }
+
+            // Trigger embedding for semantic search
+            let fact_text = format!("{}", extraction);
+            if let Err(e) = state
+                .embedding_pipeline_service
+                .process_and_embed_cognitive_fact(
+                    state.clone(),
+                    user_id,
+                    fact_id,
+                    chronicle_id,
+                    &fact_text,
+                    game_time.clone(),
+                )
+                .await
+            {
+                error!("Failed to embed cognitive fact: {}", e);
+            }
+        }
+
+        // 4. Process Opinions (Semantic Memory - Upsert by Topic)
+        for extraction in payload.opinions {
+            self.retain_character_opinion(
+                user_id,
+                chronicle_id,
+                extraction,
+                payload.significance_score,
+                session_dek,
+                state.clone(),
+            )
+            .await?;
+        }
+
+        // 5. Process Observations (Semantic Memory - Vector-First Entity Resolution)
+        for extraction in payload.observations {
+            self.retain_entity_observation(
+                user_id,
+                chronicle_id,
+                extraction,
+                payload.significance_score,
+                session_dek,
+                state.clone(),
+            )
+            .await?;
+        }
+
+        // 6. Update Core Memory if delta is present (TITANS/MIRAS)
+        if let Some(delta) = payload.core_memory_delta {
+            if let Err(e) = self
+                .update_core_memory(user_id, chronicle_id, delta, session_dek)
+                .await
+            {
+                error!("Failed to update core memory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn retain_character_opinion(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        extraction: crate::models::cognitive_memory::OpinionExtraction,
+        significance: f32,
+        session_dek: &SessionDek,
+        state: Arc<crate::state::AppState>,
+    ) -> Result<(), AppError> {
+        use crate::crypto::{encrypt_gcm, generate_hmac};
+
+        let dek_bytes = session_dek.expose_bytes();
+        let perspective_hash = generate_hmac(&extraction.perspective, dek_bytes);
+
+        // --- Upsert by Topic (Forgetting Gate) ---
+        // Search for existing opinions with high similarity (> 0.95)
+        let similar_opinions = state
+            .embedding_pipeline_service
+            .retrieve_similar_opinions(state.clone(), user_id, &extraction.opinion, 1)
+            .await?;
+
+        if let Some((score, meta)) = similar_opinions.first() {
+            if *score > 0.95 {
+                info!(
+                    %user_id,
+                    opinion_id = %meta.opinion_id,
+                    score,
+                    "Found highly similar opinion, triggering Forgetting Gate (Upsert by Topic)"
+                );
+
+                // Delete old opinion from DB
+                #[cfg(feature = "postgres-backend")]
+                {
+                    let conn = self
+                        .db_pool
+                        .get()
+                        .await
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    let opinion_id_clone = meta.opinion_id;
+                    conn.interact(move |conn| {
+                        diesel::delete(
+                            character_opinions::table
+                                .filter(character_opinions::id.eq(opinion_id_clone)),
+                        )
+                        .execute(conn)
+                    })
+                    .await
+                    .map_err(|e| AppError::DbInteractError(e.to_string()))?
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                }
+                #[cfg(feature = "sqlite-backend")]
+                {
+                    let mut conn = self
+                        .db_pool
+                        .get()
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                    diesel::delete(
+                        character_opinions::table
+                            .filter(character_opinions::id.eq(meta.opinion_id)),
+                    )
+                    .execute(&mut conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+                }
+
+                // Delete old opinion from Vector Store
+                state
+                    .embedding_pipeline_service
+                    .delete_opinion_vector(state.clone(), meta.opinion_id, user_id)
+                    .await?;
+            }
+        }
+
+        let (perspective_encrypted, perspective_nonce) =
+            encrypt_gcm(extraction.perspective.as_bytes(), &session_dek.0)?;
+
+        let (opinion_encrypted, opinion_nonce) =
+            encrypt_gcm(extraction.opinion.as_bytes(), &session_dek.0)?;
+
+        let now = chrono::Utc::now();
+        let opinion_id = DbId::new();
+        let new_opinion = NewCharacterOpinion {
+            id: opinion_id,
+            user_id,
+            chronicle_id,
+            perspective_hash,
+            perspective_encrypted,
+            perspective_nonce,
+            opinion_encrypted,
+            opinion_nonce,
+            confidence: extraction.confidence,
+            significance,
+            created_at: now.into(),
+            updated_at: now.into(),
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            let conn = self
+                .db_pool
+                .get()
+                .await
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            conn.interact(move |conn| {
+                diesel::insert_into(character_opinions::table)
+                    .values(&new_opinion)
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let mut conn = self
+                .db_pool
+                .get()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            diesel::insert_into(character_opinions::table)
+                .values(&new_opinion)
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+
+        // Embed the opinion for vector search
+        state
+            .embedding_pipeline_service
+            .process_and_embed_opinion(state.clone(), user_id, opinion_id, &extraction.opinion)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn retain_entity_observation(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        extraction: crate::models::cognitive_memory::ObservationExtraction,
+        significance: f32,
+        session_dek: &SessionDek,
+        state: Arc<crate::state::AppState>,
+    ) -> Result<(), AppError> {
+        use crate::crypto::{encrypt_gcm, generate_hmac};
+
+        let dek_bytes = session_dek.expose_bytes();
+
+        // Vector-First Entity Resolution
+        let similar_entities = state
+            .embedding_pipeline_service
+            .retrieve_similar_entities(state.clone(), user_id, &extraction.entity_name, 1)
+            .await?;
+
+        let entity_name_hash = if let Some((score, meta)) = similar_entities.first() {
+            if *score > 0.89 {
+                info!(
+                    "Entity resolution: matched '{}' to existing entity with score {}",
+                    extraction.entity_name, score
+                );
+                meta.entity_name_hash.clone()
+            } else {
+                let hash = generate_hmac(&extraction.entity_name, dek_bytes);
+                state
+                    .embedding_pipeline_service
+                    .process_and_embed_entity(
+                        state.clone(),
+                        user_id,
+                        &extraction.entity_name,
+                        &hash,
+                    )
+                    .await?;
+                hash
+            }
+        } else {
+            let hash = generate_hmac(&extraction.entity_name, dek_bytes);
+            state
+                .embedding_pipeline_service
+                .process_and_embed_entity(state.clone(), user_id, &extraction.entity_name, &hash)
+                .await?;
+            hash
+        };
+
+        let (entity_name_encrypted, entity_name_nonce) =
+            encrypt_gcm(extraction.entity_name.as_bytes(), &session_dek.0)?;
+
+        let (observation_encrypted, observation_nonce) =
+            encrypt_gcm(extraction.observation.as_bytes(), &session_dek.0)?;
+
+        let now = chrono::Utc::now();
+        let new_observation = NewEntityObservation {
+            id: DbId::new(),
+            user_id,
+            chronicle_id,
+            entity_name_hash,
+            entity_name_encrypted,
+            entity_name_nonce,
+            observation_encrypted,
+            observation_nonce,
+            confidence: extraction.confidence,
+            significance,
+            created_at: now.into(),
+            updated_at: now.into(),
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            let conn = self
+                .db_pool
+                .get()
+                .await
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            conn.interact(move |conn| {
+                diesel::insert_into(entity_observations::table)
+                    .values(&new_observation)
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let mut conn = self
+                .db_pool
+                .get()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            diesel::insert_into(entity_observations::table)
+                .values(&new_observation)
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the core memory for a chronicle
+    pub async fn get_core_memory(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+    ) -> Result<Option<crate::models::cognitive_memory::CoreMemory>, AppError> {
+        use crate::models::cognitive_memory::CoreMemory;
+
+        crate::db::with_conn(&self.db_pool, move |conn| {
+            cognitive_core_memory::table
+                .filter(
+                    cognitive_core_memory::user_id
+                        .eq(user_id)
+                        .and(cognitive_core_memory::chronicle_id.eq(chronicle_id)),
+                )
+                .order(cognitive_core_memory::updated_at.desc())
+                .first::<CoreMemory>(conn)
+                .optional()
+                .map_err(|e| {
+                    error!("Diesel error when getting core memory: {}", e);
+                    AppError::DatabaseQueryError(format!("Failed to get core memory: {e}"))
+                })
+        })
+        .await
+    }
+
+    /// Retain a cognitive fact (Hindsight 5D Fact)
+    pub async fn retain_cognitive_fact(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        fact_id: DbId,
+        extraction: crate::models::cognitive_memory::ExtractedFact,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        use crate::crypto::encrypt_gcm;
+        use crate::models::cognitive_memory::NewCognitiveFact;
+
+        let (who_encrypted, who_nonce) = encrypt_gcm(extraction.who.as_bytes(), &session_dek.0)?;
+        let (what_encrypted, what_nonce) = encrypt_gcm(extraction.what.as_bytes(), &session_dek.0)?;
+        let (where_encrypted, where_nonce) =
+            encrypt_gcm(extraction.r#where.as_bytes(), &session_dek.0)?;
+        let (when_encrypted, when_nonce) = encrypt_gcm(extraction.when.as_bytes(), &session_dek.0)?;
+        let (why_encrypted, why_nonce) = encrypt_gcm(extraction.why.as_bytes(), &session_dek.0)?;
+
+        let now = chrono::Utc::now();
+        let new_fact = NewCognitiveFact {
+            id: fact_id,
+            user_id,
+            chronicle_id,
+            who_encrypted,
+            who_nonce,
+            what_encrypted,
+            what_nonce,
+            where_encrypted,
+            where_nonce,
+            when_encrypted,
+            when_nonce,
+            why_encrypted,
+            why_nonce,
+            fact_type: extraction.fact_type,
+            confidence: extraction.confidence,
+            significance: extraction.significance,
+            created_at: now.into(),
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            let conn = self
+                .db_pool
+                .get()
+                .await
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            conn.interact(move |conn| {
+                diesel::insert_into(cognitive_facts::table)
+                    .values(&new_fact)
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let mut conn = self
+                .db_pool
+                .get()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            diesel::insert_into(cognitive_facts::table)
+                .values(&new_fact)
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Update the core memory for a chronicle (TITANS/MIRAS Neural State)
+    pub async fn update_core_memory(
+        &self,
+        user_id: DbId,
+        chronicle_id: DbId,
+        new_state: String,
+        session_dek: &SessionDek,
+    ) -> Result<(), AppError> {
+        use crate::crypto::encrypt_gcm;
+        use crate::models::cognitive_memory::NewCoreMemory;
+
+        let (memory_state_encrypted, memory_state_nonce) =
+            encrypt_gcm(new_state.as_bytes(), &session_dek.0)?;
+
+        let now = chrono::Utc::now();
+        let new_memory = NewCoreMemory {
+            id: DbId::new(),
+            user_id,
+            chronicle_id,
+            memory_state_encrypted,
+            memory_state_nonce,
+            version: 1, // TODO: Increment version if updating existing
+            updated_at: now.into(),
+        };
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            let conn = self
+                .db_pool
+                .get()
+                .await
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            conn.interact(move |conn| {
+                diesel::insert_into(cognitive_core_memory::table)
+                    .values(&new_memory)
+                    .execute(conn)
+            })
+            .await
+            .map_err(|e| AppError::DbInteractError(e.to_string()))?
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+        #[cfg(feature = "sqlite-backend")]
+        {
+            let mut conn = self
+                .db_pool
+                .get()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            diesel::insert_into(cognitive_core_memory::table)
+                .values(&new_memory)
+                .execute(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        }
+
         Ok(())
     }
 }

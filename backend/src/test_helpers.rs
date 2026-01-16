@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 use crate::errors::AppError;
 use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
 use crate::services::embeddings::{
+    metadata::{CognitiveFactMetadata, EntityMetadata, OpinionMetadata},
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
@@ -78,7 +79,7 @@ use axum::{
 };
 use axum_login::{login_required, AuthManagerLayerBuilder, AuthSession};
 use diesel::prelude::*;
-use diesel::{RunQueryDsl, SelectableHelper};
+use diesel::RunQueryDsl;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
@@ -131,6 +132,8 @@ type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>
 type ChatEventStream =
     std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
 type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
+type FactResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, CognitiveFactMetadata)>, AppError>>>>;
+type OpinionResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, OpinionMetadata)>, AppError>>>>;
 
 #[derive(Clone)]
 pub struct MockAiClient {
@@ -550,12 +553,52 @@ pub enum PipelineCall {
         chronicle_id: crate::db::DbId,
         user_id: crate::db::DbId,
     },
+    ProcessAndEmbedEntity {
+        user_id: crate::db::DbId,
+        entity_name: String,
+        entity_name_hash: String,
+    },
+    RetrieveSimilarEntities {
+        user_id: crate::db::DbId,
+        entity_name: String,
+        limit: u64,
+    },
+    ProcessAndEmbedOpinion {
+        user_id: crate::db::DbId,
+        opinion_id: crate::db::DbId,
+        opinion_text: String,
+    },
+    RetrieveSimilarOpinions {
+        user_id: crate::db::DbId,
+        opinion_text: String,
+        limit: u64,
+    },
+    DeleteOpinionVector {
+        opinion_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    },
+    ProcessAndEmbedCognitiveFact {
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: String,
+        game_time: Option<serde_json::Value>,
+    },
+    RetrieveSimilarFacts {
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: String,
+        limit: u64,
+        max_game_time_day: Option<i64>,
+    },
 }
 
 // Updated MockEmbeddingPipelineService
 #[derive(Clone)] // Added Clone
 pub struct MockEmbeddingPipelineService {
     retrieve_response_queue: RetrievalResponseQueue,
+    fact_response_queue: FactResponseQueue,
+    opinion_response_queue: OpinionResponseQueue,
     calls: Arc<Mutex<Vec<PipelineCall>>>, // Track calls
 }
 
@@ -570,6 +613,8 @@ impl MockEmbeddingPipelineService {
     pub fn new() -> Self {
         Self {
             retrieve_response_queue: Arc::new(Mutex::new(VecDeque::new())),
+            fact_response_queue: Arc::new(Mutex::new(VecDeque::new())),
+            opinion_response_queue: Arc::new(Mutex::new(VecDeque::new())),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -617,6 +662,30 @@ impl MockEmbeddingPipelineService {
         responses: Vec<Result<Vec<RetrievedChunk>, AppError>>,
     ) {
         let mut queue = self.retrieve_response_queue.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
+    }
+
+    /// Sets a sequence of fact responses for the mock service
+    pub fn set_fact_responses_sequence(
+        &self,
+        responses: Vec<Result<Vec<(f32, CognitiveFactMetadata)>, AppError>>,
+    ) {
+        let mut queue = self.fact_response_queue.lock().unwrap();
+        queue.clear();
+        for response in responses {
+            queue.push_back(response);
+        }
+    }
+
+    /// Sets a sequence of opinion responses for the mock service
+    pub fn set_opinion_responses_sequence(
+        &self,
+        responses: Vec<Result<Vec<(f32, OpinionMetadata)>, AppError>>,
+    ) {
+        let mut queue = self.opinion_response_queue.lock().unwrap();
         queue.clear();
         for response in responses {
             queue.push_back(response);
@@ -805,6 +874,148 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
             });
         Ok(())
     }
+
+    async fn process_and_embed_entity(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        entity_name_hash: &str,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedEntity {
+                user_id,
+                entity_name: entity_name.to_string(),
+                entity_name_hash: entity_name_hash.to_string(),
+            });
+        Ok(())
+    }
+
+    async fn retrieve_similar_entities(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        entity_name: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, EntityMetadata)>, AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveSimilarEntities {
+                user_id,
+                entity_name: entity_name.to_string(),
+                limit,
+            });
+        Ok(vec![])
+    }
+
+    async fn process_and_embed_opinion(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        opinion_id: crate::db::DbId,
+        opinion_text: &str,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedOpinion {
+                user_id,
+                opinion_id,
+                opinion_text: opinion_text.to_string(),
+            });
+        Ok(())
+    }
+
+    async fn retrieve_similar_opinions(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        opinion_text: &str,
+        limit: u64,
+    ) -> Result<Vec<(f32, OpinionMetadata)>, AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveSimilarOpinions {
+                user_id,
+                opinion_text: opinion_text.to_string(),
+                limit,
+            });
+
+        let mut queue = self.opinion_response_queue.lock().unwrap();
+        queue.pop_front().unwrap_or(Ok(vec![]))
+    }
+
+    async fn delete_opinion_vector(
+        &self,
+        _state: Arc<AppState>,
+        opinion_id: crate::db::DbId,
+        user_id: crate::db::DbId,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::DeleteOpinionVector {
+                opinion_id,
+                user_id,
+            });
+        Ok(())
+    }
+
+    async fn process_and_embed_cognitive_fact(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        fact_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        fact_text: &str,
+        game_time: Option<serde_json::Value>,
+    ) -> Result<(), AppError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::ProcessAndEmbedCognitiveFact {
+                user_id,
+                fact_id,
+                chronicle_id,
+                fact_text: fact_text.to_string(),
+                game_time,
+            });
+        Ok(())
+    }
+
+    async fn retrieve_similar_facts(
+        &self,
+        _state: Arc<AppState>,
+        user_id: crate::db::DbId,
+        chronicle_id: crate::db::DbId,
+        query: &str,
+        limit: u64,
+        max_game_time_day: Option<i64>,
+    ) -> Result<
+        Vec<(
+            f32,
+            crate::services::embeddings::metadata::CognitiveFactMetadata,
+        )>,
+        AppError,
+    > {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PipelineCall::RetrieveSimilarFacts {
+                user_id,
+                chronicle_id,
+                query: query.to_string(),
+                limit,
+                max_game_time_day,
+            });
+
+        let mut queue = self.fact_response_queue.lock().unwrap();
+        queue.pop_front().unwrap_or(Ok(vec![]))
+    }
 }
 
 #[derive(Clone)]
@@ -978,6 +1189,14 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         response.unwrap_or(Ok(()))
     }
 
+    async fn store_points_to_collection(
+        &self,
+        _collection_name: &str,
+        points: Vec<PointStruct>,
+    ) -> Result<(), AppError> {
+        self.store_points(points).await
+    }
+
     async fn search_points(
         &self,
         vector: Vec<f32>,
@@ -1015,6 +1234,16 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
                 Err(e) => Err(e), // Pass through errors
             }
         })
+    }
+
+    async fn search_points_in_collection(
+        &self,
+        _collection_name: &str,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        self.search_points(vector, limit, filter).await
     }
 
     async fn search_points_with_threshold(
@@ -1078,6 +1307,22 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         Ok(())
     }
 
+    async fn delete_points_from_collection(
+        &self,
+        _collection_name: &str,
+        _points: Vec<PointId>,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn delete_points_by_filter_from_collection(
+        &self,
+        _collection_name: &str,
+        filter: Filter,
+    ) -> Result<(), AppError> {
+        self.delete_points_by_filter(filter).await
+    }
+
     async fn get_point_by_id(
         &self,
         point_id: PointId,
@@ -1114,6 +1359,10 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         );
         Ok(())
     }
+
+    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        Ok(())
+    }
 }
 
 // --- END Placeholder Mock Definitions ---
@@ -1131,6 +1380,7 @@ pub struct TestAppStateBuilder {
     lorebook_service: Option<Arc<crate::services::lorebook::LorebookService>>, // Fully qualify
     auth_backend: Arc<AuthBackend>, // Add auth_backend to builder
     token_service: Option<Arc<crate::auth::TokenService>>, // Add token_service field
+    recall_pipeline: Option<Arc<crate::services::cognitive::RecallPipeline>>,
 }
 
 impl TestAppStateBuilder {
@@ -1156,6 +1406,7 @@ impl TestAppStateBuilder {
             lorebook_service: None,
             auth_backend,
             token_service: None, // Initialize token_service field
+            recall_pipeline: None,
         }
     }
 
@@ -1186,12 +1437,20 @@ impl TestAppStateBuilder {
         self
     }
 
-    #[must_use]
     pub fn with_lorebook_service(
         mut self,
         service: Arc<crate::services::lorebook::LorebookService>, // Fully qualify
     ) -> Self {
         self.lorebook_service = Some(service);
+        self
+    }
+
+    #[must_use]
+    pub fn with_recall_pipeline(
+        mut self,
+        pipeline: Arc<crate::services::cognitive::RecallPipeline>,
+    ) -> Self {
+        self.recall_pipeline = Some(pipeline);
         self
     }
 
@@ -1277,6 +1536,18 @@ impl TestAppStateBuilder {
             Arc::new(crate::auth::TokenService::new(&jwt_secret))
         });
 
+        let recall_pipeline = self.recall_pipeline.unwrap_or_else(|| {
+            Arc::new(crate::services::cognitive::RecallPipeline::new(
+                self.db_pool.clone(),
+            ))
+        });
+
+        let character_service =
+            Arc::new(crate::services::character_service::CharacterService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ));
+
         let services = AppStateServices {
             ai_client: self.ai_client,
             embedding_client: self.embedding_client,
@@ -1284,6 +1555,7 @@ impl TestAppStateBuilder {
             embedding_pipeline_service,
             chat_override_service,
             user_persona_service,
+            character_service,
             token_counter,
             encryption_service,
             lorebook_service,
@@ -1298,6 +1570,7 @@ impl TestAppStateBuilder {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            recall_pipeline,
             token_service: Some(token_service), // Use initialized token service for JWT tests
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
@@ -1394,6 +1667,7 @@ pub struct TestApp {
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     // user_persona_service field removed as per plan
     // embedding_call_tracker field removed as per plan
+    pub recall_pipeline: Arc<crate::services::cognitive::RecallPipeline>,
     pub state: Arc<AppState>, // Added state field
 }
 
@@ -1638,6 +1912,15 @@ pub async fn spawn_app_with_rate_limiting_options(
         .unwrap_or_else(|| std::path::PathBuf::from(".."));
     dotenvy::from_path(project_root.join(".env")).ok();
 
+    // Ensure COOKIE_SIGNING_KEY is set for tests
+    if std::env::var("COOKIE_SIGNING_KEY").is_err() {
+        // 64 bytes (128 hex chars) dummy key for tests
+        std::env::set_var(
+            "COOKIE_SIGNING_KEY",
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+        );
+    }
+
     // PostgreSQL: Create unique test database per test (if multi-threaded)
     #[cfg(feature = "postgres-backend")]
     let (pool, test_db_name) = {
@@ -1657,14 +1940,35 @@ pub async fn spawn_app_with_rate_limiting_options(
 
         let database_url = if multi_thread {
             // Each test gets a unique in-memory database with shared cache to allow multiple connections
-            format!("file:memdb{}?mode=memory&cache=shared", DbId::new())
+            format!(
+                "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+                DbId::new()
+            )
         } else {
-            "file:memdb_shared?mode=memory&cache=shared".to_string()
+            "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
         };
+
+        // Customizer to set busy_timeout
+        #[derive(Debug)]
+        struct SqliteConnectionCustomizer;
+
+        impl diesel::r2d2::CustomizeConnection<crate::db::DbConnection, diesel::r2d2::Error>
+            for SqliteConnectionCustomizer
+        {
+            fn on_acquire(
+                &self,
+                conn: &mut crate::db::DbConnection,
+            ) -> Result<(), diesel::r2d2::Error> {
+                use diesel::connection::SimpleConnection;
+                conn.batch_execute("PRAGMA busy_timeout = 5000;")
+                    .map_err(diesel::r2d2::Error::QueryError)
+            }
+        }
 
         let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
         let pool = Pool::builder()
             .max_size(5)
+            .connection_customizer(Box::new(SqliteConnectionCustomizer))
             .build(manager)
             .expect("Failed to create SQLite test pool");
 
@@ -1951,6 +2255,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         mock_embedding_pipeline_service: mock_embedding_pipeline_service_for_test_app.clone(),
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
+        recall_pipeline: app_state_inner.recall_pipeline.clone(),
         state: Arc::new(app_state_inner.clone()), // Populate state field
     };
 
@@ -1963,23 +2268,24 @@ pub async fn spawn_app_with_rate_limiting_options(
 pub mod db {
     // Add a comprehensive set of imports needed within the db module
     use crate::models::users::UserDbQuery;
-    use diesel::{RunQueryDsl, SelectableHelper};
+    #[cfg(feature = "postgres-backend")]
+    use diesel::RunQueryDsl;
     use diesel_migrations::MigrationHarness;
     // Import AppError
 
     use crate::db::DbPool; // Backend-agnostic pool type
-    use crate::db::{DbId, DbTimestamp}; // Import unified types from crate::db
+    #[cfg(feature = "postgres-backend")]
+    use crate::db::MIGRATIONS;
+    use crate::db::{DbId, DbTimestamp}; // Import unified types
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
     use crate::PgPool;
 
     // SQLite-specific imports
-    #[cfg(feature = "sqlite-backend")]
-    use crate::db::pool_helpers::SqliteInteractExt;
 
     // For logging macros
-    use super::MIGRATIONS; // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
+    // Use super::MIGRATIONS since it's defined in the parent scope (test_helpers.rs)
     use crate::auth::{self};
     #[cfg(feature = "postgres-backend")]
     use deadpool_diesel::postgres::{
@@ -2013,14 +2319,35 @@ pub mod db {
             use diesel::r2d2::{ConnectionManager, Pool};
 
             let database_url = if db_name_suffix.is_some() {
-                format!("file:memdb{}?mode=memory&cache=shared", DbId::new())
+                format!(
+                    "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+                    DbId::new()
+                )
             } else {
-                "file:memdb_shared?mode=memory&cache=shared".to_string()
+                "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
             };
+
+            // Customizer to set busy_timeout
+            #[derive(Debug)]
+            struct SqliteConnectionCustomizer;
+
+            impl diesel::r2d2::CustomizeConnection<crate::db::DbConnection, diesel::r2d2::Error>
+                for SqliteConnectionCustomizer
+            {
+                fn on_acquire(
+                    &self,
+                    conn: &mut crate::db::DbConnection,
+                ) -> Result<(), diesel::r2d2::Error> {
+                    use diesel::connection::SimpleConnection;
+                    conn.batch_execute("PRAGMA busy_timeout = 5000;")
+                        .map_err(diesel::r2d2::Error::QueryError)
+                }
+            }
 
             let manager = ConnectionManager::<crate::db::DbConnection>::new(database_url);
             let pool = Pool::builder()
                 .max_size(5)
+                .connection_customizer(Box::new(SqliteConnectionCustomizer))
                 .build(manager)
                 .expect("Failed to create SQLite test pool");
 
@@ -2074,7 +2401,6 @@ pub mod db {
         let db_name_clone_create = db_name.clone();
         conn_default
             .interact(move |conn| {
-                use diesel::RunQueryDsl;
                 diesel::sql_query(format!(
                     "DROP DATABASE IF EXISTS \"{db_name_clone_drop}\" WITH (FORCE)"
                 ))
@@ -2095,7 +2421,8 @@ pub mod db {
             .expect("Failed to create test DB pool");
 
         // Run migrations on the test database
-        let mut conn = crate::db::get_conn(&pool)
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&pool)
             .await
             .expect("Failed to get test DB connection for migration");
         conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
@@ -2118,9 +2445,6 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
@@ -2148,7 +2472,6 @@ pub mod db {
         let user_id = crate::db::DbId::new();
 
         let new_user_payload = NewUser {
-            #[cfg(feature = "sqlite-backend")]
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
@@ -2161,18 +2484,19 @@ pub mod db {
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
             account_status: AccountStatus::Active,      // Default to Active account status
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_completion_tokens: crate::db::DbBigInt::from(0),
+            total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
 
-        // Clone username for SQLite query-back
-        let username_for_query = new_user_payload.username.clone();
-
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
+            let conn = crate::db::get_conn(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+
             conn.interact(move |conn_actual| {
                 use diesel::{RunQueryDsl, SelectableHelper};
                 diesel::insert_into(crate::schema::users::table)
@@ -2189,6 +2513,7 @@ pub mod db {
         #[cfg(feature = "sqlite-backend")]
         let user_from_db: UserDbQuery = {
             use diesel::prelude::*;
+            let username_for_query = new_user_payload.username.clone();
 
             crate::db::with_conn(&pool, move |conn_actual| {
                 diesel::insert_into(crate::schema::users::table)
@@ -2239,9 +2564,6 @@ pub mod db {
         username: String,
         password_str: String,
     ) -> Result<DbUser, anyhow::Error> {
-        let mut conn = crate::db::get_conn(pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
         let email = format!("{username}@test.com");
 
         let password_str_for_kek = password_str.clone(); // Clone for KEK derivation
@@ -2269,7 +2591,6 @@ pub mod db {
         let user_id = crate::db::DbId::new();
 
         let new_user_payload = NewUser {
-            #[cfg(feature = "sqlite-backend")]
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
@@ -2282,18 +2603,19 @@ pub mod db {
             recovery_dek_nonce: None,
             role: crate::models::users::UserRole::User, // Using User enum variant exactly as in DB
             account_status: AccountStatus::Pending,     // Set to Pending for email verification
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_completion_tokens: crate::db::DbBigInt::from(0),
+            total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
         };
 
-        // Clone username for SQLite query-back
-        let username_for_query = new_user_payload.username.clone();
-
         #[cfg(feature = "postgres-backend")]
         let user_from_db: UserDbQuery = {
+            let conn = crate::db::get_conn(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+
             conn.interact(move |conn_actual| {
                 use diesel::{RunQueryDsl, SelectableHelper};
                 diesel::insert_into(crate::schema::users::table)
@@ -2313,6 +2635,7 @@ pub mod db {
         #[cfg(feature = "sqlite-backend")]
         let user_from_db: UserDbQuery = {
             use diesel::prelude::*;
+            let username_for_query = new_user_payload.username.clone();
 
             crate::db::with_conn(&pool, move |conn_actual| {
                 diesel::insert_into(crate::schema::users::table)
@@ -2369,10 +2692,9 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let mut conn = crate::db::get_conn(&pool).await?;
+        let _conn = crate::db::get_conn(&pool).await?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
-        let name_clone_for_error = name.clone();
 
         let new_character_payload = NewCharacter {
             id: Some(crate::db::DbId::new()),
@@ -2468,10 +2790,14 @@ pub mod db {
             world_nonce: None,
         };
 
-        let _name_clone_for_second_error = name_clone_for_error.clone();
+        let _name_clone_for_second_error = name_clone_for_payload.clone();
         let character = {
             #[cfg(feature = "postgres-backend")]
             {
+                let conn = crate::db::get_conn(pool)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
+
                 conn.interact(move |conn_actual| {
                     use diesel::prelude::*;
                     diesel::insert_into(crate::schema::characters::table)
@@ -2482,7 +2808,7 @@ pub mod db {
                 .map_err(move |interact_err| {
                     anyhow::anyhow!(
                         "DB interact error for create_test_character '{}': {}",
-                        name_clone_for_error,
+                        name_clone_for_payload,
                         interact_err
                     )
                 })??
@@ -2508,7 +2834,7 @@ pub mod db {
                 .map_err(move |interact_err| {
                     anyhow::anyhow!(
                         "DB interact error for create_test_character '{}': {}",
-                        name_clone_for_error,
+                        name_clone_for_payload,
                         interact_err
                     )
                 })?
@@ -2632,6 +2958,11 @@ impl TestDataGuard {
     /// - Database connection cannot be obtained
     /// - Any of the database deletion operations fail
     pub async fn cleanup(self) -> Result<(), anyhow::Error> {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool)
+            .await
+            .context("Failed to get DB connection for cleanup")?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool)
             .await
             .context("Failed to get DB connection for cleanup")?;
@@ -3284,6 +3615,10 @@ pub async fn set_history_settings(
         active_custom_persona_id: None,
         prompt_template_id: None,
         game_master_mode_enabled: None,
+        rag_chronicles_limit: None,
+        rag_lorebooks_limit: None,
+        rag_older_chat_limit: None,
+        rag_cognitive_context_limit: None,
     };
 
     let client = reqwest::Client::new();
@@ -3341,6 +3676,12 @@ impl TestApp {
             self.ai_client.clone(), // Use test AI client as fallback
         ));
 
+        let character_service =
+            Arc::new(crate::services::character_service::CharacterService::new(
+                self.db_pool.clone(),
+                encryption_service.clone(),
+            ));
+
         let services = crate::state::AppStateServices {
             ai_client: self.ai_client.clone(),
             embedding_client: self.mock_embedding_client.clone()
@@ -3362,6 +3703,7 @@ impl TestApp {
                     encryption_service.clone(),
                 ),
             ),
+            character_service,
             token_counter: Arc::new(
                 crate::services::hybrid_token_counter::HybridTokenCounter::new(
                     crate::services::tokenizer_service::TokenizerService::new(
@@ -3380,6 +3722,7 @@ impl TestApp {
             rate_limiter: Arc::new(crate::middleware::llm_security::LlmRateLimiter::new(
                 10, 100,
             )), // Test rate limiter
+            recall_pipeline: self.recall_pipeline.clone(),
             token_service: None, // Not available in this test context
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests

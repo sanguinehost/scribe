@@ -37,7 +37,7 @@ async fn create_test_character_and_session(
         .expect("Failed to get DB conn for char create")
         .interact(move |conn_sync| {
             let new_char_card = scribe_backend::models::character_card::NewCharacter {
-                user_id: user_id_clone,
+                user_id: user_id_clone.into(),
                 name: character_name,
                 spec: "test_spec_v1.0".to_string(),
                 spec_version: "1.0".to_string(),
@@ -46,8 +46,8 @@ async fn create_test_character_and_session(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -67,8 +67,8 @@ async fn create_test_character_and_session(
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
-                user_id: user_id_clone_session,
+                id: Uuid::new_v4().into(),
+                user_id: user_id_clone_session.into(),
                 character_id: character_id_clone_session,
                 title_ciphertext: None,
                 title_nonce: None,
@@ -76,7 +76,7 @@ async fn create_test_character_and_session(
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test-model".to_string(),
+                model_name: Some("test-model".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -87,7 +87,7 @@ async fn create_test_character_and_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: scribe_backend::models::OptionalStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -96,11 +96,12 @@ async fn create_test_character_and_session(
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -134,7 +135,7 @@ async fn test_frontend_history_vs_database_history() {
     .expect("Failed to create test user");
 
     // Create character and session in database
-    let (_character, session) = create_test_character_and_session(&test_app, user.id).await;
+    let (_character, session) = create_test_character_and_session(&test_app, user.id.into()).await;
     let session_id = session.id;
 
     // Create AppState similar to how spawn_app does it
@@ -186,6 +187,12 @@ async fn test_frontend_history_vs_database_history() {
         email_service,
         ai_client_factory,
         rate_limiter,
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: Some(Arc::new(
+            scribe_backend::auth::token_service::TokenService::new("test_secret"),
+        )),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -270,8 +277,7 @@ async fn test_frontend_history_vs_database_history() {
         frontend_call_count
     );
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
-        result_frontend;
+    let (managed_history, ..) = result_frontend;
 
     // Should have 2 messages from frontend history (excluding current message)
     assert_eq!(
@@ -315,7 +321,7 @@ async fn test_orphaned_message_exclusion_scenario() {
     .expect("Failed to create test user");
 
     // Create character and session in database
-    let (_character, session) = create_test_character_and_session(&test_app, user.id).await;
+    let (_character, session) = create_test_character_and_session(&test_app, user.id.into()).await;
     let session_id = session.id;
 
     // Create AppState
@@ -367,6 +373,12 @@ async fn test_orphaned_message_exclusion_scenario() {
         email_service,
         ai_client_factory,
         rate_limiter,
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: Some(Arc::new(
+            scribe_backend::auth::token_service::TokenService::new("test_secret"),
+        )),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -424,8 +436,7 @@ async fn test_orphaned_message_exclusion_scenario() {
     let calls = test_app.mock_embedding_pipeline_service.get_calls();
     println!("RAG calls made in frontend mode: {}", calls.len());
 
-    let (managed_history, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =
-        result;
+    let (managed_history, ..) = result;
 
     // Should have exactly 3 messages from frontend history (excluding current message)
     assert_eq!(

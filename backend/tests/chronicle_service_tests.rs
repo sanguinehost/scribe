@@ -8,7 +8,7 @@ use chrono::Utc;
 use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use scribe_backend::{
     crypto,
-    db::DbId,
+    db::{DbBigInt, DbId},
     models::{
         chronicle::{CreateChronicleRequest, UpdateChronicleRequest},
         chronicle_event::{CreateEventRequest, EventFilter, EventSource},
@@ -130,16 +130,16 @@ mod integration_tests {
             password_hash: hashed_password,
             email,
             kek_salt,
-            encrypted_dek,
+            encrypted_dek: encrypted_dek.into(),
             encrypted_dek_by_recovery: None,
             role: UserRole::User,
             recovery_kek_salt: None,
-            dek_nonce,
+            dek_nonce: dek_nonce.into(),
             recovery_dek_nonce: None,
             account_status: AccountStatus::Active,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: DbBigInt::from(0),
+            total_completion_tokens: DbBigInt::from(0),
+            total_token_cost_cents: DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: Utc::now().into(),
         };
@@ -203,7 +203,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user
         let user = setup_test_user(&test_app).await.unwrap();
@@ -282,7 +283,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user and chronicle
         let user = setup_test_user(&test_app).await.unwrap();
@@ -411,7 +413,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user and chronicle
         let user = setup_test_user(&test_app).await.unwrap();
@@ -464,7 +467,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup two test users
         let user1 = setup_test_user(&test_app).await.unwrap();
@@ -527,7 +531,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user
         let user = setup_test_user(&test_app).await.unwrap();
@@ -537,7 +542,7 @@ mod integration_tests {
 
         // Test: Get nonexistent chronicle
         let result = chronicle_service
-            .get_chronicle(user.id, nonexistent_id)
+            .get_chronicle(user.id, nonexistent_id.into())
             .await;
 
         assert!(result.is_err());
@@ -558,7 +563,7 @@ mod integration_tests {
         };
 
         let result = chronicle_service
-            .create_event(user.id, nonexistent_id, event_request, None)
+            .create_event(user.id, nonexistent_id.into(), event_request, None)
             .await;
 
         assert!(result.is_err());
@@ -573,7 +578,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user and chronicle
         let user = setup_test_user(&test_app).await.unwrap();
@@ -628,7 +634,8 @@ mod integration_tests {
         let test_app = test_helpers::spawn_app(false, false, false).await;
         let mut _guard =
             TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
         // Setup test user and chronicle
         let user = setup_test_user(&test_app).await.unwrap();

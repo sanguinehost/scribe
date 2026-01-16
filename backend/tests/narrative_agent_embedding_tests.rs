@@ -34,13 +34,19 @@ async fn test_narrative_agent_chronicle_events_are_embedded() {
     let user_id = user.id;
 
     // Create a chronicle for testing
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service = ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app
+            .mock_ai_client
+            .clone()
+            .expect("Mock AI client should be present"),
+    );
     let chronicle_request = scribe_backend::models::chronicle::CreateChronicleRequest {
         name: "Embedding Test Chronicle".to_string(),
         description: Some("For testing that narrative agent events are embedded".to_string()),
     };
     let chronicle = chronicle_service
-        .create_chronicle(user_id, chronicle_request)
+        .create_chronicle(user_id.into(), chronicle_request)
         .await
         .unwrap();
 
@@ -102,7 +108,9 @@ async fn test_narrative_agent_chronicle_events_are_embedded() {
         .get("event_id")
         .and_then(|v| v.as_str())
         .expect("Result should contain event_id");
-    let event_id = Uuid::parse_str(event_id_str).expect("Should be valid UUID");
+    let event_id = Uuid::parse_str(event_id_str)
+        .expect("Should be valid UUID")
+        .into();
 
     println!(
         "✅ Created chronicle event {} via narrative agent tool",
@@ -110,9 +118,15 @@ async fn test_narrative_agent_chronicle_events_are_embedded() {
     );
 
     // Verify the event was created in the database
-    let check_chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let check_chronicle_service = ChronicleService::new(
+        test_app.db_pool.clone(),
+        test_app
+            .mock_ai_client
+            .clone()
+            .expect("Mock AI client should be present"),
+    );
     let events = check_chronicle_service
-        .get_chronicle_events(user_id, chronicle.id, Default::default())
+        .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
         .await
         .unwrap();
 

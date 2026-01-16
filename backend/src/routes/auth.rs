@@ -19,7 +19,9 @@ use axum::Router;
 use axum_login::{AuthSession, AuthUser, AuthnBackend};
 #[cfg(feature = "desktop")]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use secrecy::{ExposeSecret, SecretString};
+#[cfg(feature = "desktop")]
+use secrecy::ExposeSecret;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, instrument, warn};

@@ -167,8 +167,8 @@ pub struct Chat {
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub model_provider: Option<String>,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -190,6 +190,7 @@ pub struct Chat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 /// Lightweight DTO for listing chats (avoids Diesel's 32-field tuple limit)
@@ -211,8 +212,8 @@ pub struct ChatListQuery {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub stop_sequences: crate::models::OptionalStringArray,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub total_credits_used: crate::db::DbDecimal,
     pub visibility: Option<String>,
     pub player_chronicle_id: Option<crate::db::DbId>,
@@ -360,8 +361,8 @@ pub struct ChatSessionQuery {
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub prompt_template_id: String,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
@@ -657,7 +658,7 @@ impl std::fmt::Debug for Chat {
 }
 
 // New Chat for insertion
-#[derive(Insertable, Clone)]
+#[derive(Insertable, Clone, Default)]
 #[diesel(table_name = chat_sessions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewChat {
@@ -684,14 +685,15 @@ pub struct NewChat {
     pub top_p: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub stop_sequences: crate::models::OptionalStringArray,
+    pub chat_mode: ChatMode,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     // Token tracking fields with default values
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -708,6 +710,7 @@ pub struct NewChat {
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for NewChat {
@@ -904,8 +907,8 @@ pub struct ChatMessageQuery {
     pub content_nonce: Option<Vec<u8>>,
     pub created_at: DbTimestamp,
     pub user_id: crate::db::DbId,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub model_name: String,
     pub status: String,
 }
@@ -958,8 +961,8 @@ pub struct ChatMessage {
     pub content_nonce: Option<Vec<u8>>,
     pub created_at: DbTimestamp,
     pub user_id: crate::db::DbId,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1373,8 +1376,8 @@ pub struct Message {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1701,8 +1704,8 @@ pub struct ChatMessageForClient {
     pub content: String,
     pub created_at: DbTimestamp,
     pub user_id: crate::db::DbId,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt: Option<String>,
     pub model_name: Option<String>,
     pub status: String,
@@ -1756,8 +1759,8 @@ pub struct NewChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String, // Changed to String to match schema
@@ -1827,8 +1830,8 @@ pub struct DbInsertableChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1944,8 +1947,8 @@ impl DbInsertableChatMessage {
     #[must_use]
     pub const fn with_token_counts(
         mut self,
-        prompt_tokens: Option<i32>,
-        completion_tokens: Option<i32>,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
     ) -> Self {
         self.prompt_tokens = prompt_tokens;
         self.completion_tokens = completion_tokens;
@@ -2186,8 +2189,8 @@ pub struct ChatForClient {
     pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub chat_mode: ChatMode,
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     // Game Master Agent fields
@@ -2567,6 +2570,15 @@ pub struct UpdateChatSettingsRequest {
     pub prompt_template_id: Option<String>,
     // Game Master mode enable/disable
     pub game_master_mode_enabled: Option<bool>,
+    // RAG Limits
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_chronicles_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_lorebooks_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_older_chat_limit: Option<i32>,
+    #[validate(range(min = 0, max = 1000000))]
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for UpdateChatSettingsRequest {
@@ -2767,8 +2779,8 @@ pub struct MessageVariantResponse {
     pub index: i32,
     pub content: String,
     pub created_at: DbTimestamp,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub model_name: Option<String>,
 
     pub game_state: Option<serde_json::Value>,
@@ -2786,8 +2798,8 @@ pub struct MessageResponse {
     pub attachments: crate::DbJson,
     pub created_at: DbTimestamp,
     pub raw_prompt: Option<String>, // Debug field containing the full prompt sent to AI
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub model_name: Option<String>, // Optional for backward compatibility with existing messages
     pub status: String,
     pub error_message: Option<String>,
@@ -3096,6 +3108,11 @@ mod tests {
             narrative_style_override_nonce: None,
             game_master_mode_enabled: false,
             game_state: None,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_cognitive_context_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
         }
     }
 
@@ -3157,6 +3174,7 @@ mod tests {
             model_name: "test-model".to_string(),
             status: "completed".to_string(),
             current_variant_index: 0,
+            game_time: None,
             variant_count: 1,
             error_message: None,
             superseded_at: None,
@@ -3433,6 +3451,10 @@ mod tests {
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: Some("neutral_roleplay".to_string()),
+            rag_chronicles_limit: None,
+            rag_cognitive_context_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
         }
     }
 
@@ -3674,8 +3696,8 @@ pub struct MessageVariant {
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
@@ -3692,8 +3714,8 @@ pub struct NewMessageVariant {
     pub content: Vec<u8>, // Encrypted content
     pub content_nonce: Option<Vec<u8>>,
     pub user_id: crate::db::DbId,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
@@ -3777,8 +3799,8 @@ impl NewMessageVariant {
         content: &str,
         user_id: crate::db::DbId,
         dek: &SecretBox<Vec<u8>>,
-        prompt_tokens: Option<i32>,
-        completion_tokens: Option<i32>,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
         model_name: Option<String>,
         raw_prompt_debug: Option<&str>,
         game_state: Option<serde_json::Value>,
@@ -3825,8 +3847,8 @@ pub struct MessageVariantDto {
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub model_name: Option<String>,
     pub raw_prompt: Option<String>,
     pub game_state: Option<serde_json::Value>,

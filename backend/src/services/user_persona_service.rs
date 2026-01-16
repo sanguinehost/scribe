@@ -1,5 +1,5 @@
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};
@@ -154,29 +154,21 @@ impl UserPersonaService {
         };
 
         let pool = self.db_pool.clone();
-        let mut conn = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        let inserted_persona = conn
-            .interact(move |db_conn| {
-                #[cfg(feature = "postgres-backend")]
-                {
-                    diesel::insert_into(user_personas_dsl::user_personas)
-                        .values(&new_persona_db)
-                        .get_result::<UserPersona>(db_conn)
-                        .map_err(AppError::from)
-                }
+        let inserted_persona = crate::db::with_conn(&pool, move |db_conn| {
+            #[cfg(feature = "postgres-backend")]
+            {
+                diesel::insert_into(user_personas_dsl::user_personas)
+                    .values(&new_persona_db)
+                    .get_result::<UserPersona>(db_conn)
+                    .map_err(AppError::from)
+            }
 
-                #[cfg(feature = "sqlite-backend")]
-                {
-                    Self::insert_user_persona_sync(db_conn, &new_persona_db).map_err(AppError::from)
-                }
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!("DB interact join error: {e}"))
-            })
-            .and_then(|r| r)?; // Flatten Result<Result<T, E1>, E2>
+            #[cfg(feature = "sqlite-backend")]
+            {
+                Self::insert_user_persona_sync(db_conn, &new_persona_db).map_err(AppError::from)
+            }
+        })
+        .await?;
 
         tracing::info!(user_id = %loggable_user_id(current_user.id), persona_id = %inserted_persona.id, "Successfully created user persona");
 
@@ -235,25 +227,15 @@ impl UserPersonaService {
     ) -> Result<Vec<UserPersonaDataForClient>, AppError> {
         let pool = self.db_pool.clone();
         let user_id_for_query = current_user.id;
-        let mut conn = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-
-        let personas_db = conn
-            .interact(move |db_conn| {
-                user_personas_dsl::user_personas
-                    .filter(user_personas_dsl::user_id.eq(user_id_for_query))
-                    .order(user_personas_dsl::updated_at.desc()) // Example ordering
-                    .select(UserPersona::as_select())
-                    .load::<UserPersona>(db_conn)
-                    .map_err(AppError::from)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for list_user_personas: {e}"
-                ))
-            })??;
+        let personas_db = crate::db::with_conn(&pool, move |db_conn| {
+            user_personas_dsl::user_personas
+                .filter(user_personas_dsl::user_id.eq(user_id_for_query))
+                .order(user_personas_dsl::updated_at.desc()) // Example ordering
+                .select(UserPersona::as_select())
+                .load::<UserPersona>(db_conn)
+                .map_err(AppError::from)
+        })
+        .await?;
 
         let mut personas_for_client = Vec::new();
         for persona_db in personas_db {
@@ -284,23 +266,15 @@ impl UserPersonaService {
         update_dto: UpdateUserPersonaDto,
     ) -> Result<UserPersonaDataForClient, AppError> {
         let pool = self.db_pool.clone();
-        let mut conn_fetch = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        let persona_to_update_db = conn_fetch
-            .interact(move |db_conn| {
-                user_personas_dsl::user_personas
-                    .filter(user_personas_dsl::id.eq(persona_id))
-                    .select(UserPersona::as_select())
-                    .first::<UserPersona>(db_conn)
-                    .optional()
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for update_user_persona (fetch): {e}"
-                ))
-            })??;
+        let persona_to_update_db = crate::db::with_conn(&pool, move |db_conn| {
+            user_personas_dsl::user_personas
+                .filter(user_personas_dsl::id.eq(persona_id))
+                .select(UserPersona::as_select())
+                .first::<UserPersona>(db_conn)
+                .optional()
+                .map_err(AppError::from)
+        })
+        .await?;
 
         let Some(mut persona) = persona_to_update_db else {
             return Err(AppError::NotFound(format!(
@@ -416,14 +390,13 @@ impl UserPersonaService {
         persona.updated_at = crate::db::DbTimestamp::now();
 
         // Update persona with conditional RETURNING support
+        let pool = self.db_pool.clone();
         let updated_persona_db = crate::db::with_conn(&pool, move |db_conn| {
             #[cfg(feature = "postgres-backend")]
-            {
-                diesel::update(user_personas_dsl::user_personas.find(persona_id))
-                    .set(&persona)
-                    .get_result::<UserPersona>(db_conn)
-                    .map_err(AppError::from)
-            }
+            return diesel::update(user_personas_dsl::user_personas.find(persona_id))
+                .set(&persona)
+                .get_result::<UserPersona>(db_conn)
+                .map_err(AppError::from);
 
             #[cfg(feature = "sqlite-backend")]
             {
@@ -453,24 +426,15 @@ impl UserPersonaService {
         let pool = self.db_pool.clone();
 
         // First, fetch to verify ownership before deleting
-        let mut conn_fetch = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        let persona_to_delete_opt = conn_fetch
-            .interact(move |db_conn| {
-                // Changed conn to db_conn
-                user_personas_dsl::user_personas
-                    .filter(user_personas_dsl::id.eq(persona_id))
-                    .select(UserPersona::as_select())
-                    .first::<UserPersona>(db_conn) // Changed conn to db_conn
-                    .optional()
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for delete_user_persona (fetch): {e}"
-                ))
-            })??;
+        let persona_to_delete_opt = crate::db::with_conn(&pool, move |db_conn| {
+            user_personas_dsl::user_personas
+                .filter(user_personas_dsl::id.eq(persona_id))
+                .select(UserPersona::as_select())
+                .first::<UserPersona>(db_conn)
+                .optional()
+                .map_err(AppError::from)
+        })
+        .await?;
 
         match persona_to_delete_opt {
             Some(persona) => {
@@ -487,28 +451,15 @@ impl UserPersonaService {
                 }
 
                 // Proceed with deletion
-                // Get a new connection instance from the cloned pool for the delete interaction
-                // pool was cloned at the start of the function.
-                let mut conn_delete = crate::db::get_conn(&pool)
-                    .await
-                    .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-                let num_deleted = conn_delete
-                    .interact(move |db_conn| {
-                        // Changed conn to db_conn
-                        diesel::delete(
-                            user_personas_dsl::user_personas
-                                .filter(user_personas_dsl::id.eq(persona_id)), // Ensure we use persona_id from outer scope
-                        )
-                        .execute(db_conn) // Changed conn to db_conn
-                        .map_err(AppError::from)
-                    })
-                    .await
-                    .map_err(|e| {
-                        AppError::InternalServerErrorGeneric(format!(
-                            "DB interact join error for delete_user_persona (delete): {e}"
-                        ))
-                    })
-                    .and_then(|r| r)?;
+                let num_deleted = crate::db::with_conn(&pool, move |db_conn| {
+                    diesel::delete(
+                        user_personas_dsl::user_personas
+                            .filter(user_personas_dsl::id.eq(persona_id)),
+                    )
+                    .execute(db_conn)
+                    .map_err(AppError::from)
+                })
+                .await?;
 
                 if num_deleted == 0 {
                     // This case should ideally not be reached if the fetch & ownership check passed,
@@ -535,12 +486,13 @@ impl UserPersonaService {
         persona_id_val: Option<crate::db::DbId>,
     ) -> Result<User, AppError> {
         // Return the updated User
-        let mut conn = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
         #[cfg(feature = "postgres-backend")]
         let updated_user_db_query = {
+            let conn = crate::db::get_conn(&pool)
+                .await
+                .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
             conn.interact(move |db_conn| {
                 diesel::update(users_dsl::users.find(user_id_val))
                     .set(users_dsl::default_persona_id.eq(persona_id_val))
@@ -591,25 +543,16 @@ impl UserPersonaService {
         user_id_val: crate::db::DbId,
     ) -> Result<Option<UserPersona>, AppError> {
         debug!(%persona_id_val, %user_id_val, "Attempting to get user persona by ID and user ID");
-        let mut conn = crate::db::get_conn(&pool)
-            .await
-            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
-        let persona_result = conn
-            .interact(move |db_conn| {
-                user_personas_dsl::user_personas
-                    .filter(user_personas_dsl::id.eq(persona_id_val))
-                    .filter(user_personas_dsl::user_id.eq(user_id_val))
-                    .select(UserPersona::as_select())
-                    .first::<UserPersona>(db_conn)
-                    .optional()
-                    .map_err(AppError::from)
-            })
-            .await
-            .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
-                    "DB interact join error for get_user_persona_by_id_and_user_id: {e}"
-                ))
-            })??;
+        let persona_result = crate::db::with_conn(pool, move |db_conn| {
+            user_personas_dsl::user_personas
+                .filter(user_personas_dsl::id.eq(persona_id_val))
+                .filter(user_personas_dsl::user_id.eq(user_id_val))
+                .select(UserPersona::as_select())
+                .first::<UserPersona>(db_conn)
+                .optional()
+                .map_err(AppError::from)
+        })
+        .await?;
 
         debug!(
             ?persona_result,

@@ -23,12 +23,12 @@ async fn test_comprehensive_lorebook_ids_basic_functionality() {
 
     let test_result = conn.interact(|conn| {
         // Create test data using raw SQL to avoid struct compatibility issues
-        let user_id = Uuid::new_v4();
-        let character_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let lorebook1_id = Uuid::new_v4(); // Character-linked
-        let lorebook2_id = Uuid::new_v4(); // Session-linked
-        let lorebook3_id = Uuid::new_v4(); // Unlinked
+        let user_id = Uuid::new_v4().into();
+        let character_id = Uuid::new_v4().into();
+        let session_id = Uuid::new_v4().into();
+        let lorebook1_id = Uuid::new_v4().into(); // Character-linked
+        let lorebook2_id = Uuid::new_v4().into(); // Session-linked
+        let lorebook3_id = Uuid::new_v4().into(); // Unlinked
         // Insert test user
         diesel::sql_query(
             "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at)
@@ -151,9 +151,9 @@ async fn test_no_lorebook_links_returns_none() {
     let test_result = conn
         .interact(|conn| {
             // Test that function returns None when no lorebook links exist
-            let user_id = Uuid::new_v4();
-            let character_id = Uuid::new_v4();
-            let session_id = Uuid::new_v4();
+            let user_id = Uuid::new_v4().into();
+            let character_id = Uuid::new_v4().into();
+            let session_id = Uuid::new_v4().into();
 
             let result = ChatSessionLorebook::get_comprehensive_active_lorebook_ids(
                 conn,
@@ -181,14 +181,14 @@ async fn test_cross_user_lorebook_isolation() {
 
     let test_result = conn.interact(|conn| {
         // Create two separate users
-        let user1_id = Uuid::new_v4();
-        let user2_id = Uuid::new_v4();
-        let character1_id = Uuid::new_v4();
-        let character2_id = Uuid::new_v4();
-        let session1_id = Uuid::new_v4();
-        let session2_id = Uuid::new_v4();
-        let lorebook1_id = Uuid::new_v4(); // User1's lorebook
-        let lorebook2_id = Uuid::new_v4(); // User2's lorebook
+        let user1_id = Uuid::new_v4().into();
+        let user2_id = Uuid::new_v4().into();
+        let character1_id = Uuid::new_v4().into();
+        let character2_id = Uuid::new_v4().into();
+        let session1_id = Uuid::new_v4().into();
+        let session2_id = Uuid::new_v4().into();
+        let lorebook1_id = Uuid::new_v4().into(); // User1's lorebook
+        let lorebook2_id = Uuid::new_v4().into(); // User2's lorebook
         // Insert users
         for (user_id, username) in [(user1_id, "user1"), (user2_id, "user2")] {
             diesel::sql_query(
@@ -307,8 +307,9 @@ async fn test_cross_user_lorebook_isolation() {
         let ownership_result: Result<Vec<OwnershipCheck>, diesel::result::Error> = lorebook_ownership_query.load(conn);
         if let Ok(owners) = ownership_result {
             if let Some(owner) = owners.first() {
-                assert_eq!(owner.user_id, user2_id, "Lorebook should be owned by User2");
-                assert_ne!(owner.user_id, user1_id, "Lorebook should NOT be owned by User1");
+                let user2_db_id: scribe_backend::db::DbId = user2_id.into();
+                assert_eq!(scribe_backend::db::DbId::from(owner.user_id), user2_db_id, "Lorebook should be owned by User2");
+                assert_ne!(scribe_backend::db::DbId::from(owner.user_id), scribe_backend::db::DbId::from(user1_id), "Lorebook should NOT be owned by User1");
             }
         }
         Ok::<(), diesel::result::Error>(())
@@ -324,12 +325,12 @@ async fn test_lorebook_activation_hierarchy() {
 
     let test_result = conn.interact(|conn| {
         // Setup test data
-        let user_id = Uuid::new_v4();
-        let character_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let character_lorebook_id = Uuid::new_v4(); // Linked to character
-        let session_lorebook_id = Uuid::new_v4();   // Linked to session
-        let unlinked_lorebook_id = Uuid::new_v4();  // Not linked to anything
+        let user_id = Uuid::new_v4().into();
+        let character_id = Uuid::new_v4().into();
+        let session_id = Uuid::new_v4().into();
+        let character_lorebook_id = Uuid::new_v4().into(); // Linked to character
+        let session_lorebook_id = Uuid::new_v4().into();   // Linked to session
+        let unlinked_lorebook_id = Uuid::new_v4().into();  // Not linked to anything
         // Insert test user
         diesel::sql_query(
             "INSERT INTO users (id, username, password_hash, email, kek_salt, encrypted_dek, dek_nonce, role, account_status, created_at, updated_at)

@@ -39,6 +39,16 @@ pub mod postgres_backend;
 #[cfg(feature = "sqlite-backend")]
 pub mod sqlite_backend;
 
+#[cfg(feature = "postgres-backend")]
+pub use diesel_migrations::{embed_migrations, EmbeddedMigrations};
+#[cfg(feature = "postgres-backend")]
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
+#[cfg(feature = "sqlite-backend")]
+pub use diesel_migrations::{embed_migrations, EmbeddedMigrations};
+#[cfg(feature = "sqlite-backend")]
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations_sqlite");
+
 // Always available because DbType trait requires both PgType and SqliteType
 pub mod sqlite_types;
 

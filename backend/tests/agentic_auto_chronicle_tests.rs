@@ -81,6 +81,10 @@ async fn create_test_app_state(
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -99,13 +103,13 @@ async fn create_test_app_state(
 fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
     vec![
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::User,
             content: "Hello! I want to start a new adventure where I play as a young wizard named Alex.".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(15),
             completion_tokens: Some(0),
             raw_prompt_ciphertext: None,
@@ -119,13 +123,13 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
         ..Default::default()
         },
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::Assistant,
             content: "Welcome to the mystical realm of Aethermoor! You are Alex, a young wizard who has just arrived at the prestigious Starfall Academy. The ancient towers gleam in the moonlight as you approach the great oak doors.".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(20),
             completion_tokens: Some(35),
             raw_prompt_ciphertext: None,
@@ -139,13 +143,13 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
         ..Default::default()
         },
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::User,
             content: "I knock on the doors and wait to see who answers.".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(12),
             completion_tokens: Some(0),
             raw_prompt_ciphertext: None,
@@ -159,13 +163,13 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
         ..Default::default()
         },
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id,
+            id: Uuid::new_v4().into(),
+            session_id: session_id.into(),
             message_type: MessageRole::Assistant,
             content: "The massive doors creak open to reveal Professor Willowshade, a tall elf with silver hair and kind eyes. 'Ah, you must be Alex! We've been expecting you. Welcome to Starfall Academy, young wizard.'".as_bytes().to_vec(),
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
-            user_id,
+            user_id: user_id.into(),
             prompt_tokens: Some(25),
             completion_tokens: Some(42),
             raw_prompt_ciphertext: None,
@@ -219,8 +223,8 @@ mod agentic_chronicle_tests {
                         chat_sessions::id.eq(chat_session_id),
                         chat_sessions::user_id.eq(user_id),
                         chat_sessions::character_id.eq::<Option<Uuid>>(None),
-                        chat_sessions::created_at.eq(chrono::Utc::now()),
-                        chat_sessions::updated_at.eq(chrono::Utc::now()),
+                        chat_sessions::created_at.eq(scribe_backend::db::DbTimestamp::now()),
+                        chat_sessions::updated_at.eq(scribe_backend::db::DbTimestamp::now()),
                         chat_sessions::history_management_strategy.eq("truncate".to_string()),
                         chat_sessions::history_management_limit.eq(4000),
                         chat_sessions::model_name.eq("gemini-2.5-pro".to_string()),
@@ -271,6 +275,7 @@ mod agentic_chronicle_tests {
         // Create the agentic narrative system using individual services
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -305,20 +310,20 @@ mod agentic_chronicle_tests {
 
         // Link the chronicle to the chat session (simulating the dialog opt-in flow)
         chronicle_service
-            .link_chat_session(user_id, chat_session_id, chronicle.id)
+            .link_chat_session(user_id.into(), chat_session_id.into(), chronicle.id.into())
             .await
             .expect("Failed to link chronicle to chat session");
 
         // Create test messages representing a new adventure starting
-        let messages = create_test_messages(user_id, chat_session_id);
+        let messages = create_test_messages(user_id.into_uuid(), chat_session_id);
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
         // Run the agentic workflow - now WITH chronicle_id (simulating post-dialog flow)
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
-                Some(chronicle.id), // Chronicle exists after user opted in
+                user_id.into(),
+                chat_session_id.into(),
+                Some(chronicle.id.into()), // Chronicle exists after user opted in
                 &messages,
                 &session_dek,
                 None,
@@ -424,7 +429,8 @@ mod agentic_chronicle_tests {
         }
 
         // Pre-create a chronicle
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
         let chronicle_request = scribe_backend::models::chronicle::CreateChronicleRequest {
             name: "Alex's Adventure".to_string(),
             description: Some("The ongoing adventures of Alex the wizard".to_string()),
@@ -470,6 +476,7 @@ mod agentic_chronicle_tests {
         // Create the agentic system using individual services
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -491,13 +498,13 @@ mod agentic_chronicle_tests {
         );
 
         // Create messages and run workflow with existing chronicle
-        let messages = create_test_messages(user_id, chat_session_id);
+        let messages = create_test_messages(user_id.into(), chat_session_id.into());
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(existing_chronicle.id),
                 &messages,
                 &session_dek,
@@ -612,6 +619,7 @@ mod agentic_chronicle_tests {
         // Create agentic system using individual services
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -632,14 +640,14 @@ mod agentic_chronicle_tests {
             None, // Use default config
         );
 
-        let messages = create_test_messages(user_id, chat_session_id);
+        let messages = create_test_messages(user_id.into(), chat_session_id.into());
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
 
         // Run workflow that should fail gracefully
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 None,
                 &messages,
                 &session_dek,
@@ -667,7 +675,8 @@ mod agentic_chronicle_tests {
         );
 
         // Verify no chronicles were created due to the error
-        let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+        let chronicle_service =
+            ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
         let chronicles = chronicle_service
             .get_user_chronicles(user_id)
             .await

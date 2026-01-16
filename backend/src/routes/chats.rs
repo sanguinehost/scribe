@@ -16,15 +16,15 @@ use crate::models::chats::{
     SelectVariantRequest, // Added for variant selection
     UpdateChatSettingsRequest,
     UpdateChatVisibilityRequest, // Now available
-    Vote,                        // Now available
-    VoteRequest,                 // Now available
 };
+#[cfg(feature = "postgres-backend")]
+use crate::models::chats::{Vote, VoteRequest};
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-use crate::schema::{
-    agent_context_analysis, chat_messages, chat_sessions, chronicle_events, message_variants,
-};
+#[cfg(feature = "sqlite-backend")]
+use crate::schema::message_variants;
+use crate::schema::{chat_messages, chat_sessions};
 use axum::{
     extract::{Path, Query, State}, // Added Query
     http::StatusCode,
@@ -42,11 +42,9 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, Select
 use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, warn}; // Added for logging
+use tracing::warn; // Added for logging
 use tracing::{error, info};
 // ExposeSecret already imported above
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 use serde::{Deserialize, Serialize}; // Added Deserialize
 use validator::Validate; // Added for cursor-based pagination
 
@@ -54,7 +52,7 @@ use validator::Validate; // Added for cursor-based pagination
 
 pub fn chat_routes() -> Router<crate::state::AppState> {
     tracing::debug!("chat_routes: entering chat_routes function");
-    let mut router = Router::new()
+    let router = Router::new()
         .route("/", get(get_chats_handler)) // Keep GET / for listing
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
         .route("/fetch/:id", get(get_chat_by_id_handler))
@@ -98,11 +96,9 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
 
     // Postgres-only routes (voting feature not yet implemented for SQLite)
     #[cfg(feature = "postgres-backend")]
-    {
-        router = router
-            .route("/messages/:id/vote", post(vote_message_handler))
-            .route("/:id/votes", get(get_votes_by_chat_id_handler));
-    }
+    let router = router
+        .route("/messages/:id/vote", post(vote_message_handler))
+        .route("/:id/votes", get(get_votes_by_chat_id_handler));
 
     router
 }
@@ -969,7 +965,7 @@ async fn process_messages_for_response(
             is_variant: false, // This is a parent message, not a variant itself
             parent_message_id: None, // TODO: Add parent_message_id to Message struct
             variants: if actual_variant_count > 0 || msg_db.current_variant_index > 0 {
-                tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})", 
+                tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})",
                     msg_db.id, msg_db.variant_count, actual_variant_count, msg_db.current_variant_index);
 
                 match chat::message_variants::get_message_variants(
@@ -1204,7 +1200,7 @@ pub async fn create_message_handler(
 
         match _daily_usage_result {
             Ok(_) => {
-                debug!(
+                tracing::debug!(
                     user_id = %user_id_for_daily_tracking,
                     chat_id = %chat_id,
                     "Successfully incremented daily usage for user message"
@@ -1256,7 +1252,7 @@ pub async fn create_message_handler(
             UsageTrackingService::new((*state.config).clone(), EncryptionService::new());
 
         let user_id_for_payment = user_id;
-        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0);
+        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0) as i32; // Cast to i32 for payment tracking
         let model_name_for_tracking = chat.model_name.clone();
 
         // Get a database connection for the usage tracking
@@ -1290,7 +1286,7 @@ pub async fn create_message_handler(
 
                 match track_result {
                     Ok(Ok(_)) => {
-                        debug!(
+                        tracing::debug!(
                             chat_id = %chat_id,
                             tokens_used = tokens_used,
                             "Successfully tracked token usage for manually created user message"
@@ -2209,7 +2205,7 @@ pub async fn delete_message_handler(
     }
 
     let message_id = message.id;
-    let chat_id = message.session_id;
+    let _chat_id = message.session_id;
 
     // Delete associated votes first (PostgreSQL only - old_votes table)
     #[cfg(feature = "postgres-backend")]
@@ -2217,7 +2213,7 @@ pub async fn delete_message_handler(
         crate::db::with_conn(&pool, move |conn| {
             diesel::delete(
                 crate::schema::old_votes::table
-                    .filter(crate::schema::old_votes::dsl::chat_id.eq(chat_id))
+                    .filter(crate::schema::old_votes::dsl::chat_id.eq(_chat_id))
                     .filter(crate::schema::old_votes::dsl::message_id.eq(message_id)),
             )
             .execute(conn)
@@ -2570,9 +2566,9 @@ async fn get_chat_token_usage_handler(
 
     let token_usage = ChatTokenUsage {
         chat_id: id,
-        total_prompt_tokens: chat.total_prompt_tokens,
-        total_completion_tokens: chat.total_completion_tokens,
-        total_tokens,
+        total_prompt_tokens: chat.total_prompt_tokens as i32, // Cast to i32 for API compatibility
+        total_completion_tokens: chat.total_completion_tokens as i32, // Cast to i32 for API compatibility
+        total_tokens: total_tokens as i32, // Cast to i32 for API compatibility
         estimated_cost_cents: chat.estimated_cost_cents,
         estimated_cost_dollars,
         tokens_counted_at: chat.tokens_counted_at,

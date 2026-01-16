@@ -11,6 +11,7 @@ use chrono::Utc;
 use diesel::{prelude::*, ExpressionMethods, RunQueryDsl};
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    db::DbBigInt,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
@@ -27,7 +28,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Helper to create a test user in the database
-async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
+async fn create_test_user(
+    test_app: &TestApp,
+) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
     let conn = test_app.db_pool.get().await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
@@ -49,16 +52,16 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -80,8 +83,8 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
 /// Helper to create a chat session in the database (required for foreign key constraint)
 async fn create_test_chat_session(
     db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
 ) -> anyhow::Result<()> {
     let conn = db_pool
         .get()
@@ -110,8 +113,8 @@ async fn create_test_chat_session(
 
 // Helper to create a chat message with proper encryption
 fn create_chat_message(
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
     role: MessageRole,
     content: &str,
     model_name: &str,
@@ -122,25 +125,21 @@ fn create_chat_message(
         scribe_backend::crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
     Ok(ChatMessage {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         session_id,
         message_type: role,
         content: encrypted_content,
         content_nonce: Some(nonce),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
+        prompt_tokens: Some(content.len() as i64 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
             Some(20)
         } else {
             Some(0)
         },
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
         model_name: model_name.to_string(),
         status: "completed".to_string(),
-        error_message: None,
-        superseded_at: None,
         variant_count: 1,
         current_variant_index: 0,
         ..Default::default()
@@ -207,6 +206,10 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -229,6 +232,7 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
             test_app.ai_client.clone(),
             Arc::new(scribe_backend::services::ChronicleService::new(
                 test_app.db_pool.clone(),
+                test_app.ai_client.clone(),
             )),
             lorebook_service,
             app_state_arc.clone(),
@@ -256,20 +260,21 @@ mod realtime_extraction_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session (required for foreign key constraint)
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id.into(), chat_session_id.into())
             .await
             .unwrap();
 
         // Create a chronicle for the ongoing adventure
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let create_chronicle_request = CreateChronicleRequest {
             name: "The Dragon's Quest".to_string(),
             description: Some("Epic adventure with dragons and treasures".to_string()),
         };
         let chronicle = chronicle_service
-            .create_chronicle(user_id, create_chronicle_request)
+            .create_chronicle(user_id.into(), create_chronicle_request)
             .await
             .unwrap();
 
@@ -328,21 +333,21 @@ mod realtime_extraction_tests {
 
         // Simulate a progressive chat session with multiple message exchanges
         let messages = vec![
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "I carefully examine the ancient chest I found in the dungeon.", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "The chest is ornate, covered in mystical runes that glow faintly blue. As you touch it, you hear a soft click - it's unlocked!", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "I open the chest to see what's inside.", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "Inside, you discover a magnificent golden amulet and a pouch of ancient coins. But suddenly, you hear footsteps echoing through the dungeon!", "gemini-2.5-flash", &session_dek).unwrap(),
         ];
 
         // Run the agentic workflow - should detect significant events in real-time
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(chronicle.id),
                 &messages,
                 &session_dek,
@@ -378,7 +383,7 @@ mod realtime_extraction_tests {
 
         // Verify events were recorded in the chronicle
         let events = chronicle_service
-            .get_chronicle_events(user_id, chronicle.id, Default::default())
+            .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
             .await
             .unwrap();
         assert!(
@@ -408,20 +413,21 @@ mod realtime_extraction_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session (required for foreign key constraint)
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id.into(), chat_session_id.into())
             .await
             .unwrap();
 
         // Create a chronicle for tracking
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let create_chronicle_request = CreateChronicleRequest {
             name: "Adventure Log".to_string(),
             description: Some("General adventure chronicle".to_string()),
         };
         let chronicle = chronicle_service
-            .create_chronicle(user_id, create_chronicle_request)
+            .create_chronicle(user_id.into(), create_chronicle_request)
             .await
             .unwrap();
 
@@ -464,8 +470,8 @@ mod realtime_extraction_tests {
         // Simulate mundane chat progression (which now gets chronicled like everything else)
         let mundane_messages = vec![
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::User,
                 "I walk down the corridor.",
                 "gemini-2.5-pro",
@@ -473,8 +479,8 @@ mod realtime_extraction_tests {
             )
             .unwrap(),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::Assistant,
                 "You walk down the stone corridor. The walls are lined with torches.",
                 "gemini-2.5-pro",
@@ -482,8 +488,8 @@ mod realtime_extraction_tests {
             )
             .unwrap(),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::User,
                 "What do I see ahead?",
                 "gemini-2.5-pro",
@@ -491,8 +497,8 @@ mod realtime_extraction_tests {
             )
             .unwrap(),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::Assistant,
                 "The corridor continues straight ahead. You can see more torches lighting the way.",
                 "gemini-2.5-pro",
@@ -503,7 +509,7 @@ mod realtime_extraction_tests {
 
         // Get initial event count
         let initial_events = chronicle_service
-            .get_chronicle_events(user_id, chronicle.id, Default::default())
+            .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
             .await
             .unwrap();
         let initial_count = initial_events.len();
@@ -511,8 +517,8 @@ mod realtime_extraction_tests {
         // Run the agentic workflow on mundane content
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(chronicle.id),
                 &mundane_messages,
                 &session_dek,
@@ -538,7 +544,7 @@ mod realtime_extraction_tests {
 
         // Verify events were recorded (since all messages get chronicled now)
         let final_events = chronicle_service
-            .get_chronicle_events(user_id, chronicle.id, Default::default())
+            .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
             .await
             .unwrap();
         assert!(
@@ -559,20 +565,21 @@ mod realtime_extraction_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session (required for foreign key constraint)
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id.into(), chat_session_id.into())
             .await
             .unwrap();
 
         // Create a chronicle for the combat scenario
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let create_chronicle_request = CreateChronicleRequest {
             name: "Combat Encounter".to_string(),
             description: Some("Fast-paced combat scenario".to_string()),
         };
         let chronicle = chronicle_service
-            .create_chronicle(user_id, create_chronicle_request)
+            .create_chronicle(user_id.into(), create_chronicle_request)
             .await
             .unwrap();
 
@@ -633,25 +640,25 @@ mod realtime_extraction_tests {
 
         // Simulate rapid-fire combat sequence
         let rapid_messages = vec![
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "I draw my sword and attack the dragon!", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "Your blade strikes true! The dragon roars in fury and breathes fire at you!", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "I dodge and cast a lightning spell!", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "Lightning crackles through the air! The dragon staggers, wounded but still dangerous!", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "I press the attack with a final strike!", "gemini-2.5-flash", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "With a mighty blow, you defeat the dragon! It crashes to the ground, defeated!", "gemini-2.5-flash", &session_dek).unwrap(),
         ];
 
         // Run the agentic workflow on rapid sequence
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(chronicle.id),
                 &rapid_messages,
                 &session_dek,
@@ -683,7 +690,7 @@ mod realtime_extraction_tests {
 
         // Verify events were recorded
         let events = chronicle_service
-            .get_chronicle_events(user_id, chronicle.id, Default::default())
+            .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
             .await
             .unwrap();
         assert!(!events.is_empty(), "Should have recorded combat events");
@@ -705,20 +712,21 @@ mod realtime_extraction_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session (required for foreign key constraint)
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id.into(), chat_session_id.into())
             .await
             .unwrap();
 
         // Create a chronicle for the story
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let create_chronicle_request = CreateChronicleRequest {
             name: "The Mysterious Quest".to_string(),
             description: Some("A quest with developing plot elements".to_string()),
         };
         let chronicle = chronicle_service
-            .create_chronicle(user_id, create_chronicle_request)
+            .create_chronicle(user_id.into(), create_chronicle_request)
             .await
             .unwrap();
 
@@ -779,25 +787,25 @@ mod realtime_extraction_tests {
 
         // Simulate a conversation that builds up to a revelation
         let context_building_messages = vec![
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "I've been having strange dreams about a castle I've never seen before.", "gemini-2.5-pro", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "The wise sage looks at you with knowing eyes. 'Tell me more about these dreams, child.'", "gemini-2.5-pro", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "In the dreams, I see myself as a child in royal robes, but I was raised as a peasant.", "gemini-2.5-pro", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "The sage nods slowly. 'The time has come for you to learn the truth about your birth.'", "gemini-2.5-pro", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::User,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::User,
                 "What truth? Who am I really?", "gemini-2.5-pro", &session_dek).unwrap(),
-            create_chat_message(user_id, chat_session_id, MessageRole::Assistant,
+            create_chat_message(user_id.into(), chat_session_id.into(), MessageRole::Assistant,
                 "'You are the lost prince of Eldoria, hidden away to protect you from those who usurped the throne!'", "gemini-2.5-pro", &session_dek).unwrap(),
         ];
 
         // Run the agentic workflow on the revelation sequence
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(chronicle.id),
                 &context_building_messages,
                 &session_dek,
@@ -832,7 +840,7 @@ mod realtime_extraction_tests {
 
         // Verify the revelation event was recorded
         let events = chronicle_service
-            .get_chronicle_events(user_id, chronicle.id, Default::default())
+            .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
             .await
             .unwrap();
         assert!(
@@ -857,20 +865,21 @@ mod realtime_extraction_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session (required for foreign key constraint)
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id.into(), chat_session_id.into())
             .await
             .unwrap();
 
         // Create a chronicle
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            test_app.ai_client.clone(),
         ));
         let create_chronicle_request = CreateChronicleRequest {
             name: "Performance Test Chronicle".to_string(),
             description: Some("Testing extraction with long content".to_string()),
         };
         let chronicle = chronicle_service
-            .create_chronicle(user_id, create_chronicle_request)
+            .create_chronicle(user_id.into(), create_chronicle_request)
             .await
             .unwrap();
 
@@ -934,8 +943,8 @@ mod realtime_extraction_tests {
 
         let long_messages = vec![
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::User,
                 "I survey the battlefield and prepare for the final confrontation.",
                 "gemini-2.5-pro",
@@ -943,8 +952,8 @@ mod realtime_extraction_tests {
             )
             .unwrap(),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::Assistant,
                 &long_content,
                 "gemini-2.5-pro",
@@ -958,8 +967,8 @@ mod realtime_extraction_tests {
 
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 Some(chronicle.id),
                 &long_messages,
                 &session_dek,
@@ -995,7 +1004,7 @@ mod realtime_extraction_tests {
 
         // Verify events were recorded
         let events = chronicle_service
-            .get_chronicle_events(user_id, chronicle.id, Default::default())
+            .get_chronicle_events(user_id.into(), chronicle.id, Default::default())
             .await
             .unwrap();
         assert!(

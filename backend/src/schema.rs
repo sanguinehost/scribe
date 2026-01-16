@@ -68,6 +68,11 @@ pub mod sql_types_unified {
     #[cfg(feature = "postgres-backend")]
     pub use diesel::sql_types::Bytea as DbBinaryType;
 
+    #[cfg(feature = "sqlite-backend")]
+    pub use diesel::sql_types::BigInt as DbBigIntType;
+    #[cfg(feature = "postgres-backend")]
+    pub use diesel::sql_types::BigInt as DbBigIntType;
+
     #[cfg(feature = "postgres-backend")]
     pub use diesel::sql_types::Text as DbTextType;
     #[cfg(feature = "sqlite-backend")]
@@ -141,6 +146,27 @@ diesel::table! {
         character_id -> DbIdType,
         lorebook_id -> DbIdType,
         user_id -> DbIdType,
+        created_at -> DbTimestampType,
+        updated_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
+    character_opinions (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        perspective_hash -> DbTextType,
+        perspective_encrypted -> DbBlobType,
+        perspective_nonce -> DbBlobType,
+        opinion_encrypted -> DbBlobType,
+        opinion_nonce -> DbBlobType,
+        confidence -> Float,
+        significance -> Float,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
     }
@@ -294,8 +320,8 @@ diesel::table! {
         role -> Nullable<DbTextType>,
         parts -> Nullable<DbJsonType>,
         attachments -> Nullable<DbJsonType>,
-        prompt_tokens -> Nullable<Integer>,
-        completion_tokens -> Nullable<Integer>,
+        prompt_tokens -> Nullable<BigInt>,
+        completion_tokens -> Nullable<BigInt>,
         raw_prompt_ciphertext -> Nullable<DbBinaryType>,
         raw_prompt_nonce -> Nullable<DbBinaryType>,
         model_name -> DbTextType,
@@ -367,8 +393,8 @@ diesel::table! {
         player_chronicle_id -> Nullable<DbIdType>,
         agent_mode -> Nullable<DbTextType>,
         model_provider -> Nullable<DbTextType>,
-        total_prompt_tokens -> Integer,
-        total_completion_tokens -> Integer,
+        total_prompt_tokens -> BigInt,
+        total_completion_tokens -> BigInt,
         estimated_cost_cents -> Integer,
         tokens_counted_at -> DbTimestampType,
         prompt_template_id -> DbTextType,
@@ -385,6 +411,7 @@ diesel::table! {
         rag_chronicles_limit -> Nullable<Integer>,
         rag_lorebooks_limit -> Nullable<Integer>,
         rag_older_chat_limit -> Nullable<Integer>,
+        rag_cognitive_context_limit -> Nullable<Integer>,
     }
 }
 
@@ -419,8 +446,50 @@ diesel::table! {
     use diesel_derive_enum::DbEnum;
     use super::sql_types_unified::*;
 
+    cognitive_core_memory (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        memory_state_encrypted -> DbBlobType,
+        memory_state_nonce -> DbBlobType,
+        version -> Integer,
+        updated_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
+    cognitive_facts (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        who_encrypted -> DbBlobType,
+        who_nonce -> DbBlobType,
+        what_encrypted -> DbBlobType,
+        what_nonce -> DbBlobType,
+        where_encrypted -> DbBlobType,
+        where_nonce -> DbBlobType,
+        when_encrypted -> DbBlobType,
+        when_nonce -> DbBlobType,
+        why_encrypted -> DbBlobType,
+        why_nonce -> DbBlobType,
+        fact_type -> DbTextType,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
     credit_packages (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         package_id -> Text,
         name -> Text,
         credits -> Integer,
@@ -440,10 +509,10 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     credit_transactions (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         user_id -> DbIdType,
-        amount -> DbNumericType,
-        balance_after -> DbNumericType,
+        amount -> Integer,
+        balance_after -> Integer,
         transaction_type -> Text,
         description_encrypted -> Binary,
         description_nonce -> Binary,
@@ -461,11 +530,11 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     daily_usage_tracking (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         user_id -> DbIdType,
         date -> Date,
         message_count -> Integer,
-        token_count -> Integer,
+        token_count -> BigInt,
         model_breakdown -> Nullable<DbJsonType>,
         soft_limit_triggered_at -> Nullable<Integer>,
         created_at -> Nullable<DbTimestampType>,
@@ -484,6 +553,27 @@ diesel::table! {
         token -> Text,
         expires_at -> DbTimestampType,
         created_at -> DbTimestampType,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+    use super::sql_types_unified::*;
+
+    entity_observations (id) {
+        id -> DbIdType,
+        user_id -> DbIdType,
+        chronicle_id -> DbIdType,
+        entity_name_hash -> DbTextType,
+        entity_name_encrypted -> DbBlobType,
+        entity_name_nonce -> DbBlobType,
+        observation_encrypted -> DbBlobType,
+        observation_nonce -> DbBlobType,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> DbTimestampType,
+        updated_at -> DbTimestampType,
     }
 }
 
@@ -548,8 +638,8 @@ diesel::table! {
         user_id -> DbIdType,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
-        prompt_tokens -> Nullable<Integer>,
-        completion_tokens -> Nullable<Integer>,
+        prompt_tokens -> Nullable<BigInt>,
+        completion_tokens -> Nullable<BigInt>,
         model_name -> Nullable<Text>,
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
@@ -817,8 +907,8 @@ diesel::table! {
         user_id -> DbIdType,
         period_start -> DbTimestampType,
         period_end -> DbTimestampType,
-        prompt_tokens_used -> Integer,
-        completion_tokens_used -> Integer,
+        prompt_tokens_used -> BigInt,
+        completion_tokens_used -> BigInt,
         estimated_cost_cents -> Integer,
         model_breakdown -> Nullable<DbJsonType>,
         created_at -> DbTimestampType,
@@ -852,10 +942,10 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     user_credits (user_id) {
-        user_id -> Nullable<DbIdType>,
-        balance -> DbNumericType,
-        lifetime_earned -> DbNumericType,
-        lifetime_spent -> DbNumericType,
+        user_id -> DbIdType,
+        balance -> Integer,
+        lifetime_earned -> Integer,
+        lifetime_spent -> Integer,
         last_monthly_grant -> Nullable<DbTimestampType>,
         created_at -> Nullable<DbTimestampType>,
         updated_at -> Nullable<DbTimestampType>,
@@ -953,9 +1043,9 @@ diesel::table! {
         role -> DbUserRole,
         account_status -> DbAccountStatus,
         default_persona_id -> Nullable<DbIdType>,
-        total_prompt_tokens -> Integer,
-        total_completion_tokens -> Integer,
-        total_token_cost_cents -> Integer,
+        total_prompt_tokens -> BigInt,
+        total_completion_tokens -> BigInt,
+        total_token_cost_cents -> BigInt,
         tokens_last_reset_at -> Nullable<DbTimestampType>,
         token_usage_updated_at -> DbTimestampType,
         cached_credit_balance -> Nullable<Integer>,
@@ -970,7 +1060,7 @@ diesel::table! {
     use super::sql_types_unified::*;
 
     webhook_events (id) {
-        id -> Nullable<DbIdType>,
+        id -> DbIdType,
         event_id -> Text,
         event_type -> Text,
         paddle_signature -> Text,
@@ -987,6 +1077,8 @@ diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(character_lorebooks -> users (user_id));
+diesel::joinable!(character_opinions -> player_chronicles (chronicle_id));
+diesel::joinable!(character_opinions -> users (user_id));
 diesel::joinable!(characters -> users (user_id));
 diesel::joinable!(chat_character_lorebook_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_character_lorebook_overrides -> lorebooks (lorebook_id));
@@ -1000,9 +1092,15 @@ diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(cognitive_core_memory -> player_chronicles (chronicle_id));
+diesel::joinable!(cognitive_core_memory -> users (user_id));
+diesel::joinable!(cognitive_facts -> player_chronicles (chronicle_id));
+diesel::joinable!(cognitive_facts -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
+diesel::joinable!(entity_observations -> player_chronicles (chronicle_id));
+diesel::joinable!(entity_observations -> users (user_id));
 diesel::joinable!(message_variants -> chat_messages (parent_message_id));
 diesel::joinable!(message_variants -> users (user_id));
 diesel::joinable!(old_documents -> users (user_id));
@@ -1030,6 +1128,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     agent_context_analysis,
     character_assets,
     character_lorebooks,
+    character_opinions,
     characters,
     chat_character_lorebook_overrides,
     chat_character_overrides,
@@ -1037,10 +1136,13 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    cognitive_core_memory,
+    cognitive_facts,
     credit_packages,
     credit_transactions,
     daily_usage_tracking,
     email_verification_tokens,
+    entity_observations,
     lorebook_entries,
     lorebooks,
     message_variants,

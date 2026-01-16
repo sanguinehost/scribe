@@ -10,7 +10,9 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
+#[cfg(feature = "postgres-backend")]
+use diesel::SelectableHelper;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument, warn};
 
@@ -174,7 +176,7 @@ async fn lock_user_handler(
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::account_status.eq(AccountStatus::Locked))
-                .returning(UserDbQuery::as_select())
+                .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -187,7 +189,6 @@ async fn lock_user_handler(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
@@ -238,7 +239,7 @@ async fn unlock_user_handler(
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::account_status.eq(AccountStatus::Active))
-                .returning(UserDbQuery::as_select())
+                .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -251,7 +252,6 @@ async fn unlock_user_handler(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
@@ -313,7 +313,7 @@ async fn update_user_role_handler(
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))
                 .set(users::role.eq(payload.role))
-                .returning(UserDbQuery::as_select())
+                .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
                     if e == diesel::result::Error::NotFound {
@@ -326,7 +326,6 @@ async fn update_user_role_handler(
 
         #[cfg(feature = "sqlite-backend")]
         {
-            use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
                 .filter(users::id.eq(user_id))

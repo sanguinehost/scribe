@@ -16,14 +16,14 @@ use uuid::Uuid;
 #[test]
 fn test_message_response_has_variant_fields() {
     let message_response = MessageResponse {
-        id: Uuid::new_v4(),
-        session_id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
+        session_id: Uuid::new_v4().into(),
         message_type: MessageRole::Assistant,
         role: "assistant".to_string(),
         content: "Test content".to_string(),
-        parts: serde_json::json!([]),
-        attachments: serde_json::json!([]),
-        created_at: chrono::Utc::now(),
+        parts: serde_json::json!([]).into(),
+        attachments: serde_json::json!([]).into(),
+        created_at: chrono::Utc::now().into(),
         raw_prompt: None,
         prompt_tokens: Some(100),
         completion_tokens: Some(200),
@@ -35,6 +35,7 @@ fn test_message_response_has_variant_fields() {
         is_variant: false,
         parent_message_id: None,
         variants: None,
+        game_state: None,
     };
 
     // Verify variant metadata fields exist and have expected values
@@ -51,10 +52,11 @@ fn test_message_variant_response_structure() {
     let variant_response = MessageVariantResponse {
         index: 1,
         content: "Variant content".to_string(),
-        created_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
         prompt_tokens: Some(100),
         completion_tokens: Some(150),
         model_name: Some("gemini-1.5-pro".to_string()),
+        game_state: None,
     };
 
     assert_eq!(variant_response.index, 1);
@@ -91,10 +93,11 @@ fn test_variant_json_serialization() {
     let variant_response = MessageVariantResponse {
         index: 0,
         content: "Original content".to_string(),
-        created_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
         prompt_tokens: Some(50),
         completion_tokens: Some(75),
         model_name: Some("gemini-1.5-pro".to_string()),
+        game_state: None,
     };
 
     // Test serialization
@@ -121,20 +124,22 @@ fn test_variant_index_logic() {
     let original_variant = MessageVariantResponse {
         index: 0,
         content: "Original".to_string(),
-        created_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
         prompt_tokens: None,
         completion_tokens: None,
         model_name: None,
+        game_state: None,
     };
 
     // First regeneration should be index 1
     let first_variant = MessageVariantResponse {
         index: 1,
         content: "First variant".to_string(),
-        created_at: chrono::Utc::now(),
+        created_at: chrono::Utc::now().into(),
         prompt_tokens: None,
         completion_tokens: None,
         model_name: None,
+        game_state: None,
     };
 
     assert_eq!(original_variant.index, 0);

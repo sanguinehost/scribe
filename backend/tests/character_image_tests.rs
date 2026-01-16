@@ -61,16 +61,16 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -192,7 +192,7 @@ async fn test_get_character_image_not_implemented() -> Result<(), anyhow::Error>
     let user_id_for_char = user.id;
     let dek_clone = dek.clone();
     let character = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, user_id_for_char, "Character For Image", &dek_clone)
+        insert_test_character(conn, *user_id_for_char, "Character For Image", &dek_clone)
     })
     .await?;
     guard.add_character(character.id);

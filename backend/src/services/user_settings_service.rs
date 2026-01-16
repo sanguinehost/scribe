@@ -27,8 +27,8 @@ impl UserSettingsService {
 
         crate::db::with_conn(pool, move |conn| {
             // Check if user settings exist using a simple query
-            let settings_exist = user_settings::table
-                .filter(user_settings::user_id.eq(user_id))
+            let target = user_settings::table.filter(user_settings::user_id.eq(user_id));
+            let settings_exist = target
                 .select(user_settings::id)
                 .first::<crate::db::DbId>(conn)
                 .optional()
@@ -37,8 +37,8 @@ impl UserSettingsService {
             match settings_exist {
                 Some(_) => {
                     // Settings exist, retrieve them using selective fields
-                    let settings = user_settings::table
-                        .filter(user_settings::user_id.eq(user_id))
+                    let target = user_settings::table.filter(user_settings::user_id.eq(user_id));
+                    let settings = target
                         .select((
                             user_settings::default_model_name,
                             user_settings::default_temperature,
@@ -648,10 +648,10 @@ impl UserSettingsService {
         user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         crate::db::with_conn(pool, move |conn| {
-            let deleted_count =
-                diesel::delete(user_settings::table.filter(user_settings::user_id.eq(user_id)))
-                    .execute(conn)
-                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+            let target = user_settings::table.filter(user_settings::user_id.eq(user_id));
+            let deleted_count = diesel::delete(target)
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             if deleted_count > 0 {
                 info!(%user_id, deleted_count, "Deleted user settings");

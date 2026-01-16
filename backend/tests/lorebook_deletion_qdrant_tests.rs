@@ -3,7 +3,6 @@ use scribe_backend::models::lorebook_dtos::{
     CreateLorebookEntryPayload, CreateLorebookPayload, LorebookEntryResponse, LorebookResponse,
 };
 use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
-use uuid::Uuid;
 
 #[tokio::test]
 async fn test_delete_lorebook_entry_cleans_up_qdrant() {
@@ -84,6 +83,7 @@ async fn test_delete_lorebook_entry_cleans_up_qdrant() {
     // 5. Verify Qdrant cleanup was called
     let mock_qdrant = test_app
         .mock_qdrant_service
+        .clone()
         .expect("Mock Qdrant service not found");
     let delete_calls = mock_qdrant.get_delete_points_by_filter_calls();
 

@@ -46,10 +46,10 @@ mod get_session_data_for_generation_tests {
 
     struct TestSetup {
         app_state: Arc<AppState>,
-        user_id: Uuid,
-        session_id: Uuid,
+        user_id: scribe_backend::db::DbId,
+        session_id: scribe_backend::db::DbId,
         #[allow(dead_code)]
-        character_id: Uuid,
+        character_id: scribe_backend::db::DbId,
         #[allow(dead_code)]
         mock_embeddings: Arc<MockEmbeddingPipelineService>,
         user_dek: Option<Arc<SecretBox<Vec<u8>>>>,
@@ -101,10 +101,14 @@ mod get_session_data_for_generation_tests {
     }
 
     /// Helper to create a complete default test character with all fields populated
-    fn create_default_test_character(character_id: Uuid, user_id: Uuid) -> Character {
+    fn create_default_test_character(
+        character_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
+    ) -> Character {
+        use scribe_backend::db::{DbDecimal, DbId, DbJson, DbStringArray, DbTimestamp};
         Character {
             id: character_id,
-            user_id,
+            user_id: user_id,
             name: "Test Character".to_string(),
             spec: "chara_card_v2".to_string(),
             spec_version: "2.0".to_string(),
@@ -116,18 +120,24 @@ mod get_session_data_for_generation_tests {
             creator_notes: Some(b"Char creator notes".to_vec()),
             system_prompt: Some(b"Char system prompt".to_vec()),
             post_history_instructions: Some(b"Char post history instructions".to_vec()),
-            tags: Some(vec![Some("tag1".to_string()), Some("tag2".to_string())]),
+            tags: DbStringArray(Some(vec![
+                Some("tag1".to_string()),
+                Some("tag2".to_string()),
+            ])),
             creator: Some("Test Creator".to_string()),
             character_version: Some("1.0".to_string()),
-            alternate_greetings: Some(vec![Some("Hi".to_string()), Some("Hello".to_string())]),
+            alternate_greetings: DbStringArray(Some(vec![
+                Some("Hi".to_string()),
+                Some("Hello".to_string()),
+            ])),
             nickname: Some("Test Nickname".to_string()),
-            creator_notes_multilingual: Some(json!({"en": "English notes"})),
-            source: Some(vec![Some("TestSource".to_string())]),
-            group_only_greetings: Some(vec![Some("Group Hi".to_string())]),
-            creation_date: Some(chrono::Utc::now()),
-            modification_date: Some(chrono::Utc::now()),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            creator_notes_multilingual: Some(DbJson::from(json!({"en": "English notes"}))),
+            source: DbStringArray(Some(vec![Some("TestSource".to_string())])),
+            group_only_greetings: DbStringArray(Some(vec![Some("Group Hi".to_string())])),
+            creation_date: Some(chrono::Utc::now().into()),
+            modification_date: Some(chrono::Utc::now().into()),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
             persona: Some(b"Char persona field".to_vec()),
             world_scenario: Some(b"Char world scenario".to_vec()),
             avatar: Some("avatar.png".to_string()),
@@ -135,7 +145,7 @@ mod get_session_data_for_generation_tests {
             greeting: Some(b"Char greeting".to_vec()),
             definition: Some(b"Char definition".to_vec()),
             default_voice: Some("voice_id".to_string()),
-            extensions: Some(json!({"custom_field": "value"})),
+            extensions: Some(DbJson::from(json!({"custom_field": "value"}))),
             data_id: Some(123),
             category: Some("Test Category".to_string()),
             definition_visibility: Some("private".to_string()),
@@ -143,26 +153,26 @@ mod get_session_data_for_generation_tests {
             example_dialogue: Some(b"Char example dialogue".to_vec()),
             favorite: Some(false),
             first_message_visibility: Some("private".to_string()),
-            height: Some(BigDecimal::from_str("180").unwrap()),
-            last_activity: Some(chrono::Utc::now()),
+            height: Some(DbDecimal(BigDecimal::from_str("180").unwrap())),
+            last_activity: Some(chrono::Utc::now().into()),
             migrated_from: Some("old_system".to_string()),
             model_prompt: Some(b"Char model prompt".to_vec()),
             model_prompt_visibility: Some("private".to_string()),
-            model_temperature: Some(BigDecimal::from_str("0.7").unwrap()),
+            model_temperature: Some(DbDecimal(BigDecimal::from_str("0.7").unwrap())),
             num_interactions: Some(10),
-            permanence: Some(BigDecimal::from_str("0.5").unwrap()),
+            permanence: Some(DbDecimal(BigDecimal::from_str("0.5").unwrap())),
             persona_visibility: Some("private".to_string()),
             revision: Some(1),
             sharing_visibility: Some("private".to_string()),
             status: Some("active".to_string()),
             system_prompt_visibility: Some("private".to_string()),
-            system_tags: Some(vec![Some("system_tag1".to_string())]),
+            system_tags: DbStringArray(Some(vec![Some("system_tag1".to_string())])),
             token_budget: Some(2048),
-            usage_hints: Some(json!({"hint": "value"})),
+            usage_hints: Some(DbJson::from(json!({"hint": "value"}))),
             user_persona: Some(b"Char user persona".to_vec()),
             user_persona_visibility: Some("private".to_string()),
             visibility: Some("private".to_string()),
-            weight: Some(BigDecimal::from_str("70.5").unwrap()),
+            weight: Some(DbDecimal(BigDecimal::from_str("70.5").unwrap())),
             world_scenario_visibility: Some("private".to_string()),
             description_nonce: Some(vec![1; 12]),
             personality_nonce: Some(vec![2; 12]),
@@ -186,7 +196,7 @@ mod get_session_data_for_generation_tests {
             depth_prompt: Some(b"Depth prompt".to_vec()),
             depth_prompt_depth: Some(5),
             depth_prompt_role: Some("assistant".to_string()),
-            talkativeness: Some(BigDecimal::from_str("0.8").unwrap()),
+            talkativeness: Some(DbDecimal(BigDecimal::from_str("0.8").unwrap())),
             depth_prompt_ciphertext: Some(b"Encrypted depth prompt".to_vec()),
             depth_prompt_nonce: Some(vec![17; 12]),
             world_ciphertext: Some(b"Encrypted world".to_vec()),
@@ -254,11 +264,12 @@ mod get_session_data_for_generation_tests {
     }
 
     async fn setup_test_env(params: TestEnvParams) -> TestSetup {
-        let user_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let default_character_id = Uuid::new_v4();
-        let character_id = params
+        let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
+        let session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
+        let default_character_id: scribe_backend::db::DbId = Uuid::new_v4().into();
+        let character_id: scribe_backend::db::DbId = params
             .session_character_id_override
+            .map(|u| u.into())
             .unwrap_or(default_character_id);
 
         let config = params
@@ -325,7 +336,7 @@ mod get_session_data_for_generation_tests {
         conn: &deadpool_diesel::postgres::Object,
         username: &str,
         email: &str,
-    ) -> Uuid {
+    ) -> scribe_backend::db::DbId {
         let new_user = NewUser {
             username: username.to_string(),
             password_hash: "hash".to_string(),
@@ -333,16 +344,16 @@ mod get_session_data_for_generation_tests {
             role: UserRole::User,
             account_status: AccountStatus::Active,
             kek_salt: "dummy_salt".to_string(),
-            encrypted_dek: vec![0u8; 16],
-            dek_nonce: vec![0u8; 12],
+            encrypted_dek: vec![0u8; 16].into(),
+            dek_nonce: vec![0u8; 12].into(),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::Utc::now().into(),
         };
 
         conn.interact(move |conn_insert| {
@@ -359,16 +370,16 @@ mod get_session_data_for_generation_tests {
     /// Helper to insert a test character into the database
     async fn insert_test_character(
         conn: &deadpool_diesel::postgres::Object,
-        character_id: Uuid,
-        user_id: Uuid,
+        character_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
         name: &str,
     ) {
         let mut test_character = scribe_backend::models::characters::create_dummy_character();
         test_character.id = character_id;
         test_character.user_id = user_id;
         test_character.name = name.to_string();
-        test_character.created_at = chrono::Utc::now();
-        test_character.updated_at = chrono::Utc::now();
+        test_character.created_at = chrono::Utc::now().into();
+        test_character.updated_at = chrono::Utc::now().into();
         test_character.visibility = Some("private".to_string());
         test_character.spec = "chara_card_v2".to_string();
         test_character.spec_version = "2.0".to_string();
@@ -386,9 +397,9 @@ mod get_session_data_for_generation_tests {
     /// Helper to insert a test chat session into the database
     async fn insert_test_chat_session(
         conn: &deadpool_diesel::postgres::Object,
-        session_id: Uuid,
-        user_id: Uuid,
-        character_id: Uuid,
+        session_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
+        character_id: scribe_backend::db::DbId,
         model_name: &str,
     ) {
         insert_test_chat_session_with_limit(
@@ -405,47 +416,26 @@ mod get_session_data_for_generation_tests {
     /// Helper to insert a test chat session with custom history management limit
     async fn insert_test_chat_session_with_limit(
         conn: &deadpool_diesel::postgres::Object,
-        session_id: Uuid,
-        user_id: Uuid,
-        character_id: Uuid,
+        session_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
+        character_id: scribe_backend::db::DbId,
         model_name: &str,
         history_limit: i32,
     ) {
         let test_session = NewChat {
             id: session_id,
-            user_id,
-            character_id,
-            title_ciphertext: None,
-            title_nonce: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            user_id: user_id,
+            character_id: character_id,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
             history_management_strategy: "message_window".to_string(),
             history_management_limit: history_limit,
-            model_name: model_name.to_string(),
+            model_name: Some(model_name.to_string()),
             visibility: Some("private".to_string()),
-            active_custom_persona_id: None,
-            active_impersonated_character_id: None,
-            temperature: None,
-            max_output_tokens: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            top_k: None,
-            top_p: None,
-            seed: None,
-            stop_sequences: None,
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
-            system_prompt_ciphertext: None,
-            system_prompt_nonce: None,
-            player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            tokens_counted_at: chrono::Utc::now().into(),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
-            narrative_style_override_ciphertext: None,
-            narrative_style_override_nonce: None,
+            ..Default::default()
         };
 
         conn.interact(move |conn_insert| {
@@ -474,21 +464,21 @@ mod get_session_data_for_generation_tests {
     /// Helper to insert a test lorebook and link it to a chat session
     async fn insert_test_lorebook_and_link(
         conn: &deadpool_diesel::postgres::Object,
-        session_id: Uuid,
-        user_id: Uuid,
+        session_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
         name: &str,
         description: &str,
-    ) -> Uuid {
-        let lorebook_id = Uuid::new_v4();
+    ) -> scribe_backend::db::DbId {
+        let lorebook_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let test_lorebook = scribe_backend::models::lorebooks::NewLorebook {
             id: lorebook_id,
-            user_id,
+            user_id: user_id,
             name: name.to_string(),
             description: Some(description.to_string()),
             source_format: "scribe_v1".to_string(),
             is_public: false,
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
+            created_at: Some(chrono::Utc::now().into()),
+            updated_at: Some(chrono::Utc::now().into()),
         };
 
         // Insert lorebook
@@ -509,8 +499,8 @@ mod get_session_data_for_generation_tests {
             use scribe_backend::schema::chat_session_lorebooks;
             let new_link = scribe_backend::models::lorebooks::NewChatSessionLorebook {
                 chat_session_id: session_id,
-                lorebook_id,
-                user_id,
+                lorebook_id: lorebook_id,
+                user_id: user_id,
                 created_at: None,
                 updated_at: None,
             };
@@ -527,7 +517,10 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to create test RAG chunks for lorebook testing
     #[allow(deprecated)]
-    fn create_test_rag_chunks(lorebook_id: Uuid, user_id: Uuid) -> Vec<RetrievedChunk> {
+    fn create_test_rag_chunks(
+        lorebook_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
+    ) -> Vec<RetrievedChunk> {
         let lore_chunk1_content = "The Orb of Zog is powerful.";
         let lore_chunk2_content = "It glows with an eerie light.";
 
@@ -537,9 +530,9 @@ mod get_session_data_for_generation_tests {
                 score: 0.9,
                 metadata: scribe_backend::services::embeddings::RetrievedMetadata::Lorebook(
                     scribe_backend::services::embeddings::LorebookChunkMetadata {
-                        original_lorebook_entry_id: Uuid::new_v4(),
-                        lorebook_id,
-                        user_id,
+                        original_lorebook_entry_id: Uuid::new_v4().into(),
+                        lorebook_id: lorebook_id,
+                        user_id: user_id,
                         chunk_text: lore_chunk1_content.to_string(),
                         entry_title: Some("Orb of Zog".to_string()),
                         keywords: Some(vec!["orb".to_string()]),
@@ -558,9 +551,9 @@ mod get_session_data_for_generation_tests {
                 score: 0.8,
                 metadata: scribe_backend::services::embeddings::RetrievedMetadata::Lorebook(
                     scribe_backend::services::embeddings::LorebookChunkMetadata {
-                        original_lorebook_entry_id: Uuid::new_v4(),
-                        lorebook_id,
-                        user_id,
+                        original_lorebook_entry_id: Uuid::new_v4().into(),
+                        lorebook_id: lorebook_id,
+                        user_id: user_id,
                         chunk_text: lore_chunk2_content.to_string(),
                         entry_title: Some("Eerie Light".to_string()),
                         keywords: Some(vec!["light".to_string()]),
@@ -580,8 +573,8 @@ mod get_session_data_for_generation_tests {
     /// Helper to insert test messages into the database
     async fn insert_test_messages(
         conn: &deadpool_diesel::postgres::Object,
-        session_id: Uuid,
-        user_id: Uuid,
+        session_id: scribe_backend::db::DbId,
+        user_id: scribe_backend::db::DbId,
         messages: &[(&str, MessageRole, Option<i32>, i64)],
         user_dek: Option<&Arc<SecretBox<Vec<u8>>>>,
     ) {
@@ -616,9 +609,14 @@ mod get_session_data_for_generation_tests {
                 "gemini-1.5-pro".to_string(),
             )
             .with_role(role_str_val)
-            .with_parts(json!({"type": "text", "text": *plain_content_str}))
-            .with_attachments(serde_json::Value::Null)
-            .with_token_counts(prompt_tokens_val, completion_tokens_val);
+            .with_parts(scribe_backend::db::DbJson::from(
+                json!({"type": "text", "text": *plain_content_str}),
+            ))
+            .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
+            .with_token_counts(
+                prompt_tokens_val.map(i64::from),
+                completion_tokens_val.map(i64::from),
+            );
 
             conn.interact(move |conn_i| {
                 diesel::insert_into(chat_messages_schema::table)
@@ -731,17 +729,26 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name,          // 12: model_name
-            _,                    // 13: model_provider (NEW)
+            _,                    // 13: model_provider
             _,                    // 14: gemini_thinking_budget
-            _,                    // 15: gemini_enable_code_execution
-            _user_msg_struct,     // 16: DbInsertableChatMessage
-            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
-            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
-            _,                    // 19: history_management_strategy
-            _,                    // 20: history_management_limit
-            _,                    // 21: user_persona_name
-            _,                    // 22: player_chronicle_id
-            _,                    // 23: agent_mode
+            _,                    // 15: gemini_thinking_level
+            _,                    // 16: gemini_enable_code_execution
+            _user_msg_struct,     // 17: DbInsertableChatMessage
+            actual_recent_tokens, // 18: actual_recent_history_tokens (usize)
+            rag_items,            // 19: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 20: history_management_strategy
+            _,                    // 21: history_management_limit
+            _,                    // 22: user_persona_name
+            _,                    // 23: player_chronicle_id
+            _,                    // 24: agent_mode
+            _,                    // 25: game_master_mode_enabled
+            _,                    // 26: initial_game_state
+            _,                    // 27: rag_chronicles_limit
+            _,                    // 28: rag_lorebooks_limit
+            _,                    // 29: rag_older_chat_limit
+            _,                    // 30: context_total_token_limit
+            _,                    // 31: recent_history_token_budget
+            _,                    // 32: rag_token_budget
         ) = result.unwrap();
 
         assert_eq!(
@@ -908,17 +915,26 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name,          // 12: model_name
-            _,                    // 13: model_provider (NEW)
+            _,                    // 13: model_provider
             _,                    // 14: gemini_thinking_budget
-            _,                    // 15: gemini_enable_code_execution
-            _user_msg_struct,     // 16: DbInsertableChatMessage
-            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
-            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
-            _,                    // 19: history_management_strategy
-            _,                    // 20: history_management_limit
-            _,                    // 21: user_persona_name
-            _,                    // 22: player_chronicle_id
-            _,                    // 23: agent_mode
+            _,                    // 15: gemini_thinking_level
+            _,                    // 16: gemini_enable_code_execution
+            _user_msg_struct,     // 17: DbInsertableChatMessage
+            actual_recent_tokens, // 18: actual_recent_history_tokens (usize)
+            rag_items,            // 19: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 20: history_management_strategy
+            _,                    // 21: history_management_limit
+            _,                    // 22: user_persona_name
+            _,                    // 23: player_chronicle_id
+            _,                    // 24: agent_mode
+            _,                    // 25: game_master_mode_enabled
+            _,                    // 26: initial_game_state
+            _,                    // 27: rag_chronicles_limit
+            _,                    // 28: rag_lorebooks_limit
+            _,                    // 29: rag_older_chat_limit
+            _,                    // 30: context_total_token_limit
+            _,                    // 31: recent_history_token_budget
+            _,                    // 32: rag_token_budget
         ) = result.unwrap();
 
         assert_eq!(
@@ -1038,18 +1054,18 @@ mod get_session_data_for_generation_tests {
             role: UserRole::User,
             account_status: AccountStatus::Active,
             kek_salt: "dummy_salt_trunc".to_string(),
-            encrypted_dek: vec![1u8; 16],
-            dek_nonce: vec![1u8; 12],
+            encrypted_dek: vec![1u8; 16].into(),
+            dek_nonce: vec![1u8; 12].into(),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::Utc::now().into(),
         };
-        let inserted_user_id_trunc: Uuid = conn
+        let inserted_user_id_trunc: scribe_backend::db::DbId = conn
             .interact(move |conn_insert_user| {
                 diesel::insert_into(users::table)
                     .values(&new_user_for_trunc_test)
@@ -1067,8 +1083,8 @@ mod get_session_data_for_generation_tests {
         test_character.id = setup.character_id;
         test_character.user_id = setup.user_id; // Use the actual inserted user_id
         test_character.name = "Test Character".to_string();
-        test_character.created_at = chrono::Utc::now();
-        test_character.updated_at = chrono::Utc::now();
+        test_character.created_at = chrono::Utc::now().into();
+        test_character.updated_at = chrono::Utc::now().into();
         test_character.visibility = Some("private".to_string());
         test_character.spec = "chara_card_v2".to_string();
         test_character.spec_version = "2.0".to_string();
@@ -1087,37 +1103,16 @@ mod get_session_data_for_generation_tests {
             id: setup.session_id,
             user_id: setup.user_id,
             character_id: setup.character_id,
-            title_ciphertext: None,
-            title_nonce: None, // Updated field
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
             history_management_strategy: "message_window".to_string(),
             history_management_limit: 20,
-            model_name: model_name_for_test.clone(), // Crucial for token counting consistency
+            model_name: Some(model_name_for_test.clone()),
             visibility: Some("private".to_string()),
-            active_custom_persona_id: None,
-            active_impersonated_character_id: None,
-            temperature: None,
-            max_output_tokens: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            top_k: None,
-            top_p: None,
-            seed: None,
-            stop_sequences: None,
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
-            system_prompt_ciphertext: None,
-            system_prompt_nonce: None,
-            player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            tokens_counted_at: chrono::Utc::now().into(),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
-            narrative_style_override_ciphertext: None,
-            narrative_style_override_nonce: None,
+            ..Default::default()
         };
         conn.interact(move |conn_insert| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1174,9 +1169,14 @@ mod get_session_data_for_generation_tests {
                 "gemini-1.5-pro".to_string(),
             )
             .with_role(role_str_val)
-            .with_parts(json!({"type": "text", "text": *plain_content_str}))
-            .with_attachments(serde_json::Value::Null)
-            .with_token_counts(prompt_tokens_val, completion_tokens_val);
+            .with_parts(scribe_backend::db::DbJson::from(
+                json!({"type": "text", "text": *plain_content_str}),
+            ))
+            .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
+            .with_token_counts(
+                prompt_tokens_val.map(i64::from),
+                completion_tokens_val.map(i64::from),
+            );
 
             conn.interact(move |conn_i| {
                 diesel::insert_into(chat_messages_schema::table)
@@ -1215,17 +1215,26 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name,          // 12: model_name
-            _,                    // 13: model_provider (NEW)
+            _,                    // 13: model_provider
             _,                    // 14: gemini_thinking_budget
-            _,                    // 15: gemini_enable_code_execution
-            _user_msg_struct,     // 16: DbInsertableChatMessage
-            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
-            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
-            _,                    // 19: history_management_strategy
-            _,                    // 20: history_management_limit
-            _,                    // 21: user_persona_name
-            _,                    // 22: player_chronicle_id
-            _,                    // 23: agent_mode
+            _,                    // 15: gemini_thinking_level
+            _,                    // 16: gemini_enable_code_execution
+            _user_msg_struct,     // 17: DbInsertableChatMessage
+            actual_recent_tokens, // 18: actual_recent_history_tokens (usize)
+            rag_items,            // 19: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 20: history_management_strategy
+            _,                    // 21: history_management_limit
+            _,                    // 22: user_persona_name
+            _,                    // 23: player_chronicle_id
+            _,                    // 24: agent_mode
+            _,                    // 25: game_master_mode_enabled
+            _,                    // 26: initial_game_state
+            _,                    // 27: rag_chronicles_limit
+            _,                    // 28: rag_lorebooks_limit
+            _,                    // 29: rag_older_chat_limit
+            _,                    // 30: context_total_token_limit
+            _,                    // 31: recent_history_token_budget
+            _,                    // 32: rag_token_budget
         ) = result.unwrap();
 
         // Token counts with Gemma for "Okay then." (3) and "See you." (2) = 5. Budget is 8.
@@ -1328,18 +1337,18 @@ mod get_session_data_for_generation_tests {
             role: UserRole::User,
             account_status: AccountStatus::Active,
             kek_salt: "salt_rag_total_limit".to_string(),
-            encrypted_dek: vec![3u8; 16],
-            dek_nonce: vec![3u8; 12],
+            encrypted_dek: vec![3u8; 16].into(),
+            dek_nonce: vec![3u8; 12].into(),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::Utc::now().into(),
         };
-        let inserted_user_id_rag_total_limit: Uuid = conn
+        let inserted_user_id_rag_total_limit: scribe_backend::db::DbId = conn
             .interact(move |conn_insert_user| {
                 diesel::insert_into(users::table)
                     .values(&new_user_for_rag_total_limit_test)
@@ -1371,37 +1380,16 @@ mod get_session_data_for_generation_tests {
             id: setup.session_id,
             user_id: setup.user_id,
             character_id: setup.character_id,
-            title_ciphertext: None,
-            title_nonce: None, // Updated field
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
             history_management_strategy: "message_window".to_string(),
-            history_management_limit: 20, // High limit, actual tokens will control
-            model_name: model_name_for_test.clone(),
+            history_management_limit: 20,
+            model_name: Some(model_name_for_test.clone()),
             visibility: Some("private".to_string()),
-            active_custom_persona_id: None,
-            active_impersonated_character_id: None,
-            temperature: None,
-            max_output_tokens: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            top_k: None,
-            top_p: None,
-            seed: None,
-            stop_sequences: None,
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
-            system_prompt_ciphertext: None,
-            system_prompt_nonce: None,
-            player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            tokens_counted_at: chrono::Utc::now().into(),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
-            narrative_style_override_ciphertext: None,
-            narrative_style_override_nonce: None,
+            ..Default::default()
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1523,9 +1511,14 @@ mod get_session_data_for_generation_tests {
                 "gemini-1.5-pro".to_string(),
             )
             .with_role(role_str_val)
-            .with_parts(json!({"type": "text", "text": plain_content_str}))
-            .with_attachments(serde_json::Value::Null)
-            .with_token_counts(prompt_tokens_val, completion_tokens_val);
+            .with_parts(scribe_backend::db::DbJson::from(
+                json!({"type": "text", "text": plain_content_str}),
+            ))
+            .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
+            .with_token_counts(
+                prompt_tokens_val.map(i64::from),
+                completion_tokens_val.map(i64::from),
+            );
 
             conn.interact(move |conn_i| {
                 diesel::insert_into(chat_messages_schema::table)
@@ -1538,7 +1531,7 @@ mod get_session_data_for_generation_tests {
         }
 
         // Prepare Lorebook and link to session
-        let lorebook_id = Uuid::new_v4();
+        let lorebook_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let test_lorebook_total_limit = scribe_backend::models::lorebooks::NewLorebook {
             id: lorebook_id,
             user_id: setup.user_id,
@@ -1546,8 +1539,8 @@ mod get_session_data_for_generation_tests {
             description: Some("Lore for total limit test.".to_string()),
             source_format: "scribe_v1".to_string(),
             is_public: false,
-            created_at: Some(chrono::Utc::now()),
-            updated_at: Some(chrono::Utc::now()),
+            created_at: Some(chrono::Utc::now().into()),
+            updated_at: Some(chrono::Utc::now().into()),
         };
         conn.interact({
             let tl = test_lorebook_total_limit.clone();
@@ -1564,7 +1557,7 @@ mod get_session_data_for_generation_tests {
             use scribe_backend::schema::chat_session_lorebooks;
             let new_link = scribe_backend::models::lorebooks::NewChatSessionLorebook {
                 chat_session_id: setup.session_id,
-                lorebook_id,
+                lorebook_id: lorebook_id,
                 user_id: setup.user_id,
                 created_at: None,
                 updated_at: None,
@@ -1601,8 +1594,8 @@ mod get_session_data_for_generation_tests {
             score: 0.9,
             metadata: scribe_backend::services::embeddings::RetrievedMetadata::Lorebook(
                 scribe_backend::services::embeddings::LorebookChunkMetadata {
-                    original_lorebook_entry_id: Uuid::new_v4(),
-                    lorebook_id,
+                    original_lorebook_entry_id: Uuid::new_v4().into(),
+                    lorebook_id: lorebook_id,
                     user_id: setup.user_id,
                     chunk_text: lore_chunk1_content.to_string(),
                     entry_title: Some("Large Chunk 1".to_string()),
@@ -1652,17 +1645,26 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name,                      // 12: model_name
-            _,                                // 13: model_provider (NEW)
+            _,                                // 13: model_provider
             _,                                // 14: gemini_thinking_budget
-            _,                                // 15: gemini_enable_code_execution
-            _user_msg_struct,                 // 16: DbInsertableChatMessage
-            actual_recent_tokens_from_result, // 17: actual_recent_history_tokens (usize)
-            rag_items,                        // 18: rag_context_items (Vec<RetrievedChunk>)
-            _,                                // 19: history_management_strategy
-            _,                                // 20: history_management_limit
-            _,                                // 21: user_persona_name
-            _,                                // 22: player_chronicle_id
-            _,                                // 23: agent_mode
+            _,                                // 15: gemini_thinking_level
+            _,                                // 16: gemini_enable_code_execution
+            _user_msg_struct,                 // 17: DbInsertableChatMessage
+            actual_recent_tokens_from_result, // 18: actual_recent_history_tokens (usize)
+            rag_items,                        // 19: rag_context_items (Vec<RetrievedChunk>)
+            _,                                // 20: history_management_strategy
+            _,                                // 21: history_management_limit
+            _,                                // 22: user_persona_name
+            _,                                // 23: player_chronicle_id
+            _,                                // 24: agent_mode
+            _,                                // 25: game_master_mode_enabled
+            _,                                // 26: initial_game_state
+            _,                                // 27: rag_chronicles_limit
+            _,                                // 28: rag_lorebooks_limit
+            _,                                // 29: rag_older_chat_limit
+            _,                                // 30: context_total_token_limit
+            _,                                // 31: recent_history_token_budget
+            _,                                // 32: rag_token_budget
         ) = result.unwrap();
 
         // Verify actual_recent_history_tokens is what we set up (around 140)
@@ -1733,18 +1735,18 @@ mod get_session_data_for_generation_tests {
             role: UserRole::User,
             account_status: AccountStatus::Active,
             kek_salt: "salt_rag_older_hist".to_string(),
-            encrypted_dek: vec![4u8; 16],
-            dek_nonce: vec![4u8; 12],
+            encrypted_dek: vec![4u8; 16].into(),
+            dek_nonce: vec![4u8; 12].into(),
             encrypted_dek_by_recovery: None,
             recovery_kek_salt: None,
             recovery_dek_nonce: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+            total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
-            token_usage_updated_at: chrono::Utc::now(),
+            token_usage_updated_at: chrono::Utc::now().into(),
         };
-        let inserted_user_id_rag_older_hist: Uuid = conn
+        let inserted_user_id_rag_older_hist: scribe_backend::db::DbId = conn
             .interact(move |conn_insert_user| {
                 diesel::insert_into(users::table)
                     .values(&new_user_for_rag_older_hist_test)
@@ -1776,37 +1778,16 @@ mod get_session_data_for_generation_tests {
             id: setup.session_id,
             user_id: setup.user_id,
             character_id: setup.character_id,
-            title_ciphertext: None,
-            title_nonce: None, // Updated field
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
             history_management_strategy: "message_window".to_string(),
-            history_management_limit: 10, // Ample limit for recent
-            model_name: model_name_for_test.clone(),
+            history_management_limit: 10,
+            model_name: Some(model_name_for_test.clone()),
             visibility: Some("private".to_string()),
-            active_custom_persona_id: None,
-            active_impersonated_character_id: None,
-            temperature: None,
-            max_output_tokens: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            top_k: None,
-            top_p: None,
-            seed: None,
-            stop_sequences: None,
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
-            system_prompt_ciphertext: None,
-            system_prompt_nonce: None,
-            player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_cents: 0,
-            tokens_counted_at: chrono::Utc::now(),
-            total_credits_used: BigDecimal::from(0),
+            tokens_counted_at: chrono::Utc::now().into(),
+            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
-            narrative_style_override_ciphertext: None,
-            narrative_style_override_nonce: None,
+            ..Default::default()
         };
         conn.interact(move |conn_insert_session| {
             diesel::insert_into(chat_sessions_schema::table)
@@ -1863,9 +1844,11 @@ mod get_session_data_for_generation_tests {
                 "gemini-1.5-pro".to_string(),
             )
             .with_role(role.to_string())
-            .with_parts(json!({"type": "text", "text": *content}))
-            .with_attachments(serde_json::Value::Null)
-            .with_token_counts(pt, ct);
+            .with_parts(scribe_backend::db::DbJson::from(
+                json!({"type": "text", "text": *content}),
+            ))
+            .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
+            .with_token_counts(pt.map(|v| v as i64), ct.map(|v| v as i64));
             // created_at will be set by the database default `now()`.
             // Order of insertion will manage "older" vs "recent".
 
@@ -1957,15 +1940,16 @@ mod get_session_data_for_generation_tests {
                 score: (idx as f32).mul_add(-0.01, 0.85), // Ensure some ordering if needed
                 metadata: scribe_backend::services::embeddings::RetrievedMetadata::Chat(
                     scribe_backend::services::embeddings::ChatMessageChunkMetadata {
-                        message_id: msg_id, // Use the ID we generated for this message
+                        message_id: msg_id.into(), // Use the ID we generated for this message
                         session_id: setup.session_id,
                         chronicle_id: None,
                         user_id: setup.user_id,
                         speaker: role.to_string(), // Changed from role
-                        timestamp: created_at_val, // Changed from created_at
+                        timestamp: created_at_val.into(), // Changed from created_at
                         // token_count: tokens as usize, // Removed, not in struct
                         source_type: "chat_message".to_string(),
                         text: (*content).to_string(), // Changed from chunk_text
+                        game_time: None,
                         // original_message_id: msg_id, // Removed, covered by message_id
                         encrypted_text: None,
                         text_nonce: None,
@@ -2019,9 +2003,11 @@ mod get_session_data_for_generation_tests {
                 "gemini-1.5-pro".to_string(),
             )
             .with_role(role.to_string())
-            .with_parts(json!({"type": "text", "text": *content}))
-            .with_attachments(serde_json::Value::Null)
-            .with_token_counts(pt, ct);
+            .with_parts(scribe_backend::db::DbJson::from(
+                json!({"type": "text", "text": *content}),
+            ))
+            .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
+            .with_token_counts(pt.map(i64::from), ct.map(i64::from));
 
             conn.interact({
                 let m_insert = insertable_recent_msg.clone();
@@ -2053,7 +2039,7 @@ mod get_session_data_for_generation_tests {
         let recent_history_message_ids_from_db: std::collections::HashSet<Uuid> =
             actual_recent_messages_from_db
                 .iter()
-                .map(|msg| msg.id)
+                .map(|msg| msg.id.into())
                 .collect();
 
         // Configure mock expectations
@@ -2088,17 +2074,26 @@ mod get_session_data_for_generation_tests {
             _,
             _,
             _model_name,          // 12: model_name
-            _,                    // 13: model_provider (NEW)
+            _,                    // 13: model_provider
             _,                    // 14: gemini_thinking_budget
-            _,                    // 15: gemini_enable_code_execution
-            _user_msg_struct,     // 16: DbInsertableChatMessage
-            actual_recent_tokens, // 17: actual_recent_history_tokens (usize)
-            rag_items,            // 18: rag_context_items (Vec<RetrievedChunk>)
-            _,                    // 19: history_management_strategy
-            _,                    // 20: history_management_limit
-            _,                    // 21: user_persona_name
-            _,                    // 22: player_chronicle_id
-            _,                    // 23: agent_mode
+            _,                    // 15: gemini_thinking_level
+            _,                    // 16: gemini_enable_code_execution
+            _user_msg_struct,     // 17: DbInsertableChatMessage
+            actual_recent_tokens, // 18: actual_recent_history_tokens (usize)
+            rag_items,            // 19: rag_context_items (Vec<RetrievedChunk>)
+            _,                    // 20: history_management_strategy
+            _,                    // 21: history_management_limit
+            _,                    // 22: user_persona_name
+            _,                    // 23: player_chronicle_id
+            _,                    // 24: agent_mode
+            _,                    // 25: game_master_mode_enabled
+            _,                    // 26: initial_game_state
+            _,                    // 27: rag_chronicles_limit
+            _,                    // 28: rag_lorebooks_limit
+            _,                    // 29: rag_older_chat_limit
+            _,                    // 30: context_total_token_limit
+            _,                    // 31: recent_history_token_budget
+            _,                    // 32: rag_token_budget
         ) = result.unwrap();
 
         assert_eq!(

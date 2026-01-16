@@ -1,5 +1,5 @@
 #[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::{SqliteInteractExt, SqlitePoolExt};
+use crate::db::pool_helpers::SqliteInteractExt;
 
 use crate::{
     errors::AppError,
@@ -96,6 +96,11 @@ impl LorebookService {
     ) -> Result<(), AppError> {
         use crate::schema::lorebooks;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -135,6 +140,11 @@ impl LorebookService {
     ) -> Result<(), AppError> {
         use crate::schema::chat_sessions;
 
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -170,6 +180,11 @@ impl LorebookService {
         start_index: Option<usize>,
         end_index: Option<usize>,
     ) -> Result<Vec<Message>, AppError> {
+        #[cfg(feature = "postgres-backend")]
+        let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
+        })?;
+        #[cfg(feature = "sqlite-backend")]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;

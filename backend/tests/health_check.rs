@@ -114,7 +114,7 @@ async fn health_check_response_serialization() {
         status: ComponentStatus::Ok,
         version: "0.1.0".to_string(),
         components: HashMap::new(),
-        timestamp: Utc::now(),
+        timestamp: Utc::now().into(),
     };
 
     response.components.insert(

@@ -4,7 +4,7 @@ use axum::{
     http::{Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use scribe_backend::test_helpers;
+use scribe_backend::{db::DbId, test_helpers};
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -357,8 +357,8 @@ async fn test_alternate_greeting_generation_with_lorebook() {
         score: 0.95,
         text: "The Grand Library of Mystic Academy contains thousands of ancient tomes and scrolls. Students often meet here for study sessions, but it's also where forbidden knowledge is hidden in the restricted section. The library is overseen by the stern but caring Librarian Thorne.".to_string(),
         metadata: RetrievedMetadata::Lorebook(LorebookChunkMetadata {
-            original_lorebook_entry_id: Uuid::new_v4(),
-            lorebook_id: Uuid::parse_str(lorebook_id).unwrap(),
+            original_lorebook_entry_id: Uuid::new_v4().into(),
+            lorebook_id: Uuid::parse_str(lorebook_id).unwrap().into(),
             user_id: DbId::new(),
             chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
             entry_title: Some("Mystic Academy Library".to_string()),

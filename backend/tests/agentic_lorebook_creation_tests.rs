@@ -25,8 +25,8 @@ use uuid::Uuid;
 /// Helper function to create a chat session in the database for testing
 async fn create_test_chat_session(
     db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
 ) -> anyhow::Result<()> {
     let conn = db_pool
         .get()
@@ -116,6 +116,10 @@ async fn create_test_app_state(
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -132,8 +136,8 @@ async fn create_test_app_state(
 
 // Helper to create a chat message with proper encryption
 fn create_chat_message(
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: scribe_backend::db::DbId,
+    session_id: scribe_backend::db::DbId,
     role: MessageRole,
     content: &str,
     model_name: &str,
@@ -145,14 +149,14 @@ fn create_chat_message(
             .expect("Failed to encrypt test content");
 
     ChatMessage {
-        id: Uuid::new_v4(),
+        id: Uuid::new_v4().into(),
         session_id,
         message_type: role,
         content: encrypted_content,
         content_nonce: Some(content_nonce),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
+        prompt_tokens: Some(content.len() as i64 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
             Some(20)
         } else {
@@ -197,7 +201,7 @@ mod lorebook_creation_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session in database (required for foreign key constraint)
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id.into(), chat_session_id.into())
             .await
             .expect("Failed to create test chat session");
 
@@ -235,6 +239,7 @@ mod lorebook_creation_tests {
         // Create the agentic narrative system
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
 
         let app_state = create_test_app_state(&test_app, lorebook_service.clone()).await;
@@ -255,32 +260,32 @@ mod lorebook_creation_tests {
         // Simulate casual discussion of common knowledge
         let common_knowledge_messages = vec![
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::User,
                 "The sun is setting, casting long shadows.",
                 "gemini-2.5-pro",
                 &session_dek,
             ),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::Assistant,
                 "Indeed, the golden hour bathes everything in warm light. It's a peaceful end to the day.",
                 "gemini-2.5-pro",
                 &session_dek,
             ),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::User,
                 "I enjoy watching the sunset from this hill.",
                 "gemini-2.5-pro",
                 &session_dek,
             ),
             create_chat_message(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 MessageRole::Assistant,
                 "This is certainly a beautiful vantage point for watching the day's end.",
                 "gemini-2.5-pro",
@@ -298,8 +303,8 @@ mod lorebook_creation_tests {
         // Run the agentic workflow - should not create new entries
         let result = agent_runner
             .process_narrative_event(
-                user_id,
-                chat_session_id,
+                user_id.into(),
+                chat_session_id.into(),
                 None,
                 &common_knowledge_messages,
                 &session_dek,

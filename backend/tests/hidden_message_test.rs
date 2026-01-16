@@ -18,14 +18,12 @@ use diesel::prelude::*;
 use diesel::RunQueryDsl;
 
 // Crate imports
-use argon2::password_hash::{rand_core::OsRng, SaltString};
-use argon2::{Argon2, PasswordHasher};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 #[cfg(feature = "sqlite-backend")]
 use scribe_backend::db::SqliteInteractExt;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
+    db::DbBigInt,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -44,7 +42,10 @@ async fn create_test_user_with_dek(
     username: String,
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
-    let mut conn = test_app.db_pool.get()?;
+    let mut conn = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
 
     let password_hash = bcrypt::hash(&password, bcrypt::DEFAULT_COST)
         .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
@@ -58,7 +59,7 @@ async fn create_test_user_with_dek(
     let kek_salt_str = kek_salt.clone();
 
     let new_user = NewUser {
-        id: Uuid::new_v4().into(),
+        id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
         email,
@@ -70,21 +71,21 @@ async fn create_test_user_with_dek(
         dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: DbBigInt::from(0),
+        total_completion_tokens: DbBigInt::from(0),
+        total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };
 
     let user_db: UserDbQuery = conn
         .interact(move |conn| {
-            let user_id = new_user.id;
             diesel::insert_into(users::table)
                 .values(&new_user)
                 .execute(conn)?;
+
             users::table
-                .find(user_id)
+                .filter(users::id.eq(new_user.id))
                 .select(UserDbQuery::as_select())
                 .first(conn)
         })
@@ -114,7 +115,8 @@ async fn create_test_chat_session(
 
     let character: DbCharacter = test_app
         .db_pool
-        .get()?
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             let char_id = new_character.id.expect("Character ID must be set");
             diesel::insert_into(characters::table)
@@ -125,7 +127,8 @@ async fn create_test_chat_session(
                 .select(DbCharacter::as_select())
                 .first(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
 
     let create_session_payload = json!({
         "character_id": character.id,
@@ -157,14 +160,16 @@ async fn create_test_chat_session(
 
     let chat_session: Chat = test_app
         .db_pool
-        .get()?
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
                 .select(Chat::as_select())
                 .first::<Chat>(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
     let chat_id = chat_session.id;
     println!("Created chat_id: {}", chat_id);
     Ok((character, chat_session, auth_cookie.to_string()))
@@ -180,7 +185,7 @@ async fn create_test_message(
     use scribe_backend::models::chats::DbInsertableChatMessage;
 
     let new_message = DbInsertableChatMessage {
-        id: Uuid::new_v4().into(),
+        id: scribe_backend::db::DbId::new(),
         chat_id: session_id.into(),
         user_id: user_id.into(),
         msg_type: role.clone(),
@@ -199,27 +204,29 @@ async fn create_test_message(
         variant_count: 1,
         current_variant_index: 0,
         credits_charged: 0,
-        credits_cost: 0,
+        credits_cost: 0.0,
         actual_cost: 0.0,
         modified_cost: 0.0,
         credit_cost: 0,
         actual_charge: 0.0,
+        game_time: None,
     };
 
     let message: DbChatMessage = test_app
         .db_pool
-        .get()?
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
-            let msg_id = new_message.id;
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
                 .execute(conn)?;
+
             chat_messages::table
-                .find(msg_id)
-                .select(DbChatMessage::as_select())
+                .order(chat_messages::created_at.desc())
                 .first(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
 
     Ok(message)
 }
@@ -262,13 +269,15 @@ async fn test_hidden_streaming_message() -> anyhow::Result<()> {
     // 2. Set status to "streaming" (or anything other than "completed")
     test_app
         .db_pool
-        .get()?
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message.id)))
                 .set(chat_messages::status.eq("streaming"))
                 .execute(conn)
         })
-        .await??;
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
 
     // 3. Fetch messages using the API
     let get_messages_request = Request::builder()

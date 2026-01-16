@@ -56,16 +56,16 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt::from(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -171,7 +171,7 @@ async fn test_delete_character_success() -> Result<(), anyhow::Error> {
     let character = run_db_op(&pool, {
         let character_name = character_name.clone();
         let dek_clone = dek.clone();
-        move |conn| insert_test_character(conn, user_id_for_char, &character_name, &dek_clone)
+        move |conn| insert_test_character(conn, *user_id_for_char, &character_name, &dek_clone)
     })
     .await
     .context("Failed to create test character with DEK")?;
@@ -321,7 +321,7 @@ async fn test_delete_character_forbidden_for_another_user() -> Result<(), anyhow
     let user_a_id_char = user_a.id;
     let dek_a_clone = dek_a.clone();
     let character_a = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, user_a_id_char, "CharA_DelForbidden", &dek_a_clone)
+        insert_test_character(conn, *user_a_id_char, "CharA_DelForbidden", &dek_a_clone)
     })
     .await?;
     guard.add_character(character_a.id);

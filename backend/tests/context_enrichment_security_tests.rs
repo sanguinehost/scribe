@@ -3,6 +3,7 @@
 
 use diesel::prelude::*;
 use scribe_backend::{
+    db::{DbId, DbTimestamp},
     models::{
         chronicle::CreateChronicleRequest, AnalysisType, MessageRole, NewAgentContextAnalysis,
         NewChatMessage,
@@ -85,6 +86,10 @@ async fn create_test_app_state(
         rate_limiter: Arc::new(
             scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100),
         ),
+        recall_pipeline: Arc::new(scribe_backend::services::cognitive::RecallPipeline::new(
+            test_app.db_pool.clone(),
+        )),
+        token_service: None,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -133,7 +138,8 @@ async fn test_search_knowledge_base_user_isolation() {
     let _user2_dek = &user2.dek.as_ref().expect("User2 should have DEK").0;
 
     // Create lorebooks for each user (not needed for basic security test)
-    let _lorebook_service = ChronicleService::new(test_app.db_pool.clone());
+    let _lorebook_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
 
     // Since we need to bypass the auth session, let's create lorebooks directly via DB
     // For now, let's skip the lorebook creation and focus on the basic security test
@@ -207,7 +213,8 @@ async fn test_context_enrichment_agent_security() {
     let _session_dek = &user.dek.as_ref().expect("User should have DEK").0;
 
     // Create chronicle for user
-    let chronicle_service = ChronicleService::new(test_app.db_pool.clone());
+    let chronicle_service =
+        ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
     let chronicle = chronicle_service
         .create_chronicle(
             user.id,
@@ -342,8 +349,8 @@ async fn test_agent_analysis_storage_security() {
     let user2_dek = &user2.dek.as_ref().expect("User2 should have DEK").0;
 
     // Create sessions for both users
-    let user1_session_id = Uuid::new_v4();
-    let user2_session_id = Uuid::new_v4();
+    let user1_session_id = Uuid::new_v4().into();
+    let user2_session_id = Uuid::new_v4().into();
 
     // Create chat sessions in database to satisfy foreign key constraint
     let conn = test_app
@@ -360,9 +367,9 @@ async fn test_agent_analysis_storage_security() {
             .values((
                 chat_sessions::id.eq(user1_session_id),
                 chat_sessions::user_id.eq(user1.id),
-                chat_sessions::character_id.eq::<Option<Uuid>>(None),
-                chat_sessions::created_at.eq(chrono::Utc::now()),
-                chat_sessions::updated_at.eq(chrono::Utc::now()),
+                chat_sessions::character_id.eq::<Option<DbId>>(None),
+                chat_sessions::created_at.eq(DbTimestamp::now()),
+                chat_sessions::updated_at.eq(DbTimestamp::now()),
                 chat_sessions::history_management_strategy.eq("truncate".to_string()),
                 chat_sessions::history_management_limit.eq(4000),
                 chat_sessions::model_name.eq("gemini-2.5-pro".to_string()),
@@ -375,9 +382,9 @@ async fn test_agent_analysis_storage_security() {
             .values((
                 chat_sessions::id.eq(user2_session_id),
                 chat_sessions::user_id.eq(user2.id),
-                chat_sessions::character_id.eq::<Option<Uuid>>(None),
-                chat_sessions::created_at.eq(chrono::Utc::now()),
-                chat_sessions::updated_at.eq(chrono::Utc::now()),
+                chat_sessions::character_id.eq::<Option<DbId>>(None),
+                chat_sessions::created_at.eq(DbTimestamp::now()),
+                chat_sessions::updated_at.eq(DbTimestamp::now()),
                 chat_sessions::history_management_strategy.eq("truncate".to_string()),
                 chat_sessions::history_management_limit.eq(4000),
                 chat_sessions::model_name.eq("gemini-2.5-pro".to_string()),
@@ -392,8 +399,8 @@ async fn test_agent_analysis_storage_security() {
     .expect("Failed to create chat sessions");
 
     // Create message IDs for the analyses
-    let user1_message_id = Uuid::new_v4();
-    let user2_message_id = Uuid::new_v4();
+    let user1_message_id = Uuid::new_v4().into();
+    let user2_message_id = Uuid::new_v4().into();
 
     // Create chat messages in database to satisfy foreign key constraint
     // (agent_context_analysis.message_id references chat_messages.id)
@@ -412,13 +419,23 @@ async fn test_agent_analysis_storage_security() {
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-flash-lite".to_string(),
+            status: "completed".to_string(),
+            variant_count: 1,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: scribe_backend::db::DbDecimal::from(0),
+            actual_cost: scribe_backend::db::DbDecimal::from(0),
+            modified_cost: scribe_backend::db::DbDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: scribe_backend::db::DbDecimal::from(0),
+            game_time: None,
         };
 
         insert_into(chat_messages::table)
@@ -436,13 +453,23 @@ async fn test_agent_analysis_storage_security() {
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-flash-lite".to_string(),
+            status: "completed".to_string(),
+            variant_count: 1,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: scribe_backend::db::DbDecimal::from(0),
+            actual_cost: scribe_backend::db::DbDecimal::from(0),
+            modified_cost: scribe_backend::db::DbDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: scribe_backend::db::DbDecimal::from(0),
+            game_time: None,
         };
 
         insert_into(chat_messages::table)
@@ -457,36 +484,36 @@ async fn test_agent_analysis_storage_security() {
 
     // Store agent analysis for each user with required message_id
     let user1_analysis = NewAgentContextAnalysis::new_encrypted(
-        user1_session_id,
+        user1_session_id.into(),
         user1.id,
         AnalysisType::PreProcessing,
         "User1's sensitive reasoning",
-        &json!({"searches": ["user1_secret"]}),
-        &json!({"steps": ["user1_execution"]}),
+        &scribe_backend::db::DbJson::new(json!({"searches": ["user1_secret"]})),
+        &scribe_backend::db::DbJson::new(json!({"steps": ["user1_execution"]})),
         "User1's sensitive context",
         "User1's sensitive analysis summary",
         100,
         1500,
         "gemini-2.5-flash-lite",
         user1_dek,
-        user1_message_id, // Required message_id
+        user1_message_id.into(), // Required message_id
     )
     .expect("Failed to create user1 analysis");
 
     let user2_analysis = NewAgentContextAnalysis::new_encrypted(
-        user2_session_id,
+        user2_session_id.into(),
         user2.id,
         AnalysisType::PostProcessing,
         "User2's sensitive reasoning",
-        &json!({"searches": ["user2_secret"]}),
-        &json!({"steps": ["user2_execution"]}),
+        &scribe_backend::db::DbJson::new(json!({"searches": ["user2_secret"]})),
+        &scribe_backend::db::DbJson::new(json!({"steps": ["user2_execution"]})),
         "User2's sensitive context",
         "User2's sensitive analysis summary",
         200,
         2500,
         "gemini-2.5-flash-lite",
         user2_dek,
-        user2_message_id, // Required message_id
+        user2_message_id.into(), // Required message_id
     )
     .expect("Failed to create user2 analysis");
 
@@ -585,7 +612,7 @@ async fn test_agent_analysis_storage_security() {
         use scribe_backend::schema::agent_context_analysis;
 
         delete(agent_context_analysis::table)
-            .filter(agent_context_analysis::user_id.eq_any(&[user1.id, user2.id]))
+            .filter(agent_context_analysis::user_id.eq_any(vec![*user1.id, *user2.id]))
             .execute(conn)
     })
     .await

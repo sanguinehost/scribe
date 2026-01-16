@@ -10,7 +10,7 @@ use axum_login::AuthSession;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use secrecy::{ExposeSecret, SecretBox};
 use std::fmt;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Represents the session's Data Encryption Key (DEK).
 /// This struct is intended to be used as an Axum request extractor.

@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod chat_overrides_api_tests {
     use reqwest::StatusCode as ReqwestStatusCode;
+    use scribe_backend::db::DbId;
     use scribe_backend::models::characters::Character;
     use scribe_backend::models::chat_override::CharacterOverrideDto;
     use scribe_backend::models::chats::Chat as ChatSession; // Renamed to avoid conflict with Character field
@@ -16,8 +17,8 @@ mod chat_overrides_api_tests {
     // Helper to create a chat session via API
     async fn create_chat_session_via_api(
         test_app: &TestApp,
-        _user_id: Uuid,
-        character_id: Uuid,
+        _user_id: DbId,
+        character_id: DbId,
         auth_cookie: &str,
     ) -> ChatSession {
         let request_body = json!({ "character_id": character_id });
@@ -271,7 +272,7 @@ mod chat_overrides_api_tests {
             .build()
             .unwrap();
 
-        let non_existent_session_id = Uuid::new_v4();
+        let non_existent_session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
 
         let override_dto = CharacterOverrideDto {
             field_name: "description".to_string(),

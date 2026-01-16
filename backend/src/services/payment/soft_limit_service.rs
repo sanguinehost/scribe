@@ -86,7 +86,7 @@ impl SoftLimitService {
                     date: today,
                     message_count: 0,
                     token_count: 0,
-                    model_breakdown: Some(json!({})),
+                    model_breakdown: Some(crate::db::Json(json!({}))),
                     soft_limit_triggered_at: None,
                 };
 
@@ -121,10 +121,14 @@ impl SoftLimitService {
         usage.token_count += token_count;
 
         // Update model breakdown
-        let mut breakdown = usage.model_breakdown.clone().unwrap_or_else(|| json!({}));
+        let mut breakdown = usage
+            .model_breakdown
+            .clone()
+            .map(|j| j.0)
+            .unwrap_or_else(|| json!({}));
         let model_count = breakdown[model].as_i64().unwrap_or(0);
         breakdown[model] = json!(model_count + 1);
-        usage.model_breakdown = Some(breakdown);
+        usage.model_breakdown = Some(crate::db::Json(breakdown));
 
         // Check if soft limit should trigger
         if self.is_enabled() && usage.soft_limit_triggered_at.is_none() {

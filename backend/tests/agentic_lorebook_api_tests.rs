@@ -70,11 +70,11 @@ fn insert_test_user_with_password(
         password_hash: hashed_password,
         email,
         kek_salt,
-        encrypted_dek,
+        encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
         role: UserRole::User,
         recovery_kek_salt: None,
-        dek_nonce,
+        dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
         total_prompt_tokens: 0,
@@ -263,9 +263,7 @@ mod generate_entries_api_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(
-                    batch_response.to_string(),
-                )],
+                content: genai::chat::MessageContent::from_text(batch_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(100),
@@ -274,6 +272,7 @@ mod generate_entries_api_tests {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             };
 
             mock_client.set_response(Ok(ai_response));
@@ -307,7 +306,7 @@ mod generate_entries_api_tests {
         // Verify entries have IDs and titles
         for entry in &result.entries {
             assert!(!entry.entry_title.is_empty());
-            assert_ne!(entry.id, Uuid::nil());
+            assert_ne!(*entry.id, Uuid::nil());
         }
 
         guard.cleanup().await?;
@@ -454,9 +453,7 @@ mod analyze_lorebook_api_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(
-                    analysis_response.to_string(),
-                )],
+                content: genai::chat::MessageContent::from_text(analysis_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(150),
@@ -465,6 +462,7 @@ mod analyze_lorebook_api_tests {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             };
 
             mock_client.set_response(Ok(ai_response));
@@ -585,9 +583,7 @@ mod token_tracking_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(
-                    batch_response.to_string(),
-                )],
+                content: genai::chat::MessageContent::from_text(batch_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(1250),
@@ -596,6 +592,7 @@ mod token_tracking_tests {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             };
 
             mock_client.set_response(Ok(ai_response));
@@ -666,9 +663,7 @@ mod token_tracking_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(
-                    analysis_response.to_string(),
-                )],
+                content: genai::chat::MessageContent::from_text(analysis_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: Some(800),
@@ -677,6 +672,7 @@ mod token_tracking_tests {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             };
 
             mock_client.set_response(Ok(ai_response));
@@ -744,9 +740,7 @@ mod token_tracking_tests {
             let ai_response = ChatResponse {
                 model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
                 provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                contents: vec![genai::chat::MessageContent::Text(
-                    batch_response.to_string(),
-                )],
+                content: genai::chat::MessageContent::from_text(batch_response.to_string()),
                 reasoning_content: None,
                 usage: Usage {
                     prompt_tokens: None,
@@ -755,6 +749,7 @@ mod token_tracking_tests {
                     prompt_tokens_details: None,
                     completion_tokens_details: None,
                 },
+                captured_raw_body: None,
             };
 
             mock_client.set_response(Ok(ai_response));
@@ -797,22 +792,22 @@ mod extract_from_chat_api_tests {
     /// Helper to create test chat session
     async fn create_test_chat_session(
         pool: &Pool,
-        user_id: Uuid,
-        character_id: Uuid,
+        user_id: scribe_backend::db::DbId,
+        character_id: scribe_backend::db::DbId,
     ) -> Result<Uuid, anyhow::Error> {
         let chat_id = Uuid::new_v4();
         let now = Utc::now();
         let new_chat = NewChat {
-            id: chat_id,
-            user_id,
-            character_id,
+            id: chat_id.into(),
+            user_id: user_id.into(),
+            character_id: character_id.into(),
             title_ciphertext: None,
             title_nonce: None,
-            created_at: now,
-            updated_at: now,
+            created_at: now.into(),
+            updated_at: now.into(),
             history_management_strategy: "sliding_window".to_string(),
             history_management_limit: 20,
-            model_name: "gemini-2.5-flash".to_string(),
+            model_name: Some("gemini-2.5-flash".to_string()),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -823,7 +818,7 @@ mod extract_from_chat_api_tests {
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: None,
+            stop_sequences: scribe_backend::models::OptionalStringArray(None),
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             system_prompt_ciphertext: None,
@@ -832,11 +827,23 @@ mod extract_from_chat_api_tests {
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
             estimated_cost_cents: 0,
-            tokens_counted_at: now,
-            total_credits_used: bigdecimal::BigDecimal::from(0),
+            tokens_counted_at: now.into(),
+            total_credits_used: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
             prompt_template_id: "default".to_string(),
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
+            game_state: None,
+            game_master_mode_enabled: false,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
+            total_actual_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            total_modified_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            total_credit_cost: 0,
+            total_actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            ..Default::default()
         };
 
         run_db_op(pool, move |conn| {
@@ -854,7 +861,7 @@ mod extract_from_chat_api_tests {
     async fn create_test_messages(
         pool: &Pool,
         session_id: Uuid,
-        user_id: Uuid,
+        user_id: scribe_backend::db::DbId,
         dek: &SessionDek,
     ) -> Result<(), anyhow::Error> {
         use scribe_backend::services::EncryptionService;
@@ -889,12 +896,12 @@ mod extract_from_chat_api_tests {
             };
 
             let new_message = NewChatMessage {
-                id: Uuid::new_v4(),
-                session_id,
+                id: Uuid::new_v4().into(),
+                session_id: session_id.into(),
                 user_id,
                 message_type: message_role,
-                content: content_ciphertext,
-                content_nonce: Some(content_nonce),
+                content: content_ciphertext.into(),
+                content_nonce: Some(content_nonce.into()),
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 role: Some(role.to_string()),
@@ -905,6 +912,16 @@ mod extract_from_chat_api_tests {
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-flash".to_string(),
+                status: "completed".to_string(),
+                variant_count: 1,
+                current_variant_index: 0,
+                credits_charged: 0,
+                credits_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                actual_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                modified_cost: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                credit_cost: 0,
+                actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+                game_time: None,
             };
 
             run_db_op(pool, move |conn| {
@@ -945,7 +962,7 @@ mod extract_from_chat_api_tests {
         let character_id = Uuid::new_v4();
 
         // Create chat session and messages
-        let chat_session_id = create_test_chat_session(&pool, user.id, character_id).await?;
+        let chat_session_id = create_test_chat_session(&pool, user.id, character_id.into()).await?;
         create_test_messages(&pool, chat_session_id, user.id, &dek).await?;
 
         // Call extract endpoint
@@ -1034,7 +1051,7 @@ mod extract_from_chat_api_tests {
 
         // Create empty chat session
         let character_id = Uuid::new_v4();
-        let chat_session_id = create_test_chat_session(&pool, user.id, character_id).await?;
+        let chat_session_id = create_test_chat_session(&pool, user.id, character_id.into()).await?;
 
         // Call extract endpoint with empty chat
         let extract_payload = json!({
@@ -1093,7 +1110,7 @@ mod extract_from_chat_api_tests {
 
         // Create chat session with messages
         let character_id = Uuid::new_v4();
-        let chat_session_id = create_test_chat_session(&pool, user.id, character_id).await?;
+        let chat_session_id = create_test_chat_session(&pool, user.id, character_id.into()).await?;
         create_test_messages(&pool, chat_session_id, user.id, &dek).await?;
 
         // Test invalid indices (start > end)

@@ -6,8 +6,7 @@ use tracing::{info, instrument, warn};
 use crate::{
     errors::AppError,
     models::template_preferences::{
-        NewTemplatePreference, TemplatePreference, TemplatePreferenceResponse,
-        UpdateTemplatePreferenceRequest,
+        TemplatePreference, TemplatePreferenceResponse, UpdateTemplatePreferenceRequest,
     },
     schema::template_preferences,
     state::DbPool,

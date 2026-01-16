@@ -5,6 +5,7 @@
 use scribe_backend::models::character_card::{CharacterCardDataV3, CharacterCardV3, NewCharacter};
 use scribe_backend::services::character_parser::ParsedCharacterCard;
 // Add this if not already implicitly imported by other uses
+use scribe_backend::db::DbId;
 use uuid::Uuid; // Keep this specific import
 
 #[test]
@@ -169,7 +170,7 @@ fn create_minimal_v2_fallback(name: &str) -> ParsedCharacterCard {
 
 #[test]
 fn test_from_parsed_card_v2_empty_collections() {
-    let user_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4().into();
     let parsed_v2 = create_minimal_v2_fallback("V2 Empty Collections");
 
     let new_char = NewCharacter::from_parsed_card(&parsed_v2, user_id);
@@ -178,14 +179,14 @@ fn test_from_parsed_card_v2_empty_collections() {
     assert_eq!(new_char.name, "V2 Empty Collections");
     assert_eq!(new_char.spec, "chara_card_v2");
     assert_eq!(new_char.spec_version, "2.0");
-    assert!(new_char.tags.is_none()); // Should be None when empty
-    assert!(new_char.alternate_greetings.is_none()); // Should be None when empty
+    assert!(new_char.tags.is_empty()); // Should be empty
+    assert!(new_char.alternate_greetings.is_empty()); // Should be empty
     assert!(new_char.description.is_none()); // Default empty string becomes None
 }
 
 #[test]
 fn test_from_parsed_card_v2_with_collections() {
-    let user_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4().into();
     let data_v2 = CharacterCardDataV3 {
         // Removed mut, not needed
         name: Some("V2 With Collections".to_string()),
@@ -204,11 +205,14 @@ fn test_from_parsed_card_v2_with_collections() {
     assert_eq!(new_char.spec_version, "2.0");
     assert_eq!(
         new_char.tags,
-        Some(vec![Some("tag1".to_string()), Some("tag2".to_string())])
+        scribe_backend::models::OptionalStringArray(Some(vec![
+            Some("tag1".to_string()),
+            Some("tag2".to_string())
+        ]))
     );
     assert_eq!(
         new_char.alternate_greetings,
-        Some(vec![Some("hi".to_string())])
+        scribe_backend::models::OptionalStringArray(Some(vec![Some("hi".to_string())]))
     );
     assert_eq!(new_char.description, Some(b"A description".to_vec()));
 }
@@ -216,7 +220,7 @@ fn test_from_parsed_card_v2_with_collections() {
 // Add a test for V3 conversion as well for completeness
 #[test]
 fn test_from_parsed_card_v3() {
-    let user_id = Uuid::new_v4();
+    let user_id = Uuid::new_v4().into();
     let data_v3 = CharacterCardDataV3 {
         name: Some("V3 Full".to_string()),
         description: "V3 Desc".to_string(),
@@ -280,10 +284,13 @@ fn test_from_parsed_card_v3() {
         new_char.post_history_instructions,
         Some(data_v3.post_history_instructions.as_bytes().to_vec())
     );
-    assert_eq!(new_char.tags, Some(vec![Some("v3tag".to_string())]));
+    assert_eq!(
+        new_char.tags,
+        scribe_backend::models::OptionalStringArray(Some(vec![Some("v3tag".to_string())]))
+    );
     assert_eq!(
         new_char.alternate_greetings,
-        Some(vec![Some("v3greet".to_string())])
+        scribe_backend::models::OptionalStringArray(Some(vec![Some("v3greet".to_string())]))
     );
     assert_eq!(new_char.creator, Some(data_v3.creator));
     assert_eq!(new_char.character_version, Some(data_v3.character_version));

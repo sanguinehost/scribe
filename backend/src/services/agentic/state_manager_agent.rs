@@ -14,6 +14,7 @@
 //! - This prevents drift, hallucination, and cheating
 //! - Uses plaintext format instead of JSON Schema for better LLM compatibility
 
+use super::CharacterContext;
 use crate::errors::AppError;
 use crate::models::game_state::{
     EnvironmentState, GameState, GameTime, InventoryItem, Location, NpcState, Quest,
@@ -94,6 +95,7 @@ impl StateManagerAgent {
         last_assistant_message: &str,
         player_name: Option<&str>,
         character_name: Option<&str>,
+        character_context: Option<&CharacterContext>,
     ) -> Result<GameState, AppError> {
         // Build prompts
         let system_prompt = self.build_system_prompt(player_name, character_name);
@@ -104,6 +106,7 @@ impl StateManagerAgent {
             last_assistant_message,
             player_name,
             character_name,
+            character_context,
         );
 
         debug!(
@@ -241,6 +244,17 @@ Season: [season name]
 Calendar: [Earth/Fantasy/Sci-Fi/etc.]
 Date: [full date string, e.g. "2025-12-19", "15th of Highsun, Year 120", or "4th Day of the Lotus Moon, Year of the Dragon"]
 Total Seconds Elapsed: [total seconds since game start]
+
+Calendar Definition
+---
+(ONLY include this section if you are defining a NEW calendar or CHANGING an existing one. If the current calendar is correct, you may omit this section.)
+Name: [calendar name]
+SecondsPerMinute: [60]
+MinutesPerHour: [60]
+HoursPerDay: [24]
+Months: [Month1, Month2, ...]
+DaysPerMonth: [30, 31, ...] (Use a single number for all months, or a comma-separated list)
+Weekdays: [Day1, Day2, ...]
 TIME CONTINUITY:
 - MICRO-TIME (Conversations, Trading, Crafting, Combat): Increment by MINUTES only.
   - Buying an item: +5-10 mins
@@ -324,6 +338,12 @@ RULES:
 4. Use reasonable defaults for values not explicitly stated
 5. For new games, infer initial state from {{user}}'s context
 
+CALENDAR RULES:
+- If the current game state does NOT have a `calendar_config` (or it is default/empty) and the setting is NOT modern Earth, you MUST define a setting-appropriate calendar in your response.
+- Use the `Calendar Definition` section in your `game-state` block.
+- Specify `Months`, `DaysPerMonth`, `HoursPerDay`, etc.
+- Ensure the calendar is consistent with the character's background and the world setting.
+
 CRITICAL - VITALS:
 - Always use format: stat_name: current/max (e.g., health: 85/100)
 - Never use separate "current" and "max" fields
@@ -381,6 +401,7 @@ CRITICAL - STATUS EFFECTS:
         last_assistant_message: &str,
         player_name: Option<&str>,
         character_name: Option<&str>,
+        character_context: Option<&CharacterContext>,
     ) -> String {
         // Format current state as plaintext for context
         let current_state_text = match current_state {
@@ -409,6 +430,10 @@ CRITICAL - STATUS EFFECTS:
             String::new()
         };
 
+        let character_description = character_context
+            .map(|c| c.to_prompt_context())
+            .unwrap_or_else(|| "No specific character context available.".to_string());
+
         let prompt = format!(
             r#"You are updating the game state based on the MOST RECENT exchange only.
 
@@ -423,6 +448,10 @@ TRANSACTION RULES:
 - Do NOT add items just because they were offered.
 - Wait for the explicit exchange to happen in the text.
 </state_tracking_rules>
+
+<character_description>
+{}
+</character_description>
 
 === AUTHORITATIVE CURRENT STATE ===
 This is the CURRENT game state. Time, day, and all values are ALREADY CORRECT.
@@ -457,6 +486,7 @@ The time should only change by the amount that passes DURING the current turn,
 NOT including any time from prior_context (that's already in the state).
 
 Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
+            character_description,
             current_state_text,
             recent_changes_section,
             conversation_summary,
@@ -524,6 +554,32 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             output.push_str(&format!(
                 "  Total Seconds Elapsed: {}\n",
                 time.total_seconds_elapsed
+            ));
+        }
+
+        // === CALENDAR DEFINITION ===
+        if let Some(ref config) = state.calendar_config {
+            output.push_str("Calendar Definition:\n");
+            output.push_str(&format!("  Name: {}\n", config.name));
+            output.push_str(&format!(
+                "  SecondsPerMinute: {}\n",
+                config.seconds_per_minute
+            ));
+            output.push_str(&format!("  MinutesPerHour: {}\n", config.minutes_per_hour));
+            output.push_str(&format!("  HoursPerDay: {}\n", config.hours_per_day));
+            output.push_str(&format!("  Months: {}\n", config.month_names.join(", ")));
+            output.push_str(&format!(
+                "  DaysPerMonth: {}\n",
+                config
+                    .days_per_month
+                    .iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+            output.push_str(&format!(
+                "  Weekdays: {}\n",
+                config.weekday_names.join(", ")
             ));
         }
 
@@ -709,6 +765,11 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             game_state.game_time = Some(Self::parse_time_section(time_text));
         }
 
+        // Parse Calendar Definition section
+        if let Some(cal_text) = sections.get("calendar definition") {
+            game_state.calendar_config = Some(Self::parse_calendar_definition_section(cal_text));
+        }
+
         // Parse Vitals section
         if let Some(vitals_text) = sections.get("vitals") {
             game_state.vitals = Self::parse_vitals_section(vitals_text);
@@ -807,23 +868,8 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
     /// Headers are case-insensitive keywords followed by optional "---"
     fn parse_sections(text: &str) -> HashMap<String, String> {
         let mut sections: HashMap<String, String> = HashMap::new();
-        let known_headers = [
-            "location",
-            "environment",
-            "time",
-            "vitals",
-            "currency",
-            "inventory",
-            "equipment",
-            "main quest",
-            "optional quests",
-            "quests",
-            "npcs",
-            "status effects",
-        ];
-
         // Match section headers: "Location", "Location\n---", "## Location", etc.
-        let header_re = Regex::new(r"(?mi)^(?:#*\s*)?(location|environment|time|vitals|currency|inventory|equipment|main quest|optional quests|quests|npcs|status effects)\s*$").unwrap();
+        let header_re = Regex::new(r"(?mi)^(?:#*\s*)?(location|environment|time|calendar definition|vitals|currency|inventory|equipment|main quest|optional quests|quests|npcs|status effects)\s*$").unwrap();
 
         let mut current_section: Option<String> = None;
         let mut current_content = String::new();
@@ -979,6 +1025,53 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             weekday,
             total_seconds_elapsed,
         }
+    }
+
+    /// Parse Calendar Definition section
+    fn parse_calendar_definition_section(text: &str) -> crate::models::game_state::CalendarConfig {
+        let mut config = crate::models::game_state::CalendarConfig::default();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some((key, value)) = trimmed.split_once(':') {
+                let key = key.trim().to_lowercase();
+                let value = value.trim();
+                match key.as_str() {
+                    "name" => config.name = value.to_string(),
+                    "secondsperminute" | "seconds_per_minute" => {
+                        config.seconds_per_minute = value.parse().unwrap_or(60)
+                    }
+                    "minutesperhour" | "minutes_per_hour" => {
+                        config.minutes_per_hour = value.parse().unwrap_or(60)
+                    }
+                    "hoursperday" | "hours_per_day" => {
+                        config.hours_per_day = value.parse().unwrap_or(24)
+                    }
+                    "dayspermonth" | "days_per_month" => {
+                        let days: Vec<u32> = value
+                            .split(',')
+                            .filter_map(|s| s.trim().parse().ok())
+                            .collect();
+                        if !days.is_empty() {
+                            config.days_per_month = days;
+                        } else if let Ok(d) = value.parse::<u32>() {
+                            config.days_per_month = vec![d; config.month_names.len().max(12)];
+                        }
+                    }
+                    "months" | "month_names" => {
+                        config.month_names =
+                            value.split(',').map(|s| s.trim().to_string()).collect();
+                    }
+                    "weekdays" | "weekday_names" => {
+                        config.weekday_names =
+                            value.split(',').map(|s| s.trim().to_string()).collect();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        config
     }
 
     /// Parse Vitals section - handles "- stat_name: current/max" or "- stat_name: current / max"
@@ -1628,6 +1721,7 @@ Name: Forest Edge
             "You find yourself in a small village at dawn...",
             None,
             None,
+            None,
         );
 
         assert!(prompt.contains("(New game session - infer initial state from context)"));
@@ -1656,6 +1750,7 @@ Name: Forest Edge
             "Player explored the village square.",
             "I walk toward the blacksmith.",
             "The blacksmith looks up from his anvil...",
+            None,
             None,
             None,
         );
@@ -1717,6 +1812,7 @@ Name: Forest Edge
             "The cavern walls glisten with moisture...",
             None,
             None,
+            None,
         );
 
         // Verify complex state serialized correctly
@@ -1741,6 +1837,7 @@ Name: Forest Edge
             "New adventure beginning.",
             "I check my surroundings.",
             "You stand at the edge of a forest...",
+            None,
             None,
             None,
         );
@@ -1814,6 +1911,7 @@ Tags: nature, peaceful
             "Context",
             "User message",
             "Assistant response",
+            None,
             None,
             None,
         );

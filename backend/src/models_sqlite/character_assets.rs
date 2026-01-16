@@ -3,7 +3,6 @@
 
 use crate::db::DbId;
 use crate::db::DbTimestamp;
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 

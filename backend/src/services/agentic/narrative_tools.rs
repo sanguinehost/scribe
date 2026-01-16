@@ -10,8 +10,10 @@ use crate::{
     errors::AppError,
     llm::{AiClient, EmbeddingClient},
     services::{
-        embeddings::{ChatMessageChunkMetadata, ChronicleEventMetadata, LorebookChunkMetadata},
-        safety_utils::create_unrestricted_safety_settings,
+        embeddings::{
+            ChatMessageChunkMetadata, ChronicleEventMetadata, CognitiveFactMetadata,
+            LorebookChunkMetadata,
+        },
         ChronicleService, LorebookService,
     },
     state::AppState,
@@ -21,6 +23,7 @@ use crate::{
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
 
 /// Generate JSON schema for text significance triage response
+#[allow(dead_code)]
 fn get_text_significance_triage_schema() -> crate::DbJson {
     crate::db::Json(serde_json::json!({
         "type": "object",
@@ -843,40 +846,38 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query (e.g., character name, location, concept)"
+                    "description": "The search query (e.g., 'What does Aragorn think of Legolas?')"
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "The UUID of the user (SECURITY: required)"
+                },
+                "chronicle_id": {
+                    "type": "string",
+                    "description": "Optional UUID of the chronicle to scope search"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional UUID of the chat session to scope search"
                 },
                 "search_type": {
                     "type": "string",
-                    "enum": ["all", "chronicles", "lorebooks"],
-                    "description": "What to search: 'all' for both, 'chronicles' for events only, 'lorebooks' for lore only",
+                    "enum": ["all", "lorebooks", "chronicles", "facts"],
+                    "description": "What type of knowledge to search for",
                     "default": "all"
+                },
+                "actor": {
+                    "type": "string",
+                    "description": "Optional character name to filter facts for (e.g., 'Aragorn')"
                 },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of results to return",
-                    "default": 10,
-                    "minimum": 1,
-                    "maximum": 50
+                    "default": 10
                 },
-                "user_id": {
-                    "type": "string",
-                    "description": "REQUIRED: User ID to filter search results to user's own data only"
-                },
-                "chronicle_id": {
-                    "type": "string",
-                    "description": "Optional: Chronicle ID to filter results to all sessions within this chronicle"
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional: Session ID to filter results to only this specific session (used when no chronicle exists)"
-                },
-                "session_dek": {
-                    "type": "string",
-                    "description": "INTERNAL: Hex-encoded session DEK for decrypting encrypted content in search results"
-                },
-                "game_time_day": {
+                "max_game_time_day": {
                     "type": "integer",
-                    "description": "Optional: Filter results to a specific game day (e.g., 5)"
+                    "description": "Optional maximum game day to filter facts for (temporal filtering)"
                 }
             },
             "required": ["query", "user_id"]
@@ -941,8 +942,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 crate::auth::session_dek::SessionDek(secret)
             });
 
-        // Optional game_time_day for filtering
-        let game_time_day_opt = params.get("game_time_day").and_then(|v| v.as_i64());
+        // Optional actor filter for facts
+        let actor_opt = params.get("actor").and_then(|v| v.as_str());
+
+        // Optional temporal filter for facts
+        let max_game_time_day = params.get("max_game_time_day").and_then(|v| v.as_i64());
 
         if session_dek_opt.is_some() {
             debug!("SessionDek provided for search result decryption");
@@ -951,8 +955,8 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         }
 
         info!(
-            "Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}, chronicle: {:?}, session: {:?}, day: {:?}",
-            query, search_type, limit, user_id, chronicle_id_opt, session_id_opt, game_time_day_opt
+            "Vector searching knowledge base for '{}' (type: {}, limit: {}) for user {}, chronicle: {:?}, session: {:?}, actor: {:?}",
+            query, search_type, limit, user_id, chronicle_id_opt, session_id_opt, actor_opt
         );
 
         // Critical debug: Log which scope we're using
@@ -1104,7 +1108,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     }
                 }
 
-                // Add condition for chronicle events (if searching all)
+                // Add condition for chronicle events (if searching all or chronicles)
                 if matches!(search_type, "all" | "chronicles") {
                     // Chronicle events might be associated with the session
                     should_conditions.push(Condition {
@@ -1120,6 +1124,45 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                     ..Default::default()
                                 })),
                             }],
+                            ..Default::default()
+                        })),
+                    });
+                }
+
+                // Add condition for cognitive facts (if searching all or facts)
+                if matches!(search_type, "all" | "facts") {
+                    let mut fact_must = vec![Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: "source_type".to_string(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Keyword(
+                                    "cognitive_fact".to_string(),
+                                )),
+                            }),
+                            ..Default::default()
+                        })),
+                    }];
+
+                    // Add temporal filter if provided
+                    if let Some(max_day) = max_game_time_day {
+                        use qdrant_client::qdrant::{
+                            condition::ConditionOneOf as QConditionOneOf, Range,
+                        };
+                        fact_must.push(Condition {
+                            condition_one_of: Some(QConditionOneOf::Field(FieldCondition {
+                                key: "game_time.day".to_string(),
+                                range: Some(Range {
+                                    lte: Some(max_day as f64),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            })),
+                        });
+                    }
+
+                    should_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                            must: fact_must,
                             ..Default::default()
                         })),
                     });
@@ -1230,6 +1273,18 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 ..Default::default()
                             })),
                         },
+                        // Include cognitive facts
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "source_type".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(
+                                        "cognitive_fact".to_string(),
+                                    )),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
                     ],
                     ..Default::default()
                 }
@@ -1243,14 +1298,14 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             }
         };
 
-        // Add game_time_day filter if provided
-        if let Some(day) = game_time_day_opt {
-            debug!("Adding game_time_day filter: {}", day);
+        // Add actor filter if provided (for facts)
+        if let Some(actor) = actor_opt {
+            debug!("Adding actor filter: {}", actor);
             search_filter.must.push(Condition {
                 condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
-                    key: "game_time.day".to_string(),
+                    key: "who".to_string(),
                     r#match: Some(Match {
-                        match_value: Some(MatchValue::Integer(day)),
+                        match_value: Some(MatchValue::Keyword(actor.to_string())),
                     }),
                     ..Default::default()
                 })),
@@ -1263,6 +1318,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
         let score_threshold = match search_type {
             "lorebooks" => Some(0.20),  // Lowered from 0.35
             "chronicles" => Some(0.25), // Lowered from 0.40
+            "facts" => Some(0.25),      // New threshold for facts
             _ => Some(0.20),            // Lowered from 0.30
         };
 
@@ -1599,40 +1655,19 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
                     // 3. If still no content, try chunk_text (if not placeholder)
                     if content.is_none() {
-                        if let Some(text_value) = payload_map.get("chunk_text") {
-                            let text = match text_value {
-                                qdrant_client::qdrant::Value {
-                                    kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s)),
-                                } => s.clone(),
-                                _ => String::new(),
-                            };
-
-                            if !text.is_empty()
-                                && text != "[encrypted]"
-                                && text != "[MISSING ENCRYPTION]"
-                            {
-                                content = Some(text);
+                        if let Some(text) = payload_map.get("chunk_text").and_then(|v| v.as_str()) {
+                            if text != "[encrypted]" {
+                                content = Some(text.to_string());
                             }
                         }
                     }
 
-                    // 4. Fallback formatting
-                    let content = content.unwrap_or_else(|| {
-                        format!(
-                            "Event type: {}, Chronicle: {}, Created: {}",
-                            chronicle_meta.event_type,
-                            chronicle_meta.chronicle_id,
-                            chronicle_meta.created_at.format("%Y-%m-%d %H:%M:%S")
-                        )
-                    });
-
                     let result = json!({
                         "type": "chronicle_event",
                         "id": chronicle_meta.event_id,
-                        "title": format!("Chronicle Event: {}", chronicle_meta.event_type),
-                        "content": content.clone(),
+                        "title": format!("Event: {}", chronicle_meta.event_type),
+                        "content": content.unwrap_or_else(|| "[content unavailable]".to_string()),
                         "relevance_score": scored_point.score,
-                        "snippet": content.chars().take(200).collect::<String>(),
                         "event_type": chronicle_meta.event_type,
                         "chronicle_id": chronicle_meta.chronicle_id.to_string(),
                         "created_at": chronicle_meta.created_at.to_rfc3339()
@@ -1647,6 +1682,62 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         }
                     } else {
                         results.push(result);
+                    }
+                }
+            } else if let Ok(fact_meta) = CognitiveFactMetadata::try_from(payload_map.clone()) {
+                // SECURITY: Double-check that this result belongs to the requesting user
+                if fact_meta.user_id != user_id.into() {
+                    error!(
+                        "SECURITY VIOLATION: Fact result for user {} returned to user {}",
+                        fact_meta.user_id, user_id
+                    );
+                    continue;
+                }
+
+                let should_include = matches!(search_type, "all" | "facts");
+                if should_include {
+                    // We need to fetch the actual fact from the DB to decrypt it
+                    match self
+                        .app_state
+                        .recall_pipeline
+                        .get_fact_by_id(
+                            user_id.into(),
+                            fact_meta.chronicle_id.into(),
+                            fact_meta.fact_id.into(),
+                        )
+                        .await
+                    {
+                        Ok(Some(fact)) => {
+                            if let Some(ref session_dek) = session_dek_opt {
+                                match fact.decrypt(session_dek) {
+                                    Ok(decrypted_fact) => {
+                                        results.push(json!({
+                                            "type": "cognitive_fact",
+                                            "id": fact_meta.fact_id,
+                                            "who": decrypted_fact.who,
+                                            "what": decrypted_fact.what,
+                                            "where": decrypted_fact.r#where,
+                                            "when": decrypted_fact.when,
+                                            "why": decrypted_fact.why,
+                                            "fact_type": decrypted_fact.fact_type,
+                                            "content": format!("{}", decrypted_fact),
+                                            "relevance_score": scored_point.score
+                                        }));
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to decrypt cognitive fact: {}", e);
+                                    }
+                                }
+                            } else {
+                                warn!("No SessionDek available to decrypt cognitive fact");
+                            }
+                        }
+                        Ok(None) => {
+                            warn!("Cognitive fact {} not found in DB", fact_meta.fact_id);
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch cognitive fact from DB: {}", e);
+                        }
                     }
                 }
             } else {
@@ -1690,19 +1781,13 @@ pub struct CreateBatchLorebookEntriesTool {
 /// Tool for analyzing existing lorebook entries and identifying gaps, inconsistencies, or improvement opportunities
 /// Uses AI to provide strategic recommendations for lorebook enhancement
 pub struct AnalyzeLorebookTool {
-    lorebook_service: Arc<LorebookService>,
     ai_client: Arc<dyn AiClient>,
     app_state: Arc<AppState>,
 }
 
 impl AnalyzeLorebookTool {
-    pub fn new(
-        lorebook_service: Arc<LorebookService>,
-        ai_client: Arc<dyn AiClient>,
-        app_state: Arc<AppState>,
-    ) -> Self {
+    pub fn new(ai_client: Arc<dyn AiClient>, app_state: Arc<AppState>) -> Self {
         Self {
-            lorebook_service,
             ai_client,
             app_state,
         }
@@ -1941,34 +2026,6 @@ Return your analysis as a JSON object with these four arrays."#,
             serde_json::to_string_pretty(&entry_summaries).unwrap()
         );
 
-        // Define structured output schema for the analysis
-        let analysis_schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "gaps": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Missing information or themes that would strengthen the lorebook"
-                },
-                "consistency_issues": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Contradictions or inconsistencies found between entries"
-                },
-                "improvement_suggestions": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Specific suggestions for enhancing existing entries"
-                },
-                "recommended_themes": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "New entry themes that would add value to the lorebook"
-                }
-            },
-            "required": ["gaps", "consistency_issues", "improvement_suggestions", "recommended_themes"]
-        });
-
         // Call AI with structured output
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
@@ -2186,9 +2243,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
         ));
 
         // Use AI to generate entries with structured outputs
-        use crate::services::character_generation::structured_output::{
-            get_batch_lorebook_entries_schema, BatchLorebookEntriesOutput,
-        };
+        use crate::services::character_generation::structured_output::BatchLorebookEntriesOutput;
         use genai::chat::{
             ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
             ChatResponseFormat, ChatRole, MessageContent,
@@ -2464,7 +2519,7 @@ impl ScribeTool for UpdateLorebookEntryTool {
 pub struct QueryRulesTool {
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,
-    app_state: Arc<AppState>,
+    _app_state: Arc<AppState>,
 }
 
 impl QueryRulesTool {
@@ -2476,7 +2531,7 @@ impl QueryRulesTool {
         Self {
             qdrant_service,
             embedding_client,
-            app_state,
+            _app_state: app_state,
         }
     }
 }

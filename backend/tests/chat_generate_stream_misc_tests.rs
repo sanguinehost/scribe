@@ -17,6 +17,7 @@ use tracing::debug;
 use uuid::Uuid;
 
 use scribe_backend::{
+    db::{DbId, DbStringArray, DbTimestamp},
     models::{
         characters::Character as DbCharacter,
         chats::{
@@ -84,7 +85,7 @@ async fn setup_test_user_and_auth(
 
 async fn create_test_character(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
+    user_id: DbId,
     char_name: String,
 ) -> DbCharacter {
     let conn_pool = test_app.db_pool.clone();
@@ -103,8 +104,8 @@ async fn create_test_character(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -118,8 +119,8 @@ async fn create_test_character(
 
 async fn create_test_chat_session(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
-    character_id: Uuid,
+    user_id: DbId,
+    character_id: DbId,
 ) -> ChatSession {
     let conn_pool = test_app.db_pool.clone();
     conn_pool
@@ -128,7 +129,7 @@ async fn create_test_chat_session(
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id,
                 character_id,
                 title_ciphertext: None,
@@ -137,7 +138,7 @@ async fn create_test_chat_session(
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test_model".to_string(),
+                model_name: Some("test_model".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -148,7 +149,7 @@ async fn create_test_chat_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
+                stop_sequences: DbStringArray(None),
                 gemini_thinking_budget: None,
                 gemini_enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -157,11 +158,14 @@ async fn create_test_chat_session(
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,
                 narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -175,7 +179,7 @@ async fn create_test_chat_session(
 
 async fn perform_empty_response_stream_test(
     test_app: &test_helpers::TestApp,
-    session_id: Uuid,
+    session_id: DbId,
     auth_cookie: &str,
     user_dek: &scribe_backend::models::users::SerializableSecretDek,
 ) {
@@ -264,7 +268,7 @@ fn verify_empty_stream_events(
 
 async fn verify_empty_stream_messages(
     test_app: &test_helpers::TestApp,
-    session_id: Uuid,
+    session_id: DbId,
     user_dek: &scribe_backend::models::users::SerializableSecretDek,
 ) {
     // Assert background save (wait a bit)
@@ -338,9 +342,13 @@ async fn generate_chat_response_streaming_empty_response() {
 
     let dek_for_assertion = user.dek.as_ref().expect("User DEK not found for assertion");
 
-    let character =
-        create_test_character(&test_app, user.id, "Stream Empty Resp Char".to_string()).await;
-    let session = create_test_chat_session(&test_app, user.id, character.id).await;
+    let character = create_test_character(
+        &test_app,
+        user.id.into(),
+        "Stream Empty Resp Char".to_string(),
+    )
+    .await;
+    let session = create_test_chat_session(&test_app, user.id.into(), character.id.into()).await;
 
     perform_empty_response_stream_test(&test_app, session.id, &auth_cookie, dek_for_assertion)
         .await;
@@ -348,7 +356,7 @@ async fn generate_chat_response_streaming_empty_response() {
 
 async fn perform_reasoning_chunk_stream_test(
     test_app: &test_helpers::TestApp,
-    session_id: Uuid,
+    session_id: DbId,
     auth_cookie: &str,
 ) {
     // Mock the AI client stream: Start -> Reasoning -> Chunk -> End
@@ -644,15 +652,19 @@ async fn generate_chat_response_streaming_reasoning_chunk() {
     let password = "password123";
     let (user, auth_cookie) = setup_test_user_and_auth(&test_app, username, password).await;
 
-    let character =
-        create_test_character(&test_app, user.id, "Stream Reasoning Char".to_string()).await;
-    let session = create_test_chat_session(&test_app, user.id, character.id).await;
+    let character = create_test_character(
+        &test_app,
+        user.id.into(),
+        "Stream Reasoning Char".to_string(),
+    )
+    .await;
+    let session = create_test_chat_session(&test_app, user.id.into(), character.id.into()).await;
 
     perform_reasoning_chunk_stream_test(&test_app, session.id, &auth_cookie).await;
 
     let dek_for_assertion = user.dek.as_ref().expect("User DEK not found for assertion");
 
-    verify_reasoning_chunk_messages(&test_app, session.id, dek_for_assertion).await;
+    verify_reasoning_chunk_messages(&test_app, *session.id, dek_for_assertion).await;
 }
 
 async fn setup_real_client_test_user_and_auth(
@@ -707,7 +719,7 @@ async fn setup_real_client_test_user_and_auth(
 
 async fn create_real_client_test_character(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
+    user_id: DbId,
     char_name: String,
 ) -> DbCharacter {
     let conn_pool = test_app.db_pool.clone();
@@ -726,8 +738,8 @@ async fn create_real_client_test_character(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator_real".to_string()),
                 persona: Some(b"Test persona real fail".to_vec()),
-                created_at: Some(Utc::now()),
-                updated_at: Some(Utc::now()),
+                created_at: Some(Utc::now().into()),
+                updated_at: Some(Utc::now().into()),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -741,8 +753,8 @@ async fn create_real_client_test_character(
 
 async fn create_real_client_test_session(
     test_app: &test_helpers::TestApp,
-    user_id: Uuid,
-    character_id: Uuid,
+    user_id: DbId,
+    character_id: DbId,
 ) -> ChatSession {
     let conn_pool = test_app.db_pool.clone();
     conn_pool
@@ -751,40 +763,21 @@ async fn create_real_client_test_session(
         .expect("Failed to get DB conn for session create")
         .interact(move |conn_sync| {
             let new_chat_session = NewChat {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id,
                 character_id,
-                title_ciphertext: None,
-                title_nonce: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "real-model-for-failure-test".to_string(),
+                model_name: Some("real-model-for-failure-test".to_string()),
                 visibility: Some("private".to_string()),
-                active_custom_persona_id: None,
-                active_impersonated_character_id: None,
-                temperature: None,
-                max_output_tokens: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                top_k: None,
-                top_p: None,
-                seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
-                system_prompt_ciphertext: None,
-                system_prompt_nonce: None,
-                player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
-                estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
-                total_credits_used: BigDecimal::from(0),
+                tokens_counted_at: chrono::Utc::now().into(),
+                total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
-                narrative_style_override_ciphertext: None,
-                narrative_style_override_nonce: None,
+                game_master_mode_enabled: false,
+                game_state: None,
+                ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
@@ -798,8 +791,8 @@ async fn create_real_client_test_session(
 
 async fn add_real_client_test_user_message(
     test_app: &test_helpers::TestApp,
-    session_id: Uuid,
-    user_id: Uuid,
+    session_id: DbId,
+    user_id: DbId,
     content: &str,
 ) {
     let conn_pool_msg = test_app.db_pool.clone();
@@ -810,7 +803,7 @@ async fn add_real_client_test_user_message(
         .expect("Failed to get DB conn for msg save")
         .interact(move |conn_sync| {
             let new_message = NewChatMessage {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 session_id,
                 user_id,
                 message_type: MessageRole::User,
@@ -819,13 +812,8 @@ async fn add_real_client_test_user_message(
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 role: Some("user".to_string()),
-                parts: None,
-                attachments: None,
-                prompt_tokens: None,
-                completion_tokens: None,
-                raw_prompt_ciphertext: None,
-                raw_prompt_nonce: None,
                 model_name: "gemini-1.5-pro".to_string(),
+                ..Default::default()
             };
             diesel::insert_into(chat_messages_dsl::chat_messages)
                 .values(&new_message)
@@ -838,7 +826,7 @@ async fn add_real_client_test_user_message(
 
 async fn perform_real_client_stream_test_and_verify(
     test_app: &test_helpers::TestApp,
-    session_id: Uuid,
+    session_id: DbId,
     auth_cookie: &str,
 ) {
     let user_message_content =
@@ -902,7 +890,7 @@ async fn perform_real_client_stream_test_and_verify(
     }
 }
 
-async fn verify_real_client_test_messages(test_app: &test_helpers::TestApp, session_id: Uuid) {
+async fn verify_real_client_test_messages(test_app: &test_helpers::TestApp, session_id: DbId) {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let messages: Vec<DbChatMessage> = test_app
@@ -955,14 +943,19 @@ async fn generate_chat_response_streaming_real_client_failure_repro() {
     let (user, auth_cookie) =
         setup_real_client_test_user_and_auth(&test_app, username, password).await;
 
-    let character =
-        create_real_client_test_character(&test_app, user.id, "Real Stream Fail Char".to_string())
-            .await;
-    let session = create_real_client_test_session(&test_app, user.id, character.id).await;
+    let character = create_real_client_test_character(
+        &test_app,
+        user.id.into(),
+        "Real Stream Fail Char".to_string(),
+    )
+    .await;
+    let session =
+        create_real_client_test_session(&test_app, user.id.into(), character.id.into()).await;
 
     let user_message_content =
         "A simple prompt likely to succeed in non-streaming, but might fail in streaming.";
-    add_real_client_test_user_message(&test_app, session.id, user.id, user_message_content).await;
+    add_real_client_test_user_message(&test_app, session.id, user.id.into(), user_message_content)
+        .await;
 
     perform_real_client_stream_test_and_verify(&test_app, session.id, &auth_cookie).await;
     verify_real_client_test_messages(&test_app, session.id).await;

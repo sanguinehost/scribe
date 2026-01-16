@@ -11,9 +11,7 @@
 
 use crate::db::DbPool;
 use crate::errors::AppError;
-use crate::models::game_state::{
-    GameState, GameTime, InventoryItem, Location, NpcState, Quest, QuestStatus, Vital,
-};
+use crate::models::game_state::{GameState, GameTime, InventoryItem, Quest, QuestStatus};
 use crate::schema::chat_sessions;
 use crate::services::reconciliation_detector::{ReconciliationAction, ReconciliationDetector};
 use diesel::prelude::*;
@@ -445,21 +443,37 @@ impl GameStateService {
         new: &GameState,
         final_state: &mut GameState,
     ) -> Option<StateChange> {
+        // 1. Determine the active calendar config
+        // Priority: LLM-suggested config > Current config > Default config
+        let calendar_config = new
+            .calendar_config
+            .as_ref()
+            .or(current.calendar_config.as_ref());
+
+        let default_config = crate::models::game_state::CalendarConfig::default();
+        let active_config = calendar_config.unwrap_or(&default_config);
+
+        // Update final state with the active config
+        final_state.calendar_config = Some(active_config.clone());
+
         if new.game_time != current.game_time {
             if let Some(new_time) = &new.game_time {
-                let mut validated_time = new_time.clone();
+                let mut total_seconds = new_time.total_seconds_elapsed;
 
                 // Ensure total_seconds_elapsed is monotonic
                 if let Some(current_time) = &current.game_time {
-                    if validated_time.total_seconds_elapsed < current_time.total_seconds_elapsed {
+                    if total_seconds < current_time.total_seconds_elapsed {
                         warn!(
-                            suggested = validated_time.total_seconds_elapsed,
+                            suggested = total_seconds,
                             current = current_time.total_seconds_elapsed,
                             "LLM suggested a time decrease, ignoring total_seconds_elapsed change"
                         );
-                        validated_time.total_seconds_elapsed = current_time.total_seconds_elapsed;
+                        total_seconds = current_time.total_seconds_elapsed;
                     }
                 }
+
+                // Derive the complete GameTime from total_seconds using the active config
+                let validated_time = active_config.derive_time(total_seconds);
 
                 debug!(new_time = ?validated_time, "Time advanced");
                 let old_time = current.game_time.clone();
@@ -552,7 +566,7 @@ impl GameStateService {
         final_state: &mut GameState,
     ) -> (Vec<StateChange>, Vec<(StateChange, String)>) {
         let mut applied = Vec::new();
-        let mut rejected = Vec::new();
+        let rejected = Vec::new();
 
         for (name, new_vital) in &new.vitals {
             let current_vital = current.vitals.get(name);
@@ -785,6 +799,7 @@ impl GameStateService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::game_state::{Location, NpcState, Vital};
 
     // ========================================================================
     // Test Helpers
@@ -818,8 +833,8 @@ mod tests {
             ) -> ReconciliationResult {
                 let mut final_state = current.clone();
                 let mut applied_changes = Vec::new();
-                let mut rejected_changes = Vec::new();
-                let mut warnings = Vec::new();
+                let rejected_changes = Vec::new();
+                let warnings = Vec::new();
 
                 // 0. Run Reconciliation Detector (Intent-Based Correction)
                 let detector = ReconciliationDetector::new();

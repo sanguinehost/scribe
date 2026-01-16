@@ -8,9 +8,10 @@ use chrono::Utc;
 use diesel::prelude::*;
 use scribe_backend::{
     auth::session_dek::SessionDek,
+    auth::token_service::TokenService,
     db::DbId,
     models::chats::{ChatMessage, MessageRole},
-    services::agentic::factory::AgenticNarrativeFactory,
+    services::{agentic::factory::AgenticNarrativeFactory, cognitive::RecallPipeline},
     test_helpers::{MockAiClient, TestDataGuard},
 };
 use secrecy::SecretBox;
@@ -84,6 +85,8 @@ async fn create_test_app_state(
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
+        token_service: Some(Arc::new(TokenService::new("test-secret"))),
     };
     Arc::new(scribe_backend::state::AppState::new(
         test_app.db_pool.clone(),
@@ -93,7 +96,7 @@ async fn create_test_app_state(
 }
 
 /// Helper to create test messages with varying content lengths
-fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -> Vec<ChatMessage> {
+fn create_conversation_messages(user_id: DbId, session_id: DbId, count: usize) -> Vec<ChatMessage> {
     let mut messages = Vec::new();
 
     for i in 0..count {
@@ -117,7 +120,7 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
         };
 
         messages.push(ChatMessage {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             session_id,
             message_type: role,
             content: content.as_bytes().to_vec(),
@@ -144,8 +147,8 @@ fn create_conversation_messages(user_id: Uuid, session_id: Uuid, count: usize) -
 /// Helper function to create a chat session in the database for testing
 async fn create_test_chat_session(
     db_pool: &deadpool_diesel::Pool<deadpool_diesel::Manager<diesel::PgConnection>>,
-    user_id: Uuid,
-    session_id: Uuid,
+    user_id: DbId,
+    session_id: DbId,
 ) -> anyhow::Result<()> {
     let conn = db_pool
         .get()
@@ -157,8 +160,8 @@ async fn create_test_chat_session(
 
         diesel::insert_into(chat_sessions::table)
             .values((
-                chat_sessions::id.eq(session_id),
-                chat_sessions::user_id.eq(user_id),
+                chat_sessions::id.eq(session_id.into_uuid()),
+                chat_sessions::user_id.eq(user_id.into_uuid()),
                 chat_sessions::model_name.eq("gemini-2.5-pro"),
                 chat_sessions::history_management_strategy.eq("sliding_window"),
                 chat_sessions::history_management_limit.eq(50),
@@ -194,7 +197,7 @@ mod agent_runner_conversation_tests {
         .await
         .expect("Failed to create test user");
         let user_id = user.id;
-        let chat_session_id = Uuid::new_v4();
+        let chat_session_id = Uuid::new_v4().into();
 
         // Create chat session in database
         create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
@@ -212,6 +215,7 @@ mod agent_runner_conversation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -281,20 +285,23 @@ mod agent_runner_conversation_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session in database
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id.into())
             .await
             .expect("Failed to create test chat session");
 
         // Create messages with different roles including System messages
         let messages = vec![
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::System,
-                content: "System: You are a helpful assistant.".as_bytes().to_vec(),
+                content: "System: You are a helpful assistant."
+                    .as_bytes()
+                    .to_vec()
+                    .into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(10),
                 completion_tokens: Some(0),
                 raw_prompt_ciphertext: None,
@@ -308,13 +315,13 @@ mod agent_runner_conversation_tests {
                 ..Default::default()
             },
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::User,
-                content: "User: What's the weather like?".as_bytes().to_vec(),
+                content: "User: What's the weather like?".as_bytes().to_vec().into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(8),
                 completion_tokens: Some(0),
                 raw_prompt_ciphertext: None,
@@ -328,15 +335,16 @@ mod agent_runner_conversation_tests {
                 ..Default::default()
             },
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::Assistant,
                 content: "Assistant: I don't have access to real-time weather data."
                     .as_bytes()
-                    .to_vec(),
+                    .to_vec()
+                    .into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(15),
                 completion_tokens: Some(12),
                 raw_prompt_ciphertext: None,
@@ -364,6 +372,7 @@ mod agent_runner_conversation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -388,7 +397,7 @@ mod agent_runner_conversation_tests {
         let result = agent_runner
             .process_narrative_event(
                 user_id,
-                chat_session_id,
+                chat_session_id.into(),
                 None,
                 &messages,
                 &session_dek,
@@ -424,20 +433,20 @@ mod agent_runner_conversation_tests {
         let chat_session_id = Uuid::new_v4();
 
         // Create chat session in database
-        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id)
+        create_test_chat_session(&test_app.db_pool, user_id, chat_session_id.into())
             .await
             .expect("Failed to create test chat session");
 
         // Create messages with HTML entities that need sanitization
         let messages = vec![
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::User,
-                content: "I&apos;m testing &quot;HTML entities&quot; like &lt;brackets&gt; &amp; ampersands.".as_bytes().to_vec(),
+                content: "I&apos;m testing &quot;HTML entities&quot; like &lt;brackets&gt; &amp; ampersands.".as_bytes().to_vec().into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(15),
                 completion_tokens: Some(0),
                 raw_prompt_ciphertext: None,
@@ -451,13 +460,13 @@ mod agent_runner_conversation_tests {
             ..Default::default()
             },
             ChatMessage {
-                id: Uuid::new_v4(),
-                session_id: chat_session_id,
+                id: Uuid::new_v4().into(),
+                session_id: chat_session_id.into(),
                 message_type: MessageRole::Assistant,
-                content: "I understand you&apos;re testing HTML entities. They should be converted to normal characters.".as_bytes().to_vec(),
+                content: "I understand you&apos;re testing HTML entities. They should be converted to normal characters.".as_bytes().to_vec().into(),
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
-                user_id,
+                user_id: user_id.into(),
                 prompt_tokens: Some(18),
                 completion_tokens: Some(20),
                 raw_prompt_ciphertext: None,
@@ -485,6 +494,7 @@ mod agent_runner_conversation_tests {
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let lorebook_service = Arc::new(scribe_backend::services::LorebookService::new(
             test_app.db_pool.clone(),
@@ -509,7 +519,7 @@ mod agent_runner_conversation_tests {
         let result = agent_runner
             .process_narrative_event(
                 user_id,
-                chat_session_id,
+                chat_session_id.into(),
                 None,
                 &messages,
                 &session_dek,
@@ -561,9 +571,20 @@ mod agent_runner_duplicate_prevention_tests {
         .expect("Failed to create test user");
         let user_id = user.id;
 
+        // Create mock AI client
+        let mock_response = serde_json::json!({
+            "is_significant": false,
+            "summary": "Test summary",
+            "event_type": "CONVERSATION",
+            "confidence": 0.5,
+            "reasoning": "Test reasoning"
+        });
+        let mock_ai_client = Arc::new(MockAiClient::new_with_response(mock_response.to_string()));
+
         // Create test chronicle directly using the service
         let chronicle_service = Arc::new(scribe_backend::services::ChronicleService::new(
             test_app.db_pool.clone(),
+            mock_ai_client.clone(),
         ));
         let create_request = scribe_backend::models::chronicle::CreateChronicleRequest {
             name: "Test Chronicle".to_string(),
@@ -616,15 +637,19 @@ mod agent_runner_duplicate_prevention_tests {
 
         // Create first chat session for the test
         let first_session_id = Uuid::new_v4();
-        create_test_chat_session(&test_app.db_pool, user_id, first_session_id)
-            .await
-            .expect("Failed to create first test chat session");
+        create_test_chat_session(
+            &test_app.db_pool,
+            (*user_id).into(),
+            first_session_id.into(),
+        )
+        .await
+        .expect("Failed to create first test chat session");
 
         // First run - should create chronicle events for this conversation
         let first_result = agent_runner
             .process_narrative_event(
                 user_id,
-                first_session_id,
+                first_session_id.into(),
                 Some(chronicle_id),
                 &messages,
                 &session_dek,
@@ -670,14 +695,18 @@ mod agent_runner_duplicate_prevention_tests {
 
         // Create second chat session for the test
         let second_session_id = Uuid::new_v4();
-        create_test_chat_session(&test_app.db_pool, user_id, second_session_id)
-            .await
-            .expect("Failed to create second test chat session");
+        create_test_chat_session(
+            &test_app.db_pool,
+            (*user_id).into(),
+            second_session_id.into(),
+        )
+        .await
+        .expect("Failed to create second test chat session");
 
         let second_result = second_agent_runner
             .process_narrative_event(
                 user_id,
-                second_session_id,
+                second_session_id.into(),
                 Some(chronicle_id),
                 &similar_messages,
                 &session_dek,
@@ -763,13 +792,13 @@ mod agent_runner_duplicate_prevention_tests {
             .expect("Failed to encrypt test content");
 
         ChatMessage {
-            id: Uuid::new_v4(),
-            session_id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
+            session_id: Uuid::new_v4().into(),
             user_id: DbId::new(),
             message_type,
-            content: encrypted_content,
+            content: encrypted_content.into(),
             content_nonce: Some(content_nonce),
-            created_at,
+            created_at: created_at.into(),
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,

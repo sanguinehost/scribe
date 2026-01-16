@@ -2,14 +2,18 @@ use anyhow::Result;
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use hmac::{Hmac, Mac};
 use rand::rngs::OsRng;
 use rand::TryRngCore;
 use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use ring::error::Unspecified as RingUnspecifiedError;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
+use sha2::Sha256;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 use tracing::error;
+
+type HmacSha256 = Hmac<Sha256>;
 
 const SALT_LEN: usize = 16; // 16 bytes for salt
 const DEK_LEN: usize = 32; // 32 bytes for AES-256 DEK
@@ -194,6 +198,15 @@ pub fn decrypt_gcm(
         .map_err(|_| CryptoError::DecryptionFailed)?;
 
     Ok(SecretBox::new(Box::new(plaintext_bytes_slice.to_vec())))
+}
+
+/// Generates an HMAC-SHA256 hash for blind indexing.
+/// This allows for secure lookups of encrypted data without exposing the plaintext.
+pub fn generate_hmac(data: &str, key: &[u8]) -> String {
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
+    mac.update(data.as_bytes());
+    let result = mac.finalize();
+    hex::encode(result.into_bytes())
 }
 
 #[cfg(test)]

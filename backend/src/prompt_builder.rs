@@ -15,7 +15,7 @@ use secrecy::ExposeSecret;
 use serde_json;
 use std::fmt::Write;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 /// Escapes text for safe inclusion in XML
 fn escape_xml(text: &str) -> String {
@@ -539,6 +539,8 @@ pub struct PromptBuildParams<'a> {
     pub context_total_token_limit: Option<usize>,
     pub recent_history_token_budget: Option<usize>,
     pub rag_token_budget: Option<usize>,
+    pub cognitive_context: Option<String>, // Secure cognitive context (opinions/observations)
+    pub core_memory: Option<String>,       // TITANS/MIRAS Core Memory (Global State)
 }
 
 /// Builds the meta system prompt template with character name substitution
@@ -551,6 +553,8 @@ async fn build_meta_system_prompt(
     has_persona_override: bool,
     has_character_definition: bool,
     has_character_details: bool,
+    has_cognitive_context: bool,
+    has_core_memory: bool,
     token_counter: &HybridTokenCounter,
     model_name: &str,
 ) -> Result<(String, usize), AppError> {
@@ -580,6 +584,19 @@ async fn build_meta_system_prompt(
 
     if has_rag_items {
         sections_list.push(format!("{}. <lorebook_entries>: Relevant background information about the world, other characters, or plot points.", section_num));
+        section_num += 1;
+    }
+
+    if has_cognitive_context {
+        sections_list.push(format!("{}. <cognitive_context>: Secure character opinions and entity observations that evolve over time.", section_num));
+        section_num += 1;
+    }
+
+    if has_core_memory {
+        sections_list.push(format!(
+            "{}. <core_memory>: The current global state and long-term memory of the narrative.",
+            section_num
+        ));
         section_num += 1;
     }
 
@@ -660,7 +677,17 @@ async fn calculate_component_tokens(
     model_name: &str,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
     user_persona_name: Option<&str>,
-) -> Result<((String, usize), (String, usize), (String, usize), usize), AppError> {
+    core_memory: Option<&str>,
+) -> Result<
+    (
+        (String, usize),
+        (String, usize),
+        (String, usize),
+        usize,
+        (String, usize),
+    ),
+    AppError,
+> {
     // Apply template substitution to persona override prompt
     let character_name = character_metadata.map(|cm| cm.name.as_str());
     let persona_override_prompt_str = if let Some(base) = system_prompt_base {
@@ -718,6 +745,16 @@ async fn calculate_component_tokens(
     let current_user_message_tokens =
         count_tokens_for_genai_message(current_user_message, token_counter, model_name).await?;
 
+    let core_memory_str = core_memory.unwrap_or("").to_string();
+    let core_memory_tokens = if core_memory_str.is_empty() {
+        0
+    } else {
+        token_counter
+            .count_tokens(&core_memory_str, CountingMode::LocalOnly, Some(model_name))
+            .await?
+            .total
+    };
+
     Ok((
         (
             persona_override_prompt_str.to_string(),
@@ -729,6 +766,7 @@ async fn calculate_component_tokens(
         ),
         (character_details_str, character_details_tokens),
         current_user_message_tokens,
+        (core_memory_str, core_memory_tokens),
     ))
 }
 
@@ -772,6 +810,11 @@ pub(crate) struct TokenCalculation {
     current_user_message_tokens: usize,
     rag_items_with_tokens: Vec<(RetrievedChunk, usize)>,
     recent_history_with_tokens: Vec<(GenAiChatMessage, usize)>,
+    cognitive_context: Option<String>,
+    cognitive_context_tokens: usize,
+    #[allow(dead_code)]
+    core_memory: Option<String>,
+    core_memory_tokens: usize,
 }
 
 async fn perform_initial_token_calculation(
@@ -779,7 +822,7 @@ async fn perform_initial_token_calculation(
 ) -> Result<TokenCalculation, AppError> {
     let PromptBuildParams {
         token_counter,
-        recent_history,
+
         rag_items,
         system_prompt_base,
         raw_character_system_prompt,
@@ -787,6 +830,7 @@ async fn perform_initial_token_calculation(
         current_user_message,
         model_name,
         user_persona_name,
+        core_memory,
         ..
     } = params;
 
@@ -799,6 +843,8 @@ async fn perform_initial_token_calculation(
         raw_character_system_prompt.is_some()
             && !raw_character_system_prompt.as_ref().unwrap().is_empty(),
         character_metadata.is_some(),
+        params.cognitive_context.is_some(),
+        core_memory.is_some(),
         token_counter,
         model_name,
     )
@@ -810,6 +856,7 @@ async fn perform_initial_token_calculation(
         (character_definition_str, character_definition_tokens),
         (character_details_str, character_details_tokens),
         current_user_message_tokens,
+        (core_memory_str, core_memory_tokens),
     ) = calculate_component_tokens(
         system_prompt_base.as_deref(),
         raw_character_system_prompt.as_deref(),
@@ -819,6 +866,7 @@ async fn perform_initial_token_calculation(
         model_name,
         params.user_dek,
         user_persona_name.as_deref(),
+        core_memory.as_deref(),
     )
     .await?;
 
@@ -840,6 +888,15 @@ async fn perform_initial_token_calculation(
     )
     .await?;
 
+    let cognitive_context_tokens = if let Some(ctx) = &params.cognitive_context {
+        token_counter
+            .count_tokens(ctx, CountingMode::LocalOnly, Some(model_name))
+            .await?
+            .total
+    } else {
+        0
+    };
+
     Ok(TokenCalculation {
         meta_system_prompt_tokens,
         persona_override_prompt_str,
@@ -851,6 +908,10 @@ async fn perform_initial_token_calculation(
         current_user_message_tokens,
         rag_items_with_tokens,
         recent_history_with_tokens,
+        cognitive_context: params.cognitive_context.clone(),
+        cognitive_context_tokens,
+        core_memory: Some(core_memory_str),
+        core_memory_tokens,
     })
 }
 
@@ -941,6 +1002,8 @@ fn calculate_total_tokens(calculation: &TokenCalculation) -> usize {
             .iter()
             .map(|(_, t)| t)
             .sum::<usize>()
+        + calculation.cognitive_context_tokens
+        + calculation.core_memory_tokens
 }
 
 /// Logs the initial token calculation breakdown
@@ -967,6 +1030,8 @@ fn log_initial_token_calculation(
             .iter()
             .map(|(_, t)| t)
             .sum::<usize>(),
+        calculation.cognitive_context_tokens,
+        calculation.core_memory_tokens,
         "Initial token calculation for prompt building."
     );
 }
@@ -1490,6 +1555,7 @@ async fn build_final_prompt_strings(
     user_persona_name: Option<&str>,
     narrative_style: Option<&crate::prompt_templates::NarrativeStyle>,
     game_state: Option<&crate::models::game_state::GameState>,
+    core_memory: Option<&str>,
 ) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
     // Use the template system to build the final system prompt
     let template_id = template_id.unwrap_or("neutral_roleplay");
@@ -1593,6 +1659,19 @@ async fn build_final_prompt_strings(
         template_context["scene_context"] = serde_json::Value::String(scene_context).into();
     }
 
+    // Add cognitive context if available
+    if let Some(ctx) = &calculation.cognitive_context {
+        if !ctx.is_empty() {
+            template_context["cognitive_context"] = serde_json::Value::String(ctx.clone()).into();
+        }
+    }
+
+    if let Some(mem) = core_memory {
+        if !mem.is_empty() {
+            template_context["core_memory"] = serde_json::Value::String(mem.to_string()).into();
+        }
+    }
+
     // Use render_with_style to inject narrative style variables into the template
     let final_system_prompt = TEMPLATE_MANAGER.read().unwrap().render_with_style(
         template_id,
@@ -1679,6 +1758,7 @@ pub async fn build_final_llm_prompt(
         params.user_persona_name.as_deref(),
         params.narrative_style.as_ref(),
         params.game_state,
+        params.core_memory.as_deref(),
     )
     .await?;
 
@@ -1696,7 +1776,9 @@ pub async fn build_final_llm_prompt(
             .recent_history_with_tokens
             .iter()
             .map(|(_, t)| t)
-            .sum::<usize>();
+            .sum::<usize>()
+        + calculation.cognitive_context_tokens
+        + calculation.core_memory_tokens;
 
     debug!(
         final_system_prompt_len = final_system_prompt.len(),
@@ -1925,6 +2007,10 @@ mod tests {
                 current_user_message_tokens: current_user_tokens,
                 rag_items_with_tokens: rag_items,
                 recent_history_with_tokens: history_messages,
+                cognitive_context: None,
+                cognitive_context_tokens: 0,
+                core_memory: None,
+                core_memory_tokens: 0,
             }
         }
 
@@ -2545,7 +2631,6 @@ mod tests {
 #[cfg(test)]
 mod scene_context_tests {
     use crate::models::game_state::{EnvironmentState, GameState, GameTime, Location, NpcState};
-    use std::collections::HashMap;
 
     #[test]
     fn test_build_scene_context_xml_empty_state() {

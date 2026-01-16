@@ -326,7 +326,6 @@ pub fn create_user_sync(
     let user_id = crate::db::DbId::new();
 
     let new_user = NewUser {
-        #[cfg(feature = "sqlite-backend")]
         id: user_id,
         username: credentials.username.clone(), // Clone username from credentials
         password_hash,                          // Use the pre-hashed password
@@ -339,9 +338,9 @@ pub fn create_user_sync(
         recovery_dek_nonce: recovery_dek_nonce.map(crate::db::DbBlob::from),
         role: user_role, // Using appropriate role based on whether this is the first user
         account_status: AccountStatus::Pending, // Default to Pending account status
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: crate::db::DbBigInt::from(0),
+        total_completion_tokens: crate::db::DbBigInt::from(0),
+        total_token_cost_cents: crate::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };

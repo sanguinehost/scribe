@@ -369,7 +369,7 @@ impl SubscriptionService {
         plan_type: &str,
     ) -> Result<Option<PlanFeatures>, AppError> {
         let features = plan_features::table
-            .find(plan_type)
+            .filter(plan_features::plan_type.eq(plan_type))
             .select(PlanFeatures::as_select())
             .first::<PlanFeatures>(conn)
             .optional()

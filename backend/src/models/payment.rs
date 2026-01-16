@@ -165,13 +165,13 @@ pub struct UpdateSubscription {
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = plan_features)]
 pub struct PlanFeatures {
-    pub plan_type: String,
+    pub plan_type: Option<String>,
     pub monthly_token_limit: Option<i32>,
     pub characters_limit: Option<i32>,
     pub lorebooks_limit: Option<i32>,
     pub price_cents: Option<i32>,
     pub paddle_price_id: Option<String>,
-    pub features: Option<JsonValue>,
+    pub features: Option<crate::DbJson>,
     pub display_name: String,
     pub description: Option<String>,
     pub created_at: Option<DbTimestamp>,

@@ -266,3 +266,82 @@ impl Clone for LorebookEntryParams {
         }
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct EntityMetadata {
+    pub user_id: crate::db::DbId,
+    pub entity_name_hash: String,
+    pub source_type: String,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for EntityMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "EntityMetadata")?;
+        let entity_name_hash =
+            extract_string_from_payload(&payload, "entity_name_hash", "EntityMetadata")?;
+        let source_type = extract_string_from_payload(&payload, "source_type", "EntityMetadata")?;
+
+        Ok(Self {
+            user_id,
+            entity_name_hash,
+            source_type,
+        })
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct OpinionMetadata {
+    pub user_id: crate::db::DbId,
+    pub opinion_id: crate::db::DbId,
+    pub source_type: String,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for OpinionMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "OpinionMetadata")?;
+        let opinion_id = extract_uuid_from_payload(&payload, "opinion_id", "OpinionMetadata")?;
+        let source_type = extract_string_from_payload(&payload, "source_type", "OpinionMetadata")?;
+
+        Ok(Self {
+            user_id,
+            opinion_id,
+            source_type,
+        })
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct CognitiveFactMetadata {
+    pub user_id: crate::db::DbId,
+    pub fact_id: crate::db::DbId,
+    pub chronicle_id: crate::db::DbId,
+    pub source_type: String,
+    pub game_time: Option<serde_json::Value>,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "CognitiveFactMetadata")?;
+        let fact_id = extract_uuid_from_payload(&payload, "fact_id", "CognitiveFactMetadata")?;
+        let chronicle_id =
+            extract_uuid_from_payload(&payload, "chronicle_id", "CognitiveFactMetadata")?;
+        let source_type =
+            extract_string_from_payload(&payload, "source_type", "CognitiveFactMetadata")?;
+
+        let game_time = extract_optional_string_from_payload(&payload, "game_time")
+            .and_then(|s| serde_json::from_str(&s).ok());
+
+        Ok(Self {
+            user_id,
+            fact_id,
+            chronicle_id,
+            source_type,
+            game_time,
+        })
+    }
+}

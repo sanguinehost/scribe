@@ -1,6 +1,7 @@
 #![cfg(feature = "postgres-backend")]
 use chrono::Utc;
 use scribe_backend::crypto::{crypto_generate_dek, decrypt_gcm, encrypt_gcm};
+use scribe_backend::db::DbId;
 use scribe_backend::services::embeddings::metadata::{
     ChatMessageChunkMetadata, LorebookChunkMetadata,
 };
@@ -12,8 +13,8 @@ use uuid::Uuid;
 fn test_lorebook_metadata_encryption_fields() {
     // Test that LorebookChunkMetadata can handle encrypted fields
     let metadata = LorebookChunkMetadata {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id: Uuid::new_v4(),
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: Uuid::new_v4().into(),
         user_id: DbId::new(),
         chunk_text: "[encrypted]".to_string(), // Placeholder for backward compat
         entry_title: Some("[encrypted]".to_string()),
@@ -41,17 +42,18 @@ fn test_lorebook_metadata_encryption_fields() {
 fn test_chat_message_metadata_encryption_fields() {
     // Test that ChatMessageChunkMetadata can handle encrypted fields
     let metadata = ChatMessageChunkMetadata {
-        message_id: Uuid::new_v4(),
-        session_id: Uuid::new_v4(),
-        chronicle_id: Some(Uuid::new_v4()),
+        message_id: Uuid::new_v4().into(),
+        session_id: Uuid::new_v4().into(),
+        chronicle_id: Some(Uuid::new_v4().into()),
         user_id: DbId::new(),
         speaker: "assistant".to_string(),
-        timestamp: Utc::now(),
+        timestamp: Utc::now().into(),
         text: "[encrypted]".to_string(), // Placeholder for backward compat
         source_type: "chat".to_string(),
         // New encrypted fields
         encrypted_text: Some(vec![1, 2, 3, 4, 5]), // Mock encrypted data
         text_nonce: Some(vec![6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]),
+        game_time: None,
     };
 
     // Verify the struct can be serialized with encrypted fields
@@ -86,8 +88,8 @@ fn test_encryption_decryption_flow() {
 fn test_backward_compatibility_plaintext_only() {
     // Test that metadata can still work with plaintext-only (legacy) mode
     let metadata = LorebookChunkMetadata {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id: Uuid::new_v4(),
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: Uuid::new_v4().into(),
         user_id: DbId::new(),
         chunk_text: "This is plaintext content for backward compatibility".to_string(),
         entry_title: Some("Legacy Entry".to_string()),
@@ -119,8 +121,8 @@ fn test_mixed_mode_encrypted_and_plaintext() {
     let (encrypted_text, nonce) = encrypt_gcm(original_text.as_bytes(), &dek).unwrap();
 
     let metadata = LorebookChunkMetadata {
-        original_lorebook_entry_id: Uuid::new_v4(),
-        lorebook_id: Uuid::new_v4(),
+        original_lorebook_entry_id: Uuid::new_v4().into(),
+        lorebook_id: Uuid::new_v4().into(),
         user_id: DbId::new(),
         chunk_text: "[encrypted]".to_string(), // Placeholder when encrypted
         entry_title: Some("Entry Title".to_string()), // Can be plaintext

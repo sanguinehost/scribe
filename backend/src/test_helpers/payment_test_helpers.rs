@@ -74,6 +74,7 @@ pub mod payment_test_helpers {
 
         // Create test user with all required fields
         let new_user = NewUser {
+            id: DbId::new(),
             username,
             password_hash,
             email,

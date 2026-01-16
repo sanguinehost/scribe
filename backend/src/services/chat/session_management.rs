@@ -5,23 +5,26 @@ use diesel::{prelude::*, result::Error as DieselError};
 use secrecy::{ExposeSecret, SecretBox};
 use tracing::{error, info, instrument, warn};
 
+#[cfg(feature = "postgres-backend")]
+use crate::models::chats::Chat;
 use crate::{
     errors::AppError,
     models::{
         characters::Character,
-        chats::{
-            Chat,
-            ChatMode,
-            ChatSessionQuery,
-            MessageRole,
-            // ChatSessionSettings, // Removed, settings are part of Chat struct
-            // HistoryManagementStrategy, // Removed, strategy is a field in Chat struct
-        },
+        chats::{ChatMode, ChatSessionQuery, MessageRole},
     },
     schema::{characters, chat_session_lorebooks, chat_sessions, users::dsl as users_dsl},
     state::DbPool,
     AppState,
 };
+#[cfg(feature = "postgres-backend")]
+use bigdecimal::BigDecimal;
+
+#[cfg(feature = "postgres-backend")]
+type DecimalType = BigDecimal;
+
+#[cfg(feature = "sqlite-backend")]
+type DecimalType = f64;
 
 use super::message_handling::{save_message, SaveMessageParams};
 
@@ -503,11 +506,11 @@ fn insert_chat_session(
                 chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
                 chat_sessions::prompt_template_id.eq(params.prompt_template_id),
                 // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
-                chat_sessions::total_prompt_tokens.eq(0),
-                chat_sessions::total_completion_tokens.eq(0),
+                chat_sessions::total_prompt_tokens.eq(0i64),
+                chat_sessions::total_completion_tokens.eq(0i64),
                 chat_sessions::estimated_cost_cents.eq(0),
                 chat_sessions::tokens_counted_at.eq(chrono::Utc::now().naive_utc()),
-                chat_sessions::total_credits_used.eq(0),
+                chat_sessions::total_credits_used.eq(0.0),
                 chat_sessions::total_actual_cost.eq(0.0),
                 chat_sessions::total_modified_cost.eq(0.0),
                 chat_sessions::total_credit_cost.eq(0),
@@ -673,7 +676,7 @@ fn fetch_created_session(
     }
 
     // Check token/cost tracking fields
-    let token_check: Result<(i32, i32, i32, crate::db::DbDecimal), _> = chat_sessions::table
+    let token_check: Result<(i64, i64, i32, crate::db::DbDecimal), _> = chat_sessions::table
         .filter(chat_sessions::id.eq(&new_session_id))
         .select((
             chat_sessions::total_prompt_tokens,
@@ -681,7 +684,7 @@ fn fetch_created_session(
             chat_sessions::estimated_cost_cents,
             chat_sessions::total_credits_used,
         ))
-        .first::<(i32, i32, i32, crate::db::DbDecimal)>(transaction_conn);
+        .first::<(i64, i64, i32, crate::db::DbDecimal)>(transaction_conn);
 
     if let Err(ref e) = token_check {
         tracing::error!("❌ token/cost fields NULL: {:?}", e);
@@ -717,28 +720,16 @@ fn fetch_created_session(
     }
 
     // Check decimal fields
-    let decimal_check: Result<
-        (
-            crate::db::DbDecimal,
-            crate::db::DbDecimal,
-            i32,
-            crate::db::DbDecimal,
-        ),
-        _,
-    > = chat_sessions::table
-        .filter(chat_sessions::id.eq(&new_session_id))
-        .select((
-            chat_sessions::total_actual_cost,
-            chat_sessions::total_modified_cost,
-            chat_sessions::total_credit_cost,
-            chat_sessions::total_actual_charge,
-        ))
-        .first::<(
-            crate::db::DbDecimal,
-            crate::db::DbDecimal,
-            i32,
-            crate::db::DbDecimal,
-        )>(transaction_conn);
+    let decimal_check: Result<(DecimalType, DecimalType, i32, DecimalType), _> =
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(&new_session_id))
+            .select((
+                chat_sessions::total_actual_cost,
+                chat_sessions::total_modified_cost,
+                chat_sessions::total_credit_cost,
+                chat_sessions::total_actual_charge,
+            ))
+            .first::<(DecimalType, DecimalType, i32, DecimalType)>(transaction_conn);
 
     if let Err(ref e) = decimal_check {
         tracing::error!("❌ decimal fields NULL: {:?}", e);
