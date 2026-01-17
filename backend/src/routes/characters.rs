@@ -84,16 +84,16 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
         // This change to more distinct paths was a pragmatic workaround,
         // born from a fuck-ton (three days) of deep-seated frustration with Axum routing obscurities in this context
         // that my fucking mortal monkey brain just cannot wrap itself around.
-        .route("/fetch/:id", get(get_character_handler))
-        .route("/:id", put(update_character_handler)) // Added PUT for update on /:id
-        .route("/remove/:id", delete(delete_character_handler))
+        .route("/fetch/{id}", get(get_character_handler))
+        .route("/{id}", put(update_character_handler))
+        .route("/remove/{id}", delete(delete_character_handler))
         .route("/generate", post(generate_character_handler))
         .route("/generate/field", post(generate_field_handler))
         .route("/generate/full", post(generate_full_character_handler))
         .route("/enhance/field", post(enhance_field_handler))
         .route("/analyze/style", post(analyze_style_handler))
         .route(
-            "/:character_id/assets/:asset_id",
+            "/{character_id}/assets/{asset_id}",
             get(get_character_asset_handler),
         )
         // Apply LoginRequired middleware to all routes in this router

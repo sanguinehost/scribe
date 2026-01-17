@@ -58,7 +58,7 @@ pub fn user_settings_routes(state: AppState) -> Router<AppState> {
         .route("/", put(update_user_settings_handler))
         .route("/", delete(delete_user_settings_handler))
         .route(
-            "/set_default_persona/:persona_id",
+            "/set_default_persona/{persona_id}",
             put(set_default_persona_handler),
         ) // Changed path to be more explicit and distinct
         .route(

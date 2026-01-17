@@ -1178,29 +1178,6 @@ dependencies = [
 
 [[package]]
 name = "axum-server"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1ad46c3ec4e12f4a4b6835e173ba21c25e484c9d02b49770bf006ce5367c036"
-dependencies = [
- "arc-swap",
- "bytes",
- "futures-util",
- "http 1.3.1",
- "http-body 1.0.1",
- "http-body-util",
- "hyper 1.8.1",
- "hyper-util",
- "pin-project-lite",
- "rustls 0.21.12",
- "rustls-pemfile 2.2.0",
- "tokio",
- "tokio-rustls 0.24.1",
- "tower 0.4.13",
- "tower-service",
-]
-
-[[package]]
-name = "axum-server"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1df331683d982a0b9492b38127151e6453639cd34926eb9c07d4cd8c6d22bfc"
@@ -9737,7 +9714,7 @@ dependencies = [
  "axum 0.8.4",
  "axum-login",
  "axum-macros",
- "axum-server 0.8.0",
+ "axum-server",
  "base64 0.22.1",
  "bcrypt",
  "bigdecimal",
@@ -9879,7 +9856,7 @@ name = "scribe-desktop"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum-server 0.6.0",
+ "axum-server",
  "base64 0.21.7",
  "diesel",
  "diesel_migrations",

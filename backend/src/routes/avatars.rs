@@ -23,13 +23,13 @@ use tracing::{debug, error, info, instrument, warn};
 
 pub fn avatar_routes() -> Router<AppState> {
     Router::new()
-        .route("/users/:user_id/avatar", get(get_user_avatar))
-        .route("/users/:user_id/avatar", post(upload_user_avatar))
-        .route("/users/:user_id/avatar", delete(delete_user_avatar))
-        .route("/personas/:persona_id/avatar", get(get_persona_avatar))
-        .route("/personas/:persona_id/avatar", post(upload_persona_avatar))
+        .route("/users/{user_id}/avatar", get(get_user_avatar))
+        .route("/users/{user_id}/avatar", post(upload_user_avatar))
+        .route("/users/{user_id}/avatar", delete(delete_user_avatar))
+        .route("/personas/{persona_id}/avatar", get(get_persona_avatar))
+        .route("/personas/{persona_id}/avatar", post(upload_persona_avatar))
         .route(
-            "/personas/:persona_id/avatar",
+            "/personas/{persona_id}/avatar",
             delete(delete_persona_avatar),
         )
 }

@@ -34,15 +34,15 @@ pub fn lorebook_routes() -> Router<AppState> {
     // Create a separate router for AI routes with rate limiting
     let ai_routes = Router::new()
         .route(
-            "/lorebooks/:lorebook_id/ai/generate",
+            "/lorebooks/{lorebook_id}/ai/generate",
             post(ai_generate_entries_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/ai/analyze",
+            "/lorebooks/{lorebook_id}/ai/analyze",
             post(ai_analyze_lorebook_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/extract-from-chat",
+            "/lorebooks/{lorebook_id}/extract-from-chat",
             post(extract_from_chat_handler),
         )
         .layer(middleware::from_fn(ai_lorebook_rate_limit_middleware));
@@ -52,60 +52,60 @@ pub fn lorebook_routes() -> Router<AppState> {
         .route("/lorebooks", post(create_lorebook_handler))
         .route("/lorebooks", get(list_lorebooks_handler))
         .route("/lorebooks/import", post(import_lorebook_handler))
-        .route("/lorebooks/:lorebook_id", get(get_lorebook_handler))
-        .route("/lorebooks/:lorebook_id", put(update_lorebook_handler))
-        .route("/lorebooks/:lorebook_id", delete(delete_lorebook_handler))
+        .route("/lorebooks/{lorebook_id}", get(get_lorebook_handler))
+        .route("/lorebooks/{lorebook_id}", put(update_lorebook_handler))
+        .route("/lorebooks/{lorebook_id}", delete(delete_lorebook_handler))
         .route(
-            "/lorebooks/:lorebook_id/entries",
+            "/lorebooks/{lorebook_id}/entries",
             post(create_lorebook_entry_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/entries",
+            "/lorebooks/{lorebook_id}/entries",
             get(list_lorebook_entries_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/entries/:entry_id",
+            "/lorebooks/{lorebook_id}/entries/{entry_id}",
             get(get_lorebook_entry_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/entries/:entry_id",
+            "/lorebooks/{lorebook_id}/entries/{entry_id}",
             put(update_lorebook_entry_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/entries/:entry_id",
+            "/lorebooks/{lorebook_id}/entries/{entry_id}",
             delete(delete_lorebook_entry_handler),
         )
         .route(
-            "/chats/:chat_session_id/lorebooks",
+            "/chats/{chat_session_id}/lorebooks",
             post(associate_lorebook_to_chat_handler),
         )
         .route(
-            "/chats/:chat_session_id/lorebooks",
+            "/chats/{chat_session_id}/lorebooks",
             get(list_chat_lorebook_associations_handler),
         )
         .route(
-            "/chats/:chat_session_id/lorebooks/:lorebook_id",
+            "/chats/{chat_session_id}/lorebooks/{lorebook_id}",
             delete(disassociate_lorebook_from_chat_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/fetch/associated_chats", // Made path more distinct
+            "/lorebooks/{lorebook_id}/fetch/associated_chats", // Made path more distinct
             get(list_associated_chat_sessions_for_lorebook_handler),
         )
         .route(
-            "/lorebooks/:lorebook_id/export",
+            "/lorebooks/{lorebook_id}/export",
             get(export_lorebook_handler),
         )
         // Character lorebook override routes
         .route(
-            "/chats/:chat_session_id/lorebooks/:lorebook_id/override",
+            "/chats/{chat_session_id}/lorebooks/{lorebook_id}/override",
             put(set_character_lorebook_override_handler),
         )
         .route(
-            "/chats/:chat_session_id/lorebooks/:lorebook_id/override",
+            "/chats/{chat_session_id}/lorebooks/{lorebook_id}/override",
             delete(remove_character_lorebook_override_handler),
         )
         .route(
-            "/chats/:chat_session_id/lorebook-overrides",
+            "/chats/{chat_session_id}/lorebook-overrides",
             get(get_character_lorebook_overrides_handler),
         )
         // Merge AI routes with rate limiting

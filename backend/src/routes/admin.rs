@@ -367,8 +367,8 @@ async fn update_user_role_handler(
 pub fn admin_routes() -> Router<AppState> {
     Router::new()
         .route("/users", get(list_users_handler))
-        .route("/users/:user_id", get(get_user_handler))
-        .route("/users/:user_id/lock", put(lock_user_handler))
-        .route("/users/:user_id/unlock", put(unlock_user_handler))
-        .route("/users/:user_id/role", put(update_user_role_handler))
+        .route("/users/{user_id}", get(get_user_handler))
+        .route("/users/{user_id}/lock", put(lock_user_handler))
+        .route("/users/{user_id}/unlock", put(unlock_user_handler))
+        .route("/users/{user_id}/role", put(update_user_role_handler))
 }

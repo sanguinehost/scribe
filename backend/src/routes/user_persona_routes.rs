@@ -26,7 +26,7 @@ pub fn user_personas_router(state: AppState) -> Router<AppState> {
             post(create_user_persona_handler).get(list_user_personas_handler),
         )
         .route(
-            "/:persona_id",
+            "/{persona_id}",
             get(get_user_persona_handler) // GET a specific persona
                 .put(update_user_persona_handler) // UPDATE a specific persona
                 .delete(delete_user_persona_handler), // DELETE a specific persona

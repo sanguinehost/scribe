@@ -158,14 +158,15 @@ pub struct CurrentModelResponse {
 pub fn llm_router() -> Router<AppState> {
     #[cfg(feature = "local-llm")]
     {
+        use axum::routing::{delete, post}; // Add delete and post methods
         Router::new()
             .route("/info", get(get_llm_info))
             .route("/models/download"(download_model))
-            .route("/models/:model_id"(delete_model))
-            .route("/models/:model_id/activate"(activate_model))
+            .route("/models/{model_id}", delete(delete_model))
+            .route("/models/{model_id}/activate", post(activate_model))
             .route("/models/deactivate"(deactivate_model))
             .route("/download/progress", get(download_progress_stream))
-            .route("/download/status/:model_id", get(get_download_status))
+            .route("/download/status/{model_id}", get(get_download_status))
             .route("/recommendations", get(get_model_recommendations))
             .route("/recommendations/best", get(get_best_recommendation))
             .route("/download/best"(download_best_model))
@@ -177,14 +178,14 @@ pub fn llm_router() -> Router<AppState> {
             // Model capabilities endpoints
             .route("/models/all", get(get_all_models))
             .route(
-                "/models/:model_id/capabilities",
+                "/models/{model_id}/capabilities",
                 get(get_model_capabilities),
             )
             // Server management endpoints
             .route("/server/status", get(get_server_status))
             .route("/server/restart"(restart_server))
             .route("/server/shutdown"(shutdown_server))
-            .route("/models/switch/:model_id"(switch_model))
+            .route("/models/switch/{model_id}", post(switch_model))
             .route("/models/current", get(get_current_model))
     }
 
@@ -198,7 +199,7 @@ pub fn llm_router() -> Router<AppState> {
             // Model capabilities endpoints (cloud models only)
             .route("/models/all", get(get_all_models))
             .route(
-                "/models/:model_id/capabilities",
+                "/models/{model_id}/capabilities",
                 get(get_model_capabilities),
             )
     }

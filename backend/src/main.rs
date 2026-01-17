@@ -706,7 +706,7 @@ fn build_router(
     let protected_api_routes = Router::new()
         .nest(
             "/characters",
-            characters_router(app_state.clone()).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+            characters_router(app_state.clone()).layer(DefaultBodyLimit::max(50 * 1024 * 1024)),
         ) // 10MB limit for character uploads
         .nest("/chat", {
             let routes = chat_routes(app_state.clone())
@@ -748,7 +748,7 @@ fn build_router(
             "/template-preferences",
             template_preferences_routes(app_state.clone()),
         )
-        .nest("/", lorebook_routes())
+        .merge(lorebook_routes())
         .nest("/templates", templates::create_router())
         .nest("/admin", admin_routes())
         .merge(avatar_routes().layer(DefaultBodyLimit::max(10 * 1024 * 1024))) // 10MB limit for avatar uploads

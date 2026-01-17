@@ -206,8 +206,8 @@ fn start_backend_process(
     // Verify backend is actually listening and responding before proceeding
     log::info!("Waiting for backend to be ready (health check)...");
     let backend_url = "https://localhost:38080/api/health";
-    let max_attempts = 10;
-    let retry_delay = Duration::from_millis(500);
+    let max_attempts = 30;
+    let retry_delay = Duration::from_millis(1000);
 
     let client = reqwest::blocking::Client::builder()
         .danger_accept_invalid_certs(true) // Accept self-signed cert

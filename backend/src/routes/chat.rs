@@ -2461,47 +2461,47 @@ pub fn chat_routes(state: AppState) -> Router<AppState> {
     info!("Entering chat_routes");
     Router::new()
         .route("/create_session", post(create_chat_session_handler))
-        .route("/sessions/:session_id", get(get_chat_session_handler))
+        .route("/sessions/{session_id}", get(get_chat_session_handler))
         .route(
-            "/:session_id/suggested-actions",
+            "/{session_id}/suggested-actions",
             post(generate_suggested_actions),
         )
-        .route("/:session_id/expand", post(expand_text_handler))
-        .route("/:session_id/impersonate", post(impersonate_handler))
+        .route("/{session_id}/expand", post(expand_text_handler))
+        .route("/{session_id}/impersonate", post(impersonate_handler))
         .route(
-            "/:session_id/agent-analysis",
+            "/{session_id}/agent-analysis",
             get(get_agent_analysis_handler),
         )
         .route("/count-tokens", post(count_tokens_handler))
         .route("/ping", get(ping_handler))
         .route(
-            "/:chat_id/settings",
+            "/{chat_id}/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
         .route(
-            "/sessions/:session_id/narrative-style",
+            "/sessions/{session_id}/narrative-style",
             patch(update_session_narrative_style_handler),
         )
-        .route("/:session_id_str/generate", post(generate_chat_response))
+        .route("/{session_id_str}/generate", post(generate_chat_response))
         .route(
-            "/overrides/:session_id",
+            "/overrides/{session_id}",
             post(create_or_update_chat_character_override_handler).with_state(state.clone()),
         )
         // Message variant routes
         .route(
-            "/messages/:message_id/variants",
+            "/messages/{message_id}/variants",
             get(get_message_variants_handler).post(create_message_variant_handler),
         )
         .route(
-            "/messages/:message_id/variants/:variant_index",
+            "/messages/{message_id}/variants/{variant_index}",
             get(get_message_variant_by_index_handler).delete(delete_message_variant_handler),
         )
         .route(
-            "/messages/:message_id/variants/count",
+            "/messages/{message_id}/variants/count",
             get(get_variant_count_handler),
         )
         .route(
-            "/messages/:message_id/select-variant",
+            "/messages/{message_id}/select-variant",
             post(select_message_variant_handler),
         )
         .with_state(state)

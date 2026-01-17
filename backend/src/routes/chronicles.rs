@@ -114,14 +114,17 @@ pub fn create_chronicles_router(state: AppState) -> Router<AppState> {
         .route("/", post(create_chronicle).get(list_chronicles))
         .route("/generate-name", post(generate_chronicle_name))
         .route(
-            "/:chronicle_id",
+            "/{chronicle_id}",
             get(get_chronicle)
                 .put(update_chronicle)
                 .delete(delete_chronicle),
         )
-        .route("/:chronicle_id/events", post(create_event).get(list_events))
-        .route("/:chronicle_id/events/:event_id", delete(delete_event))
-        .route("/:chronicle_id/re-chronicle", post(re_chronicle_from_chat))
+        .route(
+            "/{chronicle_id}/events",
+            post(create_event).get(list_events),
+        )
+        .route("/{chronicle_id}/events/{event_id}", delete(delete_event))
+        .route("/{chronicle_id}/re-chronicle", post(re_chronicle_from_chat))
         .with_state(state)
 }
 

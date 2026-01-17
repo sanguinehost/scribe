@@ -55,50 +55,50 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
     let router = Router::new()
         .route("/", get(get_chats_handler)) // Keep GET / for listing
         .route("/create_session", post(create_chat_handler)) // More distinct path for POST
-        .route("/fetch/:id", get(get_chat_by_id_handler))
-        .route("/remove/:id", delete(delete_chat_handler))
+        .route("/fetch/{id}", get(get_chat_by_id_handler))
+        .route("/remove/{id}", delete(delete_chat_handler))
         .route(
-            "/:id/deletion-analysis",
+            "/{id}/deletion-analysis",
             get(get_chat_deletion_analysis_handler),
         )
         .route(
-            "/by-character/:character_id",
+            "/by-character/{character_id}",
             get(get_chats_by_character_handler),
         ) // NEW: Get chats by character
-        .route("/:id/messages", {
+        .route("/{id}/messages", {
             tracing::debug!(
-                "chat_routes: mapping /:id/messages to get_messages_by_chat_id_handler"
+                "chat_routes: mapping /{{id}}/messages to get_messages_by_chat_id_handler"
             );
             get(get_messages_by_chat_id_handler).post(create_message_handler)
         })
-        .route("/:id/visibility", put(update_chat_visibility_handler))
         .route(
-            "/:id/settings",
+            "/{id}/settings",
             get(get_chat_settings_handler).put(update_chat_settings_handler),
         )
         .route(
-            "/messages/:id",
+            "/messages/{id}",
             get(get_message_by_id_handler).delete(delete_message_handler),
         )
         .route(
-            "/messages/:id/select-variant",
+            "/messages/{id}/select-variant",
             post(select_message_variant_handler),
         )
         .route(
-            "/messages/:id/trailing",
+            "/messages/{id}/trailing",
             delete(delete_trailing_messages_handler),
         )
         .route(
-            "/:id/character/overrides",
+            "/{id}/character/overrides",
             post(set_chat_character_override_handler),
         )
-        .route("/:id/token-usage", get(get_chat_token_usage_handler));
+        .route("/{id}/visibility", put(update_chat_visibility_handler))
+        .route("/{id}/token-usage", get(get_chat_token_usage_handler));
 
     // Postgres-only routes (voting feature not yet implemented for SQLite)
     #[cfg(feature = "postgres-backend")]
     let router = router
-        .route("/messages/:id/vote", post(vote_message_handler))
-        .route("/:id/votes", get(get_votes_by_chat_id_handler));
+        .route("/messages/{id}/vote", post(vote_message_handler))
+        .route("/{id}/votes", get(get_votes_by_chat_id_handler));
 
     router
 }

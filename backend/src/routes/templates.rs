@@ -148,7 +148,7 @@ pub fn create_router() -> Router<crate::state::AppState> {
     Router::new()
         .route("/", get(list_templates_handler))
         .route("/reload", post(reload_templates_handler))
-        .route("/:template_id", get(get_template_info_handler))
+        .route("/{template_id}", get(get_template_info_handler))
         // Apply security hardening middleware
         .layer(middleware::from_fn(security_headers))
         .layer(middleware::from_fn(rate_limit_logger))

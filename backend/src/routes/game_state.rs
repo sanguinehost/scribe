@@ -23,7 +23,7 @@ pub struct UpdateGameStatePayload {
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route(
-            "/sessions/:session_id/game-state",
+            "/sessions/{session_id}/game-state",
             put(update_game_state_handler),
         )
         .with_state(state)

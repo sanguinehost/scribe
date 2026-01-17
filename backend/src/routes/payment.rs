@@ -4488,9 +4488,9 @@ pub fn payment_routes() -> Router<AppState> {
             "/payment",
             post(create_payment).layer(from_fn(credit_purchase_rate_limit_middleware)),
         ) // Rate limit payment creation
-        .route("/transaction/:id/verify", get(verify_transaction)) // Transaction verification endpoint
+        .route("/transaction/{id}/verify", get(verify_transaction)) // Transaction verification endpoint
         .route("/transactions", get(get_payment_transactions)) // Payment transaction history
-        .route("/transaction/:id", get(get_payment_transaction)) // Get single payment transaction
+        .route("/transaction/{id}", get(get_payment_transaction)) // Get single payment transaction
         .route("/plans", get(get_plans))
         .route("/usage", get(get_usage))
         // Credit endpoints
