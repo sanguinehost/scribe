@@ -62,7 +62,7 @@ use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHel
 use futures_util::StreamExt;
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    MessageContent, ReasoningEffort,
+    JsonSpec, MessageContent, ReasoningEffort,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -3052,7 +3052,7 @@ pub async fn generate_suggested_actions(
 
     let context_str_for_suggestions = suggestion_context_parts.join("\n");
     let prompt_text_for_llm_suggestions = format!(
-        "Based on this conversation snippet:\n\n{context_str_for_suggestions}\n\nWhat are 2-4 concise follow-up actions or questions the user might say next? These should be suitable for buttons."
+        "Based on this conversation snippet:\n\n{context_str_for_suggestions}\n\nWhat are 2-4 concise follow-up actions or questions the user might say next? These should be suitable for buttons.\n\nRespond with a JSON array of objects, where each object has an 'action' field. Example: [{{ \"action\": \"Hello\" }}, {{ \"action\": \"How are you?\" }}]"
     );
     trace!(%session_id, "Constructed prompt for LLM suggested actions: {}", prompt_text_for_llm_suggestions);
 
@@ -3122,7 +3122,7 @@ pub async fn generate_suggested_actions(
     let chat_request = ChatRequest::new(final_messages_for_suggestions_llm)
         .with_system(final_system_prompt_for_suggestions);
 
-    let _suggested_actions_schema_value = json!({
+    let suggested_actions_schema_value = json!({
         "type": "array",
         "items": {
             "type": "object",
@@ -3144,7 +3144,10 @@ pub async fn generate_suggested_actions(
                 .into(),
         ) // Use session temp or default
         .with_max_tokens(1000) // Increased max tokens for suggestions
-        .with_response_format(ChatResponseFormat::JsonMode);
+        .with_response_format(ChatResponseFormat::JsonSpec(JsonSpec::new(
+            "suggested_actions",
+            suggested_actions_schema_value,
+        )));
 
     trace!(%session_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
 
