@@ -27,7 +27,6 @@ async fn create_test_user_manual(
 
     let user_id = scribe_backend::db::DbId::new();
     let new_user = scribe_backend::models::users::NewUser {
-        #[cfg(feature = "sqlite-backend")]
         id: user_id,
         username: username.clone(),
         password_hash: password_hash.clone(),

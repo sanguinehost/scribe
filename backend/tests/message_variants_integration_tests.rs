@@ -69,6 +69,7 @@ async fn create_test_user_with_dek(
     let kek_salt_str = BASE64.encode(&kek_salt);
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username,
         password_hash,
         email,

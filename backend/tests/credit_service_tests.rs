@@ -747,7 +747,7 @@ mod credit_service_tests {
         let result = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_arc);
-                service.add_credits(conn, user_id, 100, "test", "Should fail", None, None)
+                service.add_credits(conn, user_id.into(), 100, "test", "Should fail", None, None)
             })
             .await
             .expect("Failed to interact");

@@ -74,7 +74,6 @@ async fn test_chronicle_creation_refusal() {
         tool_registry,
         config,
         chronicle_service,
-        app.mock_embedding_pipeline_service.clone(),
         app.state.clone(),
         token_counter,
     );
@@ -132,6 +131,8 @@ async fn test_chronicle_creation_refusal() {
             &messages,
             &session_dek,
             None, // No persona context
+            None, // No game state
+            None, // No character context
         )
         .await;
 
@@ -208,7 +209,6 @@ async fn test_chronicle_creation_success() {
         tool_registry,
         config,
         chronicle_service.clone(),
-        app.mock_embedding_pipeline_service.clone(),
         app.state.clone(),
         token_counter,
     );
@@ -222,6 +222,7 @@ async fn test_chronicle_creation_success() {
 
     let user_id = DbId::new();
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username: "testuser".to_string(),
         password_hash: "hash".to_string(),
         email: "test@test.com".to_string(),
@@ -306,6 +307,8 @@ async fn test_chronicle_creation_success() {
             &messages,
             &session_dek,
             None,
+            None, // No game state
+            None, // No character context
         )
         .await;
 

@@ -21,6 +21,7 @@ async fn test_llm_deduplication_solomon_example() {
 
     // 2. Manually create User
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username: "testuser".to_string(),
         password_hash: "hash".to_string(),
         email: "test@example.com".to_string(),
@@ -168,6 +169,7 @@ async fn test_llm_deduplication_elara_example() {
     {
         let mut conn = get_conn(&pool).await.expect("Failed to get connection");
         let new_user = NewUser {
+            id: Uuid::new_v4().into(),
             username: "test_elara".to_string(),
             email: "test_elara@example.com".to_string(),
             password_hash: "hash".to_string(),

@@ -10,6 +10,7 @@ mod soft_limit_tests {
     use deadpool_diesel::Manager as DeadpoolManager;
     use deadpool_diesel::Pool;
     use diesel::prelude::*;
+    use scribe_backend::db::DbId;
     use scribe_backend::models::users::UserRole;
     use scribe_backend::{
         config::Config,
@@ -25,7 +26,7 @@ mod soft_limit_tests {
     /// Helper function to create a test user
     async fn create_test_user(
         pool: &Pool<DeadpoolManager<diesel::PgConnection>>,
-        user_id: Uuid,
+        user_id: DbId,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let conn = pool.get().await?;
         conn.interact(move |conn| {
@@ -50,7 +51,7 @@ mod soft_limit_tests {
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8::user_role, $9::account_status, $10, $11, $12, $13)
                  ON CONFLICT (id) DO NOTHING"
             )
-            .bind::<diesel::sql_types::Uuid, _>(user_id)
+            .bind::<diesel::sql_types::Uuid, _>(user_id.into_uuid())
             .bind::<diesel::sql_types::Text, _>(format!("test_user_{}", user_id))
             .bind::<diesel::sql_types::Text, _>(format!("test_{}@example.com", user_id))
             .bind::<diesel::sql_types::Text, _>("test_hash")
@@ -84,7 +85,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -101,7 +102,7 @@ mod soft_limit_tests {
             .expect("Failed to interact")
             .expect("Failed to create daily usage");
 
-        assert_eq!(usage.user_id, user_id);
+        assert_eq!(usage.user_id, user_id.into_uuid());
         assert_eq!(usage.message_count, 0);
         assert_eq!(usage.token_count, 0);
         assert!(usage.soft_limit_triggered_at.is_none());
@@ -127,7 +128,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -177,7 +178,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -223,7 +224,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -233,7 +234,7 @@ mod soft_limit_tests {
         conn.interact(move |conn| {
             let new_sub = NewSubscription {
                 id: Uuid::new_v4(),
-                user_id,
+                user_id: user_id.into_uuid(),
                 plan_type: "basic".to_string(),
                 paddle_subscription_id: Some("test_throttle".to_string()),
                 paddle_customer_id: Some("test_customer".to_string()),
@@ -313,7 +314,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -326,7 +327,7 @@ mod soft_limit_tests {
         // Create premium subscription
         let sub = NewSubscription {
             id: Uuid::new_v4(),
-            user_id,
+            user_id: user_id.into_uuid(),
             paddle_customer_id: Some("cus_test".to_string()),
             paddle_subscription_id: Some("sub_test".to_string()),
             plan_type: "premium".to_string(),
@@ -380,7 +381,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -400,7 +401,7 @@ mod soft_limit_tests {
                 use scribe_backend::models::credit::NewDailyUsage;
 
                 let usage = NewDailyUsage {
-                    user_id,
+                    user_id: user_id.into_uuid(),
                     date,
                     message_count: 10 + days_ago as i32,
                     token_count: 1000 + (days_ago as i64 * 100),
@@ -442,7 +443,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -455,7 +456,7 @@ mod soft_limit_tests {
             use scribe_backend::models::credit::NewDailyUsage;
 
             let usage = NewDailyUsage {
-                user_id,
+                user_id: user_id.into_uuid(),
                 date: yesterday,
                 message_count: 50,
                 token_count: 5000,
@@ -493,7 +494,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");
@@ -506,7 +507,7 @@ mod soft_limit_tests {
         // Create subscription with soft limit override
         let sub = NewSubscription {
             id: Uuid::new_v4(),
-            user_id,
+            user_id: user_id.into_uuid(),
             paddle_customer_id: Some("cus_test".to_string()),
             paddle_subscription_id: Some("sub_test".to_string()),
             plan_type: "basic".to_string(),
@@ -559,7 +560,7 @@ mod soft_limit_tests {
         let app = spawn_app(true, false, false).await;
         let _guard = TestDataGuard::new(app.db_pool.clone(), None);
 
-        let user_id = Uuid::new_v4();
+        let user_id = DbId::new();
         create_test_user(&app.db_pool, user_id)
             .await
             .expect("Failed to create user");

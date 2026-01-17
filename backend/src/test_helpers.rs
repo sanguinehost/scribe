@@ -2205,17 +2205,15 @@ pub async fn spawn_app_with_rate_limiting_options(
     let rate_limited_api_routes = Router::new()
         .nest("/auth", auth_routes_module::auth_routes()) // Auth routes under /api/auth
         .merge(protected_api_routes_for_test) // Protected routes under /api
-        .layer(GovernorLayer {
-            config: std::sync::Arc::new(
-                GovernorConfigBuilder::default()
-                    .per_second(rate_limit_per_second)
-                    .burst_size(rate_limit_burst_size)
-                    // Use GlobalKeyExtractor for tests (doesn't require ConnectInfo)
-                    .key_extractor(GlobalKeyExtractor)
-                    .finish()
-                    .unwrap(),
-            ),
-        });
+        .layer(GovernorLayer::new(std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(rate_limit_per_second)
+                .burst_size(rate_limit_burst_size)
+                // Use GlobalKeyExtractor for tests (doesn't require ConnectInfo)
+                .key_extractor(GlobalKeyExtractor)
+                .finish()
+                .unwrap(),
+        )));
 
     let router_for_server = Router::new() // Renamed to avoid conflict with router field in TestApp
         .merge(health_routes_for_test) // Health endpoint not rate limited

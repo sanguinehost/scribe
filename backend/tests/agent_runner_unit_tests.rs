@@ -24,6 +24,14 @@ async fn create_test_app_state(
     test_app: &scribe_backend::test_helpers::TestApp,
     lorebook_service: Arc<scribe_backend::services::LorebookService>,
 ) -> Arc<scribe_backend::state::AppState> {
+    let encryption_service = Arc::new(scribe_backend::services::EncryptionService::new());
+    let character_service = Arc::new(
+        scribe_backend::services::character_service::CharacterService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        ),
+    );
+
     let services = scribe_backend::state::AppStateServices {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone()
@@ -38,15 +46,16 @@ async fn create_test_app_state(
         chat_override_service: Arc::new(
             scribe_backend::services::chat_override_service::ChatOverrideService::new(
                 test_app.db_pool.clone(),
-                Arc::new(scribe_backend::services::EncryptionService::new()),
+                encryption_service.clone(),
             ),
         ),
         user_persona_service: Arc::new(
             scribe_backend::services::user_persona_service::UserPersonaService::new(
                 test_app.db_pool.clone(),
-                Arc::new(scribe_backend::services::EncryptionService::new()),
+                encryption_service.clone(),
             ),
         ),
+        character_service,
         token_counter: Arc::new(
             scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
                 scribe_backend::services::tokenizer_service::TokenizerService::new(
@@ -57,7 +66,7 @@ async fn create_test_app_state(
                 "gemini-2.5-pro",
             ),
         ),
-        encryption_service: Arc::new(scribe_backend::services::EncryptionService::new()),
+        encryption_service,
         lorebook_service: lorebook_service.clone(),
         auth_backend: Arc::new(scribe_backend::auth::user_store::Backend::new(
             test_app.db_pool.clone(),
@@ -160,8 +169,8 @@ async fn create_test_chat_session(
 
         diesel::insert_into(chat_sessions::table)
             .values((
-                chat_sessions::id.eq(session_id.into_uuid()),
-                chat_sessions::user_id.eq(user_id.into_uuid()),
+                chat_sessions::id.eq(session_id),
+                chat_sessions::user_id.eq(user_id),
                 chat_sessions::model_name.eq("gemini-2.5-pro"),
                 chat_sessions::history_management_strategy.eq("sliding_window"),
                 chat_sessions::history_management_limit.eq(50),
@@ -249,6 +258,8 @@ mod agent_runner_conversation_tests {
                 None,
                 &messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -402,6 +413,8 @@ mod agent_runner_conversation_tests {
                 &messages,
                 &session_dek,
                 None,
+                None,
+                None,
             )
             .await;
 
@@ -523,6 +536,8 @@ mod agent_runner_conversation_tests {
                 None,
                 &messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -654,6 +669,8 @@ mod agent_runner_duplicate_prevention_tests {
                 &messages,
                 &session_dek,
                 None, // persona_context
+                None,
+                None,
             )
             .await
             .expect("First narrative processing should succeed");
@@ -711,6 +728,8 @@ mod agent_runner_duplicate_prevention_tests {
                 &similar_messages,
                 &session_dek,
                 None, // persona_context
+                None,
+                None,
             )
             .await
             .expect("Second narrative processing should succeed");

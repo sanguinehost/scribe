@@ -337,7 +337,9 @@ mod get_session_data_for_generation_tests {
         username: &str,
         email: &str,
     ) -> scribe_backend::db::DbId {
+        let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user = NewUser {
+            id: user_id,
             username: username.to_string(),
             password_hash: "hash".to_string(),
             email: email.to_string(),
@@ -1047,7 +1049,9 @@ mod get_session_data_for_generation_tests {
             .expect("Failed to get DB connection");
 
         // Insert User
+        let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user_for_trunc_test = NewUser {
+            id: user_id,
             username: "testuser_trunc".to_string(),
             password_hash: "anotherhash".to_string(),
             email: "trunc@example.com".to_string(),
@@ -1330,7 +1334,9 @@ mod get_session_data_for_generation_tests {
             .expect("Failed to get DB connection for RAG total limit test");
 
         // Insert User
+        let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user_for_rag_total_limit_test = NewUser {
+            id: user_id,
             username: "testuser_rag_total_limit".to_string(),
             password_hash: "hash_rag_total_limit".to_string(),
             email: "ragtotallimit@example.com".to_string(),
@@ -1728,7 +1734,9 @@ mod get_session_data_for_generation_tests {
             .expect("Failed to get DB connection for RAG older history test");
 
         // Insert User
+        let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user_for_rag_older_hist_test = NewUser {
+            id: user_id,
             username: "testuser_rag_older_hist".to_string(),
             password_hash: "hash_rag_older_hist".to_string(),
             email: "ragolderhist@example.com".to_string(),

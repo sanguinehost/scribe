@@ -126,6 +126,7 @@ mod integration_tests {
             .expect("Failed to encrypt DEK for test user");
 
         let new_user = NewUser {
+            id: Uuid::new_v4().into(),
             username: username.to_string(),
             password_hash: hashed_password,
             email,

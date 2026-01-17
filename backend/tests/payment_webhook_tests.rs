@@ -807,7 +807,7 @@ mod payment_webhook_tests {
         );
         // Verify billing period was updated
         assert!(
-            updated_sub.current_period_start > trial_end - chrono::Duration::days(1),
+            updated_sub.current_period_start > (trial_end - chrono::Duration::days(1)).into(),
             "Billing period start should be updated"
         );
         // Verify trial-to-paid conversion tracking fields are set

@@ -1438,6 +1438,13 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
     let rate_limiter =
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
+    let character_service = Arc::new(
+        scribe_backend::services::character_service::CharacterService::new(
+            test_app.db_pool.clone(),
+            encryption_service_for_test.clone(),
+        ),
+    );
+
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
@@ -1445,6 +1452,7 @@ async fn test_create_session_saves_first_mes() -> Result<(), AnyhowError> {
         embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service: chat_override_service_for_test,
         user_persona_service: user_persona_service_for_test,
+        character_service,
         token_counter: hybrid_token_counter_for_test,
         encryption_service: encryption_service_for_test.clone(),
         lorebook_service: lorebook_service_for_test,

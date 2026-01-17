@@ -43,6 +43,7 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username,
         password_hash: hashed_password,
         email,
@@ -135,6 +136,13 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
         test_app.qdrant_service.clone(),
     ));
 
+    let character_service = Arc::new(
+        scribe_backend::services::character_service::CharacterService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        ),
+    );
+
     let services = scribe_backend::state::AppStateServices {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone()
@@ -154,6 +162,7 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
             test_app.db_pool.clone(),
             encryption_service.clone(),
         )),
+        character_service,
         token_counter: Arc::new(
             scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
                 scribe_backend::services::tokenizer_service::TokenizerService::new(
@@ -278,6 +287,8 @@ async fn test_variant_handling_updates_event() {
             &[message1.clone()],
             &session_dek,
             None,
+            None,
+            None,
         )
         .await
         .expect("First workflow failed");
@@ -360,6 +371,8 @@ async fn test_variant_handling_updates_event() {
             Some(chronicle_id.into()),
             &[message2.clone()],
             &session_dek,
+            None,
+            None,
             None,
         )
         .await

@@ -571,6 +571,12 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test.clone(),
+            ),
+        ),
     };
 
     Arc::new(AppState::new(
@@ -1712,6 +1718,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 rag_lorebooks_limit: None,
                 rag_older_chat_limit: None,
                 rag_cognitive_context_limit: None,
+                chat_mode: scribe_backend::models::chats::ChatMode::Character,
             };
 
             diesel::insert_into(chat_sessions::table)

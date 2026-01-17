@@ -53,6 +53,7 @@ fn insert_test_user_with_password(
         .expect("Failed to encrypt DEK for test user");
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username: username.to_string(),
         password_hash: hashed_password,
         email,
@@ -100,7 +101,7 @@ where
 /// Insert a test character into the database
 fn insert_test_character(
     conn: &mut PgConnection,
-    user_uuid: Uuid,
+    user_uuid: DbId,
     name: &str,
     dek: &SessionDek, // Add DEK parameter
 ) -> Result<DbCharacter, diesel::result::Error> {
@@ -110,7 +111,7 @@ fn insert_test_character(
     #[derive(Insertable)]
     #[diesel(table_name = characters)]
     struct NewDbCharacter<'a> {
-        user_id: Uuid,
+        user_id: DbId,
         name: &'a str,
         description: Option<Vec<u8>>,
         personality: Option<Vec<u8>>,
@@ -193,7 +194,7 @@ async fn test_generate_character() -> Result<(), anyhow::Error> {
     let character = run_db_op(&pool, move |conn| {
         insert_test_character(
             conn,
-            *user_id_for_insert,
+            user_id_for_insert,
             "Generated Wizard Character",
             &dek_for_insert,
         )

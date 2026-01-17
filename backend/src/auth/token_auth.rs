@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use axum::{
     extract::{FromRef, FromRequestParts},
     http::{header::AUTHORIZATION, request::Parts, StatusCode},
@@ -72,7 +71,6 @@ impl UnifiedAuth {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for UnifiedAuth
 where
     AppState: FromRef<S>,

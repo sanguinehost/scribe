@@ -3,7 +3,6 @@
 // Custom extractors that provide better error responses than Axum's defaults.
 
 use axum::{
-    async_trait,
     extract::{rejection::JsonRejection, FromRequest, Request},
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -26,7 +25,6 @@ use serde_json::json;
 /// ```
 pub struct JsonExtractor<T>(pub T);
 
-#[async_trait]
 impl<S, T> FromRequest<S> for JsonExtractor<T>
 where
     T: DeserializeOwned,

@@ -63,7 +63,6 @@ impl RequestPrivacyExt for Request {
 #[derive(Debug, Clone)]
 pub struct ExtractPrivacyContext(pub Arc<PrivacyContext>);
 
-#[axum::async_trait]
 impl<S> axum::extract::FromRequestParts<S> for ExtractPrivacyContext
 where
     S: Send + Sync,

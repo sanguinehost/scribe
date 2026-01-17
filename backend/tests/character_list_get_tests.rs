@@ -51,6 +51,7 @@ fn insert_test_user_with_password(
         .expect("Failed to encrypt DEK for test user");
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username: username.to_string(),
         password_hash: hashed_password,
         email,
@@ -98,7 +99,7 @@ where
 /// Insert a test character into the database
 fn insert_test_character(
     conn: &mut PgConnection,
-    user_uuid: Uuid,
+    user_uuid: DbId,
     name: &str,
     dek: &SessionDek, // Add DEK parameter
 ) -> Result<DbCharacter, diesel::result::Error> {
@@ -108,7 +109,7 @@ fn insert_test_character(
     #[derive(Insertable)]
     #[diesel(table_name = characters)]
     struct NewDbCharacter<'a> {
-        user_id: Uuid,
+        user_id: DbId,
         name: &'a str,
         description: Option<Vec<u8>>,
         personality: Option<Vec<u8>>,
@@ -246,14 +247,14 @@ async fn test_list_characters_success() -> Result<(), anyhow::Error> {
     let user_id_for_insert = user.id;
     let dek_clone1 = dek.clone();
     let char1 = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, *user_id_for_insert, "Character One", &dek_clone1)
+        insert_test_character(conn, user_id_for_insert, "Character One", &dek_clone1)
     })
     .await?;
     guard.add_character(char1.id);
 
     let dek_clone2 = dek.clone();
     let char2 = run_db_op(&pool, move |conn| {
-        insert_test_character(conn, *user_id_for_insert, "Character Two", &dek_clone2)
+        insert_test_character(conn, user_id_for_insert, "Character Two", &dek_clone2)
     })
     .await?;
     guard.add_character(char2.id);
@@ -329,7 +330,7 @@ async fn test_get_nonexistent_character() -> Result<(), anyhow::Error> {
     guard.add_user(user.id);
     tracing::info!(user_id = %user.id, username = %username, "Test user created for get_nonexistent_character test");
 
-    let non_existent_id = Uuid::new_v4();
+    let non_existent_id: scribe_backend::db::DbId = Uuid::new_v4().into();
     let conn = pool
         .get()
         .await
@@ -389,7 +390,7 @@ async fn test_get_character_forbidden() -> Result<(), anyhow::Error> {
     let owned_character = run_db_op(&pool, move |conn| {
         insert_test_character(
             conn,
-            *owner_id_for_insert,
+            owner_id_for_insert,
             "Character A For Get",
             &owner_dek_clone,
         )

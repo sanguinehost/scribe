@@ -467,6 +467,13 @@ async fn test_first_mes_included_in_history() {
         test_app.db_pool.clone(),
     ));
 
+    let character_service = Arc::new(
+        scribe_backend::services::character_service::CharacterService::new(
+            test_app.db_pool.clone(),
+            encryption_service.clone(),
+        ),
+    );
+
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
@@ -474,6 +481,7 @@ async fn test_first_mes_included_in_history() {
         embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service,
         user_persona_service,
+        character_service,
         token_counter: token_counter_service,
         encryption_service: encryption_service.clone(),
         lorebook_service,

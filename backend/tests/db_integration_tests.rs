@@ -153,6 +153,7 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username: test_username.clone(),
         password_hash: "test_hash".to_string(), // This hash won't match any real password process here
         email: format!("{test_username}@example.com"),
@@ -200,9 +201,9 @@ fn insert_test_character(
 // Helper struct to manage test data cleanup (copied from other file)
 struct TestDataGuard {
     pool: DbPool,
-    user_ids: Vec<Uuid>,
-    character_ids: Vec<Uuid>,
-    session_ids: Vec<Uuid>, // Added session IDs
+    user_ids: Vec<DbId>,
+    character_ids: Vec<DbId>,
+    session_ids: Vec<DbId>, // Added session IDs
 }
 
 impl TestDataGuard {
@@ -215,15 +216,15 @@ impl TestDataGuard {
         }
     }
 
-    fn add_user(&mut self, user_id: Uuid) {
+    fn add_user(&mut self, user_id: DbId) {
         self.user_ids.push(user_id);
     }
 
-    fn add_character(&mut self, character_id: Uuid) {
+    fn add_character(&mut self, character_id: DbId) {
         self.character_ids.push(character_id);
     }
 
-    fn add_session_id(&mut self, session_id: Uuid) {
+    fn add_session_id(&mut self, session_id: DbId) {
         self.session_ids.push(session_id);
     }
 
@@ -390,6 +391,7 @@ fn test_user_character_insert_and_query() {
         let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
         let new_user = NewUser {
+            id: Uuid::new_v4().into(),
             username: test_username.clone(),
             password_hash: test_password_hash.to_string(),
             email: format!("{test_username}@example.com"), // Added email
@@ -494,6 +496,7 @@ fn insert_test_user_with_password(
     let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username: username_param.to_string(),
         password_hash: hashed_password,
         email,
@@ -1151,7 +1154,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
             .expect("Interact failed inserting user")
             .context("DB error inserting user for cleanup test")?
     };
-    guard.add_user(*user.id);
+    guard.add_user(user.id);
 
     // Create character using local helper within interact
     let character = {
@@ -1166,9 +1169,9 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
             .expect("Interact failed inserting character")
             .context("DB error inserting character for cleanup test")?
     };
-    guard.add_character(*character.id);
+    guard.add_character(character.id);
 
-    let session_id = Uuid::new_v4();
+    let session_id = DbId::new();
     let new_session = NewChat {
         id: session_id.into(),
         user_id: user.id.into(),
@@ -1195,7 +1198,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         .context("DB error inserting session for cleanup test")?;
     guard.add_session_id(session_id); // Use new method
 
-    let message_id = Uuid::new_v4();
+    let message_id = DbId::new();
     // Use scribe_backend::models::chats::NewChatMessage
     let new_message = NewChatMessage {
         id: message_id.into(),

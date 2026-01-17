@@ -23,13 +23,13 @@ path = "src/bin/re_embed_chronicles.rs"
 # Build dependencies are only needed for local-llm feature
 
 [dependencies]
-axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Align with tonic and axum-login ^0.7.0, ADDED tokio feature
-axum-macros = "0.4.1" # Added for debug_handler
-axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Added for HTTPS serving
+axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] } # Updated to 0.8
+axum-macros = "0.5.0" # Updated for axum 0.8
+axum-server = { version = "0.8.0", features = ["tls-rustls"] } # Updated for axum 0.8
 tokio = { version = "1.44.2", features = ["full"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-png = "0.17.16"
+png = "0.18.0"
 base64 = "0.22.1"
 thiserror = "2.0.12"
 diesel = { version = "2.3", default-features = false, features = ["chrono", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
@@ -40,10 +40,10 @@ chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", default-features = false }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
-tower-http = { version = "0.5.2", features = ["trace", "cors"] }
-tower-sessions = { version = "0.11.1", features = ["signed"] }
-tower-sessions-memory-store = "0.11.1"
-axum-login = "0.14.0" # Compatible with axum 0.7.x
+tower-http = { version = "0.6.2", features = ["trace", "cors"] }
+tower-sessions = { version = "0.14.0", features = ["signed"] }
+tower-sessions-memory-store = "0.14.0"
+axum-login = "0.18.0" # Compatible with axum 0.7.x
 bcrypt = "0.17.0"
 argon2 = { version = "0.5.3", features = ["std"] } # Ensure std feature for hash_raw if available, or check API
 secrecy = { version = "0.10.3", features = ["serde"] } # alloc feature removed as it's not standard
@@ -70,7 +70,7 @@ time = { version = "0.3.41", features = ["serde", "serde-well-known"] }
 
 rand = "0.9.1"
 cookie = { version = "0.18.1", features = ["secure"] }
-tower-cookies = { version = "0.10.0", features = ["signed"] } # Aligned with axum-login 0.14.0, added "signed" feature
+tower-cookies = { version = "0.11.0", features = ["signed"] } # Aligned with axum-login 0.18.0, added "signed" feature
 
 lettre = { version = "0.11.15" }
 mime = "0.3.17"
@@ -82,11 +82,11 @@ genai = { path = "../../rust-genai" }
 
 reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
-reqwest-retry = { version = "0.7.0"}
+reqwest-retry = { version = "0.8.0"}
 
 qdrant-client = { version = "1.14.0", features = ["serde"] }
 
-diesel_json = { version = "0.2.1", optional = true }
+diesel_json = { version = "0.3.0", optional = true }
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg"] }
 
 envy = "0.4"
@@ -99,14 +99,14 @@ futures = "0.3.31"
 async-stream = "0.3.6"
 
 # Added for sentence splitting (using ICU4X)
-icu_segmenter = { version = "1.5", features = ["compiled_data"] }
-icu_provider = "1.5"
-icu_provider_blob = "1.5"
+icu_segmenter = { version = "2.1", features = ["compiled_data"] }
+icu_provider = "2.1"
+icu_provider_blob = "2.1"
 icu_testdata = "1.5"
 
 # Add missing dependencies here
 # icu = { version = "1.5", features = ["macros"] }
-icu_locid = "1.5"
+icu_locid = "2.0"
 
 validator = { version = "0.20", features = ["derive"] }
 regex = "1.10.4"
@@ -149,7 +149,7 @@ aws-config = "1.6.3"
 aws-sdk-ses = "1.75.0"
 
 # Rate limiting
-tower_governor = "0.5.0"
+tower_governor = "0.8.0"
 
 # Payment processing (optional - only with payment feature)
 hmac = { version = "0.12" }  # For blind indexing and webhook signature verification
@@ -169,11 +169,11 @@ jsonwebtoken = "9.3.1"
 winapi = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.25"
+cocoa = "0.26"
 
 [dev-dependencies]
-axum = { version = "0.7.5", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests, ADDED tokio feature
-axum-server = { version = "0.7.0", features = ["tls-rustls"] } # Mirror main deps features
+axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests
+axum-server = { version = "0.8.0", features = ["tls-rustls"] } # Mirror main deps features
 hyper-util = { version = "0.1.11", features = ["full"] }
 reqwest = { version = "0.12.15", features = ["json", "cookies"] }
 serde_json = "1.0.140"

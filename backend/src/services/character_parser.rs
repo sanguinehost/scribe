@@ -1544,6 +1544,31 @@ mod tests {
         }
     }
 
+    impl std::io::BufRead for FailingReader {
+        fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+            if self.read_count >= self.fail_after {
+                Err(std::io::Error::other("Simulated I/O error"))
+            } else {
+                let buf = self.data.fill_buf()?;
+                let remaining_before_fail =
+                    (self.fail_after.saturating_sub(self.read_count)) as usize;
+                let len = std::cmp::min(buf.len(), remaining_before_fail);
+                Ok(&buf[..len])
+            }
+        }
+
+        fn consume(&mut self, amt: usize) {
+            self.data.consume(amt);
+            self.read_count += amt as u64;
+        }
+    }
+
+    impl std::io::Seek for FailingReader {
+        fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+            self.data.seek(pos)
+        }
+    }
+
     #[test]
     fn test_png_io_error_conversion() {
         // Create valid PNG data first

@@ -1,6 +1,9 @@
 use crate::config::Config;
 use crate::errors::AppError;
-use icu_segmenter::{SentenceSegmenter, WordSegmenter};
+use icu_segmenter::{
+    options::SentenceBreakInvariantOptions, options::WordBreakInvariantOptions, SentenceSegmenter,
+    SentenceSegmenterBorrowed, WordSegmenter, WordSegmenterBorrowed,
+};
 
 use std::cmp::min;
 use tracing::{debug, instrument, trace, warn}; // Added trace
@@ -8,15 +11,15 @@ use tracing::{debug, instrument, trace, warn}; // Added trace
 /// Context for sentence splitting operations
 struct SentenceSplitContext<'a> {
     separators: &'a [&'a str],
-    sentence_segmenter: &'a SentenceSegmenter,
-    word_segmenter: &'a WordSegmenter,
+    sentence_segmenter: &'a SentenceSegmenterBorrowed<'static>,
+    word_segmenter: &'a WordSegmenterBorrowed<'static>,
 }
 
 /// Context for chunking operations to avoid too many function parameters
 struct ChunkingContext<'a> {
     config: &'a ChunkConfig,
-    sentence_segmenter: &'a SentenceSegmenter,
-    word_segmenter: &'a WordSegmenter,
+    sentence_segmenter: &'a SentenceSegmenterBorrowed<'static>,
+    word_segmenter: &'a WordSegmenterBorrowed<'static>,
 }
 
 #[derive(Debug, Clone)] // Removed Eq due to Option<String> potentially making it complex if not handled carefully
@@ -97,8 +100,8 @@ pub fn chunk_text(
     }
 
     // Initialize segmenters (consider lazy static or passing them in if performance is critical)
-    let sentence_segmenter = SentenceSegmenter::new();
-    let word_segmenter = WordSegmenter::new_auto();
+    let sentence_segmenter = SentenceSegmenter::new(SentenceBreakInvariantOptions::default());
+    let word_segmenter = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
 
     let mut chunks = Vec::new();
     let separators = ["\n\n", "\n", " "]; // Define separators by priority
@@ -121,7 +124,7 @@ pub fn chunk_text(
     )?;
 
     // Apply overlap after initial chunking
-    apply_overlap(&mut chunks, context.config, context.word_segmenter);
+    apply_overlap(&mut chunks, context.config, &word_segmenter);
 
     debug!(num_chunks = chunks.len(), "Chunking complete.");
     Ok(chunks)
@@ -494,7 +497,7 @@ fn split_fallback(
     config: &ChunkConfig,
     source_id: Option<&str>,
     current_offset: usize,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
     chunks: &mut Vec<TextChunk>,
 ) {
     trace!("Executing fallback split.");
@@ -518,7 +521,7 @@ fn split_fallback_by_words(
     config: &ChunkConfig,
     source_id: Option<&str>,
     current_offset: usize,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
     chunks: &mut Vec<TextChunk>,
 ) {
     let word_byte_indices: Vec<usize> = word_segmenter.segment_str(segment).collect();
@@ -587,7 +590,7 @@ fn create_text_chunk_from_slice(
     ctx: &WordChunkContext<'_>,
     chunk_start_byte: usize,
     chunk_end_byte: usize,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
 ) -> Option<TextChunk> {
     let chunk_content_original = &ctx.segment[chunk_start_byte..chunk_end_byte];
     let chunk_content_trimmed = chunk_content_original.trim();
@@ -684,7 +687,7 @@ fn process_single_word_chunk_iteration(
     ctx: &WordChunkContext<'_>,
     chunk_start_byte: usize,
     chunk_end_byte: usize,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
     chunks: &mut Vec<TextChunk>,
 ) -> bool {
     create_text_chunk_from_slice(ctx, chunk_start_byte, chunk_end_byte, word_segmenter).is_some_and(
@@ -711,7 +714,7 @@ fn handle_valid_word_chunk_boundaries(
     chunk_start_byte: usize,
     chunk_end_byte: usize,
     ctx: &WordChunkContext<'_>,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
     chunks: &mut Vec<TextChunk>,
 ) -> usize {
     process_single_word_chunk_iteration(
@@ -758,7 +761,7 @@ struct WordChunkBoundaries {
 struct ChunkProcessingParams<'a> {
     current_start_word_index: usize,
     ctx: &'a WordChunkContext<'a>,
-    word_segmenter: &'a WordSegmenter,
+    word_segmenter: &'a WordSegmenterBorrowed<'static>,
 }
 
 /// Calculate boundaries for the current word chunk
@@ -826,7 +829,7 @@ fn process_word_chunk_iteration(
     current_start_word_index: usize,
     config: &ChunkConfig,
     ctx: &WordChunkContext<'_>,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
     chunks: &mut Vec<TextChunk>,
 ) -> usize {
     let boundaries = get_word_chunk_boundaries(current_start_word_index, config, ctx);
@@ -850,7 +853,7 @@ fn process_word_chunk_iteration(
 fn process_word_chunks(
     ctx: &WordChunkContext<'_>,
     config: &ChunkConfig,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
     chunks: &mut Vec<TextChunk>,
 ) {
     trace!(
@@ -917,7 +920,11 @@ fn split_fallback_by_characters(
 
 /// Measures the size of a text segment based on the configured metric.
 #[inline]
-fn measure_size(text: &str, metric: ChunkingMetric, word_segmenter: &WordSegmenter) -> usize {
+fn measure_size(
+    text: &str,
+    metric: ChunkingMetric,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
+) -> usize {
     match metric {
         ChunkingMetric::Char => text.chars().count(),
         ChunkingMetric::Word => word_segmenter.segment_str(text).count(),
@@ -931,7 +938,7 @@ fn find_best_split_point(
     separator: &str,
     max_size: usize,
     metric: ChunkingMetric,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
 ) -> Option<usize> {
     if separator.is_empty() {
         return None;
@@ -993,7 +1000,7 @@ fn calculate_word_overlap_start_byte(
 fn generate_word_overlap(
     prev_content: &str,
     overlap_size: usize,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
 ) -> String {
     let word_indices: Vec<usize> = word_segmenter.segment_str(prev_content).collect();
     let actual_overlap_word_count = min(overlap_size, word_indices.len());
@@ -1023,7 +1030,7 @@ fn generate_word_overlap(
 fn generate_overlap_text(
     prev_chunk: &TextChunk,
     config: &ChunkConfig,
-    word_segmenter: &WordSegmenter,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
 ) -> String {
     match config.metric {
         ChunkingMetric::Char => generate_char_overlap(&prev_chunk.content, config.overlap),
@@ -1052,7 +1059,11 @@ fn apply_overlap_to_chunk(current_chunk: &mut TextChunk, overlap_text: String, c
 }
 
 /// Applies overlap between consecutive chunks. Modifies the chunks in place.
-fn apply_overlap(chunks: &mut [TextChunk], config: &ChunkConfig, word_segmenter: &WordSegmenter) {
+fn apply_overlap(
+    chunks: &mut [TextChunk],
+    config: &ChunkConfig,
+    word_segmenter: &WordSegmenterBorrowed<'static>,
+) {
     if config.overlap == 0 || chunks.len() < 2 {
         return;
     }
@@ -1080,7 +1091,7 @@ fn apply_overlap(chunks: &mut [TextChunk], config: &ChunkConfig, word_segmenter:
 
 // Helper function to count ICU words (moved from tests module)
 // Takes segmenter to avoid recreating it repeatedly.
-fn count_icu_words(text: &str, word_segmenter: &WordSegmenter) -> usize {
+fn count_icu_words(text: &str, word_segmenter: &WordSegmenterBorrowed<'static>) -> usize {
     word_segmenter.segment_str(text).count()
 }
 
@@ -1641,7 +1652,7 @@ mod tests {
         // The implementation is splitting into multiple chunks
         // Instead of asserting exact number, just check that each chunk follows the rules
         for chunk in &result {
-            let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
+            let word_segmenter = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!("Chunk: '{}', Word Count: {}", chunk.content, word_count);
             assert!(
@@ -1670,7 +1681,7 @@ mod tests {
 
         // Add debugging prints
         for (i, chunk) in result.iter().enumerate() {
-            let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
+            let word_segmenter = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Chunk {}: word count = {}, content = \"{}\"",
@@ -1734,7 +1745,7 @@ mod tests {
 
         // Print the chunks to better understand the overlap behavior
         for (i, chunk) in result.iter().enumerate() {
-            let word_segmenter = WordSegmenter::new_auto();
+            let word_segmenter = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Chunk {}: '{}', Word Count: {}",
@@ -1828,7 +1839,7 @@ mod tests {
 
         assert!(result.len() > 1, "Expected splitting for Japanese text");
         for chunk in result {
-            let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
+            let word_segmenter = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Japanese Chunk: '{}', Word Count: {}",
@@ -1859,7 +1870,7 @@ mod tests {
 
         assert!(result.len() > 1, "Expected splitting for Chinese text");
         for chunk in result {
-            let word_segmenter = WordSegmenter::new_auto(); // Create segmenter for test assertion
+            let word_segmenter = WordSegmenter::new_auto(WordBreakInvariantOptions::default());
             let word_count = count_icu_words(&chunk.content, &word_segmenter);
             trace!(
                 "Chinese Chunk: '{}', Word Count: {}",

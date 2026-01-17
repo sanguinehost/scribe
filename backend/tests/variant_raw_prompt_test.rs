@@ -49,6 +49,7 @@ async fn create_test_user_with_dek(
     let mut conn = test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
 
     let password_hash =
@@ -122,6 +123,7 @@ async fn create_test_chat_session(
     let character: DbCharacter = test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(characters::table)
@@ -167,6 +169,7 @@ async fn create_test_chat_session(
     let chat_session: Chat = test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             chat_sessions::table
@@ -223,6 +226,7 @@ async fn create_test_message(
     let message: DbChatMessage = test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(chat_messages::table)
@@ -250,6 +254,7 @@ async fn create_message_variant_with_raw_prompt(
     let next_index = test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             let count: i64 = message_variants::table
@@ -278,6 +283,7 @@ async fn create_message_variant_with_raw_prompt(
     test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(message_variants::table)
@@ -290,6 +296,7 @@ async fn create_message_variant_with_raw_prompt(
     test_app
         .db_pool
         .get()
+        .await
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))

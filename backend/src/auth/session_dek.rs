@@ -1,7 +1,7 @@
 use crate::auth::user_store::Backend as AuthBackend;
 use crate::errors::AppError;
 use crate::privacy::logging::loggable_user_id;
-use async_trait::async_trait;
+
 use axum::{
     extract::FromRequestParts,
     http::{header::HeaderName, request::Parts},
@@ -50,7 +50,6 @@ impl fmt::Debug for SessionDek {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for SessionDek
 where
     S: Send + Sync,

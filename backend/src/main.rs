@@ -768,30 +768,26 @@ fn build_router(
     let public_auth_routes = Router::new()
         .nest("/auth", auth_routes()) // Auth routes under /api/auth (login, register, desktop config, auto-login, etc.)
         .layer(auth_layer.clone()) // Auth layer for session/auth_session extractors
-        .layer(GovernorLayer {
-            config: std::sync::Arc::new(
-                GovernorConfigBuilder::default()
-                    .per_second(5000) // Very high rate for development - 1ms per request
-                    .burst_size(5000) // High burst capacity for rapid development requests
-                    .key_extractor(SmartIpKeyExtractor)
-                    .finish()
-                    .unwrap(),
-            ),
-        });
+        .layer(GovernorLayer::new(std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(5000) // Very high rate for development - 1ms per request
+                .burst_size(5000) // High burst capacity for rapid development requests
+                .key_extractor(SmartIpKeyExtractor)
+                .finish()
+                .unwrap(),
+        )));
 
     // Protected API routes - require authentication AND rate limited
     let protected_rate_limited_routes = Router::new()
         .merge(protected_api_routes) // Protected routes under /api
-        .layer(GovernorLayer {
-            config: std::sync::Arc::new(
-                GovernorConfigBuilder::default()
-                    .per_second(5000) // Very high rate for development - 1ms per request
-                    .burst_size(5000) // High burst capacity for rapid development requests
-                    .key_extractor(SmartIpKeyExtractor)
-                    .finish()
-                    .unwrap(),
-            ),
-        });
+        .layer(GovernorLayer::new(std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(5000) // Very high rate for development - 1ms per request
+                .burst_size(5000) // High burst capacity for rapid development requests
+                .key_extractor(SmartIpKeyExtractor)
+                .finish()
+                .unwrap(),
+        )));
 
     // Webhook routes (no authentication, no rate limiting - signature verified in handler)
     #[cfg(feature = "payment")]
