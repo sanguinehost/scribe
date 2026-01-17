@@ -82,7 +82,9 @@
 			"devalue": "^5.6.2",
 			"glob": "^10.5.0",
 			"js-yaml": "^4.1.1",
-			"mdast-util-to-hast": "^13.2.1"
+			"mdast-util-to-hast": "^13.2.1",
+			"tar": "^7.5.3",
+			"undici": "^6.23.0"
 		}
 	},
 	"packageManager": "pnpm@10.10.0",
