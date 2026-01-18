@@ -37,6 +37,7 @@ pub struct EventQuery {
     pub order_by: Option<EventOrderBy>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub active_variant_id: Option<crate::db::DbId>,
 }
 
 /// Request payload for re-chronicling from chat
@@ -103,6 +104,8 @@ impl From<EventQuery> for EventFilter {
             order_by: query.order_by,
             limit: query.limit,
             offset: query.offset,
+            active_variant_id: query.active_variant_id,
+            allowed_variant_ids: None, // Will be calculated in the service
         }
     }
 }
@@ -544,6 +547,7 @@ async fn re_chronicle_from_chat(
                 user.id,
                 request.chat_session_id,
                 Some(chronicle_id),
+                None, // message_variant_id
                 batch.to_vec(),
                 &session_dek,
             )

@@ -21,7 +21,7 @@ use diesel::deserialize::{self, FromSql};
 #[cfg(feature = "sqlite-backend")]
 use diesel::serialize::{self, IsNull, Output, ToSql};
 #[cfg(feature = "sqlite-backend")]
-use diesel::sql_types::{BigInt, Text, Timestamp};
+use diesel::sql_types::{BigInt, Numeric, Text, Timestamp};
 #[cfg(feature = "sqlite-backend")]
 use diesel::sqlite::Sqlite;
 
@@ -601,7 +601,40 @@ impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Double>, Sqlite> for
         Ok(SqliteBigDecimal(decimal))
     }
 }
+#[cfg(feature = "sqlite-backend")]
+impl FromSql<Numeric, Sqlite> for SqliteBigDecimal {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let value = <f64 as FromSql<diesel::sql_types::Double, Sqlite>>::from_sql(bytes)?;
+        let decimal = bigdecimal::BigDecimal::try_from(value)
+            .map_err(|e| format!("Failed to convert f64 to BigDecimal: {}", e))?;
+        Ok(SqliteBigDecimal(decimal))
+    }
+}
 
+#[cfg(feature = "sqlite-backend")]
+impl ToSql<Numeric, Sqlite> for SqliteBigDecimal {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        use std::str::FromStr;
+        let value = f64::from_str(&self.0.to_string())
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        out.set_value(value);
+        Ok(IsNull::No)
+    }
+}
+
+#[cfg(feature = "sqlite-backend")]
+impl FromSql<diesel::sql_types::Nullable<Numeric>, Sqlite> for SqliteBigDecimal {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let value = <f64 as FromSql<diesel::sql_types::Double, Sqlite>>::from_sql(bytes)?;
+        let decimal = bigdecimal::BigDecimal::try_from(value)
+            .map_err(|e| format!("Failed to convert f64 to BigDecimal: {}", e))?;
+        Ok(SqliteBigDecimal(decimal))
+    }
+}
 // Additional FromSql implementation for Integer (used for credit/payment fields in SQLite)
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {

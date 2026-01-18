@@ -97,6 +97,124 @@ impl ChronicleService {
             })
     }
 
+    /// Helper to get ancestor variant IDs (avoids E0275 Sized overflow)
+    fn get_ancestor_variant_ids(
+        conn: &mut crate::db::DbConnection,
+        variant_id: crate::db::DbId,
+    ) -> Result<Vec<crate::db::DbId>, AppError> {
+        use crate::schema::{chat_messages, message_variants};
+        use diesel::prelude::*;
+
+        // 1. Get target message info from variant
+        let (target_msg_id, _target_variant_index) = message_variants::table
+            .find(variant_id)
+            .select((
+                message_variants::parent_message_id,
+                message_variants::variant_index,
+            ))
+            .first::<(crate::db::DbId, i32)>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to get variant info: {e}"))
+            })?;
+
+        // 2. Get session info from target message
+        let (session_id, target_created_at) = chat_messages::table
+            .find(target_msg_id)
+            .select((chat_messages::session_id, chat_messages::created_at))
+            .first::<(crate::db::DbId, crate::db::DbTimestamp)>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to get message info: {e}"))
+            })?;
+
+        // 3. Get previous messages in session
+        // We want messages created BEFORE the target message
+        let previous_messages = chat_messages::table
+            .filter(chat_messages::session_id.eq(session_id))
+            .filter(chat_messages::created_at.lt(target_created_at))
+            .select((chat_messages::id, chat_messages::current_variant_index))
+            .load::<(crate::db::DbId, i32)>(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to get previous messages: {e}"))
+            })?;
+
+        // 4. Get variant IDs for previous messages
+        // We need to find variant IDs where (parent_message_id, variant_index) matches
+        let prev_msg_ids: Vec<crate::db::DbId> =
+            previous_messages.iter().map(|(id, _)| *id).collect();
+
+        #[cfg(feature = "sqlite-backend")]
+        let candidate_variants = {
+            let prev_msg_ids_raw: Vec<String> =
+                prev_msg_ids.iter().map(|id| id.to_string()).collect();
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq_any(prev_msg_ids_raw))
+                .select((
+                    message_variants::id,
+                    message_variants::parent_message_id,
+                    message_variants::variant_index,
+                ))
+                .load::<(String, String, i32)>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to get candidate variants: {e}"))
+                })?
+        };
+
+        #[cfg(feature = "sqlite-backend")]
+        let candidate_variants = candidate_variants
+            .into_iter()
+            .map(|(id_str, p_id_str, idx)| {
+                (
+                    crate::db::DbId::parse_str(&id_str).unwrap(),
+                    crate::db::DbId::parse_str(&p_id_str).unwrap(),
+                    idx,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        #[cfg(feature = "postgres-backend")]
+        let candidate_variants = {
+            let prev_msg_ids_raw: Vec<uuid::Uuid> =
+                prev_msg_ids.iter().map(|id| id.into_uuid()).collect();
+            message_variants::table
+                .filter(message_variants::parent_message_id.eq_any(prev_msg_ids_raw))
+                .select((
+                    message_variants::id,
+                    message_variants::parent_message_id,
+                    message_variants::variant_index,
+                ))
+                .load::<(uuid::Uuid, uuid::Uuid, i32)>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to get candidate variants: {e}"))
+                })?
+                .into_iter()
+                .map(|(id, p_id, idx)| {
+                    (
+                        crate::db::DbId::from_uuid(id),
+                        crate::db::DbId::from_uuid(p_id),
+                        idx,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut allowed_ids = Vec::new();
+
+        // Add the active variant itself
+        allowed_ids.push(variant_id);
+
+        // Add the correct variant for each previous message
+        for (msg_id, current_index) in previous_messages {
+            if let Some((var_id, _, _)) = candidate_variants
+                .iter()
+                .find(|(_, p_id, v_idx)| *p_id == msg_id && *v_idx == current_index)
+            {
+                allowed_ids.push(*var_id);
+            }
+        }
+
+        Ok(allowed_ids)
+    }
+
     /// Helper to get event by ID with ownership check (avoids E0275 Sized overflow)
     #[cfg(feature = "sqlite-backend")]
     fn get_event_sync(
@@ -870,18 +988,38 @@ impl ChronicleService {
         self.get_chronicle(user_id, chronicle_id).await?;
 
         let events = crate::db::with_conn(&self.db_pool, move |conn| {
-            let mut query =
-                chronicle_events::table
-                    .left_join(message_variants::table)
-                    .left_join(
-                        chat_messages::table
-                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
-                    )
-                    .filter(chronicle_events::chronicle_id.eq(chronicle_id))
-                    .filter(chronicle_events::message_variant_id.is_null().or(
+            let mut query = chronicle_events::table
+                .left_join(message_variants::table)
+                .left_join(
+                    chat_messages::table
+                        .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                )
+                .filter(chronicle_events::chronicle_id.eq(chronicle_id))
+                .into_boxed();
+
+            // Apply variant filtering
+            if let Some(active_variant_id) = filter.active_variant_id {
+                // Ancestry filtering: only show events from the active path
+                let allowed_ids = Self::get_ancestor_variant_ids(conn, active_variant_id)?;
+                #[cfg(feature = "sqlite-backend")]
+                let allowed_ids_raw: Vec<String> =
+                    allowed_ids.into_iter().map(|id| id.to_string()).collect();
+                #[cfg(feature = "postgres-backend")]
+                let allowed_ids_raw: Vec<uuid::Uuid> =
+                    allowed_ids.into_iter().map(|id| id.into_uuid()).collect();
+
+                query = query.filter(
+                    chronicle_events::message_variant_id
+                        .is_null()
+                        .or(chronicle_events::message_variant_id.eq_any(allowed_ids_raw)),
+                );
+            } else {
+                // Default filtering: show events from the currently selected variants
+                query =
+                    query.filter(chronicle_events::message_variant_id.is_null().or(
                         message_variants::variant_index.eq(chat_messages::current_variant_index),
-                    ))
-                    .into_boxed();
+                    ));
+            }
 
             // Apply filters
             if let Some(event_type) = filter.event_type {
@@ -1613,6 +1751,7 @@ impl ChronicleService {
         user_id: DbId,
         chronicle_id: DbId,
         chat_session_id: Option<DbId>,
+        message_variant_id: Option<DbId>,
         payload: CognitivePayload,
         session_dek: &SessionDek,
         state: Arc<crate::state::AppState>,
@@ -1641,7 +1780,7 @@ impl ChronicleService {
                 keywords: Some(payload.keywords.clone()),
                 timestamp_iso8601: None,
                 chat_session_id,
-                message_variant_id: None,
+                message_variant_id,
             };
 
             self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
@@ -1658,6 +1797,7 @@ impl ChronicleService {
                     fact_id,
                     extraction.clone(),
                     session_dek,
+                    message_variant_id,
                 )
                 .await
             {
@@ -1675,6 +1815,7 @@ impl ChronicleService {
                     chronicle_id,
                     &fact_text,
                     game_time.clone(),
+                    message_variant_id,
                 )
                 .await
             {
@@ -1691,6 +1832,7 @@ impl ChronicleService {
                 payload.significance_score,
                 session_dek,
                 state.clone(),
+                message_variant_id,
             )
             .await?;
         }
@@ -1704,6 +1846,7 @@ impl ChronicleService {
                 payload.significance_score,
                 session_dek,
                 state.clone(),
+                message_variant_id,
             )
             .await?;
         }
@@ -1729,6 +1872,7 @@ impl ChronicleService {
         significance: f32,
         session_dek: &SessionDek,
         state: Arc<crate::state::AppState>,
+        message_variant_id: Option<DbId>,
     ) -> Result<(), AppError> {
         use crate::crypto::{encrypt_gcm, generate_hmac};
 
@@ -1739,7 +1883,13 @@ impl ChronicleService {
         // Search for existing opinions with high similarity (> 0.95)
         let similar_opinions = state
             .embedding_pipeline_service
-            .retrieve_similar_opinions(state.clone(), user_id, &extraction.opinion, 1)
+            .retrieve_similar_opinions(
+                state.clone(),
+                user_id,
+                &extraction.opinion,
+                1,
+                message_variant_id,
+            )
             .await?;
 
         if let Some((score, meta)) = similar_opinions.first() {
@@ -1814,6 +1964,7 @@ impl ChronicleService {
             significance,
             created_at: now.into(),
             updated_at: now.into(),
+            message_variant_id,
         };
 
         #[cfg(feature = "postgres-backend")]
@@ -1847,7 +1998,13 @@ impl ChronicleService {
         // Embed the opinion for vector search
         state
             .embedding_pipeline_service
-            .process_and_embed_opinion(state.clone(), user_id, opinion_id, &extraction.opinion)
+            .process_and_embed_opinion(
+                state.clone(),
+                user_id,
+                opinion_id,
+                &extraction.opinion,
+                message_variant_id,
+            )
             .await?;
 
         Ok(())
@@ -1861,6 +2018,7 @@ impl ChronicleService {
         significance: f32,
         session_dek: &SessionDek,
         state: Arc<crate::state::AppState>,
+        message_variant_id: Option<DbId>,
     ) -> Result<(), AppError> {
         use crate::crypto::{encrypt_gcm, generate_hmac};
 
@@ -1869,7 +2027,13 @@ impl ChronicleService {
         // Vector-First Entity Resolution
         let similar_entities = state
             .embedding_pipeline_service
-            .retrieve_similar_entities(state.clone(), user_id, &extraction.entity_name, 1)
+            .retrieve_similar_entities(
+                state.clone(),
+                user_id,
+                &extraction.entity_name,
+                1,
+                message_variant_id,
+            )
             .await?;
 
         let entity_name_hash = if let Some((score, meta)) = similar_entities.first() {
@@ -1888,6 +2052,7 @@ impl ChronicleService {
                         user_id,
                         &extraction.entity_name,
                         &hash,
+                        message_variant_id,
                     )
                     .await?;
                 hash
@@ -1896,7 +2061,13 @@ impl ChronicleService {
             let hash = generate_hmac(&extraction.entity_name, dek_bytes);
             state
                 .embedding_pipeline_service
-                .process_and_embed_entity(state.clone(), user_id, &extraction.entity_name, &hash)
+                .process_and_embed_entity(
+                    state.clone(),
+                    user_id,
+                    &extraction.entity_name,
+                    &hash,
+                    message_variant_id,
+                )
                 .await?;
             hash
         };
@@ -1921,6 +2092,7 @@ impl ChronicleService {
             significance,
             created_at: now.into(),
             updated_at: now.into(),
+            message_variant_id,
         };
 
         #[cfg(feature = "postgres-backend")]
@@ -1988,6 +2160,7 @@ impl ChronicleService {
         fact_id: DbId,
         extraction: crate::models::cognitive_memory::ExtractedFact,
         session_dek: &SessionDek,
+        message_variant_id: Option<DbId>,
     ) -> Result<(), AppError> {
         use crate::crypto::encrypt_gcm;
         use crate::models::cognitive_memory::NewCognitiveFact;
@@ -2018,6 +2191,7 @@ impl ChronicleService {
             confidence: extraction.confidence,
             significance: extraction.significance,
             created_at: now.into(),
+            message_variant_id,
         };
 
         #[cfg(feature = "postgres-backend")]

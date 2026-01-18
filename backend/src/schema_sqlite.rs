@@ -189,6 +189,7 @@ diesel::table! {
         significance -> Float,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        message_variant_id -> Nullable<Text>,
     }
 }
 
@@ -545,6 +546,7 @@ diesel::table! {
         significance -> Float,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        message_variant_id -> Nullable<Text>,
     }
 }
 
@@ -567,6 +569,7 @@ diesel::table! {
         confidence -> Float,
         significance -> Float,
         created_at -> Timestamp,
+        message_variant_id -> Nullable<Text>,
     }
 }
 
@@ -888,6 +891,9 @@ diesel::joinable!(chronicle_events -> users (user_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
+diesel::joinable!(character_opinions -> message_variants (message_variant_id));
+diesel::joinable!(cognitive_facts -> message_variants (message_variant_id));
+diesel::joinable!(entity_observations -> message_variants (message_variant_id));
 diesel::joinable!(message_variants -> chat_messages (parent_message_id));
 diesel::joinable!(message_variants -> users (user_id));
 diesel::joinable!(old_documents -> users (user_id));

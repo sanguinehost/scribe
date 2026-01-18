@@ -304,7 +304,11 @@ impl ChatListQuery {
             presence_penalty: None,
             top_k: None,
             top_p: None,
+            repetition_penalty: None,
+            min_p: None,
+            top_a: None,
             seed: None,
+            logit_bias: None,
             stop_sequences: self.stop_sequences,
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
@@ -322,6 +326,11 @@ impl ChatListQuery {
             total_actual_cost: crate::db::DbDecimal::from(0), // ChatListItem doesn't have actual cost data
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
         })
     }
 }
@@ -342,11 +351,14 @@ pub struct ChatSessionQuery {
     pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<crate::db::DbJson>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    pub model_provider: Option<String>,
     pub gemini_thinking_budget: Option<i32>,
     pub gemini_enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
@@ -360,16 +372,26 @@ pub struct ChatSessionQuery {
     pub chat_mode: ChatMode,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
-    pub prompt_template_id: String,
+    pub model_provider: Option<String>,
     pub total_prompt_tokens: i64,
     pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
+    pub prompt_template_id: String,
+    pub total_credits_used: crate::db::DbDecimal,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
-    pub total_actual_cost: crate::db::DbDecimal, // Added for cost display
+    pub total_actual_cost: crate::db::DbDecimal,
+    pub total_modified_cost: crate::db::DbDecimal,
+    pub total_credit_cost: i32,
+    pub total_actual_charge: crate::db::DbDecimal,
     pub game_master_mode_enabled: bool,
     pub game_state: Option<crate::db::DbJson>,
+    pub gemini_thinking_level: Option<String>,
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl ChatSessionQuery {
@@ -455,7 +477,11 @@ impl ChatSessionQuery {
             presence_penalty: self.presence_penalty,
             top_k: self.top_k,
             top_p: self.top_p,
+            repetition_penalty: self.repetition_penalty,
+            min_p: self.min_p,
+            top_a: self.top_a,
             seed: self.seed,
+            logit_bias: self.logit_bias,
             stop_sequences: self.stop_sequences,
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
@@ -469,10 +495,15 @@ impl ChatSessionQuery {
             chronicle_id: self.player_chronicle_id,
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
-            total_credits_used: crate::db::DbDecimal::from(i64::from(self.estimated_cost_cents)),
+            total_credits_used: self.total_credits_used,
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
+            gemini_thinking_level: self.gemini_thinking_level,
+            rag_chronicles_limit: self.rag_chronicles_limit,
+            rag_lorebooks_limit: self.rag_lorebooks_limit,
+            rag_older_chat_limit: self.rag_older_chat_limit,
+            rag_cognitive_context_limit: self.rag_cognitive_context_limit,
         })
     }
 
@@ -713,6 +744,39 @@ pub struct NewChat {
     pub rag_cognitive_context_limit: Option<i32>,
 }
 
+impl NewChat {
+    pub fn builder() -> NewChatBuilder {
+        NewChatBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct NewChatBuilder {
+    inner: NewChat,
+}
+
+impl NewChatBuilder {
+    pub fn user_id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+    pub fn character_id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.character_id = id;
+        self
+    }
+    pub fn model_name(mut self, name: Option<String>) -> Self {
+        self.inner.model_name = name;
+        self
+    }
+    pub fn chat_mode(mut self, mode: ChatMode) -> Self {
+        self.inner.chat_mode = mode;
+        self
+    }
+    pub fn build(self) -> NewChat {
+        self.inner
+    }
+}
+
 impl std::fmt::Debug for NewChat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NewChat")
@@ -922,8 +986,13 @@ impl ChatMessageQuery {
             message_type: self.message_type,
             content: self.content,
             content_nonce: self.content_nonce,
+            rag_embedding_id: None,
             created_at: self.created_at,
+            updated_at: self.created_at,
             user_id: self.user_id,
+            role: None,
+            parts: None,
+            attachments: None,
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             model_name: self.model_name,
@@ -959,8 +1028,13 @@ pub struct ChatMessage {
     pub message_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
+    pub rag_embedding_id: Option<crate::db::DbId>,
     pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub user_id: crate::db::DbId,
+    pub role: Option<String>,
+    pub parts: Option<crate::db::DbJson>,
+    pub attachments: Option<crate::db::DbJson>,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
@@ -989,11 +1063,16 @@ impl Default for ChatMessage {
         Self {
             id: crate::db::DbId::nil(),
             session_id: crate::db::DbId::nil(),
-            user_id: crate::db::DbId::nil(),
             message_type: MessageRole::User,
-            content: vec![],
+            content: Vec::new(),
             content_nonce: None,
-            created_at: chrono::Utc::now().into(),
+            rag_embedding_id: None,
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
+            user_id: crate::db::DbId::nil(),
+            role: None,
+            parts: None,
+            attachments: None,
             prompt_tokens: None,
             completion_tokens: None,
             raw_prompt_ciphertext: None,
@@ -1006,13 +1085,61 @@ impl Default for ChatMessage {
             current_variant_index: 0,
             credits_charged: 0,
             credits_cost: crate::db::DbDecimal::from(0),
-            // New cost tracking fields
             actual_cost: crate::db::DbDecimal::from(0),
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
         }
+    }
+}
+
+impl ChatMessage {
+    pub fn builder() -> ChatMessageBuilder {
+        ChatMessageBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct ChatMessageBuilder {
+    inner: ChatMessage,
+}
+
+impl ChatMessageBuilder {
+    pub fn id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.id = id;
+        self
+    }
+    pub fn session_id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.session_id = id;
+        self
+    }
+    pub fn message_type(mut self, role: MessageRole) -> Self {
+        self.inner.message_type = role;
+        self
+    }
+    pub fn content(mut self, content: Vec<u8>) -> Self {
+        self.inner.content = content;
+        self
+    }
+    pub fn content_nonce(mut self, nonce: Option<Vec<u8>>) -> Self {
+        self.inner.content_nonce = nonce;
+        self
+    }
+    pub fn user_id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+    pub fn model_name(mut self, name: String) -> Self {
+        self.inner.model_name = name;
+        self
+    }
+    pub fn status(mut self, status: String) -> Self {
+        self.inner.status = status;
+        self
+    }
+    pub fn build(self) -> ChatMessage {
+        self.inner
     }
 }
 
@@ -1396,6 +1523,209 @@ pub struct Message {
     pub game_time: Option<crate::DbJson>,
 }
 
+impl Default for Message {
+    fn default() -> Self {
+        Self {
+            id: crate::db::DbId::default(),
+            session_id: crate::db::DbId::default(),
+            message_type: MessageRole::User,
+            content: Vec::new(),
+            rag_embedding_id: None,
+            created_at: DbTimestamp::default(),
+            updated_at: DbTimestamp::default(),
+            user_id: crate::db::DbId::default(),
+            content_nonce: None,
+            role: None,
+            parts: None,
+            attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
+            model_name: String::new(),
+            status: "pending".to_string(),
+            error_message: None,
+            superseded_at: None,
+            variant_count: 1,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
+        }
+    }
+}
+
+pub struct MessageBuilder {
+    inner: Message,
+}
+
+impl MessageBuilder {
+    pub fn new() -> Self {
+        Self {
+            inner: Message::default(),
+        }
+    }
+
+    pub fn id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.id = id;
+        self
+    }
+
+    pub fn session_id(mut self, session_id: crate::db::DbId) -> Self {
+        self.inner.session_id = session_id;
+        self
+    }
+
+    pub fn message_type(mut self, message_type: MessageRole) -> Self {
+        self.inner.message_type = message_type;
+        self
+    }
+
+    pub fn content(mut self, content: Vec<u8>) -> Self {
+        self.inner.content = content;
+        self
+    }
+
+    pub fn rag_embedding_id(mut self, rag_embedding_id: Option<crate::db::DbId>) -> Self {
+        self.inner.rag_embedding_id = rag_embedding_id;
+        self
+    }
+
+    pub fn created_at(mut self, created_at: DbTimestamp) -> Self {
+        self.inner.created_at = created_at;
+        self
+    }
+
+    pub fn updated_at(mut self, updated_at: DbTimestamp) -> Self {
+        self.inner.updated_at = updated_at;
+        self
+    }
+
+    pub fn user_id(mut self, user_id: crate::db::DbId) -> Self {
+        self.inner.user_id = user_id;
+        self
+    }
+
+    pub fn content_nonce(mut self, content_nonce: Option<Vec<u8>>) -> Self {
+        self.inner.content_nonce = content_nonce;
+        self
+    }
+
+    pub fn role(mut self, role: Option<String>) -> Self {
+        self.inner.role = role;
+        self
+    }
+
+    pub fn parts(mut self, parts: Option<crate::DbJson>) -> Self {
+        self.inner.parts = parts;
+        self
+    }
+
+    pub fn attachments(mut self, attachments: Option<crate::DbJson>) -> Self {
+        self.inner.attachments = attachments;
+        self
+    }
+
+    pub fn prompt_tokens(mut self, prompt_tokens: Option<i64>) -> Self {
+        self.inner.prompt_tokens = prompt_tokens;
+        self
+    }
+
+    pub fn completion_tokens(mut self, completion_tokens: Option<i64>) -> Self {
+        self.inner.completion_tokens = completion_tokens;
+        self
+    }
+
+    pub fn raw_prompt_ciphertext(mut self, raw_prompt_ciphertext: Option<Vec<u8>>) -> Self {
+        self.inner.raw_prompt_ciphertext = raw_prompt_ciphertext;
+        self
+    }
+
+    pub fn raw_prompt_nonce(mut self, raw_prompt_nonce: Option<Vec<u8>>) -> Self {
+        self.inner.raw_prompt_nonce = raw_prompt_nonce;
+        self
+    }
+
+    pub fn model_name(mut self, model_name: String) -> Self {
+        self.inner.model_name = model_name;
+        self
+    }
+
+    pub fn status(mut self, status: String) -> Self {
+        self.inner.status = status;
+        self
+    }
+
+    pub fn error_message(mut self, error_message: Option<String>) -> Self {
+        self.inner.error_message = error_message;
+        self
+    }
+
+    pub fn superseded_at(mut self, superseded_at: Option<DbTimestamp>) -> Self {
+        self.inner.superseded_at = superseded_at;
+        self
+    }
+
+    pub fn variant_count(mut self, variant_count: i32) -> Self {
+        self.inner.variant_count = variant_count;
+        self
+    }
+
+    pub fn current_variant_index(mut self, current_variant_index: i32) -> Self {
+        self.inner.current_variant_index = current_variant_index;
+        self
+    }
+
+    pub fn credits_charged(mut self, credits_charged: i32) -> Self {
+        self.inner.credits_charged = credits_charged;
+        self
+    }
+
+    pub fn credits_cost(mut self, credits_cost: crate::db::DbDecimal) -> Self {
+        self.inner.credits_cost = credits_cost;
+        self
+    }
+
+    pub fn actual_cost(mut self, actual_cost: crate::db::DbDecimal) -> Self {
+        self.inner.actual_cost = actual_cost;
+        self
+    }
+
+    pub fn modified_cost(mut self, modified_cost: crate::db::DbDecimal) -> Self {
+        self.inner.modified_cost = modified_cost;
+        self
+    }
+
+    pub fn credit_cost(mut self, credit_cost: i32) -> Self {
+        self.inner.credit_cost = credit_cost;
+        self
+    }
+
+    pub fn actual_charge(mut self, actual_charge: crate::db::DbDecimal) -> Self {
+        self.inner.actual_charge = actual_charge;
+        self
+    }
+
+    pub fn game_time(mut self, game_time: Option<crate::DbJson>) -> Self {
+        self.inner.game_time = game_time;
+        self
+    }
+
+    pub fn build(self) -> Message {
+        self.inner
+    }
+}
+
+impl Message {
+    pub fn builder() -> MessageBuilder {
+        MessageBuilder::new()
+    }
+}
+
 impl std::fmt::Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Message")
@@ -1744,7 +2074,7 @@ impl std::fmt::Debug for ChatMessageForClient {
 }
 
 // For inserting a new chat message
-#[derive(Insertable, Default, Clone)]
+#[derive(Insertable, Clone)]
 #[diesel(table_name = chat_messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewChatMessage {
@@ -1753,6 +2083,7 @@ pub struct NewChatMessage {
     pub message_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
+    pub rag_embedding_id: Option<crate::db::DbId>,
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
@@ -1774,6 +2105,197 @@ pub struct NewChatMessage {
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+}
+
+impl Default for NewChatMessage {
+    fn default() -> Self {
+        Self {
+            id: crate::db::DbId::default(),
+            session_id: crate::db::DbId::default(),
+            message_type: MessageRole::User,
+            content: Vec::new(),
+            content_nonce: None,
+            rag_embedding_id: None,
+            user_id: crate::db::DbId::default(),
+            created_at: DbTimestamp::default(),
+            updated_at: DbTimestamp::default(),
+            role: None,
+            parts: None,
+            attachments: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+            raw_prompt_ciphertext: None,
+            raw_prompt_nonce: None,
+            model_name: String::new(),
+            status: "pending".to_string(),
+            variant_count: 1,
+            current_variant_index: 0,
+            credits_charged: 0,
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
+            credit_cost: 0,
+            actual_charge: crate::db::DbDecimal::from(0),
+            game_time: None,
+        }
+    }
+}
+
+pub struct NewChatMessageBuilder {
+    inner: NewChatMessage,
+}
+
+impl NewChatMessageBuilder {
+    pub fn new() -> Self {
+        Self {
+            inner: NewChatMessage::default(),
+        }
+    }
+
+    pub fn id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.id = id;
+        self
+    }
+
+    pub fn session_id(mut self, session_id: crate::db::DbId) -> Self {
+        self.inner.session_id = session_id;
+        self
+    }
+
+    pub fn message_type(mut self, message_type: MessageRole) -> Self {
+        self.inner.message_type = message_type;
+        self
+    }
+
+    pub fn content(mut self, content: Vec<u8>) -> Self {
+        self.inner.content = content;
+        self
+    }
+
+    pub fn content_nonce(mut self, content_nonce: Option<Vec<u8>>) -> Self {
+        self.inner.content_nonce = content_nonce;
+        self
+    }
+
+    pub fn rag_embedding_id(mut self, rag_embedding_id: Option<crate::db::DbId>) -> Self {
+        self.inner.rag_embedding_id = rag_embedding_id;
+        self
+    }
+
+    pub fn user_id(mut self, user_id: crate::db::DbId) -> Self {
+        self.inner.user_id = user_id;
+        self
+    }
+
+    pub fn created_at(mut self, created_at: DbTimestamp) -> Self {
+        self.inner.created_at = created_at;
+        self
+    }
+
+    pub fn updated_at(mut self, updated_at: DbTimestamp) -> Self {
+        self.inner.updated_at = updated_at;
+        self
+    }
+
+    pub fn role(mut self, role: Option<String>) -> Self {
+        self.inner.role = role;
+        self
+    }
+
+    pub fn parts(mut self, parts: Option<crate::DbJson>) -> Self {
+        self.inner.parts = parts;
+        self
+    }
+
+    pub fn attachments(mut self, attachments: Option<crate::DbJson>) -> Self {
+        self.inner.attachments = attachments;
+        self
+    }
+
+    pub fn prompt_tokens(mut self, prompt_tokens: Option<i64>) -> Self {
+        self.inner.prompt_tokens = prompt_tokens;
+        self
+    }
+
+    pub fn completion_tokens(mut self, completion_tokens: Option<i64>) -> Self {
+        self.inner.completion_tokens = completion_tokens;
+        self
+    }
+
+    pub fn raw_prompt_ciphertext(mut self, raw_prompt_ciphertext: Option<Vec<u8>>) -> Self {
+        self.inner.raw_prompt_ciphertext = raw_prompt_ciphertext;
+        self
+    }
+
+    pub fn raw_prompt_nonce(mut self, raw_prompt_nonce: Option<Vec<u8>>) -> Self {
+        self.inner.raw_prompt_nonce = raw_prompt_nonce;
+        self
+    }
+
+    pub fn model_name(mut self, model_name: String) -> Self {
+        self.inner.model_name = model_name;
+        self
+    }
+
+    pub fn status(mut self, status: String) -> Self {
+        self.inner.status = status;
+        self
+    }
+
+    pub fn variant_count(mut self, variant_count: i32) -> Self {
+        self.inner.variant_count = variant_count;
+        self
+    }
+
+    pub fn current_variant_index(mut self, current_variant_index: i32) -> Self {
+        self.inner.current_variant_index = current_variant_index;
+        self
+    }
+
+    pub fn credits_charged(mut self, credits_charged: i32) -> Self {
+        self.inner.credits_charged = credits_charged;
+        self
+    }
+
+    pub fn credits_cost(mut self, credits_cost: crate::db::DbDecimal) -> Self {
+        self.inner.credits_cost = credits_cost;
+        self
+    }
+
+    pub fn actual_cost(mut self, actual_cost: crate::db::DbDecimal) -> Self {
+        self.inner.actual_cost = actual_cost;
+        self
+    }
+
+    pub fn modified_cost(mut self, modified_cost: crate::db::DbDecimal) -> Self {
+        self.inner.modified_cost = modified_cost;
+        self
+    }
+
+    pub fn credit_cost(mut self, credit_cost: i32) -> Self {
+        self.inner.credit_cost = credit_cost;
+        self
+    }
+
+    pub fn actual_charge(mut self, actual_charge: crate::db::DbDecimal) -> Self {
+        self.inner.actual_charge = actual_charge;
+        self
+    }
+
+    pub fn game_time(mut self, game_time: Option<crate::DbJson>) -> Self {
+        self.inner.game_time = game_time;
+        self
+    }
+
+    pub fn build(self) -> NewChatMessage {
+        self.inner
+    }
+}
+
+impl NewChatMessage {
+    pub fn builder() -> NewChatMessageBuilder {
+        NewChatMessageBuilder::new()
+    }
 }
 
 impl std::fmt::Debug for NewChatMessage {
@@ -1826,6 +2348,7 @@ pub struct DbInsertableChatMessage {
     pub msg_type: MessageRole,
     pub content: Vec<u8>,
     pub content_nonce: Option<Vec<u8>>,
+    pub rag_embedding_id: Option<crate::db::DbId>,
     pub user_id: crate::db::DbId,
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
@@ -1902,6 +2425,7 @@ impl DbInsertableChatMessage {
             msg_type,
             content,
             content_nonce,
+            rag_embedding_id: None,
             model_name,
             role: None,
             parts: None,
@@ -2135,6 +2659,8 @@ pub struct GenerateChatRequest {
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
     pub guidance: Option<String>,      // Optional guidance text for regeneration steering
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
+    pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning
+    pub game_master_mode_enabled: Option<bool>,
 }
 
 impl std::fmt::Debug for GenerateChatRequest {
@@ -2177,7 +2703,11 @@ pub struct ChatForClient {
     pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<crate::db::DbJson>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
@@ -2196,6 +2726,11 @@ pub struct ChatForClient {
     // Game Master Agent fields
     pub game_master_mode_enabled: bool,
     pub game_state: Option<crate::db::DbJson>,
+    pub gemini_thinking_level: Option<String>,
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl Chat {
@@ -2307,7 +2842,11 @@ impl Chat {
             presence_penalty: self.presence_penalty,
             top_k: self.top_k,
             top_p: self.top_p,
+            repetition_penalty: self.repetition_penalty,
+            min_p: self.min_p,
+            top_a: self.top_a,
             seed: self.seed,
+            logit_bias: self.logit_bias,
             stop_sequences: self.stop_sequences,
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
@@ -2325,6 +2864,11 @@ impl Chat {
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
+            gemini_thinking_level: self.gemini_thinking_level,
+            rag_chronicles_limit: self.rag_chronicles_limit,
+            rag_lorebooks_limit: self.rag_lorebooks_limit,
+            rag_older_chat_limit: self.rag_older_chat_limit,
+            rag_cognitive_context_limit: self.rag_cognitive_context_limit,
         })
     }
 
@@ -2444,7 +2988,11 @@ pub struct ChatSettingsResponse {
     pub presence_penalty: Option<crate::db::DbDecimal>,
     pub top_k: Option<i32>,
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<crate::db::DbJson>,
     pub stop_sequences: crate::models::OptionalStringArray,
     // History Management Fields
     pub history_management_strategy: String,
@@ -2464,6 +3012,11 @@ pub struct ChatSettingsResponse {
     pub prompt_template_id: Option<String>,
     // Game Master mode flag
     pub game_master_mode_enabled: Option<bool>,
+    pub gemini_thinking_level: Option<String>,
+    pub rag_chronicles_limit: Option<i32>,
+    pub rag_lorebooks_limit: Option<i32>,
+    pub rag_older_chat_limit: Option<i32>,
+    pub rag_cognitive_context_limit: Option<i32>,
 }
 
 impl std::fmt::Debug for ChatSettingsResponse {
@@ -2510,7 +3063,11 @@ impl From<Chat> for ChatSettingsResponse {
             presence_penalty: chat.presence_penalty,
             top_k: chat.top_k,
             top_p: chat.top_p,
+            repetition_penalty: chat.repetition_penalty,
+            min_p: chat.min_p,
+            top_a: chat.top_a,
             seed: chat.seed,
+            logit_bias: chat.logit_bias,
             stop_sequences: chat.stop_sequences,
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
@@ -2522,6 +3079,11 @@ impl From<Chat> for ChatSettingsResponse {
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
             game_master_mode_enabled: Some(chat.game_master_mode_enabled),
+            gemini_thinking_level: chat.gemini_thinking_level,
+            rag_chronicles_limit: chat.rag_chronicles_limit,
+            rag_lorebooks_limit: chat.rag_lorebooks_limit,
+            rag_older_chat_limit: chat.rag_older_chat_limit,
+            rag_cognitive_context_limit: chat.rag_cognitive_context_limit,
         }
     }
 }
@@ -2543,7 +3105,11 @@ pub struct UpdateChatSettingsRequest {
     pub top_k: Option<i32>,
     #[validate(custom(function = "validate_optional_top_p"))]
     pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
+    pub logit_bias: Option<crate::db::DbJson>,
     #[serde(default)]
     pub stop_sequences: Option<crate::models::OptionalStringArray>,
     // History Management Fields
@@ -2570,6 +3136,7 @@ pub struct UpdateChatSettingsRequest {
     pub prompt_template_id: Option<String>,
     // Game Master mode enable/disable
     pub game_master_mode_enabled: Option<bool>,
+    pub gemini_thinking_level: Option<String>,
     // RAG Limits
     #[validate(range(min = 0, max = 1000000))]
     pub rag_chronicles_limit: Option<i32>,
@@ -2921,6 +3488,7 @@ pub struct CreateMessageRequest {
     pub role: String,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
+    pub parent_message_id: Option<crate::db::DbId>,
 }
 
 impl std::fmt::Debug for CreateMessageRequest {
@@ -2942,6 +3510,7 @@ impl std::fmt::Debug for CreateMessageRequest {
 pub struct ExpandTextRequest {
     #[validate(length(min = 1, max = 2000))]
     pub original_text: String,
+    pub parent_message_id: Option<crate::db::DbId>,
 }
 
 impl std::fmt::Debug for ExpandTextRequest {
@@ -2969,6 +3538,7 @@ impl std::fmt::Debug for ExpandTextResponse {
 #[derive(Clone, Serialize, Deserialize, Validate)]
 pub struct ImpersonateRequest {
     // Empty for now, uses chat context
+    pub parent_message_id: Option<crate::db::DbId>,
 }
 
 impl std::fmt::Debug for ImpersonateRequest {
@@ -3159,32 +3729,17 @@ mod tests {
 
     // Helper function to create a sample chat message
     fn create_sample_chat_message_db() -> ChatMessage {
-        ChatMessage {
-            id: DbId::new(),
-            session_id: DbId::new(),
-            message_type: MessageRole::User,
-            content: b"Hello, how are you?".to_vec(),
-            content_nonce: None,
-            created_at: crate::db::DbTimestamp::now(),
-            user_id: DbId::new(),
-            prompt_tokens: None,
-            completion_tokens: None,
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: "test-model".to_string(),
-            status: "completed".to_string(),
-            current_variant_index: 0,
-            game_time: None,
-            variant_count: 1,
-            error_message: None,
-            superseded_at: None,
-            credits_charged: 0,
-            credits_cost: crate::db::DbDecimal::from(0),
-            actual_cost: crate::db::DbDecimal::from(0),
-            modified_cost: crate::db::DbDecimal::from(0),
-            credit_cost: 0,
-            actual_charge: crate::db::DbDecimal::from(0),
-        }
+        ChatMessage::builder()
+            .id(DbId::new())
+            .session_id(DbId::new())
+            .message_type(MessageRole::User)
+            .content(b"Hello, how are you?".to_vec())
+            .created_at(crate::db::DbTimestamp::now())
+            .updated_at(crate::db::DbTimestamp::now())
+            .user_id(DbId::new())
+            .model_name("test-model".to_string())
+            .status("completed".to_string())
+            .build()
     }
 
     #[test]
@@ -3292,34 +3847,18 @@ mod tests {
 
     // Helper function to create a sample new chat message
     fn create_sample_new_chat_message_db() -> NewChatMessage {
-        NewChatMessage {
-            id: DbId::new(),
-            session_id: DbId::new(),
-            message_type: MessageRole::User,
-            content: b"Hello!".to_vec(),
-            content_nonce: None,
-            user_id: DbId::new(),
-            created_at: Utc::now().into(),
-            updated_at: Utc::now().into(),
-            role: Some("user".to_string()),
-            parts: None,
-            attachments: None,
-            prompt_tokens: None,
-            completion_tokens: None,
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: "test-model".to_string(),
-            status: "completed".to_string(),
-            variant_count: 1,
-            current_variant_index: 0,
-            credits_charged: 0,
-            credits_cost: crate::db::DbDecimal::from(0),
-            actual_cost: crate::db::DbDecimal::from(0),
-            modified_cost: crate::db::DbDecimal::from(0),
-            credit_cost: 0,
-            actual_charge: crate::db::DbDecimal::from(0),
-            game_time: None,
-        }
+        NewChatMessage::builder()
+            .id(DbId::new())
+            .session_id(DbId::new())
+            .message_type(MessageRole::User)
+            .content(b"Hello!".to_vec())
+            .user_id(DbId::new())
+            .created_at(Utc::now().into())
+            .updated_at(Utc::now().into())
+            .role(Some("user".to_string()))
+            .model_name("test-model".to_string())
+            .status("completed".to_string())
+            .build()
     }
 
     #[test]
@@ -3375,7 +3914,11 @@ mod tests {
             presence_penalty: Some(bd("0.0")),
             top_k: Some(50),
             top_p: Some(bd("0.9")),
+            repetition_penalty: Some(bd("1.0")),
+            min_p: Some(bd("0.05")),
+            top_a: Some(bd("0.0")),
             seed: Some(12345),
+            logit_bias: None,
             stop_sequences: crate::db::unified_types::DbStringArray::from_vec(vec![
                 Some("\n\n".to_string()),
                 Some("##".to_string()),
@@ -3390,6 +3933,11 @@ mod tests {
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: None,
+            gemini_thinking_level: None,
+            rag_chronicles_limit: None,
+            rag_lorebooks_limit: None,
+            rag_older_chat_limit: None,
+            rag_cognitive_context_limit: None,
         }
     }
 
@@ -3435,7 +3983,11 @@ mod tests {
             presence_penalty: Some(bd("0.5")),
             top_k: Some(40),
             top_p: Some(bd("0.95")),
+            repetition_penalty: Some(bd("1.0")),
+            min_p: Some(bd("0.05")),
+            top_a: Some(bd("0.0")),
             seed: Some(42),
+            logit_bias: None,
             stop_sequences: Some(crate::db::unified_types::DbStringArray::from_vec(vec![
                 Some("\n\n".to_string()),
                 Some("##".to_string()),
@@ -3445,6 +3997,7 @@ mod tests {
             model_name: Some("gemini-2.5-pro".to_string()),
             model_provider: Some("gemini".to_string()),
             game_master_mode_enabled: Some(true),
+            gemini_thinking_level: None,
             gemini_thinking_budget: None,
             gemini_enable_code_execution: None,
             chronicle_id: None,
@@ -3701,7 +4254,7 @@ pub struct MessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 /// Insertable model for creating new message variants
@@ -3719,7 +4272,7 @@ pub struct NewMessageVariant {
     pub model_name: Option<String>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
-    pub game_state: Option<serde_json::Value>,
+    pub game_state: Option<crate::db::DbJson>,
 }
 
 impl MessageVariant {
@@ -3832,7 +4385,7 @@ impl NewMessageVariant {
             model_name,
             raw_prompt_ciphertext,
             raw_prompt_nonce,
-            game_state,
+            game_state: game_state.map(crate::db::DbJson::new),
         })
     }
 }
@@ -3872,7 +4425,7 @@ impl MessageVariantDto {
             completion_tokens: variant.completion_tokens,
             model_name: variant.model_name,
             raw_prompt,
-            game_state: variant.game_state,
+            game_state: variant.game_state.map(|j| j.into_inner()),
         })
     }
 }

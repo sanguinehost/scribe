@@ -1,5 +1,3 @@
-#[cfg(feature = "sqlite-backend")]
-use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use secrecy::{ExposeSecret, SecretBox};

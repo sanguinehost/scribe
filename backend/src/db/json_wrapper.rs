@@ -113,6 +113,7 @@ mod pg_impl {
         deserialize::{self, FromSql},
         pg::{Pg, PgValue},
         serialize::{self, IsNull, Output, ToSql},
+        sql_types::Text,
     };
     use std::io::Write;
 
@@ -139,6 +140,30 @@ mod pg_impl {
             out.write_all(&[1])?; // JSONB version 1
             serde_json::to_writer(out, &self.0)
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+            Ok(IsNull::No)
+        }
+    }
+
+    impl<T> FromSql<Text, Pg> for Json<T>
+    where
+        T: DeserializeOwned,
+    {
+        fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+            let text = <String as FromSql<Text, Pg>>::from_sql(bytes)?;
+            let value = serde_json::from_str(&text)
+                .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
+            Ok(Json(value))
+        }
+    }
+
+    impl<T> ToSql<Text, Pg> for Json<T>
+    where
+        T: Serialize + std::fmt::Debug,
+    {
+        fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+            let json_str = serde_json::to_string(&self.0)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+            out.write_all(json_str.as_bytes())?;
             Ok(IsNull::No)
         }
     }

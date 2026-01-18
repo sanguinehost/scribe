@@ -107,6 +107,166 @@ struct GenerationDbData {
     rag_older_chat_limit_sess: Option<i32>,
 }
 
+impl Default for GenerationDbData {
+    fn default() -> Self {
+        Self {
+            history_management_strategy_db_val: "token_limit".to_string(),
+            history_management_limit_db_val: 4096,
+            session_character_id_db: None,
+            session_temperature_db: None,
+            session_max_output_tokens_db: None,
+            session_frequency_penalty_db: None,
+            session_presence_penalty_db: None,
+            session_top_k_db: None,
+            session_top_p_db: None,
+            session_seed_db: None,
+            _session_stop_sequences_db: None,
+            session_model_name_db: "gemini-1.5-pro".to_string(),
+            session_model_provider_db: None,
+            session_gemini_thinking_budget_db: None,
+            session_gemini_thinking_level_db: None,
+            session_gemini_enable_code_execution_db: None,
+            existing_messages_db_raw: Vec::new(),
+            character_for_first_mes: Character::default(),
+            character_overrides_for_first_mes: Vec::new(),
+            final_effective_system_prompt: None,
+            raw_character_system_prompt: None,
+            player_chronicle_id_from_session: None,
+            agent_mode_from_session: None,
+            game_master_mode_enabled_from_session: false,
+            game_state_from_session: None,
+            rag_chronicles_limit_sess: None,
+            rag_lorebooks_limit_sess: None,
+            rag_older_chat_limit_sess: None,
+        }
+    }
+}
+
+impl GenerationDbData {
+    pub fn builder() -> GenerationDbDataBuilder {
+        GenerationDbDataBuilder::default()
+    }
+}
+
+#[derive(Default)]
+struct GenerationDbDataBuilder {
+    inner: GenerationDbData,
+}
+
+impl GenerationDbDataBuilder {
+    pub fn history_management_strategy(mut self, val: String) -> Self {
+        self.inner.history_management_strategy_db_val = val;
+        self
+    }
+    pub fn history_management_limit(mut self, val: i32) -> Self {
+        self.inner.history_management_limit_db_val = val;
+        self
+    }
+    pub fn session_character_id(mut self, id: Option<crate::db::DbId>) -> Self {
+        self.inner.session_character_id_db = id;
+        self
+    }
+    pub fn session_temperature(mut self, val: Option<crate::db::DbDecimal>) -> Self {
+        self.inner.session_temperature_db = val;
+        self
+    }
+    pub fn session_max_output_tokens(mut self, val: Option<i32>) -> Self {
+        self.inner.session_max_output_tokens_db = val;
+        self
+    }
+    pub fn session_frequency_penalty(mut self, val: Option<crate::db::DbDecimal>) -> Self {
+        self.inner.session_frequency_penalty_db = val;
+        self
+    }
+    pub fn session_presence_penalty(mut self, val: Option<crate::db::DbDecimal>) -> Self {
+        self.inner.session_presence_penalty_db = val;
+        self
+    }
+    pub fn session_top_k(mut self, val: Option<i32>) -> Self {
+        self.inner.session_top_k_db = val;
+        self
+    }
+    pub fn session_top_p(mut self, val: Option<crate::db::DbDecimal>) -> Self {
+        self.inner.session_top_p_db = val;
+        self
+    }
+    pub fn session_seed(mut self, val: Option<i32>) -> Self {
+        self.inner.session_seed_db = val;
+        self
+    }
+    pub fn session_model_name(mut self, name: String) -> Self {
+        self.inner.session_model_name_db = name;
+        self
+    }
+    pub fn session_model_provider(mut self, provider: Option<String>) -> Self {
+        self.inner.session_model_provider_db = provider;
+        self
+    }
+    pub fn session_gemini_thinking_budget(mut self, val: Option<i32>) -> Self {
+        self.inner.session_gemini_thinking_budget_db = val;
+        self
+    }
+    pub fn session_gemini_thinking_level(mut self, val: Option<String>) -> Self {
+        self.inner.session_gemini_thinking_level_db = val;
+        self
+    }
+    pub fn session_gemini_enable_code_execution(mut self, val: Option<bool>) -> Self {
+        self.inner.session_gemini_enable_code_execution_db = val;
+        self
+    }
+    pub fn existing_messages(mut self, messages: Vec<DbChatMessage>) -> Self {
+        self.inner.existing_messages_db_raw = messages;
+        self
+    }
+    pub fn character(mut self, character: Character) -> Self {
+        self.inner.character_for_first_mes = character;
+        self
+    }
+    pub fn character_overrides(mut self, overrides: Vec<ChatCharacterOverride>) -> Self {
+        self.inner.character_overrides_for_first_mes = overrides;
+        self
+    }
+    pub fn final_effective_system_prompt(mut self, prompt: Option<String>) -> Self {
+        self.inner.final_effective_system_prompt = prompt;
+        self
+    }
+    pub fn raw_character_system_prompt(mut self, prompt: Option<String>) -> Self {
+        self.inner.raw_character_system_prompt = prompt;
+        self
+    }
+    pub fn player_chronicle_id(mut self, id: Option<crate::db::DbId>) -> Self {
+        self.inner.player_chronicle_id_from_session = id;
+        self
+    }
+    pub fn agent_mode(mut self, mode: Option<String>) -> Self {
+        self.inner.agent_mode_from_session = mode;
+        self
+    }
+    pub fn game_master_mode_enabled(mut self, enabled: bool) -> Self {
+        self.inner.game_master_mode_enabled_from_session = enabled;
+        self
+    }
+    pub fn game_state(mut self, state: Option<crate::db::DbJson>) -> Self {
+        self.inner.game_state_from_session = state;
+        self
+    }
+    pub fn rag_chronicles_limit(mut self, val: Option<i32>) -> Self {
+        self.inner.rag_chronicles_limit_sess = val;
+        self
+    }
+    pub fn rag_lorebooks_limit(mut self, val: Option<i32>) -> Self {
+        self.inner.rag_lorebooks_limit_sess = val;
+        self
+    }
+    pub fn rag_older_chat_limit(mut self, val: Option<i32>) -> Self {
+        self.inner.rag_older_chat_limit_sess = val;
+        self
+    }
+    pub fn build(self) -> GenerationDbData {
+        self.inner
+    }
+}
+
 #[instrument(skip_all, err)]
 pub async fn get_session_data_for_generation(
     state: Arc<AppState>,
@@ -354,7 +514,7 @@ pub async fn get_session_data_for_generation(
 
             // Query 3c: stop_sequences parameter (Array<Nullable<Text>> => Option<Vec<Option<String>>>)
             #[cfg(feature = "postgres-backend")]
-            let stop_seqs = chat_sessions::table
+            let _stop_seqs = chat_sessions::table
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(chat_sessions::stop_sequences)
@@ -369,7 +529,7 @@ pub async fn get_session_data_for_generation(
                 })?;
 
             #[cfg(feature = "sqlite-backend")]
-            let stop_seqs = {
+            let _stop_seqs = {
                 let optional_array = chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
                     .filter(chat_sessions::user_id.eq(user_id))
@@ -596,7 +756,12 @@ pub async fn get_session_data_for_generation(
                                 content,
                                 content_nonce,
                                 created_at,
+                                updated_at: created_at,
                                 user_id,
+                                role: None,
+                                parts: None,
+                                attachments: None,
+                                rag_embedding_id: None,
                                 prompt_tokens,
                                 completion_tokens,
                                 raw_prompt_ciphertext: None,
@@ -699,36 +864,37 @@ pub async fn get_session_data_for_generation(
                 }
             };
 
-            Ok::<_, AppError>(GenerationDbData {
-                history_management_strategy_db_val: hist_strat,
-                history_management_limit_db_val: hist_limit,
-                session_character_id_db: sess_char_id,
-                session_temperature_db: temp,
-                session_max_output_tokens_db: max_tokens,
-                session_frequency_penalty_db: freq_pen,
-                session_presence_penalty_db: pres_pen,
-                session_top_k_db: top_k_val,
-                session_top_p_db: top_p_val,
-                session_seed_db: seed_val,
-                _session_stop_sequences_db: Some(stop_seqs),
-                session_model_name_db: model_n,
-                session_model_provider_db: model_prov,
-                session_gemini_thinking_budget_db: gem_think_budget,
-                session_gemini_thinking_level_db: gem_think_level,
-                session_gemini_enable_code_execution_db: gem_enable_code_exec,
-                existing_messages_db_raw: messages_raw_db,
-                character_for_first_mes: character_db,
-                character_overrides_for_first_mes: overrides_db,
-                final_effective_system_prompt: current_effective_system_prompt,
-                raw_character_system_prompt: raw_character_system_prompt_from_db,
-                player_chronicle_id_from_session: player_chronicle_id,
-                agent_mode_from_session: agent_mode,
-                game_master_mode_enabled_from_session: game_master_mode_enabled,
-                game_state_from_session: game_state_db,
-                rag_chronicles_limit_sess,
-                rag_lorebooks_limit_sess,
-                rag_older_chat_limit_sess,
-            })
+            Ok::<_, AppError>(
+                GenerationDbData::builder()
+                    .history_management_strategy(hist_strat)
+                    .history_management_limit(hist_limit)
+                    .session_character_id(sess_char_id)
+                    .session_temperature(temp)
+                    .session_max_output_tokens(max_tokens)
+                    .session_frequency_penalty(freq_pen)
+                    .session_presence_penalty(pres_pen)
+                    .session_top_k(top_k_val)
+                    .session_top_p(top_p_val)
+                    .session_seed(seed_val)
+                    .session_model_name(model_n)
+                    .session_model_provider(model_prov)
+                    .session_gemini_thinking_budget(gem_think_budget)
+                    .session_gemini_thinking_level(gem_think_level)
+                    .session_gemini_enable_code_execution(gem_enable_code_exec)
+                    .existing_messages(messages_raw_db)
+                    .character(character_db)
+                    .character_overrides(overrides_db)
+                    .final_effective_system_prompt(current_effective_system_prompt)
+                    .raw_character_system_prompt(raw_character_system_prompt_from_db)
+                    .player_chronicle_id(player_chronicle_id)
+                    .agent_mode(agent_mode)
+                    .game_master_mode_enabled(game_master_mode_enabled)
+                    .game_state(game_state_db)
+                    .rag_chronicles_limit(rag_chronicles_limit_sess)
+                    .rag_lorebooks_limit(rag_lorebooks_limit_sess)
+                    .rag_older_chat_limit(rag_older_chat_limit_sess)
+                    .build(),
+            )
         })
         .await?
     };
@@ -893,9 +1059,14 @@ pub async fn get_session_data_for_generation(
                         message_type: message_role,
                         content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
                         content_nonce: None, // No encryption for frontend-provided history
+                        rag_embedding_id: None,
                         created_at: (chrono::Utc::now()
                             - chrono::Duration::seconds(1000 - index as i64))
                         .into(), // Fake timestamps
+                        updated_at: chrono::Utc::now().into(),
+                        role: None,
+                        parts: None,
+                        attachments: None,
                         prompt_tokens: None,
                         completion_tokens: None,
                         raw_prompt_ciphertext: None,
@@ -972,6 +1143,7 @@ pub async fn get_session_data_for_generation(
     debug!(%session_id, %user_id, "Retrieved user settings for context management");
 
     // Use user-configured values or fall back to config defaults
+    #[allow(unused_mut)]
     let mut context_total_token_limit = user_settings
         .default_context_total_token_limit
         .map(|v| v as usize)
@@ -1735,6 +1907,11 @@ pub async fn get_session_data_for_generation(
                 content: content.into_bytes(), // Content is already decrypted String
                 content_nonce: None,
                 created_at: chrono::Utc::now().into(),
+                updated_at: chrono::Utc::now().into(),
+                role: None,
+                parts: None,
+                attachments: None,
+                rag_embedding_id: None,
                 prompt_tokens: None,
                 completion_tokens: None,
                 raw_prompt_ciphertext: None,
@@ -1860,6 +2037,7 @@ pub struct StreamAiParams {
     pub charge_credits: bool,                // Whether credits should be charged for this message
     pub game_master_mode_enabled: bool,      // Whether Game Master mode is enabled for this session
     pub initial_game_state: Option<serde_json::Value>,
+    pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -2112,6 +2290,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             charge_credits: params.charge_credits,
             game_master_mode_enabled: params.game_master_mode_enabled,
             initial_game_state: params.initial_game_state.clone(),
+            parent_message_id: params.parent_message_id,
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -2183,7 +2362,47 @@ pub async fn stream_ai_response_and_save_message(
         charge_credits,
         game_master_mode_enabled,
         initial_game_state,
+        parent_message_id,
     } = params;
+
+    // Prune future messages if this is a rewind operation (parent_message_id provided)
+    if let Some(parent_id) = parent_message_id {
+        info!(%session_id, %parent_id, "Rewind detected: Pruning future messages");
+
+        // We need to delete all messages created AFTER the parent message
+        let pool = state.pool.clone();
+        let prune_result = crate::db::with_conn(&pool, move |conn| {
+            use crate::schema::chat_messages;
+
+            // First get the parent message's creation time
+            let parent_created_at = chat_messages::table
+                .filter(chat_messages::id.eq(parent_id))
+                .select(chat_messages::created_at)
+                .first::<crate::DbTimestamp>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to fetch parent message: {}", e))
+                })?;
+
+            // Delete all messages in this session created after the parent
+            diesel::delete(
+                chat_messages::table
+                    .filter(chat_messages::session_id.eq(session_id))
+                    .filter(chat_messages::created_at.gt(parent_created_at)),
+            )
+            .execute(conn)
+            .map_err(|e| {
+                AppError::DatabaseQueryError(format!("Failed to prune future messages: {}", e))
+            })
+        })
+        .await;
+
+        match prune_result {
+            Ok(count) => {
+                info!(%session_id, pruned_count = count, "Successfully pruned future messages")
+            }
+            Err(e) => error!(%session_id, error = ?e, "Failed to prune future messages"),
+        }
+    }
 
     let service_model_name = model_name.clone(); // Clone for use in this function scope, esp. for save_message calls
 
@@ -2701,6 +2920,7 @@ pub async fn stream_ai_response_and_save_message(
                                 full_user_id_clone,
                                 full_session_id_clone,
                                 player_chronicle_id_clone,
+                                Some(saved_message.id),
                                 &recent_messages,
                                 &empty_rag_context,
                                 &session_dek_for_narrative,
@@ -2762,11 +2982,11 @@ pub async fn stream_ai_response_and_save_message(
 
                                 // Build conversation summary from last UPDATE_DEPTH messages
                                 let conversation_summary = {
-                                    let last_n: Vec<_> = recent_messages_gm.iter().rev().take(UPDATE_DEPTH).collect();
+                                    let recent_messages: Vec<&crate::models::chats::ChatMessage> = recent_messages_gm.iter().rev().take(UPDATE_DEPTH).collect();
                                     let mut summary_parts = Vec::new();
 
                                     // Iterate in chronological order (reverse again)
-                                    for msg in last_n.into_iter().rev() {
+                                    for msg in recent_messages.into_iter().rev() {
                                         let role = match msg.message_type {
                                             crate::models::chats::MessageRole::User => "User",
                                             crate::models::chats::MessageRole::Assistant => "Assistant",

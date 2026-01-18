@@ -175,6 +175,7 @@ impl ExtractionDispatcher {
             user_id,
             chat_session_id,
             chronicle_id,
+            None, // message_variant_id
             messages,
             session_dek,
             persona_context,

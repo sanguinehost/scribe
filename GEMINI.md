@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Development Commands
 
 ### Quick Start
@@ -20,6 +16,23 @@ cargo run --bin scribe-backend
 ```
 
 ### Backend Development
+
+> [!CAUTION]
+> **REQUIRED: Sentencepiece Library Linking**
+>
+> Before running ANY `cargo check`, `cargo build`, or `cargo clippy` command, you MUST export the following environment variables to link against the local sentencepiece build:
+> ```bash
+> export PKG_CONFIG_PATH="/home/socol/Workspace/sentencepiece/build:${PKG_CONFIG_PATH:-}"
+> export LD_LIBRARY_PATH="/home/socol/Workspace/sentencepiece/build/src:${LD_LIBRARY_PATH:-}"
+> ```
+>
+> **Alternatively, use the build script** which handles this automatically:
+> ```bash
+> ./scripts/build-desktop-dev.sh --check  # For desktop feature check
+> ```
+>
+> Without these exports, `sentencepiece-sys` will fail to compile with C++ errors.
+
 ```bash
 # Build and run backend
 cargo run --bin scribe-backend
@@ -42,8 +55,8 @@ cargo clippy -p scribe-backend --no-default-features --features desktop -- -D cl
 # Check compilation (cloud features)
 cargo check -p scribe-backend --no-default-features --features cloud,payment
 
-# Check compilation (desktop features)
-cargo check -p scribe-backend --no-default-features --features desktop
+# Check compilation (desktop features) - USE BUILD SCRIPT INSTEAD
+./scripts/build-desktop-dev.sh --check
 ```
 
 ### Frontend Development

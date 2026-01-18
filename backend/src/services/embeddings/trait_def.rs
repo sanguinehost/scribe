@@ -88,6 +88,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         user_id: crate::db::DbId,
         entity_name: &str,
         entity_name_hash: &str,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError>;
 
     /// Retrieves similar entities from the entity_vectors collection.
@@ -97,6 +98,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         user_id: crate::db::DbId,
         entity_name: &str,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, EntityMetadata)>, AppError>;
 
     /// Processes an opinion: embeds and stores it in the opinion_vectors collection.
@@ -106,6 +108,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         user_id: crate::db::DbId,
         opinion_id: crate::db::DbId,
         opinion_text: &str,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError>;
 
     /// Retrieves similar opinions from the opinion_vectors collection.
@@ -115,6 +118,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         user_id: crate::db::DbId,
         query: &str,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, OpinionMetadata)>, AppError>;
 
     /// Deletes an opinion vector from the opinion_vectors collection.
@@ -134,6 +138,7 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         chronicle_id: crate::db::DbId,
         fact_text: &str,
         game_time: Option<serde_json::Value>,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError>;
 
     /// Retrieves similar cognitive facts from the fact_vectors collection.
@@ -145,5 +150,6 @@ pub trait EmbeddingPipelineServiceTrait: Send + Sync {
         query: &str,
         limit: u64,
         max_game_time_day: Option<i64>,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError>;
 }

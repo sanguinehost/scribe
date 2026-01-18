@@ -214,6 +214,14 @@ impl ToSql<Text, Sqlite> for DbId {
     }
 }
 
+#[cfg(feature = "sqlite-backend")]
+impl ToSql<Nullable<Text>, Sqlite> for DbId {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        out.set_value(self.0.to_string());
+        Ok(IsNull::No)
+    }
+}
+
 // Nullable<Text> support for SQLite
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<Nullable<Text>, Sqlite> for DbId {

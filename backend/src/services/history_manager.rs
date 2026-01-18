@@ -216,26 +216,14 @@ mod tests {
     use uuid::Uuid;
 
     fn create_test_message(id: crate::db::DbId, role: MessageRole, content: &str) -> ChatMessage {
-        ChatMessage {
-            id,
-            session_id: DbId::new(),
-            message_type: role,
-            content: content.as_bytes().to_vec(),
-            content_nonce: None, // Added missing field
-            created_at: Utc::now().into(),
-            user_id: DbId::new(),
-            prompt_tokens: None,
-            completion_tokens: None,
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: "test-model".to_string(),
-            status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
-            variant_count: 1,
-            current_variant_index: 0,
-            ..Default::default()
-        }
+        ChatMessage::builder()
+            .session_id(DbId::new())
+            .message_type(role)
+            .content(content.as_bytes().to_vec())
+            .user_id(DbId::new())
+            .model_name("test-model".to_string())
+            .status("completed".to_string())
+            .build()
     }
 
     #[test]

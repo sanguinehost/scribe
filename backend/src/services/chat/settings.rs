@@ -452,12 +452,46 @@ pub async fn get_session_settings(
             })?;
 
         // Query 6: game_master_mode_enabled
-        let game_master_mode_enabled = chat_sessions::table
+        // Query 6: game_master_mode_enabled and other new fields
+        let (
+            game_master_mode_enabled,
+            repetition_penalty,
+            min_p,
+            top_a,
+            logit_bias,
+            gemini_thinking_level,
+            rag_chronicles_limit,
+            rag_lorebooks_limit,
+            rag_older_chat_limit,
+            rag_cognitive_context_limit,
+        ) = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
-            .select(chat_sessions::game_master_mode_enabled)
-            .first::<bool>(conn)
+            .select((
+                chat_sessions::game_master_mode_enabled,
+                chat_sessions::repetition_penalty,
+                chat_sessions::min_p,
+                chat_sessions::top_a,
+                chat_sessions::logit_bias,
+                chat_sessions::gemini_thinking_level,
+                chat_sessions::rag_chronicles_limit,
+                chat_sessions::rag_lorebooks_limit,
+                chat_sessions::rag_older_chat_limit,
+                chat_sessions::rag_cognitive_context_limit,
+            ))
+            .first::<(
+                bool,
+                Option<crate::db::DbDecimal>,
+                Option<crate::db::DbDecimal>,
+                Option<crate::db::DbDecimal>,
+                Option<crate::db::DbJson>,
+                Option<String>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+            )>(conn)
             .map_err(|e| {
-                error!(%session_id, %user_id, error = ?e, "Failed to fetch game_master_mode_enabled");
+                error!(%session_id, %user_id, error = ?e, "Failed to fetch game_master_mode_enabled and new fields");
                 AppError::DatabaseQueryError(e.to_string())
             })?;
 
@@ -525,6 +559,15 @@ pub async fn get_session_settings(
             active_custom_persona_id,
             prompt_template_id: Some(prompt_template_id),
             game_master_mode_enabled: Some(game_master_mode_enabled),
+            repetition_penalty,
+            min_p,
+            top_a,
+            logit_bias,
+            gemini_thinking_level,
+            rag_chronicles_limit,
+            rag_lorebooks_limit,
+            rag_older_chat_limit,
+            rag_cognitive_context_limit,
         };
 
         info!(%session_id, %user_id,
@@ -597,6 +640,8 @@ fn apply_payload_to_builder(
     #[cfg(feature = "postgres-backend")]
     {
         if let Some(stop_seqs) = payload.stop_sequences {
+            // DbStringArray is a wrapper around Option<Vec<Option<String>>>
+            // We need to extract the inner vector if it exists
             if let Some(inner_vec) = stop_seqs.0 {
                 update_builder.stop_sequences =
                     DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
@@ -606,9 +651,11 @@ fn apply_payload_to_builder(
 
     #[cfg(feature = "sqlite-backend")]
     {
-        if let Some(inner_vec) = payload.stop_sequences.0 {
-            update_builder.stop_sequences =
-                DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+        if let Some(stop_seqs) = payload.stop_sequences {
+            if let Some(inner_vec) = stop_seqs.0 {
+                update_builder.stop_sequences =
+                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
+            }
         }
     }
     if let Some(hist_strat) = payload.history_management_strategy {

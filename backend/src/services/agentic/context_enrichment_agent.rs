@@ -192,6 +192,7 @@ impl ContextEnrichmentAgent {
                         self.state.clone(),
                         None, // target_actors (optional)
                         max_game_time_day,
+                        None, // active_variant_id (optional)
                     )
                     .await
                 {

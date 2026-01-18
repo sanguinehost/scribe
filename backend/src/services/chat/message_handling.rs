@@ -99,7 +99,7 @@ pub async fn get_messages_for_session(
                                 }
                                 #[cfg(feature = "postgres-backend")]
                                 {
-                                    msg.game_time = variant.game_state.map(crate::db::Json);
+                                    msg.game_time = variant.game_state;
                                 }
                                 #[cfg(feature = "sqlite-backend")]
                                 {
@@ -651,11 +651,11 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
 
     // Clone cost values early for later use in spawned task (before they're moved into with_cost_tracking)
     #[cfg(all(feature = "payment", feature = "postgres-backend"))]
-    let actual_cost_bd_clone = actual_cost_bd.clone();
+    let _actual_cost_bd_clone = actual_cost_bd.clone();
     #[cfg(all(feature = "payment", feature = "postgres-backend"))]
-    let modified_cost_bd_clone = modified_cost_bd.clone();
+    let _modified_cost_bd_clone = modified_cost_bd.clone();
     #[cfg(all(feature = "payment", feature = "postgres-backend"))]
-    let actual_charge_bd_clone = actual_charge_bd.clone();
+    let _actual_charge_bd_clone = actual_charge_bd.clone();
 
     // SQLite uses f64, but update_cumulative_token_counts expects DbDecimal
     #[cfg(feature = "sqlite-backend")]

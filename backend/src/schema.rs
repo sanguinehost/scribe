@@ -169,6 +169,7 @@ diesel::table! {
         significance -> Float,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
+        message_variant_id -> Nullable<DbIdType>,
     }
 }
 
@@ -480,6 +481,7 @@ diesel::table! {
         confidence -> Float,
         significance -> Float,
         created_at -> DbTimestampType,
+        message_variant_id -> Nullable<DbIdType>,
     }
 }
 
@@ -574,6 +576,7 @@ diesel::table! {
         significance -> Float,
         created_at -> DbTimestampType,
         updated_at -> DbTimestampType,
+        message_variant_id -> Nullable<DbIdType>,
     }
 }
 
@@ -1101,6 +1104,9 @@ diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
 diesel::joinable!(entity_observations -> player_chronicles (chronicle_id));
 diesel::joinable!(entity_observations -> users (user_id));
+diesel::joinable!(character_opinions -> message_variants (message_variant_id));
+diesel::joinable!(cognitive_facts -> message_variants (message_variant_id));
+diesel::joinable!(entity_observations -> message_variants (message_variant_id));
 diesel::joinable!(message_variants -> chat_messages (parent_message_id));
 diesel::joinable!(message_variants -> users (user_id));
 diesel::joinable!(old_documents -> users (user_id));

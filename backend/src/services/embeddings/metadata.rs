@@ -271,6 +271,7 @@ pub struct EntityMetadata {
     pub user_id: crate::db::DbId,
     pub entity_name_hash: String,
     pub source_type: String,
+    pub message_variant_id: Option<crate::db::DbId>,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for EntityMetadata {
@@ -281,11 +282,16 @@ impl TryFrom<HashMap<String, QdrantValue>> for EntityMetadata {
         let entity_name_hash =
             extract_string_from_payload(&payload, "entity_name_hash", "EntityMetadata")?;
         let source_type = extract_string_from_payload(&payload, "source_type", "EntityMetadata")?;
+        let message_variant_id = payload
+            .get("message_variant_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DbId::parse_str(s).ok());
 
         Ok(Self {
             user_id,
             entity_name_hash,
             source_type,
+            message_variant_id,
         })
     }
 }
@@ -295,6 +301,7 @@ pub struct OpinionMetadata {
     pub user_id: crate::db::DbId,
     pub opinion_id: crate::db::DbId,
     pub source_type: String,
+    pub message_variant_id: Option<crate::db::DbId>,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for OpinionMetadata {
@@ -304,11 +311,16 @@ impl TryFrom<HashMap<String, QdrantValue>> for OpinionMetadata {
         let user_id = extract_uuid_from_payload(&payload, "user_id", "OpinionMetadata")?;
         let opinion_id = extract_uuid_from_payload(&payload, "opinion_id", "OpinionMetadata")?;
         let source_type = extract_string_from_payload(&payload, "source_type", "OpinionMetadata")?;
+        let message_variant_id = payload
+            .get("message_variant_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DbId::parse_str(s).ok());
 
         Ok(Self {
             user_id,
             opinion_id,
             source_type,
+            message_variant_id,
         })
     }
 }
@@ -320,6 +332,7 @@ pub struct CognitiveFactMetadata {
     pub chronicle_id: crate::db::DbId,
     pub source_type: String,
     pub game_time: Option<serde_json::Value>,
+    pub message_variant_id: Option<crate::db::DbId>,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
@@ -335,6 +348,10 @@ impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
 
         let game_time = extract_optional_string_from_payload(&payload, "game_time")
             .and_then(|s| serde_json::from_str(&s).ok());
+        let message_variant_id = payload
+            .get("message_variant_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DbId::parse_str(s).ok());
 
         Ok(Self {
             user_id,
@@ -342,6 +359,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {
             chronicle_id,
             source_type,
             game_time,
+            message_variant_id,
         })
     }
 }

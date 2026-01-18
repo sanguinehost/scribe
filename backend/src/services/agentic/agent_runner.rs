@@ -203,6 +203,7 @@ impl NarrativeAgentRunner {
         user_id: crate::db::DbId,
         chat_session_id: crate::db::DbId,
         mut chronicle_id: Option<crate::db::DbId>,
+        message_variant_id: Option<crate::db::DbId>,
         messages: &[ChatMessage],
         session_dek: &SessionDek,
         persona_context: Option<super::UserPersonaContext>,
@@ -284,6 +285,7 @@ impl NarrativeAgentRunner {
                         .as_ref()
                         .and_then(|gs| gs.game_time.as_ref())
                         .map(|gt| gt.day as i64),
+                    None, // active_variant_id (optional)
                 )
                 .await
             {
@@ -387,6 +389,7 @@ RULES:
                     user_id,
                     existing_chronicle_id,
                     Some(chat_session_id),
+                    message_variant_id,
                     payload.clone(),
                     session_dek,
                     self.app_state.clone(),

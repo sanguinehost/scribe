@@ -1128,6 +1128,7 @@ export class ChatController {
 						}
 						return msg;
 					});
+					this.dispatchChronicleUpdate();
 				}
 			} catch (_err) {
 				toast.error('Failed to switch to previous variant');
@@ -1173,6 +1174,7 @@ export class ChatController {
 						}
 						return msg;
 					});
+					this.dispatchChronicleUpdate();
 				} else {
 					this.regenerateResponse(
 						'',
@@ -1288,6 +1290,7 @@ export class ChatController {
 					await _apiClient.selectMessageVariant(apiMessageId, {
 						variant_index: index
 					});
+					this.dispatchChronicleUpdate();
 				} catch (_error) {
 					console.warn('⚠️ Error persisting first message variant selection:', _error);
 				}
@@ -1343,6 +1346,19 @@ export class ChatController {
 			this.agentMode = previousMode;
 			console.error('Failed to save agent mode:', _error);
 			toast.error('Failed to update context enrichment mode');
+		}
+	}
+
+	private dispatchChronicleUpdate() {
+		if (this.chat?.player_chronicle_id && typeof window !== 'undefined') {
+			console.log(
+				`[ChatController] Dispatching chronicle-events-updated for ${this.chat.player_chronicle_id}`
+			);
+			window.dispatchEvent(
+				new CustomEvent('chronicle-events-updated', {
+					detail: { chronicleId: this.chat.player_chronicle_id }
+				})
+			);
 		}
 	}
 }

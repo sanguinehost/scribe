@@ -22,24 +22,19 @@ use crate::models::chats::{Vote, VoteRequest};
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-#[cfg(feature = "sqlite-backend")]
-use crate::schema::message_variants;
-use crate::schema::{chat_messages, chat_sessions};
-use axum::{
-    extract::{Path, Query, State}, // Added Query
-    http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::{delete, get, post, put},
-    Router,
-};
-use secrecy::ExposeSecret; // Added for expose_secret method
-use secrecy::SecretBox; // Ensure SecretBox is imported
-                        // Removed incorrect ValidatedJson import
-use crate::services::chat;
+use crate::schema::{chat_messages, chat_sessions, message_variants};
 use crate::services::chat::generation::{self, StreamAiParams}; // Added generation imports
 use crate::state::AppState;
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{delete, get, post, put},
+    Json, Router,
+};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
+use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::warn; // Added for logging
@@ -147,7 +142,7 @@ pub async fn set_chat_character_override_handler(
 
     // The user.dek from auth_session might not be the raw SecretBox<Vec<u8>> needed by the service.
     // The SessionDek extractor provides the correct SecretBox<Vec<u8>>.
-    let override_db_response = chat::overrides::set_character_override(
+    let override_db_response = crate::services::chat::overrides::set_character_override(
         &state.pool,
         user.id,
         session_id,
@@ -298,7 +293,7 @@ pub async fn create_chat_handler(
     );
 
     let app_state = Arc::new(state.clone());
-    let chat = chat::session_management::create_session_and_maybe_first_message(
+    let chat = crate::services::chat::session_management::create_session_and_maybe_first_message(
         app_state,
         user.id,
         Some(payload.character_id),
@@ -929,9 +924,13 @@ async fn process_messages_for_response(
             msg_db.variant_count
         } else {
             // Fallback: check DB count directly (ignoring user_id filter as per previous fix)
-            chat::message_variants::get_variant_count(state.clone(), msg_db.id, user_id)
-                .await
-                .unwrap_or(0) as i32
+            crate::services::chat::message_variants::get_variant_count(
+                state.clone(),
+                msg_db.id,
+                user_id,
+            )
+            .await
+            .unwrap_or(0) as i32
         };
 
         let message_response = MessageResponse {
@@ -968,7 +967,7 @@ async fn process_messages_for_response(
                 tracing::info!("🔍 Fetching variants for message {} (count: {}, actual: {}, current_index: {})",
                     msg_db.id, msg_db.variant_count, actual_variant_count, msg_db.current_variant_index);
 
-                match chat::message_variants::get_message_variants(
+                match crate::services::chat::message_variants::get_message_variants(
                     state.clone(),
                     msg_db.id,
                     user_id,
@@ -1320,37 +1319,37 @@ pub async fn create_message_handler(
 
     // Convert DbChatMessage to ChatMessageForClient to get decrypted content
     // saved_db_message is a ChatMessage. We need to construct a Message to call into_decrypted_for_client.
-    let message_for_decryption = Message {
-        id: saved_db_message.id,
-        session_id: saved_db_message.session_id,
-        message_type: saved_db_message.message_type,
-        content: saved_db_message.content, // This is Vec<u8>
-        content_nonce: saved_db_message.content_nonce,
-        rag_embedding_id: None,
-        created_at: saved_db_message.created_at,
-        updated_at: saved_db_message.created_at, // For a new message, updated_at is same as created_at
-        user_id: saved_db_message.user_id,
-        role: Some(payload.role.clone()), // From the request payload
-        parts: payload.parts.clone(),     // From the request payload
-        game_time: saved_db_message.game_time,
-        attachments: payload.attachments.clone(), // From the request payload
-        prompt_tokens: saved_db_message.prompt_tokens,
-        completion_tokens: saved_db_message.completion_tokens,
-        raw_prompt_ciphertext: saved_db_message.raw_prompt_ciphertext,
-        raw_prompt_nonce: saved_db_message.raw_prompt_nonce,
-        model_name: saved_db_message.model_name.clone(),
-        status: saved_db_message.status.clone(),
-        error_message: saved_db_message.error_message.clone(),
-        superseded_at: saved_db_message.superseded_at,
-        variant_count: saved_db_message.variant_count,
-        current_variant_index: saved_db_message.current_variant_index,
-        credits_charged: saved_db_message.credits_charged,
-        credits_cost: saved_db_message.credits_cost,
-        actual_cost: saved_db_message.actual_cost,
-        modified_cost: saved_db_message.modified_cost,
-        credit_cost: saved_db_message.credit_cost,
-        actual_charge: saved_db_message.actual_charge,
-    };
+    let message_for_decryption = Message::builder()
+        .id(saved_db_message.id)
+        .session_id(saved_db_message.session_id)
+        .message_type(saved_db_message.message_type)
+        .content(saved_db_message.content) // This is Vec<u8>
+        .content_nonce(saved_db_message.content_nonce)
+        .rag_embedding_id(None)
+        .created_at(saved_db_message.created_at)
+        .updated_at(saved_db_message.created_at) // For a new message, updated_at is same as created_at
+        .user_id(saved_db_message.user_id)
+        .role(Some(payload.role.clone())) // From the request payload
+        .parts(payload.parts.clone()) // From the request payload
+        .game_time(saved_db_message.game_time)
+        .attachments(payload.attachments.clone()) // From the request payload
+        .prompt_tokens(saved_db_message.prompt_tokens)
+        .completion_tokens(saved_db_message.completion_tokens)
+        .raw_prompt_ciphertext(saved_db_message.raw_prompt_ciphertext)
+        .raw_prompt_nonce(saved_db_message.raw_prompt_nonce)
+        .model_name(saved_db_message.model_name.clone())
+        .status(saved_db_message.status.clone())
+        .error_message(saved_db_message.error_message.clone())
+        .superseded_at(saved_db_message.superseded_at)
+        .variant_count(saved_db_message.variant_count)
+        .current_variant_index(saved_db_message.current_variant_index)
+        .credits_charged(saved_db_message.credits_charged)
+        .credits_cost(saved_db_message.credits_cost)
+        .actual_cost(saved_db_message.actual_cost)
+        .modified_cost(saved_db_message.modified_cost)
+        .credit_cost(saved_db_message.credit_cost)
+        .actual_charge(saved_db_message.actual_charge)
+        .build();
     let client_message =
         message_for_decryption.into_decrypted_for_client(user_dek_arc.as_deref())?;
 
@@ -1471,6 +1470,7 @@ pub async fn create_message_handler(
 
                     // 3. Prepare params
                     if let Some(dek_arc) = user_dek_for_gen {
+                        let parent_message_id = payload.parent_message_id;
                         let params = StreamAiParams {
                             state: state_for_gen,
                             session_id: session_id_for_gen,
@@ -1497,7 +1497,8 @@ pub async fn create_message_handler(
                             variant_of: None,
                             charge_credits: true, // Charge for AI response
                             game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
-                            initial_game_state,
+                            initial_game_state: initial_game_state.clone(),
+                            parent_message_id,
                         };
 
                         // 4. Stream response
@@ -2223,69 +2224,78 @@ pub async fn delete_message_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
     }
 
-    // Fix for SQLite foreign key constraint:
-    // chronicle_events references message_variants(id) but might not have ON DELETE CASCADE.
-    // We must manually set message_variant_id to NULL for any events referencing variants of this message
-    // before we delete the message (which cascades to variants).
-    #[cfg(feature = "sqlite-backend")]
-    let variant_ids: Vec<String> = {
-        let message_id_str = message_id.to_string();
-        crate::db::with_conn(&pool, move |conn| {
-            use crate::schema::message_variants::dsl as mv_dsl;
-            mv_dsl::message_variants
-                .filter(mv_dsl::parent_message_id.eq(message_id_str))
-                .select(mv_dsl::id)
-                .load::<String>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-    };
+    // Cascading deletion for chronicle events and embeddings
+    // We must delete chronicle events and their embeddings before deleting the message
+    // because the message deletion will cascade to variants, and we need the variants to find the events.
+    {
+        let message_id_val = id.clone();
+        let pool_clone = pool.clone();
+        let embedding_service = state.embedding_pipeline_service.clone();
+        let state_arc = Arc::new(state.clone());
+        let user_id_val = user.id;
 
-    #[cfg(feature = "postgres-backend")]
-    let variant_ids: Vec<uuid::Uuid> = {
-        crate::db::with_conn(&pool, move |conn| {
+        // 1. Get all variant IDs for this message
+        let variant_ids: Vec<crate::db::DbId> = crate::db::with_conn(&pool_clone, move |conn| {
             use crate::schema::message_variants::dsl as mv_dsl;
-            mv_dsl::message_variants
-                .filter(mv_dsl::parent_message_id.eq(message_id))
-                .select(mv_dsl::id)
-                .load::<uuid::Uuid>(conn)
-                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?
-    };
 
-    if !variant_ids.is_empty() {
-        tracing::info!(
-            "Cleaning up {} variants referenced in chronicle events before message deletion",
-            variant_ids.len()
-        );
-        #[cfg(feature = "sqlite-backend")]
-        crate::db::with_conn(&pool, move |conn| {
-            use crate::schema::chronicle_events::dsl as ce_dsl;
-            diesel::update(
-                ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
-            )
-            .set(ce_dsl::message_variant_id.eq(None::<String>))
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            mv_dsl::message_variants
+                .filter(mv_dsl::parent_message_id.eq(message_id_val))
+                .select(mv_dsl::id)
+                .load::<crate::db::DbId>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
 
-        #[cfg(feature = "postgres-backend")]
-        crate::db::with_conn(&pool, move |conn| {
-            use crate::schema::chronicle_events::dsl as ce_dsl;
-            diesel::update(
-                ce_dsl::chronicle_events.filter(ce_dsl::message_variant_id.eq_any(variant_ids)),
-            )
-            .set(ce_dsl::message_variant_id.eq(None::<uuid::Uuid>))
-            .execute(conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
-        })
-        .await
-        .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+        if !variant_ids.is_empty() {
+            // 2. Get all chronicle events for these variants
+            let event_ids: Vec<crate::db::DbId> = crate::db::with_conn(&pool_clone, move |conn| {
+                use crate::schema::chronicle_events::dsl as ce_dsl;
+
+                #[cfg(feature = "sqlite-backend")]
+                let v_ids: Vec<String> = variant_ids.iter().map(|id| id.to_string()).collect();
+                #[cfg(feature = "postgres-backend")]
+                let v_ids: Vec<uuid::Uuid> = variant_ids.iter().map(|id| id.into_uuid()).collect();
+
+                ce_dsl::chronicle_events
+                    .filter(ce_dsl::message_variant_id.eq_any(&v_ids))
+                    .select(ce_dsl::id)
+                    .load::<crate::db::DbId>(conn)
+                    .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+            })
+            .await
+            .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+            // 3. Delete embeddings for each event
+            for event_id in &event_ids {
+                if let Err(e) = embedding_service
+                    .delete_chronicle_event_chunks(state_arc.clone(), event_id.clone(), user_id_val)
+                    .await
+                {
+                    error!("Failed to delete embeddings for event {}: {}", event_id, e);
+                    // Continue deletion even if embedding deletion fails
+                }
+            }
+
+            // 4. Delete events from DB
+            if !event_ids.is_empty() {
+                crate::db::with_conn(&pool_clone, move |conn| {
+                    use crate::schema::chronicle_events::dsl as ce_dsl;
+
+                    #[cfg(feature = "sqlite-backend")]
+                    let e_ids: Vec<String> = event_ids.iter().map(|id| id.to_string()).collect();
+                    #[cfg(feature = "postgres-backend")]
+                    let e_ids: Vec<uuid::Uuid> =
+                        event_ids.iter().map(|id| id.into_uuid()).collect();
+
+                    diesel::delete(ce_dsl::chronicle_events.filter(ce_dsl::id.eq_any(e_ids)))
+                        .execute(conn)
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+                })
+                .await
+                .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+            }
+        }
     }
 
     // Fix for SQLite foreign key constraint:
@@ -2429,7 +2439,7 @@ pub async fn get_chat_settings_handler(
 
     // Call the service function to get chat settings
     // The service function handles ownership check and constructing the response
-    let chat_settings_response = chat::settings::get_session_settings(
+    let chat_settings_response = crate::services::chat::settings::get_session_settings(
         &state.pool,
         user.id,
         id,           // session_id
@@ -2474,7 +2484,7 @@ pub async fn update_chat_settings_handler(
     let user_id = user.id; // Clone user_id for use in service call
 
     // Use the service function which handles encryption and ownership checks
-    let response = chat::settings::update_session_settings(
+    let response = crate::services::chat::settings::update_session_settings(
         &state.pool,
         user_id,
         id,
@@ -2718,9 +2728,6 @@ async fn get_variant_content_by_index(
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;
-        #[cfg(feature = "postgres-backend")]
-        let game_state = variant.game_state;
-        #[cfg(feature = "sqlite-backend")]
         let game_state = variant.game_state.map(|j| j.0);
 
         Ok(Some((content, game_state)))

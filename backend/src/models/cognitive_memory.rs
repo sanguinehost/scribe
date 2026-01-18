@@ -25,6 +25,7 @@ pub struct CharacterOpinion {
     pub significance: f32,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub message_variant_id: Option<DbId>,
 }
 
 impl CharacterOpinion {
@@ -61,6 +62,84 @@ pub struct NewCharacterOpinion {
     pub significance: f32,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub message_variant_id: Option<DbId>,
+}
+
+impl Default for NewCharacterOpinion {
+    fn default() -> Self {
+        Self {
+            id: DbId::new(),
+            user_id: DbId::nil(),
+            chronicle_id: DbId::nil(),
+            perspective_hash: String::new(),
+            perspective_encrypted: Vec::new(),
+            perspective_nonce: Vec::new(),
+            opinion_encrypted: Vec::new(),
+            opinion_nonce: Vec::new(),
+            confidence: 0.0,
+            significance: 0.0,
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
+            message_variant_id: None,
+        }
+    }
+}
+
+impl NewCharacterOpinion {
+    pub fn builder() -> NewCharacterOpinionBuilder {
+        NewCharacterOpinionBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct NewCharacterOpinionBuilder {
+    inner: NewCharacterOpinion,
+}
+
+impl NewCharacterOpinionBuilder {
+    pub fn user_id(mut self, id: DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+    pub fn chronicle_id(mut self, id: DbId) -> Self {
+        self.inner.chronicle_id = id;
+        self
+    }
+    pub fn perspective_hash(mut self, hash: String) -> Self {
+        self.inner.perspective_hash = hash;
+        self
+    }
+    pub fn perspective_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.perspective_encrypted = data;
+        self
+    }
+    pub fn perspective_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.perspective_nonce = nonce;
+        self
+    }
+    pub fn opinion_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.opinion_encrypted = data;
+        self
+    }
+    pub fn opinion_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.opinion_nonce = nonce;
+        self
+    }
+    pub fn confidence(mut self, val: f32) -> Self {
+        self.inner.confidence = val;
+        self
+    }
+    pub fn significance(mut self, val: f32) -> Self {
+        self.inner.significance = val;
+        self
+    }
+    pub fn message_variant_id(mut self, id: Option<DbId>) -> Self {
+        self.inner.message_variant_id = id;
+        self
+    }
+    pub fn build(self) -> NewCharacterOpinion {
+        self.inner
+    }
 }
 
 #[derive(
@@ -82,6 +161,7 @@ pub struct EntityObservation {
     pub significance: f32,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub message_variant_id: Option<DbId>,
 }
 
 impl EntityObservation {
@@ -122,6 +202,84 @@ pub struct NewEntityObservation {
     pub significance: f32,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub message_variant_id: Option<DbId>,
+}
+
+impl Default for NewEntityObservation {
+    fn default() -> Self {
+        Self {
+            id: DbId::new(),
+            user_id: DbId::nil(),
+            chronicle_id: DbId::nil(),
+            entity_name_hash: String::new(),
+            entity_name_encrypted: Vec::new(),
+            entity_name_nonce: Vec::new(),
+            observation_encrypted: Vec::new(),
+            observation_nonce: Vec::new(),
+            confidence: 0.0,
+            significance: 0.0,
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
+            message_variant_id: None,
+        }
+    }
+}
+
+impl NewEntityObservation {
+    pub fn builder() -> NewEntityObservationBuilder {
+        NewEntityObservationBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct NewEntityObservationBuilder {
+    inner: NewEntityObservation,
+}
+
+impl NewEntityObservationBuilder {
+    pub fn user_id(mut self, id: DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+    pub fn chronicle_id(mut self, id: DbId) -> Self {
+        self.inner.chronicle_id = id;
+        self
+    }
+    pub fn entity_name_hash(mut self, hash: String) -> Self {
+        self.inner.entity_name_hash = hash;
+        self
+    }
+    pub fn entity_name_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.entity_name_encrypted = data;
+        self
+    }
+    pub fn entity_name_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.entity_name_nonce = nonce;
+        self
+    }
+    pub fn observation_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.observation_encrypted = data;
+        self
+    }
+    pub fn observation_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.observation_nonce = nonce;
+        self
+    }
+    pub fn confidence(mut self, val: f32) -> Self {
+        self.inner.confidence = val;
+        self
+    }
+    pub fn significance(mut self, val: f32) -> Self {
+        self.inner.significance = val;
+        self
+    }
+    pub fn message_variant_id(mut self, id: Option<DbId>) -> Self {
+        self.inner.message_variant_id = id;
+        self
+    }
+    pub fn build(self) -> NewEntityObservation {
+        self.inner
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +344,7 @@ pub struct CognitiveFact {
     pub confidence: f32,
     pub significance: f32,
     pub created_at: DbTimestamp,
+    pub message_variant_id: Option<DbId>,
 }
 
 impl CognitiveFact {
@@ -244,6 +403,113 @@ pub struct NewCognitiveFact {
     pub confidence: f32,
     pub significance: f32,
     pub created_at: DbTimestamp,
+    pub message_variant_id: Option<DbId>,
+}
+
+impl Default for NewCognitiveFact {
+    fn default() -> Self {
+        Self {
+            id: DbId::new(),
+            user_id: DbId::nil(),
+            chronicle_id: DbId::nil(),
+            who_encrypted: Vec::new(),
+            who_nonce: Vec::new(),
+            what_encrypted: Vec::new(),
+            what_nonce: Vec::new(),
+            where_encrypted: Vec::new(),
+            where_nonce: Vec::new(),
+            when_encrypted: Vec::new(),
+            when_nonce: Vec::new(),
+            why_encrypted: Vec::new(),
+            why_nonce: Vec::new(),
+            fact_type: String::new(),
+            confidence: 0.0,
+            significance: 0.0,
+            created_at: DbTimestamp::now(),
+            message_variant_id: None,
+        }
+    }
+}
+
+impl NewCognitiveFact {
+    pub fn builder() -> NewCognitiveFactBuilder {
+        NewCognitiveFactBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct NewCognitiveFactBuilder {
+    inner: NewCognitiveFact,
+}
+
+impl NewCognitiveFactBuilder {
+    pub fn user_id(mut self, id: DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+    pub fn chronicle_id(mut self, id: DbId) -> Self {
+        self.inner.chronicle_id = id;
+        self
+    }
+    pub fn who_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.who_encrypted = data;
+        self
+    }
+    pub fn who_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.who_nonce = nonce;
+        self
+    }
+    pub fn what_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.what_encrypted = data;
+        self
+    }
+    pub fn what_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.what_nonce = nonce;
+        self
+    }
+    pub fn where_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.where_encrypted = data;
+        self
+    }
+    pub fn where_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.where_nonce = nonce;
+        self
+    }
+    pub fn when_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.when_encrypted = data;
+        self
+    }
+    pub fn when_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.when_nonce = nonce;
+        self
+    }
+    pub fn why_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.why_encrypted = data;
+        self
+    }
+    pub fn why_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.why_nonce = nonce;
+        self
+    }
+    pub fn fact_type(mut self, fact_type: String) -> Self {
+        self.inner.fact_type = fact_type;
+        self
+    }
+    pub fn confidence(mut self, val: f32) -> Self {
+        self.inner.confidence = val;
+        self
+    }
+    pub fn significance(mut self, val: f32) -> Self {
+        self.inner.significance = val;
+        self
+    }
+    pub fn message_variant_id(mut self, id: Option<DbId>) -> Self {
+        self.inner.message_variant_id = id;
+        self
+    }
+    pub fn build(self) -> NewCognitiveFact {
+        self.inner
+    }
 }
 
 #[derive(
@@ -283,6 +549,57 @@ pub struct NewCoreMemory {
     pub memory_state_nonce: Vec<u8>,
     pub version: i32,
     pub updated_at: DbTimestamp,
+}
+
+impl Default for NewCoreMemory {
+    fn default() -> Self {
+        Self {
+            id: DbId::new(),
+            user_id: DbId::nil(),
+            chronicle_id: DbId::nil(),
+            memory_state_encrypted: Vec::new(),
+            memory_state_nonce: Vec::new(),
+            version: 1,
+            updated_at: DbTimestamp::now(),
+        }
+    }
+}
+
+impl NewCoreMemory {
+    pub fn builder() -> NewCoreMemoryBuilder {
+        NewCoreMemoryBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct NewCoreMemoryBuilder {
+    inner: NewCoreMemory,
+}
+
+impl NewCoreMemoryBuilder {
+    pub fn user_id(mut self, id: DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+    pub fn chronicle_id(mut self, id: DbId) -> Self {
+        self.inner.chronicle_id = id;
+        self
+    }
+    pub fn memory_state_encrypted(mut self, data: Vec<u8>) -> Self {
+        self.inner.memory_state_encrypted = data;
+        self
+    }
+    pub fn memory_state_nonce(mut self, nonce: Vec<u8>) -> Self {
+        self.inner.memory_state_nonce = nonce;
+        self
+    }
+    pub fn version(mut self, version: i32) -> Self {
+        self.inner.version = version;
+        self
+    }
+    pub fn build(self) -> NewCoreMemory {
+        self.inner
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

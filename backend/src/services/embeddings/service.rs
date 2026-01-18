@@ -17,8 +17,8 @@ use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
-    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
-    PointId, Range,
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter,
+    IsNullCondition, Match, PointId, Range,
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -1609,6 +1609,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         user_id: crate::db::DbId,
         entity_name: &str,
         entity_name_hash: &str,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1628,6 +1629,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             user_id,
             entity_name_hash: entity_name_hash.to_string(),
             source_type: "entity".to_string(),
+            message_variant_id,
         };
 
         let point_id = DbId::new();
@@ -1651,6 +1653,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         user_id: crate::db::DbId,
         entity_name: &str,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, EntityMetadata)>, AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1665,7 +1668,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .embed_content(entity_name, "RETRIEVAL_QUERY", None)
             .await?;
 
-        let filter = Filter {
+        let mut filter = Filter {
             must: vec![Condition {
                 condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
                     key: "user_id".to_string(),
@@ -1677,6 +1680,31 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }],
             ..Default::default()
         };
+
+        // Add message_variant_id filter if provided
+        if let Some(variant_id) = active_variant_id {
+            filter.must.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                    should: vec![
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "message_variant_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(variant_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::IsNull(IsNullCondition {
+                                key: "message_variant_id".to_string(),
+                            })),
+                        },
+                    ],
+                    ..Default::default()
+                })),
+            });
+        }
 
         let search_results = qdrant_service
             .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
@@ -1699,6 +1727,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         user_id: crate::db::DbId,
         opinion_id: crate::db::DbId,
         opinion_text: &str,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1718,6 +1747,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             user_id,
             opinion_id,
             source_type: "opinion".to_string(),
+            message_variant_id,
         };
 
         let point = create_qdrant_point(
@@ -1740,6 +1770,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         user_id: crate::db::DbId,
         query: &str,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, OpinionMetadata)>, AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1754,7 +1785,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .embed_content(query, "RETRIEVAL_QUERY", None)
             .await?;
 
-        let filter = Filter {
+        let mut filter = Filter {
             must: vec![Condition {
                 condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
                     key: "user_id".to_string(),
@@ -1766,6 +1797,31 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }],
             ..Default::default()
         };
+
+        // Add message_variant_id filter if provided
+        if let Some(variant_id) = active_variant_id {
+            filter.must.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                    should: vec![
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "message_variant_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(variant_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::IsNull(IsNullCondition {
+                                key: "message_variant_id".to_string(),
+                            })),
+                        },
+                    ],
+                    ..Default::default()
+                })),
+            });
+        }
 
         let search_results = qdrant_service
             .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
@@ -1811,6 +1867,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         chronicle_id: crate::db::DbId,
         fact_text: &str,
         game_time: Option<serde_json::Value>,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1832,6 +1889,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             chronicle_id,
             source_type: "cognitive_fact".to_string(),
             game_time,
+            message_variant_id,
         };
 
         let point = create_qdrant_point(
@@ -1856,6 +1914,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         query: &str,
         limit: u64,
         max_game_time_day: Option<i64>,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, CognitiveFactMetadata)>, AppError> {
         let embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
@@ -1893,6 +1952,31 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             ],
             ..Default::default()
         };
+
+        // Add message_variant_id filter if provided
+        if let Some(variant_id) = active_variant_id {
+            filter.must.push(Condition {
+                condition_one_of: Some(ConditionOneOf::Filter(Filter {
+                    should: vec![
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                                key: "message_variant_id".to_string(),
+                                r#match: Some(Match {
+                                    match_value: Some(MatchValue::Keyword(variant_id.to_string())),
+                                }),
+                                ..Default::default()
+                            })),
+                        },
+                        Condition {
+                            condition_one_of: Some(ConditionOneOf::IsNull(IsNullCondition {
+                                key: "message_variant_id".to_string(),
+                            })),
+                        },
+                    ],
+                    ..Default::default()
+                })),
+            });
+        }
 
         // Add max_game_time_day filter if provided
         if let Some(max_day) = max_game_time_day {

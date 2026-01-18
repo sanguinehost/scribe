@@ -206,6 +206,27 @@ pub struct NewChronicleEvent {
     pub message_variant_id: Option<crate::db::DbId>,
 }
 
+impl Default for NewChronicleEvent {
+    fn default() -> Self {
+        Self {
+            id: None,
+            chronicle_id: crate::db::DbId::nil(),
+            user_id: crate::db::DbId::nil(),
+            event_type: "NARRATIVE.EVENT".to_string(),
+            summary: String::new(),
+            source: EventSource::AiExtracted.to_string(),
+            summary_encrypted: None,
+            summary_nonce: None,
+            timestamp_iso8601: Utc::now().into(),
+            keywords: OptionalStringArray(None),
+            keywords_encrypted: None,
+            keywords_nonce: None,
+            chat_session_id: None,
+            message_variant_id: None,
+        }
+    }
+}
+
 impl NewChronicleEvent {
     /// Create a new event with EventSource enum
     pub fn new(
@@ -219,20 +240,15 @@ impl NewChronicleEvent {
         message_variant_id: Option<crate::db::DbId>,
     ) -> Self {
         Self {
-            id: None,
             chronicle_id,
             user_id,
             event_type,
             summary,
             source: source.to_string(),
-            summary_encrypted: None, // Will be set by service if encryption is available
-            summary_nonce: None,     // Will be set by service if encryption is available
-            timestamp_iso8601: Utc::now().into(),
             keywords: OptionalStringArray(keywords.map(|k| k.into_iter().map(Some).collect())),
-            keywords_encrypted: None, // Will be set by service if encryption is available
-            keywords_nonce: None,     // Will be set by service if encryption is available
             chat_session_id,
             message_variant_id,
+            ..Default::default()
         }
     }
 
@@ -255,6 +271,71 @@ impl NewChronicleEvent {
             chat_session_id,
             message_variant_id,
         )
+    }
+
+    pub fn builder() -> NewChronicleEventBuilder {
+        NewChronicleEventBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct NewChronicleEventBuilder {
+    inner: NewChronicleEvent,
+}
+
+impl NewChronicleEventBuilder {
+    pub fn chronicle_id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.chronicle_id = id;
+        self
+    }
+
+    pub fn user_id(mut self, id: crate::db::DbId) -> Self {
+        self.inner.user_id = id;
+        self
+    }
+
+    pub fn event_type(mut self, event_type: impl Into<String>) -> Self {
+        self.inner.event_type = event_type.into();
+        self
+    }
+
+    pub fn summary(mut self, summary: impl Into<String>) -> Self {
+        self.inner.summary = summary.into();
+        self
+    }
+
+    pub fn source(mut self, source: EventSource) -> Self {
+        self.inner.source = source.to_string();
+        self
+    }
+
+    pub fn keywords(mut self, keywords: Vec<String>) -> Self {
+        self.inner.keywords = OptionalStringArray(Some(keywords.into_iter().map(Some).collect()));
+        self
+    }
+
+    pub fn chat_session_id(mut self, id: Option<crate::db::DbId>) -> Self {
+        self.inner.chat_session_id = id;
+        self
+    }
+
+    pub fn message_variant_id(mut self, id: Option<crate::db::DbId>) -> Self {
+        self.inner.message_variant_id = id;
+        self
+    }
+
+    pub fn timestamp_iso8601(mut self, timestamp: crate::db::DbTimestamp) -> Self {
+        self.inner.timestamp_iso8601 = timestamp;
+        self
+    }
+
+    pub fn keywords_array(mut self, keywords: OptionalStringArray) -> Self {
+        self.inner.keywords = keywords;
+        self
+    }
+
+    pub fn build(self) -> NewChronicleEvent {
+        self.inner
     }
 }
 
@@ -354,6 +435,8 @@ pub struct EventFilter {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub order_by: Option<EventOrderBy>,
+    pub active_variant_id: Option<crate::db::DbId>, // The variant we are currently viewing
+    pub allowed_variant_ids: Option<Vec<crate::db::DbId>>, // Calculated list of valid ancestor variants
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,6 +467,8 @@ impl Default for EventFilter {
             limit: Some(50),
             offset: Some(0),
             order_by: Some(EventOrderBy::TimestampDesc),
+            active_variant_id: None,
+            allowed_variant_ids: None,
         }
     }
 }
@@ -394,24 +479,17 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             .timestamp_iso8601
             .unwrap_or_else(|| Utc::now().into());
 
-        Self {
-            id: None,
-            chronicle_id: crate::db::DbId::nil(), // Will be set by the service
-            user_id: crate::db::DbId::nil(),      // Will be set by the service
-            event_type: request.event_type,
-            summary: request.summary,
-            source: request.source.to_string(),
-            summary_encrypted: None, // Will be set by service if encryption is available
-            summary_nonce: None,     // Will be set by service if encryption is available
-            timestamp_iso8601: timestamp,
-            keywords: OptionalStringArray(
+        NewChronicleEvent::builder()
+            .event_type(request.event_type)
+            .summary(request.summary)
+            .source(request.source)
+            .timestamp_iso8601(timestamp)
+            .keywords_array(OptionalStringArray(
                 request.keywords.map(|k| k.into_iter().map(Some).collect()),
-            ),
-            keywords_encrypted: None, // Will be set by service if encryption is available
-            keywords_nonce: None,     // Will be set by service if encryption is available
-            chat_session_id: request.chat_session_id,
-            message_variant_id: request.message_variant_id,
-        }
+            ))
+            .chat_session_id(request.chat_session_id)
+            .message_variant_id(request.message_variant_id)
+            .build()
     }
 }
 

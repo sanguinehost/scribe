@@ -10,15 +10,15 @@ use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};
 use crate::models::characters::{Character, CharacterMetadata}; // Added Character
 use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::models::chats::CreateChatSessionPayload;
+#[cfg(feature = "cloud")]
+use crate::models::chats::GenerationCost;
 use crate::models::chats::{
-    ChatMessage,
     ChatMode,
     ChatSessionQuery, // Added for queries to avoid tuple limit
     CreateMessageVariantPayload,
     ExpandTextRequest,
     ExpandTextResponse,
     GenerateChatRequest,
-    GenerationCost,
     ImpersonateRequest,
     ImpersonateResponse,
     MessageRole,
@@ -722,19 +722,17 @@ pub async fn generate_chat_response(
 
         // For now, we'll create a placeholder since the agent analysis expects a user message
         // In the future, we might want to find the actual user message that prompted the variant
-        use crate::models::chats::{ChatMessage, MessageRole as DbMessageRole};
+        use crate::models::chats::MessageRole as DbMessageRole;
 
-        let mut msg = ChatMessage::default();
-        msg.id = crate::db::DbId::new_v4(); // Temporary ID
-        msg.session_id = session_id;
-        msg.user_id = user_id_value;
-        msg.message_type = DbMessageRole::User;
-        msg.content = current_user_content_text.as_bytes().to_vec();
-
-        msg.model_name = model_to_use.clone();
-
-        msg.status = "completed".to_string();
-        msg
+        crate::models::chats::ChatMessage::builder()
+            .id(crate::db::DbId::new_v4()) // Temporary ID
+            .session_id(session_id)
+            .user_id(user_id_value)
+            .message_type(DbMessageRole::User)
+            .content(current_user_content_text.as_bytes().to_vec())
+            .model_name(model_to_use.clone())
+            .status("completed".to_string())
+            .build()
     } else {
         // Normal flow: save new user message
         match chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
@@ -1175,6 +1173,7 @@ pub async fn generate_chat_response(
                     .as_ref()
                     .and_then(|gs| gs.game_time.as_ref())
                     .map(|gt| gt.day as i64),
+                None, // active_variant_id (optional)
             )
             .await
         {
@@ -1316,6 +1315,7 @@ pub async fn generate_chat_response(
                     charge_credits: false,
                     game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                     initial_game_state,
+                    parent_message_id: payload.parent_message_id,
                 },
             )
             .await
@@ -2195,6 +2195,7 @@ pub async fn generate_chat_response(
                     charge_credits: false,
                     game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                     initial_game_state,
+                    parent_message_id: payload.parent_message_id,
                 },
             )
             .await
@@ -3623,7 +3624,8 @@ pub async fn expand_text_handler(
         stop_sequences: session_data
             .stop_sequences
             .0
-            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
+            .as_ref()
+            .map(|v| v.iter().flatten().cloned().collect()),
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
@@ -3637,7 +3639,20 @@ pub async fn expand_text_handler(
         variant_of: None,          // Text expansion doesn't create variants
         charge_credits: false,     // Text expansion is not charged (utility feature)
         game_master_mode_enabled: false,
-        initial_game_state: session_data.game_state.map(|j| j.0),
+        initial_game_state: {
+            #[cfg(feature = "postgres-backend")]
+            {
+                session_data.game_state.as_ref().map(|j| j.0.clone())
+            }
+            #[cfg(feature = "sqlite-backend")]
+            {
+                session_data
+                    .game_state
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+            }
+        },
+        parent_message_id: payload.parent_message_id,
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3866,6 +3881,8 @@ pub async fn impersonate_handler(
         analysis_mode: None, // Not applicable for suggested actions
         guidance: None,      // No guidance for impersonation
         variant_of: None,    // Impersonation doesn't create variants
+        parent_message_id: None,
+        game_master_mode_enabled: Some(false),
     };
 
     // Call the existing generate_chat_response handler logic but collect the response
@@ -3946,16 +3963,25 @@ pub async fn impersonate_handler(
         user_id,
         incoming_genai_messages: genai_messages,
         system_prompt: Some(impersonation_system_prompt),
-        temperature: session_data.temperature,
+        temperature: session_data
+            .temperature
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
         max_output_tokens: session_data.max_output_tokens,
-        frequency_penalty: session_data.frequency_penalty,
-        presence_penalty: session_data.presence_penalty,
+        frequency_penalty: session_data
+            .frequency_penalty
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
+        presence_penalty: session_data
+            .presence_penalty
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
         top_k: session_data.top_k,
-        top_p: session_data.top_p,
+        top_p: session_data
+            .top_p
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
         stop_sequences: session_data
             .stop_sequences
             .0
-            .and_then(|seq| seq.into_iter().collect::<Option<Vec<String>>>()),
+            .as_ref()
+            .map(|v| v.iter().flatten().cloned().collect()),
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
@@ -3969,7 +3995,20 @@ pub async fn impersonate_handler(
         variant_of: None,          // Impersonation doesn't create variants
         charge_credits: false,     // Impersonation is not charged (utility feature)
         game_master_mode_enabled: false,
-        initial_game_state: session_data.game_state.map(|j| j.0),
+        initial_game_state: {
+            #[cfg(feature = "postgres-backend")]
+            {
+                session_data.game_state.as_ref().map(|j| j.0.clone())
+            }
+            #[cfg(feature = "sqlite-backend")]
+            {
+                session_data
+                    .game_state
+                    .as_ref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+            }
+        },
+        parent_message_id: payload.parent_message_id,
     };
 
     // Generate the response using the full pipeline

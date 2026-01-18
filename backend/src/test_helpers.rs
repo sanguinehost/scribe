@@ -557,21 +557,25 @@ pub enum PipelineCall {
         user_id: crate::db::DbId,
         entity_name: String,
         entity_name_hash: String,
+        message_variant_id: Option<crate::db::DbId>,
     },
     RetrieveSimilarEntities {
         user_id: crate::db::DbId,
         entity_name: String,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     },
     ProcessAndEmbedOpinion {
         user_id: crate::db::DbId,
         opinion_id: crate::db::DbId,
         opinion_text: String,
+        message_variant_id: Option<crate::db::DbId>,
     },
     RetrieveSimilarOpinions {
         user_id: crate::db::DbId,
         opinion_text: String,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     },
     DeleteOpinionVector {
         opinion_id: crate::db::DbId,
@@ -583,6 +587,7 @@ pub enum PipelineCall {
         chronicle_id: crate::db::DbId,
         fact_text: String,
         game_time: Option<serde_json::Value>,
+        message_variant_id: Option<crate::db::DbId>,
     },
     RetrieveSimilarFacts {
         user_id: crate::db::DbId,
@@ -590,6 +595,7 @@ pub enum PipelineCall {
         query: String,
         limit: u64,
         max_game_time_day: Option<i64>,
+        active_variant_id: Option<crate::db::DbId>,
     },
 }
 
@@ -881,6 +887,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         user_id: crate::db::DbId,
         entity_name: &str,
         entity_name_hash: &str,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         self.calls
             .lock()
@@ -889,6 +896,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 user_id,
                 entity_name: entity_name.to_string(),
                 entity_name_hash: entity_name_hash.to_string(),
+                message_variant_id,
             });
         Ok(())
     }
@@ -899,6 +907,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         user_id: crate::db::DbId,
         entity_name: &str,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, EntityMetadata)>, AppError> {
         self.calls
             .lock()
@@ -907,6 +916,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 user_id,
                 entity_name: entity_name.to_string(),
                 limit,
+                active_variant_id,
             });
         Ok(vec![])
     }
@@ -917,6 +927,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         user_id: crate::db::DbId,
         opinion_id: crate::db::DbId,
         opinion_text: &str,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         self.calls
             .lock()
@@ -925,6 +936,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 user_id,
                 opinion_id,
                 opinion_text: opinion_text.to_string(),
+                message_variant_id,
             });
         Ok(())
     }
@@ -935,6 +947,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         user_id: crate::db::DbId,
         opinion_text: &str,
         limit: u64,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<Vec<(f32, OpinionMetadata)>, AppError> {
         self.calls
             .lock()
@@ -943,6 +956,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 user_id,
                 opinion_text: opinion_text.to_string(),
                 limit,
+                active_variant_id,
             });
 
         let mut queue = self.opinion_response_queue.lock().unwrap();
@@ -973,6 +987,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         chronicle_id: crate::db::DbId,
         fact_text: &str,
         game_time: Option<serde_json::Value>,
+        message_variant_id: Option<crate::db::DbId>,
     ) -> Result<(), AppError> {
         self.calls
             .lock()
@@ -983,6 +998,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 chronicle_id,
                 fact_text: fact_text.to_string(),
                 game_time,
+                message_variant_id,
             });
         Ok(())
     }
@@ -995,6 +1011,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
         query: &str,
         limit: u64,
         max_game_time_day: Option<i64>,
+        active_variant_id: Option<crate::db::DbId>,
     ) -> Result<
         Vec<(
             f32,
@@ -1011,6 +1028,7 @@ impl EmbeddingPipelineServiceTrait for MockEmbeddingPipelineService {
                 query: query.to_string(),
                 limit,
                 max_game_time_day,
+                active_variant_id,
             });
 
         let mut queue = self.fact_response_queue.lock().unwrap();
@@ -3600,10 +3618,7 @@ pub async fn set_history_settings(
         top_k: None,
         top_p: None,
         seed: None,
-        #[cfg(feature = "postgres-backend")]
-        stop_sequences: Some(crate::models::OptionalStringArray(None)),
-        #[cfg(feature = "sqlite-backend")]
-        stop_sequences: crate::models::OptionalStringArray(None),
+        stop_sequences: None,
         model_name: None,
         model_provider: None,
         gemini_enable_code_execution: None,
@@ -3613,6 +3628,11 @@ pub async fn set_history_settings(
         active_custom_persona_id: None,
         prompt_template_id: None,
         game_master_mode_enabled: None,
+        repetition_penalty: None,
+        min_p: None,
+        top_a: None,
+        logit_bias: None,
+        gemini_thinking_level: None,
         rag_chronicles_limit: None,
         rag_lorebooks_limit: None,
         rag_older_chat_limit: None,

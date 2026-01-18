@@ -3,7 +3,9 @@ use crate::db::DbId;
 use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::cognitive_memory::{CharacterOpinion, CognitiveFact, EntityObservation};
-use crate::schema::{character_opinions, cognitive_facts, entity_observations};
+use crate::schema::{
+    character_opinions, chat_messages, cognitive_facts, entity_observations, message_variants,
+};
 use crate::services::hybrid_token_counter::CountingMode;
 use crate::state::AppState;
 use diesel::prelude::*;
@@ -30,6 +32,7 @@ impl RecallPipeline {
         state: Arc<AppState>,
         target_actors: Option<Vec<String>>, // Added for actor-specific filtering
         max_game_time_day: Option<i64>,     // Added for temporal filtering
+        active_variant_id: Option<DbId>,    // Added for variant-aware retrieval
     ) -> Result<String, AppError> {
         info!("Recalling cognitive context for query: {}", query);
 
@@ -43,6 +46,7 @@ impl RecallPipeline {
                 query,
                 5,
                 max_game_time_day,
+                active_variant_id,
             )
             .await?;
 
@@ -82,7 +86,7 @@ impl RecallPipeline {
         // 1. Dogmatic Head: Search for Opinions via Vector DB
         let similar_opinions = state
             .embedding_pipeline_service
-            .retrieve_similar_opinions(state.clone(), user_id, query, 5)
+            .retrieve_similar_opinions(state.clone(), user_id, query, 5, active_variant_id)
             .await?;
 
         let mut matching_opinions = Vec::new();
@@ -136,7 +140,7 @@ impl RecallPipeline {
         // 2. State Head: Search for Entities via Vector DB, then fetch Observations
         let similar_entities = state
             .embedding_pipeline_service
-            .retrieve_similar_entities(state.clone(), user_id, query, 5)
+            .retrieve_similar_entities(state.clone(), user_id, query, 5, active_variant_id)
             .await?;
 
         let mut observations = Vec::new();
@@ -272,9 +276,18 @@ impl RecallPipeline {
         let result = conn
             .interact(move |conn| {
                 character_opinions::table
+                    .left_join(message_variants::table)
+                    .left_join(
+                        chat_messages::table
+                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                    )
                     .filter(character_opinions::user_id.eq(user_id))
                     .filter(character_opinions::chronicle_id.eq(chronicle_id))
                     .filter(character_opinions::id.eq(opinion_id))
+                    .filter(character_opinions::message_variant_id.is_null().or(
+                        message_variants::variant_index.eq(chat_messages::current_variant_index),
+                    ))
+                    .select(CharacterOpinion::as_select())
                     .first::<CharacterOpinion>(conn)
                     .optional()
             })
@@ -283,13 +296,42 @@ impl RecallPipeline {
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         #[cfg(feature = "sqlite-backend")]
-        let result = character_opinions::table
-            .filter(character_opinions::user_id.eq(user_id))
-            .filter(character_opinions::chronicle_id.eq(chronicle_id))
-            .filter(character_opinions::id.eq(opinion_id))
-            .first::<CharacterOpinion>(&mut conn)
-            .optional()
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let result = {
+            let opinion_opt = character_opinions::table
+                .filter(character_opinions::user_id.eq(user_id))
+                .filter(character_opinions::chronicle_id.eq(chronicle_id))
+                .filter(character_opinions::id.eq(opinion_id))
+                .first::<CharacterOpinion>(&mut conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            if let Some(opinion) = opinion_opt {
+                if let Some(variant_id) = opinion.message_variant_id.clone() {
+                    let is_active = message_variants::table
+                        .inner_join(chat_messages::table)
+                        .filter(message_variants::id.eq(variant_id))
+                        .filter(
+                            message_variants::variant_index
+                                .eq(chat_messages::current_variant_index),
+                        )
+                        .select(message_variants::id)
+                        .first::<crate::db::DbId>(&mut conn)
+                        .optional()
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                        .is_some();
+
+                    if is_active {
+                        Some(opinion)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(opinion)
+                }
+            } else {
+                None
+            }
+        };
 
         Ok(result)
     }
@@ -319,11 +361,20 @@ impl RecallPipeline {
         let results = conn
             .interact(move |conn| {
                 entity_observations::table
+                    .left_join(message_variants::table)
+                    .left_join(
+                        chat_messages::table
+                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                    )
                     .filter(entity_observations::user_id.eq(user_id))
                     .filter(entity_observations::chronicle_id.eq(chronicle_id))
                     .filter(entity_observations::entity_name_hash.eq(&entity_name_hash))
+                    .filter(entity_observations::message_variant_id.is_null().or(
+                        message_variants::variant_index.eq(chat_messages::current_variant_index),
+                    ))
                     .order(entity_observations::created_at.desc())
                     .limit(5)
+                    .select(EntityObservation::as_select())
                     .load::<EntityObservation>(conn)
             })
             .await
@@ -331,14 +382,46 @@ impl RecallPipeline {
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         #[cfg(feature = "sqlite-backend")]
-        let results = entity_observations::table
-            .filter(entity_observations::user_id.eq(user_id))
-            .filter(entity_observations::chronicle_id.eq(chronicle_id))
-            .filter(entity_observations::entity_name_hash.eq(&entity_name_hash))
-            .order(entity_observations::created_at.desc())
-            .limit(5)
-            .load::<EntityObservation>(&mut conn)
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let results = {
+            // Fetch potential candidates (fetch more than needed to account for filtering)
+            let candidates = entity_observations::table
+                .filter(entity_observations::user_id.eq(user_id))
+                .filter(entity_observations::chronicle_id.eq(chronicle_id))
+                .filter(entity_observations::entity_name_hash.eq(&entity_name_hash))
+                .order(entity_observations::created_at.desc())
+                .limit(20) // Fetch more to allow for filtering
+                .load::<EntityObservation>(&mut conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            let mut valid_results = Vec::new();
+            for obs in candidates {
+                if let Some(variant_id) = obs.message_variant_id.clone() {
+                    let is_active = message_variants::table
+                        .inner_join(chat_messages::table)
+                        .filter(message_variants::id.eq(variant_id))
+                        .filter(
+                            message_variants::variant_index
+                                .eq(chat_messages::current_variant_index),
+                        )
+                        .select(message_variants::id)
+                        .first::<crate::db::DbId>(&mut conn)
+                        .optional()
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                        .is_some();
+
+                    if is_active {
+                        valid_results.push(obs);
+                    }
+                } else {
+                    valid_results.push(obs);
+                }
+
+                if valid_results.len() >= 5 {
+                    break;
+                }
+            }
+            valid_results
+        };
 
         Ok(results)
     }
@@ -367,9 +450,18 @@ impl RecallPipeline {
         let result = conn
             .interact(move |conn| {
                 cognitive_facts::table
+                    .left_join(message_variants::table)
+                    .left_join(
+                        chat_messages::table
+                            .on(message_variants::parent_message_id.eq(chat_messages::id)),
+                    )
                     .filter(cognitive_facts::user_id.eq(user_id))
                     .filter(cognitive_facts::chronicle_id.eq(chronicle_id))
                     .filter(cognitive_facts::id.eq(fact_id))
+                    .filter(cognitive_facts::message_variant_id.is_null().or(
+                        message_variants::variant_index.eq(chat_messages::current_variant_index),
+                    ))
+                    .select(CognitiveFact::as_select())
                     .first::<CognitiveFact>(conn)
                     .optional()
             })
@@ -378,13 +470,42 @@ impl RecallPipeline {
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         #[cfg(feature = "sqlite-backend")]
-        let result = cognitive_facts::table
-            .filter(cognitive_facts::user_id.eq(user_id))
-            .filter(cognitive_facts::chronicle_id.eq(chronicle_id))
-            .filter(cognitive_facts::id.eq(fact_id))
-            .first::<CognitiveFact>(&mut conn)
-            .optional()
-            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+        let result = {
+            let fact_opt = cognitive_facts::table
+                .filter(cognitive_facts::user_id.eq(user_id))
+                .filter(cognitive_facts::chronicle_id.eq(chronicle_id))
+                .filter(cognitive_facts::id.eq(fact_id))
+                .first::<CognitiveFact>(&mut conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            if let Some(fact) = fact_opt {
+                if let Some(variant_id) = fact.message_variant_id.clone() {
+                    let is_active = message_variants::table
+                        .inner_join(chat_messages::table)
+                        .filter(message_variants::id.eq(variant_id))
+                        .filter(
+                            message_variants::variant_index
+                                .eq(chat_messages::current_variant_index),
+                        )
+                        .select(message_variants::id)
+                        .first::<crate::db::DbId>(&mut conn)
+                        .optional()
+                        .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?
+                        .is_some();
+
+                    if is_active {
+                        Some(fact)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(fact)
+                }
+            } else {
+                None
+            }
+        };
 
         Ok(result)
     }
