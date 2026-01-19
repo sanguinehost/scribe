@@ -515,7 +515,6 @@
 						{character}
 						_user={user}
 						{substituteTemplateVariables}
-						{userPersonaName}
 					/>
 				{:else}
 					{@const currentIndex = message.current_variant_index ?? 0}

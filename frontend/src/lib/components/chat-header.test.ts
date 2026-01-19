@@ -84,12 +84,12 @@ describe('ChatHeader.svelte', () => {
 	const mockChat: ScribeChatSession | undefined = undefined;
 
 	it('renders ModelSelector when not readonly', () => {
-		render(ChatHeader, { props: { user: undefined, chat: mockChat, readonly: false } });
+		render(ChatHeader, { props: { chat: mockChat, readonly: false } });
 		expect(ModelSelector).toHaveBeenCalledTimes(1);
 	});
 
 	it('does not render ModelSelector when readonly', () => {
-		render(ChatHeader, { props: { user: undefined, chat: mockChat, readonly: true } });
+		render(ChatHeader, { props: { chat: mockChat, readonly: true } });
 		expect(ModelSelector).not.toHaveBeenCalled();
 	});
 });

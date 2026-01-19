@@ -2202,7 +2202,7 @@
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
-	<ChatHeader {user} {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
+	<ChatHeader {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}

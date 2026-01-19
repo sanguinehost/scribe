@@ -93,17 +93,6 @@
 	}
 
 	// Helper to manage array fields (tags, hazards)
-	function addTag() {
-		if (!editLocation.tags) editLocation.tags = [];
-		editLocation.tags.push('New Tag');
-	}
-
-	function removeTag(index: number) {
-		if (editLocation.tags) {
-			editLocation.tags = editLocation.tags.filter((_, i) => i !== index);
-		}
-	}
-
 	function addHazard() {
 		if (!editEnv.hazards) editEnv.hazards = [];
 		editEnv.hazards.push('New Hazard');
@@ -292,7 +281,7 @@
 							</Button>
 						</div>
 						<div class="mt-1 space-y-1">
-							{#each editEnv.hazards || [] as hazard, i}
+							{#each editEnv.hazards || [] as _hazard, i}
 								<div class="flex gap-1">
 									<Input bind:value={editEnv.hazards![i]} class="h-6 text-xs" />
 									<Button

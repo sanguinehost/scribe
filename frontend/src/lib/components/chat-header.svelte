@@ -8,7 +8,6 @@
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
-	import type { User } from '$lib/types'; // Updated import path
 	import type { ScribeChatSession } from '$lib/types'; // Use Scribe type
 	import CreditBalance from '$lib/components/credits/CreditBalance.svelte';
 	import PurchaseCreditsDialog from '$lib/components/credits/PurchaseCreditsDialog.svelte';
@@ -16,13 +15,11 @@
 	import { Button } from '$lib/components/ui/button';
 
 	let {
-		user,
 		chat,
 		readonly,
 		onOpenExtractDialog,
 		onToggleGameMasterPanel
 	}: {
-		user: User | undefined;
 		chat: ScribeChatSession | undefined; // Use Scribe type
 		readonly: boolean;
 		onOpenExtractDialog?: () => void;

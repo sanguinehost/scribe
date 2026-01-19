@@ -236,7 +236,7 @@
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- Chat Header -->
-	<ChatHeader {user} {chat} {readonly} />
+	<ChatHeader {chat} {readonly} />
 
 	<!-- Messages Container -->
 	<div class="flex-1 overflow-y-auto px-4 py-4">

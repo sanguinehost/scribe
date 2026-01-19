@@ -5,7 +5,8 @@ import type {
 	ScribeCharacter,
 	Message,
 	ScribeChatSession,
-	ScribeChatMessage
+	ScribeChatMessage,
+	UpdateChatSessionSettingsRequest
 } from '$lib/types';
 import type { StreamingMessage } from '$lib/services/StreamingService.svelte';
 import { desktopStreamingService } from '$lib/services/DesktopStreamingService.svelte';
@@ -354,7 +355,7 @@ export class ChatController {
 					// Otherwise the user is stuck at the top with no way to trigger a load.
 					if (this.hasMoreMessages) {
 						console.log(
-							`🔄 [loadMoreMessages] Automatically fetching next batch (retry ${retryCount + 1})...`
+							`🔄[loadMoreMessages] Automatically fetching next batch(retry ${retryCount + 1})...`
 						);
 						// Release the lock briefly to allow the recursive call to proceed
 						this.isLoadingMore = false;
@@ -367,7 +368,7 @@ export class ChatController {
 					return;
 				}
 
-				console.log(`✅ [loadMoreMessages] Prepending ${uniqueNewMessages.length} unique messages`);
+				console.log(`✅[loadMoreMessages] Prepending ${uniqueNewMessages.length} unique messages`);
 
 				// 5. UI State Preservation (Scroll)
 				const messagesContainer =
@@ -435,12 +436,12 @@ export class ChatController {
 		// Prevent re-initialization if we're already on this chat
 		if (this.lastInitializedChatId === this.chat.id) {
 			console.log(
-				`🔄 [initializeChat] Skipping initialization - already initialized for ${this.chat.id}`
+				`🔄[initializeChat] Skipping initialization - already initialized for ${this.chat.id}`
 			);
 			return;
 		}
 
-		console.log(`🚀 [initializeChat] Initializing chat ${this.chat.id}`);
+		console.log(`🚀[initializeChat] Initializing chat ${this.chat.id} `);
 		this.lastInitializedChatId = this.chat.id;
 
 		// CRITICAL: Always clear messages first to prevent stale state from previous chats
@@ -489,11 +490,11 @@ export class ChatController {
 				// CRITICAL: Initialize game state from the last message that has it
 				// This ensures the UI shows the correct state when loading a chat
 				console.log(
-					`🎮 [initializeChat] Checking ${streamingMessages.length} messages for game_state`
+					`🎮[initializeChat] Checking ${streamingMessages.length} messages for game_state`
 				);
 				streamingMessages.forEach((m, i) => {
 					console.log(
-						`🎮 [initializeChat] Message ${i}: id=${m.id?.slice(-8)}, sender=${m.sender}, has_game_state=${!!m.game_state}`
+						`🎮[initializeChat] Message ${i}: id = ${m.id?.slice(-8)}, sender = ${m.sender}, has_game_state = ${!!m.game_state} `
 					);
 				});
 
@@ -501,11 +502,11 @@ export class ChatController {
 
 				if (lastMessageWithState?.game_state) {
 					console.log(
-						`🎮 [initializeChat] Restoring game state from message ${lastMessageWithState.id}`
+						`🎮[initializeChat] Restoring game state from message ${lastMessageWithState.id} `
 					);
 					this.activeStreamingService.latestGameState = lastMessageWithState.game_state;
 				} else {
-					console.log(`🎮 [initializeChat] No messages have game_state - state will be empty`);
+					console.log(`🎮[initializeChat] No messages have game_state - state will be empty`);
 				}
 			}
 		}
@@ -624,7 +625,7 @@ export class ChatController {
 		try {
 			const result = await _apiClient.updateChatSessionSettings(this.chat.id, {
 				game_master_mode_enabled: true
-			} as any);
+			} as UpdateChatSessionSettingsRequest);
 			if (result.isOk()) {
 				this.chat.game_master_mode_enabled = true;
 				toast.success('Game Master Mode enabled');
@@ -1246,7 +1247,7 @@ export class ChatController {
 		const { content, index, messageId } = detail;
 
 		if (typeof window !== 'undefined' && this.chat?.id) {
-			localStorage.setItem(`greeting-variant-${this.chat.id}`, index.toString());
+			localStorage.setItem(`greeting - variant - ${this.chat.id} `, index.toString());
 		}
 
 		// Find the message to update
@@ -1336,7 +1337,7 @@ export class ChatController {
 						: mode === 'pre_processing'
 							? 'Pre-processing'
 							: 'Post-processing';
-				toast.success(`Context enrichment: ${modeLabel}`);
+				toast.success(`Context enrichment: ${modeLabel} `);
 			} else {
 				this.agentMode = previousMode;
 				console.error('Failed to save agent mode:', result.error);
@@ -1352,7 +1353,7 @@ export class ChatController {
 	private dispatchChronicleUpdate() {
 		if (this.chat?.player_chronicle_id && typeof window !== 'undefined') {
 			console.log(
-				`[ChatController] Dispatching chronicle-events-updated for ${this.chat.player_chronicle_id}`
+				`[ChatController] Dispatching chronicle - events - updated for ${this.chat.player_chronicle_id}`
 			);
 			window.dispatchEvent(
 				new CustomEvent('chronicle-events-updated', {

@@ -375,7 +375,6 @@
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<ChatHeader
-		{user}
 		{chat}
 		{readonly}
 		onOpenExtractDialog={handleOpenExtractDialog}
@@ -680,6 +679,11 @@
 		onStateUpdate={(newState) => {
 			if (controller.chat) {
 				controller.chat = { ...controller.chat, game_state: newState };
+				// Sync the streaming service's latest state to prevent the sync effect from reverting this change
+				controller.activeStreamingService.latestGameState = newState as unknown as Record<
+					string,
+					unknown
+				>;
 			}
 		}}
 	/>
@@ -716,7 +720,7 @@
 	<LorebookExtractionDialog
 		bind:open={showExtractDialog}
 		chatSessionId={chat.id}
-		messages={controller.messages.map((msg, index) => ({
+		messages={controller.messages.map((msg: ScribeChatMessage, index: number) => ({
 			role: msg.message_type.toLowerCase(),
 			content: msg.content,
 			index

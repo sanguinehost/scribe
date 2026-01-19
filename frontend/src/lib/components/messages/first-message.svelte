@@ -6,7 +6,6 @@
 	import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 	import { Markdown } from '../markdown';
 	import { fly } from 'svelte/transition';
-	import { untrack } from 'svelte';
 	import type { ScribeChatMessage } from '$lib/types';
 	import { createEventDispatcher } from 'svelte';
 	import type { CharacterDataForClient, User } from '$lib/types'; // Import CharacterDataForClient and User
@@ -17,8 +16,7 @@
 		loading,
 		character = null,
 		_user = undefined,
-		substituteTemplateVariables = undefined,
-		userPersonaName = 'User'
+		substituteTemplateVariables = undefined
 	}: {
 		message: ScribeChatMessage;
 		_readonly: boolean;
@@ -26,7 +24,6 @@
 		character?: CharacterDataForClient | null; // Use CharacterDataForClient
 		_user?: User | undefined; // Use User type
 		substituteTemplateVariables?: (text: string, characterName: string) => string;
-		userPersonaName?: string;
 	} = $props();
 
 	const dispatch = createEventDispatcher();

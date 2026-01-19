@@ -8,7 +8,7 @@
 	// Group 4: Closing quote
 	// Followed by: End of string or non-alphanumeric character
 	// Note: We don't include > in preceder here because we are only looking at text nodes
-	const quoteRegex = /(^|\s|[(\[{])([“"])([^“"]+)([”"])(?=[^a-zA-Z0-9]|$)/g;
+	const quoteRegex = /(^|\s|[([{])([“"])([^“"]+)([”"])(?=[^a-zA-Z0-9]|$)/g;
 
 	function processText(val: string) {
 		if (!val) return [{ text: '', isQuote: false }];

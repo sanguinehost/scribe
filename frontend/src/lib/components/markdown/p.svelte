@@ -9,8 +9,6 @@
 	let { children, ...props }: { children?: Snippet; [key: string]: unknown } = $props();
 	let element = $state<HTMLElement | null>(null);
 
-	let hasProcessed = $state(false);
-
 	const activeStreamingService = $derived(
 		isInDesktopMode() ? desktopStreamingService : streamingService
 	);
@@ -40,7 +38,7 @@
 				// Check preceder in the original string
 				const charBefore = offset > 0 ? fullString[offset - 1] : '';
 				// Valid preceders: start of string, whitespace, opening brackets, or end of a tag (like Svelte comments)
-				const isValidPreceder = !charBefore || /\s|[(\[{]|>/.test(charBefore);
+				const isValidPreceder = !charBefore || /\s|[([{]|>/.test(charBefore);
 
 				if (!isValidPreceder) return match;
 
@@ -51,7 +49,6 @@
 
 		if (newHtml !== currentHtml) {
 			el.innerHTML = newHtml;
-			hasProcessed = true;
 		}
 	}
 

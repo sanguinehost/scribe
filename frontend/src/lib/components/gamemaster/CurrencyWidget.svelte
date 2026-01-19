@@ -97,7 +97,7 @@
 	{#if isEditing}
 		<!-- EDIT MODE -->
 		<div class="space-y-2">
-			{#each Object.entries(editCurrencies) as [name, amount]}
+			{#each Object.entries(editCurrencies) as [name, _amount]}
 				<div class="flex items-center gap-2 rounded-lg bg-muted/30 p-2">
 					<div class="flex-1">
 						<Input

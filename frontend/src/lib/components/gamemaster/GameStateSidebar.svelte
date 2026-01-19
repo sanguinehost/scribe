@@ -8,16 +8,12 @@
 	let {
 		isOpen = $bindable(false),
 		gameState = null,
-		gameTime = null,
-		location = null,
 		isLoading = false,
 		sessionId = null,
 		onStateUpdate
 	}: {
 		isOpen?: boolean;
 		gameState: GameState | null;
-		gameTime?: any;
-		location?: any;
 		isLoading?: boolean;
 		sessionId: string | null;
 		onStateUpdate?: (newState: GameState) => void;
