@@ -136,6 +136,7 @@ exclude: |
     frontend/build/.*|
     frontend/node_modules/.*|
     backend/target/.*|
+    desktop/gen/.*|
     \.git/.*|
     \.vercel/.*|
     .*\.lock$
