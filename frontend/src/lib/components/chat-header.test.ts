@@ -81,7 +81,16 @@ describe('ChatHeader.svelte', () => {
 		vi.clearAllMocks();
 	});
 
-	const mockChat: ScribeChatSession | undefined = undefined;
+	const mockChat: ScribeChatSession = {
+		id: 'chat-123',
+		title: 'Test Chat',
+		character_id: 'char-456',
+		user_id: 'user-789',
+		created_at: '2023-01-01T00:00:00Z',
+		updated_at: '2023-01-01T00:00:00Z',
+		model_name: 'gemini-1.5-pro',
+		chat_mode: 'Character'
+	};
 
 	it('renders ModelSelector when not readonly', () => {
 		render(ChatHeader, { props: { chat: mockChat, readonly: false } });

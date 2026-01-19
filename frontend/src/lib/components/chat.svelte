@@ -66,25 +66,11 @@
 	// Track first message variant selection for improved caching
 	let firstMessageVariantIndex = $state<number>(0);
 
-	// Initialize variant index immediately if chat ID is available
-	if (typeof window !== 'undefined' && chat?.id) {
-		const saved = localStorage.getItem(`greeting-variant-${chat.id}`);
-		if (saved) {
-			const variantIndex = parseInt(saved, 10);
-			if (!isNaN(variantIndex)) {
-				console.log(
-					`🎭 Immediately loading saved greeting variant ${variantIndex} for chat ${chat.id}`
-				);
-				firstMessageVariantIndex = variantIndex;
-			}
-		}
-	}
-
 	// Pagination state
-	let nextCursor = $state<string | null>(initialCursor || null);
+	let nextCursor = $state<string | null>(untrack(() => initialCursor) || null);
 	let isLoadingMore = $state(false);
-	let hasMoreMessages = $state(initialCursor !== null);
-	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([initialMessages]);
+	let hasMoreMessages = $state(untrack(() => initialCursor) !== null);
+	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([untrack(() => initialMessages)]);
 	let suppressAutoScroll = $state(false);
 
 	// Chronicle opt-in state

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import NarrativeStyleConfigurator from '../NarrativeStyleConfigurator.svelte';
 import { apiClient } from '$lib/api';
 import { toast } from 'svelte-sonner';
@@ -44,15 +44,14 @@ describe('NarrativeStyleConfigurator', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.useFakeTimers();
+		vi.useRealTimers();
 		vi.mocked(apiClient.getTemplatePreferences).mockResolvedValue(ok(mockPreferences));
 		vi.mocked(apiClient.updateTemplatePreferences).mockResolvedValue(ok(mockPreferences));
 		vi.mocked(apiClient.deleteTemplatePreferences).mockResolvedValue(ok(undefined));
 	});
 
 	afterEach(() => {
-		vi.runOnlyPendingTimers();
-		vi.useRealTimers();
+		cleanup();
 	});
 
 	it('shows loading state initially', () => {
@@ -65,12 +64,12 @@ describe('NarrativeStyleConfigurator', () => {
 		const { getByText } = render(NarrativeStyleConfigurator);
 
 		await waitFor(() => {
-			expect(getByText('Writing Style Preferences')).toBeInTheDocument();
+			expect(getByText('Global Writing Style')).toBeInTheDocument();
 		});
 
 		// Verify API was called
 		expect(apiClient.getTemplatePreferences).toHaveBeenCalledTimes(1);
-		expect(apiClient.getTemplatePreferences).toHaveBeenCalledWith();
+		expect(apiClient.getTemplatePreferences).toHaveBeenCalledWith(undefined);
 	});
 
 	it('displays all three expandable sections', async () => {
@@ -89,7 +88,7 @@ describe('NarrativeStyleConfigurator', () => {
 
 		// Wait for component to load preferences
 		await waitFor(() => {
-			expect(getByText('Writing Style Preferences')).toBeInTheDocument();
+			expect(getByText('Global Writing Style')).toBeInTheDocument();
 		});
 
 		// Verify sections are displayed with default preferences
@@ -113,7 +112,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(presentTenseRadio);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -136,7 +135,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(firstPersonRadio);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -159,7 +158,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(characterPovRadio);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -182,7 +181,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(conciseRadio);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -233,7 +232,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(infoBoxCheckbox);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -264,7 +263,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(statsTrackerCheckbox);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -295,7 +294,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(thinkingModeCheckbox);
 
 		// Wait for debounce (500ms)
-		vi.advanceTimersByTime(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(apiClient.updateTemplatePreferences).toHaveBeenCalledWith(undefined, {
@@ -310,6 +309,9 @@ describe('NarrativeStyleConfigurator', () => {
 		await waitFor(() => {
 			expect(getByLabelText('Present Tense')).toBeInTheDocument();
 		});
+
+		// Use fake timers for this test to verify debouncing
+		vi.useFakeTimers();
 
 		// Make multiple rapid changes
 		const presentTenseRadio = getByLabelText('Present Tense');
@@ -329,20 +331,22 @@ describe('NarrativeStyleConfigurator', () => {
 				tense: 'future-tense'
 			});
 		});
+
+		vi.useRealTimers();
 	});
 
 	it('calls reset API when Reset to Defaults button is clicked', async () => {
 		const { getByText } = render(NarrativeStyleConfigurator);
 
 		await waitFor(() => {
-			expect(getByText('Reset to Defaults')).toBeInTheDocument();
+			expect(getByText('Reset to System Defaults')).toBeInTheDocument();
 		});
 
-		const resetButton = getByText('Reset to Defaults');
+		const resetButton = getByText('Reset to System Defaults');
 		await fireEvent.click(resetButton);
 
 		await waitFor(() => {
-			expect(apiClient.deleteTemplatePreferences).toHaveBeenCalledWith();
+			expect(apiClient.deleteTemplatePreferences).toHaveBeenCalledWith(undefined);
 			// Should reload preferences after reset
 			expect(apiClient.getTemplatePreferences).toHaveBeenCalledTimes(2);
 		});
@@ -377,7 +381,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(presentTenseRadio);
 
 		// Wait for debounce and flush promises
-		await vi.advanceTimersByTimeAsync(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(toast.error).toHaveBeenCalledWith('Failed to update: Update failed');
@@ -392,10 +396,10 @@ describe('NarrativeStyleConfigurator', () => {
 		const { getByText } = render(NarrativeStyleConfigurator);
 
 		await waitFor(() => {
-			expect(getByText('Reset to Defaults')).toBeInTheDocument();
+			expect(getByText('Reset to System Defaults')).toBeInTheDocument();
 		});
 
-		const resetButton = getByText('Reset to Defaults');
+		const resetButton = getByText('Reset to System Defaults');
 		await fireEvent.click(resetButton);
 
 		await waitFor(() => {
@@ -435,8 +439,9 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(retryButton);
 
 		await waitFor(() => {
-			expect(getByText('Writing Style Preferences')).toBeInTheDocument();
+			expect(getByText('Global Writing Style')).toBeInTheDocument();
 			expect(apiClient.getTemplatePreferences).toHaveBeenCalledTimes(2);
+			expect(apiClient.getTemplatePreferences).toHaveBeenCalledWith(undefined);
 		});
 	});
 
@@ -454,7 +459,7 @@ describe('NarrativeStyleConfigurator', () => {
 		await fireEvent.click(presentTenseRadio);
 
 		// Wait for debounce and flush promises
-		await vi.advanceTimersByTimeAsync(500);
+		await new Promise((resolve) => setTimeout(resolve, 600));
 
 		await waitFor(() => {
 			expect(toast.success).toHaveBeenCalledWith('Preferences updated');
@@ -468,10 +473,10 @@ describe('NarrativeStyleConfigurator', () => {
 		const { getByText } = render(NarrativeStyleConfigurator);
 
 		await waitFor(() => {
-			expect(getByText('Reset to Defaults')).toBeInTheDocument();
+			expect(getByText('Reset to System Defaults')).toBeInTheDocument();
 		});
 
-		const resetButton = getByText('Reset to Defaults');
+		const resetButton = getByText('Reset to System Defaults');
 		await fireEvent.click(resetButton);
 
 		// Wait for the async operation to complete (no debounce, but async API calls)

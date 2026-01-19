@@ -197,7 +197,20 @@
 								: ''}"
 							onclick={() => handleTemplateSelect(template)}
 						>
-							<span class="w-full truncate text-left font-medium">{template.name}</span>
+							<div class="flex w-full items-center justify-between gap-2">
+								<span class="truncate font-medium">{template.name}</span>
+								{#if _getCompatibilityBadge(template)}
+									<span
+										class="rounded-full px-2 py-0.5 text-[10px] font-semibold {isCompatible(
+											template
+										)
+											? 'bg-primary/10 text-primary'
+											: 'bg-muted text-muted-foreground'}"
+									>
+										{_getCompatibilityBadge(template)}
+									</span>
+								{/if}
+							</div>
 							<span class="w-full truncate text-left text-xs text-muted-foreground">
 								{template.description}
 							</span>

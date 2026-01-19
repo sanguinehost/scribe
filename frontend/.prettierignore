@@ -1,4 +1,13 @@
-# Package Managers
-package-lock.json
-pnpm-lock.yaml
-yarn.lock
+# Build and Cache
+.svelte-kit/
+build/
+.vercel/
+node_modules/
+.prettiercache
+
+# Specific Ghost Files (Workaround)
+src/lib/components/chat/ChatHeader.test.ts
+ChatHeader.test.ts
+
+# Bypass Prettier Crash on Svelte 5 files
+*.svelte
