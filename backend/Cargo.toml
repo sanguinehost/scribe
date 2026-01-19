@@ -80,7 +80,7 @@ libc = "0.2.168"  # For system calls like statvfs
 
 genai = { git = "https://github.com/sanguinehost/rust-genai" }
 
-reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
+reqwest = { version = "0.13.1", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
 reqwest-retry = { version = "0.8.0"}
 
@@ -175,7 +175,7 @@ cocoa = "0.26"
 axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests
 axum-server = { version = "0.8.0", features = ["tls-rustls"] } # Mirror main deps features
 hyper-util = { version = "0.1.11", features = ["full"] }
-reqwest = { version = "0.12.15", features = ["json", "cookies"] }
+reqwest = { version = "0.13.1", features = ["json", "cookies"] }
 serde_json = "1.0.140"
 crc32fast = "1.4.2"
 mime = "0.3.17"
