@@ -161,7 +161,7 @@ lazy_static = "1.4"  # For global metrics registry
 
 # Vector database (optional - only with embedded-vector feature)
 lancedb = { version = "0.22.2", optional = true }
-arrow = { version = "56.0", optional = true }  # Pinned: lancedb 0.22.2 incompatible with arrow 57.x
+arrow = { version = "57.2", optional = true }  # Pinned: lancedb 0.22.2 incompatible with arrow 57.x
 jsonwebtoken = { version = "10.2.0", features = ["rust_crypto"] }
 
 # Platform-specific dependencies
