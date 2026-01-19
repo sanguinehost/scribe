@@ -34,7 +34,7 @@ base64 = "0.22.1"
 thiserror = "2.0.12"
 diesel = { version = "2.3", default-features = false, features = ["chrono", "uuid", "serde_json", "numeric", "64-column-tables", "128-column-tables"] }
 diesel_migrations = { version = "2.3", default-features = false }
-dirs = "5.0"  # Platform-specific directories for desktop config
+dirs = "6.0"  # Platform-specific directories for desktop config
 dotenvy = "0.15.7"
 chrono = { version = "0.4.40", features = ["serde"] }
 diesel-derive-enum = { version = "2.1.0", default-features = false }
@@ -44,7 +44,7 @@ tower-http = { version = "0.6.2", features = ["trace", "cors"] }
 tower-sessions = { version = "0.14.0", features = ["signed"] }
 tower-sessions-memory-store = "0.14.0"
 axum-login = "0.18.0" # Compatible with axum 0.7.x
-bcrypt = "0.17.0"
+bcrypt = "0.18.0"
 argon2 = { version = "0.5.3", features = ["std"] } # Ensure std feature for hash_raw if available, or check API
 secrecy = { version = "0.10.3", features = ["serde"] } # alloc feature removed as it's not standard
 aes-gcm = "0.10.3" # For AES-GCM encryption
@@ -80,9 +80,9 @@ libc = "0.2.168"  # For system calls like statvfs
 
 genai = { git = "https://github.com/sanguinehost/rust-genai" }
 
-reqwest = { version = "0.12.15", features = ["json", "cookies", "rustls-tls", "multipart"], default-features = false }
+reqwest = { version = "0.13.1", features = ["json", "cookies", "rustls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
-reqwest-retry = { version = "0.8.0"}
+reqwest-retry = { version = "0.9.0"}
 
 qdrant-client = { version = "1.14.0", features = ["serde"] }
 
@@ -114,7 +114,7 @@ blake3 = "1.5.1"
 nanoid = "0.4.0"
 # Add missing dependencies needed by test_helpers
 tonic = "0.12.3"
-testcontainers = "0.23.3"
+testcontainers = "0.26.3"
 http-body-util = { version = "0.1.3", features = ["full"] }
 
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
@@ -137,7 +137,7 @@ clap = { version = "4.5.26", features = ["derive"] }
 tokio-stream = { version = "0.1", optional = true }
 
 # Tokenization
-sentencepiece = "0.12.0"
+sentencepiece = "0.13.1"
 strsim = "0.11.1"
 
 # Template engine for prompt templates
@@ -161,8 +161,8 @@ lazy_static = "1.4"  # For global metrics registry
 
 # Vector database (optional - only with embedded-vector feature)
 lancedb = { version = "0.22.2", optional = true }
-arrow = { version = "56.0", optional = true }
-jsonwebtoken = "9.3.1"
+arrow = { version = "56.0", optional = true }  # Pinned: lancedb 0.22.2 incompatible with arrow 57.x
+jsonwebtoken = { version = "10.2.0", features = ["rust_crypto"] }
 
 # Platform-specific dependencies
 [target.'cfg(windows)'.dependencies]
@@ -175,7 +175,7 @@ cocoa = "0.26"
 axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] } # Mirror main deps features for tests
 axum-server = { version = "0.8.0", features = ["tls-rustls"] } # Mirror main deps features
 hyper-util = { version = "0.1.11", features = ["full"] }
-reqwest = { version = "0.12.15", features = ["json", "cookies"] }
+reqwest = { version = "0.13.1", features = ["json", "cookies"] }
 serde_json = "1.0.140"
 crc32fast = "1.4.2"
 mime = "0.3.17"
@@ -183,12 +183,12 @@ mime = "0.3.17"
 anyhow = "1.0.98"
 once_cell = "1.21.3"
 bytes = "1.10.1"
-jsonwebtoken = "9.3.1"
+jsonwebtoken = { version = "10.2.0", features = ["rust_crypto"] }
 tempfile = "3.19.1"
-bcrypt = "0.17.0"
+bcrypt = "0.18.0"
 tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
 http = "1.3.1"
-test-context = "0.4.1"
+test-context = "0.5.4"
 lazy_static = "1.5.0"
 async-trait = "0.1.88"
 rstest = "0.25.0"
@@ -201,7 +201,7 @@ dotenvy = "0.15"
 httpc-test = "0.1.10" # For testing axum handlers
 mockito = "1.7.0"
 httpmock = "0.8.1" # For mocking HTTP requests
-mockall = "0.13.0" # Add mockall
+mockall = "0.14.0" # Add mockall
 secrecy = { version = "0.10.3", features = ["serde"] } # Fix E0432: Add secrecy to dev-deps for tests
 
 # Specify the library target explicitly
