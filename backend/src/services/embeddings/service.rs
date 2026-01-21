@@ -1293,8 +1293,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             "\n[WHEN] {}",
             event
                 .timestamp_iso8601
-                .map(|ts| ts.format("%B %d, %Y at %H:%M").to_string())
-                .unwrap_or_else(|| "Unknown Time".to_string())
+                .format("%B %d, %Y at %H:%M")
+                .to_string()
         ));
 
         // Add the main summary content
@@ -1330,7 +1330,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let mut event_json = serde_json::json!({
             "event_type": event.event_type,
             "summary": decrypted_summary,
-            "timestamp_iso8601": event.timestamp_iso8601.map(|ts| ts.to_rfc3339()).unwrap_or_default(),
+            "timestamp_iso8601": event.timestamp_iso8601.to_rfc3339(),
             "source": event.source,
             "event_id": event.id.to_string(),
         });

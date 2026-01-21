@@ -23,7 +23,7 @@ use bigdecimal::BigDecimal;
 #[cfg(feature = "postgres-backend")]
 type DecimalType = BigDecimal;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 type DecimalType = f64;
 
 use super::message_handling::{save_message, SaveMessageParams};
@@ -506,14 +506,32 @@ fn insert_chat_session(
                 chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
                 chat_sessions::prompt_template_id.eq(params.prompt_template_id),
                 // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
+                #[cfg(feature = "postgres-backend")]
+                chat_sessions::total_prompt_tokens.eq(0i32),
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 chat_sessions::total_prompt_tokens.eq(0i64),
+                #[cfg(feature = "postgres-backend")]
+                chat_sessions::total_completion_tokens.eq(0i32),
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 chat_sessions::total_completion_tokens.eq(0i64),
                 chat_sessions::estimated_cost_cents.eq(0),
                 chat_sessions::tokens_counted_at.eq(chrono::Utc::now().naive_utc()),
+                #[cfg(feature = "postgres-backend")]
+                chat_sessions::total_credits_used.eq(crate::db::DbDecimal::from_i64(0)),
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 chat_sessions::total_credits_used.eq(0.0),
+                #[cfg(feature = "postgres-backend")]
+                chat_sessions::total_actual_cost.eq(crate::db::DbDecimal::from_i64(0)),
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 chat_sessions::total_actual_cost.eq(0.0),
+                #[cfg(feature = "postgres-backend")]
+                chat_sessions::total_modified_cost.eq(crate::db::DbDecimal::from_i64(0)),
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 chat_sessions::total_modified_cost.eq(0.0),
                 chat_sessions::total_credit_cost.eq(0),
+                #[cfg(feature = "postgres-backend")]
+                chat_sessions::total_actual_charge.eq(crate::db::DbDecimal::from_i64(0)),
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 chat_sessions::total_actual_charge.eq(0.0),
                 chat_sessions::created_at.eq(chrono::Utc::now().naive_utc()),
                 chat_sessions::updated_at.eq(chrono::Utc::now().naive_utc()),
@@ -676,6 +694,18 @@ fn fetch_created_session(
     }
 
     // Check token/cost tracking fields
+    #[cfg(feature = "postgres-backend")]
+    let token_check: Result<(i32, i32, i32, crate::db::DbDecimal), _> = chat_sessions::table
+        .filter(chat_sessions::id.eq(&new_session_id))
+        .select((
+            chat_sessions::total_prompt_tokens,
+            chat_sessions::total_completion_tokens,
+            chat_sessions::estimated_cost_cents,
+            chat_sessions::total_credits_used,
+        ))
+        .first::<(i32, i32, i32, crate::db::DbDecimal)>(transaction_conn);
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let token_check: Result<(i64, i64, i32, crate::db::DbDecimal), _> = chat_sessions::table
         .filter(chat_sessions::id.eq(&new_session_id))
         .select((
@@ -950,33 +980,34 @@ async fn process_first_message(
                         ) {
                             Ok(decrypted_first_mes_str) => {
                                 if !decrypted_first_mes_str.trim().is_empty() {
-                                    let first_message = save_message(SaveMessageParams {
-                                        state: state.clone(),
-                                        session_id: created_session.id,
-                                        user_id: created_session.user_id,
-                                        message_type_enum: MessageRole::Assistant,
-                                        content: &decrypted_first_mes_str,
-                                        role_str: Some("assistant".to_string()),
-                                        parts: None,
-                                        attachments: None,
-                                        user_dek_secret_box: user_dek_secret_box.clone(),
-                                        model_name: created_session.model_name.clone(),
-                                        raw_prompt_debug: None, // First message doesn't need raw prompt debug
-                                        status: crate::models::chats::MessageStatus::Completed,
-                                        error_message: None,
-                                        variant_of: None, // First message doesn't create variants
-                                        charge_credits: false, // Character's first message is not charged
-                                        credits_cost_override: None, // Let save_message calculate from tokens
-                                        game_time: None,
-                                    })
-                                    .await?;
+                                    let (first_message, _variant_id) =
+                                        save_message(SaveMessageParams {
+                                            state: state.clone(),
+                                            session_id: created_session.id,
+                                            user_id: created_session.user_id,
+                                            message_type_enum: MessageRole::Assistant,
+                                            content: &decrypted_first_mes_str,
+                                            role_str: Some("assistant".to_string()),
+                                            parts: None,
+                                            attachments: None,
+                                            user_dek_secret_box: user_dek_secret_box.clone(),
+                                            model_name: created_session.model_name.clone(),
+                                            raw_prompt_debug: None, // First message doesn't need raw prompt debug
+                                            status: crate::models::chats::MessageStatus::Completed,
+                                            error_message: None,
+                                            variant_of: None, // First message doesn't create variants
+                                            charge_credits: false, // Character's first message is not charged
+                                            credits_cost_override: None, // Let save_message calculate from tokens
+                                            game_time: None,
+                                        })
+                                        .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
 
                                     // Save alternate greetings as variants of the first message
                                     if let Some(alts) = alternate_greetings {
                                         for alt in alts {
                                             if !alt.trim().is_empty() {
-                                                save_message(SaveMessageParams {
+                                                let _ = save_message(SaveMessageParams {
                                                     state: state.clone(),
                                                     session_id: created_session.id,
                                                     user_id: created_session.user_id,

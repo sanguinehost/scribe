@@ -37,7 +37,7 @@ use crate::services::encryption_service::EncryptionService; // Added
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct Character {
@@ -87,7 +87,7 @@ pub struct Character {
     pub model_prompt: Option<Vec<u8>>,
     pub model_prompt_visibility: Option<String>,
     pub model_temperature: Option<crate::db::DbDecimal>,
-    pub num_interactions: Option<crate::db::DbInt>,
+    pub num_interactions: Option<crate::db::DbBigInt>,
     pub permanence: Option<crate::db::DbDecimal>,
     pub persona_visibility: Option<String>,
     pub revision: Option<crate::db::DbInt>,
@@ -905,7 +905,7 @@ pub struct CharacterDataForClient {
     pub model_prompt: Option<String>,
     pub model_prompt_visibility: Option<String>,
     pub model_temperature: Option<crate::db::DbDecimal>,
-    pub num_interactions: Option<crate::db::DbInt>,
+    pub num_interactions: Option<crate::db::DbBigInt>,
     pub permanence: Option<crate::db::DbDecimal>,
     pub persona_visibility: Option<String>,
     pub revision: Option<crate::db::DbInt>,

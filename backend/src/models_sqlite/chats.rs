@@ -652,12 +652,12 @@ pub struct ChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: f64, // FIXED: Schema has Double, not Integer
+    pub credits_cost: crate::db::DbDecimal,
     // New cost tracking fields
-    pub actual_cost: f64,   // FIXED: Schema has Double (REAL), not DbDecimal
-    pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
-    pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
 }
 
@@ -687,12 +687,12 @@ impl Default for ChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0.0, // FIXED: f64, not i32
+            credits_cost: crate::db::DbDecimal::from(0),
             // New cost tracking fields
-            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
-            modified_cost: 0.0, // FIXED: f64, not DbDecimal
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: 0.0, // FIXED: f64, not DbDecimal
+            actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
         }
     }
@@ -1117,13 +1117,49 @@ pub struct Message {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: f64, // FIXED: Schema has Double, not Integer
+    pub credits_cost: crate::db::DbDecimal,
     // Cost tracking fields (same as ChatMessage)
-    pub actual_cost: f64,   // FIXED: Schema has Double (REAL), not DbDecimal
-    pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
-    pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+}
+
+impl From<Message> for ChatMessage {
+    fn from(m: Message) -> Self {
+        Self {
+            id: m.id,
+            session_id: m.session_id,
+            message_type: m.message_type,
+            content: m.content,
+            rag_embedding_id: m.rag_embedding_id,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+            user_id: m.user_id,
+            content_nonce: m.content_nonce,
+            role: m.role,
+            parts: m.parts,
+            attachments: m.attachments,
+            prompt_tokens: m.prompt_tokens,
+            completion_tokens: m.completion_tokens,
+            raw_prompt_ciphertext: m.raw_prompt_ciphertext,
+            raw_prompt_nonce: m.raw_prompt_nonce,
+            model_name: m.model_name,
+            status: m.status,
+            error_message: m.error_message,
+            superseded_at: m.superseded_at,
+            variant_count: m.variant_count,
+            current_variant_index: m.current_variant_index,
+            credits_charged: m.credits_charged,
+            credits_cost: m.credits_cost,
+            actual_cost: m.actual_cost,
+            modified_cost: m.modified_cost,
+            credit_cost: m.credit_cost,
+            actual_charge: m.actual_charge,
+            game_time: m.game_time,
+        }
+    }
 }
 
 impl Default for Message {
@@ -1152,11 +1188,11 @@ impl Default for Message {
             variant_count: 1,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0.0,
-            actual_cost: 0.0,
-            modified_cost: 0.0,
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: 0.0,
+            actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
         }
     }
@@ -1288,17 +1324,17 @@ impl MessageBuilder {
         self
     }
 
-    pub fn credits_cost(mut self, credits_cost: f64) -> Self {
+    pub fn credits_cost(mut self, credits_cost: crate::db::DbDecimal) -> Self {
         self.inner.credits_cost = credits_cost;
         self
     }
 
-    pub fn actual_cost(mut self, actual_cost: f64) -> Self {
+    pub fn actual_cost(mut self, actual_cost: crate::db::DbDecimal) -> Self {
         self.inner.actual_cost = actual_cost;
         self
     }
 
-    pub fn modified_cost(mut self, modified_cost: f64) -> Self {
+    pub fn modified_cost(mut self, modified_cost: crate::db::DbDecimal) -> Self {
         self.inner.modified_cost = modified_cost;
         self
     }
@@ -1308,7 +1344,7 @@ impl MessageBuilder {
         self
     }
 
-    pub fn actual_charge(mut self, actual_charge: f64) -> Self {
+    pub fn actual_charge(mut self, actual_charge: crate::db::DbDecimal) -> Self {
         self.inner.actual_charge = actual_charge;
         self
     }
@@ -1699,11 +1735,11 @@ pub struct NewChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: f64,
-    pub actual_cost: f64,
-    pub modified_cost: f64,
+    pub credits_cost: crate::db::DbDecimal,
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
-    pub actual_charge: f64,
+    pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
 }
 
@@ -1731,11 +1767,11 @@ impl Default for NewChatMessage {
             variant_count: 1,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0.0,
-            actual_cost: 0.0,
-            modified_cost: 0.0,
+            credits_cost: crate::db::DbDecimal::from(0),
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: 0.0,
+            actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
         }
     }
@@ -1857,17 +1893,17 @@ impl NewChatMessageBuilder {
         self
     }
 
-    pub fn credits_cost(mut self, credits_cost: f64) -> Self {
+    pub fn credits_cost(mut self, credits_cost: crate::db::DbDecimal) -> Self {
         self.inner.credits_cost = credits_cost;
         self
     }
 
-    pub fn actual_cost(mut self, actual_cost: f64) -> Self {
+    pub fn actual_cost(mut self, actual_cost: crate::db::DbDecimal) -> Self {
         self.inner.actual_cost = actual_cost;
         self
     }
 
-    pub fn modified_cost(mut self, modified_cost: f64) -> Self {
+    pub fn modified_cost(mut self, modified_cost: crate::db::DbDecimal) -> Self {
         self.inner.modified_cost = modified_cost;
         self
     }
@@ -1877,7 +1913,7 @@ impl NewChatMessageBuilder {
         self
     }
 
-    pub fn actual_charge(mut self, actual_charge: f64) -> Self {
+    pub fn actual_charge(mut self, actual_charge: crate::db::DbDecimal) -> Self {
         self.inner.actual_charge = actual_charge;
         self
     }
@@ -1964,12 +2000,12 @@ pub struct DbInsertableChatMessage {
     pub variant_count: i32,
     pub current_variant_index: i32,
     pub credits_charged: i32,
-    pub credits_cost: f64,
+    pub credits_cost: crate::db::DbDecimal,
     // New cost tracking fields
-    pub actual_cost: f64,   // FIXED: Schema has Double (REAL), not DbDecimal
-    pub modified_cost: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub actual_cost: crate::db::DbDecimal,
+    pub modified_cost: crate::db::DbDecimal,
     pub credit_cost: i32,
-    pub actual_charge: f64, // FIXED: Schema has Double (REAL), not DbDecimal
+    pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
 }
 
@@ -2042,12 +2078,12 @@ impl DbInsertableChatMessage {
             variant_count: 0,
             current_variant_index: 0,
             credits_charged: 0,
-            credits_cost: 0.0, // FIXED: f64, not i32
+            credits_cost: crate::db::DbDecimal::from(0),
             // Initialize new cost tracking fields
-            actual_cost: 0.0,   // FIXED: f64, not DbDecimal
-            modified_cost: 0.0, // FIXED: f64, not DbDecimal
+            actual_cost: crate::db::DbDecimal::from(0),
+            modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
-            actual_charge: 0.0, // FIXED: f64, not DbDecimal
+            actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
         }
     }
@@ -2108,7 +2144,11 @@ impl DbInsertableChatMessage {
     /// Set both credits_charged and credits_cost
     /// DEPRECATED: Use with_cost_tracking for new code
     #[must_use]
-    pub fn with_credits(mut self, credits_charged: i32, credits_cost: f64) -> Self {
+    pub fn with_credits(
+        mut self,
+        credits_charged: i32,
+        credits_cost: crate::db::DbDecimal,
+    ) -> Self {
         self.credits_charged = credits_charged;
         self.credits_cost = credits_cost;
         self
@@ -2124,14 +2164,13 @@ impl DbInsertableChatMessage {
         actual_charge: crate::db::DbDecimal,
         credits_charged: i32,
     ) -> Self {
-        use bigdecimal::ToPrimitive;
-        self.actual_cost = actual_cost.to_f64().unwrap_or(0.0);
-        self.modified_cost = modified_cost.to_f64().unwrap_or(0.0);
+        self.actual_cost = actual_cost;
+        self.modified_cost = modified_cost;
         self.credit_cost = credit_cost;
-        self.actual_charge = actual_charge.to_f64().unwrap_or(0.0);
+        self.actual_charge = actual_charge;
         self.credits_charged = credits_charged;
         // Keep credits_cost for backwards compatibility
-        self.credits_cost = credit_cost as f64;
+        self.credits_cost = crate::db::DbDecimal::from(credit_cost as i64);
         self
     }
 }

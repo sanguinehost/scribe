@@ -187,7 +187,7 @@ pub async fn upload_user_avatar(
                 .map_err(Into::into)
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING, so we insert and query back
             diesel::insert_into(user_assets)
@@ -404,7 +404,7 @@ pub async fn upload_persona_avatar(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING, so we insert and query back
             diesel::insert_into(user_assets)

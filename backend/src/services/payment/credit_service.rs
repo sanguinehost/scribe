@@ -16,7 +16,6 @@ use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 /// Service for managing user credits and credit transactions
 ///
@@ -93,7 +92,6 @@ impl CreditService {
         user_id: crate::db::DbId,
     ) -> Result<i32, AppError> {
         use diesel::dsl::sum;
-        use diesel::sql_types::{Integer, Nullable};
 
         let available_balance: Option<i64> = credit_transactions::table
             .filter(credit_transactions::user_id.eq(user_id))
@@ -103,13 +101,11 @@ impl CreditService {
                     .or(credit_transactions::expires_at.gt(Utc::now())),
             )
             .select(sum(credit_transactions::amount))
-            .first(conn)
-            .optional()
+            .first::<Option<i64>>(conn)
             .map_err(|e| {
                 error!("Failed to get available credit balance: {}", e);
                 AppError::DatabaseQueryError(e.to_string())
-            })?
-            .flatten();
+            })?;
 
         Ok(available_balance.unwrap_or(0) as i32)
     }
@@ -127,13 +123,11 @@ impl CreditService {
             .filter(credit_transactions::expires_at.is_not_null())
             .filter(credit_transactions::expires_at.le(Utc::now()))
             .select(sum(credit_transactions::amount))
-            .first(conn)
-            .optional()
+            .first::<Option<i64>>(conn)
             .map_err(|e| {
                 error!("Failed to get expired credit balance: {}", e);
                 AppError::DatabaseQueryError(e.to_string())
-            })?
-            .flatten();
+            })?;
 
         Ok(expired_balance.unwrap_or(0) as i32)
     }

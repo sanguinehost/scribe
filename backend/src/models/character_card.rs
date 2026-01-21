@@ -460,7 +460,7 @@ use crate::schema::character_assets;
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCharacter {
@@ -812,11 +812,11 @@ impl NewCharacter {
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json.map(crate::db::Json), // Assign the wrapped value
-            source: source.into(),   // Already converted to Option<Vec<Option<String>>>>
+            source: source.into(), // Already converted to Option<Vec<Option<String>>>>
             group_only_greetings: group_only_greetings.into(), // Already Option<Vec<Option<String>>>
             creation_date: creation_date_ts,                   // Already Option<DbTimestamp>
             modification_date: modification_date_ts,           // Already Option<DbTimestamp>
-            extensions: extensions_option_json.map(crate::db::Json),                // Assign the calculated extensions
+            extensions: extensions_option_json.map(crate::db::Json), // Assign the calculated extensions
             persona: None,
             persona_nonce: None,
             world_scenario: None,
@@ -1032,13 +1032,13 @@ impl NewCharacter {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct CharacterAsset {
     #[cfg(feature = "postgres-backend")]
     pub id: i32,
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     pub id: crate::db::DbId,
     pub character_id: crate::db::DbId, // Changed from i32
     #[serde(rename = "type")] // Match JSON spec, handle Rust keyword
@@ -1068,13 +1068,13 @@ impl std::fmt::Debug for CharacterAsset {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCharacterAsset {
     #[cfg(feature = "postgres-backend")]
     pub id: Option<i32>,
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     pub id: Option<crate::db::DbId>,
     pub character_id: crate::db::DbId, // Changed from i32
     pub asset_type: String,            // Renamed from `type_`

@@ -591,20 +591,20 @@ async fn get_character_name_for_session(
     chat_session_id: crate::db::DbId,
     user_id: crate::db::DbId,
 ) -> Result<Option<String>, AppError> {
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{characters, chat_sessions};
     use diesel::{ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, RunQueryDsl};
 
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let character_name = conn
@@ -633,7 +633,7 @@ async fn get_character_for_session(
     chat_session_id: crate::db::DbId,
     user_id: crate::db::DbId,
 ) -> Result<Option<crate::models::characters::Character>, AppError> {
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{characters, chat_sessions};
     use diesel::{
@@ -643,13 +643,13 @@ async fn get_character_for_session(
 
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let character = conn
@@ -679,7 +679,7 @@ async fn get_chat_messages(
     chat_session_id: crate::db::DbId,
     user_id: crate::db::DbId,
 ) -> Result<Vec<ChatMessage>, AppError> {
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{chat_messages, chat_sessions};
     use diesel::{
@@ -689,13 +689,13 @@ async fn get_chat_messages(
 
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     #[cfg(feature = "postgres-backend")]
     let conn = crate::db::get_conn(&state.pool).await?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&state.pool).await?;
 
     let mut messages = conn
@@ -761,7 +761,7 @@ async fn generate_chronicle_name(
     State(state): State<AppState>,
     Json(request): Json<GenerateChronicleNameRequest>,
 ) -> Result<Json<GenerateChronicleNameResponse>, AppError> {
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     use crate::db::pool_helpers::SqliteInteractExt;
     use crate::schema::{chat_messages, chat_sessions};
     use crate::services::agentic::AgenticNarrativeFactory;

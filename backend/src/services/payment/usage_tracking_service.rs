@@ -15,7 +15,7 @@ use crate::{
     services::EncryptionService,
 };
 #[cfg(feature = "payment")]
-use chrono::{DateTime, Datelike, Duration, Utc};
+use chrono::{Datelike, Duration, Utc};
 #[cfg(feature = "payment")]
 use diesel::{prelude::*, PgConnection};
 #[cfg(feature = "payment")]
@@ -24,8 +24,6 @@ use secrecy::{ExposeSecret, SecretBox};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "payment")]
 use tracing::{error, info};
-#[cfg(feature = "payment")]
-use uuid::Uuid;
 
 #[cfg(feature = "payment")]
 #[derive(Debug, Serialize, Deserialize)]

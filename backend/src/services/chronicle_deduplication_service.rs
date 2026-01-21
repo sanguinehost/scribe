@@ -169,9 +169,7 @@ impl ChronicleDeduplicationService {
     ) -> Result<Vec<ChronicleEvent>, AppError> {
         // Calculate time window - look backward only for deduplication
         // We want to find events that happened BEFORE this one within the time window
-        let event_timestamp = new_event
-            .timestamp_iso8601
-            .unwrap_or_else(crate::db::DbTimestamp::now);
+        let event_timestamp = new_event.timestamp_iso8601;
         let time_window_start =
             event_timestamp - Duration::minutes(self.config.time_window_minutes);
         let time_window_end = event_timestamp;
@@ -336,8 +334,8 @@ impl ChronicleDeduplicationService {
         event1: &ChronicleEvent,
         event2: &ChronicleEvent,
     ) -> f32 {
-        let t1 = event1.timestamp_iso8601.unwrap_or_default();
-        let t2 = event2.timestamp_iso8601.unwrap_or_default();
+        let t1 = event1.timestamp_iso8601;
+        let t2 = event2.timestamp_iso8601;
         let time_diff = (t1 - t2).num_minutes().abs();
         let max_window = self.config.time_window_minutes;
 
@@ -390,8 +388,8 @@ impl ChronicleDeduplicationService {
                 let event2 = &events[j];
 
                 // Check if they're within the time window
-                let t1 = event1.timestamp_iso8601.unwrap_or_default();
-                let t2 = event2.timestamp_iso8601.unwrap_or_default();
+                let t1 = event1.timestamp_iso8601;
+                let t2 = event2.timestamp_iso8601;
                 let time_diff = (t2 - t1).num_minutes();
                 if time_diff > self.config.time_window_minutes {
                     break; // No need to check further events for this base event
@@ -444,7 +442,7 @@ mod tests {
             updated_at: Utc::now().into(),
             summary_encrypted: None,
             summary_nonce: None,
-            timestamp_iso8601: Some(Utc::now().into()),
+            timestamp_iso8601: Utc::now().into(),
             keywords: crate::db::unified_types::DbStringArray(None),
             keywords_encrypted: None,
             keywords_nonce: None,

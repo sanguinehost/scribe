@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct CreditBalance {
@@ -39,7 +39,7 @@ pub struct CreditBalance {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCreditBalance {
@@ -62,7 +62,7 @@ pub struct NewCreditBalance {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct CreditTransaction {
@@ -87,7 +87,7 @@ pub struct CreditTransaction {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCreditTransaction {
@@ -132,7 +132,7 @@ pub struct CreditTransactionDto {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct DailyUsage {
@@ -154,7 +154,7 @@ pub struct DailyUsage {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewDailyUsage {
@@ -189,7 +189,7 @@ pub struct DailyUsageDto {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct CreditPackage {
@@ -213,7 +213,7 @@ pub struct CreditPackage {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCreditPackage {

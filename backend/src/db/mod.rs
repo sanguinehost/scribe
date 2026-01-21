@@ -36,7 +36,7 @@ pub mod unified_types; // NEW: Backend-agnostic unified types
 #[cfg(feature = "postgres-backend")]
 pub mod postgres_backend;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub mod sqlite_backend;
 
 #[cfg(feature = "postgres-backend")]
@@ -44,9 +44,9 @@ pub use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 #[cfg(feature = "postgres-backend")]
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub use diesel_migrations::{embed_migrations, EmbeddedMigrations};
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations_sqlite");
 
 // Always available because DbType trait requires both PgType and SqliteType
@@ -58,21 +58,21 @@ pub use backend_trait::DbBackend;
 pub use pool_helpers::{get_conn, with_conn, with_conn_immediate};
 
 // Export SQLite extension traits for compatibility
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub use pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 // Conditional exports based on feature flags
 #[cfg(feature = "postgres-backend")]
 pub use postgres_backend::PostgresBackend as DefaultBackend;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub use sqlite_backend::SqliteBackend as DefaultBackend;
 
 // Connection type aliases
 #[cfg(feature = "postgres-backend")]
 pub type DbConnection = diesel::pg::PgConnection;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub type DbConnection = diesel::sqlite::SqliteConnection;
 
 // Backwards-compatible alias
@@ -85,7 +85,7 @@ pub type DbPool = deadpool_diesel::postgres::Pool;
 
 // SQLite uses diesel::r2d2 for synchronous pooling
 // (wrapped with spawn_blocking in async contexts)
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub type DbPool = diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<DbConnection>>;
 
 // Pool manager type aliases (only needed for deadpool-diesel)
@@ -103,14 +103,14 @@ pub type DbRuntime = deadpool_diesel::Runtime;
 #[cfg(feature = "postgres-backend")]
 pub type DbInt = i32;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub type DbInt = i32;
 
 // BigInt type - i64 for both PostgreSQL (BigInt) and SQLite (BigInt/Integer)
 #[cfg(feature = "postgres-backend")]
 pub type DbBigInt = i64;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub type DbBigInt = i64;
 
 // DbJson is now provided by unified_types module
@@ -118,12 +118,14 @@ pub type DbBigInt = i64;
 #[cfg(feature = "postgres-backend")]
 pub type DbBigDecimal = bigdecimal::BigDecimal;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub type DbBigDecimal = sqlite_types::SqliteBigDecimal;
 
 // Compile-time checks to ensure exactly one backend is enabled
 #[cfg(all(feature = "postgres-backend", feature = "sqlite-backend"))]
-compile_error!("Cannot enable both postgres-backend and sqlite-backend features simultaneously");
+// compile_error!("Cannot enable both postgres-backend and sqlite-backend features simultaneously");
+// We now prioritize postgres-backend if both are enabled (e.g. by dev-dependencies)
+pub use postgres_backend as _conflict_resolution_postgres;
 
 #[cfg(not(any(feature = "postgres-backend", feature = "sqlite-backend")))]
 compile_error!("Must enable either postgres-backend or sqlite-backend feature");

@@ -25,7 +25,6 @@ pub mod payment_test_helpers {
     use reqwest::Client;
     use secrecy::{ExposeSecret, SecretBox, SecretString};
     use serde_json::{json, Value};
-    use uuid::Uuid;
 
     /// Test constants for Paddle sandbox
     pub const TEST_PRODUCT_ID: &str = "pro_01k4qbwv2tf73cvy1nffve71w3";

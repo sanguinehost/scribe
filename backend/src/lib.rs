@@ -18,11 +18,11 @@ pub mod privacy;
 pub mod prompt_builder;
 pub mod prompt_templates;
 pub mod routes;
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 #[path = "schema_sqlite.rs"]
 pub mod schema;
 
-#[cfg(not(feature = "sqlite-backend"))]
+#[cfg(any(feature = "postgres-backend", not(feature = "sqlite-backend")))]
 pub mod schema;
 pub mod services;
 pub mod state;

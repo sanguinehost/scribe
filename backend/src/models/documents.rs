@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct Document {
@@ -44,7 +44,7 @@ impl std::fmt::Debug for Document {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewDocument {
@@ -77,7 +77,7 @@ impl std::fmt::Debug for NewDocument {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct Suggestion {
@@ -117,7 +117,7 @@ impl std::fmt::Debug for Suggestion {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewSuggestion {

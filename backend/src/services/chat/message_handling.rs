@@ -92,11 +92,6 @@ pub async fn get_messages_for_session(
                             {
                                 msg.content = variant.content;
                                 msg.content_nonce = variant.content_nonce;
-                                msg.prompt_tokens = variant.prompt_tokens;
-                                msg.completion_tokens = variant.completion_tokens;
-                                if let Some(model) = variant.model_name {
-                                    msg.model_name = model;
-                                }
                                 #[cfg(feature = "postgres-backend")]
                                 {
                                     msg.game_time = variant.game_state;
@@ -227,7 +222,9 @@ pub struct SaveMessageParams<'a> {
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
 #[instrument(skip(params), err)]
-pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, AppError> {
+pub async fn save_message(
+    params: SaveMessageParams<'_>,
+) -> Result<(ChatMessage, Option<crate::db::DbId>), AppError> {
     let SaveMessageParams {
         state,
         session_id,
@@ -347,45 +344,28 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         info!(parent_message_id = %parent_message_id, "Creating variant instead of new message");
 
         if let Some(dek_arc) = &user_dek_secret_box {
-            // Create the variant using the existing function, now with token counts AND raw_prompt
+            // Create the variant using the existing function (tokens/model not stored in variants table)
             let variant_result = message_variants::create_message_variant(
                 state.clone(),
                 parent_message_id,
                 content, // Use the content directly (create_message_variant handles encryption)
                 user_id,
                 dek_arc,
-                prompt_tokens_val,
-                completion_tokens_val,
-                Some(model_name.clone()),
                 raw_prompt_debug, // Pass through the raw_prompt for the variant
                 None, // game_state will be updated later by narrative service if applicable
             )
             .await;
 
             match variant_result {
-                Ok(_variant) => {
-                    info!(parent_message_id = %parent_message_id, "Successfully created message variant");
+                Ok((updated_parent_raw, variant_id)) => {
+                    let updated_parent = ChatMessage::from(updated_parent_raw);
+                    info!(
+                        parent_message_id = %parent_message_id,
+                        variant_id = %variant_id,
+                        "Successfully created message variant"
+                    );
 
-                    // Return the parent message with updated variant metadata
-                    // We need to fetch the updated parent message to return it
-                    let pool = state.pool.clone();
-                    let updated_parent = crate::db::with_conn(&pool, move |conn| {
-                        use crate::schema::chat_messages::dsl::*;
-                        // Load full ChatMessage using as_select() to avoid SQLite tuple size limits
-                        chat_messages
-                            .filter(id.eq(parent_message_id))
-                            .filter(user_id.eq(user_id))
-                            .select(ChatMessage::as_select())
-                            .first::<ChatMessage>(conn)
-                            .map_err(|e| {
-                                AppError::DatabaseQueryError(format!(
-                                    "Parent message not found: {e}"
-                                ))
-                            })
-                    })
-                    .await?;
-
-                    return Ok(updated_parent);
+                    return Ok((updated_parent, Some(variant_id)));
                 }
                 Err(e) => {
                     error!(parent_message_id = %parent_message_id, error = ?e, "Failed to create message variant");
@@ -875,7 +855,21 @@ pub async fn save_message(params: SaveMessageParams<'_>) -> Result<ChatMessage, 
         });
     }
 
-    Ok(saved_message_db)
+    // Ensure variant 0 exists for the new message
+    let variant_id = if let Some(dek_arc) = &user_dek_secret_box {
+        message_variants::ensure_original_variant_exists(
+            state.clone(),
+            saved_message_db.id,
+            content,
+            user_id,
+            dek_arc,
+        )
+        .await?
+    } else {
+        None
+    };
+
+    Ok((saved_message_db, variant_id))
 }
 
 /// Calculate estimated cost in cents based on model pricing
@@ -961,13 +955,18 @@ async fn update_cumulative_token_counts(
             actual_cost.0.clone(),
         );
 
+        #[cfg(feature = "postgres-backend")]
+        let (prompt_delta, completion_delta) = (prompt_tokens as i32, completion_tokens as i32);
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        let (prompt_delta, completion_delta) = (prompt_tokens, completion_tokens);
+
         // Update chat session cumulative counts
         diesel::update(chat_sessions::table.find(session_id))
             .set((
                 chat_sessions::total_prompt_tokens
-                    .eq(chat_sessions::total_prompt_tokens + prompt_tokens as i64),
+                    .eq(chat_sessions::total_prompt_tokens + prompt_delta),
                 chat_sessions::total_completion_tokens
-                    .eq(chat_sessions::total_completion_tokens + completion_tokens as i64),
+                    .eq(chat_sessions::total_completion_tokens + completion_delta),
                 chat_sessions::estimated_cost_cents
                     .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
                 // NEW: Track all four cost values properly

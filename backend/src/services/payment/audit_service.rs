@@ -8,12 +8,11 @@
 
 use crate::db::DbId;
 use crate::errors::AppError;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{debug, error, info};
-use uuid::Uuid;
 
 /// Privacy-focused payment audit logger
 #[derive(Clone)]

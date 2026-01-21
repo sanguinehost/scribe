@@ -181,12 +181,14 @@ pub struct UploadedLorebookEntry {
     pub display_index: Option<i32>,
     #[serde(default, rename = "addMemo")]
     pub add_memo: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_int")]
     pub group: Option<String>,
     #[serde(default, rename = "groupOverride")]
     pub group_override: Option<bool>,
     #[serde(default, rename = "groupWeight")]
     pub group_weight: Option<i32>,
+    #[serde(default, rename = "selectiveLogic")]
+    pub selective_logic: Option<i32>,
     #[serde(default)]
     pub sticky: Option<i32>,
     #[serde(default)]
@@ -199,7 +201,7 @@ pub struct UploadedLorebookEntry {
     pub depth: Option<i32>,
     #[serde(default, rename = "useProbability")]
     pub use_probability: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_int")]
     pub role: Option<String>,
     #[serde(default)]
     pub vectorized: Option<bool>,
@@ -217,7 +219,11 @@ pub struct UploadedLorebookEntry {
     pub match_whole_words: Option<bool>,
     #[serde(default, rename = "useGroupScoring")]
     pub use_group_scoring: Option<bool>,
-    #[serde(default, rename = "automationId")]
+    #[serde(
+        default,
+        rename = "automationId",
+        deserialize_with = "deserialize_string_or_int"
+    )]
     pub automation_id: Option<String>,
     #[serde(default, rename = "matchPersonaDescription")]
     pub match_persona_description: Option<bool>,
@@ -405,6 +411,23 @@ where
             Unexpected::Other(&value.to_string()),
             &"integer or string",
         )),
+    }
+}
+
+// Custom deserializer that handles both string and integer formats, converting to String
+fn deserialize_string_or_int<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let db_json = crate::DbJson::deserialize(deserializer)?;
+    let value: &serde_json::Value = &db_json;
+
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(n) => Ok(Some(n.to_string())),
+        serde_json::Value::String(s) => Ok(Some(s.clone())),
+        serde_json::Value::Bool(b) => Ok(Some(b.to_string())),
+        _ => Ok(Some(value.to_string())),
     }
 }
 

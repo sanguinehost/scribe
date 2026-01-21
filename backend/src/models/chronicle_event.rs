@@ -54,7 +54,7 @@ impl std::str::FromStr for EventSource {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct ChronicleEvent {
@@ -71,7 +71,7 @@ pub struct ChronicleEvent {
     pub summary_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
-    pub timestamp_iso8601: Option<DbTimestamp>,
+    pub timestamp_iso8601: DbTimestamp,
     pub keywords: crate::db::DbStringArray, // For search optimization
     #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
@@ -176,7 +176,7 @@ impl ChronicleEvent {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewChronicleEvent {

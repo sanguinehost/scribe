@@ -528,7 +528,7 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             let _stop_seqs = {
                 let optional_array = chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
@@ -645,15 +645,15 @@ pub async fn get_session_data_for_generation(
                             Option<Vec<u8>>,
                             crate::db::DbTimestamp,
                             crate::db::DbId,
-                            Option<i64>,
-                            Option<i64>,
+                            Option<i32>,
+                            Option<i32>,
                             String,
                             String,
                             Option<crate::DbJson>,
                         )>(conn_interaction)
                     }
 
-                    #[cfg(feature = "sqlite-backend")]
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                     {
                         query_base.load::<(
                             crate::db::DbId,
@@ -678,7 +678,7 @@ pub async fn get_session_data_for_generation(
                 // Reverse to get oldest first (ASC) order for processing
                 query_result.reverse();
 
-                #[cfg(feature = "sqlite-backend")]
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 let query_result = query_result
                     .into_iter()
                     .map(
@@ -720,11 +720,11 @@ pub async fn get_session_data_for_generation(
                                 variant_count: 0,
                                 current_variant_index: 0,
                                 credits_charged: 0,
-                                credits_cost: 0.0,  // SQLite: f64
-                                actual_cost: 0.0,   // SQLite: f64
-                                modified_cost: 0.0, // SQLite: f64
+                                credits_cost: crate::db::DbDecimal::from(0),
+                                actual_cost: crate::db::DbDecimal::from(0),
+                                modified_cost: crate::db::DbDecimal::from(0),
                                 credit_cost: 0,
-                                actual_charge: 0.0, // SQLite: f64
+                                actual_charge: crate::db::DbDecimal::from(0),
                                 game_time,
                             }
                         },
@@ -1013,79 +1013,77 @@ pub async fn get_session_data_for_generation(
                     _ => MessageRole::User, // Default fallback
                 };
 
-                #[cfg(feature = "sqlite-backend")]
-                {
-                    DbChatMessage {
-                        id: DbId::new().into(), // Generate temporary ID for frontend messages
-                        session_id,
-                        user_id,
-                        message_type: message_role,
-                        content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
-                        rag_embedding_id: None,
-                        content_nonce: None, // No encryption for frontend-provided history
-                        created_at: (chrono::Utc::now()
-                            - chrono::Duration::seconds(1000 - index as i64))
-                        .into(), // Fake timestamps
-                        updated_at: chrono::Utc::now().into(),
-                        role: None,
-                        parts: None,
-                        attachments: None,
-                        prompt_tokens: None,
-                        completion_tokens: None,
-                        raw_prompt_ciphertext: None,
-                        raw_prompt_nonce: None,
-                        model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
-                        status: "completed".to_string(), // Frontend-provided history is considered completed
-                        error_message: None,
-                        superseded_at: None,
-                        variant_count: 0,
-                        current_variant_index: 0,
-                        credits_charged: 0,
-                        credits_cost: 0.0,  // SQLite: f64
-                        actual_cost: 0.0,   // SQLite: f64
-                        modified_cost: 0.0, // SQLite: f64
-                        credit_cost: 0,
-                        actual_charge: 0.0, // SQLite: f64
-                        game_time: None,
-                    }
-                }
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                let msg = DbChatMessage {
+                    id: DbId::new().into(), // Generate temporary ID for frontend messages
+                    session_id,
+                    user_id,
+                    message_type: message_role,
+                    content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                    rag_embedding_id: None,
+                    content_nonce: None, // No encryption for frontend-provided history
+                    created_at: (chrono::Utc::now()
+                        - chrono::Duration::seconds(1000 - index as i64))
+                    .into(), // Fake timestamps
+                    updated_at: chrono::Utc::now().into(),
+                    role: None,
+                    parts: None,
+                    attachments: None,
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                    raw_prompt_ciphertext: None,
+                    raw_prompt_nonce: None,
+                    model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
+                    status: "completed".to_string(), // Frontend-provided history is considered completed
+                    error_message: None,
+                    superseded_at: None,
+                    variant_count: 0,
+                    current_variant_index: 0,
+                    credits_charged: 0,
+                    credits_cost: crate::db::DbDecimal::from(0),
+                    actual_cost: crate::db::DbDecimal::from(0),
+                    modified_cost: crate::db::DbDecimal::from(0),
+                    credit_cost: 0,
+                    actual_charge: crate::db::DbDecimal::from(0),
+                    game_time: None,
+                };
 
                 #[cfg(feature = "postgres-backend")]
-                {
-                    DbChatMessage {
-                        id: DbId::new().into(), // Generate temporary ID for frontend messages
-                        session_id,
-                        user_id,
-                        message_type: message_role,
-                        content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
-                        content_nonce: None, // No encryption for frontend-provided history
-                        rag_embedding_id: None,
-                        created_at: (chrono::Utc::now()
-                            - chrono::Duration::seconds(1000 - index as i64))
-                        .into(), // Fake timestamps
-                        updated_at: chrono::Utc::now().into(),
-                        role: None,
-                        parts: None,
-                        attachments: None,
-                        prompt_tokens: None,
-                        completion_tokens: None,
-                        raw_prompt_ciphertext: None,
-                        raw_prompt_nonce: None,
-                        model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
-                        status: "completed".to_string(), // Frontend-provided history is considered completed
-                        error_message: None,
-                        superseded_at: None,
-                        variant_count: 0,
-                        current_variant_index: 0,
-                        credits_charged: 0,
-                        credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                        actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
-                        modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                        credit_cost: 0,
-                        actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                        game_time: None,
-                    }
-                }
+                let msg = DbChatMessage {
+                    id: DbId::new().into(), // Generate temporary ID for frontend messages
+                    session_id,
+                    user_id,
+                    message_type: message_role,
+                    content: api_msg.content.as_bytes().to_vec(), // Store as plaintext bytes
+                    content_nonce: None, // No encryption for frontend-provided history
+                    rag_embedding_id: None,
+                    created_at: (chrono::Utc::now()
+                        - chrono::Duration::seconds(1000 - index as i64))
+                    .into(), // Fake timestamps
+                    updated_at: chrono::Utc::now().into(),
+                    role: None,
+                    parts: None,
+                    attachments: None,
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                    raw_prompt_ciphertext: None,
+                    raw_prompt_nonce: None,
+                    model_name: session_model_name_db.to_string(), // Use session model for frontend-provided history
+                    status: "completed".to_string(), // Frontend-provided history is considered completed
+                    error_message: None,
+                    superseded_at: None,
+                    variant_count: 0,
+                    current_variant_index: 0,
+                    credits_charged: 0,
+                    credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                    actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
+                    modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                    credit_cost: 0,
+                    actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
+                    game_time: None,
+                };
+
+                msg
             })
             .collect()
     } else {
@@ -1865,7 +1863,7 @@ pub async fn get_session_data_for_generation(
         }
 
         if let Some(content) = first_mes_content_to_add {
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             let first_mes_db_chat_message = DbChatMessage {
                 game_time: None,
                 id: DbId::new().into(),
@@ -1891,11 +1889,11 @@ pub async fn get_session_data_for_generation(
                 variant_count: 0,
                 current_variant_index: 0,
                 credits_charged: 0,
-                credits_cost: 0.0,  // SQLite: f64
-                actual_cost: 0.0,   // SQLite: f64
-                modified_cost: 0.0, // SQLite: f64
+                credits_cost: crate::db::DbDecimal::from(0),
+                actual_cost: crate::db::DbDecimal::from(0),
+                modified_cost: crate::db::DbDecimal::from(0),
                 credit_cost: 0,
-                actual_charge: 0.0, // SQLite: f64
+                actual_charge: crate::db::DbDecimal::from(0),
             };
 
             #[cfg(feature = "postgres-backend")]
@@ -1938,19 +1936,19 @@ pub async fn get_session_data_for_generation(
 
     // --- Prepare User Message Struct ---
     // Generate new ID for SQLite (no DEFAULT in schema)
-    #[cfg(feature = "sqlite-backend")]
-    let user_message_id = crate::db::DbId::new();
-
-    #[cfg(feature = "sqlite-backend")]
-    let mut user_db_message_to_save = DbInsertableChatMessage::new(
-        user_message_id, // id field - CRITICAL for SQLite (7 args total)
-        session_id,
-        user_id,
-        MessageRole::User,
-        user_message_content_for_closure.into_bytes(),
-        None,
-        session_model_name_db.to_string(),
-    );
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let mut user_db_message_to_save = {
+        let user_message_id = crate::db::DbId::new();
+        DbInsertableChatMessage::new(
+            user_message_id, // id field - CRITICAL for SQLite (7 args total)
+            session_id,
+            user_id,
+            MessageRole::User,
+            user_message_content_for_closure.into_bytes(),
+            None,
+            session_model_name_db.to_string(),
+        )
+    };
 
     #[cfg(feature = "postgres-backend")]
     let mut user_db_message_to_save = DbInsertableChatMessage::new(
@@ -2698,7 +2696,7 @@ pub async fn stream_ai_response_and_save_message(
                                 credits_cost_override: None, // Let save_message calculate from tokens
                                 game_time: game_time_clone_partial,
                            }).await {
-                                Ok(saved_message) => {
+                                Ok((saved_message, _variant_id)) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
                                 }
                                 Err(save_err) => {
@@ -2798,7 +2796,7 @@ pub async fn stream_ai_response_and_save_message(
                     credits_cost_override: None, // Let save_message calculate from tokens
                     game_time: game_time_clone_full,
                 }).await {
-                    Ok(saved_message) => {
+                    Ok((saved_message, variant_id)) => {
                         info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
 
                         // Track daily message usage with SoftLimitService
@@ -2920,7 +2918,7 @@ pub async fn stream_ai_response_and_save_message(
                                 full_user_id_clone,
                                 full_session_id_clone,
                                 player_chronicle_id_clone,
-                                Some(saved_message.id),
+                                variant_id,
                                 &recent_messages,
                                 &empty_rag_context,
                                 &session_dek_for_narrative,

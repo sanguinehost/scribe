@@ -32,8 +32,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 #[cfg(feature = "payment")]
 use tracing::{error, info, warn};
-#[cfg(feature = "payment")]
-use uuid::Uuid;
 
 #[cfg(feature = "payment")]
 use crate::{
@@ -277,7 +275,7 @@ pub async fn get_subscription(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -534,7 +532,7 @@ pub async fn get_usage(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -671,7 +669,7 @@ pub async fn create_payment(
         tracing::error!(error = %e, "Failed to get database connection");
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to get database connection");
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
@@ -1336,7 +1334,7 @@ pub async fn preview_order(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -1425,7 +1423,7 @@ pub async fn create_subscription(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -2971,7 +2969,7 @@ async fn process_subscription_created(
         tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
         AppError::DbPoolError(e.to_string())
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         tracing::error!("Step 7 FAILED: Failed to get DB connection: {}", e);
         AppError::DbPoolError(e.to_string())
@@ -3148,7 +3146,7 @@ async fn process_subscription_created(
             );
             AppError::DbPoolError(e.to_string())
         })?;
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for update: {}",
@@ -3262,7 +3260,7 @@ async fn process_subscription_created(
             );
             AppError::DbPoolError(e.to_string())
         })?;
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
             tracing::error!(
                 "Step 11 FAILED: Failed to get DB connection for create: {}",
@@ -4067,7 +4065,7 @@ pub async fn get_credit_balance(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4107,7 +4105,7 @@ pub async fn purchase_credits(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4184,7 +4182,7 @@ pub async fn get_credit_packages(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4224,7 +4222,7 @@ pub async fn get_credit_transactions(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
@@ -4315,12 +4313,12 @@ pub async fn get_payment_transactions(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
-    let user_id = user.id;
+    let target_user_id = user.id;
     let limit = query.limit.unwrap_or(50).min(100); // Max 100
     let offset = query.offset.unwrap_or(0);
 
@@ -4332,7 +4330,7 @@ pub async fn get_payment_transactions(
             use diesel::prelude::*;
 
             payment_transactions
-                .filter(crate::schema::payment_transactions::dsl::user_id.eq(user_id))
+                .filter(crate::schema::payment_transactions::dsl::user_id.eq(target_user_id))
                 .order(created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -4389,12 +4387,12 @@ pub async fn get_payment_transaction(
     let conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut conn = crate::db::get_conn(&app_state.pool).await.map_err(|e| {
         AppError::DatabaseQueryError(format!("Failed to get database connection: {}", e))
     })?;
 
-    let user_id = user.id;
+    let target_user_id = user.id;
 
     // Query transaction - ensure it belongs to the user
     let transaction = conn
@@ -4405,7 +4403,7 @@ pub async fn get_payment_transaction(
 
             payment_transactions
                 .filter(id.eq(transaction_id))
-                .filter(crate::schema::payment_transactions::dsl::user_id.eq(user_id))
+                .filter(crate::schema::payment_transactions::dsl::user_id.eq(target_user_id))
                 .select(PaymentTransaction::as_select())
                 .first::<PaymentTransaction>(conn)
         })

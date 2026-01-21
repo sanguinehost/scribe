@@ -3,13 +3,12 @@ use crate::errors::AppError;
 use crate::models::credit::{DailyUsage, NewDailyUsage};
 use crate::models::payment::Subscription;
 use crate::schema::daily_usage_tracking;
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{Timelike, Utc};
 use diesel::prelude::*;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info};
-use uuid::Uuid;
 
 /// Service for managing daily usage soft limits
 ///

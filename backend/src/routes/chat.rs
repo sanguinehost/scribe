@@ -756,7 +756,7 @@ pub async fn generate_chat_response(
         })
         .await
         {
-            Ok(saved_msg) => {
+            Ok((saved_msg, _variant_id)) => {
                 debug!(message_id = %saved_msg.id, session_id = %session_id, message_status = ?saved_msg.status, "Successfully saved user message for agent analysis");
 
                 // Track daily message usage with SoftLimitService for user messages
@@ -1928,7 +1928,7 @@ pub async fn generate_chat_response(
                         )
                         .await
                         {
-                            Ok(saved_message) => {
+                            Ok((saved_message, _variant_id)) => {
                                 debug!(session_id = %session_id, message_id = %saved_message.id, "Successfully saved AI message via chat_service (JSON path)");
 
                                 // Note: Session totals (tokens, credits) are updated by the save_message function
@@ -2756,21 +2756,52 @@ async fn create_message_variant_handler(
         .user()
         .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
 
-    let variant = crate::services::chat::message_variants::create_message_variant(
-        Arc::new(state),
-        message_id,
-        &payload.content,
-        user.id,
-        &session_dek.0,
-        None, // prompt_tokens not available in direct variant creation
-        None, // completion_tokens not available
-        None, // model_name not available
-        None, // raw_prompt_debug not available in direct variant creation
-        None, // game_state not available in direct variant creation
-    )
-    .await?;
+    let (updated_message, _variant_id) =
+        crate::services::chat::message_variants::create_message_variant(
+            Arc::new(state),
+            message_id,
+            &payload.content,
+            user.id,
+            &session_dek.0,
+            None, // raw_prompt_debug not available in direct variant creation
+            None, // game_state not available in direct variant creation
+        )
+        .await?;
 
-    Ok((StatusCode::CREATED, Json(variant)))
+    // Convert database Message to MessageResponse DTO
+    let response = crate::models::chats::MessageResponse {
+        id: updated_message.id,
+        session_id: updated_message.session_id,
+        message_type: updated_message.message_type,
+        role: updated_message
+            .role
+            .clone()
+            .unwrap_or_else(|| updated_message.message_type.to_string()),
+        content: payload.content.clone(), // Use the content from payload
+        parts: updated_message
+            .parts
+            .clone()
+            .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
+        attachments: updated_message
+            .attachments
+            .clone()
+            .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
+        created_at: updated_message.created_at,
+        raw_prompt: None,
+        prompt_tokens: updated_message.prompt_tokens.map(|t| t as i64),
+        completion_tokens: updated_message.completion_tokens.map(|t| t as i64),
+        model_name: Some(updated_message.model_name.clone()),
+        game_state: None,
+        status: updated_message.status,
+        error_message: updated_message.error_message,
+        variant_count: updated_message.variant_count,
+        current_variant_index: updated_message.current_variant_index,
+        is_variant: false,
+        parent_message_id: None,
+        variants: None,
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// Get a specific variant by index

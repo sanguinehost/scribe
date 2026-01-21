@@ -66,7 +66,7 @@ pub enum AccountStatus {
 }
 
 // SQLite implementations for UserRole - store as TEXT
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
     fn from_sql(bytes: diesel::sqlite::SqliteValue) -> diesel::deserialize::Result<Self> {
         let text = <String as diesel::deserialize::FromSql<
@@ -82,7 +82,7 @@ impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlit
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for UserRole {
     fn to_sql<'b>(
         &'b self,
@@ -94,7 +94,7 @@ impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> f
 }
 
 // SQLite implementations for AccountStatus - store as TEXT
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlite>
     for AccountStatus
 {
@@ -112,7 +112,7 @@ impl diesel::deserialize::FromSql<diesel::sql_types::Text, diesel::sqlite::Sqlit
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl diesel::serialize::ToSql<diesel::sql_types::Text, diesel::sqlite::Sqlite> for AccountStatus {
     fn to_sql<'b>(
         &'b self,
@@ -194,7 +194,7 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct UserDbQuery {
@@ -205,7 +205,7 @@ pub struct UserDbQuery {
     pub updated_at: DbTimestamp,
     #[cfg(feature = "postgres-backend")]
     pub email: String,
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     pub email: Option<String>,
     pub kek_salt: String,
     pub encrypted_dek: DbBlob,
@@ -437,7 +437,7 @@ impl AuthUser for User {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewUser {

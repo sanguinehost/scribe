@@ -102,7 +102,7 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
 }
 
 /// Helper to insert character (avoids E0275 Sized overflow with complex closures)
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 fn insert_character_sync(
     conn: &mut crate::db::DbConnection,
     character: &NewCharacter,
@@ -397,7 +397,7 @@ pub async fn upload_character_base64_handler(
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {e}")))?
     };
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let returned_id: crate::db::DbId = {
         // SQLite doesn't support RETURNING, so we generate UUID before insert
         let generated_id = crate::db::DbId::new_v4();
@@ -430,7 +430,7 @@ pub async fn upload_character_base64_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut inserted_character: Character =
         crate::db::with_conn(&state.pool, move |conn_select_block| {
             characters
@@ -472,7 +472,7 @@ pub async fn upload_character_base64_handler(
             AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
         })?;
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let asset_result: Result<CharacterAsset, AppError> = {
         let new_asset_clone = new_asset.clone();
         let asset_id = new_asset.id;
@@ -520,7 +520,7 @@ pub async fn upload_character_base64_handler(
                     ))
                 })?;
 
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             let _update_result = crate::db::with_conn(&state.pool, move |conn_update_block| {
                 diesel::update(characters.find(character_id_for_update))
                     .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
@@ -539,7 +539,7 @@ pub async fn upload_character_base64_handler(
                 }
             }
 
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             {
                 info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
             }
@@ -1034,7 +1034,7 @@ pub async fn upload_character_handler(
             .map_err(|e| AppError::InternalServerErrorGeneric(format!("Insert DB error: {e}")))?
     };
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let returned_id: crate::db::DbId = {
         // SQLite doesn't support RETURNING, so we generate UUID before insert
         let generated_id = crate::db::DbId::new_v4();
@@ -1067,7 +1067,7 @@ pub async fn upload_character_handler(
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))?;
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let mut inserted_character: Character =
         crate::db::with_conn(&state.pool, move |conn_select_block| {
             characters
@@ -1109,7 +1109,7 @@ pub async fn upload_character_handler(
             AppError::InternalServerErrorGeneric(format!("Asset insert interaction error: {e}"))
         })?;
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let asset_result: Result<CharacterAsset, AppError> = {
         let new_asset_clone = new_asset.clone();
         let asset_id = new_asset.id;
@@ -1157,7 +1157,7 @@ pub async fn upload_character_handler(
                     ))
                 })?;
 
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             let _update_result = crate::db::with_conn(&state.pool, move |conn_update_block| {
                 diesel::update(characters.find(character_id_for_update))
                     .set(crate::schema::characters::avatar.eq(Some(asset_id_for_update)))
@@ -1176,7 +1176,7 @@ pub async fn upload_character_handler(
                 }
             }
 
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             {
                 info!(character_id = %inserted_character.id, "Character avatar field updated with asset ID");
             }
@@ -1921,7 +1921,7 @@ pub async fn update_character_handler(
 #[cfg(feature = "postgres-backend")]
 type CharacterAssetIdType = i32;
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 type CharacterAssetIdType = crate::db::DbId;
 
 #[debug_handler]

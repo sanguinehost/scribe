@@ -284,29 +284,101 @@ impl NewEntityObservationBuilder {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CognitivePayload {
+    #[serde(default)]
     pub should_create_event: bool,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub reasoning: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub summary: String,
+    #[serde(default)]
     pub keywords: Vec<String>,
+    #[serde(default)]
     pub facts: Vec<ExtractedFact>,
+    #[serde(default)]
     pub surprise_score: f32,
+    #[serde(default, deserialize_with = "deserialize_string_or_null")]
     pub core_memory_delta: Option<String>,
+    #[serde(default)]
     pub significance_score: f32,
-    // Backward compatibility
+    // Backward compatibility - deprecated but kept for parsing
+    #[serde(default)]
     pub opinions: Vec<OpinionExtraction>,
+    #[serde(default)]
     pub observations: Vec<ObservationExtraction>,
+}
+
+/// Custom deserializer that handles cases where the AI returns null, a string, or omits the field entirely.
+/// Also handles cases where AI might return an array instead of a string (treats as None).
+fn deserialize_string_or_null<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let value: serde_json::Value = serde::Deserialize::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) if s.is_empty() => Ok(None),
+        serde_json::Value::String(s) => Ok(Some(s)),
+        serde_json::Value::Array(_) => {
+            // AI sometimes returns an array when we expect a string - treat as None
+            Ok(None)
+        }
+        other => Err(D::Error::custom(format!(
+            "expected string or null for core_memory_delta, got {:?}",
+            other
+        ))),
+    }
+}
+
+/// Custom deserializer that handles cases where the AI returns an array of strings (joins them)
+/// or other types (converts to string).
+fn deserialize_string_flexible<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: serde_json::Value = serde::Deserialize::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(String::new()),
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        serde_json::Value::Bool(b) => Ok(b.to_string()),
+        serde_json::Value::Array(arr) => {
+            // Join array elements with a space
+            let strings: Vec<String> = arr
+                .iter()
+                .map(|v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    _ => v.to_string(),
+                })
+                .collect();
+            Ok(strings.join(" "))
+        }
+        serde_json::Value::Object(_) => Ok(value.to_string()),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedFact {
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub who: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub what: String,
-    #[serde(rename = "where")]
+    #[serde(
+        rename = "where",
+        default,
+        deserialize_with = "deserialize_string_flexible"
+    )]
     pub r#where: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub when: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub why: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub fact_type: String,
+    #[serde(default)]
     pub confidence: f32,
+    #[serde(default)]
     pub significance: f32,
 }
 
@@ -604,15 +676,22 @@ impl NewCoreMemoryBuilder {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpinionExtraction {
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub perspective: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub opinion: String,
+    #[serde(default)]
     pub confidence: f32,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub reasoning: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObservationExtraction {
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub entity_name: String,
+    #[serde(default, deserialize_with = "deserialize_string_flexible")]
     pub observation: String,
+    #[serde(default)]
     pub confidence: f32,
 }

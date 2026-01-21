@@ -9,7 +9,7 @@ mod backend_models {
     pub mod users;
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 #[path = "../models_sqlite"]
 mod backend_models {
     pub mod character_assets;

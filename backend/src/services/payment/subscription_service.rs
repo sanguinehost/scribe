@@ -17,11 +17,9 @@ use crate::{
     services::EncryptionService,
 };
 #[cfg(feature = "payment")]
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 #[cfg(feature = "payment")]
 use diesel::{prelude::*, PgConnection};
-#[cfg(feature = "payment")]
-use uuid::Uuid;
 
 #[cfg(feature = "payment")]
 #[derive(Clone)]

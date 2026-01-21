@@ -1278,9 +1278,19 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
             )
         })?;
 
-        let payload: CognitivePayload = serde_json::from_str(content).map_err(|e| {
-            AppError::GenerationError(format!("Failed to parse cognitive payload: {}", e))
-        })?;
+        let payload: CognitivePayload = match serde_json::from_str(content) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(
+                    "Failed to parse cognitive payload. Error: {}. Raw content: {}",
+                    e, content
+                );
+                return Err(AppError::GenerationError(format!(
+                    "Failed to parse cognitive payload: {}",
+                    e
+                )));
+            }
+        };
 
         Ok(payload)
     }

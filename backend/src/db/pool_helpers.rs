@@ -15,7 +15,7 @@ use crate::db::DbPool;
 use crate::errors::AppError;
 
 // Extension trait to provide async .get() for SQLite pools (compatibility with PostgreSQL async pools)
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub trait SqlitePoolExt {
     type Connection;
     async fn get(
@@ -26,7 +26,7 @@ pub trait SqlitePoolExt {
     >;
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl SqlitePoolExt for DbPool {
     type Connection =
         diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
@@ -59,7 +59,7 @@ impl SqlitePoolExt for DbPool {
 //
 // IMPORTANT: This means SQLite code must use `let mut conn` while PostgreSQL uses `let conn`.
 // The trait signature matches the closure return type: T can be Result<U, E> to support ?? pattern.
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub trait SqliteInteractExt {
     async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
     where
@@ -67,7 +67,7 @@ pub trait SqliteInteractExt {
         T: Send + 'static;
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl SqliteInteractExt
     for diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>
 {
@@ -94,7 +94,7 @@ pub async fn get_conn(pool: &DbPool) -> Result<deadpool_diesel::postgres::Object
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get connection: {}", e)))
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub async fn get_conn(
     pool: &DbPool,
 ) -> Result<
@@ -155,7 +155,7 @@ where
     with_conn(pool, f).await
 }
 
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub async fn with_conn<F, T>(pool: &DbPool, f: F) -> Result<T, AppError>
 where
     F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,
@@ -175,7 +175,7 @@ where
 /// Execute a blocking database operation with an IMMEDIATE connection (SQLite only)
 ///
 /// For SQLite, this uses BEGIN IMMEDIATE to prevent "database is locked" errors.
-#[cfg(feature = "sqlite-backend")]
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub async fn with_conn_immediate<F, T>(pool: &DbPool, f: F) -> Result<T, AppError>
 where
     F: FnOnce(&mut crate::db::DbConnection) -> Result<T, AppError> + Send + 'static,

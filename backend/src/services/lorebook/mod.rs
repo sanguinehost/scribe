@@ -288,7 +288,7 @@ impl LorebookService {
         let conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let mut conn = crate::db::get_conn(&self.pool).await.map_err(|e| {
             AppError::InternalServerErrorGeneric(format!("Failed to get DB connection: {e}"))
         })?;
@@ -390,12 +390,13 @@ impl LorebookService {
         // 3. Insert into database
         #[cfg(feature = "postgres-backend")]
         let lorebook_entry = {
+            let new_entry_db_clone = new_entry_db.clone();
             conn.interact(move |conn_sync| {
                 use crate::schema::lorebook_entries;
                 {
                     use diesel::prelude::*;
                     diesel::insert_into(lorebook_entries::table)
-                        .values(&new_entry_db)
+                        .values(&new_entry_db_clone)
                         .returning(LorebookEntry::as_returning())
                         .get_result(conn_sync)
                 }
@@ -416,7 +417,7 @@ impl LorebookService {
             })?
         };
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let lorebook_entry = {
             use crate::schema::lorebook_entries;
             use diesel::prelude::*;

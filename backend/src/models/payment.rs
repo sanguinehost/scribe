@@ -113,7 +113,7 @@ pub struct Subscription {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewSubscription {
@@ -164,8 +164,12 @@ pub struct UpdateSubscription {
 /// Plan features model for database queries
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = plan_features)]
+#[cfg_attr(
+    feature = "postgres-backend",
+    diesel(check_for_backend(diesel::pg::Pg))
+)]
 pub struct PlanFeatures {
-    pub plan_type: Option<String>,
+    pub plan_type: String,
     pub monthly_token_limit: Option<i32>,
     pub characters_limit: Option<i32>,
     pub lorebooks_limit: Option<i32>,
@@ -204,7 +208,7 @@ pub struct PaymentUsageTracking {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewPaymentUsageTracking {
@@ -265,7 +269,7 @@ pub struct PaymentTransaction {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewPaymentTransaction {
@@ -380,7 +384,7 @@ pub struct WebhookEvent {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewWebhookEvent {

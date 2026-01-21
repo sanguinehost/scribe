@@ -12,13 +12,13 @@ use serde::{Deserialize, Serialize};
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct UserAsset {
     #[cfg(feature = "postgres-backend")]
     pub id: i32,
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     pub id: DbId,
     pub user_id: DbId,
     pub persona_id: Option<DbId>,
@@ -39,7 +39,7 @@ pub struct UserAsset {
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewUserAsset {

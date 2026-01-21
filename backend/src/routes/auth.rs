@@ -1209,7 +1209,7 @@ pub async fn desktop_setup_handler(
         };
 
         info!("🏭 Creating/loading default user...");
-        let user = match crate::desktop::ensure_default_user_exists(&mut conn).await {
+        let user = match crate::desktop::ensure_default_user_exists(&mut *conn).await {
             Ok(u) => {
                 info!(
                     "✅ Default user ready: id={}, username={}",

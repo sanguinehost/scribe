@@ -748,7 +748,7 @@ async fn fetch_paginated_chat_messages(
                 .into_boxed(); // Use into_boxed to allow dynamic query building
 
             if let Some(cursor_timestamp) = cursor {
-                #[cfg(feature = "sqlite-backend")]
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 {
                     // SQLite stores timestamps as strings (often with space separator), but cursor is RFC3339 (T separator).
                     // We must normalize both to ensure correct lexicographical comparison.
@@ -954,8 +954,8 @@ async fn process_messages_for_response(
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
-            prompt_tokens: msg_db.prompt_tokens,
-            completion_tokens: msg_db.completion_tokens,
+            prompt_tokens: msg_db.prompt_tokens.map(|t| t as i64),
+            completion_tokens: msg_db.completion_tokens.map(|t| t as i64),
             model_name: Some(msg_db.model_name),
             status: msg_db.status,
             error_message: msg_db.error_message,
@@ -1218,7 +1218,7 @@ pub async fn create_message_handler(
 
     // Create the message using the save_message function
     let app_state = Arc::new(state.clone());
-    let saved_db_message = crate::services::chat::message_handling::save_message(
+    let (saved_db_message, _variant_id) = crate::services::chat::message_handling::save_message(
         crate::services::chat::message_handling::SaveMessageParams {
             state: app_state.clone(),
             session_id: chat_id,
@@ -1333,8 +1333,8 @@ pub async fn create_message_handler(
         .parts(payload.parts.clone()) // From the request payload
         .game_time(saved_db_message.game_time)
         .attachments(payload.attachments.clone()) // From the request payload
-        .prompt_tokens(saved_db_message.prompt_tokens)
-        .completion_tokens(saved_db_message.completion_tokens)
+        .prompt_tokens(saved_db_message.prompt_tokens.map(|t| t as i64))
+        .completion_tokens(saved_db_message.completion_tokens.map(|t| t as i64))
         .raw_prompt_ciphertext(saved_db_message.raw_prompt_ciphertext)
         .raw_prompt_nonce(saved_db_message.raw_prompt_nonce)
         .model_name(saved_db_message.model_name.clone())
@@ -1528,8 +1528,8 @@ pub async fn create_message_handler(
         attachments: response_attachments,
         created_at: client_message.created_at,
         raw_prompt: client_message.raw_prompt,
-        prompt_tokens: saved_db_message.prompt_tokens,
-        completion_tokens: saved_db_message.completion_tokens,
+        prompt_tokens: saved_db_message.prompt_tokens.map(|t| t as i64),
+        completion_tokens: saved_db_message.completion_tokens.map(|t| t as i64),
         model_name: Some(saved_db_message.model_name),
         status: saved_db_message.status,
         error_message: saved_db_message.error_message,
@@ -1673,7 +1673,7 @@ pub async fn get_message_by_id_handler(
     };
 
     // If this is a variant (index > 0), try to fetch the content and raw prompt from the variant itself
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let (decrypted_content_string, decrypted_raw_prompt) = if message_db.current_variant_index > 0 {
         let pool = state.pool.clone();
         let msg_id = message_db.id;
@@ -1763,8 +1763,8 @@ pub async fn get_message_by_id_handler(
             .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
-        prompt_tokens: message_db.prompt_tokens,
-        completion_tokens: message_db.completion_tokens,
+        prompt_tokens: message_db.prompt_tokens.map(|t| t as i64),
+        completion_tokens: message_db.completion_tokens.map(|t| t as i64),
         model_name: Some(message_db.model_name),
         status: message_db.status,
         error_message: message_db.error_message,
@@ -1981,7 +1981,7 @@ pub async fn delete_trailing_messages_handler(
         // chronicle_events references message_variants(id) but might not have ON DELETE CASCADE.
         // We must manually set message_variant_id to NULL for any events referencing variants of these messages
         // before we delete the messages (which cascades to variants).
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let variant_ids: Vec<String> = {
             let message_ids_strings: Vec<String> = message_ids_clone_for_variants
                 .iter()
@@ -2022,7 +2022,7 @@ pub async fn delete_trailing_messages_handler(
                 "Cleaning up {} variants referenced in chronicle events before trailing message deletion",
                 variant_ids.len()
             );
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             crate::db::with_conn(&pool, move |conn| {
                 use crate::schema::chronicle_events::dsl as ce_dsl;
                 diesel::update(
@@ -2052,7 +2052,7 @@ pub async fn delete_trailing_messages_handler(
         // Fix for SQLite foreign key constraint:
         // agent_context_analysis references chat_messages(id) via assistant_message_id but might not have ON DELETE CASCADE.
         // We must manually delete these analysis records before deleting the messages.
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             let message_ids_strings: Vec<String> = message_ids_clone_for_variants
                 .iter()
@@ -2134,7 +2134,7 @@ pub async fn delete_trailing_messages_handler(
                     .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
             }
 
-            #[cfg(feature = "sqlite-backend")]
+            #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             {
                 let message_strings: Vec<String> = message_ids_clone_for_messages
                     .iter()
@@ -2252,7 +2252,7 @@ pub async fn delete_message_handler(
             let event_ids: Vec<crate::db::DbId> = crate::db::with_conn(&pool_clone, move |conn| {
                 use crate::schema::chronicle_events::dsl as ce_dsl;
 
-                #[cfg(feature = "sqlite-backend")]
+                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 let v_ids: Vec<String> = variant_ids.iter().map(|id| id.to_string()).collect();
                 #[cfg(feature = "postgres-backend")]
                 let v_ids: Vec<uuid::Uuid> = variant_ids.iter().map(|id| id.into_uuid()).collect();
@@ -2282,7 +2282,7 @@ pub async fn delete_message_handler(
                 crate::db::with_conn(&pool_clone, move |conn| {
                     use crate::schema::chronicle_events::dsl as ce_dsl;
 
-                    #[cfg(feature = "sqlite-backend")]
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                     let e_ids: Vec<String> = event_ids.iter().map(|id| id.to_string()).collect();
                     #[cfg(feature = "postgres-backend")]
                     let e_ids: Vec<uuid::Uuid> =
@@ -2301,7 +2301,7 @@ pub async fn delete_message_handler(
     // Fix for SQLite foreign key constraint:
     // agent_context_analysis references chat_messages(id) via assistant_message_id but might not have ON DELETE CASCADE.
     // We must manually delete these analysis records before deleting the message.
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     {
         let message_id_str = message_id.to_string();
         crate::db::with_conn(&pool, move |conn| {
@@ -2686,8 +2686,8 @@ pub async fn select_message_variant_handler(
             .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
-        prompt_tokens: updated_message.prompt_tokens,
-        completion_tokens: updated_message.completion_tokens,
+        prompt_tokens: updated_message.prompt_tokens.map(|t| t as i64),
+        completion_tokens: updated_message.completion_tokens.map(|t| t as i64),
         model_name: Some(updated_message.model_name),
         status: updated_message.status,
         error_message: updated_message.error_message,

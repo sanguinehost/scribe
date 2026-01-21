@@ -55,7 +55,10 @@ impl ChronicleService {
             .values(event)
             .execute(conn)
             .map_err(|e| {
-                error!("Diesel error when creating event: {}", e);
+                error!(
+                    "Diesel error when creating event: {}. Variant ID: {:?}, Chat Session ID: {:?}",
+                    e, event.message_variant_id, event.chat_session_id
+                );
                 AppError::DatabaseQueryError(format!("Failed to create event: {e}"))
             })?;
 
@@ -909,7 +912,7 @@ impl ChronicleService {
             updated_at: new_event.timestamp_iso8601,
             summary_encrypted: new_event.summary_encrypted.clone(),
             summary_nonce: new_event.summary_nonce.clone(),
-            timestamp_iso8601: Some(new_event.timestamp_iso8601),
+            timestamp_iso8601: new_event.timestamp_iso8601,
             keywords: new_event.keywords.clone(),
             keywords_encrypted: new_event.keywords_encrypted.clone(),
             keywords_nonce: new_event.keywords_nonce.clone(),
@@ -970,8 +973,8 @@ impl ChronicleService {
         };
 
         info!(
-            "Created event {} in chronicle {} for user {}",
-            event.id, chronicle_id, user_id
+            "Created event {} in chronicle {} for user {}. Variant ID: {:?}, Chat Session ID: {:?}",
+            event.id, chronicle_id, user_id, event.message_variant_id, event.chat_session_id
         );
         Ok(event)
     }

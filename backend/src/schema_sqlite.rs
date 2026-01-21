@@ -130,7 +130,7 @@ diesel::table! {
         model_prompt -> Nullable<Binary>,
         model_prompt_visibility -> Nullable<Text>,
         model_temperature -> Nullable<Double>,
-        num_interactions -> Nullable<Integer>,
+        num_interactions -> Nullable<BigInt>,
         permanence -> Nullable<Double>,
         persona_visibility -> Nullable<Text>,
         revision -> Nullable<Integer>,
